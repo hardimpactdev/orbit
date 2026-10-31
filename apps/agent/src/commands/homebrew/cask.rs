@@ -59,14 +59,6 @@ pub(super) struct Discovery {
     pub(super) installed_version: Option<String>,
     pub(super) block: Option<Block>,
 }
-#[derive(schemars::JsonSchema, Debug, PartialEq, Serialize)]
-pub struct Done {}
-#[derive(Clone, Copy)]
-enum Operation {
-    Install,
-    Update,
-    Remove,
-}
 fn validate(input: &Input) -> Result<()> {
     if valid_package(&input.package) {
         Ok(())
@@ -455,89 +447,6 @@ fn adoption(
         block,
     })
 }
-fn removal_target(
-    host: &mut impl recipe::Host,
-    scope: &homebrew_scope::Output,
-    input: &Input,
-    tag: &str,
-) -> Result<String> {
-    let (cask, target) = if let Some(cask) = metadata(host, scope, &input.package, false)? {
-        (
-            variation(&cask, tag)?,
-            format!("homebrew/cask/{}", input.package),
-        )
-    } else {
-        let data = installed(host, scope, 131_072)?;
-        let casks = data
-            .get("casks")
-            .and_then(Value::as_array)
-            .ok_or(Error::Output {})?;
-        let matches: Vec<_> = casks
-            .iter()
-            .filter(|v| string(v, "token") == Some(&input.package))
-            .collect();
-        if matches.len() != 1 {
-            return Err(Error::Output {});
-        }
-        let cask = variation(matches[0], tag)?;
-        if string(&cask, "tap") != Some("homebrew/cask") {
-            return Err(Error::CaskSource {});
-        }
-        (cask, input.package.clone())
-    };
-    let artifacts = cask
-        .get("artifacts")
-        .and_then(Value::as_array)
-        .ok_or(Error::Output {})?;
-    for artifact in artifacts {
-        let artifact = object(artifact)?;
-        if artifact.get("uninstall").is_some_and(uninstall_arbitrary) {
-            return Err(Error::CaskArtifact {});
-        }
-    }
-    if authorization(artifacts, scope) {
-        return Err(Error::CaskAuthorization {});
-    }
-    Ok(target)
-}
-fn mutate(
-    host: &mut impl recipe::Host,
-    scope: &homebrew_scope::Output,
-    input: &Input,
-    operation: Operation,
-) -> Result<Done> {
-    validate(input)?;
-    let tag = bottle_tag(host, Platform::Macos, Some(input.architecture))?.tag;
-    let (verb, target, refresh) = match operation {
-        Operation::Remove => (
-            "uninstall",
-            removal_target(host, scope, input, &tag)?,
-            false,
-        ),
-        Operation::Install | Operation::Update => {
-            let cask = metadata(host, scope, &input.package, true)?.ok_or(Error::CaskSource {})?;
-            assess(&variation(&cask, &tag)?, &input.package, scope)?;
-            (
-                if matches!(operation, Operation::Install) {
-                    "install"
-                } else {
-                    "upgrade"
-                },
-                format!("homebrew/cask/{}", input.package),
-                true,
-            )
-        }
-    };
-    let mut call = brew_invocation(
-        &scope.prefix,
-        &scope.home,
-        refresh,
-        &[verb, "--cask", &target],
-    )?;
-    call.timeout = Duration::from_secs(900);
-    execute(host, &call, 1_048_576)?;
-    Ok(Done {})
-}
 pub(super) fn discoveries(
     data: &Value,
     scope: &homebrew_scope::Output,
@@ -629,54 +538,6 @@ read!(
         let scope = homebrew_scope::Inspect::run(homebrew_scope::Empty {}, context)?;
         adoption(&mut recipe::Native(context), &scope, &input)
     }
-);
-macro_rules! mutation {
-    ($name:ident,$wire:literal,$summary:literal,$operation:ident) => {
-        pub struct $name;
-        impl Command for $name {
-            const NAME: &'static str = $wire;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = true;
-            const TIMEOUT: Duration = Duration::from_secs(900);
-            type Input = Input;
-            type Output = Done;
-            type Error = Error;
-            fn privilege(platform: Platform) -> Option<Privilege> {
-                (platform == Platform::Macos).then_some(Privilege::Account)
-            }
-            fn target(_: &Input) -> Option<String> {
-                Some("tools:homebrew".into())
-            }
-            fn run(input: Input, context: &Context) -> Result<Done> {
-                validate(&input)?;
-                let scope = homebrew_scope::Inspect::run(homebrew_scope::Empty {}, context)?;
-                mutate(
-                    &mut recipe::Native(context),
-                    &scope,
-                    &input,
-                    Operation::$operation,
-                )
-            }
-        }
-    };
-}
-mutation!(
-    Install,
-    "tool.homebrew-cask-install",
-    "Install one safe official cask.",
-    Install
-);
-mutation!(
-    Update,
-    "tool.homebrew-cask-update",
-    "Upgrade one safe official cask.",
-    Update
-);
-mutation!(
-    Remove,
-    "tool.homebrew-cask-remove",
-    "Remove one cask after checking uninstall safety.",
-    Remove
 );
 #[cfg(test)]
 mod tests;

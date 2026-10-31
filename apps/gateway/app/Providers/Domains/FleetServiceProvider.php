@@ -9,8 +9,6 @@ use App\Console\Commands\FleetConvergeCommand;
 use App\Console\Commands\ResolveDesiredFleetStateCommand;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
-use App\Domain\Fleet\FleetNodeVerification;
-use App\Domain\Fleet\FleetNodeVerifier;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\NodeFootprint;
@@ -69,7 +67,6 @@ final class FleetServiceProvider extends ServiceProvider
         );
         $this->app->bind(NodeCliInstaller::class, AgentNodeCliInstaller::class);
         $this->bindStaticCliRelease();
-        $this->app->bind(FleetNodeVerification::class, FleetNodeVerifier::class);
         $this->app->bind(
             AgentReportedVersions::class,
             static fn (Application $app): AgentReportedVersions => new AgentReportedVersions(

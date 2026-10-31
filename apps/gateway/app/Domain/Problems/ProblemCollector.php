@@ -4,25 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Problems;
 
-use App\Actions\Doctor\ProcessDoctorProbe;
-use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
-use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Logs\LogRedactor;
-use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\StoredInteger;
-use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\Activity;
-use App\Models\Node;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
-use App\Models\Process;
 use App\Models\Task;
+use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -34,11 +28,6 @@ use Throwable;
 final readonly class ProblemCollector
 {
     public function __construct(
-        private ProcessDoctorProbe $processDoctor,
-        private NodeAccessAuthorizer $nodes,
-        private GatewayLogLocator $logs,
-        private GatewayLogReader $reader,
-        private ProblemLogParser $parser,
         private ProblemEvidence $evidence,
         private ProblemSuppression $suppression,
         private ProblemRecovery $recovery,
@@ -61,41 +50,12 @@ final readonly class ProblemCollector
         }
 
         try {
-            $this->collectLog();
-        } catch (Throwable $exception) {
-            $failures[] = $exception;
-        }
-
-        try {
             $this->collectAssistance();
         } catch (Throwable $exception) {
             $failures[] = $exception;
         }
 
         return $failures;
-    }
-
-    /** Record Horizon health even when its queue workers cannot collect the fleet. */
-    public function collectHorizon(): void
-    {
-        $id = $this->nodes->activeGatewayId();
-        $gateway = $id === null ? null : Node::query()->find($id);
-        if (! $gateway instanceof Node) {
-            return;
-        }
-        $process = GatewayHorizon::find($gateway);
-
-        if (! $process instanceof Process) {
-            return;
-        }
-
-        $startedAt = now();
-        $issue = $this->processDoctor->inspectProcess($process);
-        $this->recordDoctor(DoctorReportData::fromNodes([
-            DoctorNodeReportData::fromFamilies($gateway->id, $gateway->name, [
-                DoctorFamilyReportData::fromIssues(DoctorFamily::Process, 1, $issue === null ? [] : [$issue], [$process->id]),
-            ]),
-        ]), $startedAt);
     }
 
     /**
@@ -191,81 +151,36 @@ final readonly class ProblemCollector
         });
     }
 
-    private function collectLog(): void
+    /**
+     * @param  array<string, mixed>  $native
+     * @param  array<string, mixed>|null  $expectedCursor
+     */
+    public function recordLogs(array $native, ?array $expectedCursor = null): void
     {
-        DB::transaction(function (): void {
+        DB::transaction(function () use ($native, $expectedCursor): void {
             $state = $this->lockedState();
-            $current = $this->logs->current();
-
-            // The first run that sees a file starts at the end and does not count history.
-            if ($state->log_path === null || $state->log_inode === null || $state->log_offset === null) {
-                if ($current === null) {
-                    return;
-                }
-
-                $state->log_path = $current->path;
-                $state->log_inode = $current->inode;
-                $state->log_offset = $current->size;
-                $state->save();
-
+            $cursor = $state->log_path === null ? null : ['path' => $state->log_path, 'inode' => $state->log_inode, 'offset' => $state->log_offset];
+            if ($cursor !== $expectedCursor) {
                 return;
             }
-
-            $reading = $this->logs->matching($state->log_path, $state->log_inode)
-                ?? $this->logs->findInode($state->log_inode);
-            $offset = $state->log_offset;
-
-            if (! $reading instanceof GatewayLogFile) {
-                if ($current === null) {
-                    return;
-                }
-
-                $reading = $current;
-                $offset = 0;
-            } elseif ($offset > $reading->size) {
-                $offset = $reading->size;
-            }
-
-            $chunk = $this->reader->read($reading->path, $offset);
-
-            foreach ($chunk->records as $record) {
-                $signal = $this->parser->signal($record);
-
-                if (! $signal instanceof ProblemLogSignal) {
-                    continue;
-                }
-
-                $observation = [
-                    'request_ids' => $signal->requestId === null ? [] : [$signal->requestId],
-                    'log_excerpt' => $signal->excerpt,
-                ];
-                $sourcePath = $this->suppression->logFramePath($signal->frame);
-
+            foreach (Arr::array($native, 'signals', []) as $value) {
+                $signal = ValidatedData::object($value);
+                $requestId = ValidatedData::nullableString($signal['request_id'] ?? null);
+                $frame = Arr::string($signal, 'frame');
+                $observation = ['request_ids' => $requestId === null || $requestId === '' ? [] : [$requestId]];
+                $sourcePath = $this->suppression->logFramePath($frame);
                 if ($sourcePath !== null) {
                     $observation['source_path'] = $sourcePath;
                 }
-
-                $this->record(
-                    $this->fingerprint(ProblemSource::Log, $signal->exceptionClass.'|'.$signal->frame),
-                    ProblemSource::Log,
-                    $observation,
-                    $this->logRecordedAt($signal->recordedAt),
-                );
+                $this->record($this->fingerprint(ProblemSource::Log, Arr::string($signal, 'exception_class').'|'.$frame), ProblemSource::Log, $observation, $this->logRecordedAt(Arr::string($signal, 'recorded_at')));
             }
-
-            $state->log_path = $reading->path;
-            $state->log_inode = $reading->inode;
-            $state->log_offset = $chunk->offset;
-            $fresh = $this->logs->describe($reading->path);
-            $finished = $chunk->offset >= $fresh->size;
-
-            if ($finished && $current instanceof GatewayLogFile && ($current->path !== $reading->path || $current->inode !== $reading->inode)) {
-                $state->log_path = $current->path;
-                $state->log_inode = $current->inode;
-                $state->log_offset = 0;
+            if (isset($native['cursor'])) {
+                $next = ValidatedData::object($native['cursor']);
+                $state->log_path = Arr::string($next, 'path');
+                $state->log_inode = Arr::integer($next, 'inode');
+                $state->log_offset = Arr::integer($next, 'offset');
+                $state->save();
             }
-
-            $state->save();
         });
     }
 

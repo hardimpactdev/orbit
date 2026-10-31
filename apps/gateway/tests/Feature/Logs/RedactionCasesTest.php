@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Problems\ProblemLogParser;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use Illuminate\Log\Logger;
 use Illuminate\Support\Facades\Log;
@@ -75,7 +74,4 @@ it('still withholds text and logs a sanitized error when PCRE fails', function (
     expect($record)->toContain('.ERROR:', '"pcre_error":'.PREG_BACKTRACK_LIMIT_ERROR)
         ->not->toContain('sentinel-password')
         ->not->toContain('sentinel-token');
-    $signal = app(ProblemLogParser::class)->signal($record);
-    expect($signal)->not->toBeNull()
-        ->and($signal->excerpt)->toBe('Output withheld: redaction failed.');
 });

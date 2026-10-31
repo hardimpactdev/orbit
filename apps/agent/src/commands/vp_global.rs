@@ -223,17 +223,11 @@ fn inventory(host: &mut impl Host) -> Result<InventoryOutput> {
 }
 #[derive(Clone, Copy)]
 enum Operation {
-    Install,
-    Update,
-    Remove,
     Plan,
 }
 fn operation(host: &mut impl Host, package: &str, operation: Operation) -> Result<Done> {
     validate(package, true)?;
     let args = match operation {
-        Operation::Install => vec!["install", "-g", package, "--node", "lts"],
-        Operation::Update => vec!["update", "-g", package, "--reinstall-node-mismatch"],
-        Operation::Remove => vec!["remove", "-g", package],
         Operation::Plan => vec!["remove", "-g", "--dry-run", package],
     };
     host.run(&args)?;
@@ -299,48 +293,6 @@ read_command!(
             packages: vec![input.package],
         })
     }
-);
-macro_rules! mutation {
-    ($name:ident,$wire:literal,$summary:literal,$op:ident) => {
-        pub struct $name;
-        impl Command for $name {
-            const NAME: &'static str = $wire;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = true;
-            const TIMEOUT: Duration = Duration::from_secs(900);
-            type Input = PackageInput;
-            type Output = Done;
-            type Error = Error;
-            fn privilege(_: Platform) -> Option<Privilege> {
-                Some(Privilege::Account)
-            }
-            fn target(_: &PackageInput) -> Option<String> {
-                Some("tools:vp-global".into())
-            }
-            fn run(input: PackageInput, context: &Context) -> Result<Done> {
-                validate(&input.package, true)?;
-                operation(&mut Native::new(context)?, &input.package, Operation::$op)
-            }
-        }
-    };
-}
-mutation!(
-    Install,
-    "tool.vp-install",
-    "Install one Vite+ global package with its normal Node selection.",
-    Install
-);
-mutation!(
-    Update,
-    "tool.vp-update",
-    "Update one Vite+ global package and reconcile its Node runtime.",
-    Update
-);
-mutation!(
-    Remove,
-    "tool.vp-remove",
-    "Remove exactly one Vite+ global package.",
-    Remove
 );
 #[cfg(test)]
 mod tests;
