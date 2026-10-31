@@ -58,7 +58,7 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
     data = { ...state.operation, worker: null, lease_seconds: 0 };
   } else if (path.includes("/receipts/")) {
     data = {
-      effect_key: "op-7.node-storage-root",
+      effect_key: "op-7.php-packages",
       state: state.receipt === null ? "unknown" : "succeeded",
       result: state.receipt,
       exit_code: null,
@@ -73,12 +73,14 @@ export const fixtureHttp: Http = async (_method, path, raw) => {
         state.child?.status !== "succeeded"
       ) throw new Error("Unproven lifecycle result");
     } else if (
-      body.key !== "node-storage-root" || body.transport !== "agent" ||
-      body.name !== "node.prepare-storage-root"
+      body.key !== "php-packages" || body.transport !== "agent" ||
+      body.name !== "php.install-build"
     ) throw new Error("Unexpected Node effect");
     if (state.receipt === null) {
       state.runs++;
-      state.receipt = parent ? { node_plan_proven: true, enrolled: true } : {};
+      state.receipt = parent
+        ? { node_plan_proven: true, enrolled: true }
+        : { outcome: "applied" };
     }
     data = state.receipt;
     if (state.loseRunReply) {

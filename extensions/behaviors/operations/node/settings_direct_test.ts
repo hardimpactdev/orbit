@@ -1,13 +1,14 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { Prepare, settings } from "./settings.ts";
+import { Prepare, prepareStorage, settings } from "./settings.ts";
 
 const input = {
   agent_pin: "a".repeat(64),
   storage: {
     root: "/srv/apps",
     user: "orbit",
-    group: "orbit",
     create_missing: true,
+    protected_roots: ["/etc", "/var/lib/orbit"],
+    managed_checkouts: ["/srv/checkout"],
   },
 };
 const args = {
@@ -112,10 +113,11 @@ Deno.test("uncertain local result fails natively without projecting false succes
   assertEquals((f.calls.at(-1)!.body as { status: string }).status, "running");
 });
 
-Deno.test("migration canary refuses another admitted Node", () => {
+Deno.test("settings arguments accept positive Node identities and refuse invalid identities", () => {
   const schema = settings().methods.execute.arguments;
   assertEquals(schema.safeParse(args).success, true);
-  assertEquals(schema.safeParse({ ...args, node_id: 9 }).success, false);
+  assertEquals(schema.safeParse({ ...args, node_id: 9 }).success, true);
+  assertEquals(schema.safeParse({ ...args, node_id: 0 }).success, false);
 });
 
 Deno.test("admitted storage rejects path traversal, controls, and command-shaped fields", () => {
@@ -145,5 +147,106 @@ Deno.test("admitted storage rejects path traversal, controls, and command-shaped
       storage: { ...input.storage, user: "orbit;id" },
     }).success,
     false,
+  );
+});
+
+Deno.test("a non-canary Node uses only its matching admitted local input", async () => {
+  const f = fixture();
+  f.operation.node_id = 9;
+  let actions = 0;
+  await settings((actual) => {
+    assertEquals(actual, input);
+    actions++;
+    return Promise.resolve(true);
+  }, () => f.http).methods.execute.execute({ ...args, node_id: 9 }, context);
+  assertEquals(actions, 1);
+});
+Deno.test("a mismatched admitted Node never executes the local action", async () => {
+  const f = fixture();
+  let actions = 0;
+  await assertRejects(() =>
+    settings(() => {
+      actions++;
+      return Promise.resolve(true);
+    }, () => f.http).methods.execute.execute({ ...args, node_id: 9 }, context)
+  );
+  assertEquals(actions, 0);
+});
+
+Deno.test("local account lookup selects the actual custom home and primary group", async () => {
+  const calls: import("../_lib/node-agent.ts").NodeCall[] = [];
+  const result = await prepareStorage(
+    { ...input, storage: { ...input.storage, root: null } },
+    undefined,
+    (call) => {
+      calls.push(call);
+      return Promise.resolve(
+        call.name === "account.lookup"
+          ? { user: "orbit", group: "staff", home: "/srv/custom-home" }
+          : {},
+      );
+    },
+  );
+  assertEquals(result, true);
+  assertEquals(calls.map((call) => [call.name, call.sudo, call.mutates]), [[
+    "account.lookup",
+    false,
+    false,
+  ], ["node.prepare-storage-root", true, true]]);
+  assertEquals(calls[1].input, {
+    root: "/srv/custom-home/apps",
+    user: "orbit",
+    group: "staff",
+    create_missing: true,
+  });
+});
+Deno.test("home and admitted excluded paths refuse before filesystem mutation", async () => {
+  for (
+    const root of [
+      "/srv/custom-home",
+      "/srv",
+      "/srv/custom-home/.ssh/apps",
+      "/etc/apps",
+      "/var/lib",
+      "/srv/checkout/apps",
+    ]
+  ) {
+    const calls: string[] = [];
+    const result = await prepareStorage(
+      { ...input, storage: { ...input.storage, root } },
+      undefined,
+      (call) => {
+        calls.push(call.name);
+        return Promise.resolve({
+          user: "orbit",
+          group: "staff",
+          home: "/srv/custom-home",
+        });
+      },
+    );
+    assertEquals(result, false);
+    assertEquals(calls, ["account.lookup"]);
+  }
+});
+Deno.test("missing account refuses and a mismatched account never starts root", async () => {
+  assertEquals(
+    await prepareStorage(
+      input,
+      undefined,
+      () => Promise.resolve({ error_code: "account.missing" }),
+    ),
+    false,
+  );
+  await assertRejects(() =>
+    prepareStorage(
+      input,
+      undefined,
+      () =>
+        Promise.resolve({
+          user: "foreign",
+          group: "staff",
+          home: "/srv/custom-home",
+        }),
+    )
   );
 });

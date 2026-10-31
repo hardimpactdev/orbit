@@ -42,7 +42,9 @@ proof or complete the original footprint.
 
 Run `python3 extensions/behaviors/operations/node/converge_native_test.py` for
 six disposable native restart and child-wait checks. The existing native Node
-checks continue to cover the retained package and settings runners.
+checks continue to cover the retained package runner. The direct settings
+workflow uses only its admitted Node worker; its owning slice removes settings
+from the polled runner and keeps enrollment preparation with its parent lane.
 
 For each required `php-runtime` artifact, Swamp runs `php.configure-runtime`
 once per captured version, in order, with stable keys

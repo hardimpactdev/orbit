@@ -1,7 +1,6 @@
 {
   "kinds": [
     "node.prepare_php_packages",
-    "node.settings",
     "node.converge",
     "node.bootstrap_probe",
     "node.bootstrap_install",
