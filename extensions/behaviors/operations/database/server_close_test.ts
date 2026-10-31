@@ -101,3 +101,20 @@ Deno.test("closed server only proves admin login and invalid input never reads m
   );
   assertEquals(reads, 0);
 });
+
+Deno.test("failed nopass restoration reports unknown default access without diagnostics", async () => {
+  const client = new Client();
+  client.failSave = true;
+  const invoke = client.command.bind(client);
+  client.command = (...args: string[]) => {
+    if (args.includes("nopass")) {
+      throw new Error("private-root-sentinel restore");
+    }
+    return invoke(...args);
+  };
+  assertEquals<unknown>(
+    await closeServer(input, use, undefined, () => Promise.resolve(client)),
+    { error_code: "database.server_restore_failed", default_open: "unknown" },
+  );
+  assertEquals(client.closed, true);
+});

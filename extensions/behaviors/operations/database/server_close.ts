@@ -10,6 +10,10 @@ const Input = z.object({
 }).strict();
 const Material = z.object({ password: z.string().min(1).max(16384) }).strict();
 export const CloseResult = z.union([
+  z.object({
+    error_code: z.literal("database.server_restore_failed"),
+    default_open: z.literal("unknown"),
+  }).strict(),
   z.object({ backend: z.literal("active") }).strict(),
   z.object({
     error_code: z.enum([
@@ -85,13 +89,21 @@ export async function closeServer(
           await client.command("ACL", "SAVE");
         } catch {
           if (wasOpen) {
-            await client.command(
-              "ACL",
-              "SETUSER",
-              "default",
-              "resetpass",
-              "nopass",
-            );
+            try {
+              await client.command(
+                "ACL",
+                "SETUSER",
+                "default",
+                "resetpass",
+                "nopass",
+              );
+            } catch {
+              result = {
+                error_code: "database.server_restore_failed",
+                default_open: "unknown",
+              };
+              return;
+            }
           }
           throw new Error("Valkey save failed");
         }
