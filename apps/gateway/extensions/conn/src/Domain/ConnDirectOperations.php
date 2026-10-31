@@ -11,7 +11,7 @@ final readonly class ConnDirectOperations implements DirectOperationContribution
 {
     public function definitions(): array
     {
-        $kinds = array_fill_keys(['conn.pairing_create', 'conn.pairing_revoke'], [
+        $kinds = array_fill_keys(['conn.pairing_create', 'conn.pairing_revoke', 'conn.gateway_sessions_revoke'], [
             'workflow' => 'operation-conn-direct', 'writer_config' => 'swamp.direct_writers',
             'writer_state' => 'conn_writer', 'projection' => DirectOperationResultProjection::class, 'result_hook' => ConnDirectResult::class,
             'private_material' => ['environment' => 'conn.environment'],

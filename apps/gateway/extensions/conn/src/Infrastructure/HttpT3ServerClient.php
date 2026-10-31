@@ -10,7 +10,6 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Domain\T3AdminSession;
-use Orbit\Extensions\Conn\Domain\T3ClientSession;
 use Orbit\Extensions\Conn\Domain\T3EnvironmentDescriptor;
 use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Domain\T3ServerException;
@@ -64,45 +63,6 @@ final readonly class HttpT3ServerClient implements T3ServerClient
             expiresAt: $this->timestamp($baseUrl, 'session', $expiresAt),
             scopes: array_values(array_filter($scopes, is_string(...))),
         );
-    }
-
-    public function clientSessions(string $baseUrl, #[SensitiveParameter] string $adminSession): array
-    {
-        $body = $this->json($baseUrl, 'clients', fn (): Response => $this->request($adminSession)
-            ->get($this->endpoint($baseUrl, '/api/auth/clients')));
-
-        if (! array_is_list($body)) {
-            throw T3ServerException::malformed($baseUrl, 'clients');
-        }
-
-        $sessions = [];
-
-        foreach ($body as $session) {
-            $sessionId = is_array($session) ? ($session['sessionId'] ?? null) : null;
-
-            if (! is_array($session) || ! is_string($sessionId)) {
-                throw T3ServerException::malformed($baseUrl, 'clients');
-            }
-
-            $client = is_array($session['client'] ?? null) ? $session['client'] : [];
-            $label = $client['label'] ?? null;
-
-            $sessions[] = new T3ClientSession(
-                sessionId: $sessionId,
-                label: is_string($label) ? $label : null,
-                current: ($session['current'] ?? false) === true,
-            );
-        }
-
-        return $sessions;
-    }
-
-    public function revokeClientSession(string $baseUrl, #[SensitiveParameter] string $adminSession, string $sessionId): bool
-    {
-        $body = $this->json($baseUrl, 'clients/revoke', fn (): Response => $this->request($adminSession)
-            ->post($this->endpoint($baseUrl, '/api/auth/clients/revoke'), ['sessionId' => $sessionId]));
-
-        return ($body['revoked'] ?? false) === true;
     }
 
     private function request(#[SensitiveParameter] ?string $adminSession = null): PendingRequest

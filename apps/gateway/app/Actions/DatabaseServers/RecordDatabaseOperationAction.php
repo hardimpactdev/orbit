@@ -6,12 +6,14 @@ namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
@@ -37,10 +39,10 @@ final readonly class RecordDatabaseOperationAction
         }
 
         $input = $prepared->input;
-        if ($prepared->kind === 'database_user.create') {
+        if (app(OperationKinds::class)->directOnly($prepared->kind)) {
             $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($prepared->nodeId));
-            foreach (['password', 'sql'] as $parameter) {
-                $input[$parameter] = ['$secret' => 'database.intent', 'id' => $input['intent_id']];
+            foreach (array_keys(app(DirectOperation::class)->definition($prepared->kind)['private_material'] ?? []) as $parameter) {
+                Arr::set($input, $parameter, ['$secret' => 'database.intent', 'id' => $input['intent_id']]);
             }
         }
 
