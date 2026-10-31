@@ -4,7 +4,9 @@ const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Runtime = z.enum(["systemd", "docker"]);
 const MountPath = z.string().startsWith("/").refine((path) =>
     new TextEncoder().encode(path).length <= 4096 &&
-    !/[\x00-\x1f\x7f]/.test(path) &&
+    ![...path].some((char) =>
+        char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127
+    ) &&
     (path === "/" || !path.endsWith("/")) &&
     !path.includes("//") &&
     !path.split("/").some((part) => part === "." || part === "..")
