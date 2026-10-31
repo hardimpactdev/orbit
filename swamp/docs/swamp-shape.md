@@ -144,7 +144,7 @@ Use the shared Gateway helper `App\Infrastructure\Swamp\SwampCommandStep::execut
 
 The actual Gateway14 PHP helper wrote a synthetic value to an isolated official-e459 server on Beast: request `4542eeb7453ee8016d19fa9240f201ea`. Readback matched. During the request, 140 Gateway process command lines contained zero value matches, and scratch files contained no plaintext value. Evidence: `vault-frame-gateway-argv.json`; a separate Beast proof is `vault-frame-official-e459.json`, in the same evidence directory. The helper source is [Orbit2038](https://github.com/hardimpactdev/orbit/pull/2038).
 
-Permission remains separate. At 14:00:38Z the installed `user:orbit-gateway` credential had no vault grants. Official e459 authorizes native `write` on `vault:orbit-control-inputs` with the exact key in resource context. That action also admits delete and annotate; `methods: [put]` does not narrow it because the handler supplies no method name. Only-put approval is not approval for that broader grant. Lane16 and Nick own the exact authority decision. No permission, production vault, binary or root-of-trust custody changed in these proofs.
+Permission remains separate. At 14:00:38Z the installed `user:orbit-gateway` credential had no vault grants. Official e459 authorizes native `write` on `vault:orbit-control-inputs` with the exact key in resource context. That action also admits delete and annotate; `methods: [put]` does not narrow it because the handler supplies no method name. Approval for put alone does not approve that broader grant. Lane16 and Nick own the exact authority decision. No permission, production vault, binary or root-of-trust custody changed in these proofs.
 
 ### 3. The value is absent from shell argv, but child argv can expose it
 

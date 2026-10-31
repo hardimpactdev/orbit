@@ -26,7 +26,7 @@ The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCom
 
 It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value.
 
-The server protocol works on official e459 even though its CLI refuses remote stdin. Live admission still requires approved authority for the exact bootstrap key. Native e459 uses `write` for put, delete and annotate, so a put-only decision cannot authorize that broader grant. The GitHub App key and Orbit CA private key stay only in the Gateway.
+The server protocol works on official e459 even though its CLI refuses remote stdin. Live admission still requires approved authority for the exact bootstrap key. Native e459 uses `write` for put, delete and annotate, so approval for put alone does not approve that broader grant. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ### Probe workflow
 
