@@ -26,15 +26,18 @@ impl Host for Fake {
         Ok(self.stored.clone())
     }
 }
-fn input() -> RuleInput {
-    RuleInput {
-        node_id: 7,
-        name: "web".into(),
+fn expected_shape() -> Shape {
+    Shape {
+        comment: "orbit:node:7:firewall:web".into(),
         action: "allow".into(),
+        direction: "in".into(),
         source: "any".into(),
+        destination: "any".into(),
         port: "443".into(),
         protocol: "tcp".into(),
-        operation: Operation::Converge,
+        in_interface: None,
+        out_interface: None,
+        family: None,
     }
 }
 const V4: &str = "[ 1] 443/tcp ALLOW IN Anywhere # orbit:node:7:firewall:web";
@@ -44,190 +47,8 @@ fn active(lines: &[&str]) -> String {
 }
 
 #[test]
-fn named_rules_preserve_inactive_state_and_converge_idempotently() {
-    let input = input();
-    let complete = active(&[V4, V6]);
-    let mut host = Fake::new(&[
-        "Status: inactive\n",
-        &active(&[]),
-        "Rule added",
-        &complete,
-        &complete,
-    ]);
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Inactive
-        })
-    );
-    assert_eq!(host.calls.len(), 1);
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Active
-        })
-    );
-    assert_eq!(
-        host.calls[2],
-        [
-            "prepend",
-            "allow",
-            "in",
-            "from",
-            "any",
-            "to",
-            "any",
-            "port",
-            "443",
-            "proto",
-            "tcp",
-            "comment",
-            "orbit:node:7:firewall:web"
-        ]
-    );
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Active
-        })
-    );
-    assert_eq!(host.calls.len(), 5);
-}
-
-#[test]
-fn named_rules_repair_one_missing_family_without_deleting_the_matching_family() {
-    let mut host = Fake::new(&[&active(&[V4]), "Rule added (v6)", &active(&[V4, V6])]);
-    named_rule(&input(), &mut host).unwrap();
-    assert_eq!(host.calls.len(), 3);
-    assert_eq!(host.calls[1][0], "prepend");
-}
-
-#[test]
-fn named_rules_replace_only_one_owned_stale_shape() {
-    let stale = "[1] 443/tcp ALLOW IN 192.0.2.0/24 # orbit:node:7:firewall:web";
-    let unrelated = "[2] 443/tcp ALLOW IN Anywhere # operator-owned";
-    let mut host = Fake::new(&[
-        &active(&[stale, unrelated]),
-        "deleted",
-        "added",
-        &active(&[unrelated, V4, V6]),
-    ]);
-    named_rule(&input(), &mut host).unwrap();
-    assert_eq!(
-        host.calls[1],
-        [
-            "delete",
-            "allow",
-            "in",
-            "from",
-            "192.0.2.0/24",
-            "to",
-            "any",
-            "port",
-            "443",
-            "proto",
-            "tcp",
-            "comment",
-            "orbit:node:7:firewall:web"
-        ]
-    );
-    assert!(!host.calls.iter().flatten().any(|s| s == "operator-owned"));
-}
-
-#[test]
-fn ownership_refusals_happen_before_any_mutation() {
-    for rows in [
-        vec![V4, V4, V6],
-        vec!["[1] 443/tcp on eth0 ALLOW IN Anywhere # orbit:node:7:firewall:web"],
-        vec!["[1] OpenSSH ALLOW IN Anywhere # orbit:node:7:firewall:web"],
-        vec!["[1] 443/tcp ALLOW IN Anywhere ALLOW IN Anywhere # orbit:node:7:firewall:web"],
-        vec![
-            "[1] 80/tcp ALLOW IN Anywhere # orbit:node:7:firewall:web",
-            "[2] 80/tcp (v6) ALLOW IN Anywhere (v6) # orbit:node:7:firewall:web",
-        ],
-    ] {
-        let mut host = Fake::new(&[&active(&rows)]);
-        assert_eq!(named_rule(&input(), &mut host), Err(Error::Collision {}));
-        assert_eq!(host.calls.len(), 1);
-    }
-    let mut invalid = input();
-    invalid.name = "web;whoami".into();
-    let mut host = Fake::new(&[]);
-    assert_eq!(named_rule(&invalid, &mut host), Err(Error::Invalid {}));
-    assert!(host.calls.is_empty());
-}
-
-#[test]
-fn named_removal_is_exact_and_idempotent() {
-    let mut input = input();
-    input.operation = Operation::Remove;
-    let mut host = Fake::new(&[
-        &active(&[V4, V6]),
-        "removed",
-        &active(&[]),
-        &active(&[]),
-        "Status: inactive",
-    ]);
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Absent
-        })
-    );
-    assert_eq!(host.calls[1][0], "delete");
-    assert_eq!(host.calls[1].last().unwrap(), "orbit:node:7:firewall:web");
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Absent
-        })
-    );
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Ok(RuleOutput {
-            backend: Backend::Inactive
-        })
-    );
-    assert_eq!(host.calls.len(), 5);
-}
-
-#[test]
-fn mutation_and_verification_failures_remain_distinct() {
-    for (operation, initial, expected) in [
-        (Operation::Converge, active(&[]), Error::Apply {}),
-        (
-            Operation::Converge,
-            active(&["[1] 80/tcp ALLOW IN Anywhere # orbit:node:7:firewall:web"]),
-            Error::Reconcile {},
-        ),
-        (Operation::Remove, active(&[V4, V6]), Error::Remove {}),
-    ] {
-        let mut input = input();
-        input.operation = operation;
-        let mut host = Fake::new(&[&initial]);
-        host.outputs
-            .push_back(Ok((1, "private manager error".into())));
-        assert_eq!(named_rule(&input, &mut host), Err(expected));
-    }
-    let mut host = Fake::new(&[&active(&[]), "added", &active(&[V4])]);
-    assert_eq!(named_rule(&input(), &mut host), Err(Error::Verify {}));
-    let mut input = input();
-    input.operation = Operation::Remove;
-    let mut host = Fake::new(&[&active(&[V4, V6]), "removed", &active(&[V4])]);
-    assert_eq!(named_rule(&input, &mut host), Err(Error::RemoveVerify {}));
-    let mut host = Fake::new(&["private unrecognized status"]);
-    assert_eq!(
-        named_rule(&input, &mut host),
-        Err(Error::StatusUnrecognized {})
-    );
-    let mut host = Fake::new(&[]);
-    host.outputs.push_back(Ok((1, "private failure".into())));
-    assert_eq!(named_rule(&input, &mut host), Err(Error::Status {}));
-}
-
-#[test]
 fn inspection_distinguishes_owned_drift_missing_and_unmanaged_live_shapes() {
-    let expected = rule_shape(&input()).unwrap();
+    let expected = expected_shape();
     let mut missing = expected.clone();
     missing.comment = "orbit:missing".into();
     let mut host = Fake::new(&[&active(&[
@@ -341,7 +162,7 @@ fn parser_preserves_interfaces_forwarding_ports_and_canonical_networks() {
 
 #[test]
 fn stored_recovery_checks_both_families_and_refuses_restricted_or_unreadable_rows() {
-    let expected = rule_shape(&input()).unwrap();
+    let expected = expected_shape();
     let hex = expected
         .comment
         .bytes()

@@ -337,8 +337,6 @@ pub fn all() -> Vec<Entry> {
         entry::<vite::CheckViteListener>(),
         entry::<vite::SetViteTraffic>(),
         entry::<firewall::native::Inspect>(),
-        entry::<firewall::native::Rule>(),
-        entry::<firewall::native::rules::Rules>(),
         entry::<firewall::native::rules::Router>(),
         entry::<firewall::native::route::RouteLan>(),
         entry::<firewall::native::gateway::GatewayVpn>(),
