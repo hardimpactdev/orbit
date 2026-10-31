@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../api/client";
+import { isTerminal, type Operation } from "../../api/operations";
+import { useOperation } from "../../realtime/operation";
 import { extensionsQuery } from "../../api/extensions";
 import {
     aiRouterProviderQuery,
@@ -172,12 +174,11 @@ function QuotaWindows({
     );
 }
 
-async function toggleAccount(account: QuotaAccount): Promise<void> {
-    await api<QuotaAccount>(
+async function toggleAccount(account: QuotaAccount): Promise<Operation> {
+    return await api<Operation>(
         "POST",
         `/api/v1/ai-router/accounts/${encodeURIComponent(account.id)}/${account.disabled ? "enable" : "disable"}`,
     );
-    await queryClient.invalidateQueries({ queryKey: ["ai-router-providers"] });
 }
 
 const providerColumns: Column<QuotaProvider>[] = [
@@ -268,14 +269,30 @@ export function AiRouterProviderPage() {
         enabled: availability.available,
     });
     const [toggleError, setToggleError] = useState<string | null>(null);
-    useEffect(() => setToggleError(null), [id]);
+    const [updateId, setUpdateId] = useState<number | null>(null);
+    const { operation: accountUpdate } = useOperation(updateId);
+    const updating = updateId !== null && (accountUpdate === null || !isTerminal(accountUpdate));
+    useEffect(() => {
+        setToggleError(null);
+        setUpdateId(null);
+    }, [id]);
+    useEffect(() => {
+        if (accountUpdate === null || !isTerminal(accountUpdate)) return;
+        if (accountUpdate.status !== "succeeded") {
+            setToggleError(
+                `Account update ${accountUpdate.status}: ${accountUpdate.error_code ?? "No change confirmed"}`,
+            );
+        }
+        void queryClient.invalidateQueries({ queryKey: ["ai-router-providers"] });
+    }, [accountUpdate, id]);
     const accountColumns = useMemo<Column<QuotaAccount>[]>(
         () => [
             { header: "Account", width: 22, value: (row) => row.id },
-            { header: "Label", width: 16, value: (row) => row.label },
+            { header: "Label", width: 16, value: (row) => row.label, hideOnMobile: true },
             {
                 header: "State",
                 width: 14,
+                hideOnMobile: true,
                 value: (row) => (row.disabled ? "disabled" : (row.status ?? "ok")),
                 cell: (row) => <Status value={row.disabled ? "disabled" : (row.status ?? "ok")} />,
             },
@@ -288,6 +305,7 @@ export function AiRouterProviderPage() {
             {
                 header: "Resets in",
                 width: 24,
+                hideOnMobile: true,
                 value: (row) =>
                     row.windows.map((window) => resetIn(window.resets_at, Date.now())).join("  ") ||
                     "—",
@@ -296,6 +314,7 @@ export function AiRouterProviderPage() {
             {
                 header: "Collection",
                 width: 28,
+                hideOnMobile: true,
                 value: (row) =>
                     row.error ??
                     (row.disabled
@@ -307,6 +326,7 @@ export function AiRouterProviderPage() {
             {
                 header: "Control",
                 width: 12,
+                fit: true,
                 value: (row) => (row.disabled ? "enable" : "disable"),
                 cell: (row) => (
                     <span
@@ -314,20 +334,23 @@ export function AiRouterProviderPage() {
                         className="cursor-pointer text-cyan"
                         onClick={(event) => {
                             event.stopPropagation();
+                            if (updating) return;
                             setToggleError(null);
-                            toggleAccount(row).catch((error: unknown) => {
-                                setToggleError(
-                                    error instanceof Error ? error.message : String(error),
-                                );
-                            });
+                            toggleAccount(row)
+                                .then((operation) => setUpdateId(operation.id))
+                                .catch((error: unknown) => {
+                                    setToggleError(
+                                        error instanceof Error ? error.message : String(error),
+                                    );
+                                });
                         }}
                     >
-                        {row.disabled ? "enable" : "disable"}
+                        {updating ? "updating…" : row.disabled ? "enable" : "disable"}
                     </span>
                 ),
             },
         ],
-        [],
+        [updating],
     );
 
     if (!availability.available) {
@@ -388,6 +411,11 @@ export function AiRouterProviderPage() {
                 className="quota-pane"
                 columns={accountColumns}
                 rows={pool.accounts}
+                detail={(row) =>
+                    [row.label, row.disabled ? "disabled" : row.status, row.error]
+                        .filter(Boolean)
+                        .join(" · ")
+                }
                 rowId={(row) => row.id}
                 warn={(row) => row.disabled || row.error !== null}
                 empty={provider.isPending ? "Loading…" : "No accounts in this pool."}

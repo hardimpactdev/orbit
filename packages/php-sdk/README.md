@@ -83,7 +83,7 @@ The SDK exposes typed create, list, show, and destroy requests in `Orbit\Sdk\Req
 
 ## ai-router
 
-The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector. Setup sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, teardown, provider list, provider show, model list, and account enable and disable are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
+The SDK exposes typed setup, teardown, status, provider list, provider show, account enable and disable, and model list requests for the optional CLIProxyAPI quota collector. Setup sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, teardown, provider list, provider show, model list, and account enable and disable are bodyless. Account enable and disable return an Operation; its native result contains the account identity and disabled state. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
 
 ## Vault
 

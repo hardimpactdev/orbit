@@ -2,14 +2,19 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
+use Orbit\Sdk\Requests\AiRouter\EnableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterModelsRequest;
 use Orbit\Sdk\Requests\AiRouter\ListAiRouterProvidersRequest;
 use Orbit\Sdk\Requests\AiRouter\SetupAiRouterRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterProviderRequest;
 use Orbit\Sdk\Requests\AiRouter\ShowAiRouterStatusRequest;
 use Orbit\Sdk\Requests\AiRouter\TeardownAiRouterRequest;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
+use Saloon\Http\Faking\MockClient;
+use Saloon\Http\Faking\MockResponse;
 
 it('exposes ai-router read and account routes', function (string $class, Method $method, string $path): void {
     $request = match ($class) {
@@ -39,3 +44,17 @@ it('sends setup and account payloads without extra keys', function (): void {
             'cliproxy_management_key' => 'management-key',
         ]);
 });
+
+it('returns admitted Operations from both bodyless account actions', function (string $class): void {
+    $connector = new GatewayConnector('https://gateway.orbit', '/test/ca.pem');
+    $connector->withMockClient(new MockClient([
+        $class => MockResponse::make(['data' => [
+            'id' => 71, 'kind' => 'ai_router.account_update', 'target_type' => 'ai_router', 'target_id' => 17,
+            'status' => 'queued', 'sequence' => 1, 'input' => ['account' => 'auth-index-42', 'disabled' => $class === DisableAiRouterAccountRequest::class],
+        ], 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 202),
+    ]));
+    $response = $connector->send(new $class('auth-index-42'))->dtoOrFail();
+    expect($response)->toBeInstanceOf(OperationResponse::class)
+        ->and($response->kind)->toBe('ai_router.account_update')
+        ->and($response->input['account'])->toBe('auth-index-42');
+})->with([EnableAiRouterAccountRequest::class, DisableAiRouterAccountRequest::class]);

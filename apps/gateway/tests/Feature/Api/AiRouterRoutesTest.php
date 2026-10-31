@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteKind;
@@ -15,15 +15,18 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmState;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route as OrbitRoute;
@@ -35,6 +38,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\AiRouter\Domain\AiRouterAccount;
+use Orbit\Extensions\AiRouter\Domain\AiRouterAccountProjection;
 use Orbit\Extensions\AiRouter\Domain\AiRouterProcess;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
@@ -45,6 +49,7 @@ use Orbit\Extensions\AiRouter\Http\Controllers\AiRouterController;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterPublicationManager;
 use Orbit\Extensions\AiRouter\Infrastructure\RecordingAiRouterRuntimeLifecycle;
+use Tests\Support\FakeRoutePublicationSocket;
 
 function ai_router_gateway(): Node
 {
@@ -237,7 +242,7 @@ it('enables ai-router with the matching task VM origin and normalizes trailing s
     'configured trailing slash' => ['http://10.44.0.3:8317', 'http://10.44.0.3:8317/'],
 ]);
 
-it('reconverges the selected collector after a Database connection update', function (bool $switch): void {
+it('refuses selected cache updates until native reconvergence is available', function (bool $switch): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     $connection = ai_router_valkey($node);
@@ -247,16 +252,15 @@ it('reconverges the selected collector after a Database connection update', func
             'cliproxy_url' => 'http://127.0.0.1:8317', 'cliproxy_management_key' => 'management-key',
         ])->assertCreated();
     $process = Process::query()->where('name', AiRouterProcess::NAME)->sole();
-    $tokens = [app(AiRouterState::class)->readToken(), app(AiRouterState::class)->controlToken()];
+    $before = $process->getRawOriginal();
+    $connectionBefore = $connection->refresh()->getRawOriginal();
     app(ExtensionStore::class)->set('ai-router', $switch);
     $this->patchJson('/api/v1/database-connections/'.$connection->slug, [
         'host' => '10.44.0.9', 'port' => 6380, 'username' => 'collector', 'password' => 'new-cache-secret',
-    ])->assertOk()->assertDontSee('new-cache-secret');
-    expect($process->refresh()->runtime_config['environment'])->toMatchArray([
-        'AI_ROUTER_CACHE_HOST' => '10.44.0.9', 'AI_ROUTER_CACHE_PORT' => '6380',
-        'AI_ROUTER_CACHE_USERNAME' => 'collector', 'AI_ROUTER_CACHE_PASSWORD' => 'new-cache-secret',
-        'AI_ROUTER_READ_TOKEN' => $tokens[0], 'AI_ROUTER_CONTROL_TOKEN' => $tokens[1],
-    ])->and(Process::query()->where('name', AiRouterProcess::NAME)->sole()->id)->toBe($process->id);
+    ])->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable')->assertDontSee('new-cache-secret');
+    expect($process->refresh()->getRawOriginal())->toBe($before)
+        ->and($connection->refresh()->getRawOriginal())->toBe($connectionBefore);
+
 })->with([true, false]);
 
 it('refuses incompatible proposed selected connections without changing connection or collector', function (string $change, string $error): void {
@@ -534,7 +538,7 @@ it('reads providers from the snapshot and never calls CLIProxyAPI', function ():
     Http::assertNothingSent();
 });
 
-it('toggles an account through the collector using its auth index', function (): void {
+it('records a native account update without collector HTTP or snapshot writes', function (): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     ai_router_valkey($node);
@@ -554,24 +558,22 @@ it('toggles an account through the collector using its auth index', function ():
         ]),
     ], '2026-09-20T12:00:00+00:00');
 
-    $signer = Mockery::mock(LeafCertificateSigner::class);
-    $signer->shouldReceive('rootCertificate')->once()->andReturn('test Orbit root certificate');
-    app()->instance(LeafCertificateSigner::class, $signer);
+    config(['swamp.address' => '10.44.0.209', 'swamp.ca_path' => '/test/ca.pem', 'swamp.run_token' => 'test.private-token']);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
     Http::fake();
-
-    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/ai-router/accounts/auth-index-42/disable')
-        ->assertOk()
-        ->assertJsonPath('data.id', 'auth-index-42')
-        ->assertJsonPath('data.disabled', true);
+        ->assertStatus(202)
+        ->assertJsonPath('data.kind', 'ai_router.account_update')
+        ->assertJsonPath('data.input.account', 'auth-index-42')
+        ->assertJsonPath('data.input.disabled', true);
 
-    Http::assertSent(fn ($request): bool => $request->url() === 'https://10.44.0.8/v1/accounts/auth-index-42'
-        && $request->method() === 'PATCH'
-        && $request->hasHeader('Host', 'collector.ai-router.orbit')
-        && $request->hasHeader('Authorization', 'Bearer '.app(AiRouterState::class)->controlToken())
-        && $request['disabled'] === true);
-
-    expect(app(AiRouterSnapshotStore::class)->accounts()[0]->disabled)->toBeTrue();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->node_id)->toBe($node->id)
+        ->and($operation->input['router'])->toBe(['$secret' => 'ai_router.management', 'id' => $node->id])
+        ->and(app(AiRouterSnapshotStore::class)->accounts()[0]->disabled)->toBeFalse();
+    Http::assertNothingSent();
 });
 
 it('disables the extension, stops the process, and hides provider reads', function (): void {
@@ -779,7 +781,7 @@ it('refuses removing the selected cache until teardown even with the extension s
     $this->assertModelMissing($connection);
 })->with([true, false]);
 
-it('uses one fixed port for setup, takeover, publication, and connection reconvergence', function (): void {
+it('keeps the fixed collector port when native cache reconvergence is unavailable', function (): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     $connection = ai_router_valkey($node);
@@ -800,14 +802,13 @@ it('uses one fixed port for setup, takeover, publication, and connection reconve
     expect($sites)->toHaveCount(1)
         ->and($sites[0]->body)->toContain('reverse_proxy 127.0.0.1:8787');
 
-    $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rotated'])->assertOk();
+    $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rotated'])
+        ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
 
-    expect($process->refresh()->runtime_config['environment'])->toBe([
-        ...$environment, 'AI_ROUTER_CACHE_PASSWORD' => 'rotated',
-    ])->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp']);
+    expect($process->refresh()->runtime_config['environment'])->toBe($environment)->and($process->runtime_config['ports'])->toBe(['127.0.0.1:8787:8787/tcp']);
 });
 
-it('does not reconverge a connection update that its outer transaction rolls back', function (): void {
+it('refuses native cache reconvergence before a caller transaction can write intent', function (): void {
     $gateway = ai_router_gateway();
     $node = ai_router_node();
     $connection = ai_router_valkey($node);
@@ -817,7 +818,8 @@ it('does not reconverge a connection update that its outer transaction rolls bac
 
     DB::beginTransaction();
     try {
-        $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rolled-back'])->assertOk();
+        $this->patchJson('/api/v1/database-connections/'.$connection->slug, ['password' => 'rolled-back'])
+            ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
         expect($runtime->converged)->toBeFalse();
     } finally {
         DB::rollBack();
@@ -825,4 +827,83 @@ it('does not reconverge a connection update that its outer transaction rolls bac
 
     expect($connection->refresh()->password)->toBeNull()
         ->and($runtime->converged)->toBeFalse();
+});
+
+it('hydrates only the admitted collector management key through the real shared reader', function (): void {
+    $gateway = ai_router_gateway();
+    $node = ai_router_node();
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'existing-management-key', 'read-token', 'control-token');
+    $run = '15ad76ad-bf85-41a0-a5ee-2f5d4e674c90';
+    $operation = Operation::query()->create([
+        'kind' => 'ai_router.account_update', 'target_type' => 'ai_router', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 1,
+        'input' => ['origin' => 'http://127.0.0.1:8317', 'account' => 'auth-index-42', 'disabled' => true,
+            'router' => ['$secret' => 'ai_router.management', 'id' => $node->id]],
+        'state' => ['swamp_run_id' => $run],
+    ]);
+    $private = app(DirectOperationPrivateMaterial::class)->read($operation, $node->id);
+    expect($private)->toBe(['router' => ['management_key' => 'existing-management-key']]);
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+        ->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)
+        ->assertOk()->assertDontSee('existing-management-key')->assertDontSee('read-token')->assertDontSee('control-token');
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation, $gateway->id))
+        ->toThrow(ResourceOperationException::class);
+
+    app(AiRouterState::class)->disable();
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation, $node->id))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('refuses stale origin or foreign owner management references', function (string $change): void {
+    ai_router_gateway();
+    $node = ai_router_node();
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'existing-management-key', 'read-token', 'control-token');
+    $operation = Operation::query()->create([
+        'kind' => 'ai_router.account_update', 'target_type' => 'ai_router', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 1,
+        'input' => ['origin' => $change === 'origin' ? 'http://127.0.0.1:8318' : 'http://127.0.0.1:8317',
+            'account' => 'auth-index-42', 'disabled' => true,
+            'router' => ['$secret' => 'ai_router.management', 'id' => $change === 'owner' ? $node->id + 1 : $node->id]],
+        'state' => ['swamp_run_id' => '15ad76ad-bf85-41a0-a5ee-2f5d4e674c90'],
+    ]);
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation, $node->id))
+        ->toThrow(ResourceOperationException::class);
+})->with(['origin', 'owner']);
+
+it('projects a native account result without writing the quota snapshot', function (): void {
+    ai_router_gateway();
+    $node = ai_router_node();
+    $operation = Operation::query()->create([
+        'kind' => 'ai_router.account_update', 'target_type' => 'ai_router', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 1,
+        'input' => ['account' => 'auth-index-42', 'disabled' => true],
+        'state' => ['swamp_run_id' => '15ad76ad-bf85-41a0-a5ee-2f5d4e674c90'],
+    ]);
+    $projected = app(AiRouterAccountProjection::class)->apply($operation, [
+        'run_id' => '15ad76ad-bf85-41a0-a5ee-2f5d4e674c90', 'status' => 'succeeded',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['account' => 'auth-index-42', 'disabled' => true, 'private' => 'must-not-persist'],
+    ]);
+    expect($projected->status->value)->toBe('succeeded')
+        ->and($projected->result)->toBe(['account' => 'auth-index-42', 'disabled' => true])
+        ->and(app(AiRouterSnapshotStore::class)->accounts())->toBe([]);
+});
+
+it('refuses an unknown account before recording any native intent', function (): void {
+    $gateway = ai_router_gateway();
+    $node = ai_router_node();
+    app(AiRouterState::class)->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'existing-management-key', 'read-token', 'control-token');
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/ai-router/accounts/missing/disable')
+        ->assertNotFound()->assertJsonPath('error.code', 'resource.not_found');
+    expect(Operation::query()->where('kind', 'ai_router.account_update')->count())->toBe(0);
+});
+
+it('requires Gateway access before admitting an account update', function (): void {
+    ai_router_gateway();
+    $caller = ai_router_node();
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/ai-router/accounts/missing/disable')
+        ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
+    expect(Operation::query()->where('kind', 'ai_router.account_update')->count())->toBe(0);
 });

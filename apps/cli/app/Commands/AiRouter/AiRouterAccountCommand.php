@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\AiRouter;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\AiRouter\DisableAiRouterAccountRequest;
 use Orbit\Sdk\Requests\AiRouter\EnableAiRouterAccountRequest;
-use Orbit\Sdk\Responses\AiRouter\AiRouterAccountResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 abstract class AiRouterAccountCommand extends AiRouterCommand
 {
+    use FollowsOperations;
+
     abstract protected function enabled(): bool;
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
@@ -29,35 +31,17 @@ abstract class AiRouterAccountCommand extends AiRouterCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            $this->enabled() ? new EnableAiRouterAccountRequest($account) : new DisableAiRouterAccountRequest($account),
-            AiRouterAccountResponse::class,
-            $this->enabled()
-                ? ['Enable AI router account', 'Enabling account', 'Enabled AI router account']
-                : ['Disable AI router account', 'Disabling account', 'Disabled AI router account'],
-        );
-
-        if (! $response instanceof AiRouterAccountResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector,
+            $this->enabled() ? new EnableAiRouterAccountRequest($account) : new DisableAiRouterAccountRequest($account),
+            OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($response->toArray());
-
-            return self::SUCCESS;
-        }
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Account [{$response->id}].", [
-            'Account' => $response->id,
-            'Provider' => $response->provider,
-            'Label' => $response->label,
-            'Disabled' => $response->disabled,
-            'Status' => $response->status,
-            'Error' => $response->error,
-            'Request ID' => $response->requestId,
-        ]));
-
-        return self::SUCCESS;
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation,
+                ($this->enabled() ? 'Enable' : 'Disable')." AI router account [{$account}]", 'Account update')
+            : self::FAILURE;
     }
 }
