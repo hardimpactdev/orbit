@@ -1454,6 +1454,33 @@ export function analyzeYaml(
     result.unknown = true;
     return result;
   }
+  // The binding guide approves one visible Route private-DNS TTL grace.
+  // This is an exact source contract, never a file/rule grandfather cap.
+  const routeDnsGrace = (path: string[]) => {
+    if (
+      file !== "workflows/workflow-route-dns-grace.yaml" ||
+      path.join(".") !== "jobs.0.steps.0.task.inputs.run" ||
+      !Array.isArray(data.jobs) || data.jobs.length !== 1
+    ) return false;
+    const job = object(data.jobs[0]);
+    if (
+      job.name !== "grace" || !Array.isArray(job.steps) ||
+      job.steps.length !== 1
+    ) return false;
+    const step = object(job.steps[0]);
+    const labels = object(step.labels), task = object(step.task);
+    const inputs = object(task.inputs);
+    return step.name === "wait-private-dns-ttl" &&
+      step.target === "orbit-node-209" &&
+      Object.keys(labels).join() === "node" && labels.node === "209" &&
+      Object.keys(task).sort().join() ===
+        "behaviorName,behaviorType,inputs,methodName,type" &&
+      task.type === "behavior" && task.behaviorType === "command/shell" &&
+      task.behaviorName === "route-dns-grace" &&
+      task.methodName === "execute" &&
+      Object.keys(inputs).join() === "run" &&
+      inputs.run === "/usr/bin/sleep 31";
+  };
   // Official @swamp/ssh 2026.10.23.1 marks precisely this transport field
   // sensitive and consumes it natively. Do not extend this to method inputs.
   const sshIdentity = (path: string[]) => {
@@ -1562,7 +1589,7 @@ export function analyzeYaml(
             block[2].replace(/[^\n]/g, " ") +
             shellControls.slice(start + block[2].length);
         }
-        const controlsFound = shellControls.match(
+        const controlsFound = routeDnsGrace(path) ? [] : shellControls.match(
           /\b(?:sleep|flock|lockfile)\b|while\s+(?:true|:)|for\s+\w*(?:attempt|retry)\w*/g,
         ) ?? [];
         for (const _ of controlsFound) {
