@@ -3,7 +3,9 @@ import { createServer } from "./server_create.ts";
 import { passwordHash } from "./valkey_policy.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 
-for (const driver of ["mysql", "pgsql", "redis"] as const) {
+export function registerServerCreateEffect(
+  driver: "mysql" | "pgsql" | "redis",
+) {
   Deno.test({
     name: `disposable ${driver} server provisions, scrubs secrets and replays`,
     fn: async () => {

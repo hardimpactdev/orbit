@@ -39,10 +39,14 @@ class DenoShards(unittest.TestCase):
                     identifier = group * 9 + index
                     name = f"{index:02}_test.ts"
                     if group == 1 and index < 5:
-                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server_create_effect_test.ts",
+                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server-create-effects/mysql_test.ts",
                                 "create_effect_test.ts", "write_effect_test.ts")[index]
+                    (directory / name).parent.mkdir(exist_ok=True)
                     (directory / name).write_text(
                         f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
+            for identifier, driver in enumerate(("pgsql", "redis"), start=27):
+                (files / "database/server-create-effects" / f"{driver}_test.ts").write_text(
+                    f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
             binary = root / "bin"
             binary.mkdir()
             (binary / "deno").symlink_to(shutil.which(DENO))
@@ -60,7 +64,7 @@ class DenoShards(unittest.TestCase):
                 result = run(shard)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 covered.extend(int(value) for value in re.findall(r"COVERED_FILE_(\d+)", result.stdout))
-            self.assertCountEqual(covered, range(27))
+            self.assertCountEqual(covered, range(29))
             (files / "00_test.ts").write_text('Deno.test("real failure", () => { throw new Error("expected"); });\n')
             self.assertNotEqual(run(shards[0]).returncode, 0)
 
