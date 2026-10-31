@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 242 concrete public Gateway API operations:
+The SDK models exactly 243 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -13,6 +13,7 @@ The SDK models exactly 242 concrete public Gateway API operations:
 - Operation: list, show, and cancel. Instance deploy, rollback, and task group provision, check, script, analyze, turn, park, and publish return the queued operation.
 - Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, Swamp dependency results read, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
+- Fleet Docker maintenance: one typed Node admission with plan, migrate or restore-policies intent, explicit confirmation, optional exact recipe and fallback; returns an Operation.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
