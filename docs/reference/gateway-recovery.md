@@ -474,12 +474,16 @@ The Gateway sends the release ID and phase to `gateway.handoff-release`. The age
 
 The serving phase:
 
-1. submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its `caddy_operation_id`;
+1. skips Caddy publication when its rendered digest matches the published target;
 2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
 4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
 
-The native Caddy Operation owns publication and its final result. Submission is not a publication claim. Release verification still checks live HTTPS.
+An unchanged digest records `caddy: unchanged` and a null `caddy_operation_id`, with no Swamp call. A changed configuration submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its ID. The Operation owns publication and its final result. Submission is not a publication claim. The digest comparison reads the actual `/etc/caddy/Caddyfile` managed link, not the last submitted Operation. Release verification still checks live HTTPS.
+
+Only the Gateway release runner has a bounded self-recovery exception: after an explicitly refused or unavailable Caddy start, it waits up to 600 seconds for Swamp's HTTPS health endpoint, using the configured CA. It then makes one fresh submission. A refusal after healthy serve, an uncertain admission, or another failure still fails the handoff. An uncertain start is never repeated. The existing release failure rules preserve or restore the prior release when safe. This wait is not available to other Operation kinds or Swamp steps.
+
+An explicit rollback uses the running release's handoff code against the stable Gateway path. It does not execute a retained target's older handoff implementation, which may still require Swamp for unchanged Caddy configuration. Forward deploys keep using the target release's handoff code.
 
 The scheduler phase:
 
@@ -535,11 +539,13 @@ The handoff also installs the [fleet rollout units](#units). A failure there onl
 
 Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
 
-The Caddy handoff submits the normal `route.caddy_converge` native root on the
-Gateway Node worker. Its report records `caddy.outcome: submitted` and
-`caddy.operation_id`; the Operation records publication success or failure.
-The handoff performs no agent publication or Gateway wait loop. Release smoke
-still checks the live HTTPS response.
+When publication is needed, the Caddy handoff submits the normal
+`route.caddy_converge` native root on the Gateway Node worker. Its report records
+`caddy: submitted` and `caddy_operation_id`; the Operation records publication
+success or failure. With an unchanged published digest, deploy and rollback can
+complete while Swamp is unreachable. A changed configuration still requires a
+successful native admission within the release-only health window. Release smoke
+checks the live HTTPS response in both cases.
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
