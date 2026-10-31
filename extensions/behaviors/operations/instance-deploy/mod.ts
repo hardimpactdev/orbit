@@ -16,11 +16,13 @@ import {
 } from "./contract.ts";
 import { deploy } from "./execution.ts";
 import { synchronizeEnvironment } from "./environment.ts";
+import { lifecycleFailure, Phase as LifecyclePhase } from "./lifecycle.ts";
 
 const Kind = z.enum([
   "instance.deploy",
   "instance.rollback",
   "instance.sync_environment",
+  "instance.run_steps",
   "instance.prepare_vp_environment",
   "instance.prepare_php_runtime",
   "instance.repair_projection",
@@ -162,6 +164,27 @@ class Port implements DeploymentPort {
         error = result.timed_out
           ? "deployment.command_timed_out"
           : "deployment.step_failed";
+      }
+      if (
+        operation.kind === "instance.run_steps" &&
+        next.name === "instance.run-lifecycle-step"
+      ) {
+        const failure = lifecycleFailure(
+          LifecyclePhase.parse(operation.input.list),
+          result,
+          Number(result.budget_seconds ?? next.input.timeout_seconds),
+          Number(result.timeout_seconds ?? next.input.timeout_seconds),
+        );
+        if (failure) {
+          error = failure.error_code;
+          result = { ...result, ...failure, failed_step: next.step };
+        }
+      }
+      if (
+        operation.kind === "instance.run_steps" &&
+        error === "command.deadline_exceeded"
+      ) {
+        result = { ...result, outcome: "deadline", failed_step: next.step };
       }
       await this.executor.post(`${this.id}/step`, {
         worker: this.worker,
@@ -322,6 +345,8 @@ export function instanceDeploy(
               ? "php_receipt"
               : operation.kind === "instance.sync_environment"
               ? "environment_receipt"
+              : operation.kind === "instance.run_steps"
+              ? "lifecycle_receipt"
               : "verification";
           const port = new Port(
             executor,
@@ -344,6 +369,7 @@ export function instanceDeploy(
                 port,
               );
             } else if (
+              operation.kind === "instance.run_steps" ||
               operation.kind === "instance.prepare_vp_environment" ||
               operation.kind === "instance.prepare_php_runtime" ||
               operation.kind === "instance.repair_projection" ||
@@ -382,7 +408,11 @@ export function instanceDeploy(
                   ? ["projection", "verification"]
                   : operation.kind === "instance.prepare_php_runtime"
                   ? ["php_plan", "php_packages", "php_converge", "php_receipt"]
-                  : [];
+                  : [
+                    "lifecycle_scope",
+                    String(operation.input.list),
+                    "lifecycle_receipt",
+                  ];
               for (const name of stages) {
                 if (await port.cancelled()) {
                   completion = {
