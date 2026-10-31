@@ -52,3 +52,8 @@ uses `operation-route-publication` / `publish`. Standalone LAN removal uses
 `operation-route-lan-remove` / `removeLan`. Each uses exact Node placement and
 projects only its own root. Native history is the execution record; there are no
 claims, child Operations or keyed receipts.
+
+For `cluster.router_set`, selecting the sole already-active Router records success
+without host effects. The native Router DAG skips edge Caddy, DNS publication and
+withdrawal checkpoints when admission marks the selection unchanged. It still
+reads the admitted inventory and projects the parent result.

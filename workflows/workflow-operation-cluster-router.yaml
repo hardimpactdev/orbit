@@ -389,6 +389,7 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     labels:
       node: ${{ string(self.member) }}
+    guard: ${{ steps.inventory.outputs.noop }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -411,6 +412,7 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     labels:
       node: ${{ string(self.member) }}
+    guard: ${{ steps.inventory.outputs.noop }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -436,6 +438,7 @@ jobs:
     target: ${{ "orbit-node-" + string(self.member) }}
     labels:
       node: ${{ string(self.member) }}
+    guard: ${{ steps.inventory.outputs.noop }}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication'
@@ -484,6 +487,7 @@ jobs:
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
+    guard: ${{ steps.inventory.outputs.noop }}
     task:
       type: behavior
       behaviorType: '@nckrtl/cluster-router'

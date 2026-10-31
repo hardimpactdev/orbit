@@ -15,7 +15,7 @@ class ClusterNative(NativeTestCase):
         failure=self.repo/'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./routes/cluster-router_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         route=self.repo/'extensions/behaviors/operations/routes';route.mkdir(parents=True)
-        for name in ['cluster-router.ts','cluster-router_native_fixture.ts','verification.ts','removal-local.ts','lan.ts','local-program.ts','firewall-program.ts','firewall-local.ts','router-preparation.ts','router-lan.ts']:
+        for name in ['cluster-router.ts','cluster-router_native_fixture.ts','verification.ts','removal-local.ts','lan.ts','local-program.ts','firewall-program.ts','firewall-local.ts','router-preparation.ts','router-lan.ts','caddy-program.ts']:
             shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,route)
         cert=self.repo/'extensions/behaviors/operations/certificates/mod.ts'
         cert.write_text('import {fixtureHttp,record} from "../routes/cluster-router_native_fixture.ts";\n'+cert.read_text().replace('...certificates()', '...certificates(() => fixtureHttp, { request: async () => { await record("certificate-request"); return {state:"current"}; }, publish: async () => { await record("certificate-publish"); return {applied:true}; }, inspect: async () => { await record("certificate-inspect"); return {present:true}; }, remove: async () => ({applied:true}) })'))
@@ -59,6 +59,13 @@ class ClusterNative(NativeTestCase):
         state=self.run_workflow()
         self.assertLess(state['events'].index('certificate-request'),state['events'].index('certificate-publish'))
         self.assertLess(state['events'].index('certificate-inspect'),state['events'].index('router-serving'))
+    def test_current_router_set_records_success_without_any_host_or_dns_effect(self):
+        inventory=self.state['operation']['input']['cluster_router']
+        inventory.update(noop=True,old_nodes=[],edge_node_ids=[14],dns_node_ids=[1,14])
+        inventory['candidate']['active']=True;self.save()
+        state=self.run_workflow()
+        self.assertEqual(['record'],state['events'])
+        self.assertEqual('succeeded',state['operation']['status'])
     def test_cancellation_starts_no_router_effect(self):
         self.state['operation']['cancel_requested']=True;self.save()
         state=self.run_workflow(success=False)
