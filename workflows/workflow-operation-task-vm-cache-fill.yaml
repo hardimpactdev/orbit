@@ -25,3 +25,21 @@ jobs:
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
             run_id: '${{ run.id }}'
+            run_started_at: '${{ run.startedAt }}'
+  - name: failed-fill
+    dependsOn: [{ job: fill, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: settle-failed-fill
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-vm-cache-fill"
+          behaviorName: task-vm-cache-fill
+          methodName: failure
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

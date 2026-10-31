@@ -32,14 +32,16 @@ export const CacheIntent = z.object({
   max_bytes: z.number().int().positive(),
 }).strict();
 type Intent = z.infer<typeof CacheIntent>;
+type FillBudget = { deadline: number; now: () => number };
 type Batch = {
   artifacts: Intent["artifacts"];
   conflicts: Record<string, string>;
 };
-const Args = DirectArgs.extend({
+const FailureArgs = DirectArgs.extend({
   kind: z.literal("task_vm.fill_package_cache"),
   node_id: z.number().int().positive(),
 });
+const Args = FailureArgs.extend({ run_started_at: z.iso.datetime() });
 const Final = z.union([
   z.object({ ready: z.literal(true) }).strict(),
   z.object({ error_code: z.literal("task_vm.package_cache_failed") }).strict(),
@@ -107,10 +109,14 @@ export async function fillNativeCache(
   gateway: CacheGateway,
   action: Action,
   signal?: AbortSignal,
+  budget: FillBudget = { deadline: Date.now() + 1_700_000, now: Date.now },
 ) {
   const batches = cacheBatches(input);
   let failed = false;
   for (const [index, batch] of batches.entries()) {
+    if (budget.now() >= budget.deadline) {
+      return { error_code: "task_vm.package_cache_failed" };
+    }
     if (signal?.aborted) {
       throw new DirectOperationCancelled({ effectRunning: false });
     }
@@ -121,14 +127,20 @@ export async function fillNativeCache(
       throw new DirectOperationCancelled({ effectRunning: false });
     }
     let outcome: Record<string, unknown> | undefined;
+    let expired = false;
     await gateway.withPrivateMaterial(async (material) => {
       const token = z.string().nullable().parse(material.github_token);
+      const remaining = Math.floor(budget.deadline - budget.now());
+      if (remaining <= 0) {
+        expired = true;
+        return;
+      }
       const raw = await action({
         name: "package-cache.host",
         pin: input.agent_sha256,
         sudo: true,
         mutates: true,
-        deadlineMs: 1_700_000,
+        deadlineMs: remaining,
         maxOutputBytes: 256 * 1024,
         input: {
           operation: "fill",
@@ -170,6 +182,9 @@ export async function fillNativeCache(
         ),
       };
     });
+    if (expired || budget.now() >= budget.deadline) {
+      return { error_code: "task_vm.package_cache_failed" };
+    }
     await gateway.project({
       status: "running",
       started_at: new Date().toISOString(),
@@ -189,9 +204,26 @@ export function cacheFillDirect(
 ) {
   return {
     type: "@nckrtl/task-vm-cache-fill",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
+      failure: {
+        description:
+          "Settle the admitted cache Operation after a failed native fill",
+        arguments: FailureArgs,
+        execute: async (args: z.infer<typeof FailureArgs>, ctx: Context) => {
+          const gateway = new GatewayOperation(makeHttp(ctx), args);
+          const timestamp = new Date().toISOString();
+          await gateway.project({
+            status: "failed",
+            started_at: timestamp,
+            finished_at: timestamp,
+            result: { error_code: "task_vm.package_cache_failed" },
+            error_code: "task_vm.package_cache_failed",
+          });
+          return {};
+        },
+      },
       execute: {
         description:
           "Fill the admitted host cache in one native run on its exact Node",
@@ -207,6 +239,10 @@ export function cacheFillDirect(
                 gateway,
                 action,
                 ctx.signal,
+                {
+                  deadline: Date.parse(args.run_started_at) + 1_700_000,
+                  now: Date.now,
+                },
               ),
             (result) => Final.parse(result),
             ctx.signal,

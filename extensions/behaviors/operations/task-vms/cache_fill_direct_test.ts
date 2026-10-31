@@ -214,3 +214,71 @@ Deno.test("cache result budget includes Gateway Unicode and slash escaping", () 
     assertEquals(phpWire.length < 256 * 1024, true);
   }
 });
+
+Deno.test("all fill batches share the original native run deadline", async () => {
+  const f = new Cache();
+  let now = 0;
+  const deadlines: number[] = [];
+  const admitted = input(
+    Array.from({ length: 1800 }, (_, i) => String(i).padStart(64, "a")),
+  );
+  const action = (call: NodeCall) => {
+    deadlines.push(call.deadlineMs);
+    now += 1_000_000;
+    const artifacts = call.input.artifacts as { key: string }[];
+    return Promise.resolve({
+      hashes: Object.fromEntries(artifacts.map((a) => [a.key, digest])),
+      failures: {},
+    });
+  };
+  assertEquals(
+    await fillNativeCache(admitted, f.gateway, action, undefined, {
+      deadline: 1_700_000,
+      now: () => now,
+    }),
+    { error_code: "task_vm.package_cache_failed" },
+  );
+  assertEquals(deadlines, [1_700_000, 700_000]);
+});
+Deno.test("expiry during credential hydration prevents a new batch effect", async () => {
+  const f = new Cache();
+  let now = 0;
+  f.gateway.withPrivateMaterial = async (use) => {
+    now = 1700;
+    await use({ github_token: f.secret });
+  };
+  assertEquals(
+    await fillNativeCache(input(), f.gateway, f.action, undefined, {
+      deadline: 1700,
+      now: () => now,
+    }),
+    { error_code: "task_vm.package_cache_failed" },
+  );
+  assertEquals(f.actions, []);
+  assertEquals(f.projections, []);
+});
+Deno.test("non-null lockfile checksums reach the canonical agent unchanged and refused archives are not projected", async () => {
+  const f = new Cache();
+  const admitted = input();
+  admitted.artifacts[0].integrity = "sha512-" + btoa("a".repeat(64));
+  const action = (call: NodeCall) => {
+    assertEquals(call.input.artifacts, admitted.artifacts);
+    return Promise.resolve({
+      hashes: {},
+      failures: {
+        verified: "Archive checksum mismatch",
+        refused: "FillRefused",
+      },
+    });
+  };
+  assertEquals(await fillNativeCache(admitted, f.gateway, action), {
+    error_code: "task_vm.package_cache_failed",
+  });
+  const result = f.projections[0].result as Result;
+  assertEquals(result.archive_ids, []);
+  assertEquals(result.failed_ids, ["verified", "refused"]);
+  assertEquals(result.failure_reasons, [
+    "Archive checksum mismatch",
+    "FillRefused",
+  ]);
+});

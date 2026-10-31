@@ -7,8 +7,28 @@ export async function fixtureHttp(
   const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
   if (path.startsWith(`/api/v1/direct-operations/${state.operation.id}`)) {
     state.directCalls = [...(state.directCalls ?? []), { method, path }];
+    if (path.includes("/private-material?")) {
+      await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+      return {
+        status: 200,
+        body: {
+          data: { github_token: Deno.env.get("CACHE_PRIVATE_FIXTURE") ?? null },
+        },
+      };
+    }
     if (method === "POST") {
       const result = body as Record<string, unknown>;
+      if (
+        ["succeeded", "failed", "cancelled"].includes(state.operation.status) &&
+        (result.status !== state.operation.status ||
+          JSON.stringify(result.result ?? null) !==
+            JSON.stringify(state.operation.result))
+      ) {
+        return {
+          status: 409,
+          body: { error: { code: "operation.completion_conflict" } },
+        };
+      }
       state.operation.status = result.status;
       state.operation.result = result.result ?? null;
       if (state.loseDirectReply && result.status === "succeeded") {
@@ -124,4 +144,31 @@ export async function fixtureHttp(
   }
   await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
   return { status: 200, body: { data } };
+}
+
+/** Simulates the convergent host cache, never records private stdin. */
+export async function fixtureCacheAction(
+  call: { name: string; input: Record<string, unknown> },
+) {
+  const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
+  const secret = Deno.env.get("CACHE_PRIVATE_FIXTURE");
+  if (
+    call.name !== "package-cache.host" || call.input.github_token !== secret
+  ) throw new Error("Wrong cache contract");
+  state.cacheInvocations = (state.cacheInvocations ?? 0) + 1;
+  if (!state.cacheFilled) {
+    state.cacheFilled = true;
+    state.cacheMutations = 1;
+  }
+  const lose = state.loseCacheReply;
+  state.loseCacheReply = false;
+  await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+  if (lose) throw new Error("private agent diagnostic: " + secret);
+  const artifacts = call.input.artifacts as { key: string }[];
+  return {
+    hashes: Object.fromEntries(
+      artifacts.map((item) => [item.key, "sha256-" + "b".repeat(64)]),
+    ),
+    failures: {},
+  };
 }
