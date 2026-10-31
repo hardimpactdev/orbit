@@ -24,8 +24,6 @@ class NodeRemovalNative(NativeTestCase):
                                                    'export const behavior = nodeRemovalRoot(() => fixtureHttp, fixtureLocal, fixtureRetire, undefined, fixtureCertificates as never);'))
         metrics = self.repo / 'extensions/behaviors/operations/node/role_metrics.ts'
         metrics.write_text('import {fixtureHttp,fixtureMetrics,fixtureMetricsRuntime} from "./removal_metrics_native_fixture.ts";\n' + metrics.read_text().replace('export const behavior = roleMetrics();', 'export const behavior = roleMetrics(() => fixtureHttp,fixtureMetrics as never,fixtureMetricsRuntime);'))
-        certs = self.repo / 'extensions/behaviors/operations/certificates/mod.ts'
-        certs.write_text('import {fixtureHttp} from "../node/removal_native_fixture.ts";\n' + certs.read_text().replace('...certificates(), type:', '...certificates(() => fixtureHttp), type:'))
         failure = self.repo / 'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./node/removal_native_fixture.ts";\n' + failure.read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         hub = self.repo / 'extensions/behaviors/operations/node/wireguard_direct.ts'
