@@ -68,6 +68,9 @@ class DevDeployDirectNativeTest(NativeTestCase):
                 if base == '/api/v1/direct-operations/100/private-material':
                     self.reply({'git_read': secret, 'vp_materialize': {}})
                 elif base == '/api/v1/direct-operations/100':
+                    if state.get('read_refused'):
+                        self.send_error(500)
+                        return
                     self.reply({'id': 100, 'kind': 'instance.deploy', 'node_id': 9,
                                 'status': state['status'], 'input': safe, 'result': None, 'cancel_requested': state['cancel_requested']})
                 else:
@@ -78,6 +81,12 @@ class DevDeployDirectNativeTest(NativeTestCase):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 if self.path != '/api/v1/direct-operations/100/result' or body['run_id'] != state['run_id']:
                     self.send_error(409)
+                    return
+                if state['status'] in ('succeeded', 'failed', 'cancelled'):
+                    if body['status'] != state['status']:
+                        self.send_error(409)
+                    else:
+                        self.reply({})
                     return
                 state['posts'].append(body)
                 state['status'] = body['status']
@@ -152,6 +161,16 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual(state['posts'][-1]['error_code'], 'deployment.interrupted')
         self.assertEqual(state['posts'][-1]['result']['failed_step'], 'before_activation.proof')
         self.assertEqual(state['posts'][-1]['result']['step_outcome'], 'unknown')
+        self.assert_private_absent(json.dumps(state['posts']))
+
+        # A broken public intent renderer must not prevent proven inactive failure
+        # settlement. The callback binds the existing root and never reads intent.
+        state.update(status='queued', posts=[], paths=[], run_id=None, cancel_requested=False, read_refused=True)
+        self.native_env.pop('ORBIT_DEPLOY_TEST_UNCERTAIN_STEP')
+        self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
+        self.assertEqual(state['status'], 'failed')
+        self.assertEqual(state['posts'][-1]['error_code'], 'deployment.interrupted')
+        self.assertEqual(state['posts'][-1]['result'], {'failed_step': 'native_execution'})
         self.assert_private_absent(json.dumps(state['posts']))
 
 
