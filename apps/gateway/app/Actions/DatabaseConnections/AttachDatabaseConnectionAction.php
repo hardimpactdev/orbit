@@ -36,70 +36,74 @@ final readonly class AttachDatabaseConnectionAction
         string $network = 'wireguard',
         bool $replace = false,
     ): DatabaseConnectionAttachmentData {
-        return $this->operations->run([$instance->id], fn (): DatabaseConnectionAttachmentData => $this->project($instance, $connection, $prefix, $forClone, $network, $replace));
-    }
-
-    /** Project stored connection facts after a direct Swamp effect; performs no Node work. */
-    public function project(Instance $instance, DatabaseConnection $connection, ?string $prefix, bool $forClone = false, string $network = 'wireguard', bool $replace = false): DatabaseConnectionAttachmentData
-    {
         $normalizedPrefix = DatabaseConnectionPrefix::normalize($prefix);
-        $instance->refresh();
 
-        if ($connection->driver === DatabaseDriver::Sqlite && $connection->node_id !== $instance->node_id) {
-            throw new ResourceOperationException(
-                errorCode: 'database.node_mismatch',
-                message: 'A SQLite connection must be on the same Node as the Instance.',
-                status: 422,
-            );
-        }
-
-        $context = $forClone
-            ? $this->contexts->resolveForClone($instance, requireActiveNode: false)
-            : $this->contexts->resolve($instance, requireActiveNode: false);
-        $projected = $this->projection->project($connection, $normalizedPrefix, $network, $instance->node);
-
-        return DB::transaction(function () use (
+        return $this->operations->run([$instance->id], function () use (
             $instance,
             $connection,
             $normalizedPrefix,
-            $context,
-            $projected,
+            $forClone,
             $network,
             $replace,
         ): DatabaseConnectionAttachmentData {
-            $stored = $this->store->values($instance);
-            $conflicts = array_intersect($this->projection->driftedKeys($stored, $projected), array_keys($stored));
+            $instance->refresh();
 
-            if (! $replace && $conflicts !== []) {
+            if ($connection->driver === DatabaseDriver::Sqlite && $connection->node_id !== $instance->node_id) {
                 throw new ResourceOperationException(
-                    errorCode: 'database.environment_conflict',
-                    message: 'The attachment would change stored connection keys. Set replace to true to allow it.',
-                    status: 409,
+                    errorCode: 'database.node_mismatch',
+                    message: 'A SQLite connection must be on the same Node as the Instance.',
+                    status: 422,
                 );
             }
 
-            DatabaseConnectionTarget::query()->updateOrCreate(
-                [
-                    'instance_id' => $instance->id,
-                    'prefix' => $normalizedPrefix,
-                ],
-                ['database_connection_id' => $connection->id, 'network' => $network],
-            );
+            $context = $forClone
+                ? $this->contexts->resolveForClone($instance, requireActiveNode: false)
+                : $this->contexts->resolve($instance, requireActiveNode: false);
+            $projected = $this->projection->project($connection, $normalizedPrefix, $network, $instance->node);
 
-            $forgotten = $this->store->forget($context, $projected['forget'], 'attach');
-            $written = $this->store->putMany($context, $projected['values'], 'attach');
+            return DB::transaction(function () use (
+                $instance,
+                $connection,
+                $normalizedPrefix,
+                $context,
+                $projected,
+                $network,
+                $replace,
+            ): DatabaseConnectionAttachmentData {
+                $stored = $this->store->values($instance);
+                $conflicts = array_intersect($this->projection->driftedKeys($stored, $projected), array_keys($stored));
 
-            return new DatabaseConnectionAttachmentData(
-                instanceId: $instance->id,
-                slug: $connection->slug,
-                prefix: $normalizedPrefix,
-                keys: $projected['keys'],
-                host: $projected['host'],
-                port: $projected['port'],
-                operation: 'attach',
-                changed: $forgotten->changed || $written->changed,
-                keyCount: $written->keyCount,
-            );
+                if (! $replace && $conflicts !== []) {
+                    throw new ResourceOperationException(
+                        errorCode: 'database.environment_conflict',
+                        message: 'The attachment would change stored connection keys. Set replace to true to allow it.',
+                        status: 409,
+                    );
+                }
+
+                DatabaseConnectionTarget::query()->updateOrCreate(
+                    [
+                        'instance_id' => $instance->id,
+                        'prefix' => $normalizedPrefix,
+                    ],
+                    ['database_connection_id' => $connection->id, 'network' => $network],
+                );
+
+                $forgotten = $this->store->forget($context, $projected['forget'], 'attach');
+                $written = $this->store->putMany($context, $projected['values'], 'attach');
+
+                return new DatabaseConnectionAttachmentData(
+                    instanceId: $instance->id,
+                    slug: $connection->slug,
+                    prefix: $normalizedPrefix,
+                    keys: $projected['keys'],
+                    host: $projected['host'],
+                    port: $projected['port'],
+                    operation: 'attach',
+                    changed: $forgotten->changed || $written->changed,
+                    keyCount: $written->keyCount,
+                );
+            });
         });
     }
 }
