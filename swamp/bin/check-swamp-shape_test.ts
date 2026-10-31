@@ -713,3 +713,162 @@ Deno.test("agent invocations inside shell substitutions and interpreter bodies a
     [],
   );
 });
+
+Deno.test("static native child workflows are scanned through their local source graph", () => {
+  const child = (run = "true") =>
+    `id: 11111111-1111-4111-8111-111111111111\n${
+      workflow("        run: " + JSON.stringify(run) + "\n").replace(
+        "name: example",
+        "name: child",
+      )
+    }`;
+  const parent = (reference: string) =>
+    `name: parent\njobs:\n- steps:\n  - task:\n      type: workflow\n      workflowIdOrName: ${
+      JSON.stringify(reference)
+    }\n`;
+  for (const reference of ["child", "11111111-1111-4111-8111-111111111111"]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["workflows/child.yaml", child()],
+    ]);
+    const clean = analyze(sources, inventory);
+    assertEquals(clean.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(workflowCoverage(clean), {
+      total: 2,
+      clean: 2,
+      unknown: 0,
+      baseline_accepted: 0,
+    });
+    sources.set(
+      "workflows/child.yaml",
+      child("orbit-agent command cli.install"),
+    );
+    assertEquals(workflowCoverage(analyze(sources, inventory)), {
+      total: 2,
+      clean: 0,
+      unknown: 0,
+      baseline_accepted: 2,
+    });
+  }
+  for (const reference of ["missing", "${{ inputs.child }}"]) {
+    const analyses = analyze(
+      new Map([["workflows/parent.yaml", parent(reference)], [
+        "workflows/child.yaml",
+        child(),
+      ]]),
+      inventory,
+    );
+    assert(analyses.get("workflows/parent.yaml")!.unknown);
+    assert(
+      analyses.get("workflows/parent.yaml")!.findings.some((f) =>
+        f.rule === "unknown-nested-workflow"
+      ),
+    );
+    assertEquals(workflowCoverage(analyses).unknown, 1);
+  }
+  const ambiguous = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      child(),
+    ], ["workflows/duplicate.yaml", child()]]),
+    inventory,
+  );
+  assert(ambiguous.get("workflows/parent.yaml")!.unknown);
+  const unresolvedBehavior = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      "name: child\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: '@missing/behavior'}\n",
+    ]]),
+    inventory,
+  );
+  assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
+});
+
+Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {
+  for (
+    const program of [
+      "import subprocess\nsubprocess.run(['flock','/tmp/workflow.lock','true'])",
+      "import os\nos.system('sleep 30')",
+      "from subprocess import run as execute\nexecute(['bash','-c','sudo -S sleep 30'])",
+      "import subprocess\nsubprocess.run(['ssh','host','flock /tmp/workflow.lock true'])",
+    ]
+  ) {
+    assertEquals(
+      agentPythonFindings(file, program, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      program,
+    );
+    const heredoc = `python3 <<'PY'\n${program}\nPY`;
+    assertEquals(
+      agentShellFindings(file, heredoc, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      heredoc,
+    );
+  }
+});
+
+Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['sleep','30']\nsubprocess.run(cmd)\ncmd=['echo','done']\n",
+      "import subprocess\nbase=['sleep','30']\ncmd=base\nbase=['echo','done']\nsubprocess.run(cmd)\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "custom-control"
+      ),
+      source,
+    );
+    assert(
+      agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory).some(
+        (f) => f.rule === "custom-control",
+      ),
+      source,
+    );
+  }
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute(cmd):\n    subprocess.run(cmd)\nexecute(['sleep','30'])\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nfor cmd in [['sleep','30']]:\n    pass\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ncmd,other=['sleep','30'],None\nexecute()\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "unknown-command"
+      ),
+      source,
+    );
+  }
+});
+
+Deno.test("Python cross-scope and walrus writes invalidate captured command provenance", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nif (cmd := ['sleep','30']):\n    execute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nsubprocess.run(cmd)\n",
+      "import subprocess\ndef outer():\n    cmd=['echo','safe']\n    def execute():\n        subprocess.run(cmd)\n    def change():\n        nonlocal cmd\n        cmd=['sleep','30']\n    change()\n    execute()\nouter()\n",
+    ]
+  ) {
+    for (
+      const findings of [
+        agentPythonFindings(file, source, inventory),
+        agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory),
+      ]
+    ) {
+      assert(
+        findings.some((finding) =>
+          finding.rule === "unknown-command" ||
+          finding.rule === "custom-control"
+        ),
+        source,
+      );
+    }
+  }
+});

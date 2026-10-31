@@ -1,6 +1,7 @@
 id: a7839446-4acb-4e72-b82f-d188f108a1fc
 name: operation-route-caddy
-description: Publish one full public Caddy snapshot as placed shell actions, retaining the actual composing parent identity.
+description: Publish one full public Caddy snapshot as placed shell actions, retaining
+  the actual composing parent identity.
 vaults: []
 inputs:
   type: object
@@ -22,6 +23,25 @@ inputs:
       properties:
         caddy_publication:
           type: object
+          properties:
+            node_id:
+              type: integer
+              minimum: 1
+              not:
+                enum:
+                - 1
+                - 18
+            user:
+              type: string
+            caddy:
+              type: object
+            expected_current:
+              type: object
+          required:
+          - node_id
+          - user
+          - caddy
+          additionalProperties: false
       required:
       - caddy_publication
       additionalProperties: false
@@ -151,7 +171,7 @@ jobs:
                   loaded = bool(re.fullmatch(r"[a-f0-9]{32}", invocation)) and recorded == {
                       "sha256": prior_digest, "invocation_id": invocation,
                   }
-          unchanged = prior_digest == meta["sha256"] and loaded
+          unchanged = prior_digest == meta["sha256"] and loaded and enabled
           print(
               json.dumps(
                   {
@@ -193,7 +213,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -251,7 +272,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -300,7 +322,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -334,7 +357,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -385,7 +409,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -497,7 +522,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -542,7 +568,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -596,7 +623,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -637,7 +665,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -717,7 +746,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -774,7 +804,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -822,7 +853,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -874,7 +906,8 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id) }}
+      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
+        }}
       methodName: execute
       inputs:
         run: |
@@ -975,6 +1008,12 @@ jobs:
           if observed["withdraw"] and current not in (None, meta["sha256"]):
               raise SystemExit("caddy.publication_stale")
           if not observed["withdraw"]:
+              active = subprocess.run(
+                  ["/usr/bin/systemctl", "is-active", "--quiet", "caddy"],
+                  check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=35,
+              )
+              if active.returncode:
+                  raise SystemExit("caddy.publication_not_loaded")
               generation = live.resolve().parent
               receipt = generation / "loaded.json"
               invocation = subprocess.run(

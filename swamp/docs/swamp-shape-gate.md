@@ -3,8 +3,12 @@
 Every pull request and main push runs `Swamp shape`. Existing violations are
 listed by file and rule in `config/swamp-shape-baseline.json`. Entries and their
 counts may only decrease. Moving code does not transfer an exception. CI also
-runs the base revision's checker, so changing a rule or exclusion does not relax
-that PR's check.
+runs the base revision's checker and dependencies against committed HEAD in
+isolated sparse worktrees. That check derives its own shrink-only baseline from
+immutable base limits; it does not reinterpret the PR's revised baseline under
+old rules. Changing current rules, limits or exclusions cannot admit new debt
+under the frozen rules. Actual debt removal and approved classification fixes do
+not require stale allowances.
 
 The gate implements Nick's migration policy using these manual references:
 
@@ -36,7 +40,30 @@ not passing. The agent rule examines executable command positions in shell and
 Python subprocess calls, including sudo, shell and SSH wrappers. Service units
 such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools and
 configuration metadata are not agent invocations. Actual executable calls still
-use the observer/action inventory; unresolved commands remain unknown.
+use the observer/action inventory; unresolved commands remain unknown. Python
+bindings follow execution order within a lexical scope. Outer captures require
+an immutable binding, including writes through loops, destructuring and context
+managers. Later assignments cannot replace the command evaluated at an earlier
+subprocess call.
+
+Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
+only proven file descriptors for the canonical UFW, observer self-update,
+WireGuard peer config and documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
+and with bindings, and accepts exclusive acquisition (optionally nonblocking)
+or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
+loops remain findings. Naming a tool in a comment grants no exception. Python
+heredocs use this AST rule once rather than a second shell-token lock count.
+
+Rule F can prove a fixed external HTTP origin before a dynamic path suffix.
+The literal prefix must contain a complete authority and its trailing slash;
+unknown origins, partial authorities, reassigned bindings and URL joins that
+could replace the authority remain unresolved. Gateway metadata in a public
+provider input does not make a fixed external API request a Gateway callback.
+
+Static native child workflows resolve by an unambiguous local workflow name or id.
+The coverage graph follows each child and its behavior and script dependencies.
+Missing, dynamic or ambiguous children stay unknown; a child with accepted debt
+does not make its parent clean.
 
 Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
 workflow has known steps and no findings in its own source or reachable local
@@ -60,6 +87,11 @@ remain part of the audit. A registered step that reaches a Gateway helper has
 its own file/rule finding, so new steps cannot inherit a historical exception.
 Intent arrives as non-secret workflow inputs, vault
 names and key names identify secrets, and step outputs carry results.
+
+Shared public Operation schemas and cancellation evidence live in
+`extensions/behaviors/operations/_lib/direct-input.ts`. Metadata and data-only
+helpers import that module directly. Importing `direct.ts` also reaches the
+retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow accepts `working-directory` and
@@ -107,3 +139,8 @@ The TS checker owns the endpoint policy and passes it to the Python AST helper.
 Native shell URLs use the same policy. The signer fixture is copied from lane0c
 model `orbit-certificate-signing-http`; altered methods, paths, unchecked ids and
 extra callbacks are rejected.
+
+Python command provenance uses lexical scope and statement order. Global or
+nonlocal declarations, walrus assignments and deleted bindings prevent a claim
+that a captured command is fixed. Unresolved executable control remains unknown
+and cannot gain a clean classification.
