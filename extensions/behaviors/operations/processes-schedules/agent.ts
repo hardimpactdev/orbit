@@ -25,6 +25,8 @@ const Budgets = {
   "process.remove": 300000,
   "process.check-release": 10000,
   "process.status": 30000,
+  "vite.set-traffic": 10000,
+  "vite.check-listener": 10000,
 } as const;
 export type LocalCommand = keyof typeof Budgets;
 export async function localAgent(

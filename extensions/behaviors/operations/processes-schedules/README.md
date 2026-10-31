@@ -2,7 +2,9 @@
 
 This family executes `process.create`, `process.update`, `process.start`,
 `process.stop`, `process.restart`, `process.destroy`, `schedule.create`,
-`schedule.enable`, `schedule.run`, and `schedule.destroy`.
+`schedule.enable`, `schedule.run`, and `schedule.destroy`. Direct controls are
+described below. The remaining polled kinds use the following contract;
+`process.start` is removed from their discovery, registration and executor.
 
 The Gateway admits the target and complete specification. It supplies references
 for unit content, Docker commands and environments, and Schedule commands. Swamp
@@ -22,11 +24,11 @@ effects and waits for children. Schedule removal keeps its record while a
 command is still running. A production clone passes stopped Process intent and
 disabled Schedule intent unchanged.
 
-Vite preparation suspends traffic, writes its Instance environment, and starts
-`route.caddy_converge` as a child on its Node. The Gateway completion contract
-requires that child to succeed. The route family owns Caddy rendering and
-reload. Startup verifies an owned listener before an explicit start marks
-traffic awake.
+Polled Vite preparation suspends traffic, writes its Instance environment, and
+starts `route.caddy_converge` as a child on its Node. The Gateway completion
+contract requires that child to succeed. The route family owns Caddy rendering
+and reload. Its unconverted restart verifies an owned listener; direct start
+owns the same-root awake step below.
 
 Run the focused checks from the repository root:
 
@@ -88,9 +90,10 @@ until their own complete cutovers.
 ## Direct Process controls
 
 `operation-process-control` handles standalone start/stop/restart/destroy for
-systemd or Docker Processes without Vite traffic preparation. It shares the
-family's admitted-digest and bounded sudo invocation with Schedule controls. The
-Node action checks an admitted selected release when required, performs one
+systemd or Docker Processes. Start adds the Vite DAG below; the other controls
+use their single local action when no traffic preparation is needed. It shares
+the family's admitted-digest and bounded sudo invocation with Schedule controls.
+The Node action checks an admitted selected release when required, performs one
 control/removal and reads status. Only ready/state or an error code reaches the
 Gateway; no readiness relay, child Operation or keyed receipt is used. Exact
 Node placement and native behavior locking own dispatch and concurrency.
@@ -98,19 +101,19 @@ Node placement and native behavior locking own dispatch and concurrency.
 The paired `process.stop` cutover switches its Gateway writer and removes the
 PHP stop action, polled descriptors and receipt tests after an actual safe
 action canary. Stopping a Vite Process needs no traffic preparation or private
-input. Other Process controls keep their current writers. Rollback is a revert
-PR.
+input. Restart and removal keep their current writers until their owning
+cutovers. Rollback is a revert PR.
 
 Native destroy also accepts the admitted Vite environment identity. It requires
 the exact `/etc/orbit/vite/app-instance-<Instance ID>.env` path and forwards it
 to the existing local removal primitive, which checks ownership and symlinks.
-Vite startup remains refused until its native preparation steps are converted.
+Vite start uses the same-root preparation and publication DAG below. Vite
+restart remains on its current writer until its owning conversion.
 
-For `process.stop` and `process.destroy` canaries on admitted Node209, the
-workflow chooses the existing `swamp209-migration-a` worker. Every other Node
-and Process kind keeps exact `orbit-node-ID` placement. There is no fallback to
-another Node. The canary owns a short-lived sleep Process and changes no serving
-unit.
+Every Process kind targets `orbit-node-<admitted node_id>` with its matching
+Node label, including Node209. Its exact worker is enrolled and independently
+proven. The temporary migration-worker placement is removed. Existing migration
+workers remain available to their other owners; this workflow has no fallback.
 
 Every Schedule control targets `orbit-node-<admitted node_id>` with its matching
 Node label, including Node209. The exact209worker has independent native
@@ -122,3 +125,17 @@ A local agent that fails its admitted build or ownership preflight returns
 bounded refusal as a failed Operation. Errors after the command starts keep
 their existing uncertainty behavior. The workflow never replaces an admitted
 digest with the current binary digest.
+
+## Same-root Process start
+
+Process start prepares its admitted release and Vite traffic on the exact Node.
+For Vite, the next DAG step calls `@nckrtl/route-publication` on the canonical
+`route-publication-node-ID` behavior with the same Operation, kind, Node and
+root run ID. That method acquires the native publication lock before reading
+fresh public Caddy data from the bound parent. It does not project the parent.
+The final Process step starts the runtime, checks the owned listener, marks
+explicit traffic awake and projects bounded status. Non-Vite start skips the
+publication step. No child Operation, child run, Gateway primitive or family
+relay is added. Native dispatch and behavior locking use defaults. The public
+branch record keeps one version for one day; it contains no command or effect
+receipt.

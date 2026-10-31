@@ -317,9 +317,7 @@ export function processesSchedules(
                   if (
                     input.vite_plan &&
                     (input.desired === "running" ||
-                      ["process.start", "process.restart"].includes(
-                        operation.kind,
-                      ))
+                      operation.kind === "process.restart")
                   ) {
                     const plan = z.record(z.string(), Result).parse(
                       input.vite_plan,
@@ -352,13 +350,6 @@ export function processesSchedules(
                         },
                       });
                       throw new Refused("vite.not_ready", {});
-                    }
-                    if (operation.kind === "process.start") {
-                      await invoke({
-                        step: "vite-awake",
-                        name: "vite.set-traffic",
-                        input: plan.awake,
-                      });
                     }
                   }
                 }
@@ -415,7 +406,7 @@ async function executeProcess(
 ) {
   const verb = kind.slice("process.".length);
   if (
-    !["create", "update", "start", "restart"].includes(verb)
+    !["create", "update", "restart"].includes(verb)
   ) throw new Error("Wrong Process kind");
   const artifact = pick(input, ["process_id", "runtime", "name"]);
   if (input.directory) {
@@ -449,7 +440,7 @@ async function executeProcess(
     });
     await project();
   }
-  if (["start", "restart"].includes(verb)) {
+  if (verb === "restart") {
     return await invoke({
       step: `process-${verb}`,
       name: "process.control",

@@ -7,6 +7,8 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 import { localAgent, type LocalCommand } from "./agent.ts";
+import { Input } from "./process-input.ts";
+import { Preparation, startActions, startMethods } from "./start.ts";
 
 const Kind = z.enum([
   "process.start",
@@ -18,23 +20,6 @@ const Args = DirectArgs.extend({
   kind: Kind,
   node_id: z.number().int().positive(),
 });
-const Removal = z.object({
-  path: z.string().startsWith("/etc/orbit/vite/app-instance-").max(4096),
-  instance_id: z.number().int().positive(),
-}).strict().refine(
-  (value) =>
-    value.path === `/etc/orbit/vite/app-instance-${value.instance_id}.env`,
-  "The environment path must belong to the admitted Instance",
-);
-const Input = z.object({
-  process_id: z.number().int().positive(),
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  runtime: z.enum(["systemd", "docker"]),
-  name: z.string().regex(/^orbit-process-[0-9]+-[a-z0-9-]+(?:\.service)?$/),
-  on_demand: z.boolean(),
-  directory: z.string().startsWith("/").max(4096).optional(),
-  vite: Removal.nullable(),
-}).strict();
 const State = z.string().regex(/^[a-z][a-z_-]{0,63}$/);
 const Result = z.union([
   z.object({ ready: z.literal(true), state: State.optional() }).strict(),
@@ -97,12 +82,22 @@ export function processControl(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   action = processAction(),
+  start = startActions(),
 ) {
   return {
     type: "@nckrtl/process-control",
-    version: "2026.10.30.1",
+    version: "2026.10.30.2",
     globalArguments: Globals,
+    resources: {
+      startPreparation: {
+        description: "Public same-root startup branch data",
+        schema: Preparation,
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+    },
     methods: {
+      ...startMethods(makeHttp, start),
       control: {
         description: "Apply admitted Process control on its exact Node worker",
         arguments: Args,

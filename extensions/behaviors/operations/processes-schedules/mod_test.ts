@@ -366,7 +366,7 @@ Deno.test("systemd replacement, backup refusal and release refusal retain eviden
     f.resources.get("operation-7")!.error_code,
     "process.systemd_converge_failed",
   );
-  const g = processFixture("start");
+  const g = processFixture("restart");
   g.operation.input.directory = "/home/production/current";
   g.answers["process.check-release"] = { available: false };
   await g.execute();
@@ -408,9 +408,9 @@ Deno.test("runtime switch removes retired footprint before creating replacement"
     ],
   );
 });
-Deno.test("unconverted Process start and restart target only their artifact", async () => {
+Deno.test("unconverted Process restart targets only its artifact", async () => {
   for (const runtime of ["systemd", "docker"]) {
-    for (const verb of ["start", "restart"]) {
+    for (const verb of ["restart"]) {
       const f = processFixture(verb, runtime);
       await f.execute();
       assertEquals(f.runs, 1);
@@ -442,8 +442,8 @@ Deno.test("wrong family or target refuses before any Node command", async () => 
   }
 });
 
-Deno.test("Vite startup prepares its environment, starts a Caddy child and verifies ownership", async () => {
-  const f = processFixture("start");
+Deno.test("unconverted Vite restart prepares its environment, starts a Caddy child and verifies ownership", async () => {
+  const f = processFixture("restart");
   f.operation.input.vite_plan = {
     suspend: { operation: "suspend", marker: "/run/orbit/awake/test" },
     environment: {
@@ -602,4 +602,10 @@ Deno.test("direct kinds refuse polled dispatch before claim or effect", async ()
     assertEquals(f.calls, []);
     assertEquals(f.resources.size, 0);
   }
+});
+
+Deno.test("polled Process start refuses before any claim or effect", async () => {
+  const f = processFixture("start");
+  await assertRejects(() => f.execute());
+  assertEquals(f.calls, []);
 });

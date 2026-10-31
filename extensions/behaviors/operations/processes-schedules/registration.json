@@ -2,7 +2,6 @@
   "kinds": [
     "process.create",
     "process.update",
-    "process.start",
     "process.restart",
     "schedule.create",
     "process.install_instance_definitions",
