@@ -9,9 +9,11 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleIntent;
 use App\Domain\Nodes\NodeRoleRemovalOutcome;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -25,6 +27,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -48,7 +51,7 @@ final readonly class AdmitNodeRoleOperationAction
         private RouteRemovalGuard $routes,
     ) {}
 
-    public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
+    public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false, bool $native = false): Operation
     {
         if (($existing = $this->idempotency->replay('node.role_add')) !== null) {
             return $existing;
@@ -57,7 +60,7 @@ final readonly class AdmitNodeRoleOperationAction
             throw new ResourceOperationException('operation.kind_unavailable', 'Node role admission is waiting for its executor contract.', 503);
         }
 
-        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning): Operation {
+        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning, $native): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             if (! in_array($node->status, $duringProvisioning ? [LifecycleStatus::Provisioning, LifecycleStatus::Active] : [LifecycleStatus::Active], true)) {
                 throw new RoleAssignmentException('Roles can be changed only on an active node.');
@@ -67,6 +70,24 @@ final readonly class AdmitNodeRoleOperationAction
             }
             if ($duringProvisioning ? ! $this->roles->definition($role)->assignableDuringProvisioning : ! $this->roles->definition($role)->mutable) {
                 throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
+            }
+            $firstRole = ! $duringProvisioning && ! $node->roles()->where('status', LifecycleStatus::Active)->exists();
+            $metricsBefore = null;
+            if ($native) {
+                if ($duringProvisioning || $this->idempotency->parent !== null || $firstRole
+                    || ! in_array($role, [RoleName::Database, RoleName::CiRunner], true)) {
+                    throw new ResourceOperationException('operation.kind_unavailable', 'This role transition needs its owning same-root publication or enrollment composition.', 422);
+                }
+                if (! app(NodeWorkerRollout::class)->allows($node)) {
+                    throw new ResourceOperationException('swamp.node_worker_not_ready', 'The Node is outside the native worker rollout.', 422);
+                }
+                if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
+                    throw new ResourceOperationException('node.agent_rekey_required', 'The standalone role needs the existing recorded Node agent identity.', 409);
+                }
+                if (Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
+                    static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->exists()) {
+                    $metricsBefore = app(MetricsFleetCapture::class)->capture();
+                }
             }
             if ($role === RoleName::Analytics) {
                 $analytics ??= $this->analytics->find($node);
@@ -78,11 +99,11 @@ final readonly class AdmitNodeRoleOperationAction
 
             // Take the durable target hold before changing an assignment or its Settings.
             $operation = $this->operations->execute('node.role_add', 'node', $node->id, $node->id,
-                ['role' => $role->value, 'converge' => $converge], 'operator', $requestId);
+                ['role' => $role->value, 'converge' => $converge, ...($native ? ['node_id' => $node->id, 'native_role' => true] : [])],
+                'operator', $requestId, expectedWriter: $native ? 'direct' : null);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
-            $firstRole = ! $duringProvisioning && ! $node->roles()->where('status', LifecycleStatus::Active)->exists();
             $assignment = $this->assign->execute($node, $role);
             $created = $assignment->wasRecentlyCreated;
             $noOp = ! $created && ! $converge && $role === RoleName::Ingress && $assignment->status === LifecycleStatus::Active;
@@ -98,7 +119,18 @@ final readonly class AdmitNodeRoleOperationAction
             if ($analytics !== null) {
                 $this->analytics->store($node, $analytics);
             }
-            $this->store->change($operation, ['state' => [...($operation->state ?? []),
+            $nativeInput = [];
+            if ($native) {
+                $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created, $metricsBefore);
+                $impact = ValidatedData::object($snapshot['metrics_impact'] ?? []);
+                $footprint = ValidatedData::object($snapshot['footprint']);
+                if (($impact['required'] ?? false) === true || $footprint['refusal'] !== null) {
+                    throw new ResourceOperationException('operation.kind_unavailable', 'The applicable role contributions need their owning native composition.', 422);
+                }
+                $nativeInput = ['input' => [...$operation->input, '_role' => $snapshot,
+                    'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id]]];
+            }
+            $this->store->change($operation, [...$nativeInput, 'state' => [...($operation->state ?? []),
                 'role_intent' => NodeRoleIntent::capture($assignment, $created),
                 'role_first_managed' => $firstRole, 'role_noop' => $noOp]]);
 
