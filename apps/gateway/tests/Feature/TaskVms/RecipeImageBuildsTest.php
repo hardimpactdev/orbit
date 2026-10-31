@@ -3,22 +3,20 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationChildren;
+use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Infrastructure\AgentView\WebSocketClient;
+use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
-use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 require_once __DIR__.'/../../Support/FakeIncusImageHost.php';
@@ -30,15 +28,6 @@ function recipeImageHost(): Node
 
 function recipeImageTransport(Node $host): FakeIncusImageHost
 {
-    $gateway = Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
-    NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    config(['dependency_detection.services_node_id' => $gateway->id, 'swamp.run_token' => 'fixture.token']);
-    test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-task-vm-image-build', 'runId' => '878a384f-8b8a-4066-bd17-dcad8eac3e86',
-    ]]];
-    app()->instance(WebSocketClient::class, $socket);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $incus = new FakeIncusImageHost;
     $incus->bindAgentInventory();
@@ -120,74 +109,78 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     $operation = Operation::query()->where('kind', 'task_vm.image_build')->sole();
     expect($operation->target_id)->toBe($first->id)->and($operation->node_id)->toBe($host->id);
     expect($operation->input['recipe'])->toBeString();
-    expect($operation->state['task_vm_image_writer'])->toBe('direct');
-    expect($operation->lock_key)->toBeNull();
-    expect($operation->parent_operation_id)->toBeNull();
     expect($operation->input['generation'])->toBe($first->recipe_generation);
 });
 
-function nativeImageOperation(): Operation
-{
+it('keeps image boot observations pending until the matching guest agent installation is proven', function (bool $smoke, bool $seed): void {
     $host = recipeImageHost();
-    recipeImageTransport($host);
+    $incus = recipeImageTransport($host);
     recipeImageCurrent(recipeImageDocument());
     app(RecipeImageBuilds::class)->reconcile();
+    $parent = Operation::query()->where('kind', 'task_vm.image_build')->sole();
 
-    return Operation::query()->where('kind', 'task_vm.image_build')->sole();
-}
+    expect(app(TaskVmImageRead::class)->boot($parent, $smoke, $seed))->toBe(['ready' => false, 'expired' => false]);
+    expect($incus->guestCalls)->toBe([]);
+})->with(['builder' => [false, false], 'smoke' => [true, false], 'seed' => [true, true]]);
 
-function nativeImageResult(array $result, string $status = 'running'): array
-{
-    return ['run_id' => '878a384f-8b8a-4066-bd17-dcad8eac3e86', 'status' => $status,
-        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => $status === 'running' ? null : '2026-10-31T00:01:00.000Z', 'result' => $result];
-}
+it('observes cloud init after a proven agent installation and preserves real bootstrap failures', function (): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    app(RecipeImageBuilds::class)->reconcile();
+    $parent = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+    $child = app(OperationChildren::class)->admit($parent, ['key' => 'builder-agent'])['operation'];
+    $executor = app(SwampOperationExecutor::class);
+    $child = $executor->claim($child->kind, 'builder-install', $host->id, $child->id);
+    $result = $executor->run($child, ['worker' => 'builder-install', 'key' => 'guest-install', 'transport' => 'task_vm_guest', 'name' => 'task_vm.guest',
+        'input' => ['command' => 'agent.install-guest', 'guest' => $child->input['guest'], 'parameters_json' => '{}']], $host->id);
+    $executor->step($child->fresh(), ['worker' => 'builder-install', 'key' => 'finish', 'name' => 'guest-install', 'status' => 'succeeded', 'result' => $result], $host->id);
+    $executor->complete($child->fresh(), ['worker' => 'builder-install', 'status' => 'succeeded', 'result' => $result], $host->id);
 
-it('starts one native image run with bound safe input and rejects the removed child executor', function (): void {
-    $op = nativeImageOperation();
-    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86')
-        ->assertOk()->assertJsonPath('data.input.host_node_id', $op->node_id)->assertJsonMissingPath('data.input.resume_from');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertStatus(422);
-    expect(app(OperationKinds::class)->definition('task_vm.image_finish_seed'))->toBeNull();
-    expect(app(OperationKinds::class)->definition('task_vm.guest_image_start_phase'))->toBeNull();
-    $op->update(['state' => ['task_vm_image_writer' => 'direct']]);
-    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86')
-        ->assertStatus(409)->assertJsonPath('error.code', 'operation.run_unbound');
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), false))->toBe(['ready' => true, 'expired' => false]);
+    expect(array_column($incus->guestCalls, 'command'))->toBe(['guest.cloud-init']);
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), true))->toBe(['ready' => false, 'expired' => false]);
+    expect(app(TaskVmImageRead::class)->boot($parent->fresh(), true, true))->toBe(['ready' => false, 'expired' => false]);
+    expect(array_column($incus->guestCalls, 'command'))->toBe(['guest.cloud-init']);
+    $incus->fail = 'cloud-init';
+    expect(fn () => app(TaskVmImageRead::class)->boot($parent->fresh(), false))->toThrow(TaskVmException::class, 'Cloud-init failed');
 });
 
-it('projects native publication promotion and completion without children or host effects', function (): void {
-    $op = nativeImageOperation();
-    $path = '/api/v1/direct-operations/'.$op->id.'/result';
-    $hash = str_repeat('c', 64);
-    $this->postJson($path, nativeImageResult(['phase' => 'publish', 'fingerprint' => $hash]))->assertOk();
-    $this->postJson($path, nativeImageResult(['phase' => 'promote', 'completed' => true]))->assertOk();
-    $this->postJson($path, nativeImageResult(['ready' => true, 'fingerprint' => $hash], 'succeeded'))->assertOk();
-    $build = TaskVmImageBuild::query()->sole();
-    expect($build->state)->toBe(TaskVmImageBuildState::Succeeded)
-        ->and($build->image_fingerprint)->toBe($hash)->and($build->images['base']['alias'])->toBe($op->input['candidate_alias'])
-        ->and($build->promoted_at)->not->toBeNull();
+it('fences an unowned running PHP image attempt and starts Swamp from stock', function (TaskVmImageBuildStep $step, ?string $program): void {
+    $host = recipeImageHost();
+    $incus = recipeImageTransport($host);
+    recipeImageCurrent(recipeImageDocument());
+    $builds = app(RecipeImageBuilds::class);
+    $recipe = $builds->currentRecipe();
+    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => $recipe->identity,
+        'recipe_json' => $recipe->json, 'recipe_generation' => 1, 'attempt' => 3,
+        'current_step' => $step, 'current_program' => $program, 'source_alias' => 'old-base', 'source_fingerprint' => IMAGE_OLD,
+        'image_fingerprint' => IMAGE_NEW, 'images' => ['base' => ['project' => 'orbit-tasks', 'alias' => 'old-candidate', 'fingerprint' => IMAGE_NEW, 'type' => 'virtual-machine']],
+        'steps' => [['step' => $step->value, 'program' => $program, 'started_at' => now()->toISOString(), 'seconds' => 12.0, 'error' => null]],
+    ]);
+    $oldName = $build->builder_vm_name;
+    $adopted = $builds->reconcile()[0];
+    expect($adopted->id)->toBe($build->id);
+    expect($adopted->attempt)->toBe(4);
+    expect($adopted->builder_vm_name)->toBe('tvm-image-'.$build->id.'-attempt-4')->not->toBe($oldName);
+    expect($adopted->steps)->toBe([]);
+    expect($adopted->images)->toBe([]);
+    expect($adopted->current_step)->toBeNull();
+    expect($adopted->current_program)->toBeNull();
+    expect($adopted->source_fingerprint)->toBeNull();
+    expect($adopted->image_fingerprint)->toBeNull();
+    expect($adopted->from_stock)->toBeTrue();
+    $operation = Operation::query()->where('kind', 'task_vm.image_build')->sole();
+    expect($operation->input['attempt'])->toBe(4);
+    expect($operation->input['name'])->toBe($adopted->builder_vm_name);
+    expect($operation->input['source'])->toBe(TaskVmHost::SourceImage);
+    expect($operation->input['reuse_published'])->toBeFalse();
+    expect($operation->input['resume_from'])->toBeNull();
+    expect($builds->reconcile()[0]->attempt)->toBe(4);
     $this->assertDatabaseCount('operations', 1);
-    $this->postJson($path, nativeImageResult(['ready' => true, 'fingerprint' => $hash], 'succeeded'))->assertOk();
-});
-
-it('refuses foreign runs stale attempts and unbounded native results', function (string $change): void {
-    $op = nativeImageOperation();
-    $body = nativeImageResult(['phase' => 'launch']);
-    if ($change === 'run') {
-        $body['run_id'] = '878a384f-8b8a-4066-bd17-dcad8eac3e87';
-    } elseif ($change === 'attempt') {
-        TaskVmImageBuild::query()->sole()->increment('attempt');
-    } else {
-        $body['result']['stdout'] = 'raw guest output';
-    }
-    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', $body)->assertStatus($change === 'run' ? 409 : 422);
-    expect($op->fresh()->status)->toBe(OperationStatus::Queued);
-})->with(['run', 'attempt', 'output']);
-
-it('projects native failure without starting another Operation', function (): void {
-    $op = nativeImageOperation();
-    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [
-        ...nativeImageResult(['error_code' => 'task_vm.image_build_failed'], 'failed'), 'error_code' => 'task_vm.image_build_failed',
-    ])->assertOk();
-    expect(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Failed);
-    $this->assertDatabaseCount('operations', 1);
-});
+    expect($incus->guestCalls)->toBe([]);
+})->with([
+    'recipe' => [TaskVmImageBuildStep::Recipe, 'base:packages'],
+    'promotion' => [TaskVmImageBuildStep::Promote, null],
+    'pruning' => [TaskVmImageBuildStep::Prune, null],
+]);
