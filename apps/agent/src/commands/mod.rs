@@ -9,7 +9,6 @@ pub mod caddy;
 pub mod caddy_access;
 mod caddy_certificate;
 mod caddy_package;
-mod caddy_publication;
 pub mod ci_runner;
 pub mod cli;
 mod cli_update;
@@ -369,9 +368,6 @@ pub fn all() -> Vec<Entry> {
         entry::<task_git_import::ImportPack>(),
         entry::<caddy_certificate::InstallCertificate>(),
         entry::<caddy::Reload>(),
-        entry::<caddy_publication::Publish>(),
-        entry::<caddy_publication::CheckAddresses>(),
-        entry::<caddy_publication::ReadLive>(),
         entry::<doctor_node::InspectNode>(),
         entry::<doctor_project::InspectProject>(),
         entry::<doctor_project::InspectDevelopmentSource>(),

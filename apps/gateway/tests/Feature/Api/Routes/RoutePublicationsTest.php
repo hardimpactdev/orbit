@@ -35,6 +35,8 @@ beforeEach(function (): void {
     config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
+    $this->node->accessibleNodes()->attach($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
         'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued,
         'sequence' => 1, 'state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'input' => ['reason' => 'private proof']]);
@@ -58,7 +60,6 @@ it('returns a public current render without executing Caddy in the Gateway', fun
 });
 
 it('authorizes the admitted Node without the legacy executor allowlist across shared endpoints', function (): void {
-    $this->node->accessibleNodes()->attach($this->gateway);
     config(['operation_executor.worker_node_ids' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
@@ -111,6 +112,7 @@ it('refuses missing peers malformed run IDs and undeclared kinds on shared endpo
 });
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
     expect(collect($response->json('data.kinds'))->firstWhere('kind', 'route.caddy_converge'))->toBeNull();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
@@ -118,11 +120,11 @@ it('excludes direct publications from discovery and refuses the replaced executo
     expect($this->agents->calls)->toBe([]);
 });
 
-it('requires the existing executor identity and rejects caller Node command and input overrides', function (): void {
+it('requires the admitted Node identity and rejects caller Node command and input overrides', function (): void {
     $this->postJson($this->path.'/primitive', [...$this->body, 'node_id' => $this->worker->id])->assertUnprocessable();
     $this->postJson($this->path.'/primitive', [...$this->body, 'input' => ['content' => 'foreign.test {}']])->assertUnprocessable();
     $this->postJson($this->path.'/primitive', [...$this->body, 'command' => 'arbitrary'])->assertUnprocessable();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
     $this->postJson($this->path.'/primitive', $this->body)->assertForbidden();
     expect($this->agents->calls)->toBe([]);
 });
