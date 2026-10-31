@@ -1,5 +1,7 @@
-/** Fixed whole-Node filesystem transaction and service activation, executed locally with sudo. */
-export const caddyProgram = String.raw`
+import { roleHostProgram } from "../certificates/role_source.ts";
+
+/** Retained whole-Node publication; native role actions import only its host helpers. */
+export const caddyProgram = roleHostProgram + String.raw`
 import contextlib, datetime, fcntl, grp, hashlib, ipaddress, json, os, re, shutil, stat, subprocess, sys, time
 from pathlib import Path
 
@@ -8,23 +10,7 @@ LOCK = Path('/run/lock/orbit/caddy.lock')
 MARKER = '# Managed by Orbit: Node Caddy build'
 LIMIT = 4194304
 
-class Refusal(Exception):
-    def __init__(self, stage): self.stage = stage
-
-def command(program, *args):
-    try:
-        return subprocess.run([program, *map(str, args)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=35, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        raise Refusal('command')
-
-def service(*args): return command('/usr/bin/systemctl', *args, 'caddy').returncode == 0
-
 def digest(data): return hashlib.sha256(data).hexdigest()[:32]
-def exists(path): return path.exists() or path.is_symlink()
-def remove(path):
-    if path.is_symlink() or path.is_file(): path.unlink()
-    elif path.is_dir(): shutil.rmtree(path)
-    elif exists(path): raise Refusal('filesystem')
 
 def directory(path, mode, gid):
     path.mkdir(mode=mode, parents=True, exist_ok=True)

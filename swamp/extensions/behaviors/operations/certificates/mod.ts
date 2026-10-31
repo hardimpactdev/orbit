@@ -19,6 +19,7 @@ const Args = DirectArgs.extend({
   target_node_id: z.number().int().positive().optional(),
 });
 type Context = {
+  extensionFile: (path: string) => string | Promise<string>;
   globalArgs?: unknown;
   signal?: AbortSignal;
   writeResource: (
@@ -60,7 +61,7 @@ export function certificates(
   ) =>
     | ReturnType<typeof signCertificateBatch>
     | Promise<ReturnType<typeof signCertificateBatch>> = signCertificateBatch,
-  roleActions = roleCertificateActions(),
+  roleActions?: ReturnType<typeof roleCertificateActions>,
 ) {
   const output = async (ctx: Context, spec: string, value: unknown) => ({
     dataHandles: [await ctx.writeResource(spec, spec, { [spec]: value })],
@@ -182,7 +183,7 @@ export function certificates(
           ctx: Context,
         ) => {
           target(args, args.leaf);
-          const request = await roleActions.request(args.leaf, ctx.signal);
+          const request = await (roleActions ?? roleCertificateActions(ctx.extensionFile)).request(args.leaf, ctx.signal);
           if ("error_code" in request) throw new Error(request.error_code);
           return output(ctx, "request", request);
         },
@@ -204,7 +205,7 @@ export function certificates(
           ctx: Context,
         ) => {
           target(args, args.leaf);
-          const applied = await roleActions.publish(
+          const applied = await (roleActions ?? roleCertificateActions(ctx.extensionFile)).publish(
             args.leaf,
             args.request,
             args.signed,
