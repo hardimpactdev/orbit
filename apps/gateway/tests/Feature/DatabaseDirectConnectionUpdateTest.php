@@ -85,3 +85,15 @@ it('keeps a configured AI-router cache unchanged until its native dependency is 
     $this->assertDatabaseCount('operations', 0);
     $this->assertDatabaseCount('database_execution_intents', 0);
 })->with([true, false]);
+
+it('preserves disjoint patches when two admitted updates finish in sequence', function (): void {
+    $connection = DatabaseConnection::query()->create(['slug' => 'patch-client', 'driver' => 'redis', 'host' => '192.0.2.80', 'port' => 6379, 'username' => 'original']);
+    $first = $this->patchJson('/api/v1/database-connections/patch-client', ['host' => '192.0.2.81'])->assertAccepted()->json('data.id');
+    $second = $this->patchJson('/api/v1/database-connections/patch-client', ['username' => 'updated'])->assertAccepted()->json('data.id');
+
+    foreach ([$first, $second] as $id) {
+        $this->postJson('/api/v1/direct-operations/'.$id.'/result', update_callback($this->runId, 'succeeded', ['backend' => 'active']))->assertOk();
+    }
+
+    expect($connection->refresh()->host)->toBe('192.0.2.81')->and($connection->username)->toBe('updated');
+});

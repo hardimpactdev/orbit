@@ -66,7 +66,27 @@ final readonly class UpdateDatabaseConnectionAction
 
             return $this->operations->execute('database.update', 'database_connection', $locked->id, $nodeId,
                 [], ['database-apply' => ['name' => 'database.update', 'input' => [...$input, 'password' => $validateIndex ? $server->root_password : ''], 'protected' => ['password']]],
-                ['connection_update' => $attributes]);
+                ['connection_update' => $this->patch($attributes, $data)]);
         });
+    }
+
+    /** @param array<string, int|string|null> $attributes
+     * @return array<string, int|string|null>
+     */
+    private function patch(array $attributes, UpdateDatabaseConnectionData $data): array
+    {
+        $provided = [
+            'driver' => $data->driverProvided, 'node_id' => $data->nodeIdProvided,
+            'host' => $data->hostProvided, 'port' => $data->portProvided,
+            'database' => $data->databaseProvided, 'path' => $data->pathProvided,
+            'username' => $data->usernameProvided, 'password' => $data->passwordProvided,
+        ];
+        if ($data->driverProvided) {
+            foreach (['host', 'port', 'database', 'path'] as $field) {
+                $provided[$field] = true;
+            }
+        }
+
+        return array_intersect_key($attributes, array_filter($provided));
     }
 }
