@@ -42,7 +42,7 @@ The setup workflow composes `node/enrollment_issuer.ts::nodeEnrollmentIssuer`; i
 
 ## Credentials and readiness
 
-The shared issuer creates exact `orbit-node-N` enrollment and `orbit-node-N-access` worker-principal tokens with explicit 24-hour lifetimes. The canonical rotation policy marks credentials due after 20 hours or with four hours remaining. Invalid lifetimes and lifetimes above 24 hours are due. A saved pair is reused by its owning native step's retry. At pinned1602, native create refuses an active name, so rotation revokes the old enrollment before minting its replacement; it does not support overlapping generations.
+The shared issuer creates exact `orbit-node-N` enrollment and `orbit-node-N-access` worker-principal tokens with explicit 24-hour lifetimes. The canonical rotation policy marks credentials due after 20 hours or with four hours remaining. Invalid lifetimes and lifetimes above 24 hours are due. A saved pair is reused by its owning native step's retry. Persistent-worker rotation refuses before any native credential mutation or full Node converge. The former path revoked the installed pair before unrelated convergence could fail, leaving the worker unable to reconnect. Its hourly schedule is paused during recovery; persistent renewal needs a credential-only delivery path in the native pilot. Proxy renewal remains scoped to its existing protected files on209.
 
 Validate `node-worker-canary` before running it with an admitted Node and configured user. It reads Node identity, hostname, effective account, and sudo readiness. On a proxy it also verifies the remote WireGuard address and the preserved local worker mask. Inspect the native dispatch target, string label, worker instance, and proof resource before announcing readiness.
 

@@ -81,14 +81,6 @@ const Node = z.object({
   platform: z.literal("linux"),
   swamp_worker_selected: z.boolean(),
 }).passthrough();
-const Intent = z.object({
-  id: z.number().int().positive(),
-  kind: z.literal("node.converge"),
-  target_type: z.literal("node"),
-  target_id: z.number().int().positive(),
-  status: z.string(),
-  poll_after_seconds: z.number().nullish(),
-}).passthrough();
 async function data(
   http: Http,
   method: "GET" | "POST",
@@ -137,89 +129,9 @@ export async function convergeWorker(
   if (!node.swamp_worker_selected) {
     throw new Error("Node worker is not selected");
   }
-  const name = `orbit-node-${node.id}`;
-  const enrollment = (await list(call, "worker")).find((t) => t.name === name);
-  // Enrollment plaintext is shown only at native create. Recovery re-mints;
-  // it never assumes the reserved control-plane vault is publicly readable.
-  if (enrollment && !["revoked", "expired"].includes(enrollment.state)) {
-    await call(["worker", "token", "revoke", name]);
-  }
-  const enrollmentToken = z.object({ token: z.string() }).parse(
-    await call([
-      "worker",
-      "token",
-      "create",
-      name,
-      "--duration",
-      WorkerCredentialDuration,
-    ]),
-  ).token;
-  const accessName = `${name}-access`;
-  const access = (await list(call, "access")).find((t) =>
-    t.name === accessName
+  throw new Error(
+    "Persistent worker rotation requires credential-only delivery",
   );
-  if (!access || ["revoked", "expired"].includes(access.state)) {
-    await call([
-      "access",
-      "token",
-      "mint",
-      accessName,
-      "--principal",
-      `worker:${name}`,
-      "--duration",
-      WorkerCredentialDuration,
-    ]);
-  } else if (due(access)) {
-    await call([
-      "access",
-      "token",
-      "rotate",
-      accessName,
-      "--duration",
-      WorkerCredentialDuration,
-    ]);
-  }
-  const serverToken = z.object({ token: z.string() }).parse(
-    await call(["access", "token", "reveal", accessName, "--yes"]),
-  ).token;
-  let intent = Intent.parse(
-    await data(http, "POST", `/api/v1/nodes/${node.id}/converge`, {
-      worker_credentials: {
-        enrollment_token: enrollmentToken,
-        server_token: serverToken,
-      },
-    }, `node-worker-${node.id}-${crypto.randomUUID()}`),
-  );
-  if (intent.target_id !== node.id) {
-    throw new Error("Node converge target changed");
-  }
-  const operationId = intent.id;
-  while (!["succeeded", "failed", "cancelled"].includes(intent.status)) {
-    signal?.throwIfAborted();
-    await new Promise<void>((resolve, reject) => {
-      const abort = () => {
-        clearTimeout(timer);
-        reject(signal?.reason);
-      };
-      const timer = setTimeout(() => {
-        signal?.removeEventListener("abort", abort);
-        resolve();
-      }, Math.max(1, intent.poll_after_seconds ?? 1) * 1000);
-      signal?.addEventListener("abort", abort, { once: true });
-    });
-    intent = Intent.parse(
-      await data(http, "GET", `/api/v1/operations/${operationId}`),
-    );
-    if (intent.id !== operationId || intent.target_id !== node.id) {
-      throw new Error("Node converge target changed");
-    }
-  }
-  if (intent.status !== "succeeded") {
-    throw new Error(
-      "Node worker converge is not ready; inspect its Operation and journal",
-    );
-  }
-  return { node_id: node.id, user: node.user, operation_id: intent.id };
 }
 const Globals = z.object({
   gatewayUrl: z.string().url().default("https://gateway.orbit"),
@@ -238,11 +150,11 @@ type Context = {
 };
 export const behavior = {
   type: "@nckrtl/node-worker-lifecycle",
-  version: "2026.10.31.3",
+  version: "2026.10.31.4",
   globalArguments: Globals,
   resources: {
     work: {
-      description: "Nodes whose native credentials reach day20",
+      description: "Nodes due for the canonical credential lifetime policy",
       schema: z.object({ nodes: z.array(Args) }),
       lifetime: "infinite",
       garbageCollection: 10,
@@ -292,7 +204,7 @@ export const behavior = {
     },
     converge: {
       description:
-        "Mint or re-deliver native credentials through Node converge",
+        "Renew installed proxy credentials; refuse persistent rotation before mutations",
       arguments: Globals.extend(Args.shape).strict(),
       execute: async (args: z.infer<typeof Args>, ctx: Context) => ({
         dataHandles: [
