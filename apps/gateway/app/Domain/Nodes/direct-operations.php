@@ -6,7 +6,7 @@ use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 
-return ['node.agent_rekey' => [
+return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.agent_rekey' => [
     'workflow' => 'operation-node-agent-rekey',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'node_agent_rekey_writer',
