@@ -150,9 +150,8 @@ const gitSettings = [
   "protocol.ext.allow=never",
   "http.followRedirects=false",
 ];
-async function git(
+export function sourceGitCommand(
   args: string[],
-  signal?: AbortSignal,
   read?: z.infer<typeof GitRead>,
   protocols?: string[],
 ) {
@@ -195,13 +194,18 @@ async function git(
       env[`GIT_CONFIG_VALUE_${i}`] = value;
     });
   }
-  return await execute(
-    "/usr/bin/git",
-    [...settings.flatMap((v) => ["-c", v]), ...args],
-    signal,
-    env,
-  );
+  return { args: [...settings.flatMap((v) => ["-c", v]), ...args], env };
 }
+async function git(
+  args: string[],
+  signal?: AbortSignal,
+  read?: z.infer<typeof GitRead>,
+  protocols?: string[],
+) {
+  const command = sourceGitCommand(args, read, protocols);
+  return await execute("/usr/bin/git", command.args, signal, command.env);
+}
+
 async function gitValue(
   checkout: string,
   args: string[],
