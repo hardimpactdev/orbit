@@ -19,7 +19,6 @@ export function assertAgent(
 
 /** Fixed family commands on the local Node; never a Gateway transport. */
 const Budgets = {
-  "schedule.activate": 45000,
   "schedule.run": 15000,
   "schedule.remove": 60000,
   "process.stage-unit": 60000,

@@ -39,11 +39,6 @@ input.command_hash = Array.from(
   new Uint8Array(commandBytes),
   (b) => b.toString(16).padStart(2, "0"),
 ).join("");
-const target = {
-  id,
-  user: input.user,
-  working_directory: input.working_directory,
-};
 type File = {
   type: string;
   uid: number;
@@ -445,7 +440,6 @@ Deno.test("foreign files, links and writable directories refuse before stop or r
   for (
     const name of [
       "schedule.install",
-      "schedule.activate",
       "schedule.remove",
     ] as const
   ) {
@@ -461,9 +455,7 @@ Deno.test("foreign files, links and writable directories refuse before stop or r
       const before = structuredClone(f.files);
       const value = name === "schedule.install"
         ? input
-        : name === "schedule.remove"
-        ? { id, group: "orbit", cascade: true }
-        : target;
+        : { id, group: "orbit", cascade: true };
       assertEquals(await f.action(name, value), {
         error_code: "schedule.artifact_conflict",
       });
@@ -530,19 +522,6 @@ Deno.test("verification failure restores absent artifacts and reports failed rol
   assertEquals(await f.action("schedule.install"), {
     error_code: "schedule.rollback_failed",
   });
-});
-
-Deno.test("activation restores disabled timer state on refusal", async () => {
-  const f = new Fixture();
-  assertEquals(await f.action("schedule.install"), {});
-  f.enableFails = true;
-  assertEquals(await f.action("schedule.activate", target), {
-    error_code: "schedule.failed",
-  });
-  assertEquals([f.enabled, f.active], [false, false]);
-  f.enableFails = false;
-  assertEquals(await f.action("schedule.activate", target), {});
-  assertEquals([f.enabled, f.active], [true, true]);
 });
 
 Deno.test("standalone removal checks active work before disabling its timer and cascade deletes owned units", async () => {
@@ -682,26 +661,18 @@ Deno.test("interrupted cleanup validates remaining obsolete files against the pu
   assertEquals([f.enabled, f.active], [true, false]);
 });
 
-Deno.test("marker-preserving service changes refuse activation and deletion before effects", async () => {
-  for (const action of ["schedule.activate", "schedule.remove"] as const) {
-    const f = new Fixture();
-    assertEquals(await f.action("schedule.install"), {});
-    f.files.get(service)!.content = f.files.get(service)!.content.replace(
-      "--request POST",
-      "--request DELETE",
-    );
-    f.calls = [];
-    assertEquals(
-      await f.action(
-        action,
-        action === "schedule.activate"
-          ? target
-          : { id, group: "orbit", cascade: true },
-      ),
-      { error_code: "schedule.artifact_conflict" },
-    );
-    assertEquals(f.mutations(), []);
-  }
+Deno.test("marker-preserving service changes refuse deletion before effects", async () => {
+  const f = new Fixture();
+  assertEquals(await f.action("schedule.install"), {});
+  f.files.get(service)!.content = f.files.get(service)!.content.replace(
+    "--request POST", "--request DELETE",
+  );
+  f.calls = [];
+  assertEquals(
+    await f.action("schedule.remove", { id, group: "orbit", cascade: true }),
+    { error_code: "schedule.artifact_conflict" },
+  );
+  assertEquals(f.mutations(), []);
 });
 
 Deno.test("busy legacy migration and standalone deletion retain the original owned runtime", async () => {

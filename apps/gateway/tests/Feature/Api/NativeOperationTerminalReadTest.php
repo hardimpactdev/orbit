@@ -44,7 +44,7 @@ it('settles the exact failed run when registration and its reporter were both so
 it('recovers interrupted native history after a serve restart without rerunning registration', function (): void {
     $this->native['status'] = 'interrupted';
     $this->operation->update(['cancel_requested_at' => now()]);
-    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'operation.native_failed');
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'interrupted')->assertJsonPath('data.error_code', 'operation.native_failed');
     expect($this->operation->fresh()->lock_key)->toBeNull()->and($this->socket->sent)->toHaveCount(1);
 });
 
@@ -56,7 +56,7 @@ it('keeps a serve outage active then settles its exact interrupted history on th
     expect($this->operation->fresh()->lock_key)->toBe('native-read-fixture');
     $this->socket->onConnect = null;
     $this->native['status'] = 'interrupted';
-    $this->getJson($this->url)->assertOk()->assertJsonPath('data.error_code', 'operation.native_failed');
+    $this->getJson($this->url)->assertOk()->assertJsonPath('data.status', 'interrupted')->assertJsonPath('data.error_code', 'operation.native_failed');
     expect($this->socket->sent)->toHaveCount(1);
 });
 

@@ -6,11 +6,13 @@ use App\Actions\Operations\StartOperationAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -40,7 +42,11 @@ beforeEach(function (): void {
 });
 
 it('exposes only admitted safe input through the shared endpoint and declares no relay', function (): void {
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit']);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input.intent.schedule', ['id' => $this->schedule->id])
+        ->assertJsonPath('data.input.intent.ssh_execution.control_node_id', 209)
+        ->assertJsonPath('data.input.intent.ssh_execution.target.host_keys', ['ssh-ed25519 fixture-host-key'])
+        ->assertJsonPath('data.input.execution_secrets', []);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
 });
 
@@ -71,13 +77,18 @@ it('checks shared start-response and first-read ordering without a family token 
     $this->getJson($path)->assertOk();
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->endpoint->bearerToken)->toBe('shared.scoped.fixture');
-    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.enable', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
+    $payload = $this->socket->sent[0]['payload'];
+    expect($payload['workflowIdOrName'])->toBe('operation-schedule-control');
+    expect($payload['inputs']['operation_id'])->toBe($operation->id);
+    expect($payload['inputs']['intent']['schedule'])->toBe(['id' => $this->schedule->id]);
+    expect($payload['inputs']['intent']['ssh_execution']['control_node_id'])->toBe(209);
+    expect($payload['runtimeTags'])->toBe(['orbit_start_key' => 'operation:'.$operation->id]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
 it('restricts Node workers without the legacy allowlist and preserves the control-plane peer', function (): void {
-    $own = Node::query()->create(['name' => 'schedule-owner', 'public_ssh_host' => '192.0.2.10', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.10']);
+    $own = Node::query()->create(['name' => 'schedule-owner', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'owner-fixture-host-key', 'public_ssh_host' => '192.0.2.10', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.10']);
     $foreign = Node::query()->create(['name' => 'schedule-foreign', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.11']);
     foreach ([$own, $foreign] as $peer) {
         $peer->accessibleNodes()->attach($this->node);
@@ -114,6 +125,27 @@ it('projects a successful enable into desired timer state', function (): void {
     Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated && $event->id === $this->schedule->id);
 });
 
+it('projects the fixed native enable result and preserves intent after failure', function (string $status): void {
+    $this->schedule->update(['desired_timer_state' => 'disabled']);
+    config(['swamp.read_token' => 'synthetic-native-read-token']);
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-schedule-control', 'status' => $status,
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'schedule.enable'],
+        'startedAt' => '2026-10-31T12:00:00Z', 'completedAt' => '2026-10-31T12:00:01Z',
+        'jobs' => [['name' => 'schedule', 'steps' => [
+            ['name' => 'timer', 'status' => $status],
+            ['name' => 'result', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped',
+                ...($status === 'succeeded' ? ['outputs' => ['stdout' => '{"ready":true}']] : [])],
+        ]]],
+    ];
+    $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    $selector = app(DirectOperation::class)->definition('schedule.enable')['terminal_result'];
+    $projected = app(SwampCommandStep::class)->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $selector);
+    expect($projected->status->value)->toBe($status);
+    expect($projected->error_code)->toBe($status === 'failed' ? 'operation.native_failed' : null);
+    expect($this->schedule->fresh()->desired_timer_state->value)->toBe($status === 'succeeded' ? 'enabled' : 'disabled');
+    expect($this->socket->sent)->toHaveCount(1);
+})->with(['succeeded', 'failed']);
+
 it('admits public native installation through 209 SSH without copying the private command', function (): void {
     $lock = Mockery::mock(ProcessAdmissionLock::class);
     $lock->shouldNotReceive('run');
@@ -144,14 +176,12 @@ it('admits public native installation through 209 SSH without copying the privat
     expect($schedule->fresh()->status->value)->toBe('provisioning');
 });
 
-it('restricts retained enable private command reads to the bound run and admitted hash', function (): void {
+it('never reads private command material while enabling an installed timer', function (): void {
     $this->operation->update(['input' => [...$this->operation->input, 'command_hash' => hash('sha256', $this->schedule->command), 'command' => ['$secret' => 'schedule.command', 'id' => $this->node->id]]]);
-    $private = $this->getJson($this->path.'/private-material?run_id='.$this->runId)
-        ->assertOk()->assertJsonPath('data.command', $this->schedule->command);
-    expect($private->headers->get('Cache-Control'))->toContain('no-store');
-    $this->getJson($this->path.'/private-material?run_id=93472cba-f750-45dd-bd6f-8d665f57f0d6')->assertConflict();
-    $this->schedule->update(['command' => '/usr/bin/false']);
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $this->schedule->update(['command' => '/usr/bin/false']);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.input.intent.schedule', ['id' => $this->schedule->id]);
 });
 
 it('projects installation failure and retries the same Schedule UUID before broadcasting native success', function (): void {
@@ -173,7 +203,7 @@ it('projects installation failure and retries the same Schedule UUID before broa
     $this->getJson('/api/v1/direct-operations/'.$retryId.'/private-material?run_id='.$this->runId)->assertConflict();
 });
 
-it('starts native enable on an executor Node without invoking the PHP runtime', function (): void {
+it('starts native enable with public 209 SSH inputs without invoking the PHP runtime', function (): void {
     $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Enable proof', 'slug' => 'enable-proof', 'repository_url' => 'https://example.test/enable-proof.git']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'main',
@@ -189,6 +219,13 @@ it('starts native enable on an executor Node without invoking the PHP runtime', 
     expect($operation->lock_key)->toBeNull();
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
     expect($this->socket->sent)->toHaveCount(1);
+    $payload = $this->socket->sent[0]['payload'];
+    expect($payload['inputs']['intent']['schedule'])->toBe(['id' => $this->schedule->id]);
+    expect($payload['inputs']['intent']['ssh_execution']['target']['host'])->toBe($this->node->wireguard_ip);
+    expect($payload['inputs']['intent']['ssh_execution']['control_node_id'])->toBe(209);
+    expect($payload['inputs']['intent']['ssh_execution']['identity_file'])->toBe('/run/credentials/orbit-node-worker.service/proxy-ssh-identity');
+    expect((array) $payload['inputs']['execution_secrets'])->toBe([]);
+    expect(json_encode($payload))->not->toContain('private-command');
     config(['dependency_detection.services_node_id' => null, 'operation_executor.worker_node_ids' => []]);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.kind', 'schedule.enable');
 });

@@ -2240,14 +2240,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/processes-schedules/control.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/create.ts",
       "rule": "gateway-http",
       "count": 1,

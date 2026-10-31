@@ -86,7 +86,7 @@ it('projects native failure cancellation and interruption when the selected step
 })->with([
     ['failed', OperationStatus::Failed, 'operation.native_failed', ['error_code' => 'operation.native_failed']],
     ['cancelled', OperationStatus::Cancelled, null, []],
-    ['interrupted', OperationStatus::Failed, 'operation.native_failed', ['error_code' => 'operation.native_failed']],
+    ['interrupted', OperationStatus::Interrupted, 'operation.native_failed', ['error_code' => 'operation.native_failed']],
 ]);
 
 it('settles an empty failed native result through the generic projector without losing its failure code', function (string $status): void {
@@ -129,7 +129,8 @@ it('settles an empty failed native result through the generic projector without 
 
     $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $this->selector);
 
-    expect($result->status)->toBe(OperationStatus::Failed);
+    expect($result->status)->toBe(OperationStatus::from($status));
+    expect($hook->completions[0]->status)->toBe(OperationStatus::from($status));
     expect($result->error_code)->toBe('operation.native_failed');
     expect($result->result)->toBe(['error_code' => 'operation.native_failed']);
     expect($result->lock_key)->toBeNull();
@@ -191,7 +192,7 @@ it('recovers a late attachment from one terminal history read without inventing 
     expect($this->socket->sent)->toHaveCount(1);
 })->with([
     ['succeeded', OperationStatus::Succeeded], ['failed', OperationStatus::Failed],
-    ['cancelled', OperationStatus::Cancelled], ['interrupted', OperationStatus::Failed],
+    ['cancelled', OperationStatus::Cancelled], ['interrupted', OperationStatus::Interrupted],
 ]);
 
 it('leaves late attachment unchanged when history is active missing forbidden or unreachable', function (string $condition): void {

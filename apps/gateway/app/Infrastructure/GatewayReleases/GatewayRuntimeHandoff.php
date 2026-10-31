@@ -125,9 +125,9 @@ final readonly class GatewayRuntimeHandoff
             $this->releaseUnits->converge();
         });
         // Release switching already stopped the source generation; start consumers on the selected release.
-        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): array => $this->withSwampRecovery(
+        $horizon = $this->step('horizon', 'gateway.release_units_failed',
             fn (): array => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? ['outcome' => 'none'],
-        ));
+        );
 
         return [
             'caddy' => $caddy['outcome'],

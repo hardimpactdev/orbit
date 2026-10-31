@@ -29,6 +29,12 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
             throw new ResourceOperationException('schedule.target_unavailable', 'The admitted Schedule no longer exists.', 404);
         }
 
+        if ($operation->kind === 'schedule.enable') {
+            return ['intent' => ['schedule' => ['id' => $operation->input['id']],
+                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+                'execution_secrets' => []];
+        }
+
         if (in_array($operation->kind, ['schedule.create', 'schedule.destroy'], true)) {
             return ['intent' => ['schedule' => Arr::only($operation->input, ['id', 'command_hash', 'user', 'group', 'home', 'working_directory', 'shell', 'login_shell', 'calendar', 'timeout_seconds', 'desired']),
                 'cascade' => $operation->input['cascade'] ?? false,
