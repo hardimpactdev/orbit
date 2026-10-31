@@ -68,12 +68,13 @@ class ShapeGate(unittest.TestCase):
             (root / "config").mkdir()
             (root / "extensions/behaviors").mkdir(parents=True)
             (root / ".swamp.yaml").write_text("repoId: fixture-repository\n")
-            (root / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
-            (root / "config/swamp-shape-baseline.json").write_text('{"schema":1,"entries":[]}')
-            (root / "extensions/behaviors/read.ts").write_text("export const value=1;\n")
+            (root / "extensions/behaviors/read.ts").write_text("export const value=1;\nawait delay(10);\n")
             git("add", ".")
             git("commit", "--quiet", "-m", "original Swamp tree")
             source = git("rev-parse", "HEAD")
+            # Old main predates the gate; only the proposed tracked tree has its inventory.
+            (root / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
+            (root / "config/swamp-shape-baseline.json").write_text(json.dumps({"schema": 1, "entries": [{"file": "extensions/behaviors/read.ts", "rule": "custom-control", "count": 1, "evidence": ["delay"]}]}))
             swamp = root / "swamp"
             swamp.mkdir()
             for name in ["config", "extensions", ".swamp.yaml"]:

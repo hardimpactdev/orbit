@@ -117,6 +117,7 @@ jobs:
         run: |
           docker info >/dev/null
           sudo -n true
+          # shellcheck disable=SC2016
           php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
       - name: Run every Operations test
         env:
