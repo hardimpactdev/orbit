@@ -316,13 +316,19 @@ The runtime family reads target receipts before remote effects. A lost restart r
 
 `process.stop` uses `operation-process-control` directly for every systemd and Docker Process, including Vite Processes. Stop needs no Vite traffic preparation or private material. The kind has no Gateway executor, so the shared writer defaults to direct. Rollback is a revert PR. An explicit `polled` override refuses because that executor is removed. The PHP stop action, polled stop descriptor and receipt proof are removed. The idle-hibernation sweep keeps its runtime stop method until its own conversion because it preserves desired-running state. Admission takes no Gateway runtime lease or target hold. Each admitted Operation preserves its selected writer and delivered agent digest.
 
-Unconverted Schedule enable uses its polled path only. Its unused direct declaration is removed; each owning cutover adds its direct declaration and deletes its polled path together. The landed direct kinds have no polled discovery or executor registration, and an explicit polled writer refuses.
+Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#direct-swamp-control). The landed direct kinds have no polled discovery or executor registration, and an explicit polled writer refuses.
 
 When you destroy a Process, the kind uses the direct default for every Node and existing owning admission. It has no Gateway runtime lease, target hold, polled removal descriptor or public PHP execution branch. Native removal receives the admitted unit or container identity and, for Vite, the exact Instance environment path. The Gateway deletes the record only after native success. A refused removal keeps the record with its error. Retained synchronous Instance and Analytics helpers stay until their owning callers convert.
 
 The Gateway starts `operation-process-control` directly and binds its native run ID. The exact Node worker reads safe admitted input through the shared direct Operation endpoint. It checks a selected production release when required, invokes the local agent with passwordless sudo, and reads runtime state. Native agent ownership checks protect the selected unit or container. The step validates the admitted digest and binary ownership, limits time and output, and returns only a typed ready/state result or error code. The Gateway projects lifecycle and desired state without checking old keyed receipts or scheduling children.
 
-For the first safe stop and destroy proofs, admitted Node 209 uses its existing `swamp209-migration-a` worker. Every other Node uses exactly `orbit-node-<admitted Node ID>`, with no fallback to another Node. Each remaining kind changes in one PR after its safe dev/canary action passes: native path, writer switch and old executor/test deletion together. Create/update specifications and Instance composition keep their existing path until their own conversion.
+Every Process job targets exactly `orbit-node-<admitted Node ID>` with a matching Node label, including Node 209. There is no fallback to another Node. Each remaining kind changes in one PR: native path, writer switch and old executor/test deletion together. Update and Instance composition keep their existing path until their own conversion.
+
+### Native Process create
+
+Process creation records its owned definition and starts one native Process DAG. Its safe input contains the admitted artifact identity, desired state, agent digest and specification hash. The exact owning Node reads installation material through the shared private endpoint; the Gateway checks that the stored definition still matches the admitted hash. Unit content and container command or environment values do not enter public workflow input, output or logs.
+
+The Node installs the captured definition through the pinned local agent. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
 
 ### Native Process start
 
