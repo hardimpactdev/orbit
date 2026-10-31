@@ -37,7 +37,7 @@ final readonly class StartSwampRun
             $endpoint = $this->endpoint();
             $response = $this->request($endpoint, [
                 'workflowIdOrName' => $declaration['workflow'],
-                'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
+                'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ]);
             $this->bind($operation, $response['run_id']);
