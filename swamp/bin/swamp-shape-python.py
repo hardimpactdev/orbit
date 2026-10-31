@@ -2,16 +2,14 @@
 import ast
 import json
 import re
-import shlex
 import sys
 
 SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|token|identity", re.I)
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
 
 
-def scan(source, gateway_primitives=(), agent_inventory=None, depth=0):
+def scan(source, gateway_primitives=()):
     findings = []
-    agent_inventory = agent_inventory or {}
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -102,86 +100,6 @@ def scan(source, gateway_primitives=(), agent_inventory=None, depth=0):
         if not external and re.search(r"gateway|/api/v1/", source, re.I) and not allowed(method, url):
             findings.append({"rule": "gateway-http", "count": 1, "line": node.lineno, "evidence": [f"{method or '<unknown>'} {url or '<unknown>'}"]})
 
-    def argument(node, at, seen=frozenset()):
-        if isinstance(node, ast.Name) and node.id not in seen:
-            values = bindings.get(node.id, [])
-            if len(values) == 1:
-                return argument(values[0], at, seen | {node.id})
-        if isinstance(node, (ast.List, ast.Tuple)):
-            result = []
-            for item in node.elts:
-                value = argument(item.value if isinstance(item, ast.Starred) else item, at, seen)
-                result.extend(value if isinstance(item, ast.Starred) and isinstance(value, list) else [value if isinstance(value, str) else "<dynamic>"])
-            return result
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left, right = argument(node.left, at, seen), argument(node.right, at, seen)
-            if isinstance(left, list) and isinstance(right, list):
-                return left + right
-            if isinstance(left, (str, type(None))) and isinstance(right, (str, type(None))):
-                return (left or "<dynamic>") + (right or "<dynamic>")
-        if isinstance(node, ast.Call) and name(node.func) == "shlex.quote" and node.args:
-            value = argument(node.args[0], at, seen)
-            if isinstance(value, str):
-                return shlex.quote(value)
-        return string(node, at, seen)
-
-    def agent_command(argv, at, level=0):
-        if level > 8 or not argv:
-            return
-        if isinstance(argv, str):
-            try:
-                lexer = shlex.shlex(argv, posix=True, punctuation_chars=";&|()")
-                lexer.whitespace_split = True
-                current = []
-                for token in lexer:
-                    if token and all(ch in ";&|()" for ch in token):
-                        agent_command(current, at, level + 1)
-                        current = []
-                    else:
-                        current.append(token)
-                agent_command(current, at, level + 1)
-            except ValueError:
-                if "orbit-agent" in argv:
-                    findings.append({"rule": "agent-dynamic", "count": 1, "line": at.lineno})
-            return
-        while argv and (re.match(r"[A-Za-z_]\w*=", argv[0]) or argv[0] in ("exec", "command", "then", "do", "if", "!")):
-            argv = argv[1:]
-        if not argv:
-            return
-        binary = argv[0].rsplit("/", 1)[-1]
-        if binary in ("sudo", "env"):
-            i = 1
-            while i < len(argv) and (argv[i].startswith("-") or re.match(r"[A-Za-z_]\w*=", argv[i])):
-                option = argv[i]
-                i += 2 if option in ("-u", "-g", "-h", "-p", "-C", "--user", "--group", "--chdir") else 1
-            agent_command(argv[i:], at, level + 1)
-        elif binary in ("sh", "bash", "dash", "zsh"):
-            for i, item in enumerate(argv[:-1]):
-                if re.fullmatch(r"-[a-z]*c[a-z]*", item):
-                    agent_command(argv[i + 1], at, level + 1)
-                    break
-        elif binary == "ssh":
-            i = 1
-            while i < len(argv) and argv[i].startswith("-"):
-                option = argv[i]
-                i += 2 if option in ("-i", "-p", "-o", "-F", "-l", "-J", "-S", "-W") else 1
-            if i < len(argv) and argv[i] == "--":
-                i += 1
-            agent_command(" ".join(argv[i + 1:]), at, level + 1)
-        elif re.fullmatch(r"python[0-9.]*", binary) and "-c" in argv and depth < 4:
-            i = argv.index("-c")
-            if len(argv) > i + 1 and argv[i + 1] != "<dynamic>":
-                for finding in scan(argv[i + 1], gateway_primitives, agent_inventory, depth + 1):
-                    if finding["rule"] in ("agent-action", "agent-dynamic"):
-                        findings.append({**finding, "line": at.lineno})
-        elif binary == "orbit-agent":
-            if len(argv) > 1 and argv[1] in ("--version", "--help", "-V", "-h"):
-                return
-            target = argv[2] if len(argv) > 2 and argv[1] == "command" else None
-            if target and agent_inventory.get(target) == "observer":
-                return
-            findings.append({"rule": "agent-action" if target and agent_inventory.get(target) == "action" else "agent-dynamic", "count": 1, "line": at.lineno, "evidence": [target] if target and agent_inventory.get(target) == "action" else []})
-
     def private(node):
         for part in ast.walk(node):
             if isinstance(part, ast.Name) and part.id in tainted:
@@ -214,10 +132,6 @@ def scan(source, gateway_primitives=(), agent_inventory=None, depth=0):
                 add(node, "custom-control")
             if call in ("subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "os.system", "os.execv", "os.execve"):
                 argv = node.args[:1] + [k.value for k in node.keywords if k.arg in ("args", "executable")]
-                for arg in argv:
-                    resolved = argument(arg, node)
-                    if isinstance(resolved, (str, list)):
-                        agent_command(resolved, node)
                 if any(private(arg) for arg in argv):
                     add(node, "secret-argv")
             if call in ("print", "logging.info", "logging.warning", "logging.error", "logging.debug", "json.dump") or call.endswith((".write", ".write_text", ".write_bytes")):
@@ -231,5 +145,4 @@ def scan(source, gateway_primitives=(), agent_inventory=None, depth=0):
 
 if __name__ == "__main__":
     primitives = json.loads(sys.argv[1]) if len(sys.argv) > 1 else []
-    inventory = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
-    print(json.dumps(scan(sys.stdin.read(), primitives, inventory)))
+    print(json.dumps(scan(sys.stdin.read(), primitives)))

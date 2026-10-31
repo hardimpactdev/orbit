@@ -43,7 +43,7 @@ class ShapeGate(unittest.TestCase):
     def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
         inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
         def scan(source):
-            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py"), "[]", inventory], input=source, text=True, capture_output=True, check=True)
+            result = subprocess.run([DENO, "eval", f"import {{agentPythonFindings}} from '{ROOT.as_uri()}/bin/check-swamp-shape.ts';console.log(JSON.stringify(agentPythonFindings('fixture.py',await new Response(Deno.stdin.readable).text(),{inventory})));"], input=source, text=True, capture_output=True, check=True)
             return json.loads(result.stdout)
         for source in [
             "from pathlib import Path\nPath('/usr/local/bin/orbit-agent').read_bytes()\n",

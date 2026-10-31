@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+  agentPythonFindings,
   agentShellFindings,
   aggregate,
   analyze,
@@ -674,4 +675,41 @@ Deno.test("normalized repository identity is public while authentication identit
       ),
     );
   }
+});
+
+Deno.test("agent invocations inside shell substitutions and interpreter bodies are actions", () => {
+  for (
+    const source of [
+      "sudo -S orbit-agent command cli.install",
+      "env -S 'sudo -S orbit-agent command cli.install'",
+      "printf hello `orbit-agent command cli.install`",
+      "bash <<EOF\norbit-agent command cli.install\nEOF",
+      'python3 -c \'import subprocess; subprocess.run(["orbit-agent","command","cli.install"])\'',
+      "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['orbit-agent','command','cli.install'])\nPY",
+    ]
+  ) {
+    assertEquals(
+      agentShellFindings(file, source, inventory).filter((f) =>
+        f.rule === "agent-action"
+      ).length,
+      1,
+      source,
+    );
+  }
+  assertEquals(
+    agentPythonFindings(
+      file,
+      "import subprocess\nsubprocess.run(['printf','$(orbit-agent command cli.install)'])",
+      inventory,
+    ),
+    [],
+  );
+  assertEquals(
+    agentShellFindings(
+      file,
+      "cat <<'EOF'\norbit-agent command cli.install\nEOF",
+      inventory,
+    ),
+    [],
+  );
 });
