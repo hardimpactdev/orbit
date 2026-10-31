@@ -76,11 +76,11 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 | Found in the collection | Action |
 | --- | --- |
-| A published item that is gone or in the trash | Forget it, so the run creates the item again. |
+| A published cipher that is gone or in the trash | Create the item with a new ID. Do not adopt another cipher for that recorded source. |
 | A published item that someone changed | Rewrite it. |
-| An Orbit item for a wanted source, with no record of publishing it | Adopt it and rewrite it. This covers a create that timed out after Vaultwarden stored the item, and items left by `vault:teardown --keep-items`. |
+| An item for a wanted source for which the ledger has no entry | Adopt it and rewrite it. This covers a create that timed out before its first ledger record, and wanted items left by `vault:teardown --keep-items`. |
 | A recorded item in the trash or whose source is gone from Orbit, with an ID and decrypted source that match the publishing ledger | Delete it permanently, unless it belongs to another visible collection. |
-| A copy of an item whose published cipher is present, or an unrecorded item for an unwanted source | Leave it. A marker alone does not authorize deletion. |
+| A copy of a recorded source with a different cipher ID, or an unrecorded item for an unwanted source | Leave it, even if the recorded cipher is missing or trashed. A marker alone does not authorize adoption, rewriting, or deletion. |
 | An item without `orbit.source` | Leave it. |
 
 The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
