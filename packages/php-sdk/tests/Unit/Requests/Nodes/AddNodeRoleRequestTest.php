@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -33,52 +33,20 @@ describe(AddNodeRoleRequest::class, function (): void {
             ->toBe(['role' => 'database', 'converge_existing' => false]);
     });
 
-    it('uses the numeric node ID exact body and typed mutation response', function (): void {
-        $mockClient = new MockClient([
-            AddNodeRoleRequest::class => MockResponse::make([
-                'data' => node_role_added_gateway_data(),
-                'meta' => ['request_id' => node_role_request_id()],
-            ]),
-        ]);
-        $connector = node_role_gateway_connector($mockClient);
-        $request = new AddNodeRoleRequest(nodeId: 7, role: 'app-dev', convergeExisting: true);
-
+    it('transports the exact role intent and parses the queued Operation', function (): void {
+        $data = ['id' => 91, 'kind' => 'node.role_add', 'target_type' => 'node', 'target_id' => 13, 'status' => 'queued',
+            'sequence' => 1, 'input' => ['role' => 'ci-runner'], 'poll_after_seconds' => 2];
+        $client = new MockClient([AddNodeRoleRequest::class => MockResponse::make([
+            'data' => $data, 'meta' => ['request_id' => node_role_request_id()],
+        ], 202)]);
+        $connector = node_role_gateway_connector($client);
+        $request = new AddNodeRoleRequest(13, 'ci-runner', true, idempotencyKey: 'native-role-once');
         $response = $connector->send($request)->dto();
-        $pendingRequest = $mockClient->getLastPendingRequest();
-
-        expect($request->getMethod())
-            ->toBe(Method::POST)
-            ->and($request->resolveEndpoint())
-            ->toBe('/api/v1/nodes/7/roles')
-            ->and($pendingRequest?->headers()->get('X-Orbit-Request-Id'))
-            ->toBe('11111111-1111-4111-8111-111111111111')
-            ->and($pendingRequest?->body()->all())
-            ->toBe([
-                'role' => 'app-dev',
-                'converge_existing' => true,
-            ])
-            ->and($response)
-            ->toBeInstanceOf(NodeRoleMutationResponse::class)
-            ->and($response->requestId)
-            ->toBe(node_role_request_id())
-            ->and($response->toArray())
-            ->toBe([
-                'node_id' => 7,
-                'node_name' => 'app-1',
-                'role' => 'app-dev',
-                'assignment' => [
-                    'id' => 34,
-                    'role' => 'app-dev',
-                    'status' => 'active',
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
-                'removed' => false,
-                'degradation' => null,
-                'retained_on_node' => [],
-                'follow_up' => null,
-                'request_id' => node_role_request_id(),
-            ]);
+        expect($request->getMethod())->toBe(Method::POST)->and($request->resolveEndpoint())->toBe('/api/v1/nodes/13/roles')
+            ->and($request->body()->all())->toBe(['role' => 'ci-runner', 'converge_existing' => true])
+            ->and($client->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('native-role-once')
+            ->and($response)->toBeInstanceOf(OperationResponse::class)->and($response->id)->toBe(91)
+            ->and($response->status)->toBe('queued')->and($response->requestId)->toBe(node_role_request_id());
     });
 
     it('maps gateway validation failures with safe details and header request id', function (): void {
@@ -119,3 +87,12 @@ describe(AddNodeRoleRequest::class, function (): void {
         }
     });
 });
+
+it('parses the same queued Operation for every role', function (string $role): void {
+    $mock = new MockClient([AddNodeRoleRequest::class => MockResponse::make([
+        'data' => node_role_operation_data(), 'meta' => ['request_id' => node_role_request_id()],
+    ], 202)]);
+    $response = node_role_gateway_connector($mock)->send(new AddNodeRoleRequest(7, $role))->dto();
+    expect($response)->toBeInstanceOf(OperationResponse::class)
+        ->and($response->kind)->toBe('node.role_add')->and($response->status)->toBe('queued');
+})->with(['app-dev', 'app-prod', 'gateway', 'websocket', 'metrics', 'analytics', 'ingress', 'database', 'ci-runner']);

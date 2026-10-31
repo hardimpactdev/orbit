@@ -495,6 +495,7 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 
 A rename changes one identity field and does not touch WireGuard. Removing and adding the Node again would delete its WireGuard peer and records. `node:update` is rejected as a name, because update means a partial field patch.
 
+Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.
 
 ## orbit node:network:converge
 

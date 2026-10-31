@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Routes\RouteDomain;
+use App\Domain\Routes\NativeRouteCertificateInput;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
@@ -18,7 +15,7 @@ use App\Models\Operation;
 /** Records one leaf intent. The signer and Node effects run later through Swamp. */
 final readonly class StartCertificateOperationAction
 {
-    public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer, private AgentDelivery $agents, private DevelopmentSiteRepository $sites) {}
+    public function __construct(private StartOperationAction $operations, private DevelopmentSiteRepository $sites) {}
 
     public function converge(Node $node, string $scope, string $domain, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
@@ -37,11 +34,7 @@ final readonly class StartCertificateOperationAction
      */
     public function convergenceInput(Node $node, string $scope, string $domain): array
     {
-        $input = $this->scopeInput($node, $scope);
-        $account = $this->accounts->resolve($node);
-
-        return [...$input, 'domain' => RouteDomain::validate($domain), 'version' => bin2hex(random_bytes(8)),
-            'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user];
+        return app(NativeRouteCertificateInput::class)->convergenceInput($node, $scope, $domain);
     }
 
     /** Admission runs after the caller withdraws all stored sites for this scope.
@@ -61,19 +54,6 @@ final readonly class StartCertificateOperationAction
     /** @return array<string, mixed> */
     private function scopeInput(Node $node, string $scope): array
     {
-        $this->assertScope($scope);
-        if ($node->platform !== 'linux') {
-            throw new ResourceOperationException('certificate.node_unsupported', 'Certificate operations require a Linux Node.', 422);
-        }
-
-        return ['node_id' => $node->id, 'scope' => $scope, 'home' => $this->accounts->resolve($node)->home,
-            'agent_sha256' => $this->agents->pin($node)];
-    }
-
-    private function assertScope(string $scope): void
-    {
-        if (preg_match('/\A(?:app-instance-[1-9][0-9]*(?:-hostname-change)?|route-[1-9][0-9]*(?:-router(?:-hostname-change)?|-ingress)?)\z/D', $scope) !== 1) {
-            throw new ResourceOperationException('certificate.scope_invalid', 'A Route or Instance certificate scope is required.', 422);
-        }
+        return app(NativeRouteCertificateInput::class)->scopeInput($node, $scope);
     }
 }

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -13,15 +12,12 @@ use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Str;
-use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
-    $this->admin = new FakeDatabaseServerAdmin;
-    app()->instance(DatabaseServerAdmin::class, $this->admin);
 
     $gateway = Node::query()->create([
         'name' => 'gateway',

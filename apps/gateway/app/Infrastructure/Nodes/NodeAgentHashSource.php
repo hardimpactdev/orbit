@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\NodeEnrollmentPrivateOwner;
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
@@ -33,6 +34,9 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
     {
         if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
             return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'secret_hash');
+        }
+        if ($operation->kind === 'node.role_add') {
+            return NodeRoleDirectInput::ownerId($operation);
         }
         $footprint = $operation->input['footprint'] ?? null;
         if ($operation->kind === 'fleet.recipe' && DirectOperation::owns($operation)
@@ -83,6 +87,9 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function store(Operation $operation, int $ownerId, #[\SensitiveParameter] mixed $value): void
     {
+        if (str_starts_with($operation->kind, 'node.role_')) {
+            throw new ResourceOperationException('operation.secret_output_unavailable', 'Role roots cannot store agent hashes.', 409);
+        }
         if ($operation->kind === 'fleet.recipe' || $ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }

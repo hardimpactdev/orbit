@@ -810,3 +810,13 @@ Enrollment, removal and restoration publish private DNS only on an active Node w
 If the existing worker cache is empty, owned by root and mode `0755`, converge
 replaces it with a private `0700` cache for the configured Node user. It refuses
 a nonempty cache owned by root or a symlink. Credential ownership stays the same.
+
+## Native role additions
+
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` reuses the same parent kind for an existing assignment. VPN and Router retain their protected-role policy.
+
+The Gateway validates the Node and records its assignment, runtime intent, public certificate plan and exact participants. Swamp performs the baseline, runtime, certificate and publication work in one native DAG. Role additions and Node convergence generate their footprint stages from one template. Agent actions, child Operations and polled execution are absent. The frozen agent continues to provide observations.
+
+The root records certificate publication before rendering Caddy, then records WebSocket serving state before publishing DNS. It captures the final footprint after those state changes, so a successful role records the files it actually published. Analytics runtime success records its managed Process even when a later publication fails. Gateway DNS routing failures remain follow-up warnings and retain Gateway authority.
+
+Execution requires an admitted Node worker for every applicable effect participant. A complete Metrics fleet containing a workerless member refuses before host effects; it does not drop that member or claim success. Existing credential types stay inside the shared private callback. Role additions can read their admitted agent hash and cannot write it.

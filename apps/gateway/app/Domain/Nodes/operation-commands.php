@@ -7,16 +7,13 @@ use App\Domain\Nodes\NodeEnrollmentStateCommand;
 use App\Domain\Nodes\NodeFootprintResultCommand;
 use App\Domain\Nodes\NodeLifecycleCommand;
 use App\Domain\Nodes\NodeRemovalStateCommand;
-use App\Domain\Nodes\NodeRoleResultCommand;
 use App\Domain\Nodes\PrepareNodeAgentConfigurationCommand;
 use App\Domain\Nodes\PrepareNodeFootprintCommand;
-use App\Domain\Nodes\PrepareNodeRoleCommand;
 use App\Domain\Nodes\PrepareNodeWireGuardCommand;
-use App\Domain\Nodes\TransferNodeRoleCommand;
 
 return [
     'node.grant-gateway-access' => GrantNodeGatewayAccessCommand::class, 'node.prepare-wireguard' => PrepareNodeWireGuardCommand::class,
-    'node.begin-removal' => NodeRemovalStateCommand::class, 'node.restore-removal-state' => NodeRemovalStateCommand::class, 'node.lifecycle-result' => NodeLifecycleCommand::class, 'node.transfer-role' => TransferNodeRoleCommand::class, 'node.prepare-role' => PrepareNodeRoleCommand::class, 'node.role-result' => NodeRoleResultCommand::class,
+    'node.begin-removal' => NodeRemovalStateCommand::class, 'node.restore-removal-state' => NodeRemovalStateCommand::class, 'node.lifecycle-result' => NodeLifecycleCommand::class,
     'node.restore-enrollment-state' => NodeEnrollmentStateCommand::class,
     'node.begin-enrollment' => NodeEnrollmentStateCommand::class, 'node.activate-enrollment' => NodeEnrollmentStateCommand::class,
     'node.prepare-footprint' => PrepareNodeFootprintCommand::class,

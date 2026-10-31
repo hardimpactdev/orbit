@@ -51,7 +51,6 @@ const recordedFixture = (name: string): Fixture => {
 
 const META = { request_id: "0198e15c-bf97-7c23-8f1f-61b8fe67a844" };
 
-
 const ok = (data: unknown, status = 200): Answer => ({ status, payload: { data, meta: META } });
 const failure = (status: number, code: string, message: string): Answer => ({
     status,
@@ -891,12 +890,17 @@ export function createDemoGateway() {
             [
                 "GET",
                 /^\/api\/v1\/database-connections\/([^/]+)\/tables$/,
-                ([slug = ""]) =>
-                    ok(
+                ([slug = ""]) => {
+                    const template = byRoute.get(
+                        "GET /api/v1/database-connections/{database_connection}/tables#charlie-shop",
+                    ) as Operation;
+                    return ok(
                         byRoute.get(
                             `GET /api/v1/database-connections/{database_connection}/tables#${slug}`,
-                        ) ?? { slug, driver: "sqlite", tables: [] },
-                    ),
+                        ) ?? { ...template, result: { tables: [] } },
+                        202,
+                    );
+                },
             ],
             [
                 "GET",
@@ -1253,9 +1257,11 @@ export function createDemoGateway() {
             );
         }
         Object.assign(operation, {
-            status: "succeeded", finished_at: now, poll_after_seconds: null,
-            result: { deployment_id: null, release: null, selected_release: null, commit: null }, sequence,
-
+            status: "succeeded",
+            finished_at: now,
+            poll_after_seconds: null,
+            result: { deployment_id: null, release: null, selected_release: null, commit: null },
+            sequence,
         });
     }
 
