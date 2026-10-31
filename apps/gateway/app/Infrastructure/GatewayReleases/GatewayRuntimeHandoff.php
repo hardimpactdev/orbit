@@ -12,13 +12,17 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use Closure;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -50,6 +54,9 @@ final readonly class GatewayRuntimeHandoff
     /** @var Closure(): float */
     private Closure $clock;
 
+    /** @var Closure(float): bool */
+    private Closure $swampHealthy;
+
     /**
      * @param  (Closure(string, string): string)|null  $resetOpcache  runs the reset script inside the pool with a query and returns its JSON
      * @param  (Closure(): int)|null  $fpmConnections  requests in flight in every pool of the PHP-FPM master, which share one OPcache
@@ -76,12 +83,15 @@ final readonly class GatewayRuntimeHandoff
         private ?GatewayHorizon $horizon = null,
         private ?Closure $recipeImages = null,
         ?Closure $clock = null,
+        private string $caddyfilePath = '/etc/caddy/Caddyfile',
+        ?Closure $swampHealthy = null,
     ) {
         $this->clock = $clock ?? static fn (): float => hrtime(true);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
+        $this->swampHealthy = $swampHealthy ?? $this->swampHealth(...);
     }
 
     /**
@@ -203,15 +213,70 @@ final readonly class GatewayRuntimeHandoff
         return $node;
     }
 
-    /** @return array{outcome:string,operation_id:int} */
+    /** @return array{outcome:string,operation_id:int|null} */
     private function caddy(Node $gateway): array
     {
-        $operation = $this->step('caddy', 'gateway.release_caddy_failed', fn () => $this->operations->execute(
-            'route.caddy_converge', 'node_route_projection', $gateway->id, $gateway->id,
-            ['reason' => 'Gateway release handoff'], 'gateway-release', null,
-        ));
+        return $this->step('caddy', 'gateway.release_caddy_failed', function () use ($gateway): array {
+            $rendered = app(NodeCaddyfileRenderer::class)->render($gateway);
+            if (! $rendered->buildable()) {
+                throw new ResourceOperationException('caddy.render_failed', 'The Gateway Caddy configuration cannot be rendered.', 409);
+            }
+            // Native publication names the managed target by the digest and restores it on activation failure.
+            $published = @readlink($this->caddyfilePath);
+            if ($published === '/etc/caddy/orbit-versions/'.$rendered->version.'/Caddyfile') {
+                return ['outcome' => 'unchanged', 'operation_id' => null];
+            }
 
-        return ['outcome' => 'submitted', 'operation_id' => $operation->id];
+            try {
+                $operation = $this->publishCaddy($gateway);
+            } catch (ResourceOperationException $exception) {
+                if (! in_array($exception->errorCode, ['swamp.start_refused', 'swamp.start_unavailable'], true)) {
+                    throw $exception;
+                }
+                // Named release-runner self-recovery exception. Never retry an uncertain admission.
+                $deadline = ($this->clock)() + 600 * 1_000_000_000;
+                while (($remaining = ($deadline - ($this->clock)()) / 1_000_000_000) > 0) {
+                    if (($this->swampHealthy)(min(5, $remaining))) {
+                        // A second refusal with healthy serve is a real failure, not another wait cycle.
+                        $operation = $this->publishCaddy($gateway);
+
+                        return ['outcome' => 'submitted', 'operation_id' => $operation->id];
+                    }
+                    $remaining = ($deadline - ($this->clock)()) / 1_000_000_000;
+                    if ($remaining > 0) {
+                        ($this->sleep)((int) min(5_000_000, $remaining * 1_000_000));
+                    }
+                }
+                throw $exception;
+            }
+
+            return ['outcome' => 'submitted', 'operation_id' => $operation->id];
+        });
+    }
+
+    private function publishCaddy(Node $gateway): Operation
+    {
+        return $this->operations->execute('route.caddy_converge', 'node_route_projection', $gateway->id, $gateway->id,
+            ['reason' => 'Gateway release handoff'], 'gateway-release', null);
+    }
+
+    /** Release-only liveness read; no credentials, workflow dispatch, or shared retry service. */
+    private function swampHealth(float $timeout): bool
+    {
+        $address = config('swamp.address');
+        $caPath = config('swamp.ca_path');
+        if (! is_string($address) || $address === '' || ! is_string($caPath) || $caPath === '') {
+            return false;
+        }
+        try {
+            $response = Http::withOptions(['verify' => $caPath,
+                'curl' => [CURLOPT_CONNECT_TO => ['swamp.orbit:443:'.$address.':443']]])
+                ->connectTimeout(min(2, $timeout))->timeout($timeout)->get('https://swamp.orbit/health');
+
+            return $response->successful() && $response->json('status') === 'ok';
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**
