@@ -40,8 +40,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
+      behaviorName: '\${{ "wireguard-hub-" + string(inputs.hub_id) }}'
       methodName: script
       globalArgs:
+        name: wireguard-hub
         transport:
           kind: ssh
           identityContent: \${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}
@@ -52,7 +54,9 @@ jobs:
             identityContent: \${{ vault.get('orbit-control-inputs', 'ssh-hub') }}
       inputs:
         hosts: name:hub
-        script: printf public
+        interpreter: python3
+        sudo: true
+        script: '\${{ steps.assets.outputs.script }}'
 `;
   assertEquals(analyzeYaml("workflows/official-ssh.yaml", step).findings, []);
   assertEquals(
