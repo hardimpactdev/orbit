@@ -63,3 +63,12 @@ A removal parent admits `_wireguard` and `_wireguard_restore` through `NodeWireG
 Enrollment may admit the same nonexcluded hub view for restoration. Its parent restores the recorded peer key and original Node status before the same `beginRestoration()` checkpoint. Fresh private rendering then includes the original key, or omits a new peer whose prior key was null. Enrollment's Gateway executor must match its immutable target/root binding. The shared hub helper does not restore peer rows or infer a completed network rollback.
 
 Before that restoration checkpoint, an exact `node.add` parent renders its context peer with the immutable enrollment candidate's WireGuard address. The peer key and all other peers come from current rows. This does not commit the candidate account or address to the Node. After the checkpoint, fresh rendering uses the restored database address and key and ignores the candidate override.
+
+## Converge the hub
+
+`node:wireguard-hub:converge <node>` admits one `node.wireguard_hub_converge` Operation for the active VPN owner. The Gateway captures public identity and the existing VPN private reference; it does not render a secret configuration or contact a Node. The native parent reads fresh peers and the private key inside the stable `wireguard-hub-ID` method lock, then applies and records the bounded result.
+
+VPN1 keeps the exact `orbit-node-1` placement and string `node=1` label. Its approved worker on 209 uses the canonical pinned SSH command transport. The hub never receives a local worker, and a missing proxy cannot fall back to the Gateway or 209. Readiness must be verified before a live convergence. The command changes no peer key, address, role, worker selection or credential.
+
+The API is `POST /api/v1/nodes/{node}/wireguard-hub/converge` with an empty body. It returns HTTP 202 and an Operation. The CLI follows the same Operation and accepts `--idempotency-key=KEY` and `--json`. A failure remains visible; it does not prove the hub rolled back after an uncertain host effect.
+

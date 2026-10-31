@@ -320,6 +320,8 @@ The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the
 
 Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
 
+Use `--idempotency-key=KEY` to retry the same native role admission.
+
 ## orbit node:role:list
 
 List the roles of one Node with their status and failed step.
@@ -356,6 +358,8 @@ For `websocket`, the Gateway copies the Reverb server's Laravel `APP_KEY` only w
 
 When a step on the target or the source fails, the role already runs on the target. The command fails with its usual code, `details.step` set to `converge:STEP` or `remove:STEP`, and `details.error_code` set to the step's own code. The message names the `--from` command that finishes the move. The Gateway reconciles Metrics once, after the source is done. A failed reconcile does not fail the move: `follow_up` names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command.
 
+Use `--idempotency-key=KEY` to retry the same native role admission.
+
 ## orbit node:role:remove
 
 Remove one role from a Node.
@@ -379,6 +383,8 @@ orbit node:role:remove beast database --force
 The command removes a role that is `active` or `failed`. Each removal step is safe to repeat over what a failed convergence left. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` and returns the step's own code in `details.error_code`. Run the same command again.
 
 When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
+
+Use `--idempotency-key=KEY` to retry the same native role admission.
 
 ## orbit node:access:add
 
@@ -515,3 +521,14 @@ An interrupted publication restores its transaction baseline before reapplying
 the complete desired configuration and DNS policy.
 
 Role removal and relocation return one native Operation. The CLI follows the parent through all source and target work. `node:role:add --converge` selects `node.role_converge` and uses the same target DAG. Each command accepts `--idempotency-key` for an admission retry. A confirmed relocation target remains active if later source cleanup fails; the parent reports that cleanup failure. Offline cleanup is unavailable until its owning native path can prove the retained effects.
+
+
+## orbit node:wireguard-hub:converge
+
+Publish the current admitted peer inventory on the active VPN hub in one native Operation. This changes no peer key or address. VPN1 runs through its approved SSH proxy worker with exact logical `node=1` placement.
+
+```bash
+orbit node:wireguard-hub:converge 1 --idempotency-key=hub-reconcile-once
+```
+
+The command accepts a Node ID or name, `--idempotency-key=KEY`, and `--json`. It follows the recorded Operation and returns a nonzero exit status for a failed or cancelled run. Missing proxy readiness refuses or leaves the placed work waiting; it never selects another host. See [WireGuard hub convergence](/reference/wireguard-endpoints#converge-the-hub).

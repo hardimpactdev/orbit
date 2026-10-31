@@ -379,6 +379,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
+            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeWireGuardHubRequest',
         ];
         $expectedOperationCount = count($firewallInspectionRequests) + count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [
