@@ -24,8 +24,9 @@ The projection does not inspect UFW or query step receipts. Duplicate terminal
 delivery does not repeat record events.
 
 `firewall.inspect` remains a read-only observation read through the Gateway. It
-changes no host state. The `firewall.rule` and `firewall.rules` Rust actions are
-retired. Shared observation and Router helpers remain with their owners.
+changes no host state. The frozen agent keeps its published Rust actions until the final observer
+strip. Native Firewall workflows execute system commands directly. Shared
+observation and Router helpers remain with their owners.
 
 The local tests cover all three root kinds, bound identity, cancellation,
 redaction, ownership collisions, inactive state, address-family repair, prepend
