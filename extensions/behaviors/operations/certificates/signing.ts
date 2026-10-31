@@ -1,5 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 import { Leaf } from "./input.ts";
+import { RoleLeaf } from "./role-input.ts";
+
+export const SigningLeaf = z.union([Leaf, RoleLeaf]);
 import { runLocalProgram } from "../routes/local-program.ts";
 
 export const CertificateRequestRecord = z.union([
@@ -100,7 +103,7 @@ export async function signCertificateBatch(
   signal?: AbortSignal,
   invoke = runLocalProgram,
 ) {
-  const leaves = z.array(Leaf).max(256).parse(rawLeaves);
+  const leaves = z.array(SigningLeaf).max(256).parse(rawLeaves);
   const requests = z.array(CertificateRequestRecord).max(256).parse(
     rawRequests,
   );

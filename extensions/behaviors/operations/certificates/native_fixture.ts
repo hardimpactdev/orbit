@@ -84,3 +84,19 @@ export async function fixtureSign(_leaves: unknown, rawRequests: unknown) {
     })),
   };
 }
+
+export async function fixtureRole(
+  _program: string,
+  input: Record<string, unknown>,
+) {
+  const state = JSON.parse(await Deno.readTextFile(file));
+  state.commands.push("role." + input.operation);
+  const result = input.operation === "request"
+    ? {
+      state: "request",
+      request_base64: btoa("-----BEGIN CERTIFICATE REQUEST-----\npublic\n"),
+    }
+    : { applied: true };
+  await Deno.writeTextFile(file, JSON.stringify(state));
+  return result;
+}
