@@ -728,3 +728,31 @@ Deno.test("shared GitHub mint permits only one attempt per step even when called
   assertEquals(mints, 1);
   assertEquals(revokes, 1);
 });
+
+Deno.test("shared GitHub private custody accepts and revokes stateless installation JWT tokens", async () => {
+  const token = "ghs_123_eyJhbGciOiJSUzI1NiJ9.eyJpYXQiOjF9.signature_-";
+  let revoked = 0;
+  const gateway = new GatewayOperation(
+    () =>
+      Promise.resolve({ status: 200, body: { data: tokenFixture({ token }) } }),
+    args,
+    undefined,
+    undefined,
+    (_url, init) => {
+      assertEquals(
+        new Headers(init?.headers).get("Authorization"),
+        `Bearer ${token}`,
+      );
+      revoked++;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    },
+  );
+  assertEquals(
+    await gateway.withGitHubToken((secret) => {
+      assertEquals(secret, token);
+      return Promise.resolve({ completed: true });
+    }),
+    { completed: true },
+  );
+  assertEquals(revoked, 1);
+});

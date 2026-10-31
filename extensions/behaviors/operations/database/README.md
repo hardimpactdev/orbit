@@ -100,3 +100,8 @@ Remote SQLite data travels as a versioned native file artifact, never a JSON
 resource. The Gateway records admitted placement and performs bounded result
 projection. It has no child operations, polled executor, completion receipts or
 synchronous SQL teardown.
+
+If restoring anonymous access after ACL SAVE fails, closure reports only
+`database.server_restore_failed` and `default_open: unknown`. The Gateway stores
+unknown access, marks the server failed, and emits one critical alert. Private
+diagnostics remain inside the effect callback.
