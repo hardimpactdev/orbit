@@ -60,3 +60,11 @@ grace child, then withdraws them. The existing Route contribution result proves
 every expected child completed. Empty duties count as zero; a skipped or failed
 required child cannot count as success. Native tests cover empty, DNS-only and
 Caddy-only duties, failed forward publication and independent restoration.
+
+`roleCertificatesSteps` calls the canonical `roleCertificateSteps` directly in
+the role root. Each child receives that root's actual `run.id`, its admitted
+leaf, and full209 SSH globals. The contribution checks each child's nested
+`outputs.result` against its admitted Node, scope and version. A failed,
+skipped, missing or mismatched child blocks publication. An empty leaf set
+produces an explicit zero contribution. Certificate completion is recorded only
+by the final Gateway projection.

@@ -90,14 +90,90 @@ export function roleConvergeResult(raw: unknown) {
     };
 }
 
+const CertificateLeaf = z.object({
+    node_id: z.number().int().positive(),
+    scope: z.string().min(1),
+    version: z.string().min(1),
+}).passthrough();
+const CertificateArgs = z.object({
+    leaves: z.array(CertificateLeaf),
+    prefix: z.string().min(1),
+    outcomes: z.record(z.string(), z.unknown()),
+}).strict();
+const CertificateProof = z.object({
+    ready: z.literal(true),
+    publication_phases: z.array(
+        z.object({
+            phase: z.literal("certificates_published"),
+            node_id: z.number().int().positive(),
+        }).strict(),
+    ),
+}).strict();
+
+/** Workflow outputs are nested under result; status alone cannot prove publication. */
+export function roleCertificatesResult(raw: unknown) {
+    const args = CertificateArgs.parse(raw);
+    const names = Object.keys(args.outcomes).filter((name) =>
+        name.startsWith(args.prefix + "-")
+    );
+    if (names.length !== args.leaves.length) {
+        throw new Error(
+            "Role certificate contribution count differs from admission",
+        );
+    }
+    const nodes = new Set<number>();
+    for (const [index, leaf] of args.leaves.entries()) {
+        const step = z.object({
+            status: z.literal("succeeded"),
+            outputs: z.object({
+                result: z.object({
+                    ready: z.literal(true),
+                    node_id: z.literal(leaf.node_id),
+                    scope: z.literal(leaf.scope),
+                    version: z.literal(leaf.version),
+                }).strict(),
+            }).passthrough(),
+        }).passthrough().parse(args.outcomes[args.prefix + "-" + index]);
+        nodes.add(step.outputs.result.node_id);
+    }
+    return CertificateProof.parse({
+        ready: true,
+        publication_phases: [...nodes].sort((a, b) => a - b).map((node_id) => ({
+            phase: "certificates_published",
+            node_id,
+        })),
+    });
+}
+
 const Output = z.object({ stdout: z.string(), ready: z.boolean() }).strict();
 export const behavior = {
     type: "@nckrtl/node-role-converge-result",
     version: "2026.10.31.1",
     resources: {
         result: { schema: Output, lifetime: "1d", garbageCollection: 10 },
+        certificates: {
+            schema: CertificateProof,
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
     },
     methods: {
+        certificates: {
+            description:
+                "Prove every admitted role certificate child completed",
+            arguments: CertificateArgs,
+            execute: async (args: z.infer<typeof CertificateArgs>, ctx: {
+                writeResource(
+                    spec: string,
+                    name: string,
+                    value: unknown,
+                ): Promise<unknown>;
+            }) => {
+                const proof = roleCertificatesResult(args);
+                await ctx.writeResource("certificates", "certificates", proof);
+                return proof;
+            },
+        },
         summarize: {
             description: "Return one public terminal role convergence receipt",
             arguments: Args,
