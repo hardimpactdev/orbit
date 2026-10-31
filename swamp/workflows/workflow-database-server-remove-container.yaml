@@ -1,0 +1,149 @@
+id: 99c5b63d-7e2b-4c5c-82db-80e434509a01
+name: database-server-remove-container
+description: 'One admitted owned Process container: native stop, remove and bounded result.'
+writes: true
+vaults: []
+inputs:
+  additionalProperties: false
+  properties:
+    execution_secrets:
+      additionalProperties: false
+      type: object
+    intent:
+      additionalProperties: true
+      properties:
+        ssh:
+          type: object
+      required:
+      - process_id
+      - container
+      - ssh
+      type: object
+    kind:
+      enum:
+      - database_server.destroy
+      type: string
+    node_id:
+      minimum: 1
+      type: integer
+    operation_id:
+      minimum: 1
+      type: integer
+    member:
+      type: object
+      properties:
+        slot:
+          type: string
+        control:
+          type: string
+        stop:
+          type: boolean
+        present:
+          type: boolean
+      required:
+      - slot
+      - control
+      - stop
+      - present
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - member
+  type: object
+jobs:
+- name: container
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  dependsOn: []
+  steps:
+  - name: stop
+    target: orbit-node-209
+    labels: *id001
+    guard: ${{ !inputs.member.present || !inputs.member.stop }}
+    allowFailure: true
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      globalArgs: &id002
+        name: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + inputs.member.control }}
+        - ORBIT_PROCESS_OPERATION=stop
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-database-server-destroy-" + string(inputs.operation_id) + "/process/control.py"
+          }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: remove
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: stop
+      condition:
+        type: always
+    guard: ${{ !inputs.member.present || inputs.member.stop && !(has(steps.stop) && has(steps.stop.outputs)
+      && steps.stop.outputs.exitCode == 0) }}
+    allowFailure: true
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-server-destroy-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/env
+        - ${{ "ORBIT_PROCESS_CONTROL=" + inputs.member.control }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-database-server-destroy-" + string(inputs.operation_id) + "/process/remove_container.py"
+          }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: remove
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-server-destroy-metadata'
+      behaviorName: ${{ "db-destroy-" + run.id }}
+      methodName: result
+      inputs:
+        completed: ${{ !inputs.member.present || has(steps.remove) && has(steps.remove.outputs) && steps.remove.outputs.exitCode
+          == 0 }}
+        steps: ${{ steps }}
