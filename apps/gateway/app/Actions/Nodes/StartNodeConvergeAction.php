@@ -28,7 +28,7 @@ final readonly class StartNodeConvergeAction
         }
 
         $input = ['force_artifacts' => $force, 'first_visit' => $firstVisit];
-        if ($workerCredentials === null && ! in_array($node->id, [1, 18], true) && app(NodeWorkerRollout::class)->allows($node)) {
+        if ($workerCredentials === null && app(NodeWorkerRollout::class)->allows($node)) {
             $input['native_footprint'] = true;
         }
         $direct = app(DirectOperation::class)->writer('node.converge', $input, $node->id) === 'direct';
