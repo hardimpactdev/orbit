@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\AppDev\VitePortAllocator;
+use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -24,6 +25,32 @@ final readonly class InstanceTransferProcesses
 
     /** @return array<string,mixed> */
     public function capture(InstanceTransfer $transfer): array
+    {
+        [$instance, $targets] = $this->placements($transfer);
+
+        return array_map(fn (ProcessTarget $target): array => $this->batches->capture($instance, $target), $targets);
+    }
+
+    /** Request-memory-only material. The native parent publishes execution copies before starting its run.
+     *
+     * @return array{captures:array<string,array<string,mixed>>,material:array<string,OperationSecretValue>}
+     */
+    public function prepare(InstanceTransfer $transfer): array
+    {
+        return DB::transaction(function () use ($transfer): array {
+            [$instance, $targets] = $this->placements($transfer);
+            $captures = $material = [];
+            foreach ($targets as $field => $target) {
+                $captures[$field] = $this->batches->capture($instance, $target);
+                $material[$field] = $this->batches->materialForCapture($instance, $target, $captures[$field]);
+            }
+
+            return ['captures' => $captures, 'material' => $material];
+        });
+    }
+
+    /** @return array{Instance,array{source_installations:ProcessTarget,destination_installations:ProcessTarget}} */
+    private function placements(InstanceTransfer $transfer): array
     {
         $instance = $transfer->instance;
         $records = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->lockForUpdate()->get();
@@ -48,8 +75,7 @@ final readonly class InstanceTransferProcesses
             certificateScope: 'app-instance-'.$placed->id, instance: $placed,
             environmentFile: $directory.'/.env', routeDomain: $transfer->destination_domain, onDemandHostStart: $source->onDemandHostStart);
 
-        return ['source_installations' => $this->batches->capture($instance, $source),
-            'destination_installations' => $this->batches->capture($instance, $target)];
+        return [$instance, ['source_installations' => $source, 'destination_installations' => $target]];
     }
 
     /** Validate the frozen source before any placement write, then commit exact relocated paths.

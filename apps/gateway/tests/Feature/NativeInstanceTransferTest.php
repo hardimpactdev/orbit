@@ -225,6 +225,56 @@ function native_transfer_process($test): Process
         'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active']);
 }
 
+it('prepares both Process placements and protected material before moving any records', function (): void {
+    $process = native_transfer_process($this);
+    $this->mock(ManagedUserAccountResolver::class)->shouldNotReceive('resolve');
+
+    $prepared = app(InstanceTransferProcesses::class)->prepare($this->transfer);
+
+    expect($prepared['material']['source_installations']->value[$process->id]['installation']['content'])->toContain('/srv/native/app')
+        ->and($prepared['material']['destination_installations']->value[$process->id]['installation']['content'])->toContain('/srv/new-native/app', '/srv/new-native/app/.env')
+        ->and($prepared['material']['destination_installations']->strings())->toContain('transfer-private-value')
+        ->and($prepared['captures']['source_installations']['origin_node_id'])->toBe($this->node->id)
+        ->and($prepared['captures']['destination_installations']['node_id'])->toBe($this->destination->id)
+        ->and($this->instance->fresh()->node_id)->toBe($this->node->id)
+        ->and($process->fresh()->working_directory)->toBe('/srv/native/app')
+        ->and($this->transfer->fresh()->cutover_at)->toBeNull()
+        ->and(Operation::query()->count())->toBe(0);
+    expect(json_encode($prepared, JSON_THROW_ON_ERROR))->not->toContain('transfer-private-value');
+});
+
+it('prepares Docker placement material while keeping null Process path defaults', function (): void {
+    $process = native_transfer_process($this);
+    $process->update(['runtime' => 'docker', 'working_directory' => null,
+        'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'],
+            'environment_file' => null, 'environment' => ['TOKEN' => 'transfer-docker-private']]]);
+
+    $prepared = app(InstanceTransferProcesses::class)->prepare($this->transfer);
+
+    expect($prepared['material']['destination_installations']->value[$process->id]['installation']['runtime'])->toBe('docker')
+        ->and($prepared['material']['destination_installations']->value[$process->id]['installation']['definition']['working_directory'])->toBeNull()
+        ->and($prepared['captures']['destination_installations']['target']['checkout_path'])->toBe('/srv/new-native')
+        ->and($process->fresh()->working_directory)->toBeNull()
+        ->and($process->fresh()->runtime_config['environment_file'])->toBeNull()
+        ->and($this->instance->fresh()->checkout_path)->toBe('/srv/native');
+    expect(json_encode($prepared['captures'], JSON_THROW_ON_ERROR))->not->toContain('transfer-docker-private');
+});
+
+it('rolls back newly reserved destination ports when prospective Process material is refused', function (): void {
+    $process = native_transfer_process($this);
+    $process->update(['runtime_config' => [...$process->runtime_config, 'preset' => 'vp-dev']]);
+    $this->instance->update(['vite_port' => 5173, 'ssr_port' => 13714]);
+    $this->destination->update(['status' => 'removing']);
+
+    expect(fn () => app(InstanceTransferProcesses::class)->prepare($this->transfer))->toThrow(ResourceOperationException::class);
+
+    foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
+        expect(DB::table($table)->where('node_id', $this->destination->id)->count())->toBe(0);
+    }
+    expect($this->instance->fresh()->node_id)->toBe($this->node->id)
+        ->and($process->fresh()->working_directory)->toBe('/srv/native/app');
+});
+
 it('commits Process paths with Instance placement and hydrates only the actual placement', function (): void {
     $process = native_transfer_process($this);
     $operation = native_transfer_operation($this);
