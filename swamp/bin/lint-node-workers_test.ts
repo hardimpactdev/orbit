@@ -149,6 +149,7 @@ const checker = import.meta.resolve("./lint-node-workers.ts");
 async function check(
   task: Record<string, unknown>,
   labels: Record<string, string> = { node: "209" },
+  guard?: string,
 ) {
   const root = await Deno.makeTempDir({ prefix: "node-worker-lint-" });
   try {
@@ -165,6 +166,7 @@ async function check(
             target: "orbit-node-209",
             labels,
             task,
+            ...(guard === undefined ? {} : { guard }),
           }],
         }],
       }),
@@ -189,6 +191,43 @@ const shell = {
   methodName: "execute",
   inputs: { run: "printf '%s\\n' public" },
 };
+
+Deno.test("native assertion predicates retain Swamp CEL grouping and macros", async () => {
+  for (
+    const expr of [
+      "steps.capture.outputs.available",
+      "has(steps.capture) && steps.capture.outputs.ids.all(id, id > 0)",
+    ]
+  ) {
+    const result = await check(
+      { type: "assert", expr, message: "metrics.no_worker" },
+      { node: "209" },
+      "${{ !(has(steps.capture) && has(steps.capture.outputs)) || !steps.capture.outputs.ids.all(id, id > 0) }}",
+    );
+    assertEquals(result.success, true, result.diagnostic);
+  }
+});
+
+Deno.test("native assertions still require expression, static message and Node placement", async () => {
+  const assertion = {
+    type: "assert",
+    expr: "true",
+    message: "metrics.no_worker",
+  };
+  for (
+    const task of [
+      { ...assertion, expr: null },
+      { ...assertion, message: "${{ inputs.message }}" },
+    ]
+  ) {
+    const result = await check(task);
+    assertEquals(result.success, false);
+    assertStringIncludes(result.diagnostic, "Node assertions");
+  }
+  const result = await check(assertion, { node: "9" });
+  assertEquals(result.success, false);
+  assertStringIncludes(result.diagnostic, "Node target and label disagree");
+});
 
 Deno.test("reviewed inline native shell is accepted on the matching Node", async () => {
   assertEquals((await check(shell)).success, true);
