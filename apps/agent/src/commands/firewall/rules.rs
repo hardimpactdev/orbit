@@ -2,6 +2,19 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(schemars::JsonSchema, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Managed {
+    shape: Shape,
+    replace_port: bool,
+}
+#[derive(schemars::JsonSchema, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RulesInput {
+    desired: Vec<Managed>,
+    remove: Vec<Shape>,
+    enable: bool,
+}
 #[derive(schemars::JsonSchema, Serialize)]
 pub struct Reconciled {
     matches: bool,
@@ -96,6 +109,40 @@ fn delete_comments(host: &mut impl Host, comments: &BTreeSet<String>) -> Result<
     }
     Ok(())
 }
+fn replaceable_port(rows: &[Row], rule: &Managed) -> bool {
+    if !rule.replace_port
+        || !rule.shape.comment.starts_with("orbit:")
+        || rule
+            .shape
+            .port
+            .parse::<u16>()
+            .ok()
+            .filter(|p| *p > 0)
+            .is_none()
+    {
+        return false;
+    }
+    let Some(previous) = rows
+        .iter()
+        .find(|r| r.comment == rule.shape.comment)
+        .and_then(|r| r.shape.as_ref())
+    else {
+        return false;
+    };
+    if previous
+        .port
+        .parse::<u16>()
+        .ok()
+        .filter(|p| *p > 0)
+        .is_none()
+    {
+        return false;
+    }
+    let mut expected = rule.shape.clone();
+    expected.port = previous.port.clone();
+    inventory::ownership(rows, &expected) == Ownership::Exact
+}
+
 pub(super) fn is_recovery(s: &Shape) -> bool {
     s.comment == "orbit:public-ssh-recovery"
         && s.action == "allow"
@@ -107,6 +154,91 @@ pub(super) fn is_recovery(s: &Shape) -> bool {
         && s.in_interface.is_none()
         && s.out_interface.is_none()
         && s.family.is_none()
+}
+
+fn rules(input: &RulesInput, host: &mut impl Host) -> Result<Reconciled, Error> {
+    validate_shapes(
+        input
+            .desired
+            .iter()
+            .map(|r| &r.shape)
+            .chain(input.remove.iter()),
+    )?;
+    if input.enable
+        && (input.desired.len() != 1
+            || !input.remove.is_empty()
+            || !is_recovery(&input.desired[0].shape))
+    {
+        return Err(Error::Invalid {});
+    }
+    let (backend, mut rows) = status(host)?;
+    if backend != Backend::Active {
+        if backend != Backend::Inactive || !input.enable {
+            return Err(Error::Convergence {});
+        }
+        let stored = host.stored().map_err(|_| Error::Convergence {})?;
+        let recovery = &input.desired[0].shape;
+        match inventory::ownership(&stored, recovery) {
+            Ownership::Drift => return Err(Error::Convergence {}),
+            Ownership::Missing => change(host, arguments(recovery), Error::Convergence {})?,
+            Ownership::Exact => (),
+        }
+        if inventory::ownership(&host.stored().map_err(|_| Error::Convergence {})?, recovery)
+            != Ownership::Exact
+        {
+            return Err(Error::Convergence {});
+        }
+        change(
+            host,
+            vec!["--force".into(), "enable".into()],
+            Error::Convergence {},
+        )?;
+        rows = active(host)?;
+    }
+    let mut replacing = BTreeSet::new();
+    let mut missing = vec![];
+    for rule in &input.desired {
+        match inventory::ownership(&rows, &rule.shape) {
+            Ownership::Exact => (),
+            Ownership::Missing => missing.push(&rule.shape),
+            Ownership::Drift if replaceable_port(&rows, rule) => {
+                replacing.insert(rule.shape.comment.clone());
+                missing.push(&rule.shape);
+            }
+            Ownership::Drift => return Err(Error::Convergence {}),
+        }
+    }
+    // Prove all ownership before changing any of the requested rules.
+    for shape in &input.remove {
+        if inventory::ownership(&rows, shape) == Ownership::Drift {
+            return Err(Error::Convergence {});
+        }
+    }
+    delete_comments(host, &replacing)?;
+    for shape in missing {
+        change(host, arguments(shape), Error::Convergence {})?;
+    }
+    let rows = active(host)?;
+    if input
+        .desired
+        .iter()
+        .any(|r| inventory::ownership(&rows, &r.shape) != Ownership::Exact)
+    {
+        return Err(Error::Convergence {});
+    }
+    let removing = input.remove.iter().map(|s| s.comment.clone()).collect();
+    delete_comments(host, &removing)?;
+    if !input.remove.is_empty() {
+        let rows = active(host)?;
+        if input
+            .remove
+            .iter()
+            .any(|s| inventory::ownership(&rows, s) != Ownership::Missing)
+        {
+            return Err(Error::Convergence {});
+        }
+    }
+    Ok(Reconciled { matches: true })
 }
 
 const FAMILIES: [&str; 3] = [
@@ -258,6 +390,27 @@ fn router(input: &RouterInput, host: &mut impl Host) -> Result<Reconciled, Error
     result
 }
 
+pub struct Rules;
+impl Command for Rules {
+    const NAME: &'static str = "firewall.rules";
+    const SUMMARY: &'static str =
+        "Converge exact managed role rules and retire owned rules under one lock.";
+    const MUTATES: bool = true;
+    const RESOURCES: &'static [&'static str] = &["firewall"];
+    const TIMEOUT: Duration = Duration::from_secs(120);
+    type Input = RulesInput;
+    type Output = Reconciled;
+    type Error = Error;
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        crate::commands::linux_only(platform, Privilege::Root)
+    }
+    fn target(_: &RulesInput) -> Option<String> {
+        Some("firewall:roles".into())
+    }
+    fn run(input: RulesInput, _: &Context) -> Result<Reconciled, Error> {
+        rules(&input, &mut Native)
+    }
+}
 pub struct Router;
 impl Command for Router {
     const NAME: &'static str = "firewall.router-lan";
