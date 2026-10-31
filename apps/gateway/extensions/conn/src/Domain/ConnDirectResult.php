@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Operations\DirectOperationResultHook;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -42,10 +42,13 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
 
     public function validate(Operation $operation, array $result, OperationStatus $status): array
     {
+        if ($operation->status->terminal()) {
+            return $result;
+        }
         if ($result === [] && $status !== OperationStatus::Succeeded) {
             return [];
         }
-        if (array_keys($result) === ['error_code'] && is_string($result['error_code']) && preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $result['error_code']) === 1) {
+        if (array_keys($result) === ['error_code'] && is_string($result['error_code']) && (preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $result['error_code']) === 1 || $result['error_code'] === 'operation.native_dispatch_failed')) {
             return $result;
         }
         if ($operation->kind !== 'conn.pairing_create') {
@@ -60,17 +63,18 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
             $this->refuse();
         }
         $pairing = ConnPairing::query()->lockForUpdate()->findOrFail($operation->target_id);
-        $known = $operation->status->terminal() ? [] : app(ConnOperationSecrets::class)->resolve($operation, ValidatedData::integer($operation->input['conn_environment_id']), '', '')->strings();
+        $known = app(ConnOperationSecrets::class)->resolve($operation, ValidatedData::integer($operation->input['conn_environment_id']), '', '')->strings();
         if ($pairing->credential !== null) {
             $known[] = $pairing->credential;
         }
-        if (app(OperationExecutionContract::class)->result($operation, $result, $known) !== $result) {
-            $this->refuse();
+        foreach ($result as $value) {
+            if (is_string($value) && (strlen($value) > OperationResultFields::MaximumStringBytes
+                || array_any($known, static fn (string $secret): bool => $secret !== '' && str_contains($value, $secret)))) {
+                $this->refuse();
+            }
         }
         if ($status === OperationStatus::Running && $result === ['backend' => 'issuing']) {
-            if (! $operation->status->terminal()) {
-                $pairing->forceFill(['issue_started_at' => $pairing->issue_started_at ?? now()])->save();
-            }
+            $pairing->forceFill(['issue_started_at' => $pairing->issue_started_at ?? now()])->save();
 
             return $result;
         }
@@ -86,7 +90,7 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
         if ($status === OperationStatus::Succeeded && ($pairing->expires_at === null || $pairing->expires_at->getTimestamp() !== Carbon::parse($result['expires_at'])->getTimestamp())) {
             $this->refuse();
         }
-        if ($status === OperationStatus::Running && ! $operation->status->terminal()) {
+        if ($status === OperationStatus::Running) {
             $pairing->forceFill(['pairing_link_id' => $result['pairing_link_id'], 'expires_at' => Carbon::parse($result['expires_at'])])->save();
         }
 

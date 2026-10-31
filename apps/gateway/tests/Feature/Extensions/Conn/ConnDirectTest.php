@@ -26,9 +26,9 @@ beforeEach(function (): void {
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $this->socket);
-    config(['operation_executor.worker_node_ids' => [$this->gateway->id], 'dependency_detection.services_node_id' => $this->worker->id, 'swamp.run_token' => 'private.shared.token', 'swamp.direct_writers' => ['conn.pairing_create' => 'direct']]);
+    config(['dependency_detection.services_node_id' => $this->worker->id, 'swamp.run_token' => 'private.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    $this->postJson('/api/v1/conn/environments/direct-proof/pairings', ['async' => true])->assertAccepted();
+    $this->postJson('/api/v1/conn/environments/direct-proof/pairings')->assertAccepted();
     $this->operation = Operation::query()->sole();
     $this->pairing = ConnPairing::query()->sole();
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
@@ -37,15 +37,13 @@ beforeEach(function (): void {
     $this->output = ['run_id' => $this->run, 'outputs' => ['credential' => 'private-pairing-sentinel']];
 });
 
-it('starts only pairing creation directly by default and freezes the selected writer', function (): void {
+it('starts each Conn kind through its fixed native workflow', function (): void {
     $direct = app(DirectOperation::class);
-    config(['swamp.direct_writers' => []]);
     expect($direct->definition('conn.pairing_create')['workflow'])->toBe('operation-conn-direct');
     expect($direct->writer('conn.pairing_create'))->toBe('direct');
     expect($direct->writer('conn.pairing_revoke'))->toBe('direct');
     expect($direct->writer('conn.gateway_sessions_revoke'))->toBe('direct');
     expect(app(OperationKinds::class)->directOnly('conn.pairing_create'))->toBeTrue();
-    config(['swamp.direct_writers' => []]);
     expect(DirectOperation::owns($this->operation->fresh()))->toBeTrue();
     expect($this->socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $this->operation->id, 'kind' => 'conn.pairing_create', 'node_id' => $this->gateway->id]);
     expect($this->operation->state)->not->toHaveKeys(['executor_runs', 'executor_lease_node_id']);
@@ -61,7 +59,7 @@ it('keeps private transport out of Operations and Activity and preserves read-on
     expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->not->toContain('private-pairing-sentinel');
     $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $this->result])->assertOk();
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Succeeded);
-    expect(json_encode([$this->operation->fresh()->toArray(), $this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-pairing-sentinel')->not->toContain('private-admin-sentinel');
+    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-pairing-sentinel')->not->toContain('private-admin-sentinel');
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $url = '/api/v1/conn/environments/direct-proof/pairings/'.$this->pairing->id;
     $this->getJson($url)->assertOk()->assertJsonPath('data.pairing_url', 'http://t3.test/pair#token=private-pairing-sentinel');
@@ -88,7 +86,7 @@ it('rejects raw credentials and unproven metadata in result projection', functio
         $response = $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result]);
         expect($response->status())->toBeIn([409, 422]);
     }
-    expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
 });
 
 it('retains the existing credential store replay and revoked-owner rules', function (): void {
@@ -116,34 +114,45 @@ it('refuses a different final expiry and retains the recorded issue metadata', f
     $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $this->result])->assertOk();
 });
 
-it('refuses the removed polled writer instead of admitting another pairing', function (): void {
-    config(['swamp.direct_writers' => ['conn.pairing_create' => 'polled']]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-
-    $this->postJson('/api/v1/conn/environments/direct-proof/pairings', ['async' => true])->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-
-    $this->assertDatabaseCount('operations', 1);
-    $this->assertDatabaseCount('conn_pairings', 1);
-    Http::assertNothingSent();
-});
-
-it('refuses legacy claims and execution contracts after deleting the pairing issue relay', function (): void {
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
-
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'conn.pairing_create', 'worker' => 'old-worker'])->assertUnprocessable()->assertJsonPath('error.code', 'operation.executor_invalid');
-
-    expect($this->operation->fresh()->worker)->toBeNull();
-    expect($this->operation->fresh()->attempts)->toBe(0);
-    expect($this->operation->fresh()->lock_key)->toBeNull();
-    expect(app(OperationKinds::class)->definition('conn.pairing_create'))->not->toHaveKeys(['runs', 'completion', 'completion_contract']);
-    Http::assertNothingSent();
-});
-
 it('exposes recorded issue start without a credential so losing native data cannot authorize another issue', function (): void {
     $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.issue_started', false)->assertJsonPath('data.input.issued', false);
     $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'running', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => ['backend' => 'issuing']])->assertOk();
     $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.issue_started', true)->assertJsonPath('data.input.issued', false);
     expect($this->pairing->fresh()->issue_started_at)->not->toBeNull();
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    Http::assertNothingSent();
+});
+
+it('refuses private bytes embedded in public pairing link metadata', function (): void {
+    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'running', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => ['backend' => 'issuing']])->assertOk();
+    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'running', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'result' => [...$this->result, 'pairing_link_id' => 'prefix-private-admin-sentinel-suffix']])->assertUnprocessable();
+    expect($this->pairing->fresh()->pairing_link_id)->toBeNull();
+});
+
+it('replays recorded terminal pairing metadata after the credential is consumed and revoked', function (): void {
+    foreach ([['backend' => 'issuing'], $this->result] as $result) {
+        $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'running', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $result])->assertOk();
+    }
+    $this->postJson($this->path.'/secret-output', $this->output)->assertOk();
+    $projection = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $this->result];
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    $this->pairing->refresh()->update(['credential' => null, 'revoked_at' => now()]);
+    $this->environment->update(['admin_session' => 'new-private-session']);
+
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    $this->postJson($this->path.'/result', [...$projection, 'result' => [...$this->result, 'pairing_link_id' => 'changed']])->assertConflict();
+
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    expect($this->pairing->fresh()->revoked_at)->not->toBeNull();
+    Http::assertNothingSent();
+});
+
+it('records shared native dispatch failure without issue or credential effects', function (): void {
+    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'failed', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'error_code' => 'operation.native_dispatch_failed', 'result' => ['error_code' => 'operation.native_dispatch_failed']])->assertOk();
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Failed);
+    expect($this->pairing->fresh()->issue_started_at)->toBeNull();
     expect($this->pairing->fresh()->credential)->toBeNull();
     Http::assertNothingSent();
 });
