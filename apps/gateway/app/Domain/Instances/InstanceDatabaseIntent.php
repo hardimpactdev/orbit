@@ -77,9 +77,13 @@ final readonly class InstanceDatabaseIntent
     public function child(Operation $operation, string $key): array
     {
         $owner = $operation->target_id;
-        $kind = ($operation->input['database_clone_source_id'] ?? null) !== null ? 'database.clone' : 'database.create';
+        $recorded = ValidatedData::object($operation->state['lifecycle_database'] ?? []);
+        $recordedInput = ValidatedData::object($recorded['input'] ?? []);
+        $kind = ($operation->input['database_clone_source_id'] ?? null) !== null
+            ? (($recordedInput['driver'] ?? null) === 'mysql' ? 'database.mysql_clone' : 'database.clone') : 'database.create';
         if ($key !== 'database' || $operation->kind !== 'instance.create') {
             throw new ResourceOperationException('operation.child_unproven', 'Database preparation requires its create parent.', 409);
+
         }
         $child = $operation->state['lifecycle_database'] ?? null;
         if (! is_array($child) || ($child['key'] ?? null) !== $key

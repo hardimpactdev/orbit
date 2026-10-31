@@ -330,7 +330,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
                 }
             }
             if ($input['database_server_id'] !== null || $input['database_clone_source_id'] !== null) {
-                $this->assertChild($operation, 'database', $input['database_clone_source_id'] !== null ? 'database.clone' : 'database.create');
+                $this->assertChild($operation, 'database', app(InstanceDatabaseIntent::class)->child($operation, 'database')['kind']);
                 $this->assertChild($operation, 'database-environment-sync', 'instance.sync_environment');
             }
             $this->assertStepList($operation, 'setup');

@@ -980,6 +980,6 @@ it('has exactly one direct destroy dispatch and no executor or child execution c
     expect($kinds->directOnly('instance.destroy'))->toBeTrue()
         ->and($definition)->not->toHaveKeys(['execution', 'runs', 'children', 'completion']);
     expect(app(DirectOperation::class)->writer('instance.destroy'))->toBe('direct');
-    config(['swamp.direct_writers.instance.destroy' => 'polled']);
+    config(['swamp.direct_writers' => ['instance.destroy' => 'polled']]);
     expect(fn () => app(DirectOperation::class)->writer('instance.destroy'))->toThrow(ResourceOperationException::class);
 });
