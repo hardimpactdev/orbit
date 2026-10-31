@@ -146,8 +146,51 @@ Deno.test("invalid results and worker-selected inputs refuse without a success p
   );
   assertEquals(Probe.safeParse({ ...input, protocol: "skip" }).success, false);
 });
-Deno.test("colocated Router skip needs no executable or privilege boundary", async () => {
-  assertEquals(await verifyLocal({ ...input, protocol: "skip", probe: null }), {
-    ready: true,
-  });
+Deno.test("colocated Route verification cannot skip its network probe", async () => {
+  await assertRejects(() =>
+    verifyLocal({ ...input, protocol: "skip", probe: null })
+  );
+});
+
+Deno.test("both Route protocols use a bounded read-only Node call without sudo", async () => {
+  for (const protocol of ["tls", "http"]) {
+    const calls: unknown[] = [];
+    assertEquals(
+      await verifyLocal({ ...input, protocol }, (call) => {
+        calls.push(call);
+        return Promise.resolve({});
+      }),
+      { ready: true },
+    );
+    assertEquals(calls, [{
+      name: protocol === "tls"
+        ? "route.verify-certificate"
+        : "route.verify-http",
+      input: input.probe,
+      pin: input.agent_sha256,
+      sudo: false,
+      mutates: false,
+      deadlineMs: 15000,
+      maxOutputBytes: 4096,
+    }]);
+  }
+});
+
+Deno.test("the shared Node refusal stays bounded and an uncertain probe throws", async () => {
+  assertEquals(
+    await verifyLocal(input, () =>
+      Promise.resolve({
+        error_code: "agent.version_mismatch",
+        stderr: "private diagnostic",
+      })),
+    { error_code: "agent.version_mismatch" },
+  );
+  await assertRejects(
+    () =>
+      verifyLocal(input, () => {
+        throw new Error("uncertain probe");
+      }),
+    Error,
+    "uncertain probe",
+  );
 });
