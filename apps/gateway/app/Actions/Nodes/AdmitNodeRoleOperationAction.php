@@ -8,23 +8,25 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleIntent;
-use App\Domain\Nodes\NodeRoleRemovalOutcome;
+use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeRoleCertificateInput;
+use App\Domain\Nodes\NodeRoleDirectInput;
+use App\Domain\Nodes\NodeRoleMetricsInput;
+use App\Domain\Nodes\NodeRolePublicationInput;
+use App\Domain\Nodes\NodeRoleRelocateInput;
+use App\Domain\Nodes\NodeRoleRemoveInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleSettings;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -38,135 +40,112 @@ final readonly class AdmitNodeRoleOperationAction
         private StartOperationAction $operations,
         private OperationStore $store,
         private OperationIdempotency $idempotency,
-        private OperationKinds $kinds,
         private AssignRoleAction $assign,
         private RoleRegistry $roles,
         private AnalyticsRoleSettingsRepository $analytics,
         private AnalyticsStorageProcessGuard $analyticsStorage,
-        private NodeRoleDependencyInspector $dependencies,
-        private NodeReachabilityProbe $reachability,
         private RouteRemovalGuard $routes,
     ) {}
 
     public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
     {
-        if (($existing = $this->idempotency->replay('node.role_add')) !== null) {
+        $kind = $converge ? 'node.role_converge' : 'node.role_add';
+        if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
-        if (! is_array($this->kinds->definition('node.role_add'))) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Node role admission is waiting for its executor contract.', 503);
-        }
 
-        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning): Operation {
+        return DB::transaction(function () use ($node, $role, $converge, $analytics, $requestId, $duringProvisioning, $kind): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
-            if (! in_array($node->status, $duringProvisioning ? [LifecycleStatus::Provisioning, LifecycleStatus::Active] : [LifecycleStatus::Active], true)) {
-                throw new RoleAssignmentException('Roles can be changed only on an active node.');
+            if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
+                throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
-            if ($node->platform !== 'linux') {
-                throw new ResourceOperationException('node.platform_unsupported', "Node platform [{$node->platform}] does not support roles.", 422);
+            if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
+                || ! app(NodeWorkerRollout::class)->allows($node)) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
             }
-            if ($duringProvisioning ? ! $this->roles->definition($role)->assignableDuringProvisioning : ! $this->roles->definition($role)->mutable) {
+            if (! $this->roles->definition($role)->mutable) {
                 throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
+            }
+            $this->assign->preflight($node, $role);
+            if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
+                throw new ResourceOperationException('node.agent_rekey_required', 'The role needs the existing recorded Node agent identity.', 409);
+            }
+            $existing = $node->roles()->where('role', $role)->first();
+            if ($existing !== null && ! $converge) {
+                throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
             }
             if ($role === RoleName::Analytics) {
                 $analytics ??= $this->analytics->find($node);
                 if ($analytics === null) {
-                    throw new ResourceOperationException('analytics.settings_missing', 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.', 422);
+                    throw new ResourceOperationException('analytics.settings_missing', 'The analytics role requires its storage Processes.', 422);
                 }
                 $this->analyticsStorage->assert($analytics->postgresProcessId, $analytics->clickhouseProcessId);
+                $this->analytics->store($node, $analytics);
             }
-
-            // Take the durable target hold before changing an assignment or its Settings.
-            $operation = $this->operations->execute('node.role_add', 'node', $node->id, $node->id,
-                ['role' => $role->value, 'converge' => $converge], 'operator', $requestId);
+            $operation = $this->operations->execute($kind, 'node', $node->id, $node->id,
+                ['node_id' => $node->id, 'role' => $role->value, 'converge' => $converge], 'operator', $requestId);
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
-            $firstRole = ! $duringProvisioning && ! $node->roles()->where('status', LifecycleStatus::Active)->exists();
             $assignment = $this->assign->execute($node, $role);
             $created = $assignment->wasRecentlyCreated;
-            $noOp = ! $created && ! $converge && $role === RoleName::Ingress && $assignment->status === LifecycleStatus::Active;
-            if (! $created && ! $noOp) {
-                if (! $converge) {
-                    throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
-                }
-                if (! $assignment->canClaimConvergence()) {
-                    throw new RoleAssignmentException("Role [{$role->value}] cannot converge from status [{$assignment->status->value}].");
-                }
+            if (! $created) {
                 $assignment->claimConvergence();
             }
-            if ($analytics !== null) {
-                $this->analytics->store($node, $analytics);
+            app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
+            $snapshot = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, $created);
+            if (ValidatedData::object($snapshot['footprint'])['refusal'] !== null) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'An applicable footprint contribution has no native action.', 422);
             }
-            $this->store->change($operation, ['state' => [...($operation->state ?? []),
-                'role_intent' => NodeRoleIntent::capture($assignment, $created),
-                'role_first_managed' => $firstRole, 'role_noop' => $noOp]]);
+            $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+            $metricsOwner = $metrics === null ? $node->id : ValidatedData::integer($metrics['metrics_node_id']);
+            $runtime = ValidatedData::object($snapshot['runtime'] ?? []);
+            $clickhouse = ValidatedData::object($runtime['clickhouse'] ?? []);
+            $this->store->change($operation, ['input' => [...$operation->input, '_role' => $snapshot,
+                'participant_node_ids' => array_values(array_unique([$node->id,
+                    ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
+                    ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
+                    ...NodeRoleMetricsInput::participants($metrics),
+                    ...(isset($clickhouse['node_id']) ? [ValidatedData::integer($clickhouse['node_id'])] : [])])),
+                'metrics_runtime' => $snapshot['metrics_fleet'] === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $metricsOwner],
+                'private_bindings' => ['metrics_runtime' => [
+                    'owner_node_id' => $metricsOwner, 'read_node_ids' => $snapshot['metrics_fleet'] === null ? [] : [$metricsOwner], 'write_node_ids' => []]],
+                'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
+                'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $node->id]]]);
 
             return $operation;
         });
     }
 
-    public function remove(Node $node, RoleName $role, bool $force = false, bool $purgeData = false, bool $offline = false, bool $deleted = false, ?string $requestId = null): Operation|NodeRoleRemovalOutcome
+    public function remove(Node $node, RoleName $role, bool $force = false, bool $purgeData = false, bool $offline = false, bool $deleted = false, ?string $requestId = null): Operation
     {
         if (($existing = $this->idempotency->replay('node.role_remove')) !== null) {
             return $existing;
         }
-        if (! is_array($this->kinds->definition('node.role_remove'))) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Node role removal is waiting for its executor contract.', 503);
-        }
-        $this->guardMutable($node, $role);
-        $this->routes->assertRoleRemovable($node, $role);
-        $assignment = $node->roles()->where('role', $role)->first();
-        if ($assignment === null && $role !== RoleName::Ingress) {
-            $node->roles()->where('role', $role)->firstOrFail();
-        }
-        if ($role === RoleName::AppDev && $node->instances()->exists()) {
-            throw new NodeRoleValidationException("Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.", [
-                'reason' => 'instances_attached', 'role' => $role->value,
-            ]);
-        }
-        $preview = $this->dependencies->inspect($node, $role);
         if (! $force) {
             throw new NodeRoleValidationException('Use --force to remove this node role.', [
-                'field' => 'force', 'reason' => 'destructive_consent_required', 'role' => $role->value, 'dependents' => $preview->summaries,
+                'field' => 'force', 'reason' => 'destructive_consent_required', 'role' => $role->value,
             ]);
         }
-        if ($assignment === null && $role === RoleName::Ingress) {
-            return new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], []));
-        }
-        $degradation = match (true) {
-            $offline && $deleted => ExporterDegradationReason::Unreachable,
-            $offline => $this->reachability->degradation($node),
-            default => null,
-        };
 
-        return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $degradation, $requestId): Operation {
+        return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             $this->guardMutable($node, $role);
+            if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeWorkerRollout::class)->allows($node)) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires its exact managed Node worker.', 422);
+            }
             $this->routes->assertRoleRemovable($node, $role);
             $assignment = $node->roles()->where('role', $role)->lockForUpdate()->firstOrFail();
             if ($role === RoleName::AppDev && $node->instances()->exists()) {
-                throw new NodeRoleValidationException("Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.", [
+                throw new NodeRoleValidationException('The app-dev role cannot be removed while its Node owns Instances.', [
                     'reason' => 'instances_attached', 'role' => $role->value,
                 ]);
             }
-            if ($assignment->status !== LifecycleStatus::Active && ! $assignment->isStaleClaim()
-                && ! ($assignment->status === LifecycleStatus::Failed && is_string($assignment->failed_step)
-                    && (str_starts_with($assignment->failed_step, 'converge:') || str_starts_with($assignment->failed_step, 'remove:')))) {
-                throw new NodeRoleValidationException("Role [{$role->value}] cannot be removed from status [{$assignment->status->value}].");
-            }
-            $dependencies = $this->dependencies->inspect($node, $role);
-            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
-                ['role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline, 'deleted' => $deleted], 'operator', $requestId);
-            if (! $operation->wasRecentlyCreated) {
-                return $operation;
-            }
-            $intent = NodeRoleIntent::capture($assignment, false);
             $assignment->claimRemoval();
-            $this->store->change($operation, ['state' => [...($operation->state ?? []), 'role_intent' => $intent,
-                'role_offline' => $degradation !== null, 'role_degradation' => $degradation?->value,
-                'role_dependencies' => ['instance_ids' => $dependencies->instanceIds, 'workspace_ids' => $dependencies->workspaceIds,
-                    'process_ids' => $dependencies->processIds, 'summaries' => $dependencies->summaries]]]);
+            $snapshot = app(NodeRoleRemoveInput::class)->capture($node, $assignment, $purgeData, $offline, $deleted);
+            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
+                ['role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline, '_role_remove' => $snapshot,
+                    'participant_node_ids' => array_values(array_unique([$node->id, ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication']))]))], 'operator', $requestId);
 
             return $operation;
         });
@@ -177,132 +156,25 @@ final readonly class AdmitNodeRoleOperationAction
         if (($existing = $this->idempotency->replay('node.role_relocate')) !== null) {
             return $existing;
         }
-        if (! is_array($this->kinds->definition('node.role_relocate'))) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Node role relocation is waiting for its executor contract.', 503);
-        }
-        if (! $this->roles->definition($role)->relocatable) {
-            throw new NodeRoleValidationException("Role [{$role->value}] cannot be relocated.", ['field' => 'role', 'role' => $role->value]);
-        }
-        if (! $force) {
-            throw new NodeRoleValidationException('Use --force to relocate this node role.', [
-                'field' => 'force', 'reason' => 'destructive_consent_required', 'role' => $role->value, 'dependents' => [],
-            ]);
-        }
-        $this->guardMutable($target, $role);
-        if ($from !== null) {
-            $this->guardMutable($from, $role);
-            if ($from->is($target)) {
-                throw new NodeRoleValidationException("Role [{$role->value}] cannot relocate from node [{$from->name}] onto itself.", ['field' => 'from', 'role' => $role->value]);
-            }
-        }
 
-        return DB::transaction(function () use ($target, $from, $role, $requestId): Operation {
-            $assignment = NodeRole::query()->where('role', $role)->lockForUpdate()->first();
-            if ($assignment === null) {
-                throw new NodeRoleValidationException("Role [{$role->value}] is not assigned.", ['field' => 'role', 'role' => $role->value]);
-            }
-            if ($assignment->status !== LifecycleStatus::Active) {
-                throw new NodeRoleValidationException("Role [{$role->value}] cannot relocate from status [{$assignment->status->value}].", ['field' => 'role', 'role' => $role->value]);
-            }
-            $reconcile = $assignment->node_id === $target->id;
-            if ($reconcile && $from === null) {
-                throw new NodeRoleValidationException("Role [{$role->value}] is already assigned to node [{$target->name}].", ['field' => 'role', 'role' => $role->value]);
-            }
-            $source = $from ?? $assignment->node;
-            if (! $reconcile && $source->id !== $assignment->node_id) {
-                throw new NodeRoleValidationException("Role [{$role->value}] is assigned to node [{$assignment->node->name}], not [{$source->name}].", ['field' => 'from', 'role' => $role->value]);
-            }
-            $this->guardMutable($source, $role);
-            $this->assign->preflightTransfer($target, $role);
-            // Keep serving on the source. A source child takes its hold before any transfer or runtime effect.
-            $original = clone $assignment;
-            $original->node_id = $source->id;
-            $operation = $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
-                ['role' => $role->value, 'source_node_id' => $source->id, 'target_node_id' => $target->id], 'operator', $requestId);
-            if (! $operation->wasRecentlyCreated) {
-                return $operation;
-            }
-            $this->store->change($operation, ['state' => [...($operation->state ?? []),
-                'role_intent' => NodeRoleIntent::capture($original, false, $target), 'role_reconcile' => $reconcile]]);
+        return DB::transaction(function () use ($target, $role, $force, $from, $requestId): Operation {
+            $target = Node::query()->lockForUpdate()->findOrFail($target->id);
+            $this->guardMutable($target, $role);
+            $input = app(NodeRoleRelocateInput::class);
+            $prepared = $input->prepare($target, $role, $force, $from);
+            $source = Node::query()->lockForUpdate()->findOrFail($prepared['source']->id);
+            $assignment = NodeRole::query()->lockForUpdate()->findOrFail($prepared['assignment']->id);
+            $assignment->update(['node_id' => $target->id]);
+            $assignment->claimConvergence();
+            app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
+            app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
+            $snapshot = $input->capture($target->refresh(), $source, $assignment);
 
-            return $operation;
-        });
-    }
-
-    /** @param array{key:string,kind:string,node_id:int|null,input:array<string,mixed>} $intent */
-    public function relocationChild(Operation $parent, array $intent): Operation
-    {
-        $sourceStage = $intent['kind'] === 'node.role_relocate_source';
-        $retained = ValidatedData::object($parent->state['role_intent'] ?? null);
-        $expectedParent = $sourceStage ? 'node.role_relocate' : 'node.role_relocate_source';
-        $nodeId = $retained[$sourceStage ? 'source_node_id' : 'target_node_id'] ?? null;
-        if ($parent->kind !== $expectedParent || $this->idempotency->parent?->id !== $parent->id
-            || $this->idempotency->childKey !== $intent['key'] || $intent['node_id'] !== $nodeId
-            || ! OperationChildIntent::same($intent['input'], ['assignment_id' => $retained['assignment_id'] ?? null])) {
-            throw new ResourceOperationException('operation.child_forbidden', 'The role transfer stage differs from its retained Node intent.', 422);
-        }
-        $role = RoleName::from(ValidatedData::string($retained['role'] ?? null));
-        if (! $this->roles->definition($role)->relocatable) {
-            throw new ResourceOperationException('operation.child_forbidden', 'This role cannot be relocated.', 422);
-        }
-        $node = Node::query()->findOrFail($nodeId);
-        $this->guardMutable($node, $role);
-
-        return DB::transaction(function () use ($parent, $intent, $retained, $sourceStage, $node): Operation {
-            $operation = $this->operations->execute($intent['kind'], 'node', $node->id, $node->id, $intent['input'], 'node-role', $parent->request_id);
-            if ($operation->wasRecentlyCreated) {
-                $this->store->change($operation, ['state' => [...($operation->state ?? []), 'role_intent' => $retained,
-                    'role_relocation_source' => $sourceStage, 'role_relocation_target' => ! $sourceStage,
-                    'role_owned_by_parent' => true, 'role_first_managed' => false, 'role_noop' => false]]);
-            }
-
-            return $operation;
-        });
-    }
-
-    /** @param array{key:string,kind:string,node_id:int|null,input:array<string,mixed>} $intent */
-    public function routerChild(Operation $parent, array $intent): Operation
-    {
-        if (($existing = $this->idempotency->replay($intent['kind'])) !== null) {
-            return $existing;
-        }
-        if ($this->idempotency->parent?->id !== $parent->id || $parent->target_type !== 'cluster_router'
-            || ! in_array($parent->kind, ['cluster.router_set', 'cluster.router_unset'], true)
-            || ! in_array($intent['kind'], ['node.role_converge', 'node.role_remove'], true)
-            || $this->idempotency->childKey !== $intent['key']) {
-            throw new ResourceOperationException('operation.child_forbidden', 'Router role work requires its owning Cluster parent.', 422);
-        }
-        $plan = ValidatedData::object($parent->state['route_plan'] ?? []);
-        $remove = $intent['kind'] === 'node.role_remove';
-        if ($remove) {
-            if (! OperationChildIntent::same($intent['input'], ['role' => 'router', 'purge_data' => false, 'offline' => false])) {
-                throw new ResourceOperationException('operation.child_forbidden', 'The Cluster can remove only its online Router effects.', 422);
-            }
-            $roleIds = ValidatedData::integerList($plan['old_role_ids'] ?? []);
-            $assignment = NodeRole::query()->whereIn('id', $roleIds)->where('node_id', $intent['node_id'])->where('role', RoleName::Router)->sole();
-        } else {
-            $id = ValidatedData::integer($intent['input']['assignment_id'] ?? null);
-            $assignment = NodeRole::query()->findOrFail($id);
-            if ($id !== ($parent->input['candidate_role_id'] ?? null) || $id !== ($plan['candidate_role_id'] ?? null)
-                || ! in_array($id, ValidatedData::integerList($plan['assignment_ids'] ?? []), true)) {
-                throw new ResourceOperationException('operation.child_forbidden', 'The Router candidate is not in its Cluster plan.', 422);
-            }
-        }
-        if ($assignment->role !== RoleName::Router || $assignment->node_id !== $intent['node_id']
-            || $assignment->cluster_id !== ($parent->input['cluster_id'] ?? null)
-            || ! in_array($assignment->node_id, ValidatedData::integerList($plan['node_ids'] ?? []), true)
-            || $assignment->status !== ($remove ? LifecycleStatus::Removing : LifecycleStatus::Provisioning)) {
-            throw new ResourceOperationException('operation.child_forbidden', 'The Router assignment differs from its owning Cluster intent.', 422);
-        }
-
-        return DB::transaction(function () use ($intent, $assignment): Operation {
-            $operation = $this->operations->execute($intent['kind'], 'node', $assignment->node_id, $assignment->node_id, $intent['input'], 'cluster', null);
-            if ($operation->wasRecentlyCreated) {
-                $this->store->change($operation, ['state' => [...($operation->state ?? []), 'role_intent' => NodeRoleIntent::capture($assignment, false),
-                    'role_owned_by_parent' => true, 'role_offline' => false, 'role_first_managed' => false, 'role_noop' => false]]);
-            }
-
-            return $operation;
+            return $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
+                ['role' => $role->value, '_relocate' => $snapshot,
+                    'participant_node_ids' => array_values(array_unique([$source->id, $target->id, ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication']))])),
+                    'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
+                    'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]], 'operator', $requestId);
         });
     }
 
