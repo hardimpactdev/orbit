@@ -1238,14 +1238,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-deploy/policy_activity.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/instance-deploy/rollback_direct.ts",
       "rule": "gateway-http",
       "count": 2,
