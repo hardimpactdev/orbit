@@ -62,9 +62,11 @@ sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr);raise System
 """,
             "scp": """import shutil,sys
 from pathlib import Path
+fault=Path(FAULT)
+if fault.exists():fault.unlink();raise SystemExit(1)
 src=Path(sys.argv[-2]);dst=Path(sys.argv[-1].split(':',1)[1])
 shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
-""",
+""".replace("FAULT", repr(str(self.repo / "copy-fault"))),
             "sudo": """import subprocess,sys
 args=sys.argv[1:];args=args[args.index('--')+1:]
 raise SystemExit(subprocess.run(args).returncode)
@@ -320,12 +322,84 @@ Path(os.environ['VP_HOME']).joinpath('config.json').write_text(json.dumps({'defa
             ).stdout
         )
 
+    def test_skipped_bootstrap_dependency_never_installs_tools(self):
+        path = self.repo / "workflows/workflow-tools.yaml"
+        workflow = yaml.safe_load(path.read_text())
+        steps = workflow["jobs"][0]["steps"]
+        steps[0]["dependsOn"] = [
+            {"step": "bootstrap_verify", "condition": {"type": "succeeded"}}
+        ]
+        steps[:0] = [
+            {
+                "name": "bootstrap_platform",
+                "task": {
+                    "type": "assert",
+                    "expr": "false",
+                    "message": "fixture refusal",
+                    "severity": "high",
+                },
+            },
+            {
+                "name": "bootstrap_verify",
+                "dependsOn": [
+                    {"step": "bootstrap_platform", "condition": {"type": "succeeded"}}
+                ],
+                "task": {
+                    "type": "assert",
+                    "expr": "true",
+                    "message": "never",
+                    "severity": "high",
+                },
+            },
+        ]
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        result = self.run_tools(False)
+        states = {step["name"]: step["status"] for step in result["jobs"][0]["steps"]}
+        self.assertEqual("skipped", states["tools_assets"])
+        self.assertEqual("skipped", states["tools_cleanup"])
+        self.assertFalse((self.target / "apt-installs").exists())
+
+    def test_copy_failure_keeps_staging_and_resumes_same_root(self):
+        (self.repo / "copy-fault").touch()
+        failed = self.run_tools(False)
+        states = {step["name"]: step["status"] for step in failed["jobs"][0]["steps"]}
+        self.assertEqual("failed", states["tools_copy"])
+        self.assertEqual("skipped", states["tools_cleanup"])
+        self.assertTrue(list(self.target.glob("stage-*")))
+        resumed = json.loads(
+            self.cli(
+                "workflow",
+                "resume",
+                "enrollment-tool-fixture",
+                "--run",
+                failed["id"],
+                "--from",
+                "tools_copy",
+            ).stdout
+        )
+        self.assertEqual(failed["id"], resumed["id"])
+        self.assertEqual("succeeded", resumed["status"])
+
+    def test_existing_account_vite_scope_and_managed_packages_remain_selected(self):
+        scope = self.target / "home/.vite-plus"
+        (scope / "bin").mkdir(parents=True)
+        (scope / "bin/vp").write_text("old-vp")
+        packages = scope / "package_manager/global/package.json"
+        packages.parent.mkdir(parents=True)
+        packages.write_text('{"dependencies":{"retained-tool":"1.0"}}')
+        self.assertEqual("succeeded", self.run_tools()["status"])
+        self.assertFalse((self.target / "opt/vite-plus").exists())
+        self.assertIn(str(scope), (self.target / "bin/vp").read_text())
+        self.assertEqual(
+            '{"dependencies":{"retained-tool":"1.0"}}', packages.read_text()
+        )
+
     def test_application_tools_verify_pins_and_prepare_only_the_managed_scopes(self):
         result = self.run_tools()
         self.assertEqual("succeeded", result["status"])
         steps = {step["name"]: step for step in result["jobs"][0]["steps"]}
         self.assertEqual("succeeded", steps["verify-receipt"]["status"])
-        self.assertTrue((self.target / "opt/vite-plus/bin/vp").is_file())
+        self.assertTrue((self.target / "home/.local/share/vite-plus/bin/vp").is_file())
         self.assertEqual(
             {"require": {}},
             json.loads((self.target / "opt/composer/composer.json").read_text()),
@@ -384,8 +458,14 @@ Path(os.environ['VP_HOME']).joinpath('config.json').write_text(json.dumps({'defa
         with zipfile.ZipFile(archive, "w") as bundle:
             bundle.writestr(
                 "chrome-headless-shell-linux64/chrome-headless-shell",
-                '#!/bin/sh\nprintf "%s\\n" "Chrome Headless Shell 145.0.0.0"\n',
+                '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Chrome Headless Shell 145.0.0.0"; else exec "$(dirname "$0")/chrome_crashpad_handler"; fi\n',
             )
+            helper = zipfile.ZipInfo(
+                "chrome-headless-shell-linux64/chrome_crashpad_handler"
+            )
+            helper.create_system = 3
+            helper.external_attr = 0o100755 << 16
+            bundle.writestr(helper, "#!/bin/sh\necho helper-ran\n")
         self.intent["browser"] = {
             "version": "145.0.0.0",
             "url": "https://artifacts.test/browser",
@@ -396,6 +476,12 @@ Path(os.environ['VP_HOME']).joinpath('config.json').write_text(json.dumps({'defa
         policy = (self.target / "apparmor/profile").read_text()
         self.assertIn("145.0.0.0", policy)
         self.assertIn("userns,", policy)
+        self.assertEqual(
+            "helper-ran",
+            subprocess.check_output(
+                [str(self.target / "bin/chrome-headless-shell")], text=True
+            ).strip(),
+        )
 
     def test_bad_javascript_artifact_prevents_later_mutation_and_readiness(self):
         self.intent["javascript"]["tools"]["bun"]["digest"] = "f" * 64
