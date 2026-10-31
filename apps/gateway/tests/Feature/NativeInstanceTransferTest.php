@@ -25,6 +25,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Operation;
@@ -138,7 +139,8 @@ it('resolves URL material only for the current authoritative admitted participan
     expect($source->resolve($operation, $this->instance->id, '', 'destination_route_environment')->value)->toBe([]);
     expect(fn () => $source->resolve($operation, $this->instance->id, '', 'source_route_environment'))->toThrow(ResourceOperationException::class);
 });
-it('rejects unimplemented SQLite composition before reserving a transfer', function (): void {
+it('rejects SQLite transfer without a fence for PHP writers before reserving a transfer', function (): void {
+    $this->instance->update(['selected_php_version' => '8.5']);
     expect(fn () => app(NativeInstanceTransferIntent::class)->assertSupported($this->instance, '/srv/native/db.sqlite'))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0);
 });
@@ -284,4 +286,46 @@ it('omits Process installation descriptors from unrelated Route participants', f
     expect($public['process_runtime'])->toBe(['node_id' => $router->id, 'field' => null, 'members' => [], 'ports' => []]);
     expect(fn () => app(InstanceTransferProcessMaterial::class)->resolve($operation, $this->instance->id, '', 'unknown'))
         ->toThrow(ResourceOperationException::class);
+});
+
+function native_sqlite_transfer($test, ?string $path = null): Operation
+{
+    $test->transfer->delete();
+    $test->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
+    $test->node->update(['wireguard_ip' => '10.44.0.9']);
+    $test->destination->update(['wireguard_ip' => '10.44.0.17', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $test->destination->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+
+    return app(StartInstanceTransferAction::class)->execute($test->instance, new TransferInstanceData($test->destination->id, null, $path ?? '/srv/native/data.sqlite'));
+}
+
+it('admits canonical SQLite descriptors in the parent without child Operations or Node calls', function (): void {
+    $this->mock(ManagedUserAccountResolver::class)->shouldNotReceive('resolve');
+    $operation = native_sqlite_transfer($this);
+    $sqlite = $operation->input['direct_transfer']['sqlite'];
+    expect($sqlite['source']['node_id'])->toBe($this->node->id)->and($sqlite['target']['node_id'])->toBe($this->destination->id)
+        ->and($sqlite['source']['source_path'])->toBe('/srv/native/data.sqlite')
+        ->and($sqlite['target']['relative_path'])->toBe('data.sqlite')
+        ->and($sqlite['target']['base'])->toBe('/srv/apps/native/native')
+        ->and($sqlite['source']['operation'])->toBe($sqlite['target']['operation']);
+    expect(Operation::query()->count())->toBe(1)->and($operation->node_id)->toBe($this->node->id)
+        ->and($operation->input['direct_transfer']['source']['sqlite_source'])->toBe('/srv/native/data.sqlite');
+});
+
+it('refuses a SQLite source outside the checkout without leaving transfer intent', function (): void {
+    expect(fn () => native_sqlite_transfer($this, '/srv/native-sibling/data.sqlite'))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0)->and(InstanceTransfer::query()->count())->toBe(0);
+});
+
+it('keeps the admitted SQLite placement fresh and stores its destination environment only at cutover', function (): void {
+    $operation = native_sqlite_transfer($this);
+    $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    $projection = app(NativeInstanceTransferProjection::class);
+    expect($projection->publicInput($operation, $this->node->id)['direct_transfer']['sqlite']['target']['relative_path'])->toBe('data.sqlite');
+    expect(InstanceEnvironmentValue::query()->where('instance_id', $this->instance->id)->where('env_key', 'DB_DATABASE')->exists())->toBeFalse();
+    $projection->apply($operation, native_transfer_result('cutover'));
+    expect(InstanceEnvironmentValue::query()->where('instance_id', $this->instance->id)->where('env_key', 'DB_DATABASE')->sole()->env_value)->toBe('/srv/apps/native/native/data.sqlite');
+    expect($projection->publicInput($operation->fresh(), $this->node->id)['direct_transfer']['cutover'])->toBeTrue();
+    $this->instance->refresh()->update(['checkout_path' => '/unrelated']);
+    expect(fn () => $projection->publicInput($operation->fresh(), $this->node->id))->toThrow(ResourceOperationException::class);
 });

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Operations\DirectOperation;
@@ -45,6 +47,15 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
         $plan = ValidatedData::object($operation->input['direct_transfer']);
         $plan['cutover'] = $transfer->cutover_at !== null;
         $plan['completed'] = $transfer->completed_at !== null;
+        if (($plan['sqlite'] ?? null) !== null) {
+            $instance = Instance::query()->findOrFail($operation->target_id);
+            if ($instance->node_id !== ($plan['cutover'] ? $transfer->destination_node_id : $transfer->source_node_id)
+                || $instance->checkout_path !== ($plan['cutover'] ? $transfer->destination_path : $transfer->source_path)
+                || $transfer->sourceNode->user !== data_get($plan, 'sqlite.source.transport_user')
+                || $transfer->destinationNode->user !== data_get($plan, 'sqlite.target.transport_user')) {
+                throw $this->conflict();
+            }
+        }
 
         return [...$this->routes->publicInput($operation, $callerNodeId), 'direct_transfer' => $plan,
             'process_runtime' => app(InstanceTransferProcesses::class)->input($operation, $callerNodeId)];
@@ -78,6 +89,12 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         'registration_common_repository_path' => null,
                         'vite_port' => DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port'),
                         'ssr_port' => DB::table('ssr_port_assignments')->where('instance_id', $instance->id)->where('node_id', $transfer->destination_node_id)->value('port')]);
+                    if ($transfer->sqlite_source_path !== null) {
+                        $sqlite = ValidatedData::object(ValidatedData::object($operation->input['direct_transfer'])['sqlite']);
+                        $target = ValidatedData::object($sqlite['target']);
+                        app(InstanceEnvironmentStore::class)->putMany(app(InstanceEnvironmentContextResolver::class)->resolve($instance, true),
+                            ['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => $transfer->destination_path.'/'.ValidatedData::string($target['relative_path'])], 'transfer-sqlite');
+                    }
                     $this->routes->cutover($snapshot);
                     $transfer->update(['cutover_at' => now(), 'status' => InstanceTransferStatus::InProgress,
                         'current_step' => InstanceTransferStep::Cutover, 'failed_step' => null, 'error_code' => null]);

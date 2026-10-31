@@ -15,7 +15,7 @@ The CLI calls `POST /api/v1/instances/{instance}/transfer` and follows the retur
 
 Both Nodes must be active Linux Nodes with an active `app-dev` role and an active Cluster. The source must be an active development Instance with one authoritative Route and no removal in progress. The destination must be a different Node that the Project permits. A stored absolute destination apps path is required. Filesystem ownership, the real source Git identity and the unoccupied destination are checked by the native workers.
 
-The current native admission refuses VM placements, SQLite copies and Instances with Schedule definitions. It returns `operation.kind_unavailable` before reserving or moving anything. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
+The current native admission refuses VM placements and Instances with Schedule definitions. It returns `operation.kind_unavailable` before reserving or moving anything. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
 
 Each additional Route with a web root must be active and have no domain or placement change. A public web-root Route cannot move across Clusters. The Route family captures the complete primary and web-root inventory and reserves any replacement primary during admission.
 
@@ -26,6 +26,12 @@ The destination worker checks readiness before the source is captured. The sourc
 A linked worktree becomes an independent checkout. Its committed history, branch, origin, staged index, staged new objects, unstaged edits, untracked files and private environment files are retained. The source index and common repository remain unchanged. A common checkout with other linked worktrees cannot be removed by this transfer. Git commands disable checkout hooks and filesystem monitors.
 
 Extraction rejects paths and links that escape the checkout. Local staging directories have private permissions and are removed when the action ends. Native archive resources live for the workflow. The destination removes public permissions from its environment file.
+
+## SQLite
+
+`--sqlite-source-path` copies one SQLite database inside the source checkout through the canonical database snapshot and seed actions. The current transfer admission requires no selected PHP runtime, no Laravel source and no external database binding. Source Processes stop before the snapshot. Transfers that use PHP remain unavailable until a native write fence can stop HTTP writes across the move.
+
+The checkout archive excludes the selected database and its WAL/SHM files. The destination verifies the native snapshot's size, digest and SQLite header before installation. A native merge updates only `DB_CONNECTION` and `DB_DATABASE` in the archived environment file. The same values enter the canonical environment store in the atomic cutover transaction. Temporary snapshots, incoming files and seed journals are cleaned before terminal projection, including failure and cancellation. Database bytes never pass through Gateway or workflow JSON.
 
 ## Placement and publication
 
