@@ -1,7 +1,6 @@
 id: 8474afdb-4aba-485e-9c39-8a1e63cf1d61
 name: observation-maintenance
 description: Run the bounded Orbit observation maintenance pass.
-labels: { pool: services-local }
 autoResume: true
 concurrency: 1
 trigger:
@@ -12,6 +11,8 @@ jobs:
   - name: observation
     steps:
       - name: maintain
+        target: orbit-node-209
+        labels: { node: "209" }
         task:
           type: behavior
           behaviorType: "@nckrtl/observation"

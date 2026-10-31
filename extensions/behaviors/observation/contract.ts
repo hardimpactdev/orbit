@@ -9,18 +9,6 @@ export const Globals = z.object({
 export type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
-  readResource(name: string): Promise<Record<string, unknown> | null>;
-  writeResource(
-    spec: string,
-    name: string,
-    value: Record<string, unknown>,
-  ): Promise<{ name: string }>;
 };
 
-export const Receipt = z.strictObject({
-  status: z.enum(["succeeded", "skipped", "disabled"]),
-  finalized: z.number().int().nonnegative().optional(),
-  requeued: z.number().int().nonnegative().optional(),
-  pruned: z.number().int().nonnegative().optional(),
-});
 export const Args = z.object({ runId: z.string().uuid() });

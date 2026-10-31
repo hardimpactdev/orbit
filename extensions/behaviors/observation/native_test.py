@@ -14,13 +14,15 @@ class ObservationNativeTest(NativeTestCase):
         super().setUp()
         self.copy_behaviors('observation', 'automatic-deploy', 'operations/_lib',
                             'operations/database', 'operations/tools')
+        shutil.copy(ROOT / 'extensions/behaviors/operations/failure.ts', self.repo / 'extensions/behaviors/operations/failure.ts')
         for path in ROOT.glob('workflows/workflow-observation-*.yaml'):
             shutil.copy(path, self.repo / 'workflows' / path.name)
-        path = ROOT / 'workflows/workflow-operation-doctor-inspect.yaml'
-        shutil.copy(path, self.repo / 'workflows' / path.name)
+        for name in ('doctor-inspect','observation-maintain'):
+            path = ROOT / f'workflows/workflow-operation-{name}.yaml'
+            shutil.copy(path, self.repo / 'workflows' / path.name)
 
     def test_native_doctor_and_cheap_schedules_validate_with_their_real_placement(self):
-        for name in ('operation-doctor-inspect', 'observation-collection',
+        for name in ('operation-doctor-inspect', 'operation-observation-maintain', 'observation-collection',
                      'observation-horizon', 'observation-maintenance',
                      'observation-retention'):
             self.cli('workflow', 'validate', name)

@@ -41,6 +41,7 @@ function fixture(nodes: NodeIntent[] = [node(9)], families: string[] = []) {
       families,
       collect_problems: false,
       logs: undefined as Row | undefined,
+      signals: undefined as Row | undefined,
     },
   };
   let unbound = false;
@@ -329,4 +330,30 @@ Deno.test("cancellation avoids every Node and log read and records cancellation"
   assertEquals(f.localCalls, []);
   assertEquals(f.logs(), 0);
   assertEquals(f.projects.at(-1)!.status, "cancelled");
+});
+
+Deno.test("collection finish selects Gateway signals natively without returning unselected state", async () => {
+  const f = fixture([], []);
+  f.current.input.collect_problems = true;
+  f.current.input.signals = {
+    activity_cursor: null,
+    activity_max: 37,
+    activities: [],
+    assistance: [],
+    stored_assistance_ids: [],
+  };
+  await f.behavior.methods.finish.execute(
+    { ...args, node_results: {} },
+    f.context,
+  );
+  const result = f.projects.at(-1)?.result as Row;
+  assertEquals((result.signals as Row).activity_cursor_after, 37);
+  assertEquals((result.signals as Row).activities, []);
+  assertEquals(result.signals, {
+    activity_cursor_before: null,
+    activity_cursor_after: 37,
+    activities: [],
+    open_assistance_ids: [],
+    assistance: [],
+  });
 });

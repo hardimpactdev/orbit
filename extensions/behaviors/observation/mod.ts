@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 
-import { Args, type Context, Globals, Receipt } from "./contract.ts";
+import { Args, type Context, Globals } from "./contract.ts";
 
 export class ObservationError extends Error {
   constructor(readonly code: string) {
@@ -38,44 +38,22 @@ export function observation(
       60_000,
     ),
 ) {
-  const routine = (names: string[]) => ({
-    description: "Maintain bounded Gateway state through Services-only APIs",
+  const admit = (routine: string) => ({
+    description: "Admit one native maintenance or Horizon inspection Operation",
     arguments: Args,
-    execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-      const api = new ObservationApi(makeHttp(ctx));
-      const handles = [];
-      let failed = false;
-      for (const name of names) {
-        const key = `${name}-${args.runId}`;
-        if (await ctx.readResource(key)) continue;
-        try {
-          const result = Receipt.parse(
-            await api.post(`maintenance/${name}`, { run_id: args.runId }),
-          );
-          handles.push(await ctx.writeResource("routine", key, result));
-        } catch {
-          failed = true;
-        }
-      }
-      if (failed) {
-        throw new ObservationError("observation.maintenance_incomplete");
-      }
-      return { dataHandles: handles };
+    execute: async (_args: z.infer<typeof Args>, ctx: Context) => {
+      const result = z.object({ id: z.number().int().positive() }).or(
+        z.object({ status: z.literal("disabled") }),
+      ).parse(
+        await new ObservationApi(makeHttp(ctx)).post(`maintenance/${routine}`),
+      );
+      return "id" in result ? { operation_id: result.id } : result;
     },
   });
   return {
     type: "@nckrtl/observation",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
-    resources: {
-      routine: {
-        description:
-          "Counts and status from one Gateway state maintenance receipt",
-        schema: Receipt,
-        lifetime: "7d",
-        garbageCollection: 10,
-      },
-    },
     methods: {
       collect: {
         description: "Admit one native Doctor and problem collection run",
@@ -88,9 +66,9 @@ export function observation(
           return "id" in result ? { operation_id: result.id } : result;
         },
       },
-      health: routine(["health"]),
-      maintain: routine(["activities", "metrics"]),
-      retain: routine(["batches", "failed"]),
+      health: admit("health"),
+      maintain: admit("maintenance"),
+      retain: admit("retention"),
     },
   };
 }

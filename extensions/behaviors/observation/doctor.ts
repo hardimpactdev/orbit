@@ -23,6 +23,7 @@ import { checkRuntime } from "./doctor_runtime.ts";
 import { checkApplications } from "./doctor_applications.ts";
 import { checkInfrastructure } from "./doctor_infrastructure.ts";
 import { collectLogs } from "./doctor_logs.ts";
+import { collectSignals } from "./doctor_signals.ts";
 
 const Args = DirectArgs.extend({
   kind: z.literal("doctor.inspect"),
@@ -33,6 +34,7 @@ const Input = z.object({
   families: z.array(z.enum(Families)),
   collect_problems: z.boolean(),
   logs: z.record(z.string(), z.unknown()).optional(),
+  signals: z.record(z.string(), z.unknown()).optional(),
 });
 const Outcome = z.object({
   id: z.number(),
@@ -376,6 +378,9 @@ export function doctor(
               };
               if (input.collect_problems && input.logs) {
                 result.logs = await logs(input.logs);
+              }
+              if (input.collect_problems && input.signals) {
+                result.signals = collectSignals(input.signals);
               }
               return result;
             },

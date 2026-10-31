@@ -62,3 +62,20 @@ jobs:
             kind: "${{ inputs.kind }}"
             run_id: "${{ run.id }}"
             node_results: "${{ steps }}"
+
+  - name: report_failure
+    dependsOn: [{job: finish, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    steps:
+      - name: report_failure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "observation-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            kind: '${{ inputs.kind }}'
+            node_id: '${{ inputs.node_id }}'
+            run_id: '${{ run.id }}'

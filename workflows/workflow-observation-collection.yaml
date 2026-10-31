@@ -1,7 +1,6 @@
 id: fb550568-ab07-4eb4-b5f4-db92e5780dc0
 name: observation-collection
 description: Run the bounded Orbit observation collection pass.
-labels: { pool: services-local }
 autoResume: true
 concurrency: 1
 trigger:
@@ -12,6 +11,8 @@ jobs:
   - name: observation
     steps:
       - name: collect
+        target: orbit-node-209
+        labels: { node: "209" }
         task:
           type: behavior
           behaviorType: "@nckrtl/observation"

@@ -15,9 +15,17 @@ Deno.test("observation schedules stagger bounded work and never poll each minute
     ) as {
       concurrency: number;
       trigger: { schedule: string };
-      jobs: { steps: { task: { behaviorName: string } }[] }[];
+      jobs: {
+        steps: {
+          target: string;
+          labels: { node: string };
+          task: { behaviorName: string };
+        }[];
+      }[];
     };
     schedules[name] = workflow.trigger.schedule;
+    assertEquals(workflow.jobs[0].steps[0].target, "orbit-node-209");
+    assertEquals(workflow.jobs[0].steps[0].labels, { node: "209" });
     assertEquals(workflow.concurrency, 1);
     behaviorNames.add(workflow.jobs[0].steps[0].task.behaviorName);
   }

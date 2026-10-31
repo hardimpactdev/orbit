@@ -15,15 +15,24 @@ material boundary, selected by admitted participant and owning Node. They stay
 inside each private callback. Reports contain no command, credential, raw
 configuration or raw exception message. The log collector reads on the Gateway
 worker and returns only exception class, normalized application frame, request
-identity, timestamp and cursor. The Gateway commits those signals and cursor
-together, refusing a stale cursor update.
+identity, timestamp and cursor. Swamp also classifies redacted Activity rows and
+assistance requests, preserving first-run history suppression, source cursors
+and bounded samples. The Gateway commits selected fingerprints and cursors
+together, refusing stale cursor updates.
 
 Scheduled collection and independent Horizon checks run every ten minutes.
-Gateway database housekeeping runs every five minutes and retention runs daily
-at 02:17 UTC. Their staggered schedules retain one concurrent scheduler run;
-there is no minute poller or Gateway execution queue. Collection admits one
-native Operation and does not wait inside the scheduler. Filing remains
-separate.
+Maintenance admission runs every five minutes and retention runs daily at 02:17
+UTC. Admission steps run on the control worker on Node 209. Each admits a native
+Operation whose execution runs on the exact Gateway worker.
+
+Swamp selects interrupted Activities and expired batch/failed-job records from
+safe Gateway row metadata. Gateway projection applies only those selected state
+changes. Activities already settled stay unchanged. Horizon snapshots run in
+Swamp through the existing Redis login's shared private-material field,
+including atomic counter resets, snapshot trimming and supervisor-based queue
+waits. Gateway keeps no maintenance lock or cached receipt. A failed snapshot
+still projects the independent Activity work. Native defaults own concurrency
+and resumption; there is no minute poller or Gateway execution queue.
 
 Run the focused Deno tests and `native_test.py`. Native validation preserves the
 production workflow's exact Node placement. A live dev proof must also record

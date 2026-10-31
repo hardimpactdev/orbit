@@ -1,122 +1,80 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { observation } from "./mod.ts";
-import type { Context } from "./contract.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
-
 const runId = "123e4567-e89b-42d3-a456-426614174099";
+const context = {
+  globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/unused" },
+};
 function fixture() {
-  const saved = new Map<string, Record<string, unknown>>();
-  const calls: string[] = [];
-  const receipts = new Map<string, unknown>();
-  const effects: string[] = [];
-  let fail: string | null = null;
+  const calls: { path: string; body: unknown }[] = [];
   let disabled = false;
-  const http: Http = async (_method, path) => {
-    await Promise.resolve();
-    calls.push(path);
-    let data: unknown = { status: disabled ? "disabled" : "recorded" };
-    if (path.endsWith("/plan")) {
-      data = {
-        ...(disabled ? { status: "disabled" } : { id: 77 }),
-      };
+  let failed = false;
+  const http: Http = (_method, path, body) => {
+    calls.push({ path, body });
+    if (failed) {
+      return Promise.resolve({
+        status: 503,
+        body: { error: { code: "swamp.start_refused" } },
+      });
     }
-    if (path.includes("/maintenance/")) data = { status: "succeeded" };
-    if (!receipts.has(path)) {
-      receipts.set(path, data);
-      effects.push(path);
-    }
-    if (path.endsWith(fail ?? "__none__")) {
-      fail = null;
-      throw new Error("lost reply");
-    }
-    return { status: 200, body: { data: receipts.get(path) } };
+    return Promise.resolve({
+      status: 202,
+      body: { data: disabled ? { status: "disabled" } : { id: 77 } },
+    });
   };
-  function context(): Context {
-    const { context } = createModelTestContext({
-      globalArgs: {
-        gatewayUrl: "https://gateway.example.test",
-        caFile: "/unused",
-      },
-    });
-    const write = context.writeResource.bind(context);
-    return Object.assign(context, {
-      globalArgs: {
-        gatewayUrl: "https://gateway.example.test",
-        caFile: "/unused",
-      },
-      readResource: (name: string) => Promise.resolve(saved.get(name) ?? null),
-      writeResource: async (
-        spec: string,
-        name: string,
-        value: Record<string, unknown>,
-      ) => {
-        const result = await write(spec, name, value);
-        saved.set(name, structuredClone(value));
-        return result;
-      },
-    });
-  }
   return {
     behavior: observation(() => http),
-    context,
     calls,
-    effects,
-    lose: (path: string) => {
-      fail = path;
-    },
     disable: () => {
       disabled = true;
     },
+    fail: () => {
+      failed = true;
+    },
   };
 }
-Deno.test("collection admits one native Doctor Operation without Gateway probes or signals", async () => {
+Deno.test("scheduled collection admits one native Doctor and never sends resource or command input", async () => {
   const f = fixture();
-  assertEquals(
-    await f.behavior.methods.collect.execute({ runId }, f.context()),
-    { operation_id: 77 },
-  );
-  assertEquals(f.calls, [`/api/v1/observation/collections/${runId}/plan`]);
+  assertEquals(await f.behavior.methods.collect.execute({ runId }, context), {
+    operation_id: 77,
+  });
+  assertEquals(f.calls, [{
+    path: `/api/v1/observation/collections/${runId}/plan`,
+    body: {},
+  }]);
 });
-Deno.test("a failed housekeeping request leaves independent routines running and resume retries only the missing receipt", async () => {
+Deno.test("maintenance and retention admit native parents without Gateway receipts or routine execution", async () => {
   const f = fixture();
-  f.lose("/activities");
-  await assertRejects(
-    () => f.behavior.methods.maintain.execute({ runId }, f.context()),
-    Error,
-    "observation.maintenance_incomplete",
-  );
-  assertEquals(f.calls.map((path) => path.split("/").at(-1)), [
-    "activities",
-    "metrics",
+  assertEquals(await f.behavior.methods.maintain.execute({ runId }, context), {
+    operation_id: 77,
+  });
+  assertEquals(await f.behavior.methods.retain.execute({ runId }, context), {
+    operation_id: 77,
+  });
+  assertEquals(f.calls.map((c) => c.path), [
+    "/api/v1/observation/maintenance/maintenance",
+    "/api/v1/observation/maintenance/retention",
   ]);
-  await f.behavior.methods.maintain.execute({ runId }, f.context());
-  assertEquals(f.calls.map((path) => path.split("/").at(-1)), [
-    "activities",
-    "metrics",
-    "activities",
-  ]);
-  assertEquals(
-    f.effects.filter((path) => path.endsWith("/activities")).length,
-    1,
-  );
+  assertEquals(f.calls.map((c) => c.body), [{}, {}]);
 });
-Deno.test("Tasks disabled before a collection returns without probes", async () => {
+Deno.test("disabled collection and Horizon checks admit no child or maintenance work", async () => {
   const f = fixture();
   f.disable();
-  assertEquals(
-    await f.behavior.methods.collect.execute({ runId }, f.context()),
-    { status: "disabled" },
+  assertEquals(await f.behavior.methods.collect.execute({ runId }, context), {
+    status: "disabled",
+  });
+  assertEquals(await f.behavior.methods.health.execute({ runId }, context), {
+    status: "disabled",
+  });
+  assertEquals(f.calls.length, 2);
+});
+Deno.test("refused admission is surfaced once and never retried by the family", async () => {
+  const f = fixture();
+  f.fail();
+  await assertRejects(
+    () => f.behavior.methods.maintain.execute({ runId }, context),
+    Error,
+    "swamp.start_refused",
   );
   assertEquals(f.calls.length, 1);
-});
-Deno.test("Horizon health and retention use narrow routines without commands or secret input", async () => {
-  const f = fixture();
-  await f.behavior.methods.health.execute({ runId }, f.context());
-  await f.behavior.methods.retain.execute({ runId }, f.context());
-  assertEquals(f.calls.map((path) => path.split("/").at(-1)), [
-    "health",
-    "batches",
-    "failed",
-  ]);
 });
