@@ -1,13 +1,13 @@
 ---
 title: PHP monitoring command steps
-description: Apply dedicated production FPM monitoring with official file actions.
+description: Apply dedicated production FPM monitoring with official SSH actions.
 ---
 
-Metrics supplies the public `MetricsFleetCapture` runtime descriptor. `ProductionPhpRuntimeConfigRenderer` owns the pool text. The workflow also receives the existing Gateway SSH connection and `control_node_id` from `NativeCaddyPublicationInput::connectionForNode(Node)`. No private bytes are needed.
+Metrics supplies the public `MetricsFleetCapture` runtime descriptor. `ProductionPhpRuntimeConfigRenderer` owns the pool text. Every step runs on 209. The workflow also receives the existing 209 SSH connection, stored `host_keys` and `control_node_id:209` from `NativeCaddyPublicationInput::connectionForNode(Node)`. No private bytes are needed.
 
 `workflow-operation-php-monitor.yaml` probes whether the dedicated runtime exists and whether the current release directory exists. The typed `@nckrtl/php-monitor-command.prepare` metadata method selects the captured current or initial pool. An absent runtime returns `present: false` without creating a runtime.
 
-For a present runtime, official `@swamp/cfgmgmt/file` writes its generated `pool.conf` from the Gateway worker. A Node-local `php-fpm -t` command validates the runtime's existing main configuration. Successful validation permits one `systemctl reload` command for the dedicated service. Local tuning, the unit and other runtime files remain under their existing owners.
+For a present runtime, official `@swamp/ssh` writes its generated `pool.conf` from a 209 worker. A separate remote `php-fpm -t` command validates the runtime's existing main configuration. Successful validation permits one `systemctl reload` command for the dedicated service. Local tuning, the unit and other runtime files remain under their existing owners.
 
 A failed write or validation skips reload. A reload failure fails the run. Re-running converges the pool. Monitoring has no journal, generation receipt, stopped-service preservation or custom compensation. The official systemd extension has no reload method, so reload is one visible command step.
 

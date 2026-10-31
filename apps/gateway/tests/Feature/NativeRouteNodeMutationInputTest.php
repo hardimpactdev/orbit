@@ -26,10 +26,10 @@ beforeEach(function (): void {
     app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root');
     $this->mock(ManagedUserAccountResolver::class)->shouldNotReceive('resolve');
-    $this->node = Node::query()->create(['name' => 'snapshot-workload', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
+    $this->node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'snapshot-workload', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
         'status' => 'active', 'public_ssh_host' => '192.0.2.31', 'wireguard_ip' => '10.44.0.31', 'tld' => 'old.test']);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-    $this->gateway = Node::query()->create(['name' => 'snapshot-gateway', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active',
+    $this->gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'snapshot-gateway', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active',
         'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14']);
     $this->gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $this->gateway->roles()->create(['role' => 'vpn', 'status' => 'active']);
@@ -161,6 +161,7 @@ it('captures tracking placement through its owner and applies it only at termina
     $tracking = instance_analytics_tracking($this->instance, 'tracker.literal.test');
     $cluster = Cluster::query()->create(['name' => 'snapshot-cluster', 'tld' => 'cluster.test', 'state' => 'active']);
     $router = instance_analytics_node('snapshot-router', '10.44.0.51', $cluster, RoleName::Router);
+    $router->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key']);
     $input = $this->capture->capture($this->node, $this->candidate, $cluster->id);
     expect($input['route_mutations']['analytics_changes'])->toHaveCount(1)
         ->and($tracking->fresh()->node_id)->toBe($this->node->id)
@@ -174,6 +175,7 @@ it('captures tracking placement through its owner and applies it only at termina
 
 it('publishes an address change on a Node that serves only a custom proxy', function (): void {
     $node = instance_analytics_node('snapshot-proxy', '10.44.0.61', null, RoleName::AppDev);
+    $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key']);
     $proxy = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $node->id, 'domain' => 'proxy.literal.test',
         'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $proxy->customProxy()->create(['node_id' => $node->id, 'upstream' => 'http://127.0.0.1:8787']);

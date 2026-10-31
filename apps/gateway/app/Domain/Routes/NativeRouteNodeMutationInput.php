@@ -124,7 +124,6 @@ final readonly class NativeRouteNodeMutationInput
                 $serves = in_array($nodeId, $addressNodes, true) || $beforeSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))
                     || $afterSites->where('nodeId', $nodeId)->contains(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true));
                 $publications[] = ['index' => $index, 'node_id' => $nodeId, 'user' => $node->user, 'serves_routes' => $serves,
-                    'host_keys' => $node->ssh_host_key_type !== null && $node->ssh_host_key !== null ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : [],
                     ...$forward, 'before' => $before, 'restore_connection' => app(NativeCaddyPublicationInput::class)->connectionForNode($node)['connection']];
             }
             $captureId = bin2hex(random_bytes(8));

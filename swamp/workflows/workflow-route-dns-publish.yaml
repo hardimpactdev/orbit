@@ -29,42 +29,44 @@ jobs:
 - name: dns
   steps:
   - name: read-records
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: &id001
-      node: ${{ string(inputs.intent.control_node_id) }}
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "route-dns-read-records-" + run.id }}
       methodName: exec
-      globalArgs: &id002
+      globalArgs: &id001
         name: ${{ "route-dns-" + string(inputs.intent.node_id) }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
           identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
         hosts:
-        - name: dns
+        - name: target
           address: ${{ inputs.intent.connection.nodeHost }}
           transport:
             hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
-        hosts: name:dns
+        hosts: name:target
         argv:
         - sudo
         - /usr/bin/cat
         - /etc/dnsmasq.d/orbit-records.conf
   - name: read-catalog
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "route-dns-read-catalog-" + run.id }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
-        hosts: name:dns
+        hosts: name:target
         argv:
         - sudo
         - /usr/bin/cat
@@ -74,8 +76,9 @@ jobs:
       condition:
         type: succeeded
   - name: compose
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: read-catalog
       condition:
@@ -93,147 +96,157 @@ jobs:
           records: ${{ steps["read-records"].outputs.stdout }}
           catalog: ${{ steps["read-catalog"].outputs.stdout }}
   - name: catalog-directory
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/directory'
-      behaviorName: ${{ "route-dns-catalog-directory-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        path: /var/lib/orbit/private-dns
-        ensure: present
-        owner: root
-        group: root
-        mode: '0755'
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-catalog-directory-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0755'
+        - /var/lib/orbit/private-dns
+        sudo: true
     dependsOn:
     - step: compose
       condition:
         type: succeeded
   - name: records
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "route-dns-records-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        path: /etc/dnsmasq.d/orbit-records.conf
-        ensure: present
-        owner: root
-        group: root
-        mode: '0644'
-        content: ${{ steps.compose.outputs.records }}
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-records-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          /usr/bin/install -m 0644 -o root -g root /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - route-file
+        - /etc/dnsmasq.d/orbit-records.conf
+        stdin: ${{ steps.compose.outputs.records }}
+        sudo: true
     dependsOn:
     - step: catalog-directory
       condition:
         type: succeeded
   - name: catalog
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ "route-dns-catalog-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        path: /var/lib/orbit/private-dns/catalog.json
-        ensure: present
-        owner: root
-        group: root
-        mode: '0644'
-        content: ${{ steps.compose.outputs.catalog }}
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-catalog-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /bin/sh
+        - -c
+        - |-
+          set -eu
+          /usr/bin/install -m 0644 -o root -g root /dev/null "$1"
+          /usr/bin/cat > "$1"
+        - route-file
+        - /var/lib/orbit/private-dns/catalog.json
+        stdin: ${{ steps.compose.outputs.catalog }}
+        sudo: true
     dependsOn:
     - step: records
       condition:
         type: succeeded
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "route-dns-validate-" + run.id }}
       methodName: exec
       inputs:
-        hosts: name:dns
+        hosts: name:target
         argv:
         - sudo
         - /usr/sbin/dnsmasq
         - --test
-      globalArgs: *id002
+      globalArgs: *id001
     dependsOn:
     - step: catalog
       condition:
         type: succeeded
   - name: restart-backend
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "route-dns-restart-backend-" + run.id }}
-      methodName: restart
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        service: dnsmasq
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-restart-backend-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - restart
+        - dnsmasq
+        sudo: true
     dependsOn:
     - step: validate
       condition:
         type: succeeded
   - name: listener
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@swamp/cfgmgmt/systemd'
-      behaviorName: ${{ "route-dns-listener-" + run.id }}
-      methodName: apply
-      inputs: {}
-      globalArgs:
-        nodeHost: ${{ inputs.intent.connection.nodeHost }}
-        nodeUser: ${{ inputs.intent.connection.nodeUser }}
-        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-        become: ${{ inputs.intent.connection.become }}
-        service: orbit-private-dns.socket
-        ensure: running
-        enabled: true
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-listener-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - enable
+        - --now
+        - orbit-private-dns.socket
+        sudo: true
     dependsOn:
     - step: restart-backend
       condition:
         type: succeeded
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
       behaviorType: command/shell
       behaviorName: ${{ "route-dns-result-" + run.id }}
       methodName: execute
       inputs:
-        run: 'printf ''%s\n'' ''{"ready":true}''
-
-          '
+        run: |
+          printf '%s\n' '{"ready":true}'
     dependsOn:
     - step: listener
       condition:
