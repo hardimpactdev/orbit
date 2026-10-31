@@ -272,6 +272,7 @@ describe('repository guidance bootstrap', function (): void {
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
+            \Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest::class,
             DestroyGitHubAppRequest::class,
         ];
         $gatewayReleaseRequests = [
@@ -370,6 +371,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Deployments\\ResolveAutomaticDeployAdmissionRequest',
         ];
         $fleetRequests = [
+            'Orbit\\Sdk\\Requests\\Fleet\\MigrateDockerRequest',
             'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',

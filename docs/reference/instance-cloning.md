@@ -1,12 +1,9 @@
 ---
 title: "Instance cloning"
-description: "How the Gateway creates a prepared production Instance from a development or production candidate, with an optional SQLite seed."
+description: "Create a production Instance from an admitted candidate through one native Swamp workflow."
 covers:
-  - apps/gateway/app/Actions/Instances/{StartInstanceCloneAction,InstantiateProjectRuntimeDefinitionsAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceCloneCandidateInspector,CloneCandidateSource,ProductionCloneRouteProjector,ProductionInstanceProvisioner,ProductionInstanceSourceLifecycle,InstanceSqliteSeedIntent}.php
-  - apps/gateway/app/Domain/Instances/Sqlite/**
-  - apps/gateway/app/Infrastructure/*/NativeProduction*Provisioner.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceCloneCandidateInspector,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle}.php
+  - apps/gateway/app/Actions/Instances/StartInstanceCloneAction.php
+  - apps/gateway/app/Domain/Instances/{InstanceCloneProjection,NativeInstanceProvisioningIntent,NativeInstanceProvisioningProjection}.php
   - apps/gateway/app/Http/{Controllers/Api/InstanceClonesController.php,Requests/Instances/CloneInstanceRequest.php}
   - apps/cli/app/Commands/Instances/CloneInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CloneInstanceRequest.php
@@ -14,170 +11,65 @@ covers:
 
 # Instance cloning
 
-Every production Instance starts as a clone. The Gateway validates the candidate and reserves the target. Swamp copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning composes the Route, environment, database, and runtime families as child Operations. Every Node effect uses the target Node recorded on its Operation.
+Cloning creates a production Instance from an active candidate. The Gateway records the source and destination placements, reserves the target, and starts one native Swamp workflow. Swamp inspects the candidate on its own worker and prepares the destination on its own worker. The candidate keeps running.
 
-Runtime installation uses the shipped `process.install_instance_definitions` and `schedule.install_instance_definitions` children, each with only `{instance_id}`. The Gateway captures the Project's definitions once. Each child records its per-record creation plan; Process copies stay stopped and Schedule copies stay disabled until a later deployment starts them.
+The native workflow currently supports Projects without Routes, database attachments, Process definitions, or Schedule definitions. Neither placement may be a task VM. SQLite seeding and other combinations return `operation.kind_unavailable` before the Gateway reserves a target.
 
 `instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
 
-A candidate on a private local branch such as `orbit/instance/<preparation-id>` needs `--branch` naming the repository branch for the production target. The candidate stays on its own local branch.
-
-## Prepare the Node
-
-The destination Node needs its own TLD for the preview domain. Set it when you add the Node:
-
-```bash
-orbit node:add production production.example --role=app-prod --tld=prod.orbit
-```
-
 ## Clone
 
-Name the candidate, the destination Node, the new Instance name, and a preview name:
+Choose a candidate and a destination with an active `app-prod` role.
 
 ```bash
-orbit instance:clone <candidate> <node> <name> --preview-name=shop.com [--branch=BRANCH] [--sqlite-source-path=PATH]
+orbit instance:clone <candidate> <node> <name> --preview-name=preview [--branch=BRANCH]
 ```
 
-The CLI calls `POST /api/v1/instances/{candidate}/clone`. The API returns HTTP 202 with the admitted Operation. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses the admission after a lost response.
+The CLI calls `POST /api/v1/instances/{candidate}/clone`. The API returns HTTP 202 with the admitted Operation. An optional `Idempotency-Key` returns the same admission after a lost response. Swamp owns steps, placement, failure handling, and cancellation. The Gateway records the resulting Instance state.
 
 | Input | Meaning |
 | --- | --- |
 | `node_id` | Destination Node with an active `app-prod` role. Required. |
-| `name` | Name of the new Instance. Required. |
-| `preview_name` | Name that the preview domain starts with. Required. |
-| `branch` | Branch to deploy. It must exist in the repository. It defaults to the candidate's branch, or its deployment branch for a production candidate. |
-| `sqlite_source_path` | Absolute path to one SQLite database on the candidate. Optional. |
+| `name` | New Instance name. Required. |
+| `preview_name` | Reserved preview identity. Required; no Route is created for the supported Project types. |
+| `branch` | Repository branch for the production target. Defaults to the candidate's branch, or its deployment branch for a production candidate. |
+| `sqlite_source_path` | Unavailable in the native clone workflow. |
 
-The request accepts no Project, commit, Unix user, or path. The candidate decides the Project. Laravel-package Projects use their declared Project type for source classification; they do not need an `artisan` application to clone. The caller needs an [access grant](/cli/node) to both Nodes.
+The request accepts no Project, commit, Unix user, or filesystem path. The candidate decides the Project. The caller needs access to both Nodes. The successful result is `{instance_id, ready: true}`.
 
-The result names the new Instance, its branch, its preview domain, and its selected release, which is empty.
+## Candidate and destination
 
-## Candidate rules
+A candidate is an active development Instance with its recorded checkout, or an active production Instance with a selected release. Swamp verifies its repository, branch, clean working tree, submodules, and committed source. It checks that the commit and target branch exist in the Project repository. Candidate inspection uses the admitted source account and disables Git hooks and filesystem monitors.
 
-The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
+The Gateway records placement metadata only. It does not run Git or inspect the candidate during admission. The source worker receives read-only public intent and the declared Git read material. Only the destination worker can project the parent result or read its environment material.
 
-The [Node agent](/reference/node-agent#commands)'s `instance.inspect-clone-candidate` runs the inspection. Its Git runs as the Instance user: the managed user for a development candidate, and the production user for a production one. Rust walks the indexed submodules at every depth and checks that each is initialized, at its recorded commit, and clean, including untracked files. Submodule paths are read as NUL-delimited data, never shell source. 
-
-Every Git invocation passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Only the repository fetch gets the credential environment. It fetches into a private scratch directory that the agent removes. `instance.clone_candidate_repository_unavailable` carries the fetch's stderr in `details.stderr`, at most 1,000 characters, with URL credentials and token-shaped words replaced by `[REDACTED]`.
-
-A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
-
-### Destination checks
-
-The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
-
-The [Node agent](/reference/node-agent#commands) prepares the destination: `instance.prepare-production-user` creates the system account `orbit-app-<project>` and its private home, `instance.prepare-production-source` clones the repository into `releases/initial` and records the root-owned source markers, `instance.resolve-production-source` checks out the branch and links `.env`, and `instance.grant-production-caddy-access` lets Caddy reach only the web root.
-
-Source preparation creates `/var/lib/orbit/app-instance-sources` and its missing parents on a fresh Node; each Instance's marker directory is private to root. `instance.inspect-production-profile` reads the Composer metadata, and refuses any file in the checkout that the production user does not own. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+The destination must be an active Linux Node with an active `app-prod` role. A Project has at most one production Instance per Node. Swamp creates the fixed `orbit-app-<ProjectID>` account and private home, then prepares `releases/initial` from the repository. It performs these actions through local system commands. It does not invoke agent action commands.
 
 ## What the clone gets
 
-The new Instance gets its own copy of each part below.
+The target gets independent source and stored configuration.
 
 | Part | Result |
 | --- | --- |
-| Source | A new checkout of the branch from the Project repository, inside the production home. Orbit copies no files from the candidate's working directory. |
-| Environment | Stored candidate values except `DB_*`, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`, or `APP_ENV=prod` and `APP_DEBUG=0` for a `symfony-app`. You can change them later. |
-| Processes and Schedules | Copies of the Project's production [definitions](/reference/processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
-| PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
-| Route | For `laravel-app` and `symfony-app`, one private preview Route. Other types get no Route. |
+| Source | Committed source checked out from the Project repository. Candidate working files are not copied. |
+| Environment | Stored candidate values, encrypted for the new Instance, excluding `DB_*` and candidate WebSocket app credentials. Production mode is set. |
+| Dependencies | The Project's admitted Vite+ environment, when applicable. |
+| Release | A prepared initial checkout; no release is selected. |
 
-Database attachments own the production `DB_*` values; the candidate's database settings do not copy.
+Private values stay inside the native effect callback. Workflow inputs and resources contain only public source identity and placement. Swamp checks the destination before replacing files and refuses foreign ownership or unsafe paths.
 
-Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are.
+Cloning does not stop the candidate's Processes or Schedules, pause its queues, or change its source, environment, or database.
 
-The clone response includes `data.warnings`, also shown by `instance:clone` (and its JSON output). Warnings name keys, never values: they flag candidate-Node hosts and dev-TLD hosts outside the target Node's TLD, absolute filesystem paths outside the production home (not URL paths such as `SESSION_PATH`), and copied local/test service choices (`QUEUE_CONNECTION=database`, `sync`, or `null`; array cache/session drivers; log/array mailers). These are review hints, not proof that a service is unreachable. Orbit does not rewrite these settings.
+## Failure and retry
 
-Review Redis, cache, queue, session, and mail settings and use `env:update` followed by `env:sync` to correct them. Warnings are recalculated from the target's stored values on retry, so corrected settings stop appearing. References such as `{{instance.domain}}` resolve against the new Instance.
+A failed or cancelled workflow records its terminal Operation status and releases the Gateway admission hold. Swamp records the failed stage. An identical request can use the existing reserved target; a changed candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`.
 
-## Preview domain
-
-The preview domain is `<preview-name>.<node-tld>`. For example, `shop.com` on a Node with TLD `prod.orbit` gives `shop.com.prod.orbit`. Orbit never uses the Cluster TLD here.
-
-Orbit stores the preview as an explicit private Route, so a later TLD change does not rename it. On a standalone Node the Route has Node scope. In an active Cluster it has Cluster scope, and private DNS points to the Router. Cloning publishes no public listener. Replace the preview with the production domain through a separate [Route](/reference/routes) change.
-
-A missing Node TLD returns `route.tld_required`. A domain that another Route owns returns `route.domain_conflict`.
-
-## SQLite seed
-
-`sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The agent creates the snapshot as a private `0600` file before SQLite opens it, without changing umask, which controls permissions for every thread in the process. The Gateway checks the path and disk space on both Nodes before it replaces anything.
-
-The [Node agent](/reference/node-agent#commands) does the work on each Node as root:
-
-- `instance.prepare-sqlite-seed` takes the snapshot as the candidate's user.
-- `instance.install-sqlite-seed` installs it as a new file, never over an existing database.
-
-The Gateway transfers the snapshot with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot` through the agent runner. These account commands accept only managed snapshot paths and verify the SQLite header, exact size, and SHA-256. Binary framing bounds each snapshot to 1 TiB. Upload preserves the prepared file's inode, so the target's ownership receipt remains valid. No general file upload or `scp` path handles database contents.
-
-Each records its progress under `/var/lib/orbit/app-instance-sqlite-seeds`, so a retry resumes or cleans up what an earlier run left.
-
-The lifecycle parent records a `database.sqlite_seed` child through the database family's preparation action. Its input and both Node placements come from the recorded clone intent. Swamp drives that child and its export and cleanup children. The Gateway attaches the database only after the exact seed child succeeds, or after an earlier clone request recorded the completed seed checkpoint.
-
-Orbit registers a SQLite connection named `<project>-<instance>` (shortened with a stable hash when it exceeds 63 characters), owned by the new Instance on the destination Node, attaches it under prefix `DB`, and syncs the production `.env` with `DB_CONNECTION=sqlite` and `DB_DATABASE=<home>/database.sqlite`. Retrying an interrupted clone reuses that connection and attachment. Without the option, the clone gets no database and no candidate `DB_*` values.
-
-Cloning seeds a different production Instance at the fixed `<home>/database.sqlite` path. [Instance transfer](/reference/instance-transfer) instead keeps the Instance ID between development Nodes and installs the snapshot at the selected file's relative path in the destination checkout. Each transfer attempt has its own snapshot record. Transfer rollback abandons that seed and removes its owned temporary files before closure. An identical retry after restoration takes a fresh snapshot rather than reusing data captured before the source restarted. These transfer rules do not change the clone's destination or its identical-request retry.
-
-The snapshot holds whatever the candidate committed at that moment, queued jobs included. Remove copied queue rows or other data on the new Instance before you start its workers. Other databases and external storage need their own preparation.
-
-## Candidate stays live
-
-Cloning never stops the candidate's Processes or Schedules, pauses queues, or changes its source, environment, or database.
-
-## Retry
-
-The Gateway records the clone request and each finished step. An identical request resumes an interrupted clone, even when the candidate has moved to a newer commit. A request that changes the candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`. After completion, an identical request returns the same Instance and changes nothing. `instance:create` does not create or resume a production Instance.
-
-While a clone is incomplete, removal of its candidate returns `instance.clone_in_progress`.
-
-## Errors
-
-The Gateway returns these codes for a clone. A failure after reservation records its code on the new Instance, and the identical request resumes it.
-
-| Code | Cause |
-| --- | --- |
-| `instance.node_inactive`, `instance.node_not_app_prod` | The destination is not an active Linux Node with an active `app-prod` role. |
-| `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |
-| `instance.placement_conflict` | Another Instance of the Project has the name. |
-| `instance.clone_reservation_conflict` | Another request took the name or preview domain at the same moment. |
-| `route.tld_required`, `route.domain_conflict` | The preview domain cannot be built or is taken. |
-| `instance.clone_retry_conflict` | A different request tries to resume the clone. |
-| `instance.clone_candidate_inactive`, `instance.clone_candidate_unavailable` | The candidate is not active, or Orbit cannot inspect it. |
-| `instance.clone_candidate_branch_invalid` | The candidate has no branch, or a development candidate is on another branch. |
-| `instance.clone_candidate_dirty` | The candidate source has changes. |
-| `instance.clone_candidate_commit_unavailable`, `instance.clone_candidate_repository_unavailable` | The repository does not have the candidate's commit, or Orbit cannot read it. |
-| `instance.clone_candidate_release_missing`, `instance.clone_candidate_release_changed` | A production candidate has no selected release, or it changed. |
-| `instance.clone_candidate_source_invalid`, `instance.clone_candidate_environment_invalid` | The candidate's source or environment does not match its record. |
-| `instance.clone_target_branch_missing` | The branch is not in the repository. |
-| `instance.clone_candidate_changed` | The candidate's commit, branch, or placement changed during the request. |
-| `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite seed failed its checks, its copy, or its install. |
-| `instance.clone_database_slug_taken` | Another owner already has the database connection slug (409). |
-| `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite result. Retry. |
-| `instance.clone_failed` | Another step failed. |
+After completion, an identical request keeps the existing Instance. Removing a candidate with an incomplete clone returns `instance.clone_in_progress`.
 
 ## Next steps
 
-1. Update environment values that must differ from the candidate, then [synchronize](/cli/env) to rewrite `.env`.
-2. Clean copied application data, such as queue rows.
-3. Record [deploy steps](/reference/deployments#deploy-steps).
-4. Run `instance:deploy` to create and select the first release.
-5. Start the copied Processes and Schedules.
+Check the copied environment values, synchronize them, and record the Project's deploy steps. Then run `instance:deploy` to create and select the first release.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
-### Clone from a candidate
-
-A repository does not hold an Instance's environment or data. A candidate does. So Orbit creates production from an existing Instance. Direct production creation from a repository was rejected. Any eligible development or production Instance can be the candidate.
-
-### Rebuild source from the repository
-
-Copying the candidate directory would carry dependencies, logs, caches, and Node-specific configuration. So the clone checks out committed source from the repository, and a dirty candidate is refused.
-
-### Keep the candidate running
-
-Stopping workers or clearing queues on the candidate would disturb a live application. So Orbit takes a live SQLite snapshot and leaves target cleanup to you.
-
-### No automatic deployment
-
-You need to check the environment and deploy steps before the first release. So cloning and deployment are separate requests.
+A repository holds code but not the Instance's stored environment. A candidate supplies both identities. Rebuilding committed source avoids carrying dependencies, logs, caches, or host configuration into production. A separate first deployment gives you a chance to check production configuration before selecting a release.
