@@ -17,11 +17,11 @@ final readonly class NodeNetworkParticipantInput
     public function __construct(private NodeFirewallRuleCatalog $firewall, private PeerDnsPolicy $dns, private AgentDelivery $agent) {}
 
     /** Whether the same native network capture contains an effect for this Node. */
-    public function affects(Node $node, Node $context): bool
+    public function affects(Node $node, Node $context, bool $peerDnsChanged = true): bool
     {
         $node->loadMissing('roles');
 
-        return $this->routerApplies($node, $context) || $this->dns->manages($node);
+        return $this->routerApplies($node, $context) || ($peerDnsChanged && $this->dns->manages($node));
     }
 
     private function routerApplies(Node $node, Node $context): bool

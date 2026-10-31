@@ -7,6 +7,7 @@ namespace App\Domain\Nodes;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -20,9 +21,11 @@ final readonly class NodeRemovalParticipants
     public function capture(Node $context, array $routes = [], bool $excludeContext = true): array
     {
         $members = [];
+        $policy = app(PeerDnsPolicy::class);
+        $peerDnsChanged = $policy->domains($context, true) !== $policy->domains($context);
         $dnsIds = PrivateDnsPublicationNodes::query()->pluck('id')->all();
         foreach (Node::query()->with('roles')->whereKeyNot($context->id)->where('status', LifecycleStatus::Active)->orderBy('id')->get() as $node) {
-            $peer = app(NodeNetworkParticipantInput::class)->affects($node, $context);
+            $peer = app(NodeNetworkParticipantInput::class)->affects($node, $context, $peerDnsChanged);
             $residue = NodeConvergeInput::residueRows($node)->exists();
             $dns = in_array($node->id, $dnsIds, true);
             if ($peer || $residue || $dns) {

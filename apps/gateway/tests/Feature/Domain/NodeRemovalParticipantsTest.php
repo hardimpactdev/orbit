@@ -15,12 +15,11 @@ use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Tests\Support\Fleet\FleetFixtures;
 
-it('omits unrelated roleless TaskVMs without enrolling workers or changing their records', function (): void {
+it('omits unrelated managed TaskVMs when removal does not change the DNS namespace', function (): void {
     FleetFixtures::bind();
     $root = FleetFixtures::node('participant-unrelated-gateway', [RoleName::Gateway]);
     $guest = FleetFixtures::taskVm();
     $unrelated = FleetFixtures::taskVm();
-    $unrelated->roles()->delete();
     $unrelated->update(['wireguard_public_key' => base64_encode(str_repeat('u', 32))]);
     $before = $unrelated->fresh()->getAttributes();
     config(['swamp_workers.nodes' => []]);
@@ -39,6 +38,7 @@ it('retains global peer DNS contributors without a Node access edge and without 
     FleetFixtures::bind();
     $root = FleetFixtures::node('participant-gateway', [RoleName::Gateway]);
     $guest = FleetFixtures::node('participant-departing');
+    $guest->update(['tld' => 'departing.test']);
     $peer = FleetFixtures::node('participant-peer', [RoleName::AppDev]);
     $peer->update(['wireguard_public_key' => base64_encode(str_repeat('p', 32))]);
     config(['swamp_workers.nodes' => [$root->id]]);
@@ -133,4 +133,15 @@ it('admits an approved light-box DNS participant through its exact shared proxy 
     expect($input['unavailable_node_ids'])->toBe([]);
     expect($input['placements'])->toContain(['effect_node_id' => $hub->id, 'execution_node_id' => $hub->id, 'transport' => 'local']);
     expect(config('swamp_workers.nodes'))->toBe([$root->id]);
+});
+
+it('omits global peer DNS work when a retained parent routing suffix already covers the removed namespace', function (): void {
+    $guest = FleetFixtures::node('participant-covered-context');
+    $guest->update(['tld' => 'covered.test']);
+    $other = FleetFixtures::node('participant-covered-owner');
+    $other->update(['tld' => 'test']);
+    $peer = FleetFixtures::node('participant-covered-peer', [RoleName::AppDev]);
+    $peer->update(['wireguard_public_key' => base64_encode(str_repeat('c', 32))]);
+
+    expect(app(NodeRemovalParticipants::class)->capture($guest))->toBe([]);
 });
