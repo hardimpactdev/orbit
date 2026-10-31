@@ -32,7 +32,6 @@ use Illuminate\Support\Facades\Http;
 use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
-    fake_websocket_registry_start();
     Http::fake();
     $this->inspector = Mockery::mock(WebSocketRouteInspector::class);
     $this->inspector->shouldReceive('hasCollisions')->andReturn(false)->byDefault();
