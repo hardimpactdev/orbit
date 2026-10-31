@@ -21,10 +21,6 @@ final class EnrollmentProgram
     /** The recipe's pinned JavaScript runtimes of an application role. */
     public const string JavascriptRuntime = 'javascript-runtime';
 
-    public const string VpManager = 'vp-manager';
-
-    public const string ComposerManager = 'composer-manager';
-
     /**
      * Prefix of the `app-dev` PHP programs: `app-dev-php-source` and one per PHP version, such as `app-dev-php-8-5`.
      * Enrollment does not run them; an Instance's route does, and finds the packages in place.
