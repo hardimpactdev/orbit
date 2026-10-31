@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { preparedRequest } from "./host-intent.ts";
+import { preparedRequest, preparingIntent } from "./host-intent.ts";
 const leaf = {
     node_id: 9,
     route_id: 19,
@@ -16,7 +16,7 @@ Deno.test("request output carries only public CSR and exact admitted identity", 
     assertEquals(
         preparedRequest(
             leaf,
-            JSON.stringify({ state: "request", request: csr }),
+            JSON.stringify({ state: "request", request_base64: btoa(csr) }),
         ),
         {
             node_id: 9,
@@ -48,11 +48,11 @@ Deno.test("private keys, extra fields and malformed request output never become 
         const value of [
             {
                 state: "request",
-                request:
+                request_base64:
                     "-----BEGIN PRIVATE KEY-----\nYWJj\n-----END PRIVATE KEY-----",
             },
             { state: "current", credential: "private-value" },
-            { state: "request", request: "not a CSR" },
+            { state: "request", request_base64: "not a CSR" },
         ]
     ) {
         assertThrows(() => preparedRequest(leaf, JSON.stringify(value)));
@@ -83,4 +83,18 @@ Deno.test("malformed command diagnostics never expose raw stdout fragments", () 
             "Error: analytics.certificate_response_invalid",
         );
     }
+});
+
+Deno.test("request intent is canonical public material without Route-only metadata", () => {
+    const intent = preparingIntent({ ...leaf, in_use: false });
+    assertEquals(intent, {
+        node_id: leaf.node_id,
+        user: leaf.user,
+        agent_sha256: leaf.agent_sha256,
+        domain: leaf.domain,
+        scope: leaf.scope,
+        version: leaf.version,
+        root_hash: leaf.root_hash,
+    });
+    assertThrows(() => preparingIntent({ ...leaf, scope: "route-20-router" }));
 });

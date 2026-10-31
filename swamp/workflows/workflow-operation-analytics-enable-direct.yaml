@@ -69,18 +69,12 @@ jobs:
     labels:
       node: ${{ string(self.item.node_id) }}
     task:
-      type: behavior
-      behaviorType: '@nckrtl/analytics-certificate'
-      behaviorName: ${{ "analytics-cert-node-" + string(self.item.node_id) }}
-      methodName: request
-      globalArgs:
-        caFile: /usr/local/share/ca-certificates/orbit-root.crt
+      type: workflow
+      workflowIdOrName: analytics-host-prepare
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.item.node_id }}
         leaf: ${{ self.item }}
     forEach:
       item: item
@@ -111,7 +105,7 @@ jobs:
           leaf.scope, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version,
           "root_hash": leaf.root_hash, "user": leaf.user}) }}'
         target_node_id: 209
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs]) }}
+        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs.prepared]) }}
   - name: sign-http
     target: orbit-node-209
     labels:
@@ -220,7 +214,7 @@ jobs:
           leaf.scope, "agent_sha256": leaf.agent_sha256, "domain": leaf.domain, "version": leaf.version,
           "root_hash": leaf.root_hash, "user": leaf.user}) }}'
         target_node_id: 209
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs]) }}
+        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, [steps[name].outputs.prepared]) }}
         native_stdout: ${{ steps["sign-http"].outputs.stdout }}
     guard: ${{ steps.begin.outputs.stopped }}
     dependsOn:
@@ -254,7 +248,7 @@ jobs:
         leaf: ${{ self.item }}
         signed: ${{ steps.sign.outputs.certificates.filter(c, c.node_id == self.item.node_id && c.scope
           == self.item.scope) }}
-        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, steps[name].outputs) }}
+        requests: ${{ steps.filter(name, name.startsWith("request-")).map(name, steps[name].outputs.prepared) }}
     forEach:
       item: item
       in: ${{ steps.begin.outputs.tracking.certificates }}
