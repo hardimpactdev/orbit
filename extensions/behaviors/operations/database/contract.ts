@@ -6,6 +6,7 @@ export const Kinds = [
   "database_server.close",
   "database.create",
   "database.destroy",
+  "database_user.create",
   "database.write",
   "database.clone",
   "database.destroy_owned",
