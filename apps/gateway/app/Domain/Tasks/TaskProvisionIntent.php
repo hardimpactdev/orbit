@@ -61,7 +61,12 @@ final readonly class TaskProvisionIntent
             if ($project->task_workspace_routed || $project->processDefinitions()->exists() || $project->scheduleDefinitions()->exists()) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace publication and runtime definitions need their native parent steps.', 503);
             }
-            $vm = $this->allocate->capture($group);
+            try {
+                $vm = $this->allocate->capture($group);
+            } catch (TaskCapacityException $exception) {
+                throw new ResourceOperationException('tasks.capacity_unavailable', $exception->getMessage(), 409,
+                    previous: $exception, details: ['reason' => $exception->wait->value]);
+            }
             $input = $this->vms->capture($vm);
             $node = $vm->node;
             assert($node !== null);

@@ -105,7 +105,9 @@ A resource observation job checks every parked VM once a minute, including group
 
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
 
-The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp performs provider creation, bootstrap, WireGuard publication, worker enrollment, model-key issue, Pi runtime preparation, source checkout and Project setup as placed steps in that run. No PHP executor or waiting-read loop runs these effects. Capacity refusal leaves the group unchanged so the orchestrator can try admission later.
+The Gateway records one `tasks.provision` intent and starts one native Swamp run. Its admission transaction captures VM placement, the exact guest Node, enrollment and workspace metadata under the shared model admission fence. It starts no child VM operation. Swamp performs provider creation, bootstrap, WireGuard publication, worker enrollment, model-key issue, Pi runtime preparation, source checkout and Project setup as placed steps in that run. No PHP executor or waiting-read loop runs these effects.
+
+Full capacity or a missing promoted image for the current recipe returns HTTP 409 `tasks.capacity_unavailable`, with the placement reason in the message and `details.reason`. It leaves the group unchanged and records no VM, workspace or Operation. The orchestrator can try the same admission key after capacity or the required image becomes available.
 
 The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It issues the existing Node worker credentials itself; caller-supplied worker credentials are unavailable for this parent.
 
