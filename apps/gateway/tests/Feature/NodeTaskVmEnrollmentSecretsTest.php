@@ -20,7 +20,7 @@ final readonly class NodeTaskVmSecretFixtureProjection implements DirectOperatio
 {
     public function input(Operation $operation): array
     {
-        if (($operation->input['execution_node_id'] ?? null) !== $operation->node_id) {
+        if (($operation->input[$operation->kind === 'task_vm.prepare_runtime' ? 'guest_node_id' : 'execution_node_id'] ?? null) !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The family refuses its changed execution root.', 422);
         }
 
