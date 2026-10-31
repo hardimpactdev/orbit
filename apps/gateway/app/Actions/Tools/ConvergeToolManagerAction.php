@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -20,8 +19,6 @@ final readonly class ConvergeToolManagerAction
 
     public function execute(Node $node, ToolManagerName $manager, bool $imageProvidesManager = false): Operation
     {
-        OperationFamilySpec::assertAvailable('tool.manager_converge');
-
         $driver = $this->managers->find($manager->value);
         if ($driver === null || ! $driver->supportsNode($node)) {
             throw new LogicException('The requested Tool manager does not support this Node.');
@@ -31,6 +28,6 @@ final readonly class ConvergeToolManagerAction
             'node_id' => $node->id, 'user' => $node->user, 'manager' => $manager->value, 'platform' => $node->platform,
             'architecture' => $node->architecture,
             'agent_sha256' => app(AgentDelivery::class)->pin($node), ...$this->intent->input($node, $manager, $imageProvidesManager),
-        ], 'system', null, expectedWriter: 'direct');
+        ], 'system', null);
     }
 }

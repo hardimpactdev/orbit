@@ -4,17 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Tools\ToolIntentProjection;
 
-$intent = [
-    'workflow' => 'operation-tool-direct',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'tool_writer',
-    'projection' => ToolIntentProjection::class,
-];
+$intent = ['workflow' => 'operation-tool-direct', 'projection' => ToolIntentProjection::class];
 
 return [
-    'tool.install' => [...$intent, 'workflow' => 'operation-tool-install-direct', 'writer_scope' => ['parent_operation_id' => null]],
-    'tool.update' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
-    'tool.remove' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
-    'tool.adopt' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
-    'tool.manager_converge' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
+    'tool.install' => [...$intent, 'workflow' => 'operation-tool-install-direct'],
+    'tool.update' => $intent,
+    'tool.remove' => $intent,
+    'tool.adopt' => $intent,
+    'tool.manager_converge' => $intent,
 ];

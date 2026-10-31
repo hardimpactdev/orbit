@@ -469,13 +469,10 @@ The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the No
 
 ## Direct Swamp execution
 
-Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). Each kind requires its direct writer. The Gateway records package, manager, configured Node account and pinned agent intent. Swamp runs policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, remove, adopt and manager convergence all run on the admitted Node's exact `orbit-node-<id>` worker with its matching Node label. There is no migration-pool fallback or polled writer.
 
-Standalone `tool.install` starts `operation-tool-install-direct`. Its one job targets `orbit-node-<node_id>` with the matching `node` label, including Node 209. The worker uses that Node's configured account and existing sudo. The other four Tool kinds retain `operation-tool-direct` and their standalone Node 209 scope. Parent Operations remain outside this standalone path; Node and Task VM owners compose manager work in their native parent workflow. A missing worker stays subject to Swamp's native queue policy. It never sends the install to a different Node.
+Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Read-only scan and Doctor probes stay in Orbit.
 
-Both workflows use the same fixed Tool policy and stable behavior identity to serialize each Node's manager scopes. The Gateway start response binds the root run ID before worker reads. Real APT manager convergence and adoption of an existing package passed canaries before takeover.
-
-Production verification precedes deletion of replaced execution helpers. Synchronous manager-version and selected-package relay methods with no production callers are removed; bulk inventory and the live Vite+ Doctor probe remain. Other actions wait for their own proof and approved privilege boundary; parent lanes move legacy manager children into native DAG steps. Shared executor core remains with the boundary lane.
 
 ## Why it works this way
 
