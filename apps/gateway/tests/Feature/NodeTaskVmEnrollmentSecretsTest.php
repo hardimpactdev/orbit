@@ -39,14 +39,16 @@ beforeEach(function (): void {
     $this->issuer = FleetFixtures::node('custody-issuer');
     $this->vm = TaskVm::query()->create(['node_id' => $this->guest->id, 'host_node_id' => $this->host->id,
         'name' => $this->guest->name, 'wireguard_ip' => $this->guest->wireguard_ip, 'provider' => 'incus', 'state' => 'provisioning']);
-    $contribution = new readonly class implements DirectOperationContribution
+    $contribution = new readonly class(app(DirectOperation::class)->definitions()) implements DirectOperationContribution
     {
+        public function __construct(private array $known) {}
+
         public function definitions(): array
         {
-            return array_fill_keys(['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'],
+            return array_diff_key(array_fill_keys(['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'],
                 ['workflow' => 'operation-task-vm-enroll', 'projection' => NodeTaskVmSecretFixtureProjection::class,
                     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
-                    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials']]);
+                    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials']]), $this->known);
         }
     };
     app()->instance(DirectOperation::class, new DirectOperation([$contribution]));
@@ -65,6 +67,9 @@ beforeEach(function (): void {
 
 it('keeps nullable initial material and protected outputs on the actual guest', function (string $kind): void {
     $this->operation->kind = $kind;
+    if ($kind === 'task_vm.prepare_runtime') {
+        $this->operation->node_id = $this->guest->id;
+    }
     if ($kind === 'tasks.provision') {
         $project = Project::query()->create(['slug' => 'custody-project', 'name' => 'Custody', 'repository_url' => 'https://github.com/example/custody.git']);
         $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Custody', 'brief' => 'Custody', 'status' => 'backlog']);
