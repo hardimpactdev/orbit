@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceStepListAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleStepStore;
@@ -151,4 +153,88 @@ it('keeps a changed checkout state when an older list result settles', function 
 it('refuses a development admission whose environment changes before execution', function (): void {
     $this->instance->node->roles()->where('role', RoleName::AppDev)->update(['role' => RoleName::AppProd]);
     expect(fn () => app(InstanceSetupProjection::class)->input($this->operation->fresh()))->toThrow(ResourceOperationException::class);
+});
+
+it('cancels an unstarted pre-cutover list without a command receipt or writer adoption', function (bool $reordered): void {
+    $target = $reordered ? ['target_id' => $this->instance->id, 'target_type' => 'instance', 'node_id' => $this->instance->node_id]
+        : ['node_id' => $this->instance->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id];
+    $state = ['executor_target' => $target];
+    $operation = Operation::query()->create(['kind' => 'instance.run_steps', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => OperationStatus::Queued, 'attempts' => 0, 'lock_key' => 'unstarted-list:'.$this->instance->id,
+        'input' => ['instance_id' => $this->instance->id, 'source' => 'project', 'list' => 'teardown', 'configuration_digest' => hash('sha256', '[]')], 'state' => $state]);
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($operation->lock_key)->toBeNull()->and($operation->finished_at)->not->toBeNull()
+        ->and($operation->cancel_requested_at)->not->toBeNull()->and($operation->error_code)->toBe('operation.cancelled')
+        ->and($operation->result)->toBeNull()->and($operation->attempts)->toBe(0)->and($operation->state)->toBe($state)
+        ->and($operation->steps()->count())->toBe(0);
+    $sequence = $operation->sequence;
+    app(CancelOperationAction::class)->execute($operation);
+    expect($operation->fresh()->sequence)->toBe($sequence);
+})->with(['original target order' => false, 'reordered target keys' => true]);
+
+it('keeps started or uncertain pre-cutover lists pending during cancellation', function (string $evidence): void {
+    $state = ['executor_target' => ['node_id' => $this->instance->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id]];
+    if ($evidence === 'native start') {
+        $state['swamp_run_id'] = '729b44c0-421f-40d1-8a31-2fe15075dd8e';
+    } elseif ($evidence === 'direct unbound') {
+        $state['instance_step_writer'] = 'direct';
+    } elseif ($evidence === 'target mismatch') {
+        $state['executor_target']['target_id']++;
+    } elseif ($evidence === 'target type') {
+        $state['executor_target']['node_id'] = (string) $this->instance->node_id;
+    } elseif ($evidence === 'uncertain start') {
+        $state['swamp_start_uncertain'] = true;
+    }
+    $operation = Operation::query()->create(['kind' => 'instance.run_steps', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => OperationStatus::Queued, 'attempts' => $evidence === 'attempt' ? 1 : 0,
+        'started_at' => $evidence === 'started' ? now() : null, 'worker' => $evidence === 'worker' ? 'old-worker' : null, 'input' => [], 'state' => $state]);
+    if ($evidence === 'step') {
+        $operation->steps()->create(['name' => 'teardown.remove', 'position' => 1, 'status' => 'succeeded', 'sequence' => 1, 'resumable' => false]);
+    } elseif ($evidence === 'child') {
+        $this->operation->forceFill(['parent_operation_id' => $operation->id])->save();
+    }
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->finished_at)->toBeNull()->and($operation->result)->toBeNull()
+        ->and($operation->cancel_requested_at)->not->toBeNull()->and($operation->state)->toBe($state);
+})->with(['attempt', 'started', 'step', 'native start', 'direct unbound', 'target mismatch', 'target type', 'uncertain start', 'worker', 'child']);
+
+it('does not terminally cancel a pre-cutover list when a claim wins first', function (): void {
+    $operation = Operation::query()->create(['kind' => 'instance.run_steps', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => 'queued', 'attempts' => 0, 'input' => [],
+        'state' => ['executor_target' => ['node_id' => $this->instance->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id]]]);
+    expect(app(OperationStore::class)->claim($operation, 'claimed-before-cancel'))->toBeTrue();
+
+    app(CancelOperationAction::class)->execute($operation);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running)->and($operation->attempts)->toBe(1)
+        ->and($operation->worker)->toBe('claimed-before-cancel')->and($operation->finished_at)->toBeNull()
+        ->and($operation->cancel_requested_at)->not->toBeNull()->and($operation->result)->toBeNull();
+});
+
+it('commits parent cancellation with an unstarted pre-cutover teardown child', function (): void {
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'setup-cancel-gateway', 'status' => 'active', 'platform' => 'linux',
+        'user' => 'orbit', 'public_ssh_host' => '192.0.2.114', 'wireguard_ip' => '10.44.0.114']));
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $parent = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'status' => 'waiting', 'attempts' => 1, 'input' => []]);
+    $child = Operation::query()->create(['kind' => 'instance.run_steps', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->instance->node_id, 'parent_operation_id' => $parent->id, 'status' => 'queued', 'attempts' => 0,
+        'input' => ['instance_id' => $this->instance->id, 'source' => 'project', 'list' => 'teardown', 'configuration_digest' => hash('sha256', '[]')],
+        'state' => ['executor_target' => ['node_id' => $this->instance->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id]]]);
+
+    $child->forceFill(['parent_operation_id' => $parent->id])->save();
+
+    $this->call('POST', '/api/v1/operations/'.$parent->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+        ->assertOk()->assertJsonPath('data.status', 'waiting');
+
+    expect($parent->fresh()->cancel_requested_at)->not->toBeNull()->and($parent->finished_at)->toBeNull();
+    $child->refresh();
+    expect($child->status)->toBe(OperationStatus::Cancelled)->and($child->result)->toBeNull()
+        ->and($child->cancel_requested_at)->not->toBeNull()->and($child->finished_at)->not->toBeNull();
 });
