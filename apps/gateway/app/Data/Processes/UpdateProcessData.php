@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Processes;
 
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\RequiredMountPaths;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -40,13 +41,14 @@ final readonly class UpdateProcessData
             keepAlive: $this->has('keep_alive') ? $data->keepAlive : $process->keep_alive,
             user: $this->has('user') ? $data->user : ValidatedData::nullableString($config['user'] ?? null),
             restartOnDeploy: $this->has('restart_on_deploy') ? $data->restartOnDeploy : $process->restart_on_deploy,
+            requiredMountPaths: $this->has('required_mount_paths') ? $data->requiredMountPaths : RequiredMountPaths::parse($config['required_mount_paths'] ?? []),
         );
     }
 
     /** @param array<string, mixed> $runtimeConfig */
     public function assertPreservesOmittedFields(#[SensitiveParameter] Process $process, #[SensitiveParameter] array $runtimeConfig): void
     {
-        foreach (['image', 'command', 'environment', 'ports', 'volumes', 'user'] as $field) {
+        foreach (['image', 'command', 'environment', 'ports', 'volumes', 'user', 'required_mount_paths'] as $field) {
             $stored = $process->runtime_config[$field] ?? null;
             if ($this->has($field) || $stored === null || $stored === []
                 || ($runtimeConfig[$field] ?? null) === $stored) {

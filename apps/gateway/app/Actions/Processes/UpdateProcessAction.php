@@ -50,9 +50,10 @@ final readonly class UpdateProcessAction
                     $data->targetType, $data->targetId, $data->name, $data->runtime,
                     $data->command, $data->image, $data->workingDirectory ?? $home,
                     $data->environment, $data->ports, $data->volumes, $data->restartPolicy,
-                    false, $data->keepAlive, user: $data->user, restartOnDeploy: $data->restartOnDeploy,
+                    false, $data->keepAlive, user: $data->user, restartOnDeploy: $data->restartOnDeploy, requiredMountPaths: $data->requiredMountPaths,
                 );
             }
+            $this->specifications->assertOptions($data);
             $attributes = $this->specifications->attributes($data, $target);
             $update->assertPreservesOmittedFields($fresh, $attributes['runtime_config']);
             $candidate = clone $fresh;

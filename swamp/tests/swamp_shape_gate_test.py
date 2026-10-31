@@ -171,6 +171,20 @@ class ShapeGate(unittest.TestCase):
             self.assertNotEqual(gate().returncode, 0)
             workflow_path.write_text(workflow_path.read_text().replace("workflow.lock", "orbit-firewall.lock"))
             git("add", ".")
+            # The complete gate must supply tracked sibling source to prove the
+            # parameterized PHP lock, rather than accepting a helper-only probe.
+            scripts = swamp / "extensions/behaviors/php/scripts"
+            scripts.mkdir(parents=True)
+            for name, content in (("runtime_common.py", PHP_RUNTIME), ("monitor_common.py", PHP_ACTIONS), ("stage.py", PHP_ENTRY)):
+                (scripts / name).write_text(content)
+            git("add", ".")
+            checked = gate()
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            runtime_source = scripts / "runtime_common.py"
+            runtime_source.write_text(PHP_RUNTIME.replace("P('/run/lock')", "P('/tmp')"))
+            self.assertNotEqual(gate().returncode, 0)
+            runtime_source.write_text(PHP_RUNTIME)
+            git("add", ".")
             # Renaming cannot move the old file's allowance to a new path.
             source.rename(source.with_name("renamed.ts"))
             source.with_name("renamed.ts").write_text("await delay(10);\n")
@@ -209,6 +223,273 @@ class ShapeGate(unittest.TestCase):
             (swamp / ".swamp.yaml").write_text("repoId: unrelated-repository\n")
             result = subprocess.run(command, cwd=swamp, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
+
+
+    def test_source_move_initial_import_uses_older_unprefixed_source_not_gate_witness(self):
+        fixture = json.loads((ROOT / "tests/fixtures/shape/proxy-http-source-move.json").read_text())
+        source_path = "extensions/behaviors/operations/_lib/node-proxy.ts"
+        target_path = source_path.replace("node-proxy.ts", "node-proxy-http.ts")
+        caller_path = "extensions/behaviors/automatic-deploy/gateway.ts"
+        with tempfile.TemporaryDirectory(prefix="shape-move-import-") as scratch:
+            root = Path(scratch)
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            git("init", "--quiet")
+            git("config", "user.email", "shape@example.invalid")
+            git("config", "user.name", "Shape fixture")
+            for name, content in ((source_path, fixture["from"]), (caller_path, fixture["caller"]),
+                                  (source_path.replace("node-proxy.ts", "node-command-process.ts"), "export const commandOutput=()=>{};\n"),
+                                  (".swamp.yaml", "repoId: source-move-fixture\n")):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "retained unprefixed source predating the gate")
+            original = git("rev-parse", "HEAD")
+            (root / "bin").mkdir()
+            (root / "bin/check-swamp-shape.ts").write_text("export {};\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "root source already carrying a gate")
+            gated_base = git("rev-parse", "HEAD")
+            (root / "bin/check-swamp-shape.ts").unlink()
+            (root / "bin").rmdir()
+            (root / "config").mkdir()
+            (root / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
+            git("add", ".")
+            seeded = subprocess.run([DENO,"run","-A",str(ROOT / "bin/check-swamp-shape.ts"),
+                "--base",original,"--write-baseline","--python-analyzer",str(ROOT / "bin/swamp-shape-python.py")],
+                cwd=root, text=True, capture_output=True)
+            self.assertEqual(seeded.returncode, 0, seeded.stderr)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "earlier root source already carrying a ledger")
+            ledger_base = git("rev-parse", "HEAD")
+            (root / ".witness").write_text("immutable code witness\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "later immutable source witness with derived ledger")
+            witness = git("rev-parse", "HEAD")
+            swamp = root / "swamp"
+            swamp.mkdir()
+            for name in ("config", "extensions", ".swamp.yaml"):
+                (root / name).rename(swamp / name)
+            (swamp / "bin").mkdir()
+            for name in ("check-swamp-shape.ts", "swamp-shape-relocations.ts", "swamp-shape-python.py", "swamp_shape_host_tools.py"):
+                (swamp / "bin" / name).write_bytes((ROOT / "bin" / name).read_bytes())
+            helper = swamp / "bin/swamp-shape-relocations.ts"
+            # Only this disposable fixture substitutes its synthetic witness.
+            helper.write_text(helper.read_text().replace(fixture["origin"], witness))
+            git("add", ".")
+            git("commit", "--quiet", "-m", "history-preserving import with protected source proof")
+            imported = git("rev-parse", "HEAD")
+            (swamp / source_path).write_text("export const proxyLaunch=()=>{};\n")
+            (swamp / target_path).write_text(fixture["target"])
+            (swamp / caller_path).write_text(fixture["caller"].replace(
+                'import { proxyGatewayRequest, runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+                'import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";\n'
+                'import { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";'))
+            ledger = swamp / "config/swamp-shape-baseline.json"
+            baseline = json.loads(ledger.read_text())
+            baseline["entries"] = [row for row in baseline["entries"] if row["file"] != source_path]
+            ledger.write_text(json.dumps(baseline))
+            git("add", ".")
+            git("commit", "--quiet", "-m", "exact extraction after protected lower")
+            def check(base, event="pull_request"):
+                return subprocess.run([DENO,"run","-A","bin/check-swamp-shape.ts","--base",base],
+                    cwd=swamp, text=True, capture_output=True, env={**os.environ,"GITHUB_EVENT_NAME":event})
+            for base, event in ((original,"pull_request"),(original,"push"),(imported,"pull_request")):
+                result = check(base,event)
+                self.assertEqual(result.returncode,0,f"{base} {event}: {result.stderr}")
+                report = json.loads(result.stdout.splitlines()[0])
+                self.assertEqual(len(report["relocated_allowances"]),1)
+                self.assertEqual(report["errors"],[])
+            for earlier in (gated_base, ledger_base):
+                self.assertIn("HTTP source move lacks immutable origin ancestry",check(earlier).stderr)
+            # An old prefixed comparison base cannot use the initial import path.
+            git("checkout","--quiet","-b","prefixed-before-origin",original)
+            (root / "swamp").mkdir(exist_ok=True)
+            for name in ("extensions", ".swamp.yaml"):
+                (root / name).rename(root / "swamp" / name)
+            git("add", ".")
+            git("commit","--quiet","-m","unrelated prefixed source before witness")
+            prefixed = git("rev-parse","HEAD")
+            git("checkout","--quiet","-")
+            self.assertIn("HTTP source move lacks immutable origin ancestry",check(prefixed).stderr)
+            # Actual base debt/layout still controls the cap, even on bootstrap.
+            original_source = (swamp / target_path).read_text()
+            (swamp / target_path).write_text(original_source.replace("timeoutMs + 1000","timeoutMs + 2000"))
+            result = check(original)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn("gateway-http 1 exceeds 0",result.stderr)
+
+
+PHP_RUNTIME = textwrap.dedent("""\
+    import contextlib
+    import fcntl
+    import os
+    import pathlib
+    import re
+    import stat
+
+    P = pathlib.Path
+    class Refused(Exception):
+        pass
+    def check(value, reason):
+        if not value:
+            raise Refused(reason)
+    def directory(path):
+        return path.is_dir()
+    class Host:
+        def __init__(self):
+            self.locks = P('/run/lock')
+            self.root_uid = self.root_gid = 0
+    class Runtime:
+        def __init__(self, host, data, home=False):
+            self.user = data['user']
+            check(re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', self.user), 'valid account')
+    @contextlib.contextmanager
+    def runtime_lock(h, user):
+        check(directory(h.locks), "lock directory exists")
+        fd = os.open(h.locks / ("orbit-php-" + user + ".lock"),
+                     os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            m = os.fstat(fd)
+            check(stat.S_ISREG(m.st_mode) and m.st_uid == h.root_uid
+                  and m.st_gid == h.root_gid
+                  and stat.S_IMODE(m.st_mode) == 0o600, "trusted runtime lock")
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+""")
+PHP_ACTIONS = textwrap.dedent("""\
+    from runtime_common import Host, Runtime, runtime_lock
+
+
+    def context():
+        data = {'user': 'orbit_app'}
+        host = Host()
+        runtime = Runtime(host, data)
+        return host, runtime, data
+    def stage(host, runtime, data):
+        runtime = Runtime(host, data, True)
+        with runtime_lock(host, runtime.user):
+            pass
+    def execute(action):
+        return action(*context())
+""")
+PHP_ENTRY = "from monitor_common import execute, stage\n\nexecute(stage)\n"
+
+
+class PhpHostTool(unittest.TestCase):
+    def scan(self, runtime=PHP_RUNTIME, actions=PHP_ACTIONS, entry=PHP_ENTRY, context=True):
+        sources = {
+            "runtime_common.py": runtime,
+            "monitor_common.py": actions,
+            "stage.py": entry,
+        }
+        command = ["python3", str(ROOT / "bin/swamp-shape-python.py"), "[]"]
+        if context:
+            command += ["--source-context"]
+        result = subprocess.run(
+            command,
+            input=json.dumps({"source": runtime, "sources": sources})
+            if context
+            else runtime,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_validated_parameterized_host_tool_transaction(self):
+        self.assertEqual(self.scan(), [])
+        # A label/path shape or an absent sibling call graph is not proof.
+        self.assertTrue(self.scan(context=False))
+        self.assertTrue(self.scan(entry=""))
+
+    def test_path_guard_custody_or_acquisition_changes_are_not_proven(self):
+        variants = [
+            PHP_RUNTIME.replace("P('/run/lock')", "P('/tmp')"),
+            PHP_RUNTIME.replace("orbit-php-", "workflow-"),
+            PHP_RUNTIME.replace("[a-z_][a-z0-9_-]{0,31}", ".*"),
+            PHP_RUNTIME.replace("if not value:", "if False:"),
+            PHP_RUNTIME.replace("os.O_NOFOLLOW", "os.O_TRUNC"),
+            PHP_RUNTIME.replace("0o600", "0o666"),
+            PHP_RUNTIME.replace("m.st_uid == h.root_uid", "True"),
+            PHP_RUNTIME.replace("fcntl.flock(fd,", "fcntl.flock(other_fd,"),
+            PHP_RUNTIME.replace(
+                "fcntl.flock(fd,",
+                "fd = os.open('/tmp/workflow.lock', os.O_RDWR)\n        fcntl.flock(fd,",
+            ),
+            PHP_RUNTIME.replace(
+                "    try:\n        m =",
+                '    try:\n        user = "unchecked"\n        m =',
+            ),
+            PHP_RUNTIME + "\nHost.__init__ = lambda self: None\n",
+            PHP_RUNTIME + "\nP = lambda value: pathlib.Path('/tmp')\n",
+            PHP_RUNTIME + "\nfor P in [lambda value: pathlib.Path('/tmp')]:\n    pass\n",
+            PHP_RUNTIME + "\nmodule = pathlib\nmodule.Path = lambda value: '/tmp'\n",
+            PHP_RUNTIME.replace("import re\n", "import fake as re\n"),
+            PHP_RUNTIME.replace("self.user = data['user']", "return\n        self.user = data['user']"),
+            PHP_RUNTIME.replace("class Host:", "@replace\nclass Host:"),
+        ]
+        for runtime in variants:
+            with self.subTest(mutation=runtime):
+                self.assertTrue(
+                    any(
+                        row["rule"] == "custom-control"
+                        for row in self.scan(runtime=runtime)
+                    )
+                )
+
+    def test_mutated_or_untyped_callers_cannot_claim_constructor_provenance(self):
+        for actions in [
+            PHP_ACTIONS.replace("runtime.user):", "'unvalidated'):"),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "runtime = data['runtime']"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "for runtime in [data['runtime']]:\n        pass",
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "if (runtime := data['runtime']):\n        pass",
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "host = data['host']"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "host.locks = '/tmp'"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)", "runtime.user += '/unchecked'"
+            ),
+            PHP_ACTIONS.replace(
+                "runtime = Runtime(host, data, True)",
+                "setattr(runtime, 'user', 'unchecked')",
+            ),
+            PHP_ACTIONS.replace(
+                "return host, runtime, data",
+                "host = data['host']\n    return host, runtime, data",
+            ),
+            PHP_ACTIONS.replace(
+                "return host, runtime, data",
+                "for runtime in [data['runtime']]:\n        pass\n    return host, runtime, data",
+            ),
+            PHP_ACTIONS.replace("def context():", "@replace\ndef context():"),
+            PHP_ACTIONS.replace("def execute(action):", "@replace\ndef execute(action):"),
+            PHP_ACTIONS + "\nstage(None, None, {})\n",
+            PHP_ACTIONS + "\nalias = execute\n",
+            PHP_ACTIONS + "\nalias = stage\n",
+            PHP_ACTIONS + "\nalias = context\n",
+        ]:
+            with self.subTest(mutation=actions):
+                self.assertTrue(
+                    any(
+                        row["rule"] == "custom-control"
+                        for row in self.scan(actions=actions)
+                    )
+                )
 
 
 if __name__ == "__main__":

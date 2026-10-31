@@ -25,8 +25,9 @@ class BasePolicy(unittest.TestCase):
             checker = swamp / "bin/check-swamp-shape.ts"
             checker.write_text("import {proof} from './policy.ts'; if(proof !== 1) throw new Error('Untrusted policy dependency');\n" + (ROOT / "bin/check-swamp-shape.ts").read_text())
             (swamp / "bin/policy.ts").write_text("export const proof=1;\n")
+            (swamp / "bin/swamp-shape-relocations.ts").write_bytes((ROOT / "bin/swamp-shape-relocations.ts").read_bytes())
             (swamp / "bin/swamp-shape-python.py").write_bytes((ROOT / "bin/swamp-shape-python.py").read_bytes())
-            (swamp / "bin/node-command-launch.ts").write_bytes((ROOT / "bin/node-command-launch.ts").read_bytes())
+            (swamp / "bin/swamp_shape_host_tools.py").write_bytes((ROOT / "bin/swamp_shape_host_tools.py").read_bytes())
             (swamp / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
             source = swamp / "extensions/behaviors/old.ts"
             source.write_text("export const behavior={type:'@fixture/old'};\nawait delay(10);\n")

@@ -37,7 +37,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         }
 
         if (in_array($kind, ['process.create', 'process.update'], true)) {
-            $installation = Arr::only($intent, ['process_id', 'agent_sha256', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec', 'account_user']);
+            $installation = Arr::only($intent, ['process_id', 'agent_sha256', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec', 'account_user', 'required_mount_paths']);
             $installation['retired'] = isset($intent['retired_runtime'])
                 ? ['runtime' => $intent['retired_runtime'], 'name' => $intent['retired_name']] : null;
 
