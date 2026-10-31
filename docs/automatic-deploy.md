@@ -230,3 +230,9 @@ Policy Activity records use the single native
 Gateway records each admitted Activity once on terminal projection. Release
 notification variants remain unavailable until their native notifier port; no
 polled or PHP notifier path is restored.
+
+Empty PHP Operation results can be serialized as `[]`. Policy readers normalize
+only that empty array to `{}`; nonempty result arrays remain invalid. A readable
+terminal failure without deployment history still retains its intent until the
+normal documented recovery proves another deployment completed. Normalizing the
+wire shape never proves that a Node effect settled.

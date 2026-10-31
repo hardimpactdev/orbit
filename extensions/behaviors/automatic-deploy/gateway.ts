@@ -47,8 +47,10 @@ const OperationSchema = z.object({
   ),
   triggered_by: z.string().nullable(),
   caller_node_id: CallerNodeIdSchema,
-  result: z.object({ deployment_id: z.number().optional() }).passthrough()
-    .nullable(),
+  result: z.preprocess(
+    (value) => Array.isArray(value) && value.length === 0 ? {} : value,
+    z.object({ deployment_id: z.number().optional() }).passthrough().nullable(),
+  ),
   error_code: z.string().nullable(),
 });
 const ReceiptSchema = z.object({
