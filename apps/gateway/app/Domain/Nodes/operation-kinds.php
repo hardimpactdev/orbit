@@ -220,7 +220,7 @@ $nodeRoleDefinition = [
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], [
         'node.network_converge', 'node.network_rollback', 'node.role_relocate_source', 'node.role_relocate_target', 'node.converge', 'fleet.cli_converge', 'route.caddy_converge', 'route.private_dns_publish',
         'tool.manager_converge', 'metrics.reconcile', 'metrics.role_converge', 'metrics.role_remove',
-        'analytics.role_converge', 'analytics.role_remove', 'websocket.role_converge', 'websocket.role_remove',
+        'websocket.role_converge', 'websocket.role_remove',
     ]),
     'completion_contract' => ['step' => 'role-result', 'transport' => 'gateway', 'name' => 'node.role-result', 'result' => ['role_proven' => true]],
     'compensations' => ['node.network_rollback'], 'cancellation_boundary' => 'role-network',
