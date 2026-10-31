@@ -98,6 +98,7 @@
     {"workflow": "operation-tool-direct", "actions": ["run", "read"]},
     {"workflow": "operation-tool-install-direct", "actions": ["run", "read"]},
     {"workflow": "operation-vault-direct", "actions": ["run", "read"]},
+    {"workflow": "operation-vault-sync", "actions": ["run", "read"]},
     {"workflow": "operation-websocket-registry", "actions": ["run", "read"]}
   ]
 }
