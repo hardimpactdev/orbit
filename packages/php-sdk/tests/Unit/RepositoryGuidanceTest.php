@@ -272,6 +272,7 @@ describe('repository guidance bootstrap', function (): void {
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
+            \Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest::class,
             DestroyGitHubAppRequest::class,
         ];
         $gatewayReleaseRequests = [
