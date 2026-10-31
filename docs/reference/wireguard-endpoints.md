@@ -48,6 +48,8 @@ The Gateway records one `node.network_converge` intent. Its native Swamp DAG pre
 
 All parents use the native `wireguard-hub-<hub-id>` model lock. The locked method reads fresh peer records and the existing `node.vpn_configuration` private material. The hub private key remains inside that effect callback. Router LAN changes reuse the Routes family’s canonical system lower; peer DNS repair preserves the running tunnel when it succeeds.
 
+An exact `task_vm.destroy` parent may place shared hub publication on its admitted active Gateway worker. The six-field hub snapshot keeps the actual hub owner and records the Gateway executor. Its `configuration` binding admits only that Gateway reader. Private connection metadata comes from the hub's pinned SSH endpoint and the existing Gateway identity path; the shared native method reads it fresh inside `wireguard-hub-<hub-id>` and invokes the canonical bootstrap SSH transport. It never runs the hub command locally on the Gateway. Other parents must supply their own closed ownership predicate; this shared contract grants no enrollment, provision, or Node removal authority.
+
 Failure recovery restores only the admitted peer transaction and original public key, then republishes the hub. A lost commit reply with matching active files and no pending transaction preserves the applied key. The parent still reports failure because that lost reply did not prove completion.
 
 ## Recover an invalid stored endpoint

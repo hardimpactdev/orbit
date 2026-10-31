@@ -27,7 +27,7 @@ final readonly class NodeVpnConfigurationSource implements OperationSecretSource
 
     public function targetTypes(): array
     {
-        return ['node', 'task_vm', 'task_group'];
+        return ['node', 'task_vm'];
     }
 
     public function ownerId(Operation $operation): ?int
