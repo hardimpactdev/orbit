@@ -30,7 +30,7 @@ The raw baseline still only shrinks. This source proof derives one virtual limit
 at the new path for each run; `--write-baseline` never writes that limit into the
 ledger. Current findings and workflow coverage still include the retained HTTP
 call. JSON metrics report checked-in baseline rows and derived source moves
-separately; `SHAPE-GATE` includes `source_moves`. This is not a general permission
+separately in the JSON report. This is not a general permission
 to transfer allowances on rename. The support lower must reach the comparison
 base before the extraction, so the frozen checker enforces the same contract.
 
@@ -136,6 +136,18 @@ Workflow metrics separate clean, baseline-accepted and unknown workflows. A clea
 workflow has known steps and no findings in its own source or reachable local
 behavior dependencies. Static coverage is not a runtime canary. Each run emits
 versioned JSON with its commit and units, plus a `SHAPE-GATE` summary on one line.
+The `Swamp shape gate` job emits this fixed format for the daily report:
+
+```text
+SHAPE-GATE workflows_passing=N/TOTAL grandfathered=M embedded_lines=X custom_loops=Y gateway_client_files=Z
+```
+
+`workflows_passing` counts statically clean workflows, not runtime validation.
+`grandfathered` counts actual file/rule entries, including proved source moves.
+`embedded_lines` counts decoded script lines by source literal. `custom_loops`
+counts syntactic control sites. `gateway_client_files` counts distinct files with
+a `gateway-http` finding, including callers that reach a local Gateway client.
+The JSON report retains coverage categories, raw baseline counts and source moves.
 
 Nick permits exactly two Gateway execution primitives from steps: GitHub
 installation-token mint and certificate signing (CSR plus operation id to a public

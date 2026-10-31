@@ -3,7 +3,7 @@ import {
   localFilesystem,
 } from "./operations/_lib/local-worker.ts";
 import { z } from "npm:zod@4";
-import { PackageTargetSchema } from "./_lib/package_target.ts";
+import { PackageTargetSchema } from "./_lib/package_target_schema.ts";
 
 export const SWAMP_REPOSITORY = "/home/orbit/apps/orbit-swamp/default";
 const HOME = "/home/orbit";

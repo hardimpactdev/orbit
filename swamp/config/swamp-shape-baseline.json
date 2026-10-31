@@ -271,12 +271,6 @@
     },
     {
       "file": "extensions/behaviors/native_host_method.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/native_host_method.ts",
       "rule": "multi-action",
       "count": 5,
       "evidence": [
@@ -3582,12 +3576,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/orbit_driver.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/orbit_gateway.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3597,18 +3585,6 @@
     },
     {
       "file": "extensions/behaviors/orbit_group_run.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/orbit_group_runs.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/orbit_stage.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
