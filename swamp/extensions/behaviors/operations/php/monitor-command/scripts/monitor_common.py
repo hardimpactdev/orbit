@@ -426,11 +426,9 @@ def finish_restore(host, runtime, _data, work):
         )
         if snapshot["active"]:
             confirm(host, runtime, (runtime.generated / "pool.conf").read_bytes())
-        unlink(runtime.receipt(METRICS_PENDING))
-        sync(runtime.directory)
-        unlink(runtime.receipt(METRICS_BACKUP))
         snapshot["phase"] = "restored"
         save(work, snapshot)
+        clear_journal(host, runtime, snapshot)
     return {"restored": True}
 
 
@@ -457,11 +455,16 @@ def cleanup(host, runtime, _data, work):
         snapshot["phase"] in ("prepared", "complete", "restored"),
         "publication recovery complete before cleanup",
     )
-    if snapshot["phase"] == "complete":
+    if snapshot["phase"] in ("complete", "restored"):
         with runtime_lock(host, runtime.user):
             unchanged(host, runtime, snapshot, pool=False)
             check(
-                file_hash(runtime.generated / "pool.conf") == snapshot["desired_hash"],
+                file_hash(runtime.generated / "pool.conf")
+                == (
+                    snapshot["desired_hash"]
+                    if snapshot["phase"] == "complete"
+                    else snapshot["prior_hash"]
+                ),
                 "completed pool remains current",
             )
             if snapshot["changed"]:

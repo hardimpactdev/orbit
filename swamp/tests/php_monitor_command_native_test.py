@@ -156,7 +156,7 @@ Host=FixtureHost
                     "operation_id": 17,
                     "node_id": 9,
                     "kind": "metrics.reconcile",
-                    "intent": {"php_runtime": self.runtime},
+                    "intent": {"node_id": 9, "php_runtime": self.runtime},
                     "execution_secrets": {},
                 }
             ),

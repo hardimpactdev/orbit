@@ -18,8 +18,12 @@ inputs:
       properties:
         php_runtime:
           type: object
+        node_id:
+          type: integer
+          minimum: 1
       required:
       - php_runtime
+      - node_id
       additionalProperties: false
     execution_secrets:
       type: object
@@ -33,12 +37,12 @@ inputs:
   additionalProperties: false
 jobs:
 - name: admission
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
   labels: &id001
-    node: ${{ string(inputs.node_id) }}
+    node: ${{ string(inputs.intent.node_id) }}
   steps:
   - name: assets
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
     labels: *id001
     task:
       type: behavior
@@ -48,17 +52,19 @@ jobs:
       inputs:
         run_id: ${{ run.id }}
         runtime: ${{ inputs.intent.php_runtime }}
+        target_node_id: ${{ inputs.intent.node_id }}
 - name: publication
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id002
+    node: ${{ string(inputs.intent.node_id) }}
   dependsOn:
   - job: admission
     condition:
       type: succeeded
   steps:
   - name: stage
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -71,8 +77,8 @@ jobs:
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
   - name: stage-result
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
@@ -85,8 +91,8 @@ jobs:
       condition:
         type: succeeded
   - name: validate
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -104,8 +110,8 @@ jobs:
         type: succeeded
     guard: ${{ !steps["stage-result"].outputs.present }}
   - name: publish
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -123,8 +129,8 @@ jobs:
         type: succeeded
     guard: ${{ !steps["stage-result"].outputs.present }}
   - name: reload
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -142,8 +148,8 @@ jobs:
         type: succeeded
     guard: ${{ !steps["stage-result"].outputs.present }}
   - name: confirm
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -161,8 +167,8 @@ jobs:
         type: succeeded
     guard: ${{ !steps["stage-result"].outputs.present }}
   - name: cleanup
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
     task:
       type: behavior
       behaviorType: command/shell
@@ -180,16 +186,17 @@ jobs:
         type: succeeded
     guard: ${{ !steps["stage-result"].outputs.present }}
 - name: restore
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id003
+    node: ${{ string(inputs.intent.node_id) }}
   dependsOn:
   - job: publication
     condition:
       type: failed
   steps:
   - name: recovery-restore
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
@@ -202,8 +209,8 @@ jobs:
         env:
           ORBIT_PHP_MONITOR_INPUT: ${{ steps.assets.outputs.input_json }}
   - name: recovery-reload_restored
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
@@ -220,8 +227,8 @@ jobs:
       condition:
         type: succeeded
   - name: recovery-finish_restore
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
@@ -238,8 +245,8 @@ jobs:
       condition:
         type: succeeded
   - name: recovery-cleanup
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
@@ -256,16 +263,17 @@ jobs:
       condition:
         type: succeeded
 - name: completion
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id004
+    node: ${{ string(inputs.intent.node_id) }}
   dependsOn:
   - job: publication
     condition:
       type: succeeded
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id004
     task:
       type: behavior
       behaviorType: command/shell
