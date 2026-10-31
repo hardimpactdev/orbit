@@ -32,7 +32,7 @@ The network snapshot remains available until the whole parent settles. A later r
 
 ### Placement and transport
 
-Node209 runs serve and all Swamp workers. Enrollment installs no Swamp binary or worker on its target and mints no worker token. All target actions, including light Nodes, use the same official SSH path. The former reserved-token issuer dependency no longer applies. Existing worker retirement is a separate, family-owned cut after placements move.
+Node209 runs serve and all Swamp workers. Enrollment installs no Swamp binary or worker on its target and mints no worker token. All target actions, including light Nodes, use the same official SSH path. Existing worker retirement is a separate, family-owned cut after placements move.
 
 Core workflow dependencies, failure conditions and history provide sequencing and recovery. Official SSH supplies the transport and its native identity-file support. Official `cfgmgmt` package, user, authorized-key, file and node models were checked at package `2026.10.27.1`: their connection schemas do not accept the admitted full host-key list. Enrollment uses official SSH methods for that pinned connection contract. Each step performs one action from the repository.
 
