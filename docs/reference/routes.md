@@ -789,3 +789,9 @@ Route Operations retain their admitted Instance environment owners until complet
 `route.caddy_converge`, `route.private_dns_publish`, `route.workload_verify` and `route.public_verify` each have one direct dispatch path. The Gateway starts the owning native workflow after intent commits. Their polled discovery entries, executor contracts and writer choices are removed. New Operations default to direct; selecting `polled` refuses admission. Rollback is a revert PR.
 
 These kinds use the shared `swamp.direct_writers` configuration and retain their recorded writer identity. The separate publication settings and their environment variables are removed. No direct kind exposes a Gateway execution contract, even for an old unstamped row. The remaining Route and Certificate kinds retain their family discovery entries until their owning native cutover.
+
+### Native target-set execution
+
+`route.target_set` records a singular binding or a full production-pool proposal and starts one native Swamp run. A pool run prepares staging certificates, runtime, workload sites and Router access before its database association checkpoint. It then writes the bound environments, publishes live certificates and current Caddy and DNS artifacts, removes staging leaves and executes authorized detach dispositions.
+
+Native steps run on each exact admitted Node and create no child Operations. A failure before association restores preparations. A failure after association keeps the committed target set for forward recovery.

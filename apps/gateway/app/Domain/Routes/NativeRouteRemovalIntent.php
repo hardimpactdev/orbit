@@ -112,6 +112,9 @@ final readonly class NativeRouteRemovalIntent
                     $node['production_instance_ids'][] = $instance->id;
                 }
             }
+            if ($replacement) {
+                $node['url_instance_ids'][] = $instance->id;
+            }
             if ($replacement || $route->hasPlacementTransition()) {
                 $node['certificate_scopes'][] = "app-instance-{$instance->id}-hostname-change";
             }

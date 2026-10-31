@@ -8,7 +8,6 @@ use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteAssociationGuard;
-use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
@@ -194,9 +193,8 @@ final readonly class RouteTargetState
         $id = $route->target_set_intent['preparation_operation_id'] ?? null;
         $previous = is_int($id) ? Operation::query()->find($id) : null;
         if ($previous === null || $previous->kind !== 'route.target_set' || $previous->target_type !== 'route' || $previous->target_id !== $route->id
-            || ! is_array($previous->state['route_plan'] ?? null)
-            || (RouteExecutionProof::result($previous, 'stage-commit.database-committed')['ready'] ?? false) !== true) {
-            throw new ResourceOperationException('route.target_set_conflict', 'The committed target set needs its recorded preparation and database proof.', 409);
+            || ! is_array($previous->input['route_target'] ?? null)) {
+            throw new ResourceOperationException('route.target_set_conflict', 'The committed target set needs its recorded native intent.', 409);
         }
 
         return $previous;

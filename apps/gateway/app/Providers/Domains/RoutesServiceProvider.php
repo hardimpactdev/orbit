@@ -8,9 +8,9 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
-use App\Domain\Routes\PhpPoolInputSource;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteEnvironmentMaterialSource;
 use App\Domain\Routes\RouteEnvironmentOperationLock;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Http\Controllers\Api\OperationExecutorController;
@@ -42,7 +42,7 @@ final class RoutesServiceProvider extends ServiceProvider
     {
         $this->app->bindIf(WebSocketClient::class, StreamWebSocketClient::class);
         $this->app->extend(InstanceEnvironmentOperationLock::class, static fn (InstanceEnvironmentOperationLock $locks): InstanceEnvironmentOperationLock => new RouteEnvironmentOperationLock($locks));
-        $this->app->tag([PhpPoolInputSource::class], OperationSecretSource::class);
+        $this->app->tag([RouteEnvironmentMaterialSource::class], OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);
     }
 

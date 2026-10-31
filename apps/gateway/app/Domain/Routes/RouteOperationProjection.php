@@ -4,97 +4,75 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Certificates\CertificateSigningRequests;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
-/** Safe admitted Route input and bounded status projection. No Node execution. */
-final readonly class RouteOperationProjection implements DirectOperationProjection
+/** Public admitted resources and minimal state projection. Swamp owns the complete DAG. */
+final readonly class RouteOperationProjection implements DirectOperationProjection, DirectOperationPublicView
 {
     public const array Kinds = ['route.workload_verify', 'route.public_verify'];
 
     public const array LocalKinds = ['route.lan_remove'];
 
-    public function __construct(private DirectOperation $direct, private OperationExecutionContract $contract) {}
+    public function __construct(private DirectOperation $direct) {}
 
     public function input(Operation $operation): array
     {
-        if ($operation->kind === 'route.target_unset') {
-            $route = Route::query()->find($operation->target_id);
-            if ($operation->target_type !== 'route' || $operation->node_id === null || $route === null || ! $route->isApp()
-                || $route->id !== ($operation->input['route_id'] ?? null) || $route->targets()->exists()) {
-                throw new ResourceOperationException('route.target_conflict', 'The admitted Route target set is no longer empty.', 409);
-            }
+        return $this->publicInput($operation, $operation->node_id);
+    }
 
-            return ['route_id' => $route->id, 'target_ids' => []];
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        if (! in_array($callerNodeId, $operation->input['participant_node_ids'] ?? [$operation->node_id], true)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'This Node is not an admitted Route participant.', 403);
         }
-        if (DirectRoutePublication::handles($operation->kind)) {
-            app(DirectRoutePublication::class)->assertOperation($operation);
+    }
 
-            return $operation->kind === 'route.caddy_converge'
-                ? ['caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))] : [];
-        }
-        if (! in_array($operation->kind, [...self::Kinds, ...self::LocalKinds], true) || $operation->target_type !== 'route_effect' || $operation->node_id === null) {
-            throw new ResourceOperationException('operation.direct_invalid', 'A Node-bound Route operation is required.', 422);
-        }
-        if ($operation->kind === 'route.lan_remove') {
-            app(RouteNodeEffectCommand::class)->prepare($operation);
-            $input = ValidatedData::object($operation->input['lan_removal'] ?? []);
-            if (($input['route_id'] ?? null) !== $operation->target_id || $input['route_id'] !== ($operation->input['route_id'] ?? null)
-                || ! is_string($input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $input['agent_sha256']) !== 1) {
-                throw new ResourceOperationException('route.lan_removal_invalid', 'The admitted Route LAN removal is missing.', 422);
-            }
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        $this->assertPublicParticipant($operation, $callerNodeId);
+        $node = Node::query()->findOrFail($callerNodeId);
+        $input = $operation->input ?? [];
+        $public = match ($operation->kind) {
+            'route.create', 'route.converge' => app(NativeRouteConvergenceIntent::class)->publicInput($operation, $callerNodeId),
+            'route.update' => app(NativeRouteUpdateIntent::class)->publicInput($operation, $callerNodeId),
+            'route.target_set' => app(NativeRouteTargetIntent::class)->publicInput($operation, $callerNodeId),
+            'route.destroy', 'route.withdraw' => [...app(NativeRoutePublicationInput::class)->forNode($node),
+                ...app(NativeRouteRemovalPublicInput::class)->forNode($operation, $callerNodeId),
+                'publication' => ['node_id' => $node->id, 'agent_sha256' => app(AgentDelivery::class)->pin($node)]],
+            'route.caddy_converge', 'route.private_dns_publish' => app(NativeRoutePublicationInput::class)->forNode($node),
+            'route.lan_remove' => Arr::only(ValidatedData::object($input['lan_removal'] ?? []), ['route_id', 'agent_sha256']),
+            'route.target_unset' => ['route_id' => $operation->target_id, 'target_ids' => []],
+            default => ValidatedData::object($input['verification'] ?? []),
+        };
 
-            return Arr::only($input, ['route_id', 'agent_sha256']);
-        }
-        $input = ValidatedData::object($operation->input['verification'] ?? []);
-        if (! in_array($input['protocol'] ?? null, ['tls', 'http'], true)
-            || ! is_string($input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $input['agent_sha256']) !== 1) {
-            throw new ResourceOperationException('route.verification_invalid', 'The admitted Route probe is missing.', 422);
-        }
-
-        $probe = $input['probe'] ?? null;
-        if (! is_array($probe)
-            || ! is_string($probe['address'] ?? null) || filter_var($probe['address'], FILTER_VALIDATE_IP) === false
-            || ! is_int($probe['port'] ?? null) || $probe['port'] < 1 || $probe['port'] > 65535
-            || ! is_string($probe['domain'] ?? null) || RouteDomain::validate($probe['domain']) !== $probe['domain']) {
-            throw new ResourceOperationException('route.verification_invalid', 'The admitted Route probe is invalid.', 422);
-        }
-
-        return ['protocol' => $input['protocol'], 'probe' => Arr::only($probe, ['address', 'port', 'domain']),
-            'agent_sha256' => $input['agent_sha256']];
+        return [...$public, 'environment_fields' => $input['environment_fields'] ?? [],
+            'participant_node_id' => $callerNodeId];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $publication = DirectRoutePublication::handles($operation->kind);
-        if ($publication) {
-            app(DirectRoutePublication::class)->assertOperation($operation);
-        } else {
-            $this->input($operation);
-        }
-        $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
-        $raw = ValidatedData::object($data['result'] ?? []);
-        $result = $this->contract->result($operation, $publication ? $raw : Arr::only($raw, ['ready', 'error_code']));
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === OperationStatus::Succeeded && (($result['ready'] ?? false) !== true || (! $publication && $result !== ['ready' => true])))
-            || ($status === OperationStatus::Failed && ($code === null || ($result['error_code'] ?? null) !== $code || (! $publication && ($result !== ['error_code' => $code] || preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) !== 1))))
-            || (! $publication && (($status !== OperationStatus::Failed && $code !== null)
-                || (in_array($status, [OperationStatus::Running, OperationStatus::Cancelled], true) && $result !== [])))
-            || (isset($result['stage']) && ! in_array($result['stage'], ['render', 'validate'], true))) {
-            throw new ResourceOperationException('operation.result_invalid', 'The Route operation needs its bounded result or refusal.', 422);
+        $result = ValidatedData::object($data['result'] ?? []);
+        if (isset($result['certificate_requests'])) {
+            app(CertificateSigningRequests::class)->record($operation, $result['certificate_requests']);
+        } elseif (($data['status'] ?? 'running') !== 'cancelled' && ($result !== [] || ($data['status'] ?? 'running') !== 'running')) {
+            $result = match ($operation->kind) {
+                'route.create', 'route.converge' => app(NativeRouteConvergenceProjection::class)->project($operation, $result),
+                'route.update' => app(NativeRouteUpdateProjection::class)->project($operation, $result),
+                'route.target_set' => app(NativeRouteTargetProjection::class)->project($operation, $result),
+                'route.destroy', 'route.withdraw' => app(NativeRouteRemovalProjection::class)->project($operation, $data),
+                default => $result,
+            };
         }
 
-        return $this->direct->project($operation, $data, $result, match ($operation->kind) {
-            'route.caddy_converge' => 'caddy-publish', 'route.private_dns_publish' => 'private-dns-publish',
-            'route.lan_remove' => 'route-lan-removed', 'route.target_unset' => 'route-targets-unset', default => 'route-verified',
-        });
+        return $this->direct->project($operation, $data, $result);
     }
 }

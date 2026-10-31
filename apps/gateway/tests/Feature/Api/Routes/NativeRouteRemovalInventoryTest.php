@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\RouteMutationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -77,4 +78,28 @@ it('deletes only the captured Routes when the admitting parent records native su
 
 afterEach(function (): void {
     unlink($this->manifest);
+});
+
+it('records each retained Node and keeps Route associations for a withdrawal parent', function (): void {
+    $node = Node::query()->create(['name' => 'offline', 'public_ssh_host' => '192.0.2.55', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $node->id, 'domain' => 'offline.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $snapshot = ['routes' => [['route_id' => $route->id, 'domain' => $route->domain, 'replacement_of' => null]]];
+    app(NativeRouteRemovalCompletion::class)->apply($snapshot, false, [['node_id' => $node->id, 'steps' => ['caddy', 'php', 'certificates', 'firewall']]]);
+    expect($route->fresh())->not->toBeNull();
+    $this->assertDatabaseHas('route_removal_residues', ['node_id' => $node->id, 'route_id' => $route->id, 'domain' => 'offline.private.test']);
+});
+
+it('captures authoritative environment restoration for every unactivated replacement target', function (): void {
+    $node = Node::query()->create(['name' => 'replacement', 'public_ssh_host' => '192.0.2.66', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Replacement', 'slug' => 'replacement', 'repository_url' => 'https://example.test/replacement.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'status' => 'active', 'checkout_path' => '/home/orbit/replacement']);
+    $current = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => 'current.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $current->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $current->update(['status' => RouteStatus::Active]);
+    $candidate = app(RouteMutationState::class)->reserve($current, 'replacement.private.test');
+    $snapshot = app(NativeRouteRemovalIntent::class)->capture($candidate);
+    expect($snapshot['nodes'][0]['url_instance_ids'])->toBe([$instance->id])
+        ->and($snapshot['nodes'][0]['certificate_scopes'])->toContain("app-instance-{$instance->id}-hostname-change")
+        ->and($candidate->fresh()->status)->toBe(RouteStatus::Pending)
+        ->and($candidate->targets()->count())->toBe(1);
 });
