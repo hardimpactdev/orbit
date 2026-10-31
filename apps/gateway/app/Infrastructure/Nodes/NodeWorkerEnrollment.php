@@ -47,7 +47,12 @@ final readonly class NodeWorkerEnrollment implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        return $operation->kind === 'node.converge' && $operation->target_type === 'node' && $operation->target_id === $operation->node_id ? $operation->node_id : null;
+        $footprint = $operation->input['footprint'] ?? null;
+        if ($operation->kind === 'fleet.recipe' && (! is_array($footprint) || ($footprint['node_id'] ?? null) !== $operation->node_id)) {
+            return null;
+        }
+
+        return in_array($operation->kind, ['node.converge', 'fleet.recipe'], true) && $operation->target_type === 'node' && $operation->target_id === $operation->node_id ? $operation->node_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
