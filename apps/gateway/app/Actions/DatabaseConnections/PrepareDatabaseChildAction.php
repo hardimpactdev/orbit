@@ -7,12 +7,12 @@ namespace App\Actions\DatabaseConnections;
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
@@ -35,8 +35,8 @@ final readonly class PrepareDatabaseChildAction
 
         $owned = $this->owned($prepared, $target);
 
-        return new PreparedDatabaseOperation($owned->kind, $owned->targetType, $owned->targetId, $owned->nodeId,
-            [...$owned->input, 'server_id' => $server->id])->child($parent);
+        return (new PreparedDatabaseOperation($owned->kind, $owned->targetType, $owned->targetId, $owned->nodeId,
+            [...$owned->input, 'server_id' => $server->id]))->child($parent);
     }
 
     /** @return array{key: string, kind: string, node_id: int, input: array<string, mixed>} */
@@ -51,25 +51,27 @@ final readonly class PrepareDatabaseChildAction
             throw new ResourceOperationException('instance.database_clone_unsupported', 'The source has no default database attachment.', 422);
         }
         $children = [];
+        $creates = [];
         if ($sourceConnection->driver === DatabaseDriver::Mysql && $sourceConnection->server !== null) {
             $server = $sourceConnection->server;
             $connection = $this->databases->reserve($server, $this->slug($target), $this->names->database($this->slug($target)), $target, null, ['clone_step' => 'recorded']);
             if ($connection->id === $sourceConnection->id || $connection->database === $sourceConnection->database) {
                 throw new ResourceOperationException('instance.database_clone_unsupported', 'The source and target must be different databases.', 422);
             }
-            $names = [$connection->database, $connection->test_database];
-
-            return $this->records->prepare('database.mysql_clone', 'instance', $target->id, $server->node_id,
-                ['owner_instance_id' => $target->id, 'source_instance_id' => $source->id, 'source_node_id' => $source->node_id,
-                    'connection_id' => $connection->id, 'source_connection_id' => $sourceConnection->id, 'server_id' => $server->id, 'driver' => 'mysql'],
-                ['database-apply' => ['name' => 'database.create', 'input' => [
-                    'repair' => false, 'driver' => 'mysql', 'username' => $connection->username, 'databases' => $names,
-                    'test_prefix' => $connection->test_database, 'locale' => null, 'host' => $server->node->wireguard_ip, 'port' => $server->port,
-                    'container' => app(DockerProcessRenderer::class)->containerName($server->process ?? throw new ResourceOperationException('database.server_required', 'The server Process is missing.', 409)),
-                    'index' => null, 'patterns' => [], 'allow' => [], 'source_database' => $sourceConnection->database,
-                    'password' => $server->root_password, 'payload' => ['password' => $connection->password, 'salt' => base64_encode(random_bytes(16))],
-                ], 'protected' => ['password', 'payload']]],
-                ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true])->child($parent);
+            $prepared = $this->databases->prepareEmpty($connection);
+            $intent = DatabaseExecutionIntent::recorded($prepared->input['intent_id']);
+            $commands = $intent->payload['commands'];
+            $creates = $intent->payload['projection']['database_creates'] ?? [];
+            $intent->delete();
+            $commands['prepare-database'] = $commands['database-apply'];
+            unset($commands['database-apply']);
+            $copy = DatabaseCommands::sql($server, '');
+            unset($copy['input']['sql'], $copy['input']['client'], $copy['input']['password_variable']);
+            $copy['input'] = [...$copy['input'], 'operation' => 'copy', 'source' => $sourceConnection->database, 'target' => $connection->database];
+            $copy['protected'] = ['password'];
+            $copy['resumable'] = false;
+            $commands['database-apply'] = $copy;
+            $nodeId = $server->node_id;
         } elseif ($sourceConnection->driver === DatabaseDriver::Sqlite) {
             $path = $sourceConnection->path;
             $base = rtrim($source->checkout_path, '/').'/';
@@ -112,8 +114,8 @@ final readonly class PrepareDatabaseChildAction
         $prepared = $this->records->prepare('database.clone', 'instance', $target->id, $nodeId,
             ['owner_instance_id' => $target->id, 'source_instance_id' => $source->id, 'source_node_id' => $source->node_id,
                 'connection_id' => $connection->id, 'driver' => $sourceConnection->driver->value,
-                'variant' => $children === [] ? 'sqlite_local' : 'sqlite_remote'], $commands,
-            ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true, 'children' => $children]);
+                'variant' => $sourceConnection->driver === DatabaseDriver::Mysql ? 'mysql' : ($children === [] ? 'sqlite_local' : 'sqlite_remote')], $commands,
+            ['created_connection' => $connection->id, 'attach_instance' => $target->id, 'clone' => true, 'children' => $children, 'database_creates' => $creates]);
 
         return $prepared->child($parent);
     }
