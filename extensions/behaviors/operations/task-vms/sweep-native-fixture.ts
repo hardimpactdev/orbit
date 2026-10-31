@@ -10,44 +10,69 @@ export function fixtureSweepHttp(args: { caFile: string }) {
   return fixtureHttp;
 }
 
-export async function fixtureSweepAgent(
-  call: import("../_lib/node-agent.ts").NodeCall,
-) {
-  const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
-  state.sweepCalls = [...(state.sweepCalls ?? []), {
-    name: call.name,
-    input: call.input,
-  }];
-  let result: Record<string, unknown>;
-  if (call.name === "incus.instances") result = { names: state.hostNames };
-  else if (call.name === "incus.volumes") result = { names: state.hostVolumes };
-  else if (call.name === "incus.inventory") {
-    result = {
-      instances: state.hostNames.map((name: string) => ({
-        project: "orbit-tasks",
-        name,
-      })),
-      volumes: state.hostVolumes.map((name: string) => ({
-        project: "orbit-tasks",
-        pool: "orbit-tasks",
-        name,
-      })),
-    };
-  } else if (call.name === "incus.images") result = { images: {} };
-  else if (call.name === "incus.vm") {
-    const name = (call.input.vm as { name: string }).name;
-    state.hostNames = state.hostNames.filter((value: string) => value !== name);
-    result = { ready: true };
-  } else if (call.name === "incus.volume") {
-    const name = (call.input.operation as { name: string }).name;
-    state.hostVolumes = state.hostVolumes.filter((value: string) =>
-      value !== name
-    );
-    result = { name };
-  } else throw new Error("Unexpected sweep primitive");
-  await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
-  return result;
-}
+export const fixtureSweepSystem:
+  import("../node/system_command.ts").SystemTransport = async (command) => {
+    if (
+      command.command !== "/usr/bin/sudo" ||
+      JSON.stringify(command.args.slice(0, 3)) !==
+        JSON.stringify(["-n", "--", "/usr/bin/incus"])
+    ) throw new Error("Unexpected native transport");
+    const args = command.args.slice(3);
+    const state = JSON.parse(await Deno.readTextFile("native-executor.json"));
+    state.sweepCalls = [...(state.sweepCalls ?? []), { args }];
+    let value: unknown;
+    if (args[0] === "query") {
+      if (args[2] === "/1.0/instances?all-projects=true") {
+        value = state.hostNames.map((name: string) =>
+          `/1.0/instances/${name}?project=orbit-tasks`
+        );
+      } else if (args[2] === "/1.0/storage-pools") {
+        value = ["/1.0/storage-pools/orbit-tasks"];
+      } else if (
+        args[2] ===
+          "/1.0/storage-pools/orbit-tasks/volumes/custom?all-projects=true"
+      ) {
+        value = state.hostVolumes.map((name: string) =>
+          `/1.0/storage-pools/orbit-tasks/volumes/custom/${name}?project=orbit-tasks`
+        );
+      } else throw new Error("Unexpected native query");
+    } else {
+      if (args[0] !== "--project" || args[1] !== "orbit-tasks") {
+        throw new Error("Foreign native project");
+      }
+      const op = args.slice(2);
+      if (op[0] === "list") {
+        value = (op.includes("--")
+          ? state.hostNames.filter((name: string) =>
+            name === op.at(-1)
+          )
+          : state.hostNames).map((name: string) => ({
+            name,
+            type: "virtual-machine",
+            status: "Stopped",
+            config: {},
+          }));
+      } else if (op[0] === "image" && op[1] === "list") value = [];
+      else if (op[0] === "storage" && op[2] === "list") {
+        value = state.hostVolumes.map((name: string) => ({
+          name,
+          type: "custom",
+        }));
+      } else if (op[0] === "delete") {
+        state.hostNames = state.hostNames.filter((name: string) =>
+          name !== op.at(-1)
+        );
+        value = {};
+      } else if (op[0] === "storage" && op[2] === "delete") {
+        state.hostVolumes = state.hostVolumes.filter((name: string) =>
+          name !== op.at(-1)
+        );
+        value = {};
+      } else throw new Error("Unexpected native effect");
+    }
+    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+    return { success: true, stdout: JSON.stringify(value) };
+  };
 export async function fixtureSweepCloud(
   input: import("./sweep.ts").SweepInput,
   gateway: import("./sweep.ts").SweepGateway,

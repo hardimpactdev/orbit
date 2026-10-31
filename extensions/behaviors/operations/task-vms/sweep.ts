@@ -7,7 +7,11 @@ import {
   DirectOperationCancelled,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import {
+  localSystemCommand,
+  type SystemTransport,
+} from "../node/system_command.ts";
+import { incusSweepHost } from "./sweep_incus_host.ts";
 import { sweepUpCloud } from "./upcloud_sweep.ts";
 
 const Name = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$/);
@@ -38,10 +42,6 @@ export type SweepGateway = Pick<
   GatewayOperation,
   "read" | "withPrivateMaterial"
 >;
-export type Agent = (
-  call: NodeCall,
-  signal?: AbortSignal,
-) => Promise<Record<string, unknown>>;
 export class SweepRefused extends Error {
   constructor() {
     super("task_vm.host_command_failed");
@@ -125,45 +125,17 @@ export function orphanVolume(input: SweepInput, name: string): boolean {
 export async function sweepIncus(
   input: SweepInput,
   gateway: SweepGateway,
-  agent: Agent,
+  invoke: SystemTransport,
   signal?: AbortSignal,
   report: (message: string, facts: Record<string, unknown>) => void = () => {},
 ) {
   const host = input.host!;
-  const call = async (
-    name: string,
-    data: Record<string, unknown>,
-    mutates = false,
-  ) => {
-    const result = await agent({
-      name,
-      pin: input.agent_sha256,
-      input: data,
-      sudo: true,
-      mutates,
-      deadlineMs: 900000,
-      maxOutputBytes: 4 * 1024 * 1024,
-    }, signal);
-    if (typeof result.error_code === "string") throw new SweepRefused();
-    return result;
-  };
-  const names = async () =>
-    z.object({ names: z.array(Name).max(4096) }).parse(
-      await call("incus.instances", { project: host.project }),
-    ).names;
-  // Project existence is proved by incus.instances; a missing project is not an empty inventory.
+  const native = incusSweepHost(host, invoke, signal);
+  const names = native.names;
   const initial = await names();
-  const volumes = z.object({ names: z.array(Name).max(4096) }).parse(
-    await call("incus.volumes", { project: host.project, pool: host.pool }),
-  ).names;
-  const inventory = z.object({
-    instances: z.array(z.object({ project: Name, name: Name })).max(4096),
-    volumes: z.array(z.object({ project: Name, pool: Name, name: Name })).max(
-      4096,
-    ),
-  }).parse(await call("incus.inventory", {}));
-  const images = z.object({ images: z.record(z.string(), z.array(z.string())) })
-    .parse(await call("incus.images", { project: host.project }));
+  const volumes = await native.volumes();
+  const inventory = await native.inventory();
+  const images = await native.images();
   let ownership = await currentSweep(input, gateway, signal); // Inventory BEFORE live rows, including clone volumes.
   const excluded = (project: string, name: string) =>
     input.ci_runner && project === "orbit-ci" ||
@@ -189,9 +161,7 @@ export async function sweepIncus(
     const managed = row.project === host.project && row.pool === host.pool &&
       (/^tvm-[0-9]+-topology-seed$/.test(row.name) ||
         seed !== null &&
-          Object.keys(images.images).some((fingerprint) =>
-            fingerprint.startsWith(seed[1])
-          ));
+          images.some((fingerprint) => fingerprint.startsWith(seed[1])));
     if (!managed && !excluded(row.project, row.name)) {
       report(
         "A task VM host has an Incus custom volume that Orbit does not own.",
@@ -211,14 +181,18 @@ export async function sweepIncus(
     ownership = await currentSweep(input, gateway, signal);
     if (!orphanInstance(ownership, name)) continue;
     try {
-      const result = await call("incus.vm", {
-        vm: { project: host.project, name, cidr: host.cidr },
-        operation: { kind: "remove_instance" },
-      }, true);
-      if (result.ready !== true) throw new SweepRefused();
+      await native.removeInstance(name, async () => {
+        ownership = await currentSweep(input, gateway, signal);
+        if (!orphanInstance(ownership, name)) throw new SweepRefused();
+      });
       deleted.push(name);
     } catch (error) {
-      if (!(error instanceof SweepRefused)) throw error; // Unknown transport outcome resumes the SAME native run.
+      await currentSweep(input, gateway, signal);
+      if (
+        !(error instanceof SweepRefused) &&
+        !(error instanceof Error &&
+          error.message === "task_vm.incus_operation_failed")
+      ) throw error;
       failed = true;
     }
   }
@@ -226,14 +200,18 @@ export async function sweepIncus(
     ownership = await currentSweep(input, gateway, signal);
     if (!orphanVolume(ownership, name)) continue;
     try {
-      const result = await call("incus.volume", {
-        location: { project: host.project, pool: host.pool },
-        operation: { kind: "remove", name },
-      }, true);
-      if (result.name !== name) throw new SweepRefused();
+      await native.removeVolume(name, async () => {
+        ownership = await currentSweep(input, gateway, signal);
+        if (!orphanVolume(ownership, name)) throw new SweepRefused();
+      });
       deleted.push(name);
     } catch (error) {
-      if (!(error instanceof SweepRefused)) throw error;
+      await currentSweep(input, gateway, signal);
+      if (
+        !(error instanceof SweepRefused) &&
+        !(error instanceof Error &&
+          error.message === "task_vm.incus_operation_failed")
+      ) throw error;
       failed = true;
     }
   }
@@ -255,12 +233,12 @@ type Context = {
 export function nativeSweep(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  agent: Agent = runNodeAgent,
+  invoke: SystemTransport = localSystemCommand,
   cloud = sweepUpCloud,
 ) {
   return {
     type: "@nckrtl/task-vm-sweep",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
       execute: {
@@ -284,7 +262,7 @@ export function nativeSweep(
                   ? await sweepIncus(
                     input,
                     gateway,
-                    agent,
+                    invoke,
                     ctx.signal,
                     (message, facts) => ctx.logger?.warn(message, facts),
                   )

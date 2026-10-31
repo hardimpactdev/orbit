@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import type { SystemTransport } from "../node/system_command.ts";
 import { DirectOperationCancelled } from "../_lib/direct.ts";
 import {
-  type Agent,
   orphanInstance,
   orphanVolume,
   sweepIncus,
@@ -44,6 +44,7 @@ class Host {
   loseReply = false;
   inventoryBroken = false;
   afterVolumes = () => {};
+  afterObserve = () => {};
   beforeRead = () => {};
   gateway = {
     read: () => {
@@ -58,71 +59,89 @@ class Host {
     withPrivateMaterial: () =>
       Promise.reject(new Error("Incus cannot fetch provider credentials")),
   };
-  agent: Agent = (call) => {
-    this.calls.push({ name: call.name, input: call.input });
-    assertEquals(call.pin, "a".repeat(64));
-    assertEquals(call.sudo, true);
+  invoke: SystemTransport = (command) => {
+    assertEquals(command.command, "/usr/bin/sudo");
+    assertEquals(command.args.slice(0, 3), ["-n", "--", "/usr/bin/incus"]);
+    const args = command.args.slice(3);
+    const result = (value: unknown) =>
+      Promise.resolve({ success: true, stdout: JSON.stringify(value) });
     if (this.inventoryBroken) {
-      return Promise.resolve({ error_code: "task_vm.host_command_failed" });
+      return Promise.resolve({ success: false, stdout: "" });
     }
-    switch (call.name) {
-      case "incus.instances":
-        assertEquals(call.input.project, "orbit-tasks");
-        return Promise.resolve({ names: [...this.names] });
-      case "incus.volumes":
-        assertEquals(call.input, {
-          project: "orbit-tasks",
-          pool: "orbit-tasks",
-        });
-        this.afterVolumes();
-        return Promise.resolve({ names: [...this.volumes] });
-      case "incus.inventory":
-        return Promise.resolve({
-          instances: this.names.map((name) => ({
-            project: "orbit-tasks",
-            name,
-          })),
-          volumes: this.volumes.map((name) => ({
-            project: "orbit-tasks",
-            pool: "orbit-tasks",
-            name,
-          })),
-        });
-      case "incus.images":
-        return Promise.resolve({ images: {} });
-      case "incus.vm": {
-        const vm = call.input.vm as { name: string; project: string };
-        assertEquals(vm.project, "orbit-tasks");
-        assertEquals(call.input.operation, { kind: "remove_instance" });
-        if (vm.name === this.refuse) {
-          return Promise.resolve({ error_code: "task_vm.host_command_failed" });
-        }
-        this.names = this.names.filter((name) => name !== vm.name);
-        if (this.loseReply) {
-          this.loseReply = false;
-          return Promise.reject(new Error("lost reply"));
-        }
-        return Promise.resolve({ ready: true });
+    if (args[0] === "query") {
+      if (args[2] === "/1.0/instances?all-projects=true") {
+        return result(
+          this.names.map((name) =>
+            `/1.0/instances/${name}?project=orbit-tasks`
+          ),
+        );
       }
-      case "incus.volume": {
-        const operation = call.input.operation as {
-          name: string;
-          kind: string;
-        };
-        assertEquals(call.input.location, {
-          project: "orbit-tasks",
-          pool: "orbit-tasks",
-        });
-        assertEquals(operation.kind, "remove");
-        this.volumes = this.volumes.filter((name) => name !== operation.name);
-        return Promise.resolve({ name: operation.name });
+      if (args[2] === "/1.0/storage-pools") {
+        return result(["/1.0/storage-pools/orbit-tasks"]);
       }
-      default:
-        throw new Error("Unexpected agent primitive");
+      if (
+        args[2] ===
+          "/1.0/storage-pools/orbit-tasks/volumes/custom?all-projects=true"
+      ) {
+        return result(
+          this.volumes.map((name) =>
+            `/1.0/storage-pools/orbit-tasks/volumes/custom/${name}?project=orbit-tasks`
+          ),
+        );
+      }
     }
+    assertEquals(args.slice(0, 2), ["--project", "orbit-tasks"]);
+    const op = args.slice(2);
+    if (op[0] === "list") {
+      this.calls.push({
+        name: "incus.instances",
+        input: { project: "orbit-tasks" },
+      });
+      const names = op.includes("--")
+        ? this.names.filter((name) => name === op.at(-1))
+        : this.names;
+      if (op.includes("--")) this.afterObserve();
+      return result(
+        names.map((name) => ({
+          name,
+          type: "virtual-machine",
+          status: "Stopped",
+          config: {},
+        })),
+      );
+    }
+    if (op[0] === "storage" && op[2] === "list") {
+      assertEquals(op.includes("orbit-tasks"), true);
+      this.afterVolumes();
+      return result(this.volumes.map((name) => ({ name, type: "custom" })));
+    }
+    if (op[0] === "image" && op[1] === "list") return result([]);
+    if (op[0] === "delete") {
+      const name = op.at(-1)!;
+      this.calls.push({
+        name: "incus.vm",
+        input: { vm: { project: "orbit-tasks", name } },
+      });
+      if (name === this.refuse) {
+        return Promise.resolve({ success: false, stdout: "" });
+      }
+      this.names = this.names.filter((value) => value !== name);
+      if (this.loseReply) {
+        this.loseReply = false;
+        return Promise.reject(new Error("lost reply"));
+      }
+      return result({});
+    }
+    if (op[0] === "storage" && op[2] === "delete") {
+      const name = op.at(-1)!;
+      this.calls.push({ name: "incus.volume", input: { operation: { name } } });
+      this.volumes = this.volumes.filter((value) => value !== name);
+      return result({});
+    }
+    throw new Error(`Unexpected native Incus command: ${JSON.stringify(args)}`);
   };
   execute() {
-    return sweepIncus(structuredClone(this.input), this.gateway, this.agent);
+    return sweepIncus(structuredClone(this.input), this.gateway, this.invoke);
   }
   mutations() {
     return this.calls.filter((call) =>
@@ -192,8 +211,14 @@ Deno.test("one proven deletion refusal still observes the host and processes oth
 Deno.test("lost delete reply resumes by fresh inventory without repeating a completed mutation", async () => {
   const f = new Host();
   f.loseReply = true;
-  await assertRejects(() => f.execute(), Error, "lost reply");
-  assertEquals(f.mutations().length, 1);
+  await f.execute();
+  assertEquals(
+    f.mutations().filter((call) =>
+      call.name === "incus.vm" &&
+      (call.input.vm as { name: string }).name === "tvm-1"
+    ).length,
+    1,
+  );
   await f.execute();
   assertEquals(
     f.mutations().filter((call) =>
@@ -291,5 +316,22 @@ Deno.test("an expired admitted sweep performs no deletion", async () => {
   const f = new Host();
   f.input.deadline_at = 1;
   await assertRejects(() => f.execute(), Error, "task_vm.host_command_failed");
+  assertEquals(f.mutations(), []);
+});
+
+Deno.test("ownership captured after the provider observation prevents the next delete", async () => {
+  const f = new Host();
+  f.afterObserve = () => {
+    f.input.live_names = [...f.names];
+  };
+  await f.execute();
+  assertEquals(f.mutations(), []);
+});
+Deno.test("cancellation during provider observation prevents its delete", async () => {
+  const f = new Host();
+  f.afterObserve = () => {
+    f.cancelled = true;
+  };
+  await assertRejects(() => f.execute(), DirectOperationCancelled);
   assertEquals(f.mutations(), []);
 });

@@ -15,7 +15,7 @@ class TaskVmNativeTest(NativeTestCase):
 
     def setUp(self):
         super().setUp()
-        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/task-vms", "operations/_lib")
+        self.copy_behaviors("automatic-deploy", "operation-runner", "operations", "node-worker")
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
@@ -27,8 +27,8 @@ class TaskVmNativeTest(NativeTestCase):
         direct.write_text('import { fixtureHttp } from "../../_test/executor.ts";\n' + direct.read_text().replace(
             '...lifecycleIntent()', '...lifecycleIntent(() => fixtureHttp)'))
         sweep = self.repo / 'extensions/behaviors/operations/task-vms/sweep.ts'
-        sweep.write_text('import { fixtureSweepHttp, fixtureSweepAgent, fixtureSweepCloud } from "./sweep-native-fixture.ts";\n' + sweep.read_text().replace(
-            '...nativeSweep()', '...nativeSweep((ctx) => fixtureSweepHttp(ctx.globalArgs), fixtureSweepAgent, fixtureSweepCloud)'))
+        sweep.write_text('import { fixtureSweepHttp, fixtureSweepSystem, fixtureSweepCloud } from "./sweep-native-fixture.ts";\n' + sweep.read_text().replace(
+            '...nativeSweep()', '...nativeSweep((ctx) => fixtureSweepHttp(ctx.globalArgs), fixtureSweepSystem, fixtureSweepCloud)'))
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
             source = "\n".join(line for line in path.read_text().splitlines()
@@ -137,7 +137,7 @@ class TaskVmNativeTest(NativeTestCase):
         self.state['operation'].update(kind='task_vm.sweep_host', result=None, input={
             'node_id': 3, 'provider': provider, 'deadline_at': 4000000000, 'ci_runner': False, 'stray_vm_ids': [],
             'agent_sha256': 'a'*64, 'host': None if provider == 'upcloud' else {
-                'project': 'orbit-tasks', 'pool': 'orbit-tasks', 'cidr': '10.1.0.1/24', 'operator_owned': []},
+                'project': 'orbit-tasks', 'pool': 'orbit-tasks', 'cidr': '10.1.0.0/24', 'operator_owned': []},
             'retired_build_ids': [], 'live_names': ['tvm-5'], 'protected_build_ids': [], 'recorded_build_ids': [], 'running_stamps': []})
         self.state.update(hostNames=['tvm-5', 'tvm-999', 'operator-vm'],
                           hostVolumes=['tvm-5-topology-seed', 'tvm-999-topology-seed', 'operator-data'])
