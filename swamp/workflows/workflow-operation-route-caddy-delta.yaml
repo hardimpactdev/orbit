@@ -1,0 +1,212 @@
+id: 2c1fb8bb-5e46-4f5e-b742-99e7801684d9
+name: operation-route-caddy-delta
+description: Compose and publish a Route-owned section delta while preserving unrelated
+  current publications.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      pattern: ^[a-z][a-z0-9_.-]+$
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+          not:
+            enum:
+            - 1
+            - 18
+        user:
+          type: string
+        before:
+          type: object
+        after:
+          type: object
+        direction:
+          type: string
+          enum:
+          - forward
+          - restore
+      required:
+      - node_id
+      - user
+      - before
+      - after
+      - direction
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.intent.node_id) }}
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication-command'
+      behaviorName: ${{ "caddy-delta-assets-" + run.id }}
+      methodName: assets
+      inputs:
+        run_id: ${{ run.id }}
+        node_id: ${{ inputs.intent.node_id }}
+        user: ${{ inputs.intent.user }}
+        before: ${{ inputs.intent.before }}
+        after: ${{ inputs.intent.after }}
+        direction: ${{ inputs.intent.direction }}
+- name: composition
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: *id001
+  steps:
+  - name: prepare-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "caddy-delta-prepare-payload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.prepare_payload }}"
+        env: &id002
+          ORBIT_CADDY_DELTA_META: ${{ steps.assets.outputs.metadata_json }}
+  - name: write-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "caddy-delta-write-payload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.write_payload_chunk }}"
+        env:
+          ORBIT_CADDY_DELTA_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_CADDY_DELTA_CHUNK: ${{ self.chunk.json }}
+    dependsOn:
+    - step: prepare-payload
+      condition:
+        type: succeeded
+    forEach:
+      item: chunk
+      in: ${{ steps.assets.outputs.chunks }}
+  - name: compose
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "caddy-delta-compose-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.compose_caddy }}"
+        env: *id002
+    dependsOn:
+    - step: write-payload
+      condition:
+        type: succeeded
+  - name: candidate
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication-command'
+      behaviorName: ${{ "caddy-delta-candidate-" + run.id }}
+      methodName: publication
+      inputs:
+        stdout: ${{ steps.compose.outputs.stdout }}
+    dependsOn:
+    - step: compose
+      condition:
+        type: succeeded
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+- name: publication
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: *id001
+  dependsOn:
+  - job: composition
+    condition:
+      type: succeeded
+  steps:
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent:
+          caddy_publication: ${{ steps.candidate.outputs.publication }}
+- name: completion
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: *id001
+  dependsOn:
+  - job: publication
+    condition:
+      type: succeeded
+  steps:
+  - name: cleanup-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "caddy-delta-cleanup-payload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup_payload }}"
+        env: *id002
+    allowFailure: true
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "caddy-delta-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' "$ORBIT_CADDY_DELTA_RESULT"
+        env:
+          ORBIT_CADDY_DELTA_RESULT: ${{ steps.candidate.outputs.result_json }}
+    dependsOn:
+    - step: cleanup-payload
+      condition:
+        type: succeeded

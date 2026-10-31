@@ -1,0 +1,15 @@
+manifestVersion: 1
+name: "@nckrtl/route-publication-command"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public Route publication sections and placed candidate composition.
+behaviors:
+  - operations/routes/publication-command/assets.ts
+additionalFiles:
+  - scripts/caddy_sections.py
+  - scripts/payload_common.py
+  - scripts/prepare_payload.py
+  - scripts/write_payload_chunk.py
+  - scripts/compose_caddy.py
+  - scripts/cleanup_payload.py
