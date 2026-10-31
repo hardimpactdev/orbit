@@ -24,6 +24,7 @@ beforeEach(function (): void {
     $this->host = Node::query()->create(['name' => 'destroy-host', 'user' => 'nckrtl', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '192.0.2.13']);
     $this->gateway = Node::query()->create(['name' => 'destroy-gateway', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14']);
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    config(['dependency_detection.services_node_id' => $this->gateway->id]);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)]]);
     $this->vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'failed', 'host_node_id' => $this->host->id, 'wireguard_ip' => '10.44.0.208', 'pi_token' => 'private-pi-token']);
     $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
@@ -58,8 +59,8 @@ it('keeps UpCloud intent on the Gateway and strips its existing credential refer
     $operation = savedDestroyIntent();
 
     expect($operation->node_id)->toBe($this->gateway->id);
-    expect($operation->input['token'])->toBe(['$secret' => 'upcloud.api', 'id' => $this->vm->id]);
-    expect(app(TaskVmDestroyIntent::class)->input($operation))->not->toHaveKey('token');
+    expect($operation->input['upcloud_token'])->toBe(['$secret' => 'upcloud.api', 'id' => $this->vm->id]);
+    expect(app(TaskVmDestroyIntent::class)->input($operation))->not->toHaveKey('upcloud_token');
 });
 
 it('refuses stale ownership before any private read or provider effect', function (array $changes): void {
@@ -117,7 +118,7 @@ it('returns kind unavailable before admission when complete cleanup participants
     expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->status)->toBe(409);
     expect(Operation::query()->where('target_type', 'task_vm')->where('target_id', $this->vm->id)->exists())->toBeFalse();
     expect($this->vm->fresh()->state->value)->toBe('failed');
-})->with([[['worker_stop_required' => true]], [['model_key' => str_repeat('c', 64)]]]);
+})->with([[['model_key' => str_repeat('c', 64)]]]);
 
 it('projects the provider-only removal inside the truthful parent transaction without an Operation child', function (): void {
     $input = app(TaskVmDestroyIntent::class)->capture($this->vm);
@@ -147,7 +148,7 @@ it('composes the owning Node projector and VM record projection in the same Task
     $this->vm->update(['node_id' => $guest->id]);
     $input = app(TaskVmDestroyIntent::class)->capture($this->vm->fresh());
     expect($input['node_removal'])->toMatchArray(['schema_version' => 1, 'task_vm_id' => $this->vm->id, 'node_id' => $guest->id, 'machine_deleted' => true, 'offline' => true]);
-    expect($input['participant_node_ids'])->toBe([$this->host->id, $guest->id]);
+    expect($input['participant_node_ids'])->toBe([$this->host->id, $guest->id, $this->gateway->id]);
 
     DB::transaction(fn () => app(TaskVmDestroyProjection::class)->projectRemoval($input, [
         'removed' => true, 'node_removal' => ['schema_version' => 1, 'node_id' => $guest->id, 'removed' => true],
@@ -191,9 +192,9 @@ it('returns only the canonical public input for the exact admitted cleanup parti
     expect($view['removal_node_id'])->toBe($guest->id);
     expect($view['network']['node_id'])->toBe($this->host->id);
     expect($view['network']['peer_dns'])->toBeNull();
-    expect($view)->not->toHaveKey('token')->not->toHaveKey('model_key')->not->toHaveKey('pi_token');
+    expect($view)->not->toHaveKey('upcloud_token')->not->toHaveKey('model_key')->not->toHaveKey('pi_token');
     expect(json_encode($view))->not->toContain('private-pi-token');
-    expect(fn () => app(TaskVmDestroyProjection::class)->publicInput($operation, $this->gateway->id))->toThrow(ResourceOperationException::class);
+    expect(app(TaskVmDestroyProjection::class)->publicInput($operation, $this->gateway->id)['task_vm_id'])->toBe($this->vm->id);
     expect(fn () => app(TaskVmDestroyProjection::class)->publicInput($operation, $guest->id))->toThrow(ResourceOperationException::class);
 });
 

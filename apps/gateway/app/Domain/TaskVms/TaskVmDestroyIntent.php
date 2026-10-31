@@ -23,7 +23,7 @@ use LogicException;
 /** Records destruction scope. It never reads power, stops a worker or deletes a resource. */
 final readonly class TaskVmDestroyIntent
 {
-    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private NodeRemovalPlan $nodes) {}
+    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private NodeRemovalPlan $nodes, private ModelKeyIssuer $modelKeys) {}
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
@@ -32,12 +32,22 @@ final readonly class TaskVmDestroyIntent
         $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
             : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
         $location = $vm->provider === TaskVmProviderKind::Incus ? $this->settings->host($host->id) : null;
+        $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $issuerId = $vm->node_id === null ? $host->id : filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
+        if (! is_int($issuerId) || ! Node::query()->whereKey($issuerId)->where('status', LifecycleStatus::Active)->exists()) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'The existing worker issuer is unavailable.', 409);
+        }
+        if ($vm->model_key !== null && $vm->node_id === null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Model-key cleanup requires its recorded guest owner.', 409);
+        }
+        $routerId = $vm->model_key === null ? null : $this->modelKeys->ownerNodeId();
         $nodeRemoval = $vm->node_id === null ? null : $this->nodes->deletedTaskVm($vm, Node::query()->findOrFail($vm->node_id));
         $cleanupNodeIds = $nodeRemoval === null ? [] : $this->cleanupNodeIds($nodeRemoval);
 
         $input = ['removal_id' => (string) Str::uuid(), 'task_vm_id' => $vm->id, 'node_id' => $host->id,
             'guest_node_id' => $vm->node_id, 'group_id' => $vm->group_id, 'name' => $vm->name,
             'guest_user' => $vm->node?->user, 'model_origin' => $vm->ai_router_origin,
+            'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuerId, 'model_router_node_id' => $routerId,
             'wireguard_ip' => $vm->wireguard_ip, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
             'agent_sha256' => $this->agents->pin($host), 'deadline_at' => now()->addSeconds(1500)->timestamp,
             'worker_stop_required' => (bool) $vm->worker_stop_required, 'model_key_required' => $vm->model_key !== null,
@@ -46,8 +56,15 @@ final readonly class TaskVmDestroyIntent
             'node_placements' => array_map(static fn (int $nodeId): array => ['effect_node_id' => $nodeId, 'execution_node_id' => $nodeId, 'transport' => 'local'], $cleanupNodeIds),
             'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr],
             'pool' => $location?->pool,
-            'participant_node_ids' => array_values(array_unique(array_filter([$host->id, $vm->node_id, ...$cleanupNodeIds]))),
-            ...($vm->provider === TaskVmProviderKind::UpCloud ? ['token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]] : [])];
+            'participant_node_ids' => array_values(array_unique(array_filter([$host->id, $vm->node_id, $gateway->id, $issuerId, $routerId, ...$cleanupNodeIds]))),
+            'private_bindings' => [
+                ...($vm->model_key === null ? [] : [
+                    'model_key' => ['owner_node_id' => $vm->node_id, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
+                    'model_router' => ['owner_node_id' => $routerId, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
+                ]),
+            ],
+            ...($vm->model_key === null ? [] : ['model_key' => ['$secret' => 'task_vm.model_key', 'id' => $vm->id], 'model_router' => ['$secret' => 'task_vm.model_router', 'id' => $vm->id]]),
+            ...($vm->provider === TaskVmProviderKind::UpCloud ? ['upcloud_token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]] : [])];
         $this->available($input);
 
         return $input;
@@ -90,7 +107,7 @@ final readonly class TaskVmDestroyIntent
     {
         $nodeRemoval = $input['node_removal'] === null ? null : ValidatedData::object($input['node_removal']);
         if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && $nodeRemoval['route_ids'] !== [])
-            || $input['worker_stop_required'] || $input['model_key_required']) {
+            ) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Same-root worker, credential and Route cleanup participants are not installed.', 409);
         }
     }
@@ -102,7 +119,7 @@ final readonly class TaskVmDestroyIntent
             $this->owned($operation);
         }
 
-        return Arr::except($operation->input, ['token']);
+        return Arr::except($operation->input, ['upcloud_token', 'model_key', 'model_router', 'private_bindings']);
     }
 
     private function preserved(TaskVm $vm): void

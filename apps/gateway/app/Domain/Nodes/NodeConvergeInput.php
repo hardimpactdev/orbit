@@ -126,7 +126,7 @@ final readonly class NodeConvergeInput
     }
 
     /** @return array{records:string,catalog:string} */
-    private function dns(): array
+    public function dns(): array
     {
         $renderer = app(DevelopmentDnsConfigRenderer::class);
 
@@ -136,7 +136,7 @@ final readonly class NodeConvergeInput
     }
 
     /** @return array<string,mixed> */
-    private function residue(Node $node): array
+    public function residue(Node $node): array
     {
         $rows = RouteRemovalResidue::query()->where('node_id', $node->id)->orderBy('id')->get()
             ->filter(static fn (RouteRemovalResidue $row): bool => ! Route::query()->whereKey($row->route_id)->exists())->values();

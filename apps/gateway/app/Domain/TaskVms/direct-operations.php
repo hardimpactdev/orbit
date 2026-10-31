@@ -12,7 +12,7 @@ use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 return ['task_vm.destroy' => [
     'workflow' => 'operation-task-vm-destroy',
     'projection' => \App\Domain\TaskVms\TaskVmDestroyProjection::class,
-    'private_material' => ['token' => 'upcloud.api'],
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'model_key' => 'task_vm.model_key', 'model_router' => 'task_vm.model_router'],
 ]] + array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
     'writer_config' => 'swamp.direct_writers',

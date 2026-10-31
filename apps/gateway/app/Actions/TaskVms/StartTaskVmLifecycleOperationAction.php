@@ -29,6 +29,9 @@ final readonly class StartTaskVmLifecycleOperationAction
 
     public function execute(int $taskVmId, string $verb): ?Operation
     {
+        if ($verb === 'destroy') {
+            return app(StartTaskVmDestroyAction::class)->execute($taskVmId);
+        }
         TaskVmCapabilities::require('children');
         TaskVmCapabilities::require('receipts');
         if (in_array($verb, ['provision', 'enroll'], true)) {

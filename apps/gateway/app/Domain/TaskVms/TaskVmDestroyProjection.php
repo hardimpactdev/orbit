@@ -30,6 +30,9 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
         $this->intent->owned($operation);
+        if ($callerNodeId === ($operation->input['gateway_node_id'] ?? null) || $callerNodeId === ($operation->input['issuer_node_id'] ?? null)) {
+            return;
+        }
         if ($operation->input['node_removal'] === null) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This VM has no admitted Node cleanup inventory.', 403);
         }
@@ -43,6 +46,9 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
+        if ($callerNodeId === ($operation->input['gateway_node_id'] ?? null) || $callerNodeId === ($operation->input['issuer_node_id'] ?? null)) {
+            return $this->intent->input($operation);
+        }
 
         return $this->publicNodes->participant(ValidatedData::object($operation->input['node_removal']), Node::query()->findOrFail($callerNodeId));
     }
