@@ -149,7 +149,7 @@ final readonly class InfrastructureDoctorIntent
     private function connection(?DatabaseConnection $connection, ?DatabaseConnectionTarget $attachment = null): array
     {
         $row = ['id' => $attachment !== null ? 'attachment:'.$attachment->id : 'connection:'.$connection?->id,
-            'name' => ($connection?->slug ?? 'missing').($attachment !== null ? ':'.$attachment->prefix : ''), 'missing' => $connection === null];
+            'name' => ($connection->slug ?? 'missing').($attachment !== null ? ':'.$attachment->prefix : ''), 'missing' => $connection === null];
         if ($connection === null) {
             return $row;
         }

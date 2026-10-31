@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Actions\TaskVms\DeleteTaskVmAction;
-use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceState;
@@ -92,14 +91,13 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /**
-     * Removes the workspace the group owns, and returns it, or null when the group owns none. Every task path removes
-     * a workspace here, so only the owner decides which Instance goes.
+     * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
      * The workspace goes with its task VM, or through the generic Instance remover when the VM is gone. The source
      * and row stay when removal refuses. A workspace on a parked task VM stays: the VM is queued to start, and removal
      * fails with `task_vm.parked` until it is ready.
      */
-    public function remove(Task $group): ?Instance
+    public function remove(Task $group): null
     {
         app(TaskVmWorker::class)->stopGroup($group);
         $instance = $group->workspace()->first();
@@ -119,7 +117,6 @@ final readonly class RemoveTaskWorkspaceAction
             $lease = $leases->remoteStarted($instance);
             try {
                 $this->removeWithLease($instance);
-                $leases->remoteFinished($lease);
             } catch (Throwable $exception) {
                 if (! $this->uncertainRemoteRemoval($exception)) {
                     $leases->remoteFinished($lease);
@@ -128,7 +125,6 @@ final readonly class RemoveTaskWorkspaceAction
             }
         });
 
-        return $instance;
     }
 
     private function uncertainRemoteRemoval(Throwable $exception): bool
@@ -147,13 +143,11 @@ final readonly class RemoveTaskWorkspaceAction
         return false;
     }
 
-    private function removeWithLease(Instance $instance): void
+    private function removeWithLease(Instance $instance): never
     {
         $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);
-
-            return;
         }
 
         throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace removal requires its native ending DAG.', 503);
@@ -165,7 +159,7 @@ final readonly class RemoveTaskWorkspaceAction
      * earlier removal attempt ran it. The agent transcripts are copied to the Gateway, then the VM is deleted and the
      * workspace records are forgotten offline. Swamp proves provider deletion and removes the Node through its owning child.
      */
-    private function removeWithTaskVm(Instance $instance, TaskVm $vm): void
+    private function removeWithTaskVm(Instance $instance, TaskVm $vm): never
     {
         $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
         if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
@@ -175,7 +169,6 @@ final readonly class RemoveTaskWorkspaceAction
             app(ArchiveAgentTranscriptsAction::class)->execute($vm->group_id, $vm->node_id);
         }
         app(DeleteTaskVmAction::class)->execute($vm);
-        app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy');
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
