@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceCloneAction;
 use App\Data\Instances\CloneInstanceData;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateBindings;
-use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -17,29 +14,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use Tests\Support\FakeRoutePublicationSocket;
 
-final class CloneAdmissionFixtureProjection implements DirectOperationProjection
-{
-    public function input(Operation $operation): array
-    {
-        return $operation->input;
-    }
-
-    public function apply(Operation $operation, array $data): Operation
-    {
-        return $operation;
-    }
-}
-
 beforeEach(function (): void {
-    // Production registration lands with its native root; this fixture tests admission alone.
-    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
-    {
-        public function definitions(): array
-        {
-            return ['instance.clone' => ['workflow' => 'operation-instance-clone', 'projection' => CloneAdmissionFixtureProjection::class,
-                'private_material' => ['git_read' => 'instance.lifecycle_git']]];
-        }
-    }]));
     $agent = Mockery::mock(AgentCommandRunner::class);
     $agent->shouldNotReceive('run');
     app()->instance(AgentCommandRunner::class, $agent);
@@ -48,14 +23,14 @@ beforeEach(function (): void {
     $this->project = Project::query()->create(['name' => 'Native clone', 'slug' => 'native-clone', 'type' => 'monorepo',
         'repository_url' => 'https://github.com/example/native-clone.git', 'root' => '.', 'default_branch' => 'main']);
     $this->source = Node::query()->create(['name' => 'clone-dev', 'status' => 'active', 'platform' => 'linux',
-        'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     $this->destination = Node::query()->create(['name' => 'clone-prod', 'status' => 'active', 'platform' => 'linux',
-        'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10']);
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10']);
     orbit_test_set_app_placement_role($this->source, false);
     orbit_test_set_app_placement_role($this->destination, true);
     $this->candidate = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->source->id, 'name' => 'default',
         'status' => 'active', 'provisioning_step' => 'active', 'checkout_path' => '/srv/apps/native-clone/default',
-        'source_layout' => 'checkout', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+        'source_layout' => 'checkout', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'source_is_laravel' => false]);
     $this->data = new CloneInstanceData($this->destination->id, 'preview', 'preview', null, null);
 });
 
@@ -101,4 +76,50 @@ it('refuses changed clone input without admitting another target', function (): 
     $changed = new CloneInstanceData($this->destination->id, 'preview', 'different', null, null);
     expect(fn () => app(StartInstanceCloneAction::class)->execute($this->candidate, $changed))->toThrow(ResourceOperationException::class, 'different immutable');
     expect(Instance::query()->where('clone_candidate_id', $this->candidate->id)->count())->toBe(1);
+});
+
+it('gives the candidate a read-only source view and only its declared Git material', function (): void {
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'clone-gateway', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
+    $this->source->accessibleNodes()->attach($gateway);
+    $this->destination->accessibleNodes()->attach($gateway);
+    $operation = app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data);
+    $run = '?run_id=a075eb23-7ac4-4487-80d1-57a038a92676';
+    $url = '/api/v1/direct-operations/'.$operation->id;
+    $this->withServerVariables(['REMOTE_ADDR' => $this->source->wireguard_ip]);
+    $this->getJson($url.$run)->assertOk()->assertJsonPath('data.input.direct_provisioning.candidate.node_id', $this->source->id)
+        ->assertJsonMissingPath('data.input.environment_material');
+    $private = $this->getJson($url.'/private-material'.$run)->assertOk();
+    expect(array_keys($private->json('data')))->toBe(['git_read']);
+    $body = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
+        'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'result' => ['instance_id' => $operation->target_id, 'ready' => true]];
+    $this->postJson($url.'/result', $body)->assertForbidden();
+    $other = Node::query()->create(['name' => 'clone-other', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.11', 'wireguard_ip' => '10.44.0.11']);
+    $other->accessibleNodes()->attach($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+    $this->getJson($url.$run)->assertForbidden();
+    $this->getJson($url.'/private-material'.$run)->assertForbidden();
+});
+
+it('projects native source and completion through the destination without child proofs', function (): void {
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'clone-gateway', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
+    $this->destination->accessibleNodes()->attach($gateway);
+    $operation = app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->destination->wireguard_ip]);
+    $url = '/api/v1/direct-operations/'.$operation->id.'/result';
+    $base = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z')];
+    $this->postJson($url, [...$base, 'status' => 'running', 'result' => ['phase' => 'source', 'branch' => 'main',
+        'commit' => str_repeat('c', 40), 'candidate_commit' => str_repeat('c', 40), 'php_version' => null, 'laravel' => false]])->assertOk();
+    $target = Instance::query()->findOrFail($operation->target_id);
+    expect($target->status->value)->toBe('source_resolved')->and($target->clone_candidate_commit)->toBe(str_repeat('c', 40));
+    $done = [...$base, 'status' => 'succeeded', 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'result' => ['instance_id' => $target->id, 'ready' => true]];
+    $this->postJson($url, $done)->assertOk()->assertJsonPath('data.status', 'succeeded');
+    $completed = $target->refresh()->clone_completed_at;
+    $this->postJson($url, $done)->assertOk();
+    expect($target->refresh()->status->value)->toBe('active')->and($target->clone_completed_at)->toEqual($completed);
+    expect($operation->refresh()->lock_key)->toBeNull();
 });

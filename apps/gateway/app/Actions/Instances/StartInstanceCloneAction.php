@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
@@ -48,6 +49,8 @@ final readonly class StartInstanceCloneAction
             $target = $this->existingTarget($candidate, $data);
             $created = ! $target instanceof Instance;
             $node = Node::query()->findOrFail($data->nodeId);
+            $intent = app(NativeInstanceProvisioningIntent::class);
+            $intent->assertCloneSupported($candidate, $node, $data->sqliteSourcePath);
             $completed = $target?->clone_completed_at !== null;
             $branch = $completed ? (string) $target->branch : $data->branch ?? $this->candidateBranch($candidate);
             $source = $this->candidateIntent($candidate, $branch);
@@ -58,7 +61,7 @@ final readonly class StartInstanceCloneAction
 
             $participants = array_values(array_unique([$candidate->node_id, $node->id]));
 
-            return $this->operations->execute('instance.clone', 'instance', $target->id, $node->id, [
+            $input = [
                 'instance_id' => $target->id, 'project_id' => $candidate->project_id, 'created' => $created,
                 'candidate_id' => $candidate->id, 'candidate' => $source,
                 'candidate_node_id' => $candidate->node_id,
@@ -74,7 +77,12 @@ final readonly class StartInstanceCloneAction
                 'production_user' => $target->production_user, 'production_home' => $target->production_home,
                 'route_id' => $target->routes()->whereNull('web_root')->value('routes.id'),
                 'initial_completed' => $target->clone_completed_at !== null,
-            ], $caller, $requestId);
+            ];
+            $input['git_read'] = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
+            $input['environment_material'] = ['$secret' => 'instance.environment_sync', 'id' => $input['instance_id']];
+            $input['direct_provisioning'] = $intent->clone($target, $input);
+
+            return $this->operations->execute('instance.clone', 'instance', $target->id, $node->id, $input, $caller, $requestId);
         });
     }
 
