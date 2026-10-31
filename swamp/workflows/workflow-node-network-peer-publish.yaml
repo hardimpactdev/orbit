@@ -1,0 +1,1080 @@
+id: 68861487-e108-500d-9c8a-38be1e38fc6f
+name: node-network-peer-publish
+description: Publish one prepared peer after the owning parent proves its canonical hub step; does not commit the
+  transaction or apply trust firewall.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    transaction_id:
+      type: string
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+    public_key:
+      type: string
+  required:
+  - operation_id
+  - transaction_id
+  - node_id
+  - intent
+  - public_key
+jobs:
+- name: peer_publication
+  steps:
+  - name: publication_intent
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-command-inputs'
+      methodName: publication
+      inputs:
+        node_id: ${{ inputs.node_id }}
+        intent: ${{ inputs.intent }}
+        public_key: ${{ inputs.public_key }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-publication-intent" }}
+  - name: inspect_peer_readiness
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import ipaddress
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          with open("/etc/orbit/agent/config.toml", "rb") as stream:
+              installed = tomllib.load(stream)
+          if installed.get("swamp_worker", {}).get("node_id") != intent["node_id"]:
+              raise SystemExit("wireguard.peer_worker_mismatch")
+          root = Path("/etc/wireguard")
+          metadata = root.lstat()
+          if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+              raise SystemExit("wireguard.peer_state_unsupported")
+          for name in (".orbit.peer-transaction", ".orbit.conf.rollback", ".orbit.dns-link.rollback"):
+              if os.path.lexists(root / name):
+                  raise SystemExit("wireguard.peer_recovery_pending")
+          if intent["peer"]["operator_dns"] is None:
+              observed = subprocess.run(["/usr/bin/resolvectl", "dns"], check=True, capture_output=True, text=True, timeout=10).stdout
+              found = False
+              for line in observed.splitlines():
+                  if ":" not in line or "(orbit):" in line:
+                      continue
+                  if not (line.startswith("Global:") or line.startswith("Link ")):
+                      continue
+                  for server in line.split(":", 1)[1].split():
+                      try:
+                          address = ipaddress.ip_address(server.split("%", 1)[0].split("#", 1)[0])
+                      except ValueError:
+                          continue
+                      if not address.is_loopback and not address.is_unspecified and str(address) != intent["peer"]["dns_server"]:
+                          found = True
+              if not found:
+                  raise SystemExit("wireguard.peer_dns_uplink_missing")
+          print('{"ready":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-inspect-peer-readiness" }}
+    dependsOn:
+    - step: publication_intent
+      condition:
+        type: succeeded
+  - name: capture_before_image
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          if os.path.lexists(journal):
+              saved = json.loads(private_read(journal))
+              if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+                  raise SystemExit("wireguard.peer_recovery_pending")
+          else:
+              def observed(argv):
+                  return subprocess.run(argv, capture_output=True, text=True, timeout=10, check=False)
+              active = observed(["/usr/bin/systemctl", "is-active", "--quiet", "wg-quick@orbit"]).returncode == 0
+              enabled = observed(["/usr/bin/systemctl", "is-enabled", "wg-quick@orbit"]).stdout.strip()
+              dns_file = private_read(root / "orbit.dns-link", True)
+              settings = {}
+              links = ["orbit"] if active else []
+              if dns_file:
+                  link = dns_file.splitlines()[0]
+                  if not link or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:+-" for character in link):
+                      raise SystemExit("wireguard.peer_state_unsupported")
+                  if link not in links and (link != "orbit" or active):
+                      links.append(link)
+              for link in links:
+                  settings[link] = {}
+                  for property_name in ("dns", "domain", "default-route", "llmnr", "mdns", "dnssec", "dnsovertls", "nta"):
+                      observed_value = observed(["/usr/bin/resolvectl", property_name, link])
+                      if observed_value.returncode:
+                          raise SystemExit("wireguard.peer_state_unsupported")
+                      settings[link][property_name] = observed_value.stdout.split(":", 1)[-1].strip()
+              saved = {"operation_id": operation_id, "transaction_id": transaction_id,
+                       "config": private_read(root / "orbit.conf", True), "dns_file": dns_file,
+                       "active": active, "enabled": enabled, "resolver_settings": settings}
+              descriptor, candidate = tempfile.mkstemp(prefix=".orbit-before-", dir=root)
+              try:
+                  os.fchmod(descriptor, 0o600)
+                  with os.fdopen(descriptor, "w") as stream:
+                      json.dump(saved, stream, separators=(",", ":"))
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.link(candidate, journal)
+              finally:
+                  os.unlink(candidate)
+          legacy = saved["dns_file"].splitlines()[0] if saved["dns_file"] else None
+          print(json.dumps({"captured": True, "legacy_link": legacy if legacy != "orbit" else None}, separators=(",", ":")))
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-capture-before-image" }}
+    dependsOn:
+    - step: inspect_peer_readiness
+      condition:
+        type: succeeded
+  - name: before_image
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-command-inputs'
+      methodName: beforeImage
+      inputs:
+        stdout: ${{ steps.capture_before_image.outputs.stdout }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-before-image" }}
+    dependsOn:
+    - step: capture_before_image
+      condition:
+        type: succeeded
+  - name: stop_peer_tunnel
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(['/usr/bin/systemctl', 'stop', 'wg-quick@orbit'], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-stop-peer-tunnel" }}
+    dependsOn:
+    - step: before_image
+      condition:
+        type: succeeded
+  - name: publish_peer_configuration
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          def publish(path, value):
+              descriptor, candidate = tempfile.mkstemp(prefix=".orbit-network-", dir=root)
+              try:
+                  os.fchmod(descriptor, 0o600)
+                  with os.fdopen(descriptor, "w") as stream:
+                      stream.write(value)
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.replace(candidate, path)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          private = private_read(root / "orbit.key")
+          public = subprocess.run(["/usr/bin/wg", "pubkey"], input=private, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+          if public != intent["public_key"]:
+              raise SystemExit("vpn.peer_key_mismatch")
+          peer = intent["peer"]
+          hook = ("DNS = " + peer["operator_dns"]) if peer["operator_dns"] is not None else ("PostUp = resolvectl dns %i " + peer["dns_server"] + "; resolvectl domain %i " + " ".join("\\~" + domain for domain in peer["domains"]))
+          config = "[Interface]\nAddress = " + peer["address"] + "\nPrivateKey = " + private.strip() + "\n" + hook + "\n\n[Peer]\nPublicKey = " + peer["server_public_key"] + "\nEndpoint = " + peer["endpoint"] + "\nAllowedIPs = " + peer["subnet"] + "\nPersistentKeepalive = 25\n"
+          private_read(root / "orbit.conf", True)
+          publish(root / "orbit.conf", config)
+          print('{"published":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-publish-peer-configuration" }}
+    dependsOn:
+    - step: stop_peer_tunnel
+      condition:
+        type: succeeded
+  - name: unmask_peer_tunnel
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(['/usr/bin/systemctl', 'unmask', 'wg-quick@orbit'], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-unmask-peer-tunnel" }}
+    dependsOn:
+    - step: publish_peer_configuration
+      condition:
+        type: succeeded
+  - name: unmask_peer_tunnel_runtime
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(['/usr/bin/systemctl', 'unmask', '--runtime', 'wg-quick@orbit'], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-unmask-peer-tunnel-runtime" }}
+    dependsOn:
+    - step: unmask_peer_tunnel
+      condition:
+        type: succeeded
+  - name: enable_peer_tunnel
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(['/usr/bin/systemctl', 'enable', 'wg-quick@orbit'], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-enable-peer-tunnel" }}
+    dependsOn:
+    - step: unmask_peer_tunnel_runtime
+      condition:
+        type: succeeded
+  - name: start_peer_tunnel
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(['/usr/bin/systemctl', 'start', 'wg-quick@orbit'], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-start-peer-tunnel" }}
+    dependsOn:
+    - step: enable_peer_tunnel
+      condition:
+        type: succeeded
+  - name: set_peer_dns_domains
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(["/usr/bin/resolvectl", "domain", "orbit", *["~" + domain for domain in intent["peer"]["domains"]]], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-set-peer-dns-domains" }}
+    dependsOn:
+    - step: start_peer_tunnel
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.peer.operator_dns != null }}
+  - name: set_peer_dns_default_route
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(["/usr/bin/resolvectl", "default-route", "orbit", "no"], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-set-peer-dns-default-route" }}
+    dependsOn:
+    - step: set_peer_dns_domains
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.peer.operator_dns != null }}
+  - name: set_peer_dns_server
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(["/usr/bin/resolvectl", "dns", "orbit", intent["peer"]["dns_server"]], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-set-peer-dns-server" }}
+    dependsOn:
+    - step: set_peer_dns_default_route
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.peer.operator_dns != null }}
+  - name: clear_legacy_dns_server
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          link = saved["dns_file"].splitlines()[0]
+          if link == "orbit":
+              raise SystemExit("wireguard.peer_state_unsupported")
+          subprocess.run(["/usr/bin/resolvectl", "dns", link, ""], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-clear-legacy-dns-server" }}
+    dependsOn:
+    - step: set_peer_dns_server
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.before_image.outputs.legacy_link == null }}
+  - name: clear_legacy_dns_domains
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          link = saved["dns_file"].splitlines()[0]
+          if link == "orbit":
+              raise SystemExit("wireguard.peer_state_unsupported")
+          subprocess.run(["/usr/bin/resolvectl", "domain", link, ""], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-clear-legacy-dns-domains" }}
+    dependsOn:
+    - step: clear_legacy_dns_server
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.before_image.outputs.legacy_link == null }}
+  - name: restore_legacy_dns_default_route
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          link = saved["dns_file"].splitlines()[0]
+          if link == "orbit":
+              raise SystemExit("wireguard.peer_state_unsupported")
+          subprocess.run(["/usr/bin/resolvectl", "default-route", link, "yes"], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-restore-legacy-dns-default-route" }}
+    dependsOn:
+    - step: clear_legacy_dns_domains
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.before_image.outputs.legacy_link == null }}
+  - name: reconfigure_legacy_uplink
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          link = saved["dns_file"].splitlines()[0]
+          if link == "orbit":
+              raise SystemExit("wireguard.peer_state_unsupported")
+          subprocess.run(["/usr/bin/networkctl", "reconfigure", link], check=True, capture_output=True, timeout=30)
+          print('{"applied":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-reconfigure-legacy-uplink" }}
+    dependsOn:
+    - step: restore_legacy_dns_default_route
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.before_image.outputs.legacy_link == null }}
+  - name: verify_public_uplink
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import ipaddress
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          with open("/etc/orbit/agent/config.toml", "rb") as stream:
+              installed = tomllib.load(stream)
+          if installed.get("swamp_worker", {}).get("node_id") != intent["node_id"]:
+              raise SystemExit("wireguard.peer_worker_mismatch")
+          root = Path("/etc/wireguard")
+          metadata = root.lstat()
+          if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+              raise SystemExit("wireguard.peer_state_unsupported")
+          for name in (".orbit.peer-transaction", ".orbit.conf.rollback", ".orbit.dns-link.rollback"):
+              if os.path.lexists(root / name):
+                  raise SystemExit("wireguard.peer_recovery_pending")
+          if intent["peer"]["operator_dns"] is None:
+              observed = subprocess.run(["/usr/bin/resolvectl", "dns"], check=True, capture_output=True, text=True, timeout=10).stdout
+              found = False
+              for line in observed.splitlines():
+                  if ":" not in line or "(orbit):" in line:
+                      continue
+                  if not (line.startswith("Global:") or line.startswith("Link ")):
+                      continue
+                  for server in line.split(":", 1)[1].split():
+                      try:
+                          address = ipaddress.ip_address(server.split("%", 1)[0].split("#", 1)[0])
+                      except ValueError:
+                          continue
+                      if not address.is_loopback and not address.is_unspecified and str(address) != intent["peer"]["dns_server"]:
+                          found = True
+              if not found:
+                  raise SystemExit("wireguard.peer_dns_uplink_missing")
+          print('{"ready":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-verify-public-uplink" }}
+    dependsOn:
+    - step: reconfigure_legacy_uplink
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.peer.operator_dns != null }}
+  - name: persist_peer_dns_metadata
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          def publish(path, value):
+              descriptor, candidate = tempfile.mkstemp(prefix=".orbit-network-", dir=root)
+              try:
+                  os.fchmod(descriptor, 0o600)
+                  with os.fdopen(descriptor, "w") as stream:
+                      stream.write(value)
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.replace(candidate, path)
+              finally:
+                  if os.path.exists(candidate):
+                      os.unlink(candidate)
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          publish(root / "orbit.dns-link", "orbit\n" + intent["peer"]["dns_server"] + "\n" + "\n".join(intent["peer"]["domains"]) + "\n")
+          print('{"persisted":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-persist-peer-dns-metadata" }}
+    dependsOn:
+    - step: verify_public_uplink
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.peer.operator_dns != null }}
+  - name: withdraw_operator_dns_metadata
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          if private_read(root / "orbit.dns-link", True) is not None:
+              (root / "orbit.dns-link").unlink()
+          print('{"persisted":true}')
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-withdraw-operator-dns-metadata" }}
+    dependsOn:
+    - step: persist_peer_dns_metadata
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.peer.operator_dns == null }}
+  - name: verify_peer_publication
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n -- /usr/bin/python3 - "$NETWORK_JSON" "$OPERATION_ID" "$TRANSACTION_ID" <<'PYTHON'
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          intent = json.loads(sys.argv[1])
+          operation_id = int(sys.argv[2])
+          transaction_id = sys.argv[3]
+          root = Path("/etc/wireguard")
+          journal = root / ".orbit.native-network-transaction"
+          def private_read(path, optional=False):
+              if optional and not os.path.lexists(path):
+                  return None
+              metadata = path.lstat()
+              if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o077:
+                  raise SystemExit("wireguard.peer_state_unsupported")
+              return path.read_text()
+          saved = json.loads(private_read(journal))
+          if saved.get("operation_id") != operation_id or saved.get("transaction_id") != transaction_id:
+              raise SystemExit("wireguard.peer_recovery_pending")
+          subprocess.run(["/usr/bin/systemctl", "is-active", "--quiet", "wg-quick@orbit"], check=True, capture_output=True, timeout=10)
+          public = subprocess.run(["/usr/bin/wg", "show", "orbit", "public-key"], check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+          if public != intent["public_key"]:
+              raise SystemExit("vpn.peer_key_mismatch")
+          checks = [] if intent["peer"]["operator_dns"] is not None else (("dns", intent["peer"]["dns_server"]), ("domain", " ".join("~" + domain for domain in intent["peer"]["domains"])), ("default-route", "no"))
+          for property_name, expected in checks:
+              observed = subprocess.run(["/usr/bin/resolvectl", property_name, "orbit"], check=True, capture_output=True, text=True, timeout=10).stdout.split(":", 1)[-1].strip()
+              if observed != expected:
+                  raise SystemExit("wireguard.peer_config_failed")
+          if intent["peer"]["operator_dns"] is not None and os.path.lexists(root / "orbit.dns-link"):
+              raise SystemExit("wireguard.peer_config_failed")
+          print(json.dumps({"peer_published": True, "public_key": public, "retained": intent["peer"]["retain"]}, separators=(",", ":")))
+          PYTHON
+        env:
+          NETWORK_JSON: ${{ steps.publication_intent.outputs.network_json }}
+          OPERATION_ID: ${{ string(inputs.operation_id) }}
+          TRANSACTION_ID: ${{ inputs.transaction_id }}
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) + "-verify-peer-publication" }}
+    dependsOn:
+    - step: withdraw_operator_dns_metadata
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
