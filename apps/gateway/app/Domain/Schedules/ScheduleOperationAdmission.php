@@ -53,7 +53,7 @@ final readonly class ScheduleOperationAdmission
             'destroy' => $this->targets->forRemoval($schedule),
             default => $this->targets->forSchedule($schedule),
         };
-        if (in_array($verb, ['create', 'enable'], true)) {
+        if ($verb === 'create') {
             app(ScheduleSwampSafety::class)->assertAllowed($target->node);
         }
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];

@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\CreateProcessAction;
 use App\Actions\Processes\DestroyProcessAction;
+use App\Actions\Processes\RecordProcessIntentAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Broadcasting\RecordBroadcast;
@@ -81,7 +81,7 @@ beforeEach(function (): void {
 });
 
 describe('Process record events', function (): void {
-    it('broadcasts process.created when a new process is added', function (): void {
+    it('does not broadcast completion while only recording new Process intent', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         $data = new AddProcessData(
@@ -99,16 +99,11 @@ describe('Process record events', function (): void {
             start: false,
         );
 
-        $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
-            ->execute($data);
+        $result = app(RecordProcessIntentAction::class)
+            ->execute($data, $this->targets->forAdmission($this->instance));
 
         expect($result['created'])->toBeTrue();
-        Event::assertDispatched(
-            RecordBroadcast::class,
-            fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ProcessCreated
-                && $event->id === $result['process']->id
-                && $event->data['name'] === 'queue',
-        );
+        Event::assertNotDispatched(RecordBroadcast::class);
     });
 
     it('does not broadcast when re-asserting an existing process with identical configuration', function (): void {
@@ -126,12 +121,12 @@ describe('Process record events', function (): void {
             restartPolicy: 'on-failure',
             start: false,
         );
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+        app(RecordProcessIntentAction::class)->execute($data, $this->targets->forAdmission($this->instance));
 
         Event::fake([RecordBroadcast::class]);
 
-        $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))
-            ->execute($data);
+        $result = app(RecordProcessIntentAction::class)
+            ->execute($data, $this->targets->forAdmission($this->instance));
 
         expect($result['created'])->toBeFalse();
         Event::assertNotDispatched(RecordBroadcast::class);

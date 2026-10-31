@@ -26,7 +26,7 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $services->accessibleNodes()->attach($gateway);
     config(['dependency_detection.services_node_id' => $services->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
-    $node = Node::query()->create(['name' => 'dev-child', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $node = Node::query()->create(['name' => 'dev-child', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Child', 'slug' => 'child', 'repository_url' => 'https://example.test/child.git', 'root' => 'public']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'private', 'checkout_path' => '/srv/child/private', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
     $route = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'node_id' => $node->id, 'domain' => 'tracking.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
@@ -57,7 +57,10 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data', null);
     $childPath = '/api/v1/direct-operations/'.$child['id'];
     $runId = Operation::query()->findOrFail($child['id'])->state['swamp_run_id'];
-    $result = $this->postJson($childPath.'/primitive', ['run_id' => $runId])->assertOk()->json('data');
+    $publication = $this->getJson($childPath.'?run_id='.$runId)->assertOk()->json('data.input.caddy_publication');
+    expect($publication['node_id'])->toBe($node->id);
+    $this->postJson($childPath.'/primitive', ['run_id' => $runId])->assertUnprocessable();
+    $result = ['ready' => true, 'result' => 'unserved', 'version' => $publication['caddy']['version']];
     $this->postJson($childPath.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'result' => $result,
         'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'])->assertOk();
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'parent-two', 'operation_id' => $parent->id])->assertOk()->assertJsonPath('data.id', $parent->id);
@@ -68,6 +71,6 @@ it('admits only the open Route phase, yields to its stamped child and finishes o
     $this->postJson($path.'/step', ['worker' => 'parent-two', 'key' => 'final-proof', 'name' => 'route-proof', 'status' => 'succeeded', 'result' => $proof])->assertOk();
     $this->postJson($path.'/complete', ['worker' => 'parent-two', 'status' => 'succeeded', 'result' => [...$proof, 'route_id' => $route->id + 1]])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->postJson($path.'/complete', ['worker' => 'parent-two', 'status' => 'succeeded', 'result' => $proof])->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect($agents->calls)->toHaveCount(1)->and($agents->calls[0]['node'])->toBe('dev-child')
+    expect($agents->calls)->toBe([])
         ->and(Operation::query()->findOrFail($child['id'])->parent_operation_id)->toBe($parent->id);
 });

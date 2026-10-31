@@ -18,8 +18,6 @@ final class OperationOutput
             'Kind' => $operation->kind,
             'Target' => "{$operation->targetType} {$operation->targetId}",
             'Status' => $operation->status,
-            'Current step' => $operation->currentStep,
-            'Failed step' => $operation->failedStep,
             'Error code' => $operation->errorCode,
             'Result' => $result,
             'Cancel requested' => $operation->cancelRequested ? 'yes' : null,
@@ -40,7 +38,6 @@ final class OperationOutput
             $operation->kind,
             "{$operation->targetType} {$operation->targetId}",
             $operation->status,
-            $operation->currentStep ?? $operation->failedStep ?? '',
             $operation->triggeredBy ?? '',
             $operation->startedAt ?? $operation->createdAt ?? '',
         ];

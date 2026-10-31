@@ -210,7 +210,7 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Session cleanup
 
-Swamp revokes each device session and pairing link with its own stable effect key. The Gateway reads the server's session list, limits it to the admitted owner, and validates each individual effect and the final receipt. Successful completion marks only the admitted pairings revoked.
+Swamp reads and revokes each admitted device session and pairing link directly. Before each effect it checks that the admin session and admitted link are current, then rechecks session ownership. It preserves the current admin and other client labels. The Gateway projects successful completion onto only the admitted pairings. Gateway session cleanup runs the same direct behavior for its fixed Gateway client label.
 
 Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels.
 
@@ -220,7 +220,7 @@ Registration keeps its normal response after it validates and stores the new enc
 
 Existing Conn clients keep synchronous pairing creation: omit `async` or send `false` to receive HTTP 201 with `{pairing, pairing_url}`. This path admits the same Swamp Operation and waits for up to 30 seconds. Success returns the existing HTTP 201 shape and consumes the encrypted one-time credential. A timeout returns HTTP 504 with `conn.pairing_pending` and `details.operation_id`; follow that Operation rather than creating a second pairing. Failed or cancelled Operations return HTTP 502 with their error code and Operation ID.
 
-Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Pairing creation starts Swamp directly on the admitted Node's worker. Swamp reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Revocation keeps its current Gateway executor path until its own takeover.
+Send `{"async": true}` to opt into HTTP 202 with a normal Operation. Revocation returns an Operation. Pairing creation starts Swamp directly on the admitted Node's worker. Swamp reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation runs directly in Swamp; Gateway session cleanup also runs directly in Swamp.
 
 For async creation, after the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
 
@@ -238,7 +238,7 @@ A failed session-list read ends the revocation Operation with its safe `conn.*` 
 
 ## Direct Swamp writer
 
-`conn.pairing_create` starts `operation-conn-direct` through the shared helper. Its declaration requires Swamp to start it directly, so `swamp.direct_writers` defaults to `direct` for this kind. An explicit `polled` value refuses admission because the old writer is removed. Rollback reverts the owning takeover PR. Pairing revocation and Gateway session cleanup keep their current writers until their own takeover.
+`conn.pairing_create` starts `operation-conn-direct` through the shared helper. Its declaration requires Swamp to start it directly, so `swamp.direct_writers` defaults to `direct` for this kind. An explicit `polled` value refuses admission because the old writer is removed. Rollback reverts the owning takeover PR. Pairing revocation also uses the direct writer. Gateway session cleanup uses the same direct writer.
 
 Swamp calls T3 directly. The Gateway serves shared run-bound private input, stores the one-time output through the existing encrypted credential store and projects safe metadata. No credential enters Operation input, results or step output. Activity records no request body on either shared private path. The PHP issue command, pairing HTTP relay and their receipt tests are removed.
 

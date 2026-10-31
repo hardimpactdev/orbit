@@ -14,10 +14,8 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
-use App\Models\DatabaseUser;
 use App\Models\Instance;
 use App\Models\Operation;
-use App\Models\Process;
 use App\Support\ValidatedData;
 
 final readonly class DatabaseOperationCompletion implements OperationCompletion
@@ -44,7 +42,7 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
                 }
             }
 
-            if (str_starts_with($operation->kind, 'database_server.') && $server !== null) {
+            if ($operation->kind === 'database_server.destroy' && $server !== null) {
                 $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $outcome->errorCode,
                     'failed_step' => $operation->steps()->where('status', 'failed')->value('name')]);
             }
@@ -53,27 +51,10 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
         }
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
         $projection = $intent->payload['projection'];
-        if (isset($projection['upsert_user'])) {
-            $user = $projection['upsert_user'];
-            DatabaseUser::query()->updateOrCreate(['database_connection_id' => $user['database_connection_id'], 'username' => $user['username']], $user);
-        }
-        if (isset($projection['server']) && $server !== null) {
-            $server->update($projection['server']);
-        }
-        if (isset($projection['process']) && $server?->process !== null) {
-            $server->process->fill($projection['process'])->fill(['status' => 'active', 'failed_step' => null, 'error_code' => null])->save();
-        }
-        if (isset($projection['adopted_connection']) && $server !== null) {
-            DatabaseConnection::query()->where('slug', $projection['adopted_connection'])->update(['database_server_id' => $server->id]);
-        }
         foreach ($projection['delete_connections'] ?? [] as $id) {
             $connection = DatabaseConnection::query()->findOrFail($id);
             $connection->delete();
             $this->broadcaster->broadcast(RecordEventType::DatabaseDeleted, $id, ['id' => $id, 'slug' => $connection->slug]);
-        }
-        if ($projection['delete_server'] ?? false) {
-            $server?->delete();
-            Process::query()->whereKey($projection['process_id'] ?? null)->delete();
         }
         if (isset($projection['created_connection'])) {
             $connection = DatabaseConnection::query()->findOrFail($projection['created_connection']);

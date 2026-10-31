@@ -1,0 +1,152 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Instances\Environment;
+
+use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Instance;
+use App\Models\Operation;
+use App\Models\Process;
+
+/** Existing environment values, delivered only to their exact native Instance parent. */
+final readonly class NativeInstanceEnvironmentMaterial implements OperationSecretSource
+{
+    public function __construct(
+        private InstanceEnvironmentContextResolver $contexts,
+        private InstanceEnvironmentStore $store,
+        private InstanceEnvironmentRenderer $renderer,
+        private InstanceTestEnvironment $testing,
+    ) {}
+
+    public function name(): string
+    {
+        return 'instance.environment_sync';
+    }
+
+    public function targetTypes(): array
+    {
+        return ['instance'];
+    }
+
+    public function ownerId(Operation $operation): ?int
+    {
+        return in_array($operation->kind, ['instance.sync_environment', 'instance.create', 'instance.clone'], true)
+            && $operation->target_type === 'instance'
+            && ($operation->input['instance_id'] ?? null) === $operation->target_id
+            ? $operation->target_id : null;
+    }
+
+    public function context(Operation $operation): InstanceEnvironmentContext
+    {
+        if ($this->ownerId($operation) === null) {
+            $this->refuse();
+        }
+        $instance = Instance::query()->findOrFail($operation->target_id);
+        if ($operation->node_id !== $instance->node_id) {
+            $this->refuse();
+        }
+        $context = match ($operation->kind) {
+            'instance.create' => $this->contexts->resolve($instance, true, createOperationId: $operation->id),
+            'instance.clone' => $this->contexts->resolveForClone($instance, true),
+            default => $this->contexts->resolve($instance, true),
+        };
+        if ($operation->kind === 'instance.sync_environment') {
+            $saved = $operation->input['direct_environment'] ?? null;
+            if (! is_array($saved) || ($saved['base'] ?? null) !== $context->path
+                || ($saved['user'] ?? null) !== $context->executionUser
+                || ($saved['environment'] ?? null) !== $context->environment
+                || ($saved['node_id'] ?? null) !== $context->nodeId) {
+                $this->refuse();
+            }
+        } else {
+            $saved = $operation->input['direct_provisioning'] ?? null;
+            if (! is_array($saved) || ($saved['environment'] ?? null) !== $context->environment
+                || ($saved['user'] ?? null) !== $context->executionUser
+                || ($saved['project_id'] ?? null) !== $context->projectId
+                || ($saved['checkout'] ?? null) !== $instance->checkout_path) {
+                $this->refuse();
+            }
+        }
+
+        return $context;
+    }
+
+    /** Safe placement and fixed arguments; no environment contents or Node calls.
+     * @return array<string,mixed>
+     */
+    public function plan(Operation $operation): array
+    {
+        return $this->forContext($this->context($operation), $operation->kind === 'instance.sync_environment');
+    }
+
+    /** @return array<string,mixed> */
+    public function forContext(InstanceEnvironmentContext $context, bool $explicit = true): array
+    {
+        $instance = Instance::query()->findOrFail($context->instanceId);
+        $pin = app(AgentDelivery::class)->pin($context->node);
+        $runtime = null;
+        if ($explicit && $context->environment === 'production') {
+            $requiresRestart = Process::query()->whereIn('owner_type', Instance::morphTypes())
+                ->where('owner_id', $instance->id)->where('status', LifecycleStatus::Active)
+                ->where('desired_state', DesiredProcessState::Running)->where('restart_on_deploy', true)->exists();
+            if ($requiresRestart) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native environment Process restart composition is unavailable.', 409);
+            }
+            if ($instance->selected_php_version !== null) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native production PHP environment refresh is unavailable.', 409);
+            }
+        }
+
+        return ['instance_id' => $context->instanceId, 'node_id' => $context->nodeId,
+            'environment' => $context->environment, 'base' => $context->path, 'user' => $context->executionUser,
+            'agent_sha256' => $pin, 'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
+            'required_capacity' => InstanceEnvironmentValidator::MaximumFileBytes * 2,
+            'preserve_workload_keys' => $explicit, 'runtime' => $runtime];
+    }
+
+    public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
+    {
+        if ($this->ownerId($operation) !== $id || $key !== '' || $parameter !== 'environment_material') {
+            $this->refuse();
+        }
+        $instance = Instance::query()->with('node')->findOrFail($id);
+        if (in_array($operation->kind, ['instance.create', 'instance.clone'], true)
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true)) {
+            $saved = $operation->input['direct_provisioning'] ?? null;
+            $environment = $instance->placementEnvironment();
+            $user = $environment === 'production' ? $instance->production_user : $instance->node->user;
+            if ($operation->node_id !== $instance->node_id || ! is_array($saved)
+                || ($saved['environment'] ?? null) !== $environment || ($saved['user'] ?? null) !== $user
+                || ($saved['checkout'] ?? null) !== $instance->checkout_path
+                || ($saved['project_id'] ?? null) !== $instance->project_id) {
+                $this->refuse();
+            }
+
+            return new OperationSecretValue(null);
+        }
+        $context = $this->context($operation);
+        $snapshot = $context->cloning ? $this->store->cloneSynchronizationSnapshot($context) : $this->store->synchronizationSnapshot($context);
+        $values = $snapshot->values();
+        $testing = $this->testing->plan($id, $values);
+        $instance = Instance::query()->findOrFail($id);
+
+        return new OperationSecretValue([
+            'content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
+            'owned_keys' => $instance->environment_owned_keys ?? [],
+            'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testing->values),
+                'managed_keys' => $testing->managedKeys, 'test_database' => $testing->testDatabase],
+        ], array_values($values));
+    }
+
+    private function refuse(): never
+    {
+        throw new ResourceOperationException('operation.execution_forbidden', 'The native parent does not own this Instance environment.', 422);
+    }
+}

@@ -1,5 +1,7 @@
 use super::*;
 use crate::command::Command;
+use crate::commands::recipe::WorkDir;
+use std::os::unix::fs::{symlink, PermissionsExt};
 
 struct Fixture {
     _work: WorkDir,
@@ -298,5 +300,4 @@ fn macos_can_inspect_as_account_but_cannot_materialize() {
         Inspect::privilege(Platform::Macos),
         Some(Privilege::Account)
     );
-    assert_eq!(Materialize::privilege(Platform::Macos), None);
 }

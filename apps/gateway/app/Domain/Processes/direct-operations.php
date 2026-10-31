@@ -13,6 +13,9 @@ $control = [
 ];
 
 return [
+    'process.create' => [...$control, 'writer_scope' => [], 'private_material' => ['installation' => 'process.installation']],
     'process.destroy' => [...$control, 'writer_scope' => []],
+    'process.restart' => [...$control, 'writer_scope' => []],
+    'process.start' => [...$control, 'writer_scope' => []],
     'process.stop' => [...$control, 'writer_scope' => []],
 ];

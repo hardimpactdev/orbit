@@ -1,0 +1,21 @@
+{
+  "control": {
+    "process_id": 12,
+    "name": "orbit-process-12-native-first-visit.service",
+    "runtime": "systemd",
+    "on_demand": false,
+    "vite": null,
+    "agent_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "installation": {
+    "process_id": 12,
+    "name": "orbit-process-12-native-first-visit.service",
+    "runtime": "systemd",
+    "desired": "running",
+    "on_demand": false,
+    "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "activation_pending": false,
+    "agent_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "retired": null
+  }
+}

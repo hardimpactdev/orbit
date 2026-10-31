@@ -8,7 +8,9 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -21,7 +23,21 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        return Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+        $input = Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
+        if (in_array($operation->kind, ['process.start', 'process.restart', 'process.create'], true) && isset($operation->input['vite_plan'])) {
+            $input['vite_plan'] = $operation->input['vite_plan'];
+            $input['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id));
+        }
+
+        if ($operation->kind === 'process.create') {
+            $installation = Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec']);
+            $installation['retired'] = isset($operation->input['retired_runtime'])
+                ? ['runtime' => $operation->input['retired_runtime'], 'name' => $operation->input['retired_name']] : null;
+
+            return ['control' => Arr::except($input, ['caddy_publication']), 'installation' => $installation, ...Arr::only($input, ['caddy_publication'])];
+        }
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation

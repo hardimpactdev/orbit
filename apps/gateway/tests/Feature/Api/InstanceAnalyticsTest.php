@@ -3,38 +3,30 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\DestroyInstanceAction;
-use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Analytics\AnalyticsIntentProjection;
+use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Settings\SettingRepository;
+use App\Domain\Settings\SettingScope;
+use App\Domain\Settings\SettingScopeType;
+use App\Domain\Settings\SettingValueProtection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
-use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeAnalyticsTrackingRouteProjector;
-use Tests\Support\FakePublicRouteEdgeProjector;
-use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
-    $this->projector = new FakeAnalyticsTrackingRouteProjector;
-    $this->edge = new FakePublicRouteEdgeProjector;
-    $this->removal = new FakeRouteRemovalProjector;
-    app()->instance(AnalyticsTrackingRouteProjector::class, $this->projector);
-    app()->instance(PublicRouteEdgeProjector::class, $this->edge);
-    app()->instance(RouteRemovalProjector::class, $this->removal);
-    app()->instance(DevelopmentProjectionOperationLock::class, new InstanceAnalyticsProjectionOwner);
-
     $this->gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -96,354 +88,239 @@ describe('instance:analytics:show', function (): void {
 });
 
 describe('instance:analytics:enable', function (): void {
-    it('publishes the default host as a public cluster-scoped tracking Route', function (): void {
-        $response = $this->postJson($this->url)->assertOk();
-        $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
-
-        expect($response->json('data'))->toBe([
-            'instance_id' => $this->instance->id,
-            'enabled' => true,
-            'domain' => 'shop.example.com',
-            'dashboard_url' => 'https://analytics.orbit',
-            'hosts' => [
-                [
-                    'host' => 'analytics.shop.example.com',
-                    'route_id' => $route->id,
-                    'status' => 'active',
-                    'publication' => 'public',
-                    'failed_step' => null,
-                    'error_code' => null,
-                    'script_url' => 'https://analytics.shop.example.com/js/script.js',
-                    'event_url' => 'https://analytics.shop.example.com/api/event',
-                    'dns' => [
-                        'type' => 'CNAME',
-                        'name' => 'analytics.shop.example.com',
-                        'value' => 'shop.example.com',
-                    ],
-                ],
-            ],
-            'snippet' => '<script defer data-domain="shop.example.com" src="https://analytics.shop.example.com/js/script.js"></script>',
-        ]);
-
-        expect($route->domain)->toBe('analytics.shop.example.com')
-            ->and($route->project_id)->toBeNull()
-            ->and($route->node_id)->toBeNull()
-            ->and($route->cluster_id)->toBe($this->cluster->id)
-            ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($route->status)->toBe(RouteStatus::Active)
-            ->and($route->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
-            ->and($route->targets()->count())->toBe(0)
-            ->and(RouteAnalyticsTracking::query()->sole()->getAttributes())
-            ->toMatchArray(['route_id' => $route->id, 'instance_id' => $this->instance->id])
-            ->and($this->projector->routeIds)->toBe([$route->id])
-            ->and($this->edge->calls)->toBe([
-                'ingress-certificate',
-                'public-edge-verified',
-                'public-activated',
-                'ingress-firewall',
-            ]);
-
-        $this->getJson($this->url)->assertOk()->assertJsonPath('data', $response->json('data'));
-        $this->getJson("/api/v1/routes/{$route->id}")
-            ->assertOk()
-            ->assertJsonPath('data.kind', 'analytics_tracking')
-            ->assertJsonPath('data.analytics_instance_id', $this->instance->id)
-            ->assertJsonPath('data.target', null)
-            ->assertJsonPath('data.upstream', null);
-        $this->getJson("/api/v1/routes/{$this->appRoute->id}")
-            ->assertOk()
-            ->assertJsonPath('data.analytics_instance_id', null);
+    it('admits one direct parent with desired hosts and no host execution', function (): void {
+        $socket = analytics_intent_socket();
+        $response = $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.kind', 'analytics.enable');
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        expect($operation->input['site'])->toBe(['domain' => 'shop.example.com', 'previous_domain' => null, 'timezone' => 'Europe/Amsterdam', 'goals' => []])
+            ->and($operation->input['hosts'])->toBe(['analytics.shop.example.com'])
+            ->and($operation->input['plausible_credentials'])->toBe(['$secret' => 'analytics.plausible_credentials', 'id' => $this->analytics->id])
+            ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-analytics-enable-direct')
+            ->and(Operation::query()->count())->toBe(1)
+            ->and(RouteAnalyticsTracking::query()->count())->toBe(1)
+            ->and($operation->input['tracking']['publish'])->toHaveCount(1)
+            ->and($operation->input['tracking']['certificates'])->toHaveCount(1)
+            ->and($operation->input['tracking']['certificates'][0]['scope'])->toEndWith('-router')
+            ->and($operation->input['tracking']['certificates'][0]['home'])->toBe('/srv/managed/orbit')
+            ->and($operation->input['tracking']['router_node_ids'])->toBe([$this->router->id])
+            ->and($operation->input['tracking']['ingress_node_ids'])->toBe([$this->ingress->id])
+            ->and($operation->input['participant_node_ids'])->toContain($this->analytics->id, $this->router->id, $this->ingress->id)
+            ->and($operation->state)->not->toHaveKey('analytics_writer');
     });
 
-    it('publishes a public tracking host through Ingress and Router when both roles sit on the Project instance Node', function (): void {
-        $this->router->roles()->delete();
-        $this->ingress->roles()->delete();
-
-        foreach ([RoleName::Router, RoleName::Ingress] as $role) {
-            $this->workload->roles()->create([
-                'cluster_id' => $this->cluster->id,
-                'role' => $role,
-                'status' => LifecycleStatus::Active,
-            ]);
-        }
-
-        $this->postJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.enabled', true)
+    it('projects publication and site identity only after the native effects succeed', function (): void {
+        $operation = analytics_intent_start($this);
+        $route = Route::query()->where('kind', RouteKind::AnalyticsTracking)->sole();
+        expect($route->status)->toBe(RouteStatus::Pending)->and($route->sites_published)->toBeFalse();
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running', ['certificates_ready' => true]));
+        expect($route->fresh()->sites_published)->toBeTrue()
+            ->and($route->fresh()->replacement_step)->toBeNull();
+        $projection->apply($operation, analytics_intent_result('running', ['public_verified' => true]));
+        expect($route->fresh()->replacement_step)->toBe(RouteReplacementStep::PublicActivated);
+        $projection->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
+        $this->getJson($this->url)->assertOk()->assertJsonPath('data.enabled', true)
             ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com')
-            ->assertJsonPath('data.hosts.0.status', 'active')
-            ->assertJsonPath('data.hosts.0.publication', 'public');
-
-        $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
-
-        expect($this->appRoute->refresh()->cluster_id)->toBe($this->cluster->id)
-            ->and($this->appRoute->node_id)->toBeNull()
-            ->and($this->appRoute->publication)->toBe(RoutePublication::Public)
-            ->and($route->cluster_id)->toBe($this->cluster->id)
-            ->and($route->node_id)->toBeNull()
-            ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($route->status)->toBe(RouteStatus::Active)
-            ->and($this->edge->calls)->toBe([
-                'ingress-certificate',
-                'public-edge-verified',
-                'public-activated',
-                'ingress-firewall',
-            ]);
+            ->assertJsonPath('data.hosts.0.status', 'active');
+        expect($route->fresh()->replacement_step)->toBe(RouteReplacementStep::PublicActivated);
+        $settings = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $settings->put($scope, 'analytics.site.'.$this->instance->id, 'newer-binding');
+        // Exact terminal replay must not overwrite a later binding.
+        $projection->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
+        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBe('newer-binding');
     });
 
-    it('treats an empty host list as the default host', function (): void {
-        $this->postJson($this->url, ['hosts' => []])
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com')
-            ->assertJsonCount(1, 'data.hosts');
+    it('converges the exact host set and retains old router and ingress cleanup targets', function (): void {
+        $old = instance_analytics_tracking($this->instance, 'old.shop.example.com');
+        $operation = analytics_intent_start($this, ['hosts' => [' Stats.Shop.Example.Com ']]);
+        $plan = $operation->fresh()->input['tracking'];
+        expect($plan['remove'])->toBe([$old->id])->and($plan['cleanup'])->toHaveCount(1)
+            ->and($plan['caddy_node_ids'])->toBe([$this->router->id, $this->ingress->id])
+            ->and($operation->input['hosts'])->toBe(['stats.shop.example.com']);
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('running', ['certificates_ready' => true]));
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
+        expect(Route::query()->whereKey($old->id)->exists())->toBeFalse()
+            ->and(Route::query()->where('kind', RouteKind::AnalyticsTracking)->pluck('domain')->all())->toBe(['stats.shop.example.com']);
     });
 
-    it('is idempotent', function (): void {
-        $first = $this->postJson($this->url)->assertOk()->json('data');
-        $this->edge->calls = [];
-
-        $this->postJson($this->url)->assertOk()->assertJsonPath('data', $first);
-
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(1)
-            ->and($this->projector->routeIds)->toHaveCount(1)
-            ->and($this->edge->calls)->toBe([])
-            ->and($this->removal->events)->toBe([]);
+    it('mirrors a private authoritative Route without admitting an ingress step', function (): void {
+        $this->appRoute->update(['publication' => RoutePublication::Private]);
+        $operation = analytics_intent_start($this);
+        expect($operation->fresh()->input['tracking']['caddy_node_ids'])->toBe([$this->router->id])
+            ->and($operation->fresh()->input['tracking']['certificates'])->toHaveCount(1);
     });
 
-    it('sets the exact host set: it adds the missing hosts and removes the others', function (): void {
-        $this->postJson($this->url, ['hosts' => ['Stats.Shop.Example.com', 'analytics.shop.example.com']])
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.host', 'stats.shop.example.com')
-            ->assertJsonPath('data.hosts.1.host', 'analytics.shop.example.com')
-            ->assertJsonPath(
-                'data.snippet',
-                '<script defer data-domain="shop.example.com" src="https://stats.shop.example.com/js/script.js"></script>',
-            );
-        $kept = Route::query()->where('domain', 'stats.shop.example.com')->sole();
-        $dropped = Route::query()->where('domain', 'analytics.shop.example.com')->sole();
+    it('keeps the existing Router leaf while retiring only the public edge on a private change', function (): void {
+        $route = instance_analytics_tracking($this->instance);
+        $this->appRoute->update(['publication' => RoutePublication::Private]);
 
-        $this->postJson($this->url, ['hosts' => ['stats.shop.example.com', 'plausible.shop.example.com']])
-            ->assertOk()
-            ->assertJsonCount(2, 'data.hosts')
-            ->assertJsonPath('data.hosts.0.route_id', $kept->id)
-            ->assertJsonPath('data.hosts.1.host', 'plausible.shop.example.com')
-            ->assertJsonPath('data.hosts.1.publication', 'public');
+        $operation = analytics_intent_start($this);
 
-        expect(Route::query()->whereKey($dropped->id)->exists())->toBeFalse()
-            ->and(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->pluck('domain')->all())
-            ->toBe(['stats.shop.example.com', 'plausible.shop.example.com'])
-            ->and(RouteAnalyticsTracking::query()->count())->toBe(2)
-            ->and($this->edge->calls)->toContain('remove-public-edge')
-            ->and($this->removal->routeIds)->toBe(array_fill(0, 4, $dropped->id))
-            ->and($this->removal->events)->toBe(['dns', 'caddy', 'certificates', 'firewall']);
+        expect($operation->input['tracking']['cleanup'])->toBe([])
+            ->and($operation->input['tracking']['ingress_node_ids'])->toBe([])
+            ->and($operation->input['tracking']['cleanup_caddy_node_ids'])->toBe([$this->router->id, $this->ingress->id])
+            ->and($route->fresh()->publication)->toBe(RoutePublication::Private);
     });
 
-    it('stays off the public edge without error while the cluster has no active Ingress', function (): void {
-        $this->ingress->roles()->update(['status' => LifecycleStatus::Provisioning]);
+    it('needs no retiring placement publication when the exact host set is already current', function (): void {
+        instance_analytics_tracking($this->instance);
 
-        $this->postJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.status', 'active')
-            ->assertJsonPath('data.hosts.0.publication', 'public');
+        $operation = analytics_intent_start($this);
 
-        $this->ingress->roles()->update(['status' => LifecycleStatus::Active]);
-
-        $this->postJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.publication', 'public');
-        expect($this->projector->routeIds)->toHaveCount(1);
+        expect($operation->input['tracking']['cleanup_caddy_node_ids'])->toBe([])
+            ->and($operation->input['tracking']['cleanup'])->toBe([]);
     });
 
-    it('records a failed projection on the host and converges it on the next request', function (): void {
-        $this->projector->failures = 1;
+    it('keeps retiring placement identity until native cleanup and successful completion', function (): void {
+        $oldCluster = Cluster::query()->create(['name' => 'old-edge', 'tld' => 'old.test', 'state' => ClusterState::Active]);
+        $oldRouter = instance_analytics_node('old-router', '10.44.0.80', $oldCluster, RoleName::Router);
+        $oldIngress = instance_analytics_node('old-ingress', '10.44.0.81', $oldCluster, RoleName::Ingress);
+        $route = instance_analytics_tracking($this->instance);
+        $route->update(['cluster_id' => $oldCluster->id]);
 
-        $this->postJson($this->url)->assertStatus(502);
-        $this->getJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.status', 'failed')
-            ->assertJsonPath('data.hosts.0.failed_step', 'projection')
-            ->assertJsonPath('data.hosts.0.error_code', 'route.test_projection')
-            ->assertJsonPath('data.hosts.0.publication', 'public');
-
-        $this->postJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.status', 'active')
-            ->assertJsonPath('data.hosts.0.failed_step', null)
-            ->assertJsonPath('data.hosts.0.publication', 'public');
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(1);
+        $operation = analytics_intent_start($this);
+        $plan = $operation->input['tracking'];
+        expect($route->fresh()->cluster_id)->toBe($this->cluster->id)
+            ->and($route->fresh()->transition_cluster_id)->toBe($oldCluster->id)
+            ->and($plan['router_node_ids'])->toBe([$this->router->id])
+            ->and($plan['ingress_node_ids'])->toBe([$this->ingress->id])
+            ->and($plan['cleanup_caddy_node_ids'])->toBe([$oldRouter->id, $oldIngress->id])
+            ->and($plan['cleanup'])->toHaveCount(1)
+            ->and($plan['cleanup'][0]['node_id'])->toBe($oldRouter->id)
+            ->and($plan['cleanup'][0]['in_use'])->toBeFalse();
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running', ['certificates_ready' => true, 'public_verified' => true]));
+        expect($route->fresh()->transition_cluster_id)->toBe($oldCluster->id);
+        $projection->apply($operation, analytics_intent_result('running', ['placement_cleanup' => true]));
+        expect($route->fresh()->replacement_step)->toBe(RouteReplacementStep::Cleanup)
+            ->and($route->fresh()->transition_cluster_id)->toBe($oldCluster->id);
+        $projection->apply($operation, analytics_intent_result('succeeded', analytics_intent_success()));
+        expect($route->fresh()->transition_cluster_id)->toBeNull()
+            ->and($route->fresh()->transition_dns_moved_at)->toBeNull()
+            ->and($route->fresh()->status)->toBe(RouteStatus::Active);
     });
 
-    it('rolls back a publication that fails before activation and publishes it on the next request', function (): void {
-        $this->edge->failures = ['public-edge-verified' => 1];
+    it('preserves its old binding and retiring Routes when native publication fails', function (): void {
+        $settings = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $binding = json_encode(['domain' => 'old.example.com', 'timezone' => 'UTC']);
+        $settings->put($scope, 'analytics.site.'.$this->instance->id, $binding);
+        $old = instance_analytics_tracking($this->instance, 'old.shop.example.com');
+        $operation = analytics_intent_start($this);
 
-        $this->postJson($this->url)->assertStatus(502)->assertJsonPath('error.code', 'route.test_public-edge-verified');
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('failed', [], 'analytics.change_failed'));
 
-        $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
-        expect($route->status)->toBe(RouteStatus::Active)
-            ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($this->edge->calls)->toContain('rollback-public-edge');
-
-        $this->postJson($this->url)
-            ->assertOk()
-            ->assertJsonPath('data.hosts.0.route_id', $route->id)
-            ->assertJsonPath('data.hosts.0.publication', 'public');
-        expect($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
-            ->and($this->projector->routeIds)->toBe([$route->id]);
+        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBe($binding)
+            ->and($old->fresh()->status)->toBe(RouteStatus::Retiring)
+            ->and(Route::query()->where('domain', 'analytics.shop.example.com')->sole()->status)->toBe(RouteStatus::Pending);
     });
 
-    it('refuses malformed hosts and creates nothing', function (mixed $hosts, string $field): void {
-        $details = $this->postJson($this->url, ['hosts' => $hosts])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation.failed')
-            ->json('error.details');
-
-        expect(array_keys($details))->toContain($field);
-
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0)
-            ->and($this->projector->routeIds)->toBe([]);
-    })->with([
-        'more than ten hosts' => [array_map(static fn (int $n): string => "a{$n}.shop.example.com", range(1, 11)), 'hosts'],
-        'a string' => ['analytics.shop.example.com', 'hosts'],
-        'a map' => [['first' => 'analytics.shop.example.com'], 'hosts'],
-        'a number in the list' => [['analytics.shop.example.com', 12], 'hosts.1'],
-        'a URL' => [['https://analytics.shop.example.com'], 'hosts.0'],
-        'a path' => [['analytics.shop.example.com/js'], 'hosts.0'],
-        'an IP address' => [['203.0.113.10'], 'hosts.0'],
-        'an underscore' => [['analytics_host.example.com'], 'hosts.0'],
-        'a single label' => [['analytics'], 'hosts.0'],
-        'the reserved dashboard name' => [['analytics.orbit'], 'hosts.0'],
-        'another orbit name' => [['tracking.shop.orbit'], 'hosts.0'],
-        'duplicates after normalisation' => [['stats.shop.example.com', ' STATS.shop.example.com '], 'hosts'],
-    ]);
-
-    it('refuses an unsupported body key', function (): void {
-        $this->postJson($this->url, ['host' => 'analytics.shop.example.com'])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation.failed');
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0);
-    });
-
-    it('refuses while no Node has an active analytics role', function (): void {
+    it('refuses absent analytics and authoritative domains before submitting a run', function (): void {
+        $socket = analytics_intent_socket();
         $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
-
-        $this->postJson($this->url)
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'analytics.role_missing');
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0)
-            ->and(RouteAnalyticsTracking::query()->count())->toBe(0);
+        $this->postJson($this->url)->assertConflict()->assertJsonPath('error.code', 'analytics.role_missing');
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Active]);
+        $this->appRoute->update(['status' => RouteStatus::Pending]);
+        $this->postJson($this->url)->assertUnprocessable()->assertJsonPath('error.code', 'analytics.domain_required');
+        expect($socket->sent)->toBe([]);
     });
 
-    it('mirrors a private App Route, so the host is served beside the domain it follows', function (): void {
-        $target = instance_analytics_extra_instance('private');
-        $owner = instance_analytics_app_route($target, 'private.example.com', RoutePublication::Private);
-
-        $this->postJson("/api/v1/instances/{$target->id}/analytics")
-            ->assertOk()
-            ->assertJsonPath('data.enabled', true)
-            ->assertJsonPath('data.hosts.0.host', 'analytics.private.example.com')
-            ->assertJsonPath('data.hosts.0.publication', 'private');
-
-        $tracking = Route::query()
-            ->where('kind', RouteKind::AnalyticsTracking->value)
-            ->where('domain', 'analytics.private.example.com')
-            ->sole();
-
-        // The same scope and publication as the Route it follows, so the same edge serves both.
-        expect($tracking->publication)->toBe(RoutePublication::Private)
-            ->and($tracking->node_id)->toBe($owner->node_id)
-            ->and($tracking->cluster_id)->toBe($owner->cluster_id)
-            ->and($tracking->status)->toBe(RouteStatus::Active)
-            ->and($tracking->publication)->toBe(RoutePublication::Private)
-            ->and($this->projector->routeIds)->toContain($tracking->id)
-            // A private host never reaches the public edge, so it publishes nothing there.
-            ->and($this->edge->calls)->toBe([]);
+    it('refuses another Route hostname and writes none of the desired set', function (): void {
+        analytics_intent_socket();
+        $this->postJson($this->url, ['hosts' => ['fresh.shop.example.com', 'shop.example.com']])
+            ->assertConflict()->assertJsonPath('error.code', 'analytics.host_taken');
+        expect(RouteAnalyticsTracking::query()->count())->toBe(0);
     });
 
-    it('refuses a Project instance that serves no domain', function (Closure $instance): void {
-        $target = $instance();
-
-        $this->postJson("/api/v1/instances/{$target->id}/analytics", ['hosts' => ['stats.shop.example.com']])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'analytics.domain_required');
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0)
-            ->and($this->projector->routeIds)->toBe([]);
+    it('rejects malformed input before an Operation exists', function (array $body): void {
+        analytics_intent_socket();
+        $this->postJson($this->url, $body)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect(Operation::query()->count())->toBe(0);
     })->with([
-        'no Route' => [fn (): Instance => instance_analytics_extra_instance('bare')],
-        'a Route that is not authoritative' => [function (): Instance {
-            $pending = instance_analytics_extra_instance('pending');
-            instance_analytics_app_route($pending, 'pending.example.com', RoutePublication::Public, activate: false);
-
-            return $pending;
-        }],
+        'singular host' => [['host' => 'stats.shop.example.com']],
+        'duplicate' => [['hosts' => ['stats.shop.example.com', 'Stats.Shop.Example.Com.']]],
+        'invalid host' => [['hosts' => ['https://stats.shop.example.com']]],
+        'timezone' => [['timezone' => 'Invalid/Timezone']],
+        'empty property name' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => ['' => 'paid']]]]]],
+        'list properties' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => ['paid']]]]]],
+        'missing event' => [['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => []]]]],
+        'missing currency' => [['goals' => [['goal_type' => 'Goal.Revenue', 'goal' => ['event_name' => 'Sale']]]]],
+        'foreign field' => [['goals' => [['goal_type' => 'Goal.Pageview', 'goal' => ['path' => '/', 'event_name' => 'x']]]]],
     ]);
 
-    it('refuses a host that another Route owns and creates none of the requested hosts', function (): void {
-        $other = instance_analytics_extra_instance('other');
-        instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
-        $this->postJson("/api/v1/instances/{$other->id}/analytics", ['hosts' => ['stats.example.com']])->assertOk();
-        $this->projector->routeIds = [];
-
-        foreach (['other.example.com', 'stats.example.com', 'shop.example.com'] as $taken) {
-            $this->postJson($this->url, ['hosts' => ['fresh.shop.example.com', $taken]])
-                ->assertConflict()
-                ->assertJsonPath('error.code', 'analytics.host_taken');
-        }
-
-        expect(Route::query()->where('domain', 'fresh.shop.example.com')->exists())->toBeFalse()
-            ->and(RouteAnalyticsTracking::query()->where('instance_id', $this->instance->id)->count())->toBe(0)
-            ->and($this->projector->routeIds)->toBe([]);
+    it('normalizes empty goal properties to an absent object field before native admission', function (): void {
+        analytics_intent_socket();
+        $id = $this->postJson($this->url, ['goals' => [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup', 'custom_props' => []]]]])->assertAccepted()->json('data.id');
+        expect(Operation::query()->findOrFail($id)->input['site']['goals'])->toBe([['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup']]]);
     });
 
-    it('keeps the generic Route create from taking a tracking host', function (): void {
-        $this->postJson($this->url)->assertOk();
+    it('keeps running observations out of the projected result', function (): void {
+        $operation = analytics_intent_start($this);
 
-        $this->postJson('/api/v1/routes', [
-            'instance_id' => $this->instance->id,
-            'domain' => 'analytics.shop.example.com',
-            'publication' => 'public',
-        ])->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
-        $this->postJson('/api/v1/routes', [
-            'domain' => 'analytics.shop.example.com',
-            'node_id' => $this->workload->id,
-            'upstream' => 'http://127.0.0.1:4788',
-        ])->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('running', ['ready' => false]));
+
+        expect($operation->fresh()->result)->toBe([])
+            ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
     });
+
+    it('projects bounded domain observations and discards unrecognized result fields', function (): void {
+        $operation = analytics_intent_start($this);
+
+        app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('succeeded', [
+            ...analytics_intent_success(), 'extra' => 'private-sentinel',
+        ]));
+
+        expect($operation->fresh()->result)->toEqual(analytics_intent_success())
+            ->and(json_encode($operation->fresh()->toArray()))->not->toContain('private-sentinel');
+    });
+
 });
 
 describe('instance:analytics:disable', function (): void {
-    it('removes every tracking Route of the Project instance and is idempotent', function (): void {
+    it('admits one native parent and removes only its exact observed tracking set on completion', function (): void {
         $other = instance_analytics_extra_instance('other');
         instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
-        $this->postJson("/api/v1/instances/{$other->id}/analytics")->assertOk();
-        $this->postJson($this->url, ['hosts' => ['analytics.shop.example.com', 'stats.shop.example.com']])->assertOk();
-        $this->edge->calls = [];
-
-        $expected = [
-            'instance_id' => $this->instance->id,
-            'enabled' => false,
-            'domain' => 'shop.example.com',
-            'dashboard_url' => 'https://analytics.orbit',
-            'hosts' => [],
-            'snippet' => null,
-        ];
-
-        $this->deleteJson($this->url)->assertOk()->assertJsonPath('data', $expected);
-
-        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->pluck('domain')->all())
-            ->toBe(['analytics.other.example.com'])
-            ->and(RouteAnalyticsTracking::query()->pluck('instance_id')->all())->toBe([$other->id])
-            ->and($this->edge->calls)->toBe(['remove-public-edge', 'remove-public-edge'])
-            ->and($this->removal->events)->toBe([
-                'dns', 'caddy', 'certificates', 'firewall',
-                'dns', 'caddy', 'certificates', 'firewall',
-            ])
-            ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue();
-
-        $this->edge->calls = [];
-        $this->removal->events = [];
-        $this->deleteJson($this->url)->assertOk()->assertJsonPath('data', $expected);
-        expect($this->edge->calls)->toBe([])->and($this->removal->events)->toBe([]);
+        $retained = instance_analytics_tracking($other);
+        $first = instance_analytics_tracking($this->instance);
+        $second = instance_analytics_tracking($this->instance, 'stats.shop.example.com');
+        analytics_intent_socket();
+        $id = $this->deleteJson($this->url)->assertAccepted()->assertJsonPath('data.kind', 'analytics.disable')->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->input)->not->toHaveKey('plausible_credentials')
+            ->and(RouteAnalyticsTracking::query()->count())->toBe(3)
+            ->and($operation->input['tracking']['remove'])->toBe([$first->id, $second->id]);
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running'));
+        expect($operation->fresh()->input['tracking']['cleanup'])->toHaveCount(2)
+            ->and($first->fresh()->status)->toBe(RouteStatus::Retiring)
+            ->and($second->fresh()->sites_published)->toBeFalse();
+        $result = ['ready' => true, 'enabled' => false, 'domain' => null, 'timezone' => null, 'detached' => true];
+        $projection->apply($operation, analytics_intent_result('succeeded', $result));
+        expect(Route::query()->where('kind', RouteKind::AnalyticsTracking)->pluck('id')->all())->toBe([$retained->id])
+            ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue()
+            ->and(Operation::query()->count())->toBe(1);
+        $this->getJson($this->url)->assertOk()->assertJsonPath('data.enabled', false)->assertJsonPath('data.hosts', []);
     });
+
+    it('detaches its binding without Plausible credentials, active role or Instance domain', function (): void {
+        $settings = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $settings->put($scope, 'analytics.site.'.$this->instance->id, json_encode(['domain' => 'old.example.com', 'timezone' => 'UTC']));
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Failed]);
+        $this->appRoute->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+        analytics_intent_socket();
+        $id = $this->deleteJson($this->url)->assertAccepted()->json('data.id');
+        $operation = Operation::query()->findOrFail($id);
+        expect($operation->node_id)->toBe($this->workload->id);
+        $projection = app(AnalyticsIntentProjection::class);
+        $projection->apply($operation, analytics_intent_result('running'));
+        expect($operation->fresh()->input['tracking']['dns_node_ids'])->toBe([]);
+        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
+        expect($settings->get($scope, 'analytics.site.'.$this->instance->id))->toBeNull();
+        $projection->apply($operation, analytics_intent_result('succeeded', ['ready' => true, 'enabled' => false, 'domain' => 'old.example.com', 'timezone' => 'UTC', 'detached' => true]));
+    });
+
 });
 
 describe('generic Route commands on a tracking Route', function (): void {
@@ -465,17 +342,14 @@ describe('generic Route commands on a tracking Route', function (): void {
     });
 
     it('refuses route:update and both route:target commands', function (): void {
-        $routeId = $this->postJson($this->url)->assertOk()->json('data.hosts.0.route_id');
+        $routeId = instance_analytics_tracking($this->instance)->id;
 
         $this->patchJson("/api/v1/routes/{$routeId}", ['publication' => 'private'])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'route.kind_unsupported');
+            ->assertConflict();
         $this->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'moved.shop.example.com'])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'route.kind_unsupported');
+            ->assertConflict();
         $this->putJson("/api/v1/routes/{$routeId}/target", ['instance_id' => $this->instance->id])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'route.kind_unsupported');
+            ->assertConflict();
         $this->deleteJson("/api/v1/routes/{$routeId}/target")
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.kind_unsupported');
@@ -483,11 +357,12 @@ describe('generic Route commands on a tracking Route', function (): void {
         $route = Route::query()->findOrFail($routeId);
         expect($route->domain)->toBe('analytics.shop.example.com')
             ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($route->targets()->count())->toBe(0);
+            ->and($route->targets()->count())->toBe(0)
+            ->and(Operation::query()->count())->toBe(0);
     });
 
     it('lists the tracking Route with its App instance', function (): void {
-        $routeId = $this->postJson($this->url)->assertOk()->json('data.hosts.0.route_id');
+        $routeId = instance_analytics_tracking($this->instance)->id;
 
         $this->getJson('/api/v1/routes')
             ->assertOk()
@@ -500,7 +375,7 @@ describe('generic Route commands on a tracking Route', function (): void {
 
 describe('guards around a tracking host', function (): void {
     it('refuses to remove the analytics role while a tracking host exists', function (): void {
-        $this->postJson($this->url)->assertOk();
+        instance_analytics_tracking($this->instance);
 
         $this->deleteJson("/api/v1/nodes/{$this->analytics->id}/roles/analytics", ['force' => true])
             ->assertConflict()
@@ -509,13 +384,152 @@ describe('guards around a tracking host', function (): void {
     });
 
     it('refuses to remove a Project instance that still publishes a tracking host', function (): void {
-        $this->postJson($this->url)->assertOk();
+        instance_analytics_tracking($this->instance);
 
         expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance->refresh(), force: true))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('analytics.tracking_hosts_exist');
             });
-        expect(DB::table('instance_removals')->count())->toBe(0)
-            ->and(RouteAnalyticsTracking::query()->count())->toBe(1);
+        expect(RouteAnalyticsTracking::query()->count())->toBe(1);
     });
+});
+
+describe('analytics native participant boundary', function (): void {
+    beforeEach(function (): void {
+        $this->operation = analytics_intent_start($this);
+        $this->path = '/api/v1/direct-operations/'.$this->operation->id;
+        config(['dependency_detection.services_node_id' => $this->analytics->id,
+            'operation_executor.worker_node_ids' => [$this->router->id, $this->ingress->id, $this->workload->id]]);
+        foreach ([$this->analytics, $this->router, $this->ingress, $this->workload] as $node) {
+            $node->accessibleNodes()->attach($this->gateway);
+        }
+        $scope = new SettingScope(SettingScopeType::Gateway);
+        $settings = app(SettingRepository::class);
+        foreach (['analytics.management_email' => 'native@example.test', 'analytics.management_password' => 'private-management-sentinel'] as $key => $value) {
+            $settings->put($scope, $key, $value, SettingValueProtection::Secret);
+        }
+        app(AnalyticsStatsKeyStore::class)->put('private-stats-sentinel');
+    });
+
+    it('returns a fresh caller-scoped public view with truthful parent identity and no parent result', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->router->wireguard_ip]);
+        $query = '?run_id=a075eb23-7ac4-4487-80d1-57a038a92676';
+        $first = $this->getJson($this->path.$query)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('data.node_id', $this->analytics->id)
+            ->assertJsonPath('data.input.participant_node_id', $this->router->id)
+            ->assertJsonMissingPath('data.result')->assertJsonMissingPath('data.input.site')
+            ->assertJsonMissingPath('data.input.plausible_credentials');
+        app(AnalyticsIntentProjection::class)->apply($this->operation, analytics_intent_result('running', ['certificates_ready' => true]));
+        $next = $this->getJson($this->path.$query)->assertOk();
+        expect($next->json('data.input.caddy_publication.caddy.content'))->not->toBe($first->json('data.input.caddy_publication.caddy.content'));
+        expect($next->getContent())->not->toContain('private-management-sentinel')->not->toContain('private-stats-sentinel');
+    });
+
+    it('admits private TLS probes only on Ingress and activates its handler after verification', function (): void {
+        $projection = app(AnalyticsIntentProjection::class);
+        $router = $projection->publicInput($this->operation, $this->router->id);
+        $before = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($router['public_verification'])->toBe([])
+            ->and($before['certificates'])->toBe([])
+            ->and($before['public_verification'][0]['probe'])->toBe([
+                'address' => '10.10.0.20', 'port' => 443, 'domain' => 'analytics.shop.example.com',
+            ]);
+        $projection->apply($this->operation, analytics_intent_result('running', ['certificates_ready' => true]));
+        $prepared = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($prepared['caddy_publication']['caddy']['content'])->toBe($before['caddy_publication']['caddy']['content']);
+        $projection->apply($this->operation, analytics_intent_result('running', ['public_verified' => true]));
+        $active = $projection->publicInput($this->operation, $this->ingress->id);
+        expect($active['caddy_publication']['caddy']['content'])->not->toBe($prepared['caddy_publication']['caddy']['content'])
+            ->toContain('tls force_automate');
+    });
+
+    it('exposes the canonical private DNS payload only to its admitted owner', function (): void {
+        $dns = instance_analytics_node('private-dns', '10.44.0.82', null, RoleName::Vpn);
+        $operation = analytics_intent_start($this);
+
+        $view = app(AnalyticsIntentProjection::class)->publicInput($operation, $dns->id);
+
+        expect($view)->toHaveKey('private_dns_publication')->not->toHaveKey('dns_publication')
+            ->and($view['private_dns_publication']['node_id'])->toBe($dns->id)
+            ->and($view['private_dns_publication']['digest'])->toBe(hash('sha256', $view['private_dns_publication']['catalog']));
+    });
+
+    it('refuses fresh participant reads after admitted ownership or placement changes', function (string $change): void {
+        if ($change === 'owner') {
+            $this->appRoute->update(['publication' => RoutePublication::Private]);
+        } else {
+            Route::query()->where('kind', RouteKind::AnalyticsTracking)->sole()
+                ->update(['publication' => RoutePublication::Private]);
+        }
+        $this->withServerVariables(['REMOTE_ADDR' => $this->router->wireguard_ip]);
+
+        $this->getJson($this->path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')
+            ->assertConflict()->assertJsonPath('error.code', 'analytics.tracking_changed');
+
+        expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+    })->with(['owner', 'tracking']);
+
+    it('never grants a public participant POST or private authority', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->router->wireguard_ip]);
+        $this->postJson($this->path.'/result', analytics_intent_result('succeeded', analytics_intent_success()))->assertForbidden();
+        $this->postJson($this->path.'/primitive', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'])->assertForbidden();
+        $this->getJson($this->path.'/private-material?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertForbidden()->assertHeader('Cache-Control', 'no-store, private');
+    });
+
+    it('refuses unadmitted Nodes, foreign runs, unfinished binding and terminal public reads', function (): void {
+        $query = '?run_id=a075eb23-7ac4-4487-80d1-57a038a92676';
+        $this->withServerVariables(['REMOTE_ADDR' => $this->workload->wireguard_ip]);
+        $this->getJson($this->path.$query)->assertForbidden();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->router->wireguard_ip]);
+        $this->getJson($this->path.'?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
+        $state = $this->operation->state;
+        unset($state['swamp_run_id']);
+        $this->operation->update(['state' => $state]);
+        $this->getJson($this->path.$query)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+        $this->operation->update(['status' => OperationStatus::Succeeded]);
+        $this->getJson($this->path.$query)->assertConflict()->assertJsonPath('error.code', 'operation.finished');
+    });
+
+    it('hydrates protected credentials only for the root Node and current exact unfinished run', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
+        $path = $this->path.'/private-material?run_id=a075eb23-7ac4-4487-80d1-57a038a92676';
+        $this->getJson($path)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('data.plausible_credentials.password', 'private-management-sentinel')
+            ->assertJsonPath('data.plausible_credentials.apiKey', 'private-stats-sentinel');
+        $this->getJson($this->path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()->assertDontSee('private-management-sentinel');
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
+        $this->getJson($path)->assertConflict();
+        $this->analytics->roles()->update(['status' => LifecycleStatus::Active]);
+        $this->operation->update(['status' => OperationStatus::Succeeded]);
+        $this->getJson($path)->assertConflict()->assertJsonPath('error.code', 'operation.finished');
+        expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))
+            ->not->toContain('private-management-sentinel')->not->toContain('private-stats-sentinel');
+    });
+
+    it('keeps certificate signing and public request storage in Swamp', function (): void {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
+        $this->postJson($this->path.'/primitive', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'])
+            ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+        $this->postJson($this->path.'/result', analytics_intent_result('running', ['certificate_requests' => [
+            ['node_id' => $this->router->id, 'scope' => 'route-public', 'request_base64' => base64_encode('public-csr')],
+        ]]))->assertOk();
+        expect($this->operation->fresh()->state)->not->toHaveKey('certificate_requests');
+    });
+
+});
+
+it('keeps the root lifecycle readable after its own publication ownership changes', function (): void {
+    $this->analytics->update(['cluster_id' => $this->cluster->id, 'lan_ip' => '10.10.0.40']);
+    $this->router->roles()->where('role', RoleName::Router)->update(['node_id' => $this->analytics->id]);
+    $operation = analytics_intent_start($this);
+    config(['dependency_detection.services_node_id' => $this->analytics->id]);
+    $this->analytics->accessibleNodes()->attach($this->gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
+    $this->appRoute->update(['publication' => RoutePublication::Private]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
+        ->assertJsonPath('data.status', 'running')->assertJsonMissingPath('data.input.caddy_publication');
+    expect(fn () => app(AnalyticsIntentProjection::class)->publicInput($operation, $this->analytics->id))->toThrow(ResourceOperationException::class);
+    $this->postJson($path.'/result', analytics_intent_result('failed', ['error_code' => 'analytics.change_failed'], 'analytics.change_failed'))
+        ->assertOk()->assertJsonPath('data.status', 'failed');
 });

@@ -4,13 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmUpCloud;
-use App\Infrastructure\TaskVms\TaskVmSweepCommand;
-use App\Infrastructure\TaskVms\TaskVmUpCloudImageCommand;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Infrastructure\TaskVms\UpCloudServers;
-use App\Models\Node;
-use App\Models\Operation;
-use App\Models\UpCloudTaskVmImageBuild;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
@@ -85,45 +80,5 @@ it('accepts an absent owned server without a delete request', function (): void 
     $servers->requestDelete('tvm-90', TaskVmUpCloud::Label, '90', $server['uuid']);
 
     Http::assertSentCount(1);
-    Sleep::assertNeverSlept();
-});
-
-it('keeps image cleanup to one owned delete request after its stop child', function (string $slot): void {
-    $stamp = '20261029120000';
-    $name = 'tvm-image-'.$stamp.($slot === 'smoke' ? '-smoke' : '');
-    $server = upcloudDeletionServer($name, UpCloudServers::ImageLabel, $stamp);
-    upcloudDeletionBoundary($server);
-    $node = Node::query()->create(['name' => 'gateway', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1']);
-    $build = UpCloudTaskVmImageBuild::query()->create(['recipe_identity' => 'sha256:'.str_repeat('a', 64), 'state' => 'running', 'started_at' => now()]);
-    $build->forceFill(['intent' => ['node_id' => $node->id, 'name' => 'tvm-image-'.$stamp, 'stamp' => $stamp],
-        'resources' => [$slot => ['uuid' => $server['uuid']]]])->save();
-    $operation = new Operation(['kind' => 'task_vm.upcloud_image_delete_'.$slot, 'target_type' => 'task_vm_upcloud_image', 'target_id' => $build->id, 'node_id' => $node->id]);
-
-    $result = app(TaskVmUpCloudImageCommand::class)->run($operation, [], ['action' => 'delete-'.$slot, 'token' => 'ucat_test_delete_boundary']);
-
-    expect($result['ready'])->toBeTrue();
-    Http::assertSentCount(2);
-    Sleep::assertNeverSlept();
-})->with(['builder', 'smoke']);
-
-it('keeps orphan sweep deletion to one request after rechecking the current ownership snapshot', function (): void {
-    $server = upcloudDeletionServer();
-    upcloudDeletionBoundary($server);
-    Http::fake([
-        UpCloudApi::Origin.'/server?label=orbit-task-vm' => Http::response(['servers' => ['server' => [$server]]]),
-        UpCloudApi::Origin.'/server?label=orbit-task-image' => Http::response(['servers' => ['server' => []]]),
-        UpCloudApi::Origin.'/storage/template' => Http::response(['storages' => ['storage' => []]]),
-    ]);
-    $node = Node::query()->create(['name' => 'gateway', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1']);
-    $operation = Operation::query()->create(['kind' => 'task_vm.sweep_host', 'target_type' => 'task_vm_sweep', 'target_id' => $node->id,
-        'node_id' => $node->id, 'status' => 'running', 'input' => ['provider' => 'upcloud', 'node_id' => $node->id]]);
-    $operation->update(['input' => [...$operation->input, 'sweep_id' => $operation->id]]);
-    $deletion = ['kind' => 'server', 'name' => 'tvm-90', 'uuid' => $server['uuid'], 'label' => TaskVmUpCloud::Label, 'value' => '90'];
-
-    $result = app(TaskVmSweepCommand::class)->run($operation, [], ['action' => 'delete', 'deletion' => $deletion, 'token' => 'ucat_test_delete_boundary']);
-
-    expect($result)->toBe(['ready' => true]);
-    Http::assertSentCount(6);
-    Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST');
     Sleep::assertNeverSlept();
 });

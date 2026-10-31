@@ -54,38 +54,32 @@ it('requires a step-list kind before classifying a keyed child outcome', functio
     expect(fn () => app(InstanceLifecycleChildren::class)->stepOutcome($this->parent, 'setup'))->toThrow(ResourceOperationException::class);
 });
 
-it('takes setup failure classification from the proven transport receipt instead of the terminal body', function (array $receipt, string $expected): void {
-    $child = preparationListChild($this->parent, 'setup', result: ['outcome' => 'failed']);
-    $child->update(['state' => ['executor_runs' => ['setup.install' => ['transport' => 'agent', 'name' => 'instance.run-lifecycle-step',
-        'step' => 'setup.install', 'input' => ['step' => 'install'], 'started' => true, 'result' => $receipt]]]]);
-    $child->steps()->create(['name' => 'setup.install', 'position' => 1, 'sequence' => 1, 'status' => 'failed', 'resumable' => false]);
-
-    expect(app(InstanceLifecycleChildren::class)->stepOutcome($this->parent, 'setup')['outcome'])->toBe($expected);
-    expect(app(InstanceLifecycleChildren::class)->rollbackSetup($this->parent))->toBe(in_array($expected, ['failed', 'missing', 'deadline'], true));
+it('uses bound native list outcomes for parent rollback policy', function (string $outcome, string $code): void {
+    $child = preparationListChild($this->parent, 'setup', result: ['instance_id' => $this->instance->id,
+        'outcome' => $outcome, 'error_code' => $code, 'failed_step' => 'setup.install']);
+    $child->update(['error_code' => $code, 'state' => ['instance_step_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    expect(app(InstanceLifecycleChildren::class)->stepOutcome($this->parent, 'setup')['outcome'])->toBe($outcome);
+    expect(app(InstanceLifecycleChildren::class)->rollbackSetup($this->parent))->toBe(in_array($outcome, ['failed', 'missing', 'deadline'], true));
 })->with([
-    'failed command' => [['exit_code' => 1, 'timed_out' => false], 'failed'],
-    'busy command' => [['exit_code' => 75, 'timed_out' => false], 'busy'],
-    'missing command' => [['exit_code' => 127, 'timed_out' => false], 'missing'],
-    'bounded deadline' => [['exit_code' => 124, 'timed_out' => true, 'budget_seconds' => 10, 'timeout_seconds' => 30], 'deadline'],
-    'unconfirmed receipt' => [['error_code' => 'operation.execution_uncertain'], 'unconfirmed'],
+    ['failed', 'instance.setup_step_failed'], ['busy', 'instance.lifecycle_busy'],
+    ['missing', 'instance.setup_step_unavailable'], ['deadline', 'command.deadline_exceeded'],
+    ['unconfirmed', 'instance.step_execution_unconfirmed'],
 ]);
 
-it('does not use a mismatched or unfinished run as failure proof', function (string $change): void {
-    $child = preparationListChild($this->parent, 'setup', result: ['outcome' => 'deadline']);
-    $run = ['transport' => 'agent', 'name' => 'instance.run-lifecycle-step', 'step' => 'setup.install',
-        'input' => ['step' => 'install'], 'started' => true, 'result' => ['exit_code' => 1, 'timed_out' => false]];
+it('refuses unbound or mismatched native outcomes as failure proof', function (string $change): void {
+    $code = 'instance.setup_step_failed';
+    $child = preparationListChild($this->parent, 'setup', result: ['instance_id' => $this->instance->id,
+        'outcome' => 'failed', 'error_code' => $code, 'failed_step' => 'setup.install']);
+    $child->update(['error_code' => $code, 'state' => ['instance_step_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
     match ($change) {
-        'transport' => $run['transport'] = 'gateway', 'name' => $run['name'] = 'process.control',
-        'step' => $run['step'] = 'setup.other', 'unconfirmed' => $run['result'] = null,
-        'missing-step' => null,
+        'unbound' => $child->update(['state' => ['instance_step_writer' => 'direct']]),
+        'polled' => $child->update(['state' => []]),
+        'running' => $child->update(['status' => 'running']),
+        'foreign' => $child->update(['result' => [...$child->result, 'instance_id' => $child->target_id + 1]]),
+        'error' => $child->update(['error_code' => 'different.failure']),
     };
-    $child->update(['state' => ['executor_runs' => ['setup.install' => $run]]]);
-    if ($change !== 'missing-step') {
-        $child->steps()->create(['name' => 'setup.install', 'position' => 1, 'sequence' => 1, 'status' => 'failed', 'resumable' => false]);
-    }
-
-    expect(app(InstanceLifecycleChildren::class)->stepOutcome($this->parent, 'setup')['outcome'])->toBe('unconfirmed');
-})->with(['transport', 'name', 'step', 'unconfirmed', 'missing-step']);
+    expect(app(InstanceLifecycleChildren::class)->stepOutcome($this->parent, 'setup')['outcome'] ?? null)->toBe($change === 'running' ? null : 'unconfirmed');
+})->with(['unbound', 'polled', 'running', 'foreign', 'error']);
 
 it('retains source while any child is nonterminal even after a confirmed refusal', function (string $status): void {
     $this->parent->update(['state' => ['executor_runs' => ['source-prepare' => ['result' => ['error_code' => 'instance.source_step_failed']]]]]);
@@ -97,15 +91,13 @@ it('retains source while any child is nonterminal even after a confirmed refusal
 
 it('requires proven teardown success before removing a failed setup checkout', function (): void {
     $setup = preparationListChild($this->parent, 'setup');
-    $setup->update(['state' => ['executor_runs' => ['setup.install' => ['transport' => 'agent', 'name' => 'instance.run-lifecycle-step',
-        'step' => 'setup.install', 'input' => ['step' => 'install'], 'started' => true, 'result' => ['exit_code' => 1, 'timed_out' => false]]]]]);
-    $setup->steps()->create(['name' => 'setup.install', 'position' => 1, 'sequence' => 1, 'status' => 'failed', 'resumable' => false]);
+    $setup->update(['error_code' => 'instance.setup_step_failed', 'result' => ['instance_id' => $this->instance->id, 'outcome' => 'failed', 'error_code' => 'instance.setup_step_failed', 'failed_step' => 'setup.install'], 'state' => ['instance_step_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+
     $teardown = preparationListChild($this->parent, 'rollback-teardown', status: 'succeeded', result: ['outcome' => 'succeeded']);
     $policy = app(InstanceLifecycleChildren::class);
     expect($policy->canRemoveFailedCreate($this->parent))->toBeFalse();
-    $teardown->update(['state' => ['executor_runs' => ['lifecycle.receipt' => ['transport' => 'gateway', 'name' => 'instance.step-list-receipt',
-        'step' => 'lifecycle_receipt', 'result' => ['instance_id' => $this->instance->id, 'outcome' => 'succeeded']]]]]);
-    $teardown->steps()->create(['name' => 'lifecycle_receipt', 'position' => 1, 'sequence' => 1, 'status' => 'succeeded', 'resumable' => true]);
+    $teardown->update(['result' => ['instance_id' => $this->instance->id, 'outcome' => 'succeeded', 'no_op' => true], 'state' => ['instance_step_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+
     expect($policy->canRemoveFailedCreate($this->parent))->toBeTrue();
 });
 

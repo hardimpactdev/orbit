@@ -8,13 +8,10 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Operation;
 use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use App\Support\ValidatedData;
 
 /** Accepts only a kit-verified, server-built family child intent. */
@@ -59,22 +56,6 @@ final readonly class AdmitTaskVmChildAction
             }
 
             return app(StartTaskVmLifecycleOperationAction::class)->execute($parent->target_id, 'resume') ?? throw new ResourceOperationException('operation.execution_forbidden', 'The VM no longer admits a preservation resume.', 422);
-        }
-        if ($parent->target_type === 'task_vm_image' && ($input['phase'] ?? null) !== 'intent') {
-            $build = TaskVmImageBuild::query()->findOrFail($parent->target_id);
-            if ($build->attempt !== ($input['attempt'] ?? null) || $build->state !== TaskVmImageBuildState::Running || $build->cleanup_started_at !== null) {
-                throw new ResourceOperationException('operation.execution_forbidden', 'The image attempt no longer admits this phase.', 422);
-            }
-            $phase = ValidatedData::string($input['phase']);
-            $step = match ($phase) {
-                'promote' => TaskVmImageBuildStep::Promote,'prune' => TaskVmImageBuildStep::Prune,default => TaskVmImageBuildStep::Recipe
-            };
-            $program = $step === TaskVmImageBuildStep::Recipe ? 'base:'.$phase : null;
-            $steps = $build->steps;
-            $index = array_find_key($steps, static fn (array $entry): bool => $entry['step'] === $step->value && $entry['program'] === $program) ?? count($steps);
-            $steps[$index] ??= ['step' => $step->value, 'program' => $program, 'started_at' => now()->toISOString(), 'seconds' => null, 'error' => null];
-            $steps[$index]['started_at'] ??= now()->toISOString();
-            $build->forceFill(['steps' => $steps, 'current_step' => $step, 'current_program' => $program])->save();
         }
 
         return $this->operations->execute($kind, $parent->target_type, $parent->target_id, $node, $input, 'task-vm-child', null);

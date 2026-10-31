@@ -8,9 +8,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
-use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -18,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
-use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -42,6 +39,8 @@ beforeEach(function (): void {
 });
 
 it('hydrates only fixed owner-checked material without changing Operation state', function (): void {
+    config(['operation_executor.worker_node_ids' => []]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $this->operation->kind, 'worker' => 'old', 'operation_id' => $this->operation->id])->assertNotFound();
     $before = $this->operation->fresh()->getAttributes();
     $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.environment.admin_session', 'shared-private-admin-sentinel');
     expect($this->operation->fresh()->getAttributes())->toBe($before);
@@ -50,6 +49,8 @@ it('hydrates only fixed owner-checked material without changing Operation state'
 });
 
 it('calls the existing encrypted owner store and accepts only exact replay', function (): void {
+    config(['operation_executor.worker_node_ids' => []]);
+    $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertNotFound();
     $before = $this->operation->fresh()->getAttributes();
     $this->postJson($this->path.'/secret-output', $this->output)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.stored.credential', ['$secret' => 'conn.pairing.credential', 'id' => $this->pairing->id]);
     $this->postJson($this->path.'/secret-output', $this->output)->assertOk();
@@ -57,7 +58,7 @@ it('calls the existing encrypted owner store and accepts only exact replay', fun
     expect($this->pairing->fresh()->credential)->toBe('shared-output-sentinel');
     expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->not->toContain('shared-output-sentinel');
     expect($this->operation->fresh()->getAttributes())->toBe($before);
-    expect(json_encode([$this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
+    expect(json_encode([Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
 });
 
 it('rejects foreign and missing native bindings without establishing a run', function (): void {
@@ -98,6 +99,7 @@ it('retains the existing store exact pairing-set and issue/link preconditions', 
 });
 
 it('rejects extra selectors, undeclared fields and foreign references', function (): void {
+    $this->getJson($this->path.'/private-material?run_id='.$this->run.'&artifact=environment')->assertUnprocessable();
     $this->getJson($this->path.'/private-material?run_id='.$this->run.'&source=conn.environment')->assertUnprocessable();
     $this->postJson($this->path.'/secret-output', [...$this->output, 'store' => 'foreign.store'])->assertUnprocessable()->assertHeader('Cache-Control', 'no-store, private');
     $this->postJson($this->path.'/secret-output', ['run_id' => $this->run, 'outputs' => ['foreign' => 'shared-output-sentinel']])->assertUnprocessable();
@@ -144,41 +146,4 @@ it('preserves whitespace and empty strings in private output JSON', function ():
     $raw = ['spaces' => '  exact bytes  ', 'nested' => ['empty' => '']];
     $this->postJson($this->path.'/secret-output', ['run_id' => $this->run, 'outputs' => ['credential' => $raw]])->assertOk();
     expect($store->received)->toBe($raw);
-});
-
-it('requires exact native identity before an unbound private read and keeps the admitted Node boundary', function (): void {
-    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
-        'workflowName' => 'operation-private-test', 'runId' => $this->run, 'status' => 'running',
-        'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
-        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
-    ]]]]]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'private.fixture.token']);
-    $before = $this->operation->fresh()->getAttributes();
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.environment.admin_session', 'shared-private-admin-sentinel');
-    expect($socket->sent)->toHaveCount(1);
-    expect($this->operation->fresh()->getAttributes())->toBe($before);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertForbidden();
-    expect($socket->sent)->toHaveCount(1);
-    expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('shared-private-admin-sentinel', 'private.fixture.token');
-});
-
-it('refuses a private output when another native run binds after early authorization', function (): void {
-    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
-        'workflowName' => 'operation-private-test', 'runId' => $this->run, 'status' => 'running',
-        'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
-        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
-    ]]]]]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'private.fixture.token']);
-    app(DirectOperation::class)->assertRun($this->operation, $this->run);
-    $this->operation->update(['state' => [...$this->operation->state, 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']]);
-    expect(fn () => app(DirectOperationPrivateMaterial::class)->write($this->operation, ['credential' => 'must-not-store'], $this->run))->toThrow(ResourceOperationException::class, 'another Swamp run');
-    expect($this->pairing->fresh()->credential)->toBeNull();
-    expect($socket->sent)->toHaveCount(1);
 });

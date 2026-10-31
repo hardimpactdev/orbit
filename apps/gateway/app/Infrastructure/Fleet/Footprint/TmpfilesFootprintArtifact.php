@@ -7,10 +7,6 @@ namespace App\Infrastructure\Fleet\Footprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -31,8 +27,6 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 
         CONF;
 
-    public function __construct(private AgentCommandRunner $agents) {}
-
     public function name(): string
     {
         return 'tmpfiles';
@@ -48,14 +42,5 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
     public function digest(Node $node): string
     {
         return hash('sha256', self::Rule);
-    }
-
-    public function apply(Node $node): bool
-    {
-        try {
-            return ($this->agents->run($node, 'node.publish-tmpfiles', ['rule' => self::Rule])['changed'] ?? false) === true;
-        } catch (AgentCommandRefused|AgentRunnerFailure $exception) {
-            throw new ResourceOperationException('node.footprint_tmpfiles_failed', 'The tmpfiles rule could not be published: '.$exception->getMessage(), 502, $exception);
-        }
     }
 }

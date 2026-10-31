@@ -73,7 +73,7 @@ beforeEach(function (): void {
         'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '192.0.2.8',
     ]);
     $this->environment = ['AI_ROUTER_CACHE_HOST' => '10.44.0.9', 'AI_ROUTER_CACHE_PASSWORD' => 'secret'];
-    $this->process = app(CreateProcessAction::class)->execute(AiRouterProcess::data($this->node, $this->environment))['process'];
+    $this->process = app(CreateProcessAction::class)->bootstrapCollector(AiRouterProcess::data($this->node, $this->environment))['process'];
     $this->source = AiRouterProcessSource::query()->create([
         'process_id' => $this->process->id,
         'source_revision' => hash('sha256', 'previous script'),

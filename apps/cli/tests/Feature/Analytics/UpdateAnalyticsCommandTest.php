@@ -7,6 +7,8 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Analytics\UpdateAnalyticsRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -22,9 +24,9 @@ beforeEach(function (): void {
     ));
     $this->requestId = (string) Str::uuid();
     $this->answer = fn (string $version, string $previous): MockResponse => MockResponse::make([
-        'data' => ['node_id' => 17, 'node_name' => 'services', 'version' => $version, 'previous_version' => $previous],
+        'data' => ['id' => 42, 'kind' => 'analytics.update', 'target_type' => 'node', 'target_id' => 17, 'input' => [], 'status' => 'succeeded', 'sequence' => 3, 'current_step' => null, 'failed_step' => null, 'error_code' => null, 'result' => ['ready' => true, 'version' => $version, 'previous_version' => $previous], 'cancel_requested' => false, 'attempts' => 0, 'triggered_by' => 'operator', 'created_at' => '2026-10-30T10:00:00Z', 'started_at' => '2026-10-30T10:00:01Z', 'finished_at' => '2026-10-30T10:00:02Z', 'poll_after_seconds' => 2],
         'meta' => ['request_id' => $this->requestId],
-    ]);
+    ], 202);
 });
 
 afterEach(function (): void {
@@ -34,28 +36,28 @@ afterEach(function (): void {
 
 describe('analytics:update', function (): void {
     it('sends the version and returns the Gateway answer as JSON', function (): void {
-        $mockClient = MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.3.0', '3.2.1')]);
+        $mockClient = MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.3.0', '3.2.1'), ShowOperationRequest::class => ($this->answer)('3.3.0', '3.2.1'), ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]])]);
 
         $this->artisan('analytics:update', ['version' => '3.3.0', '--json' => true])
             ->expectsOutputToContain('"previous_version":"3.2.1"')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastPendingRequest()?->body()->all())->toBe(['version' => '3.3.0']);
+        $mockClient->assertSent(static fn ($request): bool => $request instanceof UpdateAnalyticsRequest && $request->body()->all() === ['version' => '3.3.0']);
     });
 
     it('names the node and both versions for a human', function (): void {
-        MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.3.0', '3.2.1')]);
+        MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.3.0', '3.2.1'), ShowOperationRequest::class => ($this->answer)('3.3.0', '3.2.1'), ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]])]);
 
         $this->artisan('analytics:update', ['version' => '3.3.0'])
-            ->expectsOutputToContain('Plausible updated on node [services].')
+            ->expectsOutputToContain('Plausible succeeded.')
             ->assertExitCode(0);
     });
 
     it('says so when that version already runs', function (): void {
-        MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.2.1', '3.2.1')]);
+        MockClient::global([UpdateAnalyticsRequest::class => ($this->answer)('3.2.1', '3.2.1'), ShowOperationRequest::class => ($this->answer)('3.2.1', '3.2.1'), ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]])]);
 
         $this->artisan('analytics:update', ['version' => '3.2.1'])
-            ->expectsOutputToContain('Plausible already runs 3.2.1 on node [services].')
+            ->expectsOutputToContain('Plausible succeeded.')
             ->assertExitCode(0);
     });
 

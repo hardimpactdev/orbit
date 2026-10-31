@@ -8,9 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\ClusterRouterParentCommand;
 use App\Domain\Routes\ClusterRouterReplacementStep;
-use App\Domain\Routes\RouteKitAvailability;
+use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
@@ -31,7 +30,6 @@ final readonly class AdmitClusterRouterOperationAction
 
     public function set(Cluster $cluster, Node $node, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('cluster.router_set');
 
         return app(ClusterRouterOperationLock::class)->run($cluster->id, fn (): Operation => DB::transaction(function () use ($cluster, $node, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
@@ -48,9 +46,7 @@ final readonly class AdmitClusterRouterOperationAction
             }
             $current = $assignments->first(static fn (NodeRole $row): bool => $row->status === LifecycleStatus::Active);
             $candidate = $assignments->first(static fn (NodeRole $row): bool => $row->node_id === $node->id);
-            if ($candidate === null) {
-                $candidate = NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
-            }
+            $candidate ??= NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
             if ($candidate->status !== LifecycleStatus::Active) {
                 $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null,
                     ...($candidate->status === LifecycleStatus::Failed ? ['failed_step' => null] : [])]);
@@ -62,7 +58,8 @@ final readonly class AdmitClusterRouterOperationAction
             $operation = $this->operations->execute('cluster.router_set', 'cluster_router', $cluster->id, $node->id,
                 ['cluster_id' => $cluster->id, 'node_id' => $node->id, 'candidate_role_id' => $candidate->id, 'old_role_id' => $current?->id,
                     'old_node_id' => $current?->node_id, 'route_ids' => $routeIds, 'node_ids' => $nodeIds], 'operator', $requestId);
-            app(ClusterRouterParentCommand::class)->run($operation, ['action' => 'prepare']);
+            $intent = app(NativeClusterRouterIntent::class)->forOperation($operation);
+            $operation->update(['input' => [...$operation->input, 'cluster_router' => $intent, 'certificates' => $intent['leaves']]]);
 
             return $operation->refresh();
         }));
@@ -70,7 +67,6 @@ final readonly class AdmitClusterRouterOperationAction
 
     public function unset(Cluster $cluster, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('cluster.router_unset');
 
         return app(ClusterRouterOperationLock::class)->run($cluster->id, fn (): Operation => DB::transaction(function () use ($cluster, $requestId): Operation {
             $cluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
@@ -88,7 +84,8 @@ final readonly class AdmitClusterRouterOperationAction
 
             $operation = $this->operations->execute('cluster.router_unset', 'cluster_router', $cluster->id, $nodeId,
                 ['cluster_id' => $cluster->id, 'assignment_ids' => $assignments->modelKeys(), 'node_ids' => $nodeIds], 'operator', $requestId);
-            app(ClusterRouterParentCommand::class)->run($operation, ['action' => 'prepare']);
+            $intent = app(NativeClusterRouterIntent::class)->forOperation($operation);
+            $operation->update(['input' => [...$operation->input, 'cluster_router' => $intent, 'certificates' => $intent['leaves']]]);
 
             return $operation->refresh();
         }));

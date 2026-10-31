@@ -9,6 +9,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
+use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -75,6 +76,25 @@ final readonly class InstanceDeploymentRecorder
 
             $this->prune($deployment->instance_id);
         });
+        $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
+    }
+
+    /** Records a native root's reported domain facts; it performs no runtime validation.
+     * @param  array<string,mixed>  $facts
+     */
+    public function recordNative(InstanceDeployment $deployment, string $status, ?string $code, array $facts): void
+    {
+        $finished = Carbon::now();
+        $events = DeploymentEventCollector::resume($deployment->events ?? []);
+        if (is_string($facts['output_tail'] ?? null)) {
+            $events->output(new DeploymentEvent(ValidatedData::string($facts['failed_step'] ?? 'operation'), DeploymentOutputStream::Stderr, $facts['output_tail']));
+        }
+        $deployment->update(['release' => $facts['release'], 'selected_release' => $facts['selected_release'],
+            'commit' => $facts['commit'], 'status' => $status === 'cancelled' ? 'failed' : $status,
+            'failed_step' => $facts['failed_step'], 'error_code' => $status === 'cancelled' ? 'deployment.cancelled' : $code,
+            'finished_at' => $finished, 'duration_seconds' => max(0, $finished->diffInSeconds($deployment->started_at)),
+            'events' => $events->events()]);
+        $this->prune($deployment->instance_id);
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
     }
 

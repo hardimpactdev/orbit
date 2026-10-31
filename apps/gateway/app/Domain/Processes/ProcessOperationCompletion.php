@@ -59,10 +59,10 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
     {
         $verb = substr($operation->kind, strlen('process.'));
         $required = match ($verb) {
-            'create', 'update' => $operation->input['runtime'] === 'docker'
+            'update' => $operation->input['runtime'] === 'docker'
                 ? ['process-converge-container' => 'process.converge-container']
                 : ['process-stage-unit' => 'process.stage-unit'],
-            default => ['process-'.$verb => 'process.control'],
+            default => throw new ResourceOperationException('operation.execution_forbidden', 'The kind has no polled Process executor.', 422),
         };
         if ($requireStatus) {
             $required['process-status'] = 'process.status';
@@ -84,14 +84,8 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
         }
         if (isset($operation->input['vite_plan'])) {
             $required += ['vite-suspend' => 'vite.set-traffic', 'vite-environment' => 'vite.set-traffic'];
-            if ($verb === 'restart') {
-                $required['vite-stop'] = 'process.control';
-            }
-            if ($verb === 'start') {
-                $required['vite-awake'] = 'vite.set-traffic';
-            }
             app(OperationChildren::class)->requireSucceeded($operation, 'vite-caddy');
-            if ($operation->input['desired'] === 'running' || in_array($verb, ['start', 'restart'], true)) {
+            if ($operation->input['desired'] === 'running') {
                 $ready = array_find(array_keys($steps), static fn ($key): bool => str_starts_with($key, 'vite-ready-') && is_array($steps[$key]) && ($steps[$key]['ready'] ?? false) === true && ($steps[$key]['owned'] ?? false) === true);
                 if ($ready === null) {
                     throw new ResourceOperationException('operation.completion_unproven', 'An owned Vite listener must be proven ready.', 409);

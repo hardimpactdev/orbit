@@ -46,6 +46,9 @@ final readonly class ConnOperationSecrets implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'Cleanup has another environment owner.', 422);
         }
         $environment = ConnEnvironment::query()->findOrFail($id);
+        if ($operation->kind === 'conn.gateway_sessions_revoke' && $environment->cleanup_version !== $operation->input['cleanup_version']) {
+            throw new ResourceOperationException('conn.environment_changed', 'The cleanup revision changed.', 409);
+        }
 
         return new OperationSecretValue(new ConnExecutionInput(['url' => $environment->url, 'admin_session' => $environment->admin_session, 'id' => $environment->id]), [$environment->admin_session]);
     }

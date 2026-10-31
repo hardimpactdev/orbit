@@ -17,7 +17,6 @@ use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
-use App\Domain\Instances\Environment\EnvironmentSyncSecrets;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
@@ -26,6 +25,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceCreateEnvironmentSeed;
 use App\Domain\Instances\InstanceDestinationGuard;
@@ -33,6 +33,7 @@ use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\Logs\InstanceLogReader;
+use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
@@ -49,13 +50,10 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
-use App\Domain\Instances\StepLists\InstanceStepListSecrets;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
-use App\Http\Controllers\Api\OperationExecutorController;
-use App\Http\Middleware\Instances\SerializeInstanceEnvironment;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
@@ -85,8 +83,6 @@ use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
-use App\Infrastructure\Processes\CommandDeadline;
-use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -134,34 +130,16 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceStepListSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
         ));
         $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
-        $this->app->scoped(
-            InstanceEnvironmentOperationLock::class,
-            static fn (): InstanceEnvironmentOperationLock => new NativeInstanceEnvironmentOperationLock(
-                directory: rtrim(string: Config::string('orbit.home'), characters: '/')
-                    .'/locks/app-instance-environment',
-                deadline: app(CommandDeadline::class),
-            ),
-        );
+        $this->app->scoped(InstanceEnvironmentOperationLock::class, NativeInstanceEnvironmentOperationLock::class);
         $this->app->singleton(
             DevelopmentInstanceSourceFinalizer::class,
             static fn (): DevelopmentInstanceSourceFinalizer => app(RemoteDevelopmentInstanceSourceRemoval::class),
         );
-    }
-
-    public function boot(): void
-    {
-        $this->app->booted(function (): void {
-            foreach ($this->app->make(Router::class)->getRoutes()->getRoutes() as $route) {
-                if ($route->getActionName() === OperationExecutorController::class.'@run') {
-                    $route->middleware(SerializeInstanceEnvironment::class);
-                }
-            }
-        });
     }
 }

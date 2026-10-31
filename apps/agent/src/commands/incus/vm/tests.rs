@@ -71,6 +71,18 @@ fn images() -> Output {
 }
 
 #[test]
+fn vm_state_reports_settled_only_for_stable_power() {
+    for status in ["Running", "Stopped"] {
+        let observation = observe(&mut fake(vec![listed(status)]), &location()).unwrap();
+        let value = serde_json::to_value(State { observation }).unwrap();
+        assert_eq!(value["observation"]["settled"], true);
+    }
+    for status in ["Starting", "Stopping", "Frozen", "Error"] {
+        assert!(observe(&mut fake(vec![listed(status)]), &location()).is_err());
+    }
+}
+
+#[test]
 fn observes_exact_names_image_and_only_one_usable_bridge_address_repeatedly() {
     let mut other = instance("Running");
     other["name"] = json!("tvm-12");
@@ -84,6 +96,7 @@ fn observes_exact_names_image_and_only_one_usable_bridge_address_repeatedly() {
         first,
         Some(Observation {
             running: true,
+            settled: true,
             address: Some("10.251.77.20".parse().unwrap()),
             image_fingerprint: Some("a".repeat(64))
         })
@@ -101,6 +114,7 @@ fn observes_exact_names_image_and_only_one_usable_bridge_address_repeatedly() {
         .unwrap(),
         Some(Observation {
             running: false,
+            settled: true,
             address: None,
             image_fingerprint: None
         })

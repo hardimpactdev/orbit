@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Fleet\Footprint;
 
-use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ContributedPrivateHostnames;
@@ -22,7 +21,7 @@ use Illuminate\Container\Attributes\Tag;
 final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifact
 {
     /** @param iterable<ContributedPrivateHostnames> $contributions */
-    public function __construct(private PrivateDnsManager $dns,
+    public function __construct(
         #[Tag(ContributedPrivateHostnames::class)] private iterable $contributions,
     ) {}
 
@@ -66,12 +65,5 @@ final readonly class PrivateDnsFootprintArtifact implements NodeFootprintArtifac
                 array_values([...$this->contributions]),
             )),
         ];
-    }
-
-    public function apply(Node $node): ?bool
-    {
-        $this->dns->converge();
-
-        return null;
     }
 }

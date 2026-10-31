@@ -42,24 +42,6 @@ final readonly class DatabaseCommands
             : ['mysql', '--user=root', '--batch', '--skip-column-names'];
     }
 
-    /** @return Command */
-    public static function ready(DatabaseServer $server): array
-    {
-        if ($server->driver === DatabaseDriver::Redis) {
-            return self::valkey($server, 'ready');
-        }
-        $command = self::sql($server, '');
-        unset($command['input']['sql']);
-        $command['input']['operation'] = 'ready';
-        $command['input']['timeout_seconds'] = 120;
-        if ($server->driver === DatabaseDriver::Mysql) {
-            $command['input']['client'] = ['mysql', '--protocol=TCP', '--host=127.0.0.1', '--user=root', '--batch', '--skip-column-names'];
-        }
-        $command['protected'] = ['password'];
-
-        return $command;
-    }
-
     /** @param array<string, mixed> $payload
      * @return Command
      */

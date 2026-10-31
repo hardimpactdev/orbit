@@ -6,6 +6,7 @@ namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,6 +25,7 @@ final readonly class AdmitPeerDnsAction
         $server = $this->policy->server($node);
 
         return $this->start->execute('fleet.peer_dns', 'peer_dns', $node->id, $node->id, [
+            'agent_sha256' => app(AgentDelivery::class)->pin($node),
             'server' => $server, 'dns_server' => $server, 'public_key' => $node->wireguard_public_key,
             'domains' => $this->policy->domains($node),
         ], $triggeredBy, $requestId);

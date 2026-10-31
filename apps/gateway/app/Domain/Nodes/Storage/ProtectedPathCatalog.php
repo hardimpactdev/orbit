@@ -29,7 +29,7 @@ final readonly class ProtectedPathCatalog
             return true;
         }
 
-        foreach ([...self::SYSTEM_ROOTS, ...self::ORBIT_ROOTS] as $root) {
+        foreach ($this->roots() as $root) {
             $protected = StoragePath::tryParse($root);
 
             if ($protected instanceof StoragePath && $path->overlaps($protected)) {
@@ -37,15 +37,14 @@ final readonly class ProtectedPathCatalog
             }
         }
 
-        foreach ($this->gatewayPaths() as $gatewayPath) {
-            $protected = StoragePath::tryParse($gatewayPath);
-
-            if ($protected instanceof StoragePath && $path->overlaps($protected)) {
-                return true;
-            }
-        }
-
         return $this->isHiddenControlPath($path, $home);
+    }
+
+    /** @return list<string> */
+    public function roots(): array
+    {
+        return array_values(array_filter([...self::SYSTEM_ROOTS, ...self::ORBIT_ROOTS, ...$this->gatewayPaths()],
+            static fn (string $path): bool => StoragePath::tryParse($path) instanceof StoragePath));
     }
 
     /**

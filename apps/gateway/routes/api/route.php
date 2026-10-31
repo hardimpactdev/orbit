@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Http\Controllers\Api\DirectOperationsController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -12,9 +11,6 @@ Route::middleware([
     RequireActiveWireGuardPeer::class,
     RequireNodeAccess::class,
 ])->group(function (): void {
-    Route::get('route-publications/{operation}', [DirectOperationsController::class, 'show'])->whereNumber('operation')->name('route:publication:show');
-    Route::post('route-publications/{operation}/publish', [DirectOperationsController::class, 'primitive'])->whereNumber('operation')->name('route:publication:publish');
-    Route::post('route-publications/{operation}/result', [DirectOperationsController::class, 'result'])->whereNumber('operation')->name('route:publication:result');
     Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
     Route::post('routes', [RoutesController::class, 'store'])->name('route:create');
     Route::get('routes/{route}', [RoutesController::class, 'show'])

@@ -12,6 +12,7 @@ $control = [
 ];
 
 return [
+    'schedule.enable' => $control,
     'schedule.run' => $control,
     'schedule.destroy' => $control,
 ];

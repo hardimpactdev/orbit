@@ -80,7 +80,7 @@ final readonly class TaskVmRuntime
                 throw new AgentRunnerFailure('pi.configure-runtime', AgentRunnerFailure::MalformedResult, 'Pi preparation did not return its runtime paths.');
             }
             $this->clock->step('pi-files');
-            $this->processes->execute(new AddProcessData(
+            $this->processes->bootstrapPi(new AddProcessData(
                 targetType: ProcessTargetType::Node,
                 targetId: $node->id,
                 name: 'pi-server',

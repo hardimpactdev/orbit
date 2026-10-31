@@ -6,35 +6,39 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
-use App\Http\Authorization\RequiresNodeAccess;
-use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\DirectOperationPrivateRequest;
 use App\Http\Requests\Operations\DirectOperationRequest;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-#[RequiresNodeAccess(ServingNode::Gateway)]
 final class DirectOperationsController extends Controller
 {
     public function show(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
     {
-        $direct->projection($operation);
+        $projection = $direct->projection($operation);
+        if ($request->peerNodeId() !== $operation->node_id && $projection instanceof DirectOperationPublicView) {
+            return $this->respond($request, ['id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
+                'status' => $operation->status->value, 'cancel_requested' => $operation->cancel_requested_at !== null,
+                'input' => $projection->publicInput($operation, $request->peerNodeId())])->header('Cache-Control', 'no-store');
+        }
 
-        return $this->respond($request, $this->operation($operation));
+        return $this->respond($request, $this->operation($operation))->header('Cache-Control', 'no-store');
     }
 
-    public function primitive(DirectOperationRequest $request, Operation $operation, DirectOperation $direct, OperationExecutionContract $contract): JsonResponse
+    public function primitive(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
     {
         $direct->projection($operation);
         if ($operation->status->terminal()) {
             throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
         }
 
-        return $this->respond($request, $contract->result($operation, $direct->primitive($operation)->execute($operation)));
+        return $this->respond($request, $direct->primitive($operation)->execute($operation));
     }
 
     public function result(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
@@ -42,21 +46,52 @@ final class DirectOperationsController extends Controller
         return $this->respond($request, $this->operation($direct->projection($operation)->apply($operation, $request->validated())));
     }
 
-    public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse
+    /** Native failed-dependency callback: bounded failure only, no domain effects or material. */
+    public function failure(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
     {
-        return $this->respond($request, $material->read($operation, ValidatedData::string($request->validated('run_id'))))->header('Cache-Control', 'no-store');
+        DB::transaction(function () use ($request, $operation, $direct): void {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            $direct->assertRun($operation, ValidatedData::string($request->validated('run_id')));
+            if ($operation->status->terminal()) {
+                return;
+            }
+            $direct->project($operation, [
+                'run_id' => $request->validated('run_id'), 'status' => 'failed',
+                'started_at' => ($operation->started_at ?? $operation->created_at ?? now())->toISOString(),
+                'finished_at' => now()->toISOString(), 'error_code' => 'operation.native_failed',
+            ], []);
+        });
+
+        return $this->respond($request, ['id' => $operation->id, 'status' => $operation->status->value])->header('Cache-Control', 'no-store');
+    }
+
+    public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse|BinaryFileResponse
+    {
+        $field = $request->validated('artifact');
+        if (is_string($field)) {
+            $artifact = $material->artifact($operation, $field, $request->peerNodeId());
+
+            return response()->download($artifact->path, 'artifact-'.$artifact->sha256, [
+                'Content-Type' => 'application/octet-stream', 'Cache-Control' => 'private, no-store',
+                'X-Content-Type-Options' => 'nosniff', 'X-Artifact-Sha256' => $artifact->sha256,
+            ])->setPrivate();
+        }
+
+        return $this->respond($request, $material->read($operation, $request->peerNodeId()))->header('Cache-Control', 'no-store');
     }
 
     public function secretOutput(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse
     {
-        return $this->respond($request, ['stored' => $material->write($operation, ValidatedData::object($request->validated('outputs')), ValidatedData::string($request->validated('run_id')))])->header('Cache-Control', 'no-store');
+        return $this->respond($request, ['stored' => $material->write($operation, ValidatedData::object($request->validated('outputs')), $request->peerNodeId())])->header('Cache-Control', 'no-store');
     }
 
     /** @return array<string, mixed> */
     private function operation(Operation $operation): array
     {
+        $projection = app(DirectOperation::class)->projection($operation);
+
         return ['id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
-            'input' => app(DirectOperation::class)->projection($operation)->input($operation),
+            'input' => $projection->input($operation),
             'status' => $operation->status->value, 'result' => $operation->result, 'cancel_requested' => $operation->cancel_requested_at !== null];
     }
 

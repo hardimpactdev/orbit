@@ -17,6 +17,7 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 
 beforeEach(function (): void {
     Exceptions::fake();
+    Http::preventStrayRequests();
     $this->capturedLogs = [];
     Log::listen(function (MessageLogged $event): void {
         $this->capturedLogs[] = [$event->message, $event->context];
@@ -52,12 +53,12 @@ it('mints a fresh one-repository read token without activity or operations', fun
     $wire['data']['project_id'] = $this->project->id;
     $wire['data']['expires_at'] = $this->tokenReply['expires_at'];
     $this->tokenReply['token'] = $wire['data']['token'];
-    Http::fake(['*/repos/nckrtl/website/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->tokenReply, 201)]);
+    Http::fake(['*/repos/nckrtl/website/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->tokenReply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($this->tokenReply['repositories']), 'repositories' => $this->tokenReply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     foreach ([1, 2] as $_) {
         $this->call('POST', $this->tokenUrl, [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertOk()->assertHeader('Cache-Control', 'no-store, private')
             ->assertExactJson($wire);
     }
-    Http::assertSentCount(4);
+    Http::assertSentCount(6);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/app/installations/7/access_tokens'
         && $request->data() === ['repositories' => ['website'], 'permissions' => ['contents' => 'read', 'pull_requests' => 'read']]);
     expect(Activity::query()->count())->toBe($activities)->and(Operation::query()->count())->toBe($operations);
@@ -126,7 +127,7 @@ it('refuses unsafe returned scope or lifetime', function (string $mutation): voi
         'long' => $reply['expires_at'] = now()->addHours(2)->format('Y-m-d\TH:i:s\Z'),
         'missing' => $reply['token'] = '',
     };
-    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($reply, 201)]);
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($reply, 201), '*/installation/repositories*' => Http::response(['total_count' => count($reply['repositories']), 'repositories' => $reply['repositories']]), '*/installation/token' => Http::response(null, 204)]);
     $this->call('POST', $this->tokenUrl, [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertServiceUnavailable()->assertJsonPath('error.code', 'dependency_token.unavailable')->assertDontSee('ephemeral-sentinel');
 })->with(['write', 'extra', 'repository', 'multiple', 'expired', 'long', 'missing']);
 

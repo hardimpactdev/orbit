@@ -35,23 +35,15 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
         $plan = $input['vite_plan'] ?? null;
         if (is_array($plan)) {
             $add('vite-suspend', 'vite.set-traffic', ValidatedData::object($plan['suspend']));
-            if ($verb === 'restart') {
-                $add('vite-stop', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop']);
-            }
             $add('vite-environment', 'vite.set-traffic', ValidatedData::object($plan['environment']));
-            if ($input['desired'] === 'running' || in_array($verb, ['start', 'restart'], true)) {
+            if ($input['desired'] === 'running') {
                 for ($check = 0; $check < 60; $check++) {
                     $add('vite-ready-'.$check, 'vite.check-listener', ValidatedData::object($plan['listener']), required: false);
                 }
                 $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
             }
-            if ($verb === 'start') {
-                $add('vite-awake', 'vite.set-traffic', ValidatedData::object($plan['awake']));
-            }
         }
-        if (in_array($verb, ['start', 'restart'], true)) {
-            $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], $verb !== 'restart');
-        } elseif (in_array($verb, ['create', 'update'], true)) {
+        if ($verb === 'update') {
             if (isset($input['retired_runtime'])) {
                 $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);
             }
@@ -141,7 +133,7 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
     {
         $verb = substr($operation->kind, strlen('process.'));
         $key = match ($verb) {
-            'create', 'update' => $operation->input['runtime'] === 'docker' ? 'process-converge-container' : 'process-activate-unit',
+            'update' => $operation->input['runtime'] === 'docker' ? 'process-converge-container' : 'process-activate-unit',
             default => 'process-'.$verb,
         };
         $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);

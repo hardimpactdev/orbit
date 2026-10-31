@@ -8,7 +8,6 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,7 +15,6 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Adds or updates a SQL login and replaces its grants. Replication users get reader grants.
@@ -26,7 +24,6 @@ use Illuminate\Support\Facades\DB;
 final readonly class CreateDatabaseUserAction
 {
     public function __construct(
-        private DatabaseServerAdmin $admin,
         private MysqlStatements $statements,
         private RecordDatabaseOperationAction $operations,
     ) {}
@@ -58,10 +55,6 @@ final readonly class CreateDatabaseUserAction
             );
         }
 
-        if ($data->replication && $this->admin->execute($server, "SHOW wal_level;\n") !== ['logical']) {
-            throw new ResourceOperationException('database.wal_level_not_logical', 'Replication users require wal_level=logical on the PostgreSQL server.', 422);
-        }
-
         $ownsConnection = DatabaseConnection::query()
             ->where('database_server_id', $server->id)
             ->where('username', $data->username)
@@ -75,25 +68,20 @@ final readonly class CreateDatabaseUserAction
             );
         }
 
-        if ($server->driver === DatabaseDriver::Pgsql
-            && ! DatabaseUser::query()->where('database_connection_id', $connection->id)->where('username', $data->username)->exists()
-            && $this->admin->execute($server, $this->statements->forDriver($server->driver)->userNamed($data->username)) !== []) {
-            throw new ResourceOperationException('database.name_conflict', 'That PostgreSQL role already exists outside this connection.', 409);
-        }
+        $knownUser = DatabaseUser::query()->where('database_connection_id', $connection->id)->where('username', $data->username)->exists();
         $statements = $this->statements->forDriver($server->driver);
         $readOnly = $data->readOnly || $data->replication;
         $ensureUser = $statements instanceof PostgresStatements
-            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication)
+            ? $statements->ensureUser($data->username, $data->password, replication: $data->replication, knownUser: $knownUser)
             : $statements->ensureUser($data->username, $data->password);
 
-        return DB::transaction(function () use ($connection, $data, $createdBy, $statements, $readOnly, $server, $ensureUser): Operation {
-            return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
-                ['connection_id' => $connection->id, 'driver' => $server->driver->value],
-                ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
-                    'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
-                    'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
-                    'created_by' => $createdBy,
-                ]]);
-        });
+        return $this->operations->execute('database_user.create', 'database_server', $server->id, $server->node_id,
+            ['connection_id' => $connection->id, 'driver' => $server->driver->value, 'username' => $data->username,
+                'replication' => $data->replication, 'known_user' => $knownUser],
+            ['database-apply' => DatabaseCommands::sql($server, $ensureUser.$statements->replaceGrant($connection->database, $data->username, $readOnly, $connection->username), redactions: [$data->password])], ['upsert_user' => [
+                'database_connection_id' => $connection->id, 'username' => $data->username, 'password' => $data->password,
+                'privileges' => $statements->privilegeText($connection->database, $readOnly), 'replication' => $data->replication,
+                'created_by' => $createdBy,
+            ]]);
     }
 }

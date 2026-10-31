@@ -5,13 +5,21 @@ declare(strict_types=1);
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'executor-safety', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
@@ -61,37 +69,23 @@ it('runs executor-host mutations synchronously with the original HTTP responses'
         'create' => 2, default => 1
     });
     $this->assertDatabaseCount('operations', 0);
-})->with(['services', 'worker'])->with(['create', 'update', 'start', 'restart']);
+})->with(['services', 'worker'])->with(['update', 'start', 'restart']);
 
-it('creates and reuses a Services deploy helper without admitting an Operation', function (): void {
-    config(['dependency_detection.services_node_id' => $this->node->id]);
+it('creates and replays one direct intent on an executor Node without Gateway convergence', function (string $peer): void {
+    config($peer === 'services'
+        ? ['dependency_detection.services_node_id' => $this->node->id]
+        : ['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withHeader('Idempotency-Key', 'services-helper');
-    $this->runtime->shouldReceive('converge')->twice();
-    $this->runtime->shouldReceive('status')->andReturn('active');
+    $this->runtime->shouldNotReceive('converge');
     $payload = ['target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'deploy-helper',
         'runtime' => 'systemd', 'command' => ['/bin/sleep', '300'], 'start' => true];
 
-    $id = $this->postJson('/api/v1/processes', $payload)->assertCreated()->json('data.id');
-    $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.id', $id);
+    $id = $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create')->json('data.id');
+    $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.id', $id);
 
-    $this->assertDatabaseHas('processes', ['id' => $id]);
-    $this->assertDatabaseCount('operations', 0);
-});
-
-it('fences an unconverted start if its Node becomes an executor before dispatch', function (): void {
-    app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
-    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'start');
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.start', 'worker' => 'safety-worker'])->assertOk();
-
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', [
-        'worker' => 'safety-worker', 'key' => 'process-start', 'transport' => 'agent', 'name' => 'process.control',
-        'input' => ['process_id' => $this->process->id, 'runtime' => 'systemd', 'name' => $operation->input['name'], 'on_demand' => false, 'operation' => 'start'],
-    ])->assertConflict()->assertJsonPath('error.code', 'process.executor_dependency');
-
-    expect($this->process->refresh()->desired_state->value)->toBe('running');
-    expect($operation->refresh()->state['executor_runs']['process-start']['started'] ?? false)->toBeFalse();
-});
+    $this->assertDatabaseHas('processes', ['name' => 'deploy-helper', 'status' => 'provisioning']);
+    $this->assertDatabaseCount('operations', 1);
+})->with(['services', 'worker']);
 
 it('also protects Instance-owned executor dependencies at child input admission', function (): void {
     $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);

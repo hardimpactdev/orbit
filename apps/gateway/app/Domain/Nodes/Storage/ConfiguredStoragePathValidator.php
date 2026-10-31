@@ -40,6 +40,32 @@ final readonly class ConfiguredStoragePathValidator
         }
     }
 
+    /** @return array{root:?string,user:string,create_missing:bool,protected_roots:list<string>,managed_checkouts:list<string>} */
+    public function directIntent(?NodeSettingsData $settings, Node $node, bool $create): array
+    {
+        $this->validateGrammar($settings);
+        $root = $settings?->appsPath();
+        $protected = $this->catalog->roots();
+        $checkouts = array_map(static fn (StoragePath $path): string => $path->value, $this->managedCheckouts($node));
+        if ($root !== null) {
+            $path = StoragePath::parse($root);
+            foreach ($protected as $excluded) {
+                if ($path->overlaps(StoragePath::parse($excluded))) {
+                    throw new ResourceOperationException('node.settings_path_protected', 'The apps storage path is protected.');
+                }
+            }
+            foreach ($checkouts as $checkout) {
+                $managed = StoragePath::parse($checkout);
+                if ($path->equals($managed) || $path->isInside($managed)) {
+                    throw new ResourceOperationException('node.settings_path_managed', 'The apps storage path overlaps a managed checkout.');
+                }
+            }
+        }
+
+        return ['root' => $root, 'user' => $node->user, 'create_missing' => $create,
+            'protected_roots' => $protected, 'managed_checkouts' => $checkouts];
+    }
+
     public function validateEffective(
         ?NodeSettingsData $settings,
         Node $node,

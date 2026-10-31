@@ -27,6 +27,7 @@ Route::middleware([
     RequireNodeAccess::class,
 ])->group(function (): void {
     Route::post('github/app/install', [GitHubAppController::class, 'install'])->name('github:app:install');
+    Route::post('github/app/sync', [GitHubAppController::class, 'sync'])->name('github:app:sync');
     Route::get('github/app', [GitHubAppController::class, 'show'])->name('github:app:show');
     Route::delete('github/app', [GitHubAppController::class, 'destroy'])->name('github:app:destroy');
 });
