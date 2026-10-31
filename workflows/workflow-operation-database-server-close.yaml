@@ -1,0 +1,45 @@
+id: a316a21c-564c-4f25-bc20-713f6f987d20
+name: operation-database-server-close
+description: Close default anonymous access on the admitted Valkey server.
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [database_server.close] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: server
+    steps:
+      - name: apply
+        dataOutputOverrides:
+          - specName: outcome
+            vary: [run_id]
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-server-close"
+          behaviorName: '${{ "database-server-close-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: project
+        dependsOn:
+          - step: apply
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-server-close"
+          behaviorName: '${{ "database-server-close-" + string(inputs.node_id) }}'
+          methodName: project
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            outcome: "${{ steps.apply.outputs.outcome }}"

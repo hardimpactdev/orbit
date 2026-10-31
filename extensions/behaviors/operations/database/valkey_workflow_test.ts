@@ -18,8 +18,6 @@ async function execute(scenario: Scenario, lostReply = false) {
   const f = new Fixture();
   f.operation.kind = scenario.action === "remove"
     ? "database.destroy"
-    : scenario.action === "close"
-    ? "database_server.close"
     : "database.create";
   f.descriptors[0] = {
     ...f.descriptors[0],
@@ -151,16 +149,6 @@ Deno.test({
       "+@list",
     ]);
     assertEquals(finished!.status, "failed");
-  },
-});
-Deno.test({
-  name:
-    "Valkey close refuses other default clients before an authentication change",
-  ignore: !gateway,
-  fn: async () => {
-    const { calls, finished } = await execute({ action: "close", payload: {} });
-    assertFalse(calls.some((call) => call[0] === "ACL"));
-    assertEquals(finished!.error_code, "database.server_in_use");
   },
 });
 Deno.test({

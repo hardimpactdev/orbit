@@ -22,3 +22,11 @@ Coverage includes final ACL denials, save-failure compensation, fixed refusal
 codes, preserving `default`, client refusal before close, removing stale users,
 changing only differing users, and recovering a lost reply without repeating the
 effect. `tests/valkey-primitive.py` is a test adapter, not a deployed behavior.
+
+`operation-database-server-close` uses bounded native RESP on the exact admitted
+Node and reads only the shared declared admin password. The apply step saves a
+safe outcome before record projection. Native tests use the shared harness and
+scan scratch native history for private sentinels. The opt-in
+`DATABASE_VALKEY_EFFECT_CANARY=1` test uses a disposable loopback-only Valkey
+container, proves anonymous refusal and repeat closure, and removes its fixture.
+It does not prove live worker readiness.

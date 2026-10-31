@@ -18,7 +18,18 @@ jobs:
           methodName: discover
           inputs:
             family: operation-database
-            kinds: ["database_server.create", "database_server.destroy", "database_server.close", "database.create", "database.destroy", "database.write", "database.clone", "database.destroy_owned", "database.sqlite_export", "database.sqlite_seed", "database.sqlite_seed_abandon"]
+            kinds: [
+              "database_server.create",
+              "database_server.destroy",
+              "database.create",
+              "database.destroy",
+              "database.write",
+              "database.clone",
+              "database.destroy_owned",
+              "database.sqlite_export",
+              "database.sqlite_seed",
+              "database.sqlite_seed_abandon",
+            ]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
@@ -29,9 +40,9 @@ jobs:
           in: "${{ has(steps.discover.outputs) ? steps.discover.outputs.work : [] }}"
         task:
           type: behavior
-          behaviorType: '@nckrtl/operation-database'
+          behaviorType: "@nckrtl/operation-database"
           behaviorName: '${{ "operation-database-slot-" + string(self.work.slot) }}'
           methodName: execute
           inputs:
-            kind: '${{ self.work.kind }}'
-            worker: '${{ self.work.worker }}'
+            kind: "${{ self.work.kind }}"
+            worker: "${{ self.work.worker }}"
