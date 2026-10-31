@@ -11,3 +11,5 @@ Forward reads refuse cancellation. Restoration explicitly uses `recovery: true`,
 The Gateway records the configured Node user. PHP and certificate programs resolve the actual local account before writes. Account homes, groups and private keys never come from a caller or a guessed path.
 
 Fixed Caddy, PHP, firewall and certificate programs use `routes/local-program.ts::runLocalProgram(program, input, signal?)`. DNS uses `routes/dns.ts::runPrivateDns(input)`. Endpoint probes use `routes/verification.ts::verifyLocal(input)`. These helpers use the shared Node command transport, which selects the placed worker's local process or its pinned SSH proxy. Private JSON stays on stdin on both paths. A program already started completes its bounded transaction; cancellation is checked before the next effect.
+
+Workload file access and package downloads use the same selected Node runner. A proxy worker stages and verifies downloads on its logical Node. The shared PHP runner keeps private input on stdin and uses the program's existing effect and rollback deadlines. A disconnected proxy leaves the outcome uncertain; it does not prove a rollback.

@@ -1,4 +1,4 @@
-import { localCommand } from "../_lib/local-worker.ts";
+import { nodePhpRunner } from "./local.ts";
 import { z } from "npm:zod@4.4.3";
 import { productionRuntimeProgram } from "./runtime_program.ts";
 
@@ -21,22 +21,20 @@ const Configuration = z.object({
   unit: Text,
   initial_pool: Text,
 }).strict();
-export const ProductionRuntimeInputSchema = Identity.extend({
+const ConvergeInput = Identity.extend({
   mode: z.enum(["converge", "monitor"]),
   home: Path,
   configuration: Configuration,
   application: Path,
   initial_application: Path,
 }).strict();
-export const ProductionCacheInputSchema = Identity.extend({
+const RefreshInput = Identity.extend({
   home: Path,
   deadline_seconds: z.number().int().min(1).max(30),
 }).strict();
-export type ProductionRuntimeInput = z.infer<
-  typeof ProductionRuntimeInputSchema
->;
+export type ProductionRuntimeInput = z.infer<typeof ConvergeInput>;
 export type ProductionRuntimeIdentity = z.infer<typeof Identity>;
-export type ProductionCacheInput = z.infer<typeof ProductionCacheInputSchema>;
+export type ProductionCacheInput = z.infer<typeof RefreshInput>;
 export type LocalPhpRuntimeCommand = {
   executable: "sudo";
   args: string[];
@@ -52,27 +50,7 @@ export class PhpRuntimeError extends Error {
     this.name = "PhpRuntimeError";
   }
 }
-const local: LocalPhpRuntimeRunner = async (command, signal) => {
-  const child = localCommand(command.executable, {
-    args: command.args,
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-    signal,
-  }).spawn();
-  const writer = child.stdin.getWriter();
-  try {
-    await writer.write(new TextEncoder().encode(command.stdin));
-    await writer.close();
-    const result = await child.output();
-    return {
-      code: result.code,
-      stdout: new TextDecoder().decode(result.stdout),
-    };
-  } finally {
-    writer.releaseLock();
-  }
-};
+const local: LocalPhpRuntimeRunner = nodePhpRunner();
 async function run<T>(
   action: "converge" | "inspect" | "remove" | "refresh",
   input: Record<string, unknown>,
@@ -83,7 +61,7 @@ async function run<T>(
   try {
     const output = await runner({
       executable: "sudo",
-      args: ["-n", "--", "python3", "-c", productionRuntimeProgram],
+      args: ["-n", "--", "python3", "-I", "-c", productionRuntimeProgram],
       stdin: JSON.stringify({ action, input }),
     }, signal);
     if (output.code !== 0 || output.stdout.length > 2097152) {
@@ -107,7 +85,7 @@ export function convergeProductionRuntime(
 ): Promise<{ published: boolean }> {
   return run(
     "converge",
-    ProductionRuntimeInputSchema.parse(input),
+    ConvergeInput.parse(input),
     z.object({
       published: z.boolean(),
     }).strict(),
@@ -156,7 +134,7 @@ export function refreshProductionCache(
 ): Promise<{ complete: true }> {
   return run(
     "refresh",
-    ProductionCacheInputSchema.parse(input),
+    RefreshInput.parse(input),
     z.object({
       complete: z.literal(true),
     }).strict(),

@@ -258,7 +258,7 @@ export function convergence(
   }
   return {
     type: "@nckrtl/route-convergence",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       analyticsRequests: {

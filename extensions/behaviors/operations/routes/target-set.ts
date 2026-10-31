@@ -275,7 +275,7 @@ export function targetSet(
   });
   return {
     type: "@nckrtl/route-target-set",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       admission: {

@@ -1,4 +1,7 @@
-import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
+import {
+  type NodeCommand,
+  run as runNodeCommand,
+} from "../_lib/node-commands.ts";
 import { z } from "npm:zod@4.4.3";
 import { installPhpBuild, PhpBuildInput } from "../php/build_local.ts";
 import {
@@ -49,59 +52,73 @@ export interface RouteLocalHost {
 }
 const encoder = new TextEncoder();
 
+// Download and checksum on the logical Node. Only the temporary filename returns.
+const downloadProgram = String
+  .raw`import hashlib, json, os, signal, sys, tempfile, time, urllib.request
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs): raise ValueError()
+def interrupted(*args): raise InterruptedError()
+signal.signal(signal.SIGTERM, interrupted)
+path = None
+complete = False
+try:
+    args = json.load(sys.stdin)
+    opener = urllib.request.build_opener(NoRedirect)
+    deadline = time.monotonic() + 120
+    with opener.open(args['url'], timeout=120) as response:
+        if not 200 <= response.status < 300: raise ValueError()
+        if int(response.headers.get('Content-Length', '0')) > 268435456: raise ValueError()
+        fd, path = tempfile.mkstemp(prefix='orbit-route-php-', suffix='.deb', dir='/tmp')
+        digest = hashlib.sha256()
+        count = 0
+        with os.fdopen(fd, 'wb') as output:
+            while True:
+                if time.monotonic() >= deadline: raise TimeoutError()
+                chunk = response.read(1048576)
+                if not chunk: break
+                count += len(chunk)
+                if count > 268435456: raise ValueError()
+                digest.update(chunk)
+                output.write(chunk)
+        if digest.hexdigest() != args['sha256']: raise ValueError()
+    print(path)
+    complete = True
+except BaseException:
+    sys.exit(1)
+finally:
+    if path and not complete:
+        try: os.unlink(path)
+        except FileNotFoundError: pass
+`;
+
 /** Standard local programs only. Private stdin and stderr never become native output. */
-export function localRouteHost(invoke?: RouteLocalHost["run"]): RouteLocalHost {
+export function localRouteHost(
+  invoke?: RouteLocalHost["run"],
+  command: NodeCommand = runNodeCommand,
+): RouteLocalHost {
   const run = invoke ?? runDefault;
   async function runDefault(
     binary: string,
     args: string[],
     options: LocalOptions = {},
   ): Promise<LocalReply> {
-    const child = localCommand("/usr/bin/sudo", {
-      args: [
-        "-n",
-        ...(options.user ? ["-u", User.parse(options.user)] : []),
-        "--",
-        binary,
-        ...args,
-      ],
-      stdin: options.input === undefined ? "null" : "piped",
-      stdout: "piped",
-      stderr: "null",
-      signal: AbortSignal.timeout(options.timeoutMs ?? 120000),
-    }).spawn();
     try {
-      if (options.input !== undefined) {
-        const writer = child.stdin.getWriter();
-        await writer.write(encoder.encode(options.input));
-        await writer.close();
-      }
-      let size = 0;
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of child.stdout) {
-        size += chunk.length;
-        if (size > 16 * 1024 * 1024) {
-          throw new Error("route.local_output_exceeded");
-        }
-        chunks.push(chunk);
-      }
-      const status = await child.status;
-      const bytes = new Uint8Array(size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        bytes.set(chunk, offset);
-        offset += chunk.length;
-      }
+      const output = await command(
+        [binary, ...args],
+        options.input === undefined ? undefined : encoder.encode(options.input),
+        options.user ? User.parse(options.user) : "root",
+        {
+          deadlineMs: options.timeoutMs ?? 120000,
+          maxOutputBytes: 16 * 1024 * 1024,
+        },
+      );
+      if (output.stdout.byteLength > 16 * 1024 * 1024) throw new Error();
       return {
-        success: status.success,
-        code: status.code,
-        stdout: new TextDecoder().decode(bytes),
+        success: output.success,
+        code: output.code,
+        stdout: new TextDecoder().decode(output.stdout),
       };
     } catch {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* The process already exited. */ }
-      await child.status.catch(() => {});
       throw new Error("route.local_command_failed");
     }
   }
@@ -186,40 +203,23 @@ export function localRouteHost(invoke?: RouteLocalHost["run"]): RouteLocalHost {
         throw new Error("php.build_input_invalid");
       }
       z.string().regex(/^[a-f0-9]{64}$/).parse(sha256);
-      const response = await fetch(parsed, {
-        redirect: "error",
-        signal: AbortSignal.timeout(120000),
-      });
-      if (!response.ok || !response.body) {
-        throw new Error("php.build_download_failed");
-      }
-      const file = await localFilesystem().makeTempFile({
-        prefix: "orbit-route-php-",
-        suffix: ".deb",
-      });
       try {
-        const output = await localFilesystem().open(file, { write: true });
-        let count = 0;
-        try {
-          for await (const chunk of response.body) {
-            count += chunk.length;
-            if (count > 268435456) throw new Error("php.build_download_failed");
-            await output.write(chunk);
-          }
-        } finally {
-          output.close();
+        const result = await run("/usr/bin/python3", [
+          "-I",
+          "-c",
+          downloadProgram,
+        ], {
+          input: JSON.stringify({ url: parsed, sha256 }),
+          timeoutMs: 120000,
+        });
+        if (!result.success) throw new Error();
+        const file = result.stdout.trim();
+        if (!/^\/tmp\/orbit-route-php-[A-Za-z0-9_-]+\.deb$/.test(file)) {
+          throw new Error();
         }
-        const digest = Array.from(
-          new Uint8Array(
-            await crypto.subtle.digest("SHA-256", await Deno.readFile(file)),
-          ),
-          (b) => b.toString(16).padStart(2, "0"),
-        ).join("");
-        if (digest !== sha256) throw new Error("php.build_download_failed");
         return file;
-      } catch (error) {
-        await localFilesystem().remove(file).catch(() => {});
-        throw error;
+      } catch {
+        throw new Error("php.build_download_failed");
       }
     },
   };

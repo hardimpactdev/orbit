@@ -3,6 +3,8 @@ import {
   convergeProductionRuntime,
   inspectProductionPool,
   PhpRuntimeError,
+  refreshProductionCache,
+  removeProductionRuntime,
 } from "./runtime_local.ts";
 import { productionRuntimeProgram } from "./runtime_program.ts";
 
@@ -141,4 +143,99 @@ Deno.test("PHP local wrapper keeps private configuration on stdin and exposes on
     PhpRuntimeError,
     "php.runtime_invalid",
   );
+});
+
+Deno.test("all production PHP lowers use canonical placed argv and private stdin", async () => {
+  const { nodePhpRunner } = await import("./local.ts");
+  const { commandLaunch } = await import("../_lib/node-commands.ts");
+  const { proxyAddress } = await import("../_lib/node-proxy-config.ts");
+  const identity = {
+    user: "orbit-app-9",
+    version: "8.5",
+    marker: "instance:9",
+  };
+  for (const node of [1, 18] as const) {
+    const actions: string[] = [];
+    const command: import("../_lib/node-commands.ts").NodeCommand = (
+      argv,
+      stdin,
+      user,
+      options,
+    ) => {
+      assertEquals(argv, [
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        productionRuntimeProgram,
+      ]);
+      assertEquals(user, "root");
+      assertEquals(options?.deadlineMs, 1020000);
+      assertEquals(options?.maxOutputBytes, 2097152);
+      const input = JSON.parse(new TextDecoder().decode(stdin));
+      actions.push(input.action);
+      assertEquals(input.input.marker, identity.marker);
+      const launch = commandLaunch(argv, user, {
+        node_id: node,
+        host: proxyAddress(node),
+        user: "orbit",
+      }, options?.deadlineMs);
+      assertEquals(launch.args.includes("orbit@" + proxyAddress(node)), true);
+      assertEquals(
+        JSON.stringify(launch).includes("private-configuration"),
+        false,
+      );
+      assertEquals(JSON.stringify(launch).includes(identity.marker), false);
+      const result = input.action === "inspect"
+        ? { pool: "pool", fingerprint: "a".repeat(64) }
+        : input.action === "converge"
+        ? { published: true }
+        : input.action === "remove"
+        ? { removed: true }
+        : { complete: true };
+      return Promise.resolve({
+        success: true,
+        code: 0,
+        stdout: new TextEncoder().encode(JSON.stringify(result)),
+      });
+    };
+    const runner = nodePhpRunner(command);
+    assertEquals(await inspectProductionPool(identity, undefined, runner), {
+      pool: "pool",
+      fingerprint: "a".repeat(64),
+    });
+    assertEquals(
+      await convergeProductionRuntime(
+        {
+          ...identity,
+          mode: "monitor",
+          home: "/home/orbit-app-9",
+          application: "/home/orbit-app-9/current",
+          initial_application: "/home/orbit-app-9/releases/initial",
+          configuration: {
+            main: "private-configuration",
+            pool: "pool",
+            initial_pool: "pool",
+            local_defaults: "",
+            master_ini: "",
+            unit: "unit",
+          },
+        },
+        undefined,
+        runner,
+      ),
+      { published: true },
+    );
+    assertEquals(await removeProductionRuntime(identity, undefined, runner), {
+      removed: true,
+    });
+    assertEquals(
+      await refreshProductionCache(
+        { ...identity, home: "/home/orbit-app-9", deadline_seconds: 30 },
+        undefined,
+        runner,
+      ),
+      { complete: true },
+    );
+    assertEquals(actions, ["inspect", "converge", "remove", "refresh"]);
+  }
 });

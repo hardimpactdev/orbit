@@ -80,7 +80,7 @@ export function removal(
   }
   return {
     type: "@nckrtl/route-removal",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       inventory: {

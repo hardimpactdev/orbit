@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
+  localRouteHost,
   type LocalStat,
   replaceCachedUrl,
   type RouteLocalHost,
@@ -262,4 +263,172 @@ Deno.test("source-access failure restores ACL snapshots through stdin without an
     "# saved ACL\n",
   );
   assert(f.calls.every((call) => !call.binary.includes("orbit-agent")));
+});
+
+Deno.test("workload default runner keeps private stdin and users on each logical proxy", async () => {
+  const { commandLaunch } = await import("../_lib/node-commands.ts");
+  const { proxyAddress } = await import("../_lib/node-proxy-config.ts");
+  for (const node of [1, 18] as const) {
+    const command: import("../_lib/node-commands.ts").NodeCommand = (
+      argv,
+      stdin,
+      user,
+      options,
+    ) => {
+      assertEquals(argv, ["/usr/bin/php", "-r", "fixed code"]);
+      assertEquals(user, "orbit");
+      assertEquals(new TextDecoder().decode(stdin), "private-stdin");
+      assertEquals(options, { deadlineMs: 45000, maxOutputBytes: 16777216 });
+      const launch = commandLaunch(argv, user, {
+        node_id: node,
+        host: proxyAddress(node),
+        user: "orbit",
+      }, options?.deadlineMs);
+      assert(launch.args.includes("orbit@" + proxyAddress(node)));
+      assert(!JSON.stringify(launch).includes("private-stdin"));
+      return Promise.resolve({
+        success: true,
+        code: 0,
+        stdout: new TextEncoder().encode("ready"),
+      });
+    };
+    assertEquals(
+      await localRouteHost(undefined, command).run("/usr/bin/php", [
+        "-r",
+        "fixed code",
+      ], {
+        user: "orbit",
+        input: "private-stdin",
+        timeoutMs: 45000,
+      }),
+      { success: true, code: 0, stdout: "ready" },
+    );
+  }
+});
+
+Deno.test("workload helpers and downloads use the injected placed runner", async () => {
+  const calls: { binary: string; args: string[]; input?: string }[] = [];
+  const host = localRouteHost((binary, args, options) => {
+    calls.push({ binary, args, input: options?.input });
+    let stdout = "";
+    if (binary === "/usr/bin/stat") stdout = "regular file:1000:1000:600";
+    if (binary === "/usr/bin/cat") stdout = "old private file";
+    if (binary === "/usr/bin/readlink") stdout = "/home/orbit/.env\n";
+    if (binary === "/usr/bin/python3") {
+      assertEquals(JSON.parse(options!.input!), {
+        url: "https://example.test/pkg.deb",
+        sha256: "a".repeat(64),
+      });
+      assertEquals(options?.timeoutMs, 120000);
+      stdout = "/tmp/orbit-route-php-pinned.deb\n";
+    }
+    return Promise.resolve({ success: true, code: 0, stdout });
+  });
+  assertEquals((await host.stat("/home/orbit/.env"))?.uid, 1000);
+  assertEquals(await host.read("/home/orbit/.env"), "old private file");
+  assertEquals(await host.realPath("/home/orbit/.env"), "/home/orbit/.env");
+  await host.write("/home/orbit/.env", "private-new", "orbit", 0o600);
+  const install = calls.find((c) => c.binary === "/usr/bin/install")!;
+  assertEquals(install.input, "private-new");
+  assert(install.args.includes("/dev/stdin"));
+  assert(!JSON.stringify(calls.map((c) => c.args)).includes("private-new"));
+  assertEquals(
+    await host.download("https://example.test/pkg.deb", "a".repeat(64)),
+    "/tmp/orbit-route-php-pinned.deb",
+  );
+});
+
+Deno.test("workload transport bounds failures and hides private output", async () => {
+  for (
+    const command of [
+      (() => {
+        throw new Error("private-transport-detail");
+      }) as import("../_lib/node-commands.ts").NodeCommand,
+      (() =>
+        Promise.resolve({
+          success: true,
+          code: 0,
+          stdout: new Uint8Array(16777217),
+        })) as import("../_lib/node-commands.ts").NodeCommand,
+    ]
+  ) {
+    const error = await assertRejects(
+      () => localRouteHost(undefined, command).run("/usr/bin/true", []),
+      Error,
+      "route.local_command_failed",
+    );
+    assert(!error.message.includes("private-transport-detail"));
+  }
+  for (
+    const stdout of [
+      "private-output",
+      "/tmp/foreign.deb",
+      "/tmp/orbit-route-php-good.deb\nextra",
+    ]
+  ) {
+    await assertRejects(
+      () =>
+        localRouteHost(() =>
+          Promise.resolve({ success: true, code: 0, stdout })
+        ).download("https://example.test/pkg.deb", "a".repeat(64)),
+      Error,
+      "php.build_download_failed",
+    );
+  }
+});
+
+Deno.test("placed download program verifies bytes and cleans checksum failures", async () => {
+  let program = "";
+  await localRouteHost((_binary, args) => {
+    program = args[2];
+    return Promise.resolve({
+      success: true,
+      code: 0,
+      stdout: "/tmp/orbit-route-php-fixture.deb",
+    });
+  }).download("https://example.test/pkg.deb", "a".repeat(64));
+  const fixture = String
+    .raw`import hashlib, io, json, os, pathlib, subprocess, sys, tempfile, urllib.request
+program = json.load(sys.stdin)
+with tempfile.TemporaryDirectory() as directory:
+    prefix = """import io, tempfile, urllib.request
+original = tempfile.mkstemp
+tempfile.mkstemp = lambda **kw: original(**dict(kw, dir=DIRECTORY))
+class Response(io.BytesIO):
+    status = 200
+    headers = {}
+class Opener:
+    def open(self, url, timeout):
+        assert url == 'https://example.test/pkg.deb' and timeout == 120
+        return Response(b'pinned bytes')
+def opener(handler):
+    try: handler.redirect_request(None, None, None, None, None, None)
+    except ValueError: pass
+    else: raise AssertionError('redirect allowed')
+    return Opener()
+urllib.request.build_opener = opener
+""".replace('DIRECTORY', repr(directory))
+    for digest, success in ((hashlib.sha256(b'pinned bytes').hexdigest(), True), ('a'*64, False)):
+        result = subprocess.run([sys.executable, '-I', '-c', prefix + program], input=json.dumps({'url': 'https://example.test/pkg.deb', 'sha256': digest}), text=True, capture_output=True)
+        assert (result.returncode == 0) == success and not result.stderr
+        if success:
+            path = pathlib.Path(result.stdout.strip())
+            assert path.parent == pathlib.Path(directory) and path.read_bytes() == b'pinned bytes'
+            assert path.stat().st_mode & 0o777 == 0o600
+            path.unlink()
+        else: assert not result.stdout
+        assert not list(pathlib.Path(directory).iterdir())
+`;
+  const child = new Deno.Command("python3", {
+    args: ["-I", "-c", fixture],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  const writer = child.stdin.getWriter();
+  await writer.write(new TextEncoder().encode(JSON.stringify(program)));
+  await writer.close();
+  const result = await child.output();
+  assertEquals(new TextDecoder().decode(result.stderr), "");
+  assertEquals(result.code, 0);
 });

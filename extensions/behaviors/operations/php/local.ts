@@ -1,4 +1,7 @@
-import { localCommand } from "../_lib/local-worker.ts";
+import {
+  type NodeCommand,
+  run as runNodeCommand,
+} from "../_lib/node-commands.ts";
 import { z } from "npm:zod@4.4.3";
 
 export const PhpVersion = z.string().regex(/^[0-9]+\.[0-9]+$/);
@@ -31,36 +34,36 @@ export class PhpLocalError extends Error {
     this.name = "PhpLocalError";
   }
 }
-const local: LocalPhpRunner = async (command, signal) => {
-  signal?.throwIfAborted();
-  const child = localCommand(command.executable, {
-    args: command.args,
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-  }).spawn();
-  // Python catches TERM and restores files/packages before returning. Keep draining
-  // its bounded result during cancellation instead of abandoning cleanup.
-  const cancel = () => {
-    try {
-      child.kill("SIGTERM");
-    } catch { /* already exited */ }
-  };
-  signal?.addEventListener("abort", cancel, { once: true });
-  const writer = child.stdin.getWriter();
-  try {
-    await writer.write(new TextEncoder().encode(command.stdin));
-    await writer.close();
-    const output = await child.output();
+/** Canonical placed transport; a cancelled proxy command has an uncertain outcome. */
+export function nodePhpRunner(
+  command: NodeCommand = runNodeCommand,
+): LocalPhpRunner {
+  return async (input, signal) => {
+    signal?.throwIfAborted();
+    if (
+      input.executable !== "sudo" || input.args.length !== 6 ||
+      input.args.slice(0, 5).join("\0") !==
+        ["-n", "--", "python3", "-I", "-c"].join("\0")
+    ) {
+      throw new Error("php.local_command_invalid");
+    }
+    const output = await command(
+      ["/usr/bin/python3", "-I", "-c", input.args[5]],
+      new TextEncoder().encode(input.stdin),
+      "root",
+      // The program permits 880s for effects and another 120s for restoration.
+      { signal, deadlineMs: 1020000, maxOutputBytes: 2097152 },
+    );
+    if (output.stdout.byteLength > 2097152) {
+      throw new Error("php.local_output_exceeded");
+    }
     return {
       code: output.code,
       stdout: new TextDecoder().decode(output.stdout),
     };
-  } finally {
-    writer.releaseLock();
-    signal?.removeEventListener("abort", cancel);
-  }
-};
+  };
+}
+const local = nodePhpRunner();
 export async function runPhp<T>(
   input: unknown,
   program: string,
