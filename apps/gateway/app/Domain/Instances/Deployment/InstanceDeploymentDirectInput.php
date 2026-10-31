@@ -25,6 +25,9 @@ final readonly class InstanceDeploymentDirectInput
             throw $this->changed();
         }
         $admitted = ValidatedData::object($operation->input['deployment']);
+        if (($admitted['variant'] ?? null) !== 'development' || ($admitted['projection_route_id'] ?? null) !== null) {
+            throw $this->changed();
+        }
         $current = $this->intents->snapshot($instance);
         if (! OperationChildIntent::same($admitted, $current)) {
             throw $this->changed();
@@ -35,8 +38,22 @@ final readonly class InstanceDeploymentDirectInput
         }
         $this->guards->assert($operation, $instance);
 
-        return ['instance_id' => $instance->id, 'project_id' => $instance->project_id,
-            'deployment' => $admitted, 'commit' => InstanceDeploymentIntent::commit($operation),
+        return $this->admitted($operation);
+    }
+
+    /** Immutable native input also remains readable after terminal completion.
+     * @return array<string,mixed>
+     */
+    public function admitted(Operation $operation): array
+    {
+        $admitted = ValidatedData::object($operation->input['deployment']);
+        $pin = $operation->input['agent_sha256'] ?? null;
+        if (! is_string($pin) || preg_match('/\A[a-f0-9]{64}\z/D', $pin) !== 1) {
+            throw $this->changed();
+        }
+
+        return ['instance_id' => $operation->target_id, 'project_id' => ValidatedData::integer($admitted['project_id']),
+            'agent_sha256' => $pin, 'deployment' => $admitted, 'commit' => InstanceDeploymentIntent::commit($operation),
             'release_name' => InstanceDeploymentIntent::releaseName($operation),
             'timeout_seconds' => InstanceDeploymentBudget::seconds($operation)];
     }

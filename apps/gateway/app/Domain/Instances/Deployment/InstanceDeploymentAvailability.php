@@ -20,7 +20,7 @@ final class InstanceDeploymentAvailability
     {
         $definitions ??= OperationKinds::definitions();
         $required = ['instance.deploy', 'instance.rollback'];
-        foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime'] as $kind) {
+        foreach (['instance.deploy', 'instance.rollback', 'instance.prepare_vp_environment', 'instance.prepare_php_runtime', 'instance.repair_projection'] as $kind) {
             $definition = $definitions[$kind] ?? [];
             if (is_array($definition)) {
                 $children = $definition['children'] ?? [];
@@ -44,17 +44,18 @@ final class InstanceDeploymentAvailability
     /** @param array<string,mixed> $intent */
     public static function assertAvailable(array $intent): void
     {
+        if (($intent['variant'] ?? null) === 'development') {
+            return;
+        }
         if (! OperationKinds::supports('children')) {
             throw self::unavailable();
         }
         $required = [];
-        if (($intent['variant'] ?? null) !== 'development') {
-            if (($intent['runtime_synchronous'] ?? false) !== true) {
-                $required[] = 'process.restart_instance';
-            }
-            if (($intent['php'] ?? false) === true) {
-                $required[] = 'node.prepare_php_packages';
-            }
+        if (($intent['runtime_synchronous'] ?? false) !== true) {
+            $required[] = 'process.restart_instance';
+        }
+        if (($intent['php'] ?? false) === true) {
+            $required[] = 'node.prepare_php_packages';
         }
         if (($intent['variant'] ?? null) === 'production') {
             $required[] = 'instance.sync_environment';

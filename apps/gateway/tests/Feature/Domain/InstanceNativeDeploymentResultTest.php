@@ -8,7 +8,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 
-function native_deploy_result_fixture(bool $development = false): array
+function native_deploy_result_fixture(bool $development = true): array
 {
     $instance = $development ? dev935_instance() : deployment_api_fixture()[3];
     $operation = Operation::query()->create([
@@ -34,35 +34,13 @@ it('projects a native development checkout without inventing a production releas
         ->and($result->release)->toBeNull()->and($result->selectedRelease)->toBeNull();
 });
 
-it('derives a successful production selection path from admitted intent only', function (): void {
-    [$operation, $payload] = native_deploy_result_fixture();
-    $result = InstanceNativeDeploymentResult::from($operation, 'succeeded', null, $payload)->deployment();
-    expect($result->succeeded)->toBeTrue()->and($result->release?->name)->toBe($payload['release']['name'])
-        ->and($result->release?->path)->toBe($operation->input['deployment']['home'].'/releases/'.$payload['release']['name'])
-        ->and($result->selectedRelease)->toBe($result->release);
-});
-
-it('preserves the previous selection before activation and uncertainty after a lost reply', function (): void {
+it('records a failed development step and cancellation without a production release', function (): void {
     [$operation, $payload] = native_deploy_result_fixture();
     $payload['failed_step'] = 'before_activation';
-    $payload['selected_release'] = $payload['previous'];
-    $before = InstanceNativeDeploymentResult::from($operation, 'failed', 'deployment.step_failed', $payload)->deployment();
-    expect($before->succeeded)->toBeFalse()->and($before->selectedRelease?->name)->toBe('previous');
-    $payload['failed_step'] = 'activation';
-    $payload['selected_release'] = null;
-    $payload['selection_confirmed'] = false;
-    $unknown = InstanceNativeDeploymentResult::from($operation, 'failed', 'deployment.interrupted', $payload)->deployment();
-    expect($unknown->selectedRelease)->toBeNull()->and($unknown->release?->name)->toBe($payload['release']['name']);
-});
-
-it('retains a confirmed new selection after a later failure and records cancellation truthfully', function (): void {
-    [$operation, $payload] = native_deploy_result_fixture();
-    $payload['failed_step'] = 'php_refresh';
-    $failed = InstanceNativeDeploymentResult::from($operation, 'failed', 'deployment.php_runtime_unconfirmed', $payload)->deployment();
-    expect($failed->selectedRelease?->name)->toBe($payload['release']['name'])
-        ->and($failed->failure?->boundary->value)->toBe('cache_refresh');
+    $failed = InstanceNativeDeploymentResult::from($operation, 'failed', 'deployment.step_failed', $payload)->deployment();
+    expect($failed->succeeded)->toBeFalse()->and($failed->selectedRelease)->toBeNull();
     $cancelled = InstanceNativeDeploymentResult::from($operation, 'cancelled', null, $payload)->deployment();
-    expect($cancelled->succeeded)->toBeFalse()->and($cancelled->failure?->errorCode)->toBe('deployment.cancelled');
+    expect($cancelled->failure?->errorCode)->toBe('deployment.cancelled');
 });
 
 it('refuses forged native identity selection and terminal outcome shapes', function (string $change): void {
@@ -71,11 +49,10 @@ it('refuses forged native identity selection and terminal outcome shapes', funct
     $code = null;
     match ($change) {
         'instance' => $payload['instance_id']++,
-        'candidate' => $payload['release']['name'] = 'foreign',
-        'selected' => $payload['selected_release']['name'] = 'foreign',
+        'candidate' => $payload['release'] = ['name' => 'foreign', 'commit' => str_repeat('a', 40)],
+        'selected' => $payload['selected_release'] = ['name' => 'foreign', 'commit' => str_repeat('a', 40)],
         'unknown success' => $payload['selection_confirmed'] = false,
-        'supplied path' => $payload['release']['path'] = '/foreign',
-        'commit mismatch' => $payload['commit'] = str_repeat('c', 40),
+        'supplied path' => $payload['release'] = ['path' => '/foreign'],
         'commit type' => $payload['commit'] = 123,
         'unbounded warnings' => $payload['warnings'] = 65,
         'private extra' => $payload['program'] = 'private-program',
@@ -85,7 +62,7 @@ it('refuses forged native identity selection and terminal outcome shapes', funct
     };
     expect(fn () => InstanceNativeDeploymentResult::from($operation, $status, $code, $payload))
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
-})->with(['instance', 'candidate', 'selected', 'unknown success', 'supplied path', 'commit mismatch', 'commit type', 'unbounded warnings', 'private extra', 'error success', 'failure without code', 'nonterminal']);
+})->with(['instance', 'candidate', 'selected', 'unknown success', 'supplied path', 'commit type', 'unbounded warnings', 'private extra', 'error success', 'failure without code', 'nonterminal']);
 
 it('refuses a native commit that differs from an admitted pin', function (): void {
     [$operation, $payload] = native_deploy_result_fixture();

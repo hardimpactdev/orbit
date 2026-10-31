@@ -36,12 +36,6 @@ final readonly class InstanceEnvironmentSynchronizationSnapshot
         return $unowned;
     }
 
-    /** @return list<string> */
-    public function ownedKeys(): array
-    {
-        return $this->ownedKeys;
-    }
-
     public function keyCount(): int
     {
         return count($this->values);

@@ -17,7 +17,7 @@ beforeEach(function (): void {
         'kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $this->instance->node_id, 'status' => OperationStatus::Queued,
         'triggered_by' => 'operator',
-        'input' => ['instance_id' => $this->instance->id,
+        'input' => ['agent_sha256' => str_repeat('d', 64), 'instance_id' => $this->instance->id,
             'deployment' => app(InstanceDeploymentIntent::class)->snapshot($this->instance)],
     ]);
 });
@@ -56,3 +56,11 @@ it('accepts map key order without weakening ordered step bindings', function ():
     $this->operation->update(['input' => $input]);
     expect(app(InstanceDeploymentDirectInput::class)->input($this->operation)['deployment']['steps'][0]['name'])->toBe('install');
 });
+
+it('refuses a missing or malformed admitted agent pin before exposing executable input', function (?string $pin): void {
+    $input = $this->operation->input;
+    $input['agent_sha256'] = $pin;
+    $this->operation->update(['input' => $input]);
+    expect(fn () => app(InstanceDeploymentDirectInput::class)->input($this->operation))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.identity_changed'));
+})->with([null, 'not-a-delivery-digest']);

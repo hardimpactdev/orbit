@@ -78,14 +78,6 @@ final readonly class RunAutomaticDeploysAction
             return $this->failed($instance, $exception);
         }
 
-        if ($head !== $instance->seed_commit) {
-            $history = new AutomaticDeployHistory($instance);
-
-            return in_array($head, $history->blocked(), true)
-                ? new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::CommitFailed, $head)
-                : $this->deploy($instance, $head, $history);
-        }
-
         if ($instance->development_projection_pending && ! $this->holder($instance) instanceof Operation) {
             try {
                 $repair = $this->projections->execute($instance);
@@ -94,6 +86,14 @@ final readonly class RunAutomaticDeploysAction
             } catch (RuntimeConvergenceException|ResourceOperationException $exception) {
                 return $this->failed($instance, $exception, $head);
             }
+        }
+
+        if ($head !== $instance->seed_commit) {
+            $history = new AutomaticDeployHistory($instance);
+
+            return in_array($head, $history->blocked(), true)
+                ? new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::CommitFailed, $head)
+                : $this->deploy($instance, $head, $history);
         }
 
         return new AutomaticDeployOutcome($instance->id, AutomaticDeployResult::UpToDate, $head);

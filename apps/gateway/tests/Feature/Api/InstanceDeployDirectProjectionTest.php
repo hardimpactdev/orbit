@@ -2,30 +2,28 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\RunAutomaticDeploysAction;
+use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
-use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\DevelopmentDeployStep;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\RemoteBranchHeads;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Route;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\TestCase;
 
 function native_deploy_projection_fixture(TestCase $test, bool $production = false, bool $vp = false): array
 {
-    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
-    {
-        public function definitions(): array
-        {
-            return ['instance.deploy' => ['workflow' => 'operation-instance-deploy-direct',
-                'writer_config' => 'swamp.direct_writers', 'writer_state' => 'instance_deploy_writer',
-                'projection' => InstanceDeployProjection::class]];
-        }
-    }]));
     if ($production) {
         [$gateway, , , $instance] = deployment_api_fixture();
         $instance->update(['production_user' => 'orbit-app-'.$instance->project_id,
@@ -44,7 +42,9 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
     $test->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance',
         'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Queued,
-        'input' => ['instance_id' => $instance->id, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)],
+        'input' => ['agent_sha256' => str_repeat('d', 64), 'instance_id' => $instance->id, 'development' => ! $production, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance),
+            'git_read' => ['$secret' => 'instance.deployment', 'id' => $instance->id],
+            'vp_materialize' => ['$secret' => 'instance.deployment', 'id' => $instance->id]],
         'state' => ['instance_deploy_writer' => 'direct', 'swamp_run_id' => '402775cd-6ab4-46d1-a92e-f84ae368fe62']]);
     $candidate = ['name' => InstanceDeploymentIntent::releaseName($operation), 'commit' => str_repeat('a', 40)];
     $payload = ['instance_id' => $instance->id, 'commit' => str_repeat('a', 40),
@@ -57,6 +57,13 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
 
     return [$instance, $operation, '/api/v1/direct-operations/'.$operation->id, $body, $payload];
 }
+
+it('returns the immutable admitted agent pin over the real direct read endpoint', function (): void {
+    [, $operation, $path, $body] = native_deploy_projection_fixture($this);
+    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()
+        ->assertJsonPath('data.input.agent_sha256', str_repeat('d', 64));
+    expect($operation->fresh()->input['agent_sha256'])->toBe(str_repeat('d', 64));
+});
 
 it('starts one history row through the existing bound direct endpoint without a child', function (): void {
     [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
@@ -80,18 +87,6 @@ it('projects native checkout success and keeps terminal replay independent of la
     $this->postJson($path.'/result', $body)->assertOk();
     expect($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
         ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
-});
-
-it('records uncertain activation without falsely projecting a selected production release', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, true);
-    $original = $instance->checkout_path;
-    $this->postJson($path.'/result', $body)->assertOk();
-    $payload = [...$payload, 'selected_release' => null, 'selection_confirmed' => false, 'failed_step' => 'activation'];
-    $response = $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'finished_at' => '2026-10-31T02:00:01.000Z',
-        'result' => $payload, 'error_code' => 'deployment.interrupted'])->assertOk()->assertJsonPath('data.result.selected_release', null);
-    $history = InstanceDeployment::query()->findOrFail($response->json('data.result.deployment_id'));
-    expect($history->status)->toBe('failed')->and($history->selected_release)->toBeNull()
-        ->and($history->release)->toBe($payload['release']['name'])->and($instance->fresh()->checkout_path)->toBe($original);
 });
 
 it('refuses private or foreign facts before changing history or Instance state', function (): void {
@@ -144,3 +139,89 @@ it('refuses malformed or private runtime reference fields before recording any s
     expect($instance->fresh()->vp_environment)->toBeNull()->and(InstanceDeployment::query()->count())->toBe(0)
         ->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
 })->with(['private field', 'foreign path', 'invalid status', 'invalid version', 'unsafe store']);
+
+it('admits the real dev writer with only a native start and no Gateway step execution', function (): void {
+    $instance = dev935_instance();
+    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'dev-deploy-admission-gateway', 'status' => 'active',
+        'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.116', 'wireguard_ip' => '10.44.0.116']));
+    $instance->node->accessibleNodes()->attach($gateway);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.dev-deploy.fixture']);
+    $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
+
+    $response = $this->call('POST', '/api/v1/instances/'.$instance->id.'/deploy', server: [
+        'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+    ], content: '{}')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+
+    expect($operation->state['instance_deploy_writer'])->toBe('direct')
+        ->and($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($instance->node))
+        ->and($operation->input['development'])->toBeTrue()->and($operation->steps()->count())->toBe(0)
+        ->and(InstanceDeployment::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+    app(StartSwampRun::class)->start($operation);
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct')
+        ->and($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id,
+            'kind' => 'instance.deploy', 'node_id' => $instance->node_id]);
+});
+
+it('exposes no polled development option while keeping the production scope for its next cutover', function (): void {
+    $instance = dev935_instance();
+    expect(app(DirectOperation::class)->writer('instance.deploy', ['development' => false]))->toBe('polled');
+    config(['swamp.direct_writers' => ['instance.deploy' => 'polled']]);
+
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('operation.writer_invalid'));
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('transports public repository Git absence privately without Agent or child execution', function (): void {
+    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
+
+    $this->getJson($path.'/private-material?run_id='.$body['run_id'])->assertOk()
+        ->assertJsonPath('data.git_read', null)->assertJsonPath('data.vp_materialize', []);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->steps()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+});
+
+it('rechecks the admitted target before hydrating private deploy material', function (): void {
+    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
+    $instance->node->update(['user' => 'changed']);
+
+    $this->getJson($path.'/private-material?run_id='.$body['run_id'])->assertStatus(409)
+        ->assertJsonPath('error.code', 'deployment.identity_changed');
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)->and($operation->steps()->count())->toBe(0);
+});
+
+it('refuses manual deployment until the existing default Route repair finishes', function (): void {
+    $instance = dev935_instance();
+    $instance->update(['development_projection_pending' => true]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id, 'domain' => 'pending-dev.example.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $instance->routes()->attach($route->id, ['position' => 0]);
+    $route->update(['status' => 'active']);
+
+    expect(fn () => app(StartInstanceDeployAction::class)->execute($instance->fresh(), 'operator', null))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('deployment.projection_pending'));
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('admits Route repair ahead of a newer commit through the existing automatic ticker', function (): void {
+    $instance = dev935_instance();
+    $instance->update(['development_projection_pending' => true, 'seed_commit' => str_repeat('a', 40)]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id, 'domain' => 'pending-auto.example.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $instance->routes()->attach($route->id, ['position' => 0]);
+    $route->update(['status' => 'active']);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->once()->andReturn(str_repeat('b', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+
+    app(RunAutomaticDeploysAction::class)->execute();
+
+    expect(Operation::query()->sole()->kind)->toBe('instance.repair_projection')
+        ->and($instance->fresh()->development_projection_pending)->toBeTrue()
+        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40));
+});

@@ -60,31 +60,20 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         $candidate = $this->candidate($operation);
         $descriptors = [];
         if ($variant === 'development') {
-            $checkout = ['home' => $intent['home'], 'repository' => $intent['repository'], 'instance' => $instance->id];
-            $descriptors[] = $this->descriptor('source.resolve', 'source_preparation.resolve', 'instance.resolve-development-target', [
-                ...$checkout, 'branch' => $intent['branch'], 'commit' => InstanceDeploymentIntent::commit($operation),
-                'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])), 'git_read' => $secret,
-            ]);
-            $commit = InstanceExecutionEvidence::result($operation, 'source.resolve')['commit'] ?? null;
-            if (is_string($commit)) {
-                $descriptors[] = $this->descriptor('source.checkout', 'source_preparation', 'instance.checkout-development-default', [
-                    ...$checkout, 'branch' => $intent['branch'], 'commit' => $commit,
-                ]);
-            }
-        } else {
-            $home = $this->home($operation);
-            $descriptors[] = $this->descriptor('source.previous', ($variant === 'rollback' ? 'rollback' : 'source_preparation').'.previous', 'instance.inspect-release', $home);
-            if ($variant === 'rollback') {
-                $release = ValidatedData::object($operation->input['target'] ?? [])['release'] ?? $operation->input['release'];
-                $descriptors[] = $this->descriptor('source.retained', 'rollback', 'instance.inspect-release', [...$home, 'name' => $release]);
-            } else {
-                $descriptors[] = $this->descriptor('source.prepare', 'source_preparation', 'instance.prepare-release', [
-                    ...$home, 'name' => InstanceDeploymentIntent::releaseName($operation), 'branch' => $intent['branch'],
-                    'commit' => InstanceDeploymentIntent::commit($operation), 'shared_paths' => $intent['shared_paths'], 'git_read' => $secret,
-                ], false);
-            }
+            throw new ResourceOperationException('operation.execution_forbidden', 'Development deployment requires its native Swamp writer.', 422);
         }
-        if ($candidate !== null || $variant === 'development') {
+        $home = $this->home($operation);
+        $descriptors[] = $this->descriptor('source.previous', ($variant === 'rollback' ? 'rollback' : 'source_preparation').'.previous', 'instance.inspect-release', $home);
+        if ($variant === 'rollback') {
+            $release = ValidatedData::object($operation->input['target'] ?? [])['release'] ?? $operation->input['release'];
+            $descriptors[] = $this->descriptor('source.retained', 'rollback', 'instance.inspect-release', [...$home, 'name' => $release]);
+        } else {
+            $descriptors[] = $this->descriptor('source.prepare', 'source_preparation', 'instance.prepare-release', [
+                ...$home, 'name' => InstanceDeploymentIntent::releaseName($operation), 'branch' => $intent['branch'],
+                'commit' => InstanceDeploymentIntent::commit($operation), 'shared_paths' => $intent['shared_paths'], 'git_read' => $secret,
+            ], false);
+        }
+        if ($candidate !== null) {
             foreach ($intent['steps'] as $step) {
                 $key = $step['phase'].'.'.$step['name'];
                 $descriptors[] = ['key' => 'budget.'.$key, 'step' => $key.'.budget', 'transport' => 'gateway',
@@ -94,16 +83,14 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
                 if (! is_int($timeout)) {
                     continue;
                 }
-                $input = $variant === 'development'
-                    ? ['home' => $intent['home'], 'repository' => $intent['repository'], 'instance' => $instance->id]
-                    : ['user' => $intent['user'], 'home' => $intent['home'], 'release' => $candidate['name'] ?? throw $this->unproven()];
-                $descriptors[] = $this->descriptor($key, $key, $variant === 'development' ? 'instance.run-development-step' : 'instance.run-deploy-step', [
+                $input = ['user' => $intent['user'], 'home' => $intent['home'], 'release' => $candidate['name']];
+                $descriptors[] = $this->descriptor($key, $key, 'instance.run-deploy-step', [
                     ...$input, 'script' => $secret, 'vp_environment' => $this->vpEnvironment($operation), 'operation' => $operation->id,
                     'step' => $step['name'], 'timeout_seconds' => $timeout, 'secrets' => $secret,
                 ], false, $step['required']);
             }
         }
-        if ($variant !== 'development' && $candidate !== null) {
+        if ($candidate !== null) {
             $descriptors[] = $this->descriptor('activation', 'activation', 'instance.activate-release', [
                 ...$this->home($operation), 'name' => $candidate['name'], 'commit' => $candidate['commit'],
             ]);
@@ -126,7 +113,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
                 'store' => $store, 'references' => $this->vp->references($operation->node_id ?? throw $this->unproven(), $store),
             ], true, false);
         }
-        if ($intent['runtime_synchronous'] && $variant !== 'development') {
+        if ($intent['runtime_synchronous']) {
             if ($variant === 'production') {
                 $descriptors[] = $this->runtimeDescriptor($operation, 'activation.runtime_definitions', 'install_definitions');
             }
@@ -141,8 +128,8 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
         $order = ['source_preparation' => 0, 'rollback' => 0, 'environment_sync' => 1, 'vp_environment' => 2, 'before_activation' => 3,
             'activation' => 4, 'php_refresh' => 5, 'process_restart' => 6, 'after_activation' => 7, 'cleanup' => 8, 'verification' => 9];
-        usort($descriptors, static fn (array $left, array $right): int => [$order[explode('.', $left['step'])[0]], in_array($left['key'], ['child.php_refresh.packages', 'child.source_preparation.projection'], true) ? -1 : 0]
-            <=> [$order[explode('.', $right['step'])[0]], in_array($right['key'], ['child.php_refresh.packages', 'child.source_preparation.projection'], true) ? -1 : 0]);
+        usort($descriptors, static fn (array $left, array $right): int => [$order[explode('.', $left['step'])[0]], $left['key'] === 'child.php_refresh.packages' ? -1 : 0]
+            <=> [$order[explode('.', $right['step'])[0]], $right['key'] === 'child.php_refresh.packages' ? -1 : 0]);
 
         return $descriptors;
     }
@@ -156,9 +143,6 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             'key' => $key, 'kind' => $kind, 'node_id' => $operation->node_id, 'input' => $input,
         ];
         $input = ['instance_id' => $operation->target_id];
-        if ($intent['projection_route_id'] !== null) {
-            $children[] = $child('source_preparation.projection', 'route.converge', ['route_id' => $intent['projection_route_id'], ...$input]);
-        }
         if ($intent['variant'] === 'production') {
             $children[] = $child('environment_sync', 'instance.sync_environment', $input);
         }
@@ -284,15 +268,11 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         if ($key === 'php.refresh' && ($receipt['complete'] ?? false) !== true) {
             return ['error_code' => 'app-prod.php_cache_refresh_failed'];
         }
-        if ($key === 'child.source_preparation.projection' && ($receipt['child_status'] ?? null) === 'succeeded') {
-            $this->children->requireSucceeded($operation, 'source_preparation.projection');
-            Instance::query()->findOrFail($operation->target_id)->update(['development_projection_pending' => false]);
-        }
         if ($key === 'cleanup') {
             return $this->cleanup($operation, $receipt);
         }
         $this->recordOutput($operation, $run, $receipt);
-        if (in_array($run['name'], ['instance.run-deploy-step', 'instance.run-development-step'], true)) {
+        if ($run['name'] === 'instance.run-deploy-step') {
             $budget = InstanceExecutionEvidence::result($operation, 'budget.'.$key) ?? throw $this->unproven();
             $receipt = [...$receipt, 'budget_seconds' => $budget['budget_seconds'], 'timeout_seconds' => $budget['timeout_seconds']];
             $step = array_find(InstanceDeploymentIntent::admitted($operation)['steps'], static fn (array $step): bool => $key === $step['phase'].'.'.$step['name']);
@@ -333,14 +313,6 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
 
             return $release;
         }
-        if ($key === 'source.resolve' || $key === 'source.checkout') {
-            $commit = $receipt['commit'] ?? null;
-            if (! is_string($commit) || ! GitCommitSha::isValid($commit)
-                || (InstanceDeploymentIntent::commit($operation) !== null && $commit !== InstanceDeploymentIntent::commit($operation))) {
-                throw $this->invalidReceipt();
-            }
-        }
-
         if (is_array($receipt['output'] ?? null)) {
             $output = mb_scrub(implode('', array_map(static fn (mixed $chunk): string => is_array($chunk) && is_string($chunk['value'] ?? null) ? $chunk['value'] : '', $receipt['output'])), 'UTF-8');
             $receipt['output_tail'] = mb_strcut($output, -1024, 1024, 'UTF-8');
@@ -365,11 +337,10 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
                 'selected_release' => null, 'commit' => $row->commit];
         }
         $candidate = $this->candidate($operation);
-        $selected = InstanceDeploymentIntent::admitted($operation)['variant'] === 'development' ? null : $this->selected($operation);
+        $selected = $this->selected($operation);
 
         return ['deployment_id' => ValidatedData::integer($operation->state['deployment_id'] ?? null), 'release' => $candidate['name'] ?? null,
-            'selected_release' => $selected?->name, 'commit' => $candidate['commit']
-                ?? ValidatedData::nullableString(InstanceExecutionEvidence::result($operation, 'source.checkout')['commit'] ?? InstanceDeploymentIntent::commit($operation))];
+            'selected_release' => $selected?->name, 'commit' => $candidate['commit'] ?? InstanceDeploymentIntent::commit($operation)];
     }
 
     public function assertCompletion(Operation $operation, OperationOutcome $outcome): void
@@ -394,7 +365,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         $result = $this->result($operation);
         if ($result === [] || ! is_string($result['commit']) || ! GitCommitSha::isValid($result['commit'])
             || $outcome->result !== $result
-            || (InstanceDeploymentIntent::admitted($operation)['variant'] !== 'development' && $result['selected_release'] !== $result['release'])) {
+            || $result['selected_release'] !== $result['release']) {
             throw $this->unproven();
         }
     }
@@ -417,18 +388,14 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         }
         $candidate = InstanceDeploymentIntent::storedRelease($this->candidate($operation));
         $instance = Instance::query()->findOrFail($operation->target_id);
-        $development = InstanceDeploymentIntent::admitted($operation)['variant'] === 'development';
-        $selected = $development ? null : $this->selected($operation);
-        $commit = ValidatedData::nullableString(InstanceExecutionEvidence::result($operation, 'source.checkout')['commit'] ?? InstanceDeploymentIntent::commit($operation));
+        $selected = $this->selected($operation);
+        $commit = InstanceDeploymentIntent::commit($operation);
         $failed = $operation->steps()->where('status', 'failed')->orderByDesc('position')->value('name');
         $boundary = is_string($failed) ? $this->boundary($failed) : DeploymentFailureBoundary::Operation;
         $result = $outcome->status === OperationStatus::Succeeded
-            ? ($development ? DeploymentResult::checkedOut($commit ?? throw $this->unproven()) : DeploymentResult::succeeded($candidate ?? throw $this->unproven()))
+            ? DeploymentResult::succeeded($candidate ?? throw $this->unproven())
             : DeploymentResult::failed($candidate, $selected, $boundary,
                 $outcome->status === OperationStatus::Cancelled ? 'deployment.cancelled' : ($outcome->errorCode ?? 'deployment.interrupted'), commit: $commit);
-        if ($development && $result->succeeded) {
-            $instance->update(['seed_path' => $instance->checkout_path, 'seed_repository' => $instance->checkout_path, 'seed_commit' => $result->commit]);
-        }
         $this->recorder->finish($row, $result, $row->events ?? []);
     }
 
@@ -439,7 +406,7 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
         }
         $candidate = $this->candidate($operation);
 
-        return $candidate === null || InstanceDeploymentIntent::admitted($operation)['variant'] === 'development' ? null : [
+        return $candidate === null ? null : [
             'key' => 'activation', 'transport' => 'instance-deploy-agent', 'name' => 'instance.activate-release', 'result' => $candidate,
         ];
     }

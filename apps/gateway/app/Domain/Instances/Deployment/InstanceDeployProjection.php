@@ -32,14 +32,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
     public function input(Operation $operation): array
     {
         if ($operation->status->terminal()) {
-            $admitted = ValidatedData::object($operation->input['deployment']);
-
-            return ['instance_id' => $operation->target_id,
-                'project_id' => ValidatedData::integer($admitted['project_id']),
-                'deployment' => $admitted,
-                'commit' => InstanceDeploymentIntent::commit($operation),
-                'release_name' => InstanceDeploymentIntent::releaseName($operation),
-                'timeout_seconds' => InstanceDeploymentBudget::seconds($operation)];
+            return $this->intent->admitted($operation);
         }
 
         return $this->intent->input($operation);
@@ -87,8 +80,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             if ($deployment->succeeded && $admitted['variant'] === 'development') {
                 $home = $admitted['home'];
                 $instance->update(['seed_path' => $home, 'seed_repository' => $home, 'seed_commit' => $deployment->commit]);
-            } elseif ($deployment->selectedRelease !== null) {
-                $instance->update(['checkout_path' => $deployment->selectedRelease->path]);
             }
             $this->history->finish($row, $deployment, $row->events ?? []);
 
