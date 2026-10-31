@@ -541,6 +541,10 @@ If the start response is lost, the same call reads native history once for that 
 
 An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. An intent never submits again after it binds a run, ends, or receives a cancellation request. A read never starts or resumes execution. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
 
+### Execution-copy failures
+
+The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. A failed push returns `swamp.vault_sync_unavailable`. The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
+
 ### Recover a terminal native result
 
 `GET /api/v1/operations/{operation}` makes one bounded native history read for an active direct Operation with a recorded run ID. It queries that exact UUID and checks the workflow name, Operation ID, kind and root Node. Only a native status of failed or interrupted can record `operation.native_failed`, through the same terminal transition as the existing root failure callback. Native success never invents a missing domain result.
