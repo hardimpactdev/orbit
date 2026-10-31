@@ -125,7 +125,7 @@ raise SystemExit(r.returncode)
                 },
             },
             "execution_secrets": {
-                "command": {"vault": "orbit-control-inputs", "key": "schedule-command"}
+                "command": {"vault": "orbit-control-inputs", "key": "schedule-run-operation-17"}
             },
         }
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
@@ -137,7 +137,7 @@ raise SystemExit(r.returncode)
             command.encode()
         ).hexdigest()
         self.cli(
-            "vault", "put", "orbit-control-inputs", "schedule-command", input=command
+            "vault", "put", "orbit-control-inputs", "schedule-run-operation-17", input=command
         )
 
     def run_schedule(self, success=True):

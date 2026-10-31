@@ -78,8 +78,11 @@ inputs:
           properties:
             vault:
               type: string
+              enum:
+              - orbit-control-inputs
             key:
               type: string
+              pattern: ^schedule-run-operation-[1-9][0-9]*$
           required:
           - vault
           - key
