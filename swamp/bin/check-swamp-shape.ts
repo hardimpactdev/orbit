@@ -1505,7 +1505,10 @@ export function analyzeYaml(
     const scopes = [step, job, data];
     const target = scopes.find((scope) => scope.target !== undefined)?.target;
     const labels = scopes.find((scope) => scope.labels !== undefined)?.labels;
-    return target === "orbit-node-209" || object(labels).node === "209";
+    // The native scheduler uses target before considering labels.
+    return target !== undefined
+      ? target === "orbit-node-209"
+      : object(labels).node === "209";
   };
   // Official @swamp/ssh 2026.10.23.1 consumes these transport fields natively.
   const sshIdentity = (path: string[]) => {

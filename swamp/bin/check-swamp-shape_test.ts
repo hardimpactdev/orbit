@@ -211,6 +211,15 @@ Deno.test("official SSH vault stdin and env require a 209 worker and closed exec
       f.rule === "vault-placement"
     ),
   );
+  overridden.jobs[0].labels = { node: "209" };
+  assert(
+    analyzeYaml(file, JSON.stringify(overridden)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  overridden.jobs[0].steps[0].target = "orbit-node-209";
+  overridden.jobs[0].labels = { node: "18" };
+  assertEquals(analyzeYaml(file, JSON.stringify(overridden)).findings, []);
   labelled.jobs[0].steps[0].labels = {};
   assert(
     analyzeYaml(file, JSON.stringify(labelled)).findings.some((f) =>

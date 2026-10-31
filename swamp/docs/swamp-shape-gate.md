@@ -90,7 +90,8 @@ Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression 
 `modelType: '@swamp/ssh'`, and literal `methodName: exec`. The effective placement
 must select Node 209 with `target: orbit-node-209` or labels `{node: '209'}`.
 Placement fields inherit independently through workflow, job and step, as core
-defines them; a step override or an empty labels map takes precedence. The existing closed
+defines them; a step override or an empty labels map takes precedence. The native
+scheduler selects by target before labels. The existing closed
 `execution_secrets` descriptor schema still applies. The official
 [`ExecArgsSchema`](https://github.com/swamp-club/swamp-extensions/blob/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh/extensions/models/_lib/schemas.ts)
 provides native stdin; `runExec` in `_lib/operations.ts` passes it to the process
