@@ -21,7 +21,6 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileComponent;
-use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\MachineArchitecture;
@@ -55,7 +54,6 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
-use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -338,7 +336,7 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId, $data): void {
+            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId): void {
                 $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
                 if ($node->exists) {
                     $this->routeReconciler()->reconcile(
@@ -349,10 +347,6 @@ final readonly class ProvisionNodeAction
                     );
                 }
                 $node->save();
-                if ($data->taskVmId !== null) {
-                    // Before any convergence, so the rollout and the CLI install already see a task VM Node.
-                    TaskVm::query()->whereKey($data->taskVmId)->update(['node_id' => $node->id]);
-                }
             });
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
@@ -494,13 +488,9 @@ final readonly class ProvisionNodeAction
         // exporter selection only ever considers active nodes. The node is
         // active here, so every provisioning outcome reconciles: a role-bearing
         // node becomes a selected exporter, and a roleless node picks up an
-        // explicit preference it kept from an earlier registration. A task VM
-        // Node never hosts an exporter, so its enrollment changes nothing that
-        // Metrics owns and skips the fleet-wide reconcile.
+        // explicit preference it kept from an earlier registration.
         try {
-            if ($data->taskVmId === null) {
-                $this->metrics->reconcile();
-            }
+            $this->metrics->reconcile();
         } catch (Throwable $exception) {
             if ($exception instanceof MetricsFleetReconcileException) {
                 if ($exception->component !== MetricsReconcileComponent::Runtime) {
@@ -560,11 +550,7 @@ final readonly class ProvisionNodeAction
         };
 
         try {
-            if ($data->taskVmId === null) {
-                $converge();
-            } else {
-                app(MetricsReconcileDeferral::class)->during($converge);
-            }
+            $converge();
         } catch (NodeRoleOperationException $exception) {
             throw new NodeProvisioningException(
                 step: "role:{$exception->step}",

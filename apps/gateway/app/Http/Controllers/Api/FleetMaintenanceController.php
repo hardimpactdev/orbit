@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\AdmitFleetCliAction;
+use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\AdmitRecipePrAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PeerDnsTargetsAction;

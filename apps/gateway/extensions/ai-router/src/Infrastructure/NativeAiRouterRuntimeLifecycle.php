@@ -59,10 +59,11 @@ final readonly class NativeAiRouterRuntimeLifecycle implements AiRouterRuntimeLi
 
             $process = Process::query()->where('owner_type', Node::class)
                 ->where('owner_id', $node->id)->where('name', AiRouterProcess::NAME)->sole();
-            $process = $this->update->execute($process, new UpdateProcessData($data, [
+            $this->update->recordIntent($process, new UpdateProcessData($data, [
                 'runtime', 'command', 'image', 'working_directory', 'environment', 'ports', 'volumes',
                 'restart_policy', 'keep_alive', 'restart_on_deploy', 'user',
             ]));
+            $process = $this->add->bootstrapCollector($data)['process'];
         }
 
         $source ??= AiRouterProcessSource::query()->firstOrNew(['process_id' => $process->id]);

@@ -13,7 +13,6 @@ use LogicException;
 
 /**
  * Hydrates only declared, target-owned references. Holds no values between requests.
-
  */
 final readonly class OperationSecrets
 {

@@ -6,7 +6,6 @@ use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecrets;

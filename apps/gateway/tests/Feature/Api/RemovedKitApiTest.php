@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 it('returns 404 for retired executor and Gateway resume endpoints', function (string $method, string $path): void {
     $this->json($method, '/api/v1/'.$path)->assertNotFound()->assertJsonPath('error.code', 'http.404');
 })->with([
+    ['GET', 'operations/1/instance-lifecycle'],
     ['GET', 'operation-executor/claimable'],
     ['POST', 'operation-executor/claim'],
     ['GET', 'operation-executor/1/children'],

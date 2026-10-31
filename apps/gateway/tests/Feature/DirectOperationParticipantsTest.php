@@ -10,7 +10,6 @@ use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecrets;

@@ -6,7 +6,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,10 +23,10 @@ use Tests\Support\TaskVmSettingsBuilder;
 beforeEach(function (): void {
     $this->gateway = Node::query()->create(['name' => 'intent-gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14', 'user' => 'orbit']);
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $this->worker = Node::query()->create(['name' => 'intent-control', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit']);
+    $this->worker = Node::query()->forceCreate(['id' => 209, 'name' => 'intent-control', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit']);
     $this->worker->accessibleNodes()->attach($this->gateway);
     config(['dependency_detection.services_node_id' => $this->worker->id, 'swamp.run_token' => 'fixture.token']);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->vm = TaskVm::query()->create(['name' => 'intent-vm', 'provider' => 'upcloud', 'state' => 'parked', 'wireguard_ip' => '10.44.0.129']);
     TaskVmSettingsBuilder::bind();
     $this->run = '3fc3ad54-423a-4b4b-8187-99514098426b';
@@ -59,7 +58,7 @@ it('defaults only this kind to direct and starts the existing family workflow af
     DB::commit();
     $this->getJson($path)->assertOk()->assertJsonPath('data.input', ['task_vm_id' => $this->vm->id]);
     expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-task-vms');
-    expect(app(DirectOperation::class)->writer('task_vm.incus_stop'))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('task_vm.incus_stop'))->toBe('direct');
 });
 
 it('projects and replays acknowledgement without provider calls or lifecycle mutation', function (): void {
@@ -88,21 +87,25 @@ it('refuses false success, undeclared output, foreign runs and the deleted execu
     $this->postJson($path.'/result', [...$this->outcome, 'run_id' => 'f5518d34-4395-4454-ab37-7f3cdcae1ad4'])->assertConflict();
     $this->postJson($path.'/primitive', ['run_id' => $this->run])->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
     $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', ['worker' => 'forged', 'key' => 'lifecycle-intent',
-        'transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input' => ['task_vm_id' => $this->vm->id, 'action' => 'intent']])->assertStatus(422);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
+        'transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input' => ['task_vm_id' => $this->vm->id, 'action' => 'intent']])->assertNotFound();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
 });
 
-it('refuses explicit polled fallback before recording work', function (): void {
+it('ignores retired writer selectors and keeps the native declaration', function (): void {
     config(['swamp.direct_writers' => ['task_vm.lifecycle_intent' => 'polled']]);
-    expect(fn () => admitLifecycleAcknowledgement())->toThrow(ResourceOperationException::class, 'This kind requires its direct Swamp writer.');
-    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+    $operation = admitLifecycleAcknowledgement();
+
+    expect(DirectOperation::owns($operation))->toBeTrue();
+    expect($this->socket->sent)->toHaveCount(1);
 });
 
-it('preserves canonical child proof for existing lifecycle parents', function (): void {
-    $parent = app(StartTaskVmLifecycleOperationAction::class)->execute($this->vm->id, 'resume');
-    $child = app(OperationChildren::class)->admit($parent, ['key' => 'lifecycle-intent'])['operation'];
-    $this->postJson('/api/v1/direct-operations/'.$child->id.'/result', $this->outcome)->assertOk();
-    expect(app(OperationChildren::class)->requireSucceeded($parent, 'lifecycle-intent')->id)->toBe($child->id)
-        ->and($child->parent_operation_id)->toBe($parent->id)->and($child->node_id)->toBe($this->gateway->id)
-        ->and($this->vm->fresh()->state->value)->toBe('parked');
+it('refuses retired child lifecycle admission without changing VM ownership', function (): void {
+    $before = $this->vm->fresh()->getAttributes();
+
+    expect(fn () => app(StartTaskVmLifecycleOperationAction::class)->execute($this->vm->id, 'resume'))
+        ->toThrow(ResourceOperationException::class, 'owning native Task VM lifecycle');
+
+    expect(Operation::query()->exists())->toBeFalse();
+    expect($this->vm->fresh()->getAttributes())->toBe($before);
+    expect($this->socket->sent)->toBe([]);
 });

@@ -9,7 +9,6 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\FailTaskVmAction;
-use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
@@ -459,38 +458,24 @@ describe('retained task VM workspace removal', function (): void {
         Queue::assertNothingPushed();
     })->with(['first cancel' => false, 'retry after an earlier failure' => true]);
 
-    it('retains the recorded removal push when native VM destruction is unavailable', function (): void {
+    it('preserves approved work until native publication finishes before workspace removal', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => TaskGroupStatus::Failed]);
         $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
         $sha = str_repeat('c', 40);
-        $approval = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
+        $task->comments()->create(['task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Reviewed.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $sha]);
         $publisher = Mockery::mock(TaskPullRequestPublisher::class);
-        $publisher->shouldReceive('push')->once()->withArgs(fn (Task $pushed, string $commit): bool => $pushed->id === $group->id && $commit === $sha);
+        $publisher->shouldNotReceive('push');
         app()->instance(TaskPullRequestPublisher::class, $publisher);
-        $removal = app(RemoveTaskWorkspaceAction::class);
-        $lifecycle = app(ProjectLifecycleRunner::class);
-        app()->instance(ProjectLifecycleRunner::class, Mockery::mock($lifecycle)->shouldReceive('run')->andThrow(new RuntimeException('Teardown failed.'))->getMock());
-        try {
-            $removal->remove($group);
-            throw new LogicException('Expected teardown failure.');
-        } catch (RuntimeException $exception) {
-            expect($exception->getMessage())->toBe('Teardown failed.');
-            $removal->recordFailure($group, $exception);
-        }
-        app()->instance(ProjectLifecycleRunner::class, $lifecycle);
-        $this->assertModelExists($instance);
-        expect($task->fresh()->review_handled_comment_id)->toBe($approval->id);
-        $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing', 'publish_state' => 'pushed', 'publish_commit' => $sha, 'publish_branch' => 'task-'.$group->id]);
-        $this->provider->observation = null;
 
-        expect(fn () => app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy'))->toThrow(ResourceOperationException::class);
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
+            ->toThrow(TaskPullRequestException::class, 'finish native publication');
 
         $this->assertModelExists($instance);
-        expect($vm->fresh()->state)->toBe(TaskVmState::Failed)
-            ->and($task->fresh()->review_handled_comment_id)->toBe($approval->id)
-            ->and(Operation::query()->where('kind', 'task_vm.destroy')->count())->toBe(0)
-            ->and($this->provider->calls)->toBe([]);
+        expect($task->fresh()->review_handled_comment_id)->toBeNull();
+        expect($vm->fresh()->publish_state)->not->toBe('pushed');
+        expect(Operation::query()->where('kind', 'task_vm.destroy')->exists())->toBeFalse();
+        expect($this->provider->calls)->toBe([]);
     });
 
     it('reconciles a queued push that succeeded before VM loss without another removal poll', function (bool $reviewAndMerge): void {

@@ -221,3 +221,22 @@ it('maps native source removal refusals and keeps activation pending', function 
     expect($this->source->refresh()->activation_pending)->toBeTrue()
         ->and($this->source->source_revision)->toBeNull();
 });
+
+it('converges updated collector intent before completing source activation', function (bool $failure): void {
+    $environment = [...$this->environment, 'AI_ROUTER_CACHE_HOST' => '10.44.0.10'];
+    $this->runtime->convergedProcessIds = [];
+    $this->runtime->failConverge = $failure;
+    $lifecycle = app(NativeAiRouterRuntimeLifecycle::class);
+
+    if ($failure) {
+        expect(fn () => $lifecycle->converge($this->node, $environment))->toThrow(ProcessOperationException::class);
+    } else {
+        $lifecycle->converge($this->node, $environment);
+    }
+
+    expect($this->runtime->convergedProcessIds)->toBe([$this->process->id]);
+    expect($this->process->refresh()->runtime_config['environment']['AI_ROUTER_CACHE_HOST'])->toBe('10.44.0.10');
+    expect($this->process->status)->toBe($failure ? LifecycleStatus::Failed : LifecycleStatus::Active);
+    expect($this->source->refresh()->activation_pending)->toBe($failure);
+    expect($this->source->source_revision)->toBe($failure ? null : $this->pin);
+})->with(['updated collector' => false, 'interrupted update' => true]);
