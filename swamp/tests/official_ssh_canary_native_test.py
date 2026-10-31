@@ -47,6 +47,8 @@ raise SystemExit(result.returncode)
             self.assertEqual((step['target'], step['labels']), ('orbit-node-209', {'node': '209'}))
             self.assertEqual(step['task']['behaviorType'], '@swamp/ssh')
             self.assertNotIn('sshBinary', step['task']['globalArgs'])
+            self.assertEqual(step['task']['globalArgs']['transport']['identityFile'],
+                             '/run/credentials/orbit-node-worker.service/proxy-ssh-identity')
 
         def fixture_copy(value):
             if isinstance(value, str):

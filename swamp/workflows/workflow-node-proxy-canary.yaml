@@ -36,7 +36,7 @@ jobs:
         transport:
           kind: ssh
           user: orbit
-          identityFile: /etc/orbit/node-proxy/id_ed25519
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
         hosts:
         - name: vpn1
           address: 10.44.0.1
