@@ -128,3 +128,46 @@ Sources:
 [workflow model](https://swamp-club.com/manual/explanation/the-workflow-execution-model),
 [failure semantics](https://swamp-club.com/manual/reference/remote-execution/failure-semantics),
 [idempotency](https://swamp-club.com/manual/how-to/make-workflows-idempotent).
+
+## Scoped GitHub credentials
+
+A checked-in declaration can add
+`github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}`
+and `private_material: {github: "github.installation"}`. Admission records the
+owned reference
+`github: {$secret: "github.installation", id: <Operation Node ID>}`. The Gateway
+accepts only the closed permission names `contents`, `pull_requests`, `checks`,
+`actions`, `metadata`; the last three are read-only. This is a
+credential-authority change requiring review; no family is enabled by the shared
+helper PR.
+
+Deploy the Gateway consumer first. The shared
+`GatewayOperation.withGitHubToken(async (token, grant) => safeResult)` calls the
+shared `GET /api/v1/direct-operations/{id}/private-material?run_id=UUID` through
+`withPrivateMaterial`, reading `data.github` inside its effect callback. No
+family controller, route or token is added. Caller Node/run binding and direct
+intent apply; terminal or cancelled intents refuse. The private `no-store` reply
+holds exactly the admitted repository/permissions and a fresh token expiring
+within about an hour. Signing keys remain on the Gateway, with no shared worker
+cache or public `result_fields` change.
+
+Mint once per native step, outside item loops; use one `GatewayOperation`
+instance per step. Further mint attempts on that instance refuse. Use the
+credential only inside that callback, in trusted fixed GitHub/git calls, never
+package or repository code. Do not log, persist or return it from a behavior.
+The shared helper attempts to revoke the token at the fixed GitHub
+`DELETE /installation/token` endpoint when the callback ends, including errors,
+then drops its reference. Revocation is best effort: failure reports only
+`operation.github_token_revoke_failed` and preserves the action's result or
+refusal. A successful GitHub write must not fail because revocation failed. The
+expiry check uses the client's injected clock. The helper refuses callback
+results containing the credential and replaces thrown diagnostics with fixed
+codes. Family results remain bounded and secret-free. Native Swamp owns retry
+policy; token minting adds no claim, lease, receipt or retry loop.
+
+Mint callers match their Operation Node. The shared private reader has no
+control-plane exception: Node209 cannot mint for a Gateway14-owned intent.
+Control-plane consumers must admit the intent on the executing Node. Safe intent
+reads and result projection retain their existing authority. Each successful
+mint records one token-free Gateway Activity containing Operation, run, caller
+Node, repository, permissions and expiry.

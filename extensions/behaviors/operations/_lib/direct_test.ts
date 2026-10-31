@@ -339,3 +339,343 @@ Deno.test("only explicit no-effect cancellation can end a running direct action 
   );
   assertEquals(f.projected[1].result, { applied: true });
 });
+
+function tokenFixture(change: Record<string, unknown> = {}) {
+  return {
+    github: {
+      repository: "hardimpactdev/orbit",
+      permissions: { contents: "write", pull_requests: "write" },
+      token: "ephemeral-sentinel",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+      ...change,
+    },
+  };
+}
+const revokeOk: typeof fetch = () =>
+  Promise.resolve(new Response(null, { status: 204 }));
+Deno.test("shared GitHub mint requests only the bound run and keeps the credential inside the callback", async () => {
+  const requests: unknown[] = [];
+  const gateway = new GatewayOperation(
+    (method, path, body) => {
+      requests.push({ method, path, body });
+      return Promise.resolve({ status: 200, body: { data: tokenFixture() } });
+    },
+    args,
+    undefined,
+    undefined,
+    revokeOk,
+  );
+  const result = await gateway.withGitHubToken((token, grant) => {
+    assertEquals(token, "ephemeral-sentinel");
+    assertEquals(grant.repository, "hardimpactdev/orbit");
+    assertEquals(grant.permissions, {
+      contents: "write",
+      pull_requests: "write",
+    });
+    return Promise.resolve({ completed: true });
+  });
+  assertEquals(result, { completed: true });
+  assertEquals(requests, [{
+    method: "GET",
+    path: `/api/v1/direct-operations/71/private-material?run_id=${args.run_id}`,
+    body: undefined,
+  }]);
+});
+Deno.test("shared GitHub mint refuses unsafe scope expiry and transport replies without secret diagnostics", async () => {
+  for (
+    const data of [
+      tokenFixture({ permissions: { administration: "write" } }),
+      tokenFixture({ expires_at: new Date(Date.now() - 1).toISOString() }),
+      tokenFixture({
+        expires_at: new Date(Date.now() + 7_200_000).toISOString(),
+      }),
+      tokenFixture({ token: "ephemeral-sentinel\n" }),
+      { token: "ephemeral-sentinel" },
+    ]
+  ) {
+    let called = false;
+    const gateway = new GatewayOperation(
+      () => Promise.resolve({ status: 200, body: { data } }),
+      args,
+      undefined,
+      undefined,
+      revokeOk,
+    );
+    const error = await assertRejects(
+      () =>
+        gateway.withGitHubToken(() => {
+          called = true;
+          return Promise.resolve({});
+        }),
+      Error,
+      "operation.github_token_unavailable",
+    );
+    assertEquals(called, false);
+    assertEquals(String(error).includes("ephemeral-sentinel"), false);
+  }
+  const gateway = new GatewayOperation(
+    () => {
+      throw new Error("ephemeral-sentinel");
+    },
+    args,
+    undefined,
+    undefined,
+    revokeOk,
+  );
+  await assertRejects(
+    () => gateway.withGitHubToken(() => Promise.resolve({})),
+    Error,
+    "operation.github_token_unavailable",
+  );
+});
+Deno.test("shared GitHub callback failures and attempted credential outputs are sanitized", async () => {
+  const makeGateway = () =>
+    new GatewayOperation(
+      () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
+      args,
+      undefined,
+      undefined,
+      revokeOk,
+    );
+  await assertRejects(
+    () =>
+      makeGateway().withGitHubToken((token) => {
+        throw new Error(token);
+      }),
+    Error,
+    "operation.github_action_failed",
+  );
+  for (
+    const leak of [
+      (token: string) => ({ token }),
+      (token: string) => ({ nested: { url: "prefix-" + token } }),
+    ]
+  ) {
+    const error = await assertRejects(
+      () =>
+        makeGateway().withGitHubToken((token) => Promise.resolve(leak(token))),
+      Error,
+      "operation.github_result_invalid",
+    );
+    assertEquals(String(error).includes("ephemeral-sentinel"), false);
+  }
+});
+
+Deno.test("shared GitHub result serialization cannot leak through thrown diagnostics or stateful toJSON", async () => {
+  const makeGateway = () =>
+    new GatewayOperation(
+      () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
+      args,
+      undefined,
+      undefined,
+      revokeOk,
+    );
+  for (
+    const action of [
+      (token: string) => ({
+        toJSON() {
+          throw new Error(token);
+        },
+      }),
+      (token: string) => ({
+        get value() {
+          throw new Error(token);
+        },
+      }),
+    ]
+  ) {
+    const error = await assertRejects(
+      () =>
+        makeGateway().withGitHubToken((token) =>
+          Promise.resolve(action(token))
+        ),
+      Error,
+      "operation.github_result_invalid",
+    );
+    assertEquals(String(error).includes("ephemeral-sentinel"), false);
+  }
+  let serializations = 0;
+  const result = await makeGateway().withGitHubToken((token) =>
+    Promise.resolve({
+      toJSON() {
+        return ++serializations === 1 ? { ready: true } : { token };
+      },
+    })
+  );
+  assertEquals(result, { ready: true });
+  assertEquals(JSON.stringify(result), '{"ready":true}');
+  assertEquals(serializations, 1);
+});
+
+Deno.test("shared GitHub credentials revoke on success action failure and invalid result", async () => {
+  for (const mode of ["success", "failure", "leak"]) {
+    let calls = 0;
+    let callbackEnded = false;
+    const github: typeof fetch = (url, init) => {
+      calls++;
+      assertEquals(callbackEnded, true);
+      assertEquals(url, "https://api.github.com/installation/token");
+      assertEquals(init?.method, "DELETE");
+      assertEquals(init?.redirect, "error");
+      assertEquals(
+        new Headers(init?.headers).get("Authorization"),
+        "Bearer ephemeral-sentinel",
+      );
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+    const gateway = new GatewayOperation(
+      () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
+      args,
+      undefined,
+      undefined,
+      github,
+    );
+    const action = (token: string) => {
+      callbackEnded = true;
+      if (mode === "failure") throw new Error(token);
+      return Promise.resolve(mode === "leak" ? { token } : { completed: true });
+    };
+    if (mode === "success") {
+      assertEquals(await gateway.withGitHubToken(action), { completed: true });
+    } else {await assertRejects(
+        () => gateway.withGitHubToken(action),
+        Error,
+        mode === "failure"
+          ? "operation.github_action_failed"
+          : "operation.github_result_invalid",
+      );}
+    assertEquals(calls, 1);
+  }
+});
+
+Deno.test("shared GitHub revoke failures preserve a successful write and report only a fixed diagnostic", async () => {
+  const originalWarn = console.warn;
+  try {
+    for (const fail of [false, true]) {
+      const warnings: unknown[][] = [];
+      console.warn = (...values: unknown[]) => {
+        warnings.push(values);
+      };
+      let writes = 0;
+      const gateway = new GatewayOperation(
+        () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
+        args,
+        undefined,
+        undefined,
+        () => {
+          if (fail) throw new Error("ephemeral-sentinel");
+          return Promise.resolve(
+            new Response("ephemeral-sentinel", { status: 503 }),
+          );
+        },
+      );
+      const result = await gateway.withGitHubToken(() => {
+        writes++;
+        return Promise.resolve({ completed: true });
+      });
+      assertEquals(result, { completed: true });
+      assertEquals(writes, 1);
+      assertEquals(warnings, [["operation.github_token_revoke_failed"]]);
+    }
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+Deno.test("shared GitHub expiry validation uses the injected clock", async () => {
+  const now = Date.parse("2030-01-02T03:04:05Z");
+  for (const offset of [-1, 3_600_000, 3_605_001]) {
+    let calls = 0;
+    const gateway = new GatewayOperation(
+      () =>
+        Promise.resolve({
+          status: 200,
+          body: {
+            data: tokenFixture({
+              expires_at: new Date(now + offset).toISOString(),
+            }),
+          },
+        }),
+      args,
+      undefined,
+      () => now,
+      revokeOk,
+    );
+    const action = () => {
+      calls++;
+      return Promise.resolve({ completed: true });
+    };
+    if (offset === 3_600_000) {
+      assertEquals(await gateway.withGitHubToken(action), { completed: true });
+    } else {await assertRejects(
+        () => gateway.withGitHubToken(action),
+        Error,
+        "operation.github_token_unavailable",
+      );}
+    assertEquals(calls, offset === 3_600_000 ? 1 : 0);
+  }
+});
+
+Deno.test("a revoke failure cannot replace the GitHub action refusal", async () => {
+  const originalWarn = console.warn;
+  const warnings: unknown[][] = [];
+  try {
+    console.warn = (...values: unknown[]) => {
+      warnings.push(values);
+    };
+    const gateway = new GatewayOperation(
+      () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
+      args,
+      undefined,
+      undefined,
+      () => {
+        throw new Error("ephemeral-sentinel");
+      },
+    );
+    await assertRejects(
+      () =>
+        gateway.withGitHubToken(() => {
+          throw new Error("ephemeral-sentinel");
+        }),
+      Error,
+      "operation.github_action_failed",
+    );
+    assertEquals(warnings, [["operation.github_token_revoke_failed"]]);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+Deno.test("shared GitHub mint permits only one attempt per step even when called concurrently", async () => {
+  let mints = 0;
+  let revokes = 0;
+  const gateway = new GatewayOperation(
+    () => {
+      mints++;
+      return Promise.resolve({ status: 200, body: { data: tokenFixture() } });
+    },
+    args,
+    undefined,
+    undefined,
+    () => {
+      revokes++;
+      return Promise.resolve(new Response(null, { status: 204 }));
+    },
+  );
+  const first = gateway.withGitHubToken(() =>
+    Promise.resolve({ completed: true })
+  );
+  await assertRejects(
+    () => gateway.withGitHubToken(() => Promise.resolve({})),
+    Error,
+    "operation.github_token_already_used",
+  );
+  await first;
+  await assertRejects(
+    () => gateway.withGitHubToken(() => Promise.resolve({})),
+    Error,
+    "operation.github_token_already_used",
+  );
+  assertEquals(mints, 1);
+  assertEquals(revokes, 1);
+});

@@ -11,6 +11,19 @@ export const DirectResult = z.preprocess(
   (value) => Array.isArray(value) && value.length === 0 ? {} : value,
   z.record(z.string(), z.unknown()),
 );
+const GitHubCredential = z.object({
+  repository: z.string().max(140).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  permissions: z.object({
+    contents: z.enum(["read", "write"]).optional(),
+    pull_requests: z.enum(["read", "write"]).optional(),
+    checks: z.literal("read").optional(),
+    actions: z.literal("read").optional(),
+    metadata: z.literal("read").optional(),
+  }).strict().refine((value) => Object.keys(value).length > 0),
+  token: z.string().max(2048).regex(/^[A-Za-z0-9_-]+$/),
+  expires_at: z.iso.datetime(),
+}).strict();
+type GitHubGrant = Omit<z.infer<typeof GitHubCredential>, "token">;
 const Outcome = z.object({
   id: z.number().int().positive(),
   kind: z.string(),
@@ -57,11 +70,13 @@ async function pauseBinding(signal?: AbortSignal): Promise<void> {
 
 /** Fixed endpoints. Only the first native read waits for start-response binding. */
 export class GatewayOperation {
+  #githubTokenUsed = false;
   constructor(
     private http: Http,
     private args: DirectIntent,
     private bindingWait = pauseBinding,
     private now = Date.now,
+    private github: typeof fetch = fetch,
   ) {}
   async call(
     method: "GET" | "POST",
@@ -195,6 +210,69 @@ export class GatewayOperation {
   }
   primitive() {
     return this.call("POST", "/primitive", { run_id: this.args.run_id });
+  }
+  /** Credential bytes stay inside this action; never return them as behavior data. */
+  async withGitHubToken(
+    action: (token: string, grant: GitHubGrant) => Promise<Result>,
+  ): Promise<Result> {
+    if (this.#githubTokenUsed) {
+      throw new Error("operation.github_token_already_used");
+    }
+    this.#githubTokenUsed = true;
+    let safe: Result | undefined;
+    let refusal = "operation.github_token_unavailable";
+    try {
+      await this.withPrivateMaterial(async (material) => {
+        const credential = GitHubCredential.parse(material.github);
+        try {
+          const expiry = Date.parse(credential.expires_at);
+          const now = this.now();
+          if (expiry <= now || expiry > now + 3_605_000) throw new Error();
+          refusal = "operation.github_action_failed";
+          const result = await action(credential.token, {
+            repository: credential.repository,
+            permissions: Object.freeze(credential.permissions),
+            expires_at: credential.expires_at,
+          });
+          refusal = "operation.github_result_invalid";
+          const value = DirectResult.parse(JSON.parse(JSON.stringify(result)));
+          if (JSON.stringify(value).includes(credential.token)) {
+            throw new Error();
+          }
+          safe = value;
+        } finally {
+          await this.revokeGitHubToken(credential);
+        }
+      });
+    } catch {
+      throw new Error(refusal);
+    }
+    return safe!;
+  }
+  private async revokeGitHubToken(
+    credential: z.infer<typeof GitHubCredential>,
+  ) {
+    try {
+      const response = await this.github(
+        "https://api.github.com/installation/token",
+        {
+          method: "DELETE",
+          redirect: "error",
+          signal: AbortSignal.timeout(10_000),
+          headers: {
+            Authorization: `Bearer ${credential.token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+          },
+        },
+      );
+      await response.body?.cancel();
+      if (response.status !== 204) throw new Error();
+    } catch {
+      console.warn("operation.github_token_revoke_failed");
+    } finally {
+      credential.token = "";
+    }
   }
 }
 
