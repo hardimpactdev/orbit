@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build\Sources;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
@@ -51,7 +52,7 @@ final readonly class WebSocketCaddySiteSource implements NodeCaddySiteSource
             listener: CaddyListenerRule::Shared,
             hosts: [WebSocketFootprint::Hostname],
             port: 443,
-            body: $this->renderer->render($this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port')), $gateway?->node->wireguard_ip),
+            body: $this->renderer->render($this->port > 0 ? $this->port : StoredValue::integer(config('orbit.websocket.port')), ($gateway === null ? null : app(RouteRenderContext::class)->wireguardIp($gateway->node))),
             bindPlaceholder: WebSocketFootprint::CaddyBindPlaceholder,
         )];
     }

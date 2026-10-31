@@ -1,0 +1,9 @@
+{
+  "id": 88,
+  "kind": "tasks.worker",
+  "target_type": "task_group",
+  "target_id": 7,
+  "status": "succeeded",
+  "input": {"worker":{"orchestrator_url":"wss://swamp.orbit","labels":{"group":"7"}}},
+  "result": {"instance_id": 70,"node_id": 9,"started": true}
+}

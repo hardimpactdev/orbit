@@ -1,0 +1,56 @@
+id: 2631be29-8b8d-40af-94d8-07f76f795c87
+name: operation-schedule-create
+description: Install one admitted Schedule on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: schedule.create
+  required:
+    - operation_id
+    - node_id
+    - kind
+jobs:
+  - name: node
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    writes: true
+    steps:
+      - name: install
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/schedule-control"
+          behaviorName: ${{ "schedule-control-node-" + string(inputs.node_id) }}
+          methodName: install
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+  - name: failed-node
+    dependsOn:
+      - job: node
+        condition:
+          type: failed
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: project-failure
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "operation-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            kind: ${{ inputs.kind }}
+            node_id: ${{ inputs.node_id }}
+            run_id: ${{ run.id }}

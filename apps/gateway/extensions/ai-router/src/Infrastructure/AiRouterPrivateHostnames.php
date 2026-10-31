@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
 use App\Domain\Routes\ContributedPrivateHostnames;
+use App\Domain\Routes\RouteRenderContext;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Domain\AiRouterHostname;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
@@ -17,9 +18,8 @@ final readonly class AiRouterPrivateHostnames implements ContributedPrivateHostn
     public function hostnames(): array
     {
         $node = $this->state->enabled() ? Node::query()->find($this->state->nodeId()) : null;
-        $address = $node instanceof Node && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
-            ? $node->wireguard_ip
-            : null;
+        $value = $node instanceof Node ? app(RouteRenderContext::class)->wireguardIp($node) : null;
+        $address = is_string($value) && $value !== '' ? $value : null;
 
         return [AiRouterHostname::Value => $address];
     }

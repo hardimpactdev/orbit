@@ -1,0 +1,213 @@
+id: b33533ee-6cf6-5929-860d-6455ce15fc04
+name: operation-database-sqlite-seed
+description: Run database.sqlite_seed as one native placed DAG.
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - database.sqlite_seed
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: read
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: read
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: failure-admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: failed
+  steps:
+  - name: report
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: snapshot
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
+  steps:
+  - name: export
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: export
+      inputs:
+        source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+- name: prepare
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  steps:
+  - name: prepare
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: prepare
+      inputs:
+        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
+        exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
+  dependsOn:
+  - job: snapshot
+    condition:
+      type: succeeded
+- name: receive
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  steps:
+  - name: receive
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: receive
+      inputs:
+        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
+        exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
+        prepared: ${{ data.latest("database-sqlite-" + run.id, "prepare").attributes }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+- name: install
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  steps:
+  - name: install
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: install
+      inputs:
+        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
+        exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
+        received: ${{ data.latest("database-sqlite-" + run.id, "receive").attributes }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
+  dependsOn:
+  - job: receive
+    condition:
+      type: succeeded
+- name: cleanup-target
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  steps:
+  - name: cleanupTarget
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: cleanupTarget
+      inputs:
+        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
+        run_id: ${{ run.id }}
+        cancel_only: true
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  - job: install
+    condition:
+      type: always
+- name: cleanup
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
+  steps:
+  - name: cleanupSource
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: cleanupSource
+      inputs:
+        source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  - job: cleanup-target
+    condition:
+      type: always
+- name: projection
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: project
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  - job: install
+    condition:
+      type: always
+  - job: cleanup
+    condition:
+      type: always
+  - job: cleanup-target
+    condition:
+      type: always

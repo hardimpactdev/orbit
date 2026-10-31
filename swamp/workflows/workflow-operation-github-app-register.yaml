@@ -1,0 +1,44 @@
+id: 2e8a06b6-8bc6-4d79-84bd-0861f3b36d2f
+name: operation-github-app-register
+description: GitHub App register on its admitted Gateway Node.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [github.app_register] }
+  required: [operation_id, node_id, kind]
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+jobs:
+  - name: github
+    steps:
+      - name: register
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/github-app'
+          behaviorName: github-app
+          methodName: register
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
+  - name: native-failure
+    dependsOn:
+      - job: github
+        condition: { type: failed }
+    steps:
+      - name: report
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "github-app-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

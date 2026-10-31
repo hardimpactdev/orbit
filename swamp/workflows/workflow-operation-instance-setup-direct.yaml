@@ -1,0 +1,28 @@
+id: dea5d024-3c16-4eb7-a576-2fda63a93872
+name: operation-instance-setup-direct
+description: Admitted Project setup and teardown run with sudo on the exact Node.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [instance.run_steps] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: setup
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels:
+      node: "${{ string(inputs.node_id) }}"
+    writes: true
+    steps:
+      - name: run-setup
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-setup-direct"
+          behaviorName: '${{ "instance-setup-node-" + string(inputs.node_id) }}'
+          methodName: run
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

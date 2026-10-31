@@ -24,7 +24,7 @@ class BuildPlanTest(unittest.TestCase):
         self.assertEqual({'docs'}, self.selected(['docs/reference/ci.md']))
         self.assertEqual({'docs'}, self.selected(['README.md']))
 
-    def test_main_always_supplies_the_web_artifact(self):
+    def test_main_supplies_the_web_artifact_for_gateway_releases(self):
         self.assertEqual({'docs', 'web'}, self.selected(['docs/reference/ci.md'], main=True))
 
     def test_an_empty_diff_selects_no_builds_except_main_web(self):
@@ -42,6 +42,21 @@ class BuildPlanTest(unittest.TestCase):
         self.assertTrue(plan.select(['apps/agent/src/main.rs'])['agent'])
         self.assertFalse(plan.select(['apps/gateway/app/Thing.php'])['agent'])
         self.assertFalse(plan.select(['.github/workflows/ci.yml'])['agent'])
+
+    def test_swamp_only_skips_gateway_builds_and_release_on_main_and_prs(self):
+        for main in (False, True):
+            with self.subTest(main=main):
+                paths = ['swamp/extensions/example.ts', 'swamp/bin/effect.php', 'swamp/composer.json']
+                self.assertEqual({'swamp'}, self.selected(paths, main))
+                self.assertFalse(plan.select(paths, main)['gateway_release'])
+
+    def test_mixed_change_keeps_gateway_artifacts_and_swamp_checks(self):
+        paths = ['swamp/workflows/example.yaml', 'apps/gateway/app/Thing.php']
+        self.assertEqual({'swamp', 'php', 'api-reference', 'web'}, self.selected(paths, main=True))
+        self.assertTrue(plan.select(paths, True)['gateway_release'])
+
+    def test_shared_workflow_change_selects_swamp_checks(self):
+        self.assertIn('swamp', self.selected(['.github/workflows/ci.yml']))
 
     def test_web_types_tool_keeps_the_contract_generator(self):
         self.assertEqual({'web','api-reference'}, self.selected(['apps/web/tools/api-types/package.json']))

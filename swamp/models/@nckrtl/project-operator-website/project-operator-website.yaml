@@ -1,0 +1,8 @@
+type: '@nckrtl/project-operator-website'
+typeVersion: 2026.10.27.1
+id: 315cbffd-0bb7-42d7-8d10-26b362bed75e
+name: project-operator-website
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}

@@ -1,0 +1,75 @@
+name: Maintenance worker
+on:
+  pull_request:
+    paths:
+      - 'extensions/behaviors/production-smoke/**'
+      - 'workflows/workflow-production-smoke.yaml'
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/dependency_scanner.ts'
+      - 'extensions/behaviors/orbit_driver.ts'
+      - 'extensions/behaviors/orbit_group*.ts'
+      - 'extensions/behaviors/_lib/**'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@nckrtl/dependency-scanner/**'
+      - 'models/@swamp/software-factory/dependency-*.yaml'
+      - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-group*.yaml'
+      - 'models/@nckrtl/orbit-group-runs/**'
+      - 'workflows/workflow-dependency-*.yaml'
+      - 'tests/**'
+      # The automatic policy has its own isolated job.
+      - '!tests/automatic_deploy_test.ts'
+      - '!tests/_support/automatic_deploy.ts'
+      - '.github/workflows/maintenance-worker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'extensions/behaviors/production-smoke/**'
+      - 'workflows/workflow-production-smoke.yaml'
+      - 'extensions/behaviors/orbit_gateway.ts'
+      - 'extensions/behaviors/dependency_scanner.ts'
+      - 'extensions/behaviors/orbit_driver.ts'
+      - 'extensions/behaviors/orbit_group*.ts'
+      - 'extensions/behaviors/_lib/**'
+      - 'models/@nckrtl/orbit-gateway/**'
+      - 'models/@nckrtl/dependency-scanner/**'
+      - 'models/@swamp/software-factory/dependency-*.yaml'
+      - 'workflows/workflow-maintenance-*.yaml'
+      - 'workflows/workflow-group*.yaml'
+      - 'models/@nckrtl/orbit-group-runs/**'
+      - 'workflows/workflow-dependency-*.yaml'
+      - 'tests/**'
+      # The automatic policy has its own isolated job.
+      - '!tests/automatic_deploy_test.ts'
+      - '!tests/_support/automatic_deploy.ts'
+      - '.github/workflows/maintenance-worker.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+jobs:
+  driver:
+    runs-on: [self-hosted, hardimpact]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.8
+      - name: Check driver types
+        run: deno check extensions/behaviors/dependency_scanner.ts extensions/behaviors/orbit_gateway.ts extensions/behaviors/orbit_driver.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts
+      - name: Check worker modules
+        run: |
+          deno fmt --check extensions/behaviors/_lib/review_capacity.ts tests/review_capacity_test.ts extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+          deno lint extensions/behaviors/_lib/review_capacity.ts tests/review_capacity_test.ts extensions/behaviors/_lib/maintenance_worker.ts extensions/behaviors/_lib/swamp_maintenance.ts tests/maintenance_worker_test.ts tests/maintenance_resources_test.ts tests/worker_enrollment_entry_test.ts extensions/behaviors/_lib/group_runs.ts extensions/behaviors/orbit_group_run.ts extensions/behaviors/orbit_group_runs.ts tests/group_runs_test.ts extensions/behaviors/_lib/stage_launch.ts tests/stage_launch_test.ts
+      - name: Check smoke contracts
+        run: |
+          deno fmt --check extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/production_smoke_recovery_test.ts tests/production_smoke_repair_test.ts tests/production_smoke_repair_routing_test.ts tests/fixtures/production-smoke
+          deno lint extensions/behaviors/production-smoke tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/production_smoke_recovery_test.ts tests/production_smoke_repair_test.ts tests/production_smoke_repair_routing_test.ts tests/fixtures/production-smoke
+          deno check extensions/behaviors/production-smoke/mod.ts tests/production_smoke_test.ts tests/production_smoke_failure_test.ts tests/production_smoke_recovery_test.ts tests/production_smoke_repair_test.ts tests/production_smoke_repair_routing_test.ts
+      - name: Check Services producer modules
+        run: |
+          deno fmt --check extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts
+          deno lint extensions/behaviors/_lib/dependency_credentials.ts extensions/behaviors/_lib/dependency_inventory.ts extensions/behaviors/_lib/dependency_results.ts extensions/behaviors/_lib/dependency_results_schema.ts extensions/behaviors/_lib/service_detection.ts extensions/behaviors/_lib/service_workspace.ts extensions/behaviors/_lib/dependency_retention.ts extensions/behaviors/_lib/maintenance/tool_policy.ts extensions/behaviors/dependency_scanner.ts tests/dependency_credentials_test.ts tests/service_detection_security_test.ts tests/dependency_retention_test.ts tests/dependency_results_test.ts tests/dependency_inventory_test.ts

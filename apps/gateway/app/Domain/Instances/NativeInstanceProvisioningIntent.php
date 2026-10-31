@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\StartInstanceStepListAction;
+use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Domain\Tools\ToolManagerIntent;
+use App\Domain\Tools\ToolManagerName;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
 use App\Models\Node;
@@ -100,6 +103,9 @@ final readonly class NativeInstanceProvisioningIntent
 
         return ['instance_id' => $instance->id, 'project_id' => $instance->project_id,
             'node_id' => $instance->node_id, 'node_user' => $instance->node->user,
+            'platform' => $instance->node->platform,
+            'architecture' => MachineArchitecture::normalize($instance->node->architecture) ?? $this->unavailable(),
+            'vp_materialize' => app(ToolManagerIntent::class)->input($instance->node, ToolManagerName::Vp)['materialize'] ?? [],
             'environment' => $environment, 'user' => $user, 'checkout' => $instance->checkout_path,
             'application' => ApplicationDirectory::resolve($instance->checkout_path, $instance->root ?? $instance->project->root),
             'project_type' => $instance->project->type->value,

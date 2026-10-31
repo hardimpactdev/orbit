@@ -12,7 +12,7 @@ covers:
 
 Swamp owns dependency scanning, advisory checks, target selection, and updates. The Gateway reads its versioned results from `swamp.orbit`. Opening an Instance or Project dependency view starts no scan, workflow, task, or package command. The browser calls the Gateway only. [Dependency contracts](/reference/instance-dependency-contracts) defines the producer data and read limits.
 
-The Gateway retains the pure lock-graph readers for dependency batch merge admission. Swamp owns scan/update execution and dependency inventory.
+Swamp also parses manifests and lockfiles and admits dependency batches. The Gateway validates the published result contract; it has no lock-graph reader or dependency inventory.
 
 ## Versions and evidence
 

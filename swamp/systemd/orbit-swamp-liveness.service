@@ -1,0 +1,23 @@
+[Unit]
+Description=Independent Swamp health, dispatch progress and inode check
+After=network-online.target
+RequiresMountsFor=/home/orbit/apps/orbit-swamp/default/.swamp
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/orbit-swamp-liveness.py
+StateDirectory=orbit-swamp-liveness
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+# Only an empty directory is exposed for statvfs; never the datastore contents.
+BindReadOnlyPaths=/home/orbit/apps/orbit-swamp/default/.swamp/.inode-probe:/run/swamp-datastore-inode-probe
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+TimeoutStartSec=150

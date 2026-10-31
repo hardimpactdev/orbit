@@ -1,0 +1,20 @@
+id: fffdd21a-c944-40ee-a56c-0adba2e70ace
+name: '@nckrtl/project-laravel-toolbar-site/routine'
+labels: { pool: migration, node: "209" }
+description: laravel-toolbar-site routine through its private project extension.
+trigger:
+  schedule: 10 3 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-28
+      methodName: project_routine
+      inputs:
+        projectId: 28
+        mode: routine

@@ -1,0 +1,2 @@
+# Verbatim upstream snapshots retain upstream whitespace.
+*.snapshot -whitespace

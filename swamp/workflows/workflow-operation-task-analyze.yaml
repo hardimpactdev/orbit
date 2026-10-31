@@ -1,0 +1,43 @@
+id: 789a2fc8-6c47-4e48-8d49-674455fe1710
+name: operation-task-analyze
+description: Run fixed repository analysis on the task VM worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.analyze] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: analysis
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: execute
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-workspace"
+          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
+          methodName: analyze
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: failure
+    dependsOn: [{ job: analysis, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "task-analysis-failure-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
