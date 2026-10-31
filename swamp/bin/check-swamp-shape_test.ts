@@ -97,7 +97,7 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
-Deno.test("official SSH exec accepts whole vault stdin with closed execution descriptors", () => {
+Deno.test("official SSH vault stdin and env require a 209 worker and closed execution descriptors", () => {
   const vault =
     "${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}";
   const workflow = {
@@ -159,6 +159,72 @@ Deno.test("official SSH exec accepts whole vault stdin with closed execution des
   assertEquals(
     analyzeYaml(file, source.replace(vault, "public input")).findings,
     [],
+  );
+  const labelled = JSON.parse(source);
+  delete labelled.jobs[0].target;
+  labelled.jobs[0].labels = { node: "209" };
+  assertEquals(analyzeYaml(file, JSON.stringify(labelled)).findings, []);
+  const inherited = JSON.parse(source);
+  delete inherited.jobs[0].target;
+  inherited.target = "orbit-node-209";
+  assertEquals(analyzeYaml(file, JSON.stringify(inherited)).findings, []);
+  const scriptEnv = JSON.parse(source);
+  scriptEnv.jobs[0].steps[0].task.methodName = "script";
+  scriptEnv.jobs[0].steps[0].task.inputs = {
+    hosts: "name:target",
+    script: "print('public')",
+    interpreter: "python3",
+    env: { MATERIAL: vault },
+  };
+  assertEquals(analyzeYaml(file, JSON.stringify(scriptEnv)).findings, []);
+  for (const method of ["copy", "resolve"]) {
+    const changed = structuredClone(scriptEnv);
+    changed.jobs[0].steps[0].task.methodName = method;
+    assert(
+      analyzeYaml(file, JSON.stringify(changed)).findings.some((f) =>
+        f.rule === "vault-placement"
+      ),
+      method,
+    );
+  }
+  for (const target of [undefined, "orbit-node-1", "orbit-node-18", "${{ inputs.worker }}"]) {
+    for (const channel of ["stdin", "env"]) {
+      const changed = JSON.parse(source);
+      if (target === undefined) delete changed.jobs[0].target;
+      else changed.jobs[0].target = target;
+      if (channel === "env") {
+        delete changed.jobs[0].steps[0].task.inputs.stdin;
+        changed.jobs[0].steps[0].task.inputs.env = { MATERIAL: vault };
+      }
+      assert(
+        analyzeYaml(file, JSON.stringify(changed)).findings.some((f) =>
+          f.rule === "vault-placement"
+        ),
+        `${channel}: ${target}`,
+      );
+    }
+  }
+  const overridden = JSON.parse(source);
+  overridden.jobs[0].steps[0].target = "orbit-node-18";
+  assert(
+    analyzeYaml(file, JSON.stringify(overridden)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  overridden.jobs[0].labels = { node: "209" };
+  assert(
+    analyzeYaml(file, JSON.stringify(overridden)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  overridden.jobs[0].steps[0].target = "orbit-node-209";
+  overridden.jobs[0].labels = { node: "18" };
+  assertEquals(analyzeYaml(file, JSON.stringify(overridden)).findings, []);
+  labelled.jobs[0].steps[0].labels = {};
+  assert(
+    analyzeYaml(file, JSON.stringify(labelled)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
   );
   for (const [from, to] of [
     ['"@swamp/ssh"', '"@example/ssh"'],
