@@ -51,7 +51,7 @@ def swamp_comparison_base(base, head):
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60).returncode == 0:
         return base
     source = json.loads(subprocess.check_output(
-        ['git', 'show', f'{head}:swamp/import-source.json'], timeout=60))['commit']
+        ['git', 'show', f'{head}:swamp/import-source.json'], timeout=60))['shape_base']
     if not isinstance(source, str) or not re.fullmatch('[0-9a-f]{40}', source):
         raise ValueError('The Swamp import source must be a full commit SHA')
     subprocess.run(['git', 'merge-base', '--is-ancestor', source, head], check=True,

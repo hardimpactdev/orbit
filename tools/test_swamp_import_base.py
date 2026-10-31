@@ -37,7 +37,7 @@ class ImportBaseTest(unittest.TestCase):
             orbit = git('rev-parse', 'HEAD')
             git('read-tree', '--prefix=swamp/', source)
             (root / 'swamp').mkdir()
-            (root / 'swamp/import-source.json').write_text(json.dumps({'commit': source}))
+            (root / 'swamp/import-source.json').write_text(json.dumps({'commit': source, 'shape_base': source}))
             git('add', 'swamp/import-source.json')
             imported = git('commit-tree', git('write-tree'), '-p', orbit, '-p', source, '-m', 'Import')
             git('reset', '--hard', imported)
@@ -62,7 +62,7 @@ class ImportBaseTest(unittest.TestCase):
                                                             cwd=shallow, timeout=60))
                 self.assertTrue(result['jobs']['swamp'])
                 self.assertNotIn('swamp_base_ref', result)
-                (root / 'swamp/import-source.json').write_text(json.dumps({'commit': 'f' * 40}))
+                (root / 'swamp/import-source.json').write_text(json.dumps({'commit': source, 'shape_base': 'f' * 40}))
                 git('add', 'swamp/import-source.json')
                 git('commit', '-m', 'Invalid import source')
                 with self.assertRaises(subprocess.CalledProcessError):
