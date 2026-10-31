@@ -4,7 +4,7 @@ description: "How an optional Gateway feature lives in its own directory, contri
 covers:
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
-  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/{NodeFootprintArtifact,NodeFootprintCapture},Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
+  - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/GatewayServiceStartHook,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
   - apps/gateway/{app/Infrastructure/GatewayReleases/GatewayCleanupHandoff.php,app/Infrastructure/Caddy/Build/ContributedCaddySiteSource.php,app/Infrastructure/Gateway/NativeGatewayFpmConverger.php,app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php,app/Infrastructure/Firewall/ContributedRoleFirewallRules.php,app/Http/Middleware/RequireEnabledExtension.php,app/Http/Middleware/ValidateRequestBodySize.php}
   - apps/gateway/{bootstrap/providers.php,tests/Unit/Domain/Extensions/**}
   - apps/gateway/extensions/*/src/*ServiceProvider.php
@@ -122,8 +122,6 @@ The Node Caddy build renders core's sources first, then each `ContributedCaddySi
 A contribution owns its source names and certificate slug. Its unit test checks those identities and its production wiring.
 
 The Node footprint applies core's artifacts first, then each contributed `NodeFootprintArtifact` in provider order. Core owns the `php-runtime` artifact for [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits); it uses this existing interface and adds no plug-in point. Each artifact owns its name, because the footprint keys its digests by name. The AI router contributes the `ai-router` artifact.
-
-The held native conversion reserves the optional `NodeFootprintCapture` interface on this same artifact tag. Its `capture(Node): array` method returns only safe desired input for that artifact, without host inspection, writes or private material. It neither creates missing Process records nor activates a native handler; admission must record any owned intent before capture, and unsupported contributions still refuse before effects.
 
 `ContributedPrivateHostnames::hostnames()` returns a map from each reserved hostname to its current address, or `null` when it must remain reserved without a DNS record. Private DNS publishes each non-null address as a `host-record`. AI router publishes the collector Node's stored `wireguard_ip`.
 
