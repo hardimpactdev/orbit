@@ -2,226 +2,77 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
-use App\Domain\DatabaseConnections\DatabaseQueryResult;
-use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
-use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeDatabaseInspectionExecutor;
+use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 
 const DATABASE_INSPECTION_SECRET = 'db-query-secret-6c2e';
 
 beforeEach(function (): void {
-    $node = Node::query()->create([
-        'name' => 'gateway',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux', 'architecture' => 'amd64',
-        'public_ssh_host' => '192.0.2.10',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'tld' => 'orbit',
-        'wireguard_ip' => '10.44.0.1',
-    ]);
-    $this->node = $this->markAsGateway($node);
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-});
-
-it('queries a registered mysql connection as read-only by default and redacts audit input', function (): void {
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'host' => 'db.example.test',
-        'database' => 'app',
-        'username' => 'app',
-        'password' => DATABASE_INSPECTION_SECRET,
-    ])->assertCreated();
-
-    $executor = new FakeDatabaseInspectionExecutor(
-        queryResult: new DatabaseQueryResult(['email'], [['email' => 'owner@example.test']], 1, false),
-    );
-    app()->instance(DatabaseInspectionExecutor::class, $executor);
-
-    $response = $this->postJson('/api/v1/database-connections/app/query', [
-        'sql' => 'SELECT email FROM users WHERE token='.DATABASE_INSPECTION_SECRET,
-        'write' => false,
-    ]);
-
-    $response
-        ->assertOk()
-        ->assertJsonPath('data.slug', 'app')
-        ->assertJsonPath('data.driver', 'mysql')
-        ->assertJsonPath('data.write', false)
-        ->assertJsonPath('data.columns.0', 'email')
-        ->assertJsonPath('data.rows.0.email', 'owner@example.test')
-        ->assertJsonPath('data.row_count', 1)
-        ->assertJsonPath('data.truncated', false)
-        ->assertJsonMissingPath('data.password');
-
-    expect($response->getContent())->not->toContain(DATABASE_INSPECTION_SECRET);
-    expect($executor->queries)->toBe([
-        [
-            'slug' => 'app',
-            'sql' => 'SELECT email FROM users WHERE token='.DATABASE_INSPECTION_SECRET,
-            'write' => false,
-        ],
-    ]);
-
-    $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
-    $encoded = json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR);
-
-    expect($activity->command)
-        ->toBe('database:query')
-        ->and($encoded)
-        ->not->toContain(DATABASE_INSPECTION_SECRET)
-        ->and($activity->properties?->get('input'))
-        ->not->toHaveKey('password');
-});
-
-it('refuses write SQL without the write flag and executes it when gated', function (): void {
     config(['swamp.run_token' => 'fake.token']);
+    $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-write', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'host' => 'db.example.test',
-        'database' => 'app',
-        'username' => 'app',
-        'password' => DATABASE_INSPECTION_SECRET,
-    ])->assertCreated();
-
-    $executor = new FakeDatabaseInspectionExecutor(
-        queryResult: new DatabaseQueryResult([], [], 1, false),
-    );
-    app()->instance(DatabaseInspectionExecutor::class, $executor);
-
-    $this->postJson('/api/v1/database-connections/app/query', [
-        'sql' => 'DELETE FROM users',
-    ])
-        ->assertStatus(422)
-        ->assertJsonPath('error.code', 'database.write_required');
-
-    expect($executor->queries)->toBe([]);
-
-    $this->postJson('/api/v1/database-connections/app/query', [
-        'sql' => 'DELETE FROM users',
-        'write' => true,
-    ])
-        ->assertAccepted()
-        ->assertJsonPath('data.kind', 'database.write')
-        ->assertJsonPath('data.status', 'queued');
-
-    expect($executor->queries)->toBe([]);
 });
 
-it('refuses stacked SQL statements', function (): void {
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'host' => 'db.example.test',
-        'database' => 'app',
-        'username' => 'app',
-        'password' => DATABASE_INSPECTION_SECRET,
-    ])->assertCreated();
+it('records SQL read intent without connecting and keeps SQL credentials private and out of audit input', function (string $driver): void {
+    $connection = DatabaseConnection::query()->create(['slug' => 'app', 'driver' => $driver, 'host' => 'unreachable.example.invalid', 'database' => 'app', 'username' => 'private-user', 'password' => DATABASE_INSPECTION_SECRET]);
+    $sql = 'SELECT email FROM users WHERE token='.DATABASE_INSPECTION_SECRET;
+    $response = $this->postJson('/api/v1/database-connections/app/query', ['sql' => $sql])->assertAccepted()->assertJsonPath('data.kind', 'database.read')->assertJsonPath('data.status', 'running')->assertDontSee(DATABASE_INSPECTION_SECRET);
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->node_id)->toBe($this->node->id);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['driver' => $driver, 'mode' => 'query', 'table' => null])->assertDontSee(DATABASE_INSPECTION_SECRET);
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.sql', $sql)->assertJsonPath('data.password', DATABASE_INSPECTION_SECRET)->assertJsonPath('data.username', 'private-user');
+    $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
+    expect($activity->command)->toBe('database:query');
+    expect(json_encode($activity->properties?->toArray() ?? [], JSON_THROW_ON_ERROR))->not->toContain(DATABASE_INSPECTION_SECRET);
+    $connection->update(['host' => 'changed.invalid', 'password' => 'changed-password']);
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertJsonPath('data.password', DATABASE_INSPECTION_SECRET);
+})->with(['mysql', 'pgsql']);
 
-    $executor = new FakeDatabaseInspectionExecutor;
-    app()->instance(DatabaseInspectionExecutor::class, $executor);
-
-    $this->postJson('/api/v1/database-connections/app/query', [
-        'sql' => 'SELECT 1; DELETE FROM users',
-    ])
-        ->assertStatus(422)
-        ->assertJsonPath('error.code', 'database.sql_multiple_statements');
-
-    expect($executor->queries)->toBe([]);
+it('keeps write gating and stacked SQL refusal before native admission', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'app', 'driver' => 'mysql', 'host' => 'db.invalid', 'database' => 'app', 'username' => 'app']);
+    $this->postJson('/api/v1/database-connections/app/query', ['sql' => 'DELETE FROM users'])->assertUnprocessable()->assertJsonPath('error.code', 'database.write_required');
+    $this->postJson('/api/v1/database-connections/app/query', ['sql' => 'SELECT 1; DELETE FROM users'])->assertUnprocessable()->assertJsonPath('error.code', 'database.sql_multiple_statements');
+    expect(Operation::query()->count())->toBe(0);
+    $this->postJson('/api/v1/database-connections/app/query', ['sql' => 'DELETE FROM users', 'write' => true])->assertAccepted()->assertJsonPath('data.kind', 'database.write');
 });
 
-it('lists schema and describes tables on a registered connection', function (): void {
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'app',
-        'driver' => 'pgsql',
-        'host' => 'pg.example.test',
-        'database' => 'app',
-        'username' => 'app',
-        'password' => DATABASE_INSPECTION_SECRET,
-    ])->assertCreated();
+it('starts table schema and describe reads as native Operations and records their bounded results', function (string $suffix, string $mode, array $result): void {
+    DatabaseConnection::query()->create(['slug' => 'app', 'driver' => 'pgsql', 'host' => 'db.invalid', 'database' => 'app', 'username' => 'app']);
+    $response = $this->getJson('/api/v1/database-connections/app/'.$suffix)->assertAccepted()->assertJsonPath('data.kind', 'database.read');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.mode', $mode);
+    $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => $result])->assertOk();
+    expect($operation->fresh()->result)->toBe($result);
+})->with([
+    ['tables', 'tables', ['tables' => ['users']]],
+    ['schema', 'schema', ['tables' => [['name' => 'users', 'columns' => [['name' => 'id', 'type' => 'integer', 'nullable' => false, 'default' => null, 'primary' => true]]]]]],
+    ['describe/users', 'describe', ['table' => 'users', 'columns' => [['name' => 'id', 'type' => 'integer', 'nullable' => false, 'default' => null, 'primary' => true]]]],
+]);
 
-    app()->instance(DatabaseInspectionExecutor::class, new FakeDatabaseInspectionExecutor);
-
-    $this->getJson('/api/v1/database-connections/app/tables')
-        ->assertOk()
-        ->assertJsonPath('data.slug', 'app')
-        ->assertJsonPath('data.tables.0', 'users');
-
-    $this->getJson('/api/v1/database-connections/app/schema')
-        ->assertOk()
-        ->assertJsonPath('data.tables.0.name', 'users')
-        ->assertJsonPath('data.tables.0.columns.0.name', 'id');
-
-    $describe = $this->getJson('/api/v1/database-connections/app/describe/users');
-    $describe
-        ->assertOk()
-        ->assertJsonPath('data.table', 'users')
-        ->assertJsonPath('data.columns.0.primary', true);
-
-    expect(Activity::query()->where('request_id', $describe->json('meta.request_id'))->sole()->command)
-        ->toBe('database:describe');
-
-    app()->instance(DatabaseInspectionExecutor::class, new FakeDatabaseInspectionExecutor(
-        failure: new ResourceOperationException(
-            errorCode: 'database.table_missing',
-            message: 'Table [orders] was not found.',
-            status: 404,
-        ),
-    ));
-
-    $this->getJson('/api/v1/database-connections/app/describe/orders')
-        ->assertNotFound()
-        ->assertJsonPath('error.code', 'database.table_missing');
-});
-
-it('runs sqlite queries on the owning node through the native agent with typed input', function (): void {
-    $worker = Node::query()->create([
-        'name' => 'worker',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux', 'architecture' => 'amd64',
-        'public_ssh_host' => '192.0.2.11',
-        'public_ssh_port' => 22,
-        'user' => 'orbit',
-        'tld' => null,
-        'wireguard_ip' => '10.44.0.8',
-    ]);
-
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'local',
-        'driver' => 'sqlite',
-        'node_id' => $worker->id,
-        'path' => '/var/lib/app/database.sqlite',
-    ])->assertCreated();
-
-    $agents = (new FakeAgentCommandRunner)->answer('database.query-sqlite', [
-        'columns' => ['name'], 'rows' => [['name' => 'users']], 'row_count' => 1, 'truncated' => false,
-    ]);
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    $this->getJson('/api/v1/database-connections/local/tables')
-        ->assertOk()->assertJsonPath('data.tables.0', 'users');
-
-    expect($agents->calls)->toHaveCount(1);
-    expect($agents->calls[0])->toBe([
-        'node' => 'worker', 'command' => 'database.query-sqlite',
-        'input' => [
-            'owner' => 'orbit', 'path' => '/var/lib/app/database.sqlite',
-            'sql' => "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        ],
-    ]);
+it('places SQLite reads on the owning worker and refuses private material on another Node', function (): void {
+    $worker = Node::query()->create(['name' => 'worker', 'public_ssh_host' => '192.0.2.9', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9']);
+    $worker->accessibleNodes()->attach($this->node);
+    DatabaseConnection::query()->create(['slug' => 'local', 'driver' => 'sqlite', 'node_id' => $worker->id, 'path' => '/tmp/native-read.sqlite']);
+    $response = $this->getJson('/api/v1/database-connections/local/tables')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->node_id)->toBe($worker->id);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $worker->wireguard_ip]);
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.owner', 'orbit')->assertJsonPath('data.input.path', '/tmp/native-read.sqlite');
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertJsonPath('data.sql', '');
+    $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'failed', 'error_code' => 'database.sqlite_unreadable', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['error_code' => 'database.sqlite_unreadable']])->assertOk();
+    expect($operation->fresh()->error_code)->toBe('database.sqlite_unreadable');
 });
 
 it('refuses sqlite inspection without an associated node and unknown slugs', function (): void {
@@ -270,4 +121,16 @@ it('refuses query, tables, schema, and describe against a redis connection', fun
     $this->getJson('/api/v1/database-connections/cache/describe/users')
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'database.driver_unsupported');
+});
+
+it('replays keyed reads and writes using their declared request kind', function (): void {
+    DatabaseConnection::query()->create(['slug' => 'app', 'driver' => 'pgsql', 'host' => 'db.invalid', 'database' => 'app', 'username' => 'app']);
+    foreach ([false, true] as $write) {
+        $body = ['sql' => 'SELECT 1', 'write' => $write];
+        $headers = ['Idempotency-Key' => 'same-key-separate-kinds'];
+        $first = $this->postJson('/api/v1/database-connections/app/query', $body, $headers)->assertAccepted()->assertJsonPath('data.kind', $write ? 'database.write' : 'database.read');
+        $again = $this->postJson('/api/v1/database-connections/app/query', $body, $headers)->assertAccepted();
+        expect($again->json('data.id'))->toBe($first->json('data.id'));
+    }
+    expect(Operation::query()->count())->toBe(2);
 });

@@ -421,7 +421,7 @@ The pane subscribes to `private-operation.{id}`, reads the operation, and reads 
 
 ## Database tables
 
-The database Tables panel shows a query error when a table read fails, instead of reporting an empty database. MySQL inspection requires the MySQL PDO driver in the Gateway PHP runtime.
+The database Tables panel starts a native `database.read` Operation and follows its result through the shared Operation channel. It shows loading until the read ends, table names after success, and an error after refusal, failure or cancellation. An empty list means the native read succeeded without tables. Swamp performs the inspection on the admitted Node.
 
 ### Annotations outside the Gateway
 

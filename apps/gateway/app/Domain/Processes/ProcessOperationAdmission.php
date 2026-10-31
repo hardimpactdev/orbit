@@ -42,7 +42,7 @@ final readonly class ProcessOperationAdmission
     /** @return array<string, mixed> */
     public function inputFor(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?ProcessTarget $target = null): array
     {
-        $admittedTarget = $target;
+        $providedTarget = $target;
         $target ??= match ($verb) {
             'destroy' => $this->targets->forRemoval($process),
             'start', 'restart' => $this->targets->forStart($process),
@@ -52,7 +52,7 @@ final readonly class ProcessOperationAdmission
             $instance = $target->instance;
             if ($instance !== null) {
                 app(VitePortAllocator::class)->assign($instance, recheck: true);
-                $target = $admittedTarget ?? $this->targets->forInstallation($process);
+                $target = $providedTarget ?? $this->targets->forInstallation($process);
             }
         }
         $systemd = $process->runtime === ProcessRuntime::Systemd;

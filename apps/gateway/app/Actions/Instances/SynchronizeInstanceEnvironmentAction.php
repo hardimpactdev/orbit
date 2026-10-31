@@ -20,10 +20,8 @@ use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironment;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentOutcome;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use App\Models\Operation;
 
 final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnvironmentSynchronizer, InstanceRouteEnvironmentSynchronizer
 {
@@ -51,21 +49,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         );
     }
 
-    public function executeForApi(Instance $instance, RefreshInstanceEnvironmentRuntimeAction $runtime): InstanceEnvironmentResult
-    {
-        return $this->operations->run([$instance->id], function () use ($instance, $runtime): InstanceEnvironmentResult {
-            if (Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
-                ->whereIn('kind', [OperationKinds::InstanceDeploy, OperationKinds::InstanceRollback])
-                ->whereIn('status', ['queued', 'running', 'waiting'])->exists()) {
-                throw new ResourceOperationException('env.operation_busy', 'An open deployment owns this Instance runtime. Retry after it settles.', 409);
-            }
-            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
-            $result = $this->synchronize($context, runtime: $runtime);
-
-            return $runtime->execute($context, $result);
-        });
-    }
-
     public function synchronizeRouteDomain(
         Instance $instance,
         InstanceEnvironmentRouteDomain $domain,
@@ -88,7 +71,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
     private function synchronize(
         InstanceEnvironmentContext $context,
         bool $keepWorkloadKeys = true,
-        ?RefreshInstanceEnvironmentRuntimeAction $runtime = null,
     ): InstanceEnvironmentResult {
         $requiredCapacity = $this->store->synchronizationCapacity($context);
         $existing = null;
@@ -114,7 +96,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         if ($environmentChanged) {
             // Later key tracking or .env.testing work can fail after .env was replaced.
             // An unchanged-file retry must still refresh the explicit env-sync runtime.
-            $runtime?->recordPending($context);
         }
         $this->store->recordSynchronizedKeys($context, array_keys($snapshot->values()));
         $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());

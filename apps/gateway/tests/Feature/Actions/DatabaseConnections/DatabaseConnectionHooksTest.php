@@ -11,16 +11,17 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\DatabaseConnectionUpdateProjection;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 
 final class TestDatabaseConnectionUpdateHook implements DatabaseConnectionUpdateHook
 {
@@ -67,20 +68,31 @@ function connection_hook(): TestDatabaseConnectionUpdateHook
     return $hook;
 }
 
-it('validates the proposal before writing and waits for the outer commit to reconverge', function (): void {
+function connection_hook_worker(): void
+{
+    $node = Node::query()->create(['name' => 'update-worker', 'user' => 'orbit', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8']);
+    test()->markAsGateway($node);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-connection-update', 'runId' => 'e1589ed9-996b-4c9c-aa75-7749ef519210']]];
+    app()->instance(WebSocketClient::class, $socket);
+}
+
+it('validates the proposal before admission and writes only after the native result', function (): void {
+    connection_hook_worker();
     $connection = DatabaseConnection::query()->create(['slug' => 'cache', 'driver' => 'redis', 'host' => 'old.example.test', 'port' => 6379]);
     $hook = connection_hook();
     $level = DB::transactionLevel();
+    $operation = app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
+    expect($hook->calls)->toBe([['validate', 'new.example.test', 'old.example.test', $level + 1]])
+        ->and($connection->fresh()->host)->toBe('old.example.test');
 
-    DB::transaction(function () use ($connection, $hook, $level): void {
-        app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
-        expect($hook->calls)->toBe([['validate', 'new.example.test', 'old.example.test', $level + 2]]);
-    });
-
-    expect($hook->calls)->toBe([
-        ['validate', 'new.example.test', 'old.example.test', $level + 2],
-        ['afterCommit', 'new.example.test', 'new.example.test', $level],
+    app(DatabaseConnectionUpdateProjection::class)->apply($operation, [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
     ]);
+    expect($connection->fresh()->host)->toBe('new.example.test')
+        ->and(array_column($hook->calls, 0))->toBe(['validate']);
 });
 
 it('leaves the connection and events unchanged when a tagged hook refuses', function (): void {
@@ -91,24 +103,20 @@ it('leaves the connection and events unchanged when a tagged hook refuses', func
 
     expect(fn () => app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update()))
         ->toThrow(ResourceOperationException::class, 'Connection is in use.');
-
-    expect($connection->refresh()->host)->toBe('old.example.test')
-        ->and($hook->calls)->toHaveCount(1);
+    expect($connection->refresh()->host)->toBe('old.example.test')->and($hook->calls)->toHaveCount(1);
     Event::assertNotDispatched(RecordBroadcast::class);
 });
 
-it('keeps the committed connection when reconvergence fails and retries on the same update', function (): void {
+it('does not change the connection or run a Gateway execution hook after native failure', function (): void {
+    connection_hook_worker();
     $connection = DatabaseConnection::query()->create(['slug' => 'cache', 'driver' => 'redis', 'host' => 'old.example.test', 'port' => 6379]);
     $hook = connection_hook();
-    $hook->failConvergence = true;
-
-    expect(fn () => app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update()))
-        ->toThrow(RuntimeException::class, 'Collector reconvergence failed.');
-    expect($connection->refresh()->host)->toBe('new.example.test');
-
-    $hook->failConvergence = false;
-    app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
-    expect(array_column($hook->calls, 0))->toBe(['validate', 'afterCommit', 'validate', 'afterCommit']);
+    $operation = app(UpdateDatabaseConnectionAction::class)->execute($connection, connection_hook_update());
+    app(DatabaseConnectionUpdateProjection::class)->apply($operation, [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => 'failed', 'error_code' => 'database.server_command_failed',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['error_code' => 'database.server_command_failed'],
+    ]);
+    expect($connection->fresh()->host)->toBe('old.example.test')->and(array_column($hook->calls, 0))->toBe(['validate']);
 });
 
 it('calls a tagged removal guard before deleting or broadcasting', function (): void {
@@ -152,8 +160,6 @@ it('refuses dropping the managed analytics owner database while the role refers 
     app(AnalyticsRoleSettingsRepository::class)->store($node, new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id));
     $server = DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $node->id, 'process_id' => $storage['postgres']->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'admin-fixture', 'status' => 'active']);
     $connection = DatabaseConnection::query()->create(['slug' => 'plausible-db', 'driver' => 'pgsql', 'database_server_id' => $server->id, 'host' => $node->wireguard_ip, 'port' => 5434, 'database' => 'plausible_db', 'username' => 'plausible_db', 'password' => 'owner-fixture']);
-    $admin = new FakeDatabaseServerAdmin;
-    app()->instance(DatabaseServerAdmin::class, $admin);
     expect(fn () => app(DestroyDatabaseConnectionAction::class)->execute($connection))->toThrow(ResourceOperationException::class, 'Move or remove the analytics role');
-    expect($connection->fresh())->not->toBeNull()->and($admin->sql())->toBe('');
+    expect($connection->fresh())->not->toBeNull();
 });

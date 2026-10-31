@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\DatabaseConnections;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
@@ -23,8 +23,8 @@ final class ListDatabaseTablesRequest extends GatewayRequest
         return '/api/v1/database-connections/'.rawurlencode($this->slug).'/tables';
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): DatabaseTablesResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
     {
-        return DatabaseTablesResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 }

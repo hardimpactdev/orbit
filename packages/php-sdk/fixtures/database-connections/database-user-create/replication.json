@@ -1,17 +1,35 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest",
-    "route": "POST /api/v1/database-connections/{database_connection}/users",
-    "status": 201,
+    "request": "Orbit\\Sdk\\Requests\\Operations\\ShowOperationRequest",
+    "route": "GET /api/v1/operations/{operation}",
+    "status": 200,
     "body": {
         "data": {
-            "id": 5,
-            "database_connection_id": 3,
-            "username": "sync_reader",
-            "privileges": "CONNECT, USAGE, SELECT ON \"catalog\"",
-            "created_by": "gateway",
-            "created_at": "2026-01-01T00:00:00+00:00",
-            "replication": true
+            "id": 1,
+            "kind": "database_user.create",
+            "target_type": "database_server",
+            "target_id": 1,
+            "input": {
+                "driver": "pgsql"
+            },
+            "status": "succeeded",
+            "sequence": 3,
+            "current_step": null,
+            "failed_step": null,
+            "error_code": null,
+            "result": {
+                "backend": "active"
+            },
+            "cancel_requested": false,
+            "attempts": 0,
+            "triggered_by": null,
+            "caller_node_id": null,
+            "caller_node_name": null,
+            "created_at": "2026-10-31T09:00:00+00:00",
+            "started_at": "2026-10-31T09:00:00+00:00",
+            "finished_at": "2026-10-31T09:00:00+00:00",
+            "poll_after_seconds": null,
+            "assistance": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -17,7 +16,6 @@ use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -98,12 +96,9 @@ it('projects a bounded preflight refusal without creating a user or accepting SQ
 });
 
 it('admits PostgreSQL replication without any Gateway SQL and leaves WAL checks to the Node', function (): void {
-    $admin = new FakeDatabaseServerAdmin;
-    app()->instance(DatabaseServerAdmin::class, $admin);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $response = $this->postJson('/api/v1/database-connections/proof/users', ['username' => 'second_reader', 'password' => 'another-private-login', 'replication' => true])
         ->assertAccepted()->assertJsonPath('data.kind', 'database_user.create');
-    expect($admin->statements)->toBe([]);
     expect($response->getContent())->not->toContain('another-private-login', 'private-root-sentinel');
     $this->assertDatabaseCount('database_users', 0);
 });

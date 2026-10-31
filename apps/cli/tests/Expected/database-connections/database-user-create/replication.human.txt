@@ -1,23 +1,10 @@
-Creating Database user...
+Database user running...
 
-┌  Create Database user
+┌  Create Database user [catalog]
 │
-├  ● Created Database user
+├  ● Database user complete
 │
-└  Created Database user.
+└  Database user succeeded.
 
-
-┌  Database user [sync_reader] on [catalog].
-│
-├  Username      sync_reader
-│
-├  Privileges    CONNECT, USAGE, SELECT ON "catalog"
-│
-├  Replication   yes
-│
-├  Created by    gateway
-│
-├  Created       2026-01-01T00:00:00+00:00
-│
-└  Request ID    0198e15c-bf97-7c23-8f1f-61b8fe67a844
-
+Operation: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

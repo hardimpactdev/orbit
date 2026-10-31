@@ -98,3 +98,10 @@ function assert_node_role_boundary_exception(callable $callback, string $message
         }
     }
 }
+
+/** @return array<string,mixed> */
+function node_role_operation_data(string $kind = 'node.role_add'): array
+{
+    return ['id' => 91, 'kind' => $kind, 'target_type' => 'node', 'target_id' => 7,
+        'status' => 'queued', 'sequence' => 1, 'input' => [], 'poll_after_seconds' => 2];
+}
