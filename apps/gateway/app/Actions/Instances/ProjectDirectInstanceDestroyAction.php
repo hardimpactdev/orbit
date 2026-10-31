@@ -74,7 +74,7 @@ final readonly class ProjectDirectInstanceDestroyAction
                     Route::query()->whereKey($routeId)->delete();
                     $this->deleted(RecordEventType::RouteDeleted, $routeId);
                 }
-                $member->update(['route_cleared_at' => now(), 'route_outcome' => $member->route_id === null ? 'none' : 'deleted',
+                $member->update(['route_cleared_at' => now(), 'route_outcome' => $member->route_id === null ? 'none' : ($parentOwnsRoutes ? 'retained' : 'deleted'),
                     'source_finalized_at' => now(), 'finalization_receipt' => 'native:'.$removal->id,
                     'runtime_cleaned_at' => now()]);
                 InstanceTransfer::query()->where('instance_id', $member->instance_id)->closed()->update(['instance_id' => null]);

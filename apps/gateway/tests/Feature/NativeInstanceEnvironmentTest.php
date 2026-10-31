@@ -3,13 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceProjectionRepairAction;
-use App\Actions\Instances\StartInstanceTransferAction;
-use App\Data\Instances\TransferInstanceData;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\InstanceTransfer;
 use App\Models\Operation;
 use App\Models\Process;
 
@@ -75,16 +72,6 @@ it('makes reserved parent environment material null without reading configuratio
         ->toThrow(ResourceOperationException::class);
 });
 
-it('does not reserve or pause a transfer without its native cross-Node contract', function (): void {
-    [, $instance] = nativeEnvironmentOperation();
-    $before = $instance->fresh()->getAttributes();
-    expect(fn () => app(StartInstanceTransferAction::class)->execute($instance, new TransferInstanceData(nodeId: $instance->node_id + 1, name: null, sqliteSourcePath: null)))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
-    expect($instance->fresh()->getAttributes())->toBe($before)
-        ->and(InstanceTransfer::query()->count())->toBe(0)
-        ->and(Operation::query()->count())->toBe(0);
-});
-
 it('does not claim projection repair by admitting a Route child', function (): void {
     [, $instance] = nativeEnvironmentOperation();
     $instance->update(['development_projection_pending' => true]);
@@ -108,4 +95,18 @@ it('refuses production synchronization before admission when an owned Process re
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
     expect(Operation::query()->count())->toBe(0);
     expect(app(NativeInstanceEnvironmentMaterial::class)->forContext($context, false)['runtime'])->toBeNull();
+});
+
+
+it('refuses production PHP refresh before admitting or changing environment intent', function (): void {
+    [, $instance] = nativeEnvironmentOperation();
+    $instance->update(['selected_php_version' => '8.5']);
+    $before = $instance->fresh()->getAttributes();
+    $context = new InstanceEnvironmentContext(instanceId: $instance->id, projectId: $instance->project_id,
+        nodeId: $instance->node_id, environment: 'production', path: '/home/orbit-app-'.$instance->project_id,
+        executionUser: 'orbit-app-'.$instance->project_id, laravel: true, routeId: null, routeDomain: null,
+        nodeStatus: 'active', node: $instance->node);
+    expect(fn () => app(NativeInstanceEnvironmentMaterial::class)->forContext($context))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
+    expect($instance->fresh()->getAttributes())->toBe($before)->and(Operation::query()->count())->toBe(0);
 });

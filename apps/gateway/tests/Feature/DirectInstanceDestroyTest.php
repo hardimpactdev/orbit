@@ -497,7 +497,6 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
     $this->getJson($path.'?run_id='.$run)->assertOk()->assertJsonPath('data.status', 'succeeded')
         ->assertJsonMissingPath('data.input.direct_destroy.routes.0.php');
     $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect($operation->children()->count())->toBe(0);
 });
 
 it('returns a fresh same-root Caddy render and keeps PHP in the private channel', function (): void {

@@ -51,7 +51,7 @@ final readonly class StartInstanceDestroyAction
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
-        $snapshot = $this->snapshot($instance, $force, $this->idempotency->parent);
+        $snapshot = $this->snapshot($instance, $force);
 
         return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
@@ -94,7 +94,7 @@ final readonly class StartInstanceDestroyAction
         $snapshots = [];
         $additional = [];
         foreach ($members as $position => $member) {
-            $route = $routesOwnedByParent ? null : $this->route($member, $detached);
+            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member, $detached);
             foreach ($member->routes as $candidate) {
                 if ($route === null || $candidate->id !== $route->id) {
                     $additional[] = $candidate->id;

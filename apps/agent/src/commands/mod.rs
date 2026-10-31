@@ -21,7 +21,6 @@ pub mod deploy_runner;
 pub mod deploy_step;
 pub mod dev_certificates;
 pub mod dev_deploy;
-pub mod dev_source;
 mod docker_migration;
 mod doctor_node;
 mod doctor_project;
@@ -115,7 +114,6 @@ pub mod transfer_source;
 pub mod valkey_acl;
 pub mod vite;
 mod vp_global;
-mod vp_materialize;
 pub mod vp_project;
 mod vp_scope;
 mod vp_store;
@@ -194,46 +192,28 @@ pub fn all() -> Vec<Entry> {
         entry::<vp_store::Prune>(),
         entry::<vp_project::ReadProject>(),
         entry::<vp_scope::Inspect>(),
-        entry::<vp_materialize::Materialize>(),
         entry::<composer_global::Version>(),
         entry::<composer_global::Candidate>(),
         entry::<composer_global::Inventory>(),
         entry::<composer_global::Plan>(),
-        entry::<composer_global::Install>(),
-        entry::<composer_global::Update>(),
-        entry::<composer_global::Remove>(),
         entry::<homebrew_scope::Inspect>(),
-        entry::<homebrew_scope::Materialize>(),
         entry::<homebrew::Version>(),
         entry::<homebrew::FormulaInventory>(),
         entry::<homebrew::formula::Candidate>(),
         entry::<homebrew::formula::Adoption>(),
-        entry::<homebrew::formula::Install>(),
-        entry::<homebrew::formula::Update>(),
-        entry::<homebrew::formula::Remove>(),
         entry::<homebrew::cask::Inventory>(),
         entry::<homebrew::cask::Candidate>(),
         entry::<homebrew::cask::Adoption>(),
-        entry::<homebrew::cask::Install>(),
-        entry::<homebrew::cask::Update>(),
-        entry::<homebrew::cask::Remove>(),
         entry::<homebrew::scan::Scan>(),
         entry::<composer_scope::Inspect>(),
-        entry::<composer_scope::Materialize>(),
         entry::<tools_apt::Version>(),
         entry::<tools_apt::Candidate>(),
         entry::<tools_apt::Inventory>(),
         entry::<tools_apt::Plan>(),
-        entry::<tools_apt::Install>(),
-        entry::<tools_apt::Update>(),
-        entry::<tools_apt::Remove>(),
         entry::<vp_global::Version>(),
         entry::<vp_global::Candidate>(),
         entry::<vp_global::Inventory>(),
         entry::<vp_global::Plan>(),
-        entry::<vp_global::Install>(),
-        entry::<vp_global::Update>(),
-        entry::<vp_global::Remove>(),
         entry::<image_recipe::lifecycle::Inspect>(),
         entry::<image_recipe::lifecycle::Begin>(),
         entry::<image_recipe::lifecycle::Retry>(),
@@ -308,18 +288,9 @@ pub fn all() -> Vec<Entry> {
         entry::<ssh_host_key::Scan>(),
         entry::<role_prerequisites::InstallPrerequisites>(),
         entry::<instances::InspectSource>(),
-        entry::<instances::RemoveSource>(),
-        entry::<instances::PrepareRemoval>(),
-        entry::<instances::FinalizeRemoval>(),
         entry::<instances::ReadReceipt>(),
-        entry::<instances::CleanReceipt>(),
-        entry::<instances::ReadRemovalState>(),
         entry::<instances::CheckPublication>(),
         entry::<instances::InspectLaravelRoutes>(),
-        entry::<dev_source::PrepareDevelopmentSource>(),
-        entry::<dev_source::InspectDevelopmentSource>(),
-        entry::<dev_source::ResolveDevelopmentSource>(),
-        entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
         entry::<registration::InspectRegistrationSource>(),
         entry::<registration::RelocateRegistrationSource>(),
         entry::<registration::LaravelRegistrationReceipt>(),
@@ -337,8 +308,6 @@ pub fn all() -> Vec<Entry> {
         entry::<instances::CheckPathFree>(),
         entry::<environment::ReadEnvironment>(),
         entry::<environment::InspectEnvironmentSync>(),
-        entry::<environment::WriteEnvironment>(),
-        entry::<laravel::InspectProfile>(),
         entry::<laravel::WriteUrl>(),
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
         entry::<clone_candidate::InspectCloneCandidate>(),

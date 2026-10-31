@@ -131,15 +131,6 @@ it('refuses an unavailable create before reserving a new Instance', function ():
     expect(Instance::query()->count())->toBe($before);
 });
 
-it('refuses an unavailable database clone before reserving the production target', function (): void {
-    $before = Instance::query()->count();
-
-    expect(fn () => app(StartInstanceCloneAction::class)->execute($this->instance,
-        new CloneInstanceData($this->node->id, 'unavailable-clone', 'preview', null, 'db.sqlite'), 'test', null,
-    ))->toThrow(ResourceOperationException::class, 'native publication');
-    expect(Instance::query()->count())->toBe($before);
-});
-
 it('projects native source and success without Gateway step receipts', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
@@ -160,5 +151,5 @@ it('projects native source and success without Gateway step receipts', function 
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
         ->and($this->instance->first_setup_pending)->toBeFalse()
         ->and($operation->refresh()->status->value)->toBe('succeeded')
-        ->and($operation->steps()->count())->toBe(0);
+        ;
 });

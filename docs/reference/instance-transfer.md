@@ -13,8 +13,172 @@ covers:
 
 # Instance transfer
 
-Instance transfer is unavailable while its native multi-Node workflow is being built. The API returns `operation.kind_unavailable` before reserving a destination, stopping runtime, changing Routes or creating an Operation. Orbit does not run a polled transfer or a Gateway child workflow.
+A transfer moves one active development Instance to another `app-dev` Node. The Instance keeps its ID, Project, and Processes. A Schedule cannot target the Instance during transfer. The source gets a short downtime, and Orbit deletes the old placement at the end.
 
-The native parent must own checkout transfer, optional SQLite copy, environment synchronization, runtime cutover, Route publication and rollback as steps in one root. Each Node effect must run on that exact Node worker. The shared private API still permits only the exact root Node to read its material. A source Node cannot read material owned by the destination. Transfer does not relay archives or credentials through the Gateway and does not use Node 209 as a foreign-Node fallback.
+```bash
+orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
+```
 
-A complete native archive-transfer contract and fresh Route publication composition are required before admission can return. A recorded transfer keeps its stored state; an unavailable new request does not claim rollback or successful cleanup.
+## Request
+
+The CLI calls `POST /api/v1/instances/{instance}/transfer`. The Gateway validates and records immutable transfer intent, then returns HTTP 202 with an Operation. Swamp executes the transfer through keyed effects and one-Node child Operations. The CLI follows its steps and returns the final Operation receipt. An optional `Idempotency-Key` reuses admission after a lost response.
+
+Transfer admission requires the shared `archive_relay` capability. Until its protected binary relay and the destination and activation handlers are available, the Gateway returns `operation.kind_unavailable` before reserving a transfer or pausing the source.
+
+| Input | Meaning |
+| --- | --- |
+| `node_id` | Destination Node. Required. |
+| `name` | Destination Instance name. It defaults to the current name. |
+| `sqlite_source_path` | Absolute path to one SQLite database on the source to copy. Optional. |
+
+The request accepts no path, Cluster, Route, or Process input. The caller needs an [access grant](/cli/node) to both Nodes. Interactive calls ask for default-No consent that names the source, the destination, the downtime, and the deletion. `--force` gives that consent. JSON and noninteractive calls without `--force` return `instance.confirmation_required`.
+
+## Eligibility
+
+Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
+
+Each other [Route with a web root](/reference/routes#serve-several-web-roots) of the Instance must be active and must not be in a domain or placement change; otherwise transfer returns `instance.lifecycle_conflict`. A public Route with a web root cannot move to another Cluster and returns `instance.transfer_public_web_root_route`.
+
+The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses an occupied or unsafe path with `instance.destination_exists`. Retry with another `--name`. A name that another Instance of the Project uses returns `instance.identity_conflict`.
+
+## What moves
+
+The destination gets an independent checkout, even when the source is a worktree. It holds the branch, commits, detached state, tracked changes, untracked files, and file modes of the source. Orbit does not fetch, reset, clean, or push the source. The common repository, sibling worktrees, and local branches of a source worktree stay unchanged.
+
+Gateway Git commands that capture the source and prepare the destination pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Checkout hooks and custom filesystem monitors are not transfer steps. The overrides apply to those commands without changing the stored Git configuration. Checkout commands that can start clean, smudge, or process filters run as the managed account without a credential environment.
+
+The checkout and its `.git` travel as they are. The agent captures a private archive, `instance.read-transfer-archive` streams it to Gateway disk, and `instance.materialize-transfer` receives the binary archive directly. Both transfers are bounded to 1 TiB. The receiver validates archive paths before creating the new checkout. No separate upload or `scp` call stages an archive on the destination Node. File placement stays under the managed account.
+
+Every transfer runs in this order:
+
+1. Orbit stops the source Processes and timers, with or without SQLite.
+2. It copies the source checkout to the destination.
+3. When you select a SQLite file, it takes one consistent snapshot and installs it at the selected path on the destination.
+
+The [Node agent](/reference/node-agent#commands)'s `instance.transfer-source` captures the archive on the source Node and removes the old checkout after cutover. `instance.materialize-transfer` unpacks it on the destination as the managed user. The Gateway stages the archive in `storage/app/transfer-staging` and streams that file directly during upload, without copying it into `/tmp`. The archive must fit both the Gateway's disk and the 1 TiB command bound. If staging fails, the Gateway records and logs the failing step.
+
+When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
+
+Stopping Processes before the final checkout copy prevents their writes from being missed. Apart from the selected SQLite file, Orbit copies no database or data path.
+
+The environment child reads the source `.env` inside Gateway memory and imports missing keys into the [stored environment](/reference/environment-variables). It transactionally records the imported key names on the transfer before any destination write. Environment contents never enter descriptors or receipts.
+
+Transfer renders the destination path and domain and does not merge a testing environment. For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, and relocates explicit Process working directories.
+
+A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
+
+A Docker Process with a null working-directory override keeps null on the destination and uses its image default; null is neither a source path to relocate nor a reason to skip runtime cleanup. An existing explicit override such as `/app` stays explicit unless it points inside the source checkout.
+
+At cutover, every Process that has an environment file gets the destination `.env` in the [application directory](/reference/projects#application-directory). This covers custom systemd Processes and the `vp-dev` preset. Activation then rewrites each destination unit, so its `EnvironmentFile=` names the destination file, never the source Node's path.
+
+Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports) and [SSR port](/reference/assigned-ssr-ports), and Orbit releases the source ports after cleanup.
+
+## Route
+
+An explicit domain keeps its Route. The Route moves to the destination Node and Cluster.
+
+A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for `default`, and `<name>.<project-slug>.<tld>` otherwise. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. The replacement keeps the web root of the Route it replaces. A domain that another Route owns returns `route.domain_conflict`.
+
+### Routes with a web root
+
+The Instance's other sites move with it. Each [Route with a web root](/reference/routes#serve-several-web-roots) has an explicit domain, so it keeps its ID and domain and moves to the destination Node and Cluster at cutover. Transfer records these Route IDs.
+
+After cutover, Orbit first issues the destination workload and Router leaves of each such Route. Then it builds the Instance's own Route and each other site: Caddy sites, PHP-FPM pools, LAN firewall rules, and DNS. Next it synchronizes `APP_URL` in the `.env` of each other application directory on the destination. The checkout copy already holds those files. Only then does it start the destination Processes.
+
+Cleanup removes each recorded Route's workload leaf and firewall rule from the old workload, and its Router leaf from the old Router. A leaf that a site on that Node still loads stays, such as the Router leaf when the transfer kept the Cluster. A Route removed after cutover is still cleaned from the source.
+
+Before cutover, transfer changes nothing for these Routes. Orbit checks them again under the cutover locks, so a site that became public or stopped being active during the transfer prevents cutover and rolls the transfer back.
+
+A public Route with a web root cannot change Cluster, because transfer does not move a public edge. Make the Route private, transfer, and publish it again. Within one Cluster, the public edge stays where it is.
+
+## Failure and retry
+
+An unconfirmed failure before cutover can recover by retrying the same Operation to read its original receipt. Orbit keeps both copies until the original effects have definite receipts. Successful rollback releases the destination Vite and SSR ports and keeps the source allocations.
+
+Cutover is the moment the destination becomes authoritative.
+
+After the Gateway commits cutover, cancellation returns `operation.cancel_refused` (409). It leaves the transfer and all child Operations untouched so activation and cleanup can finish forward. This also covers a lost reply from the cutover Gateway step.
+
+- A confirmed failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
+- It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
+- Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
+- After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
+
+Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. A new request, including an identical request, returns `instance.transfer_recovery_pending` while that marker remains; it cannot pause or capture the source again.
+
+An existing nonterminal rollback Operation can resume with its recorded children. There is no automatic new-parent recovery from a terminal failed rollback. The Gateway clears the marker and resets the checkpoint only after proven rollback finishes. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
+
+After cancellation, the parent runs no rollback effects. The Gateway admits its `instance.transfer_rollback` compensation child only after proving that the exact `transfer-stop-source` child succeeded. That child records rollback intent and restores the source runtime first. Only after proven source restoration may it abandon a recorded SQLite seed through `database.sqlite_seed_abandon` and discard the destination. An unavailable destination can delay cleanup but cannot delay source restoration. It then projects the restored state. Each Node effect belongs to its own child Operation. An unresolved capture or destination effect must settle before compensation can start.
+
+`instance.transfer_discard` uses the direct Swamp writer. Its owning admission records the destination path and agent digest after source restoration. Swamp runs the fixed `instance.transfer-source` discard command locally through `sudo -n` on the destination Node worker. The Gateway only supplies the recorded input and projects `discarded: true`; it has no direct cleanup relay. Missing destinations converge successfully. Unknown command outcomes remain available for native Swamp recovery. This child uses the direct writer by default and has no Gateway executor or receipt-completion path. An explicit `polled` override is refused; rollback uses a revert PR.
+
+Transfer admission stays unavailable until its destination and activation handlers exist. Node 209 uses its enrolled `swamp209-migration-a` worker; other destinations use `orbit-node-<destination_node_id>`, without foreign-Node fallback.
+
+The source capture is nonresumable. After a lost reply, Swamp reads the original keyed agent receipt, even after cancellation. The Gateway projects its raw capture metadata and saves its safe result before compensation is eligible. It does not capture again. A running receipt keeps the parent running until the result is definite.
+
+If cancellation finds an unknown receipt for a capture already marked started, the parent may end cancelled with `rollback_pending: true`. The Gateway retains the original attempt in recovery evidence. The source stays paused and both checkouts remain: unknown does not prove the command never started. A new transfer request refuses with `instance.transfer_recovery_pending`; it cannot silently start another attempt. Recovery from that terminal pending state needs an effect fence or a dedicated owning recovery flow, which this gated slice does not enable.
+
+After capture, a Gateway step records the SQLite seed on the transfer parent before destination admission. The attempt identity comes from that Operation. The database owner retains the seed and its source intents while the parent is pending. Destination setup uses that exact descriptor. Rollback passes its recorded intent ID and its live compensation Operation to the database owner; it cannot select another attempt or cleanup path.
+
+Rollback restores the source runtime before it abandons the transfer's SQLite seed. It removes the owned source snapshot, unfinished destination incoming and candidate files, and seed records. A new transfer after proven restoration takes a fresh snapshot, so later source writes reach the destination. If seed cleanup is unconfirmed, the source remains restored while the original child settles; new requests remain blocked by pending recovery. Cleanup checks the recorded operation and file identities; it never removes a file that belongs to another operation.
+
+A transfer that fails before cutover is closed once rollback finishes. A new transfer request with any input, or `instance:destroy`, proceeds without a conflict from that closed transfer. Normal eligibility checks still apply.
+
+An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only an identical request can resume an open transfer. If recovery is pending, even that request is refused. A different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. `route:destroy` also returns `instance.transfer_incomplete` for either Route while the transfer is open. This includes its destination replacement before cutover.
+
+If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then send a new transfer request if rollback has finished, or retry the identical request if the transfer is still open.
+
+Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
+
+Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router, including those of the recorded Routes with a web root. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
+
+## Failure codes
+
+The Gateway returns these codes before or during a transfer.
+
+| Code | Cause |
+| --- | --- |
+| `instance.confirmation_required` | The call has no consent. |
+| `instance.lifecycle_conflict` | The Instance is not active, or its Route or a Route with a web root is not ready. |
+| `instance.transfer_public_web_root_route` | A public Route with a web root would move to another Cluster. |
+| `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before trying the transfer again. |
+| `instance.production_refused` | The Instance is a production Instance. |
+| `instance.removal_conflict` | The Instance is being removed. |
+| `instance.same_node` | The destination is the current Node. |
+| `instance.node_inactive` | A Node is not an active Linux Node. |
+| `instance.node_not_app_dev` | A Node has no active `app-dev` role. |
+| `instance.node_excluded` | The Project excludes the destination. |
+| `instance.standalone_unsupported` | A Node is not in an active Cluster. |
+| `instance.identity_conflict` | Another Instance of the Project has the name. |
+| `instance.destination_exists` | The destination path is occupied or unsafe. |
+| `route.domain_conflict` | Another Route owns the destination domain. |
+| `instance.transfer_retry_conflict` | A different request tried to resume an open transfer. |
+| `instance.transfer_recovery_pending` | Recorded rollback or uncertain capture recovery must finish before a new transfer attempt. |
+| `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
+| `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
+| `instance.transfer_source_router_unknown` | The source Route has no Router, so Orbit cannot record one for the transfer. |
+| `instance.transfer_cleanup_conflict` | The recorded placement or Route changed, so cleanup stops. |
+| `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite copy. Retry. |
+| `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite snapshot failed its checks, its copy, or its install. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Keep the Instance, not the layout
+
+Removing the Instance and registering a new one would lose its ID and rebuild its Route, environment, and Processes. So transfer keeps the record. A worktree cannot keep its link to a common repository on another Node, so the destination is always an independent checkout.
+
+### Downtime, not live migration
+
+A consistent SQLite snapshot needs a moment with no writes. So transfer stops the source for a short window. Zero-downtime transfer was rejected.
+
+### Only the selected SQLite file
+
+Orbit cannot know the owner, credentials, or consistency rules of other databases. So it copies only the SQLite file you name. Discovering and copying external databases was rejected.
+
+### Clusters on both sides
+
+A move between Clusters can change the generated domain and the Router path. Transfer uses the destination Cluster's naming and the replacement Route lifecycle for that change. Standalone Nodes are refused.
+
+Transfers preserve the Instance identity and resolve its development or production placement from the destination Node role.

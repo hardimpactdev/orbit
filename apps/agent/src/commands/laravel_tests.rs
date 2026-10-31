@@ -192,31 +192,6 @@ fn leaves_another_application_without_artisan_alone_and_refuses_a_linked_env() {
 }
 
 #[test]
-fn reads_the_development_profile_and_refuses_a_linked_manifest() {
-    let app = App::new();
-    fs::write(app.0.join("composer.json"), "{}").unwrap();
-    let input = ProfileInput {
-        application: app.0.clone(),
-        owner: app.input().owner,
-        entry_point: "artisan".into(),
-    };
-
-    let read = profile(&input).unwrap();
-    assert_eq!(
-        read.kind,
-        super::super::production_home::ProfileKind::Composer
-    );
-    assert_eq!(read.entry_point.as_deref(), Some("regular"));
-
-    fs::remove_file(app.0.join("composer.json")).unwrap();
-    symlink("/etc/hostname", app.0.join("composer.json")).unwrap();
-    assert_eq!(
-        profile(&input).unwrap().kind,
-        super::super::production_home::ProfileKind::Unsafe
-    );
-}
-
-#[test]
 fn url_changes_preserve_other_bytes_modes_and_later_operator_changes() {
     let app = App::new();
     let env = app.0.join(".env");
@@ -329,25 +304,5 @@ fn nested_application_writes_leave_repository_environment_alone_and_refuse_linke
     symlink(app.0.join("server"), app.0.join("linked")).unwrap();
     input.directory = app.0.join("linked/web");
     assert!(write_url(&input).is_err());
-    let profile_input = ProfileInput {
-        application: input.directory.clone(),
-        owner: input.owner.clone(),
-        entry_point: "artisan".into(),
-    };
-    assert_eq!(
-        profile(&profile_input).unwrap().kind,
-        super::super::production_home::ProfileKind::Unsafe
-    );
     assert_eq!(fs::read(nested.join(".env")).unwrap(), previous);
-}
-
-#[test]
-fn composer_metadata_owned_by_another_account_is_unsafe() {
-    let app = App::new();
-    fs::write(app.0.join("composer.json"), "{}").unwrap();
-    let uid = rustix::process::geteuid().as_raw();
-    assert_eq!(
-        composer_profile(&app.0, "artisan", uid + 1).unwrap().kind,
-        super::super::production_home::ProfileKind::Unsafe
-    );
 }

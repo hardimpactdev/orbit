@@ -7,9 +7,10 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\Instances\CloneCandidateSource;
+use App\Domain\Instances\InstanceCloneCandidateInspector;
+use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Routes\RouteDomain;
@@ -20,8 +21,6 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitBranchName;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -29,12 +28,13 @@ use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
-/** Records a production clone intent. Swamp inspects the candidate and executes the clone. */
+/** Records a production clone intent. Candidate inspection is a read; Swamp executes the clone. */
 final readonly class StartInstanceCloneAction
 {
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
+        private InstanceCloneCandidateInspector $candidates,
         private RouteStateResolver $routeState,
     ) {}
 
@@ -43,29 +43,36 @@ final readonly class StartInstanceCloneAction
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
+        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.clone');
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {
             $candidate->loadMissing(['project', 'node']);
             $target = $this->existingTarget($candidate, $data);
             $created = ! $target instanceof Instance;
             $node = Node::query()->findOrFail($data->nodeId);
-            app(NativeInstanceProvisioningIntent::class)->assertCloneSupported($candidate, $node, $data->sqliteSourcePath);
             $completed = $target?->clone_completed_at !== null;
             $branch = $completed ? (string) $target->branch : $data->branch ?? $this->candidateBranch($candidate);
-            $source = $this->candidateSource($candidate, $branch);
+            $source = $completed ? null : $this->candidates->inspect($candidate, $branch);
             if (! $target instanceof Instance) {
+                if ($source === null) {
+                    throw $this->conflict('instance.clone_candidate_unavailable', 'The candidate source is unavailable.');
+                }
                 [$domain, $placement] = $this->preflight($candidate, $node, $data);
                 $target = $this->reserve($candidate, $node, $data, $source, $domain, $placement);
             }
 
-            $sourceMetadata = ['candidate_node_id' => $source->node->id, 'candidate_path' => $source->basePath,
-                'candidate_user' => $source->executionUser, 'candidate_environment' => $source->environment,
-                'candidate_branch' => $source->branch];
+            $sourceMetadata = $source === null
+                ? ['candidate_node_id' => $candidate->node_id, 'candidate_path' => $candidate->checkout_path,
+                    'candidate_user' => $candidate->node->user, 'candidate_environment' => $candidate->defaultAppEnv(),
+                    'candidate_branch' => $candidate->branch]
+                : ['candidate_node_id' => $source->node->id, 'candidate_path' => $source->basePath,
+                    'candidate_user' => $source->executionUser, 'candidate_environment' => $source->environment,
+                    'candidate_branch' => $source->branch];
 
-            $input = [
+            return $this->operations->execute('instance.clone', 'instance', $target->id, $node->id, [
                 'instance_id' => $target->id, 'project_id' => $candidate->project_id, 'created' => $created,
                 'candidate_id' => $candidate->id, ...$sourceMetadata,
-                'candidate_commit' => $target->clone_candidate_commit,
+                'candidate_commit' => $source->commit ?? $target->clone_candidate_commit,
                 'initial_provisioning_step' => $target->provisioning_step,
                 'selected_php_version' => $target->selected_php_version, 'source_is_laravel' => $target->source_is_laravel,
                 'repository' => $candidate->project->repository_url, 'repository_identity' => $candidate->project->repository_identity,
@@ -75,41 +82,8 @@ final readonly class StartInstanceCloneAction
                 'production_user' => $target->production_user, 'production_home' => $target->production_home,
                 'route_id' => $target->routes()->whereNull('web_root')->value('routes.id'),
                 'initial_completed' => $target->clone_completed_at !== null,
-            ];
-            $input['git_read'] = ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']];
-            $input['environment_material'] = ['$secret' => 'instance.environment_sync', 'id' => $input['instance_id']];
-            $input['candidate'] = [
-                'node_id' => $candidate->node_id, 'agent_sha256' => app(AgentDelivery::class)->pin($candidate->node),
-                'environment' => $source->environment, 'base' => $source->environment === 'production' ? $candidate->production_home : $source->basePath,
-                'user' => $source->executionUser, 'repository' => $candidate->project->repository_url,
-                'configured_branch' => $source->branch, 'target_branch' => $branch, 'expected_source' => $source->basePath,
-            ];
-            $input['participant_node_ids'] = array_values(array_unique([$node->id, $candidate->node_id]));
-            $input['private_bindings'] = ['git_read' => ['owner_node_id' => $node->id,
-                'read_node_ids' => $input['participant_node_ids'], 'write_node_ids' => []]];
-            $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->clone($target, $input);
-
-            return $this->operations->execute('instance.clone', 'instance', $target->id, $node->id, $input, $caller, $requestId);
+            ], $caller, $requestId);
         });
-    }
-
-    private function candidateSource(Instance $candidate, string $branch): CloneCandidateSource
-    {
-        if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
-            || $candidate->node->status !== LifecycleStatus::Active || $candidate->node->platform !== 'linux'
-            || ! GitBranchName::isValid($branch)) {
-            throw $this->conflict('instance.clone_candidate_inactive', 'The candidate is not active.');
-        }
-        $production = $candidate->placedOnAppProd();
-        $configured = $production ? $candidate->deployment_branch ?? $candidate->branch : $candidate->branch;
-        $user = $production ? $candidate->production_user : $candidate->node->user;
-        if (! is_string($configured) || ! GitBranchName::isValid($configured) || ! is_string($user)
-            || ! ($candidate->placedOnAppDev() || $production) || ($production && ! $candidate->usesProductionReleaseLayout())) {
-            throw $this->conflict('instance.clone_candidate_source_invalid', 'The candidate has no admitted source.');
-        }
-
-        return new CloneCandidateSource($candidate->id, $production ? 'production' : 'development',
-            $candidate->checkout_path, $user, $configured, $candidate->starting_commit ?? '', $candidate->node);
     }
 
     private function existingTarget(Instance $candidate, CloneInstanceData $data): ?Instance

@@ -1,10 +1,8 @@
-//! `instance.*-development-*` for a Laravel application in a development checkout: its Composer metadata, and its
-//! `APP_URL` in `.env` and in a cached configuration. These run as the managed account, which owns the checkout, and
+//! `instance.write-development-url` for a Laravel application in a development checkout: its `APP_URL` in `.env` and in a cached configuration. These run as the managed account, which owns the checkout, and
 //! replace the Bash and Python of `RemoteDevelopmentInstanceConfigurator`, rule for rule. The `.env` line rules are
 //! shared with the production writer.
 
 use super::production::ReleaseError;
-use super::production_home::{composer_profile, Profile};
 use super::source::{exists, is_symlink, realpath};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
@@ -51,53 +49,6 @@ pub(super) fn put(text: &[u8], found: &[std::ops::Range<usize>], line: &[u8]) ->
     updated.extend_from_slice(line);
     updated.push(b'\n');
     updated
-}
-
-// ---- the Composer profile ------------------------------------------------------------------------------------------
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProfileInput {
-    pub application: PathBuf,
-    /// The account that must own `composer.json`.
-    pub owner: String,
-    pub entry_point: String,
-}
-
-pub fn profile(input: &ProfileInput) -> Result<Profile, ReleaseError> {
-    let (uid, _, _) = identity::account(&input.owner)
-        .map_err(|_| super::production::invalid("the owner exists"))?;
-    if input.application.is_dir()
-        && realpath(&input.application).as_deref() != Some(input.application.as_path())
-    {
-        return Ok(Profile {
-            kind: super::production_home::ProfileKind::Unsafe,
-            entry_point: None,
-            composer: None,
-        });
-    }
-    composer_profile(&input.application, &input.entry_point, uid)
-}
-
-pub struct InspectProfile;
-
-impl Command for InspectProfile {
-    const NAME: &'static str = "instance.inspect-development-profile";
-    const SUMMARY: &'static str =
-        "Read a development checkout's Composer metadata, refusing a link or another owner.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = ProfileInput;
-    type Output = Profile;
-    type Error = ReleaseError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn run(input: ProfileInput, _: &Context) -> Result<Profile, ReleaseError> {
-        profile(&input)
-    }
 }
 
 // ---- the URL -----------------------------------------------------------------------------------------------------

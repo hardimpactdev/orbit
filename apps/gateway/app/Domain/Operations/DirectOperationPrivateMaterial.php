@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentInvocation;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -25,16 +24,7 @@ final readonly class DirectOperationPrivateMaterial
             Arr::set($input, $parameter, Arr::get($operation->input, $parameter));
         }
 
-        return array_map(self::wireValue(...), $this->sources->hydrate($operation, '', $input, $declaration)['input']);
-    }
-
-    private static function wireValue(#[\SensitiveParameter] mixed $value): mixed
-    {
-        if (is_array($value)) {
-            return array_map(self::wireValue(...), $value);
-        }
-
-        return AgentInvocation::wire(['value' => $value])[0]['value'];
+        return $this->sources->hydrate($operation, '', $input, $declaration)['input'];
     }
 
     public function artifact(Operation $operation, string $field, ?int $callerNodeId = null): OperationArtifact

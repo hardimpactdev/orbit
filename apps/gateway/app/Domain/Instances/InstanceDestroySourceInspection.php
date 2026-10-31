@@ -18,8 +18,17 @@ final readonly class InstanceDestroySourceInspection
      */
     public function capture(Operation $operation, array $inspection): array
     {
-        return DB::transaction(function () use ($operation, $inspection): array {
-            $input = $operation->input ?? [];
+        return $this->captureInput($operation->input ?? [], $inspection);
+    }
+
+    /** Capture within an owning parent's saved removal, without a child Operation.
+     * @param  array<string, mixed>  $input
+     * @param  array<string, mixed>  $inspection
+     * @return array<string, mixed>
+     */
+    public function captureInput(array $input, array $inspection): array
+    {
+        return DB::transaction(function () use ($input, $inspection): array {
             $removal = InstanceRemoval::query()->lockForUpdate()->findOrFail(ValidatedData::string($input['removal_id']));
             if ($removal->native_sources !== null) {
                 return $this->executable($input);

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Processes\DesiredProcessState;
@@ -101,14 +100,7 @@ final readonly class NativeInstanceEnvironmentMaterial implements OperationSecre
                 throw new ResourceOperationException('operation.kind_unavailable', 'Native environment Process restart composition is unavailable.', 409);
             }
             if ($instance->selected_php_version !== null) {
-                $identity = ProductionPhpRuntimeIdentity::from($instance);
-                $runtime = [
-                    'config' => ['user' => $context->executionUser, 'home' => $context->path,
-                        'version' => $instance->selected_php_version, 'application' => $instance->applicationDirectory()],
-                    'php' => ['user' => $identity->user, 'home' => $identity->home, 'version' => $identity->version,
-                        'marker' => $identity->marker(), 'deadline_seconds' => 30],
-                    'processes' => [],
-                ];
+                throw new ResourceOperationException('operation.kind_unavailable', 'Native production PHP environment refresh is unavailable.', 409);
             }
         }
 
