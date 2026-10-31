@@ -14,6 +14,7 @@ export function rolePrerequisiteSteps(
     intent: string,
     fullGlobals: Fields,
     dependency?: string,
+    preparedToolsExpr?: string,
 ): Fields[] {
     const steps: Fields[] = [];
     let previous = dependency;
@@ -31,10 +32,28 @@ export function rolePrerequisiteSteps(
                     JSON.stringify(predecessors)
                 }.exists(prior, key == prior || key.startsWith(prior + "-")) && steps[key].status in ["failed", "cancelled"])`
                 : "false";
-            step.guard = expr(`!(${applicable}) || (${failed})`);
+            step.guard = expr(`(${failed}) || !(${applicable})`);
             steps.push(step);
         }
         previous = String(group[group.length - 1].name);
+    }
+    const prepared = name + "_prepared_tools";
+    if (preparedToolsExpr) {
+        append([{
+            name: prepared,
+            ...placement,
+            task: {
+                type: "behavior",
+                behaviorType: "@nckrtl/node-role-converge-command",
+                behaviorName: prepared,
+                methodName: "prepared_tools",
+                inputs: {
+                    node_id: expr(intent + ".node_id"),
+                    required_packages: expr(intent + ".prerequisites.packages"),
+                    contribution: expr(preparedToolsExpr),
+                },
+            },
+        }]);
     }
     const account = name + "_account";
     append(
@@ -77,7 +96,10 @@ export function rolePrerequisiteSteps(
             fullGlobals,
             String(previous),
         ),
-        `size(${intent}.prerequisites.packages) > 0`,
+        `size(${intent}.prerequisites.packages) > 0` +
+            (preparedToolsExpr
+                ? ` && !steps[${JSON.stringify(prepared)}].outputs.ready`
+                : ""),
     );
     append(
         roleBaselineSteps(name + "_apps_directory", "account_directory", {

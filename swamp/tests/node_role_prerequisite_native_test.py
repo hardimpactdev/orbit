@@ -48,6 +48,7 @@ print(json.dumps(result))
                           "hostKeys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG"]},
             "hosts": [{"name": "target", "address": "dev.invalid"}],
         }
+        self.globals = globals_
         source = (ROOT / "extensions/behaviors/operations/node-role-converge-command/prerequisite_steps.ts").as_uri()
         deno = os.environ.get("DENO_BIN", shutil.which("deno") or "deno")
         code = ("import {rolePrerequisiteSteps} from " + json.dumps(source) + ";"
@@ -66,17 +67,17 @@ print(json.dumps(result))
 
     def run_prerequisites(self, role="app-dev", success=True):
         application = role in ("app-dev", "app-prod")
-        intent = {"role": role, "user": "orbit", "storage_root": None,
+        intent = {"node_id": 7, "role": role, "user": "orbit", "storage_root": None,
                   "caddy_package": {"release": "2.10.0", "minimum_version": "2.9.0", "amd64_sha512": "a" * 128} if application else None,
                   "prerequisites": {"releases": ["noble"], "packages": ["composer"] if application else ["postgresql-client"],
                                     "apps_directory": role == "app-dev", "composer_home": application}}
         path = self.repo / "inputs.json"
-        path.write_text(json.dumps({"intent": intent}))
+        path.write_text(json.dumps({"intent": intent, **({"tools": self.tools} if hasattr(self, "tools") else {})}))
         run = json.loads(self.cli("workflow", "run", "role-prerequisite-fixture", "--input-file", str(path), success=success).stdout)
         return json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
 
     def calls(self):
-        return [json.loads(line) for line in self.audit.read_text().splitlines()]
+        return [json.loads(line) for line in self.audit.read_text().splitlines()] if self.audit.exists() else []
 
     def test_application_prerequisites_keep_directory_manifest_and_verification_actions_visible(self):
         history = self.run_prerequisites()
@@ -111,3 +112,41 @@ print(json.dumps(result))
         self.assertEqual(calls.count("account"), 1)
         self.assertEqual(calls.count("composer_vendor"), 2)
         self.assertIn("composer_verify", calls)
+
+    def prepared(self, receipt):
+        self.tools = receipt
+        deno = os.environ.get("DENO_BIN", shutil.which("deno") or "deno")
+        source = (ROOT / "extensions/behaviors/operations/node-role-converge-command/prerequisite_steps.ts").as_uri()
+        code = "import {rolePrerequisiteSteps} from " + json.dumps(source) + ";console.log(JSON.stringify(rolePrerequisiteSteps('baseline','inputs.intent'," + json.dumps(self.globals) + ",undefined,'inputs.tools')));"
+        steps = json.loads(subprocess.run([deno, "eval", code], check=True, capture_output=True, text=True).stdout)
+        for step in steps:
+            self.assertEqual(step.pop("target"), "orbit-node-209")
+            self.assertEqual(step.pop("labels"), {"node": "209"})
+        path = self.repo / "workflows/workflow-role-prerequisite-fixture.yaml"
+        workflow = yaml.safe_load(path.read_text())
+        workflow["inputs"]["properties"]["tools"] = {"type": "object"}
+        workflow["jobs"][0]["steps"] = steps
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+
+    def test_verified_parent_tools_skip_generic_apt_and_preserve_caddy_and_account_directory_duties(self):
+        self.prepared({"ready": True, "node_id": 7, "packages": ["composer", "caddy"]})
+        history = self.run_prerequisites()
+        self.assertEqual(history["status"], "succeeded")
+        actions = [call["action"] for call in self.calls()]
+        self.assertNotIn("packages", actions)
+        self.assertIn("caddy", actions)
+        self.assertIn("account", actions)
+        self.assertIn("storage", actions)
+        self.assertIn("composer_verify", actions)
+
+    def test_wrong_node_tool_contribution_refuses_before_any_target_action(self):
+        self.prepared({"ready": True, "node_id": 8, "packages": ["composer", "caddy"]})
+        history = self.run_prerequisites(success=False)
+        self.assertEqual(history["status"], "failed")
+        self.assertEqual(self.calls(), [])
+
+    def test_incomplete_tool_coverage_refuses_before_any_target_action(self):
+        self.prepared({"ready": True, "node_id": 7, "packages": ["caddy"]})
+        history = self.run_prerequisites(success=False)
+        self.assertEqual(history["status"], "failed")
+        self.assertEqual(self.calls(), [])

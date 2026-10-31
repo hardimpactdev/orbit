@@ -138,3 +138,27 @@ Deno.test("observer files retain public templates and resolve only admitted chec
         "# Managed by Orbit: agent\n[Service]\nProtectHome=tmpfs\n",
     );
 });
+
+Deno.test("parent tools must prove the same Node and every required OS package", async () => {
+    const { preparedRoleTools } = await import("./assets.ts");
+    const args = {
+        node_id: 7,
+        required_packages: ["caddy", "composer"],
+        contribution: {
+            ready: true,
+            node_id: 7,
+            packages: ["caddy", "composer", "git"],
+        },
+    };
+    assertEquals(preparedRoleTools(args), { ready: true });
+    for (
+        const contribution of [{ ...args.contribution, node_id: 8 }, {
+            ...args.contribution,
+            packages: ["caddy"],
+        }, { ...args.contribution, ready: false }]
+    ) {
+        await assertRejects(async () =>
+            preparedRoleTools({ ...args, contribution })
+        );
+    }
+});

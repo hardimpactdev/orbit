@@ -1,4 +1,9 @@
 import { z } from "npm:zod@4.4.3";
+import {
+    bindRolePublications,
+    PublicationBindingInput,
+    PublicationBindingResult,
+} from "./publication_binding.ts";
 
 const Account = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Path = z.string().startsWith("/").max(4096).refine((value) =>
@@ -103,6 +108,27 @@ export function observerFiles(raw: unknown) {
         unit: args.unit.replace(/^ProtectHome=yes$/m, access),
     });
 }
+const PreparedTools = z.object({
+    ready: z.literal(true),
+    node_id: z.number().int().positive(),
+    packages: z.array(z.string().min(1)),
+}).strict();
+const PreparedArgs = z.object({
+    node_id: z.number().int().positive(),
+    required_packages: z.array(z.string().min(1)),
+    contribution: PreparedTools,
+}).strict();
+/** Parent tools own pin verification; a role may reuse only a matching, complete typed contribution. */
+export function preparedRoleTools(raw: unknown) {
+    const args = PreparedArgs.parse(raw);
+    if (
+        args.node_id !== args.contribution.node_id ||
+        args.required_packages.some((name) =>
+            !args.contribution.packages.includes(name)
+        )
+    ) throw new Error("role.prerequisites_unproven");
+    return { ready: true as const };
+}
 const Result = z.object({ ready: z.literal(true), changed: z.boolean() })
     .strict();
 type Context = {
@@ -115,6 +141,16 @@ export const behavior = {
     type: "@nckrtl/node-role-converge-command",
     version: "2026.10.31.1",
     resources: {
+        publication_binding: {
+            schema: PublicationBindingResult,
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
+        prepared_tools: {
+            schema: z.object({ ready: z.literal(true) }).strict(),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
         observer_files: {
             schema: ObserverFiles,
@@ -129,6 +165,41 @@ export const behavior = {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        publication_binding: {
+            description:
+                "Bind only the admitted pending candidate publication to verified bootstrap pins",
+            arguments: PublicationBindingInput,
+            execute: async (
+                args: z.infer<typeof PublicationBindingInput>,
+                ctx: Context,
+            ) => {
+                const result = bindRolePublications(args);
+                await ctx.writeResource(
+                    "publication_binding",
+                    "publication_binding",
+                    result,
+                );
+                return result;
+            },
+        },
+        prepared_tools: {
+            description:
+                "Prove a parent tool contribution covers this role's OS prerequisites",
+            arguments: PreparedArgs,
+            execute: async (
+                args: z.infer<typeof PreparedArgs>,
+                ctx: Context,
+            ) => {
+                const result = preparedRoleTools(args);
+                await ctx.writeResource(
+                    "prepared_tools",
+                    "prepared_tools",
+                    result,
+                );
+                return result;
+            },
+        },
+
         observer_delivery: {
             description:
                 "Prove the canonical observer delivery matches the admitted pin",
