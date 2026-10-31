@@ -45,22 +45,22 @@ it('refuses an unbound worker run and never lets projection establish its identi
     $runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     expect(fn () => $direct->assertRun($this->operation, $runId))->toThrow(ResourceOperationException::class);
     expect(fn () => $direct->project($this->operation, ['run_id' => $runId, 'status' => 'running',
-        'started_at' => '2026-10-30T12:00:00.000Z'], [], 'publish'))->toThrow(ResourceOperationException::class);
+        'started_at' => '2026-10-30T12:00:00.000Z'], []))->toThrow(ResourceOperationException::class);
     expect($this->operation->fresh()->state)->toBe(['route_publication_writer' => 'direct']);
     expect($this->operation->steps()->count())->toBe(0);
 });
 
-it('rejects undeclared and previous-writer intents before opening a native connection', function (): void {
+it('refuses undeclared intents and registers direct declarations without writer flags', function (): void {
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
-    foreach ([['kind' => 'unknown.intent'], ['kind' => 'route.private_dns_publish', 'state' => []]] as $changes) {
-        $this->operation->update($changes);
-        expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
-    }
+    $this->operation->update(['kind' => 'unknown.intent']);
+    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(DirectOperation::class)->writer('unknown.intent'))->toThrow(ResourceOperationException::class);
     expect($socket->sent)->toBe([]);
-    expect($socket->endpoint)->toBeNull();
-    expect(app(DirectOperation::class)->writer('unknown.intent'))->toBeNull();
+    $this->operation->update(['kind' => 'route.private_dns_publish', 'state' => []]);
+    app(StartSwampRun::class)->start($this->operation);
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
 
 it('fails closed without a configured scoped credential before sending intent', function (): void {
@@ -124,14 +124,17 @@ it('projects terminal results idempotently and rejects a changed run or outcome'
     $direct = app(DirectOperation::class);
     $data = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
         'started_at' => '2026-10-30T12:00:00Z', 'finished_at' => '2026-10-30T12:00:01Z'];
-    $direct->project($this->operation, $data, ['ready' => true], 'publish');
+    $direct->project($this->operation, $data, ['ready' => true]);
     $sequence = $this->operation->sequence;
-    $direct->project($this->operation, $data, ['ready' => true], 'publish');
+    $direct->project($this->operation, $data, ['ready' => true]);
     expect($this->operation->sequence)->toBe($sequence);
     expect($this->operation->attempts)->toBe(0);
     expect($this->operation->worker)->toBeNull();
-    expect(fn () => $direct->project($this->operation, $data, ['ready' => false], 'publish'))->toThrow(ResourceOperationException::class);
-    expect(fn () => $direct->project($this->operation, [...$data, 'run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'], ['ready' => true], 'publish'))->toThrow(ResourceOperationException::class);
+    expect($this->operation->steps()->count())->toBe(0);
+    expect($this->operation->state)->not->toHaveKey('steps');
+    expect($this->operation->current_step)->toBeNull();
+    expect(fn () => $direct->project($this->operation, $data, ['ready' => false]))->toThrow(ResourceOperationException::class);
+    expect(fn () => $direct->project($this->operation, [...$data, 'run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'], ['ready' => true]))->toThrow(ResourceOperationException::class);
 });
 
 it('recovers a lost start response from exact native history without resubmission', function (): void {
