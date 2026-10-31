@@ -17,7 +17,6 @@ use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
-use App\Domain\Instances\Environment\InstanceEnvironmentRuntimeRefresher;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -27,6 +26,8 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceCreateEnvironmentSeed;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceDestroyPhpSecret;
+use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Instances\Logs\InstanceLogReader;
@@ -68,7 +69,6 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
-use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
@@ -109,7 +109,6 @@ final class InstancesServiceProvider extends ServiceProvider
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionPhpRuntimeManager::class => RemoteProductionPhpRuntimeManager::class,
-        InstanceEnvironmentRuntimeRefresher::class => RemoteInstanceEnvironmentRuntimeRefresher::class,
         ProductionRouteProjector::class => NativeProductionRouteProjector::class,
         ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
@@ -121,7 +120,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([NativeInstanceProvisioningSetup::class, \App\Domain\Instances\InstanceDestroyTeardownSecret::class, \App\Domain\Instances\InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
