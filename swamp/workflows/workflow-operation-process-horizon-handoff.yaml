@@ -104,6 +104,8 @@ jobs:
               if (
                   not stat.S_ISREG(info.st_mode)
                   or info.st_uid != 0
+                  or info.st_gid != 0
+                  or info.st_nlink != 1
                   or info.st_mode & 0o022
                   or len(content) > 65536
               ):
@@ -189,7 +191,12 @@ jobs:
               except FileExistsError:
                   pass
               info = directory.lstat()
-              if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+              if (
+                  not stat.S_ISDIR(info.st_mode)
+                  or info.st_uid != 0
+                  or info.st_gid != 0
+                  or info.st_mode & 0o022
+              ):
                   raise SystemExit("process.horizon_foreign_directory")
           fd, name = tempfile.mkstemp(prefix=".horizon-", suffix=".service", dir=parent)
           try:
@@ -304,7 +311,13 @@ jobs:
               with os.fdopen(fd, "rb") as current:
                   info = os.fstat(current.fileno())
                   content = current.read(65537)
-              if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+              if (
+                  not stat.S_ISREG(info.st_mode)
+                  or info.st_uid != 0
+                  or info.st_gid != 0
+                  or info.st_nlink != 1
+                  or info.st_mode & 0o022
+              ):
                   raise SystemExit("process.horizon_foreign_unit")
               if hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]:
                   print("unchanged")
@@ -316,6 +329,8 @@ jobs:
           if (
               not stat.S_ISREG(info.st_mode)
               or info.st_uid != 0
+              or info.st_gid != 0
+              or info.st_nlink != 1
               or info.st_mode & 0o022
               or hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]
           ):

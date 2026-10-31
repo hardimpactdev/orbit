@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -35,7 +36,7 @@ class HorizonInlineNative(NativeTestCase):
         text = text.replace('/etc/systemd/system',str(self.host/'etc/systemd/system')).replace('/etc/orbit',str(self.host/'etc/orbit'))
         text = text.replace('/usr/bin/systemctl',str(self.manager)).replace('/usr/bin/systemd-analyze',str(self.analyzer))
         text = text.replace('sudo -n /usr/bin/env','/usr/bin/env').replace('sudo -n --user "$RUN_USER" -- ','').replace('sudo -n ','')
-        text = text.replace('info.st_uid != 0','info.st_uid != os.getuid()')
+        text = text.replace('info.st_uid != 0','info.st_uid != os.getuid()').replace('info.st_gid != 0','info.st_gid != os.getgid()')
         workflow=yaml.safe_load(text)
         for job in workflow['jobs']:
             job.pop('target',None)
@@ -97,3 +98,11 @@ class HorizonInlineNative(NativeTestCase):
         self.assertEqual(run['status'],'failed')
         self.assertEqual(json.loads((self.repo/'host-state.json').read_text())['calls'],[])
         self.assertIn('99',self.unit.read_text())
+
+    def test_hardlinked_owned_unit_is_refused_before_mutation(self):
+        self.unit.write_text(self.content)
+        self.unit.chmod(0o644)
+        os.link(self.unit, self.host / 'unit-other-link')
+        run = self.run_handoff(success=False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertEqual(json.loads((self.repo/'host-state.json').read_text())['calls'], [])
