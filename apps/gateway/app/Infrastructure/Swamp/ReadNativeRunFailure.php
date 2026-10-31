@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
@@ -14,13 +15,13 @@ final readonly class ReadNativeRunFailure
 {
     public function __construct(private WebSocketClient $socket) {}
 
-    public function failed(Operation $operation, string $workflow, string $runId): bool
+    public function status(Operation $operation, string $workflow, string $runId): ?OperationStatus
     {
         $token = config('swamp.read_token');
         $address = config('swamp.address');
         $caPath = config('swamp.ca_path');
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($caPath) || $caPath === '') {
-            return false;
+            return null;
         }
         $id = bin2hex(random_bytes(16));
         $deadline = microtime(true) + 2;
@@ -40,18 +41,22 @@ final readonly class ReadNativeRunFailure
                         || ! in_array($input['operation_id'] ?? null, [$operation->id, (string) $operation->id], true)
                         || ($input['kind'] ?? null) !== $operation->kind
                         || ! in_array($input['node_id'] ?? null, [$operation->node_id, (string) $operation->node_id], true)) {
-                        return false;
+                        return null;
                     }
 
-                    return in_array($run['status'] ?? null, ['failed', 'interrupted'], true);
+                    return match ($run['status'] ?? null) {
+                        'failed' => OperationStatus::Failed,
+                        'interrupted' => OperationStatus::Interrupted,
+                        default => null,
+                    };
                 }
             }
         } catch (Throwable) {
-            return false;
+            return null;
         } finally {
             $this->socket->close();
         }
 
-        return false;
+        return null;
     }
 }
