@@ -46,20 +46,19 @@ class AnalyticsHostPrepareNative(NativeTestCase):
         self.user = getpass.getuser()
         # Only fixture account lookup and system paths differ.
         # Real key generation, CSR and OpenSSL code is unchanged.
-        helper = certificates / "scripts/leaf.py"
+        helper = certificates / "scripts/local.py"
         text = helper.read_text()
-        passwd = (
-            f"{self.user}:x:{os.getuid()}:{os.getgid()}:fixture:{self.home}:/bin/sh"
-        )
         text += f"""
-CADDY = P({str(self.caddy)!r})
-ANCHOR = P({str(self.ca)!r})
-BUNDLE = P({str(self.ca)!r})
-_original_run = run
-def run(*args):
-    if args == ('/usr/bin/getent', 'passwd', {self.user!r}):
-        return {passwd!r}
-    return _original_run(*args)
+from types import SimpleNamespace
+CADDY = pathlib.Path({str(self.caddy)!r})
+ANCHOR = pathlib.Path({str(self.ca)!r})
+_original_getpwnam = pwd.getpwnam
+def fixture_getpwnam(name):
+    if name == {self.user!r}:
+        return SimpleNamespace(pw_dir={str(self.home)!r},
+                               pw_uid={os.getuid()}, pw_gid={os.getgid()})
+    return _original_getpwnam(name)
+pwd.getpwnam = fixture_getpwnam
 """
         helper.write_text(text)
         self.leaf = {
@@ -244,7 +243,12 @@ await ctx.writeResource("plan","plan",plan);return plan;}}}};
         self.assert_key_private(key)
 
     def test_a_valid_current_leaf_returns_no_csr_and_keeps_its_private_key(self):
-        self.run_parent()
+        first = self.run_parent()
+        prepared = next(job for job in first["jobs"] if job["name"] == "requests")[
+            "steps"
+        ][0]["outputs"]["prepared"]
+        csr = self.repo / "current-request.csr"
+        csr.write_bytes(base64.b64decode(prepared["request_base64"]))
         candidate = self.candidate()
         private_key = (candidate / "key.pem").read_bytes()
         ca_key = self.repo / "disposable-ca.key"
@@ -282,7 +286,7 @@ await ctx.writeResource("plan","plan",plan);return plan;}}}};
                 "x509",
                 "-req",
                 "-in",
-                str(candidate / "request.pem"),
+                str(csr),
                 "-CA",
                 str(self.ca),
                 "-CAkey",
