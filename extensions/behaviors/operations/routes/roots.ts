@@ -22,7 +22,6 @@ export const rootKinds = [
   "route.destroy",
   "route.update",
   "route.target_set",
-  "route.target_unset",
   "route.retire_source",
   "cluster.router_set",
   "cluster.router_unset",
