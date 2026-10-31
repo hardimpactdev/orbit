@@ -143,9 +143,10 @@ export function proxyHttpConfig(
   url: string,
   method: string,
   path: string,
-  body?: unknown,
-  key?: string,
-  timeoutMs = 60000,
+  body: unknown,
+  key: string | undefined,
+  timeoutMs: number,
+  caFile: string,
 ): string {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Invalid proxy Gateway timeout");
@@ -160,7 +161,7 @@ export function proxyHttpConfig(
   return [
     `url = ${curlQuote(target.href)}`,
     `request = ${curlQuote(method)}`,
-    'cacert = "/etc/orbit/agent/ca.pem"',
+    `cacert = ${curlQuote(caFile)}`,
     'proto = "=https"',
     "silent",
     "show-error",
@@ -180,6 +181,7 @@ export function proxyHttpConfig(
 export async function proxyGatewayRequest(
   proxy: NodeProxy,
   url: string,
+  caFile: string,
   method: string,
   path: string,
   body?: unknown,
@@ -191,7 +193,7 @@ export async function proxyGatewayRequest(
   const result = await commandOutput(
     proxyLaunch(proxy, ["/usr/bin/curl", "--config", "-"], timeoutMs),
     new TextEncoder().encode(
-      proxyHttpConfig(url, method, path, body, key, timeoutMs),
+      proxyHttpConfig(url, method, path, body, key, timeoutMs, caFile),
     ),
     268435456 + 1024,
     signal ? AbortSignal.any([signal, timeout]) : timeout,

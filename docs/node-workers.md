@@ -16,7 +16,7 @@ Behaviors import `run` from `extensions/behaviors/operations/_lib/node-commands.
 
 Commands run locally on ordinary workers and over pinned SSH on light Node proxies. Systemd cgroup membership selects the root-owned proxy mapping. Workflow arguments and environment variables cannot select a host. One bounded fixed Python subprocess reads the inherited cgroup and validates public configuration custody, because the compiled native runtime forbids direct `/proc` reads. Metadata failures refuse execution. Stdin and stdout drain concurrently to avoid pipe backpressure deadlocks.
 
-Gateway HTTP also runs on the effect Node over SSH, using its installed CA. The Gateway sees that Node's WireGuard peer identity. No identity header or authorization exception is added. Unported agent-action adapters refuse proxy execution; each family must port its effects before using a proxy.
+Gateway HTTP also runs on the effect Node over SSH, using the caller’s existing configured CA path on that Node. The transport does not substitute an agent configuration path. The Gateway sees that Node's WireGuard peer identity. No identity header or authorization exception is added. Unported agent-action adapters refuse proxy execution; each family must port its effects before using a proxy.
 
 ## Persistent local workers
 
@@ -42,7 +42,7 @@ The setup workflow composes `node/enrollment_issuer.ts::nodeEnrollmentIssuer`; i
 
 ## Credentials and readiness
 
-The shared issuer creates exact `orbit-node-N` enrollment and `orbit-node-N-access` worker-principal tokens with explicit 24-hour lifetimes. The canonical rotation policy marks credentials due after 20 hours or with four hours remaining. Invalid lifetimes and lifetimes above 24 hours are due. A saved pair is reused by its owning native step's retry. At pinned1602, native create refuses an active name, so rotation revokes the old enrollment before minting its replacement; it does not support overlapping generations.
+The shared issuer creates exact `orbit-node-N` enrollment and `orbit-node-N-access` worker-principal tokens with explicit 24-hour lifetimes. The canonical rotation policy marks credentials due after 20 hours or with four hours remaining. Invalid lifetimes and lifetimes above 24 hours are due. A saved pair is reused by its owning native step's retry. Persistent-worker rotation refuses before any native credential mutation or full Node converge. The former path revoked the installed pair before unrelated convergence could fail, leaving the worker unable to reconnect. Its hourly schedule is paused during recovery; persistent renewal needs a credential-only delivery path in the native pilot. Proxy renewal remains scoped to its existing protected files on209.
 
 Validate `node-worker-canary` before running it with an admitted Node and configured user. It reads Node identity, hostname, effective account, and sudo readiness. On a proxy it also verifies the remote WireGuard address and the preserved local worker mask. Inspect the native dispatch target, string label, worker instance, and proof resource before announcing readiness.
 
