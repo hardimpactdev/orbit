@@ -1,6 +1,7 @@
 // Real official workflow/assert engine with the real planner. Only scan and
-// registry IO are fixture transports. This does not execute a task-VM update.
+// registry IO and host-method dispatch are fixtures. This does not execute a task-VM update.
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { parse, stringify } from "jsr:@std/yaml@1.0.9";
 
 const repo = new URL("..", import.meta.url).pathname;
 Deno.test("official dependency workflow refuses registry faults before approval; no-change remains distinct", async () => {
@@ -48,6 +49,33 @@ Deno.test("official dependency workflow refuses registry faults before approval;
         `${dir}/${to}`,
       );
     }
+    // The production host dispatcher targets its worker-owned repository.
+    // Invoke the same scan/plan methods directly inside this isolated fixture.
+    const workflowPath = `${dir}/workflows/workflow-dependency-upgrade.yaml`;
+    const workflow = parse(await Deno.readTextFile(workflowPath)) as {
+      labels?: Record<string, string>;
+      jobs: { steps: { task: Record<string, unknown> }[] }[];
+    };
+    // This local policy fixture has no fleet worker. Verify shipped placement
+    // before removing it from the disposable copy; keep every DAG/assert edge.
+    assertEquals(workflow.labels, { pool: "migration", node: "209" });
+    delete workflow.labels;
+    let dispatches = 0;
+    for (const job of workflow.jobs) {
+      for (const step of job.steps) {
+        const task = step.task;
+        if (task.modelType !== "@nckrtl/native-host-method") continue;
+        assert(
+          ["upgrade_scan", "upgrade_plan"].includes(String(task.methodName)),
+        );
+        task.modelType = "@fixture/dependency-policy";
+        task.modelName = "orbit-deps";
+        task.methodName = task.methodName === "upgrade_scan" ? "scan" : "plan";
+        dispatches++;
+      }
+    }
+    assertEquals(dispatches, 2);
+    await Deno.writeTextFile(workflowPath, stringify(workflow));
     await Deno.mkdir(`${dir}/extensions/behaviors`, { recursive: true });
     // Use the existing planner without adding injectable registry URLs or a
     // production scan/host fallback. The wrapper exists only in this fixture.
@@ -84,14 +112,11 @@ export const behavior = { ...original, type: "@fixture/dependency-policy", metho
     await Deno.writeTextFile(
       `${dir}/models/@fixture/dependency-policy/orbit-deps.yaml`,
       `type: '@fixture/dependency-policy'
-typeVersion: 2026.10.25.1
+typeVersion: 2026.10.31.1
 id: f9acccd1-c74f-4d87-a383-84c2924da698
 name: orbit-deps
 version: 1
 globalArguments:
-  gatewayUrl: https://unused.invalid
-  caCertPath: /unused
-  instanceId: 1
   checkoutDir: ${dir}
   branch: main
 methods: {}
@@ -100,17 +125,13 @@ methods: {}
     const baseInventory = {
       commit: "a".repeat(40),
       branch: "main",
-      instanceId: 1,
       scannedAt: "2026-10-25T00:00:00Z",
-      gatewayError: null,
       subProjects: [{
         path: "packages/example",
         ecosystems: [{
           ecosystem: "composer",
           manager: "composer",
           source: "checkout",
-          reason: "test scan",
-          observedAt: null,
           direct: [{
             name: "acme/one",
             registryName: "acme/one",
