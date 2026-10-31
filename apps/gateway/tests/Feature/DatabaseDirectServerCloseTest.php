@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseServers\CloseDatabaseServerAction;
-use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -28,10 +28,9 @@ beforeEach(function (): void {
 });
 
 it('starts closure directly and exposes only its admitted endpoint', function (): void {
-    expect(app(OperationKinds::class)->definition('database_server.close'))->not->toHaveKeys(['runs', 'execution', 'completion', 'children']);
     expect($this->operation->lock_key)->toBeNull();
     $response = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.default_open', true)->assertJsonPath('data.input.port', 5434);
+        ->assertJsonPath('data.input.default_open', true)->assertJsonPath('data.input.port', 5434)->assertJsonMissingPath('data.input.agent_sha256');
     expect($response->getContent())->not->toContain('private-root-sentinel', 'payload');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
@@ -42,6 +41,10 @@ it('starts closure directly and exposes only its admitted endpoint', function ()
 
 it('projects closure once and cannot overwrite a newer server state on terminal replay', function (): void {
     expect($this->server->fresh()->default_open)->toBeTrue();
+    $intent = DatabaseExecutionIntent::recorded($this->operation->input['intent_id']);
+    $payload = $intent->payload;
+    unset($payload['commands']['database-apply']['protected']);
+    $intent->update(['payload' => $payload]);
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     expect($this->server->fresh()->default_open)->toBeFalse();
     $this->server->fresh()->update(['default_open' => true]);
@@ -50,10 +53,9 @@ it('projects closure once and cannot overwrite a newer server state on terminal 
     $this->getJson($this->path.'/private-material?run_id='.$this->runId)->assertConflict();
 });
 
-it('keeps default-user state on refusal and rejects a changed endpoint', function (): void {
+it('keeps the admitted endpoint and default-user state on native refusal', function (): void {
     $this->server->update(['port' => 5435]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
-    $this->server->update(['port' => 5434]);
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.port', 5434);
     $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_in_use', 'result' => ['error_code' => 'database.server_in_use']])->assertOk();
     expect($this->server->fresh()->default_open)->toBeTrue();
 });

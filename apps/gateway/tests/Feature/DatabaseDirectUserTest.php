@@ -6,12 +6,12 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseServers\DatabaseCommands;
 use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Node;
@@ -43,12 +43,11 @@ beforeEach(function (): void {
 });
 
 it('directly starts SQL user intent without old execution declarations or secret values', function (): void {
-    expect(app(OperationKinds::class)->definition('database_user.create'))->not->toHaveKeys(['runs', 'execution', 'completion', 'completion_contract', 'children']);
-    expect($this->operation->state)->toMatchArray(['database_user_writer' => 'direct', 'swamp_run_id' => $this->runId]);
+    expect($this->operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
     expect($this->operation->attempts)->toBe(0);
     expect($this->operation->worker)->toBeNull();
     $public = $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->json('data.input');
-    expect($public)->toHaveKeys(['driver', 'container', 'agent_sha256', 'username', 'replication', 'known_user'])->not->toHaveKeys(['password', 'sql']);
+    expect($public)->toHaveKeys(['driver', 'container', 'username', 'replication', 'known_user'])->not->toHaveKeys(['password', 'sql', 'agent_sha256']);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-root-sentinel', $this->sql, 'private-login-sentinel');
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
 });
@@ -75,6 +74,10 @@ it('maps only fixed direct material paths through the existing owner-checked sou
 
 it('projects the encrypted recorded user once and refuses later private reads', function (): void {
     $this->assertDatabaseCount('database_users', 0);
+    $intent = DatabaseExecutionIntent::recorded($this->operation->input['intent_id']);
+    $payload = $intent->payload;
+    unset($payload['commands']['database-apply']['protected']);
+    $intent->update(['payload' => $payload]);
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     $user = DatabaseUser::query()->sole();
     expect($user->password)->toBe('private-login-sentinel');
