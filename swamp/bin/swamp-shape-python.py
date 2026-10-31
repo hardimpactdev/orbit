@@ -53,19 +53,28 @@ def scan(source, gateway_primitives=()):
         current = scope(at)
         while current is not None:
             values = [(part, part.value) for part in ast.walk(current)
-                      if isinstance(part, (ast.Assign, ast.AnnAssign)) and scope(part) is current
+                      if isinstance(part, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and scope(part) is current
                       and any(isinstance(target, ast.Name) and target.id == identifier
                               for target in (part.targets if isinstance(part, ast.Assign) else [part.target]))]
             values += [(part, item.context_expr) for part in ast.walk(current)
                        if isinstance(part, (ast.With, ast.AsyncWith)) and scope(part) is current
                        for item in part.items if isinstance(item.optional_vars, ast.Name) and item.optional_vars.id == identifier]
             if values:
+                # Function bodies may run after later module/closure rebindings.
+                # Only a syntactically immutable outer binding is provable here.
+                if current is not scope(at) and (len(values) != 1 or any(
+                    isinstance(part, (ast.Global, ast.Nonlocal)) and identifier in part.names
+                    for part in ast.walk(tree)
+                )):
+                    return None
                 # A unique binding is sufficient; repeated assignment needs a final
                 # unconditional binding that dominates the use, not a branch guess.
                 prior = [(part, value) for part, value in values if part.lineno <= at.lineno]
                 if not prior:
                     return None
                 part, value = max(prior, key=lambda item: item[0].lineno)
+                if isinstance(part, (ast.AugAssign, ast.NamedExpr)):
+                    return None
                 parent = parents.get(part)
                 use = at
                 while use in parents and parents[use] is not parent:

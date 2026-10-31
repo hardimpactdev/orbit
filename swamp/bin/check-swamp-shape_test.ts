@@ -783,3 +783,30 @@ Deno.test("static native child workflows are scanned through their local source 
   );
   assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
 });
+
+Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {
+  for (
+    const program of [
+      "import subprocess\nsubprocess.run(['flock','/tmp/workflow.lock','true'])",
+      "import os\nos.system('sleep 30')",
+      "from subprocess import run as execute\nexecute(['bash','-c','sudo -S sleep 30'])",
+      "import subprocess\nsubprocess.run(['ssh','host','flock /tmp/workflow.lock true'])",
+    ]
+  ) {
+    assertEquals(
+      agentPythonFindings(file, program, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      program,
+    );
+    const heredoc = `python3 <<'PY'\n${program}\nPY`;
+    assertEquals(
+      agentShellFindings(file, heredoc, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      heredoc,
+    );
+  }
+});
