@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessRuntimeLease;
+use App\Domain\Processes\ProcessOperationCompletion;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -15,7 +17,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
     ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
@@ -36,7 +38,7 @@ it('records Process intent without dispatch or exposing environment bytes', func
         ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     $operation = Operation::query()->sole();
     expect($operation->node_id)->toBe($this->node->id)
-        ->and($operation->input['environment'])->toBe(['$secret' => 'process.environment', 'id' => Process::query()->sole()->id])
+        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => Process::query()->sole()->id])
         ->and(json_encode($operation->toArray()))->not->toContain($secret)
         ->and($response->getContent())->not->toContain($secret)
         ->and(Process::query()->sole()->status->value)->toBe('provisioning');
@@ -68,13 +70,11 @@ it('records lifecycle intent without marking an unexecuted effect successful', f
 })->with(['start', 'restart']);
 
 it('starts creation directly without the old admission lease or claim contract', function (): void {
-    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class)->shouldNotReceive('run')->getMock());
     app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->state['process_control_writer'])->toBe('direct')->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
+    expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
     config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.create', 'worker' => 'old'])->assertUnprocessable();
 });
 
 it('returns only admitted public installation input and binds private bytes to the current definition', function (): void {
@@ -90,13 +90,6 @@ it('returns only admitted public installation input and binds private bytes to t
     $process = Process::query()->sole();
     $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:changed']]);
     $this->getJson($path.'/private-material'.$query)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-});
-
-it('refuses a removed polled creation writer before storing a row', function (): void {
-    config(['swamp.direct_writers' => ['process.create' => 'polled']]);
-    $this->postJson('/api/v1/processes', $this->payload)->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('processes', 0);
-    $this->assertDatabaseCount('operations', 0);
 });
 
 it('captures the real first-visit systemd input with a boolean activation flag', function (): void {
@@ -118,4 +111,60 @@ it('captures the real first-visit systemd input with a boolean activation flag',
     $input['installation']['content_hash'] = str_repeat('b', 64);
     $fixture = json_decode(file_get_contents(base_path('tests/Fixtures/Processes/create-admitted-input.json')), true, flags: JSON_THROW_ON_ERROR);
     expect($input)->toBe($fixture);
+});
+
+it('starts update directly with only record admission serialization and keeps private definition bytes out of its input', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active']);
+    app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
+
+    config(['dependency_detection.services_node_id' => $this->node->id, 'operation_executor.worker_node_ids' => [(string) $this->node->id]]);
+    $this->patchJson('/api/v1/processes/'.$process->id, ['environment' => ['PASSWORD' => 'update-private-value']])->assertAccepted()->assertJsonPath('data.kind', 'process.update');
+
+    $operation = Operation::query()->where('kind', 'process.update')->sole();
+    expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => $process->id])
+        ->and($operation->input)->not->toHaveKeys(['environment', 'command', 'content', 'image'])
+        ->and(json_encode($operation->toArray()))->not->toContain('update-private-value');
+    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $query = '?run_id='.$operation->state['swamp_run_id'];
+    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $process->id)
+        ->assertJsonMissingPath('data.input.installation.definition');
+    $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'update-private-value');
+    Queue::assertNothingPushed();
+});
+
+it('settles pending activation metadata from a bounded native update result', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'pending-update',
+        'runtime' => 'systemd', 'command' => ['/usr/bin/true'], 'start' => false,
+    ])->assertAccepted();
+    $process = Process::query()->sole();
+    $process->forceFill(['systemd_activation_pending' => true, 'retired_runtime' => 'docker'])->save();
+    $operation = Operation::query()->sole();
+    app(ProcessOperationCompletion::class)->complete($operation,
+        OperationOutcome::succeeded(['state' => 'inactive']));
+    expect($process->refresh()->systemd_activation_pending)->toBeFalse()
+        ->and($process->systemd_activation_hash)->toBe($operation->input['content_hash'])
+        ->and($process->retired_runtime)->toBeNull();
+});
+
+it('refuses update intent while a Route owns the Process reservation lock', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active']);
+    $before = $process->runtime_config;
+    $reservation = new NativeProcessRuntimeLease;
+    $reservation->run($process, function () use ($process, $before): void {
+        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])
+            ->assertStatus(502)->assertJsonPath('error.code', 'process.runtime_lock_failed');
+        expect($process->fresh()->runtime_config)->toBe($before);
+        expect(Operation::query()->where('kind', 'process.update')->exists())->toBeFalse();
+    });
+    $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])->assertAccepted();
 });
