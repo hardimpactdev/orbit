@@ -12,7 +12,7 @@ use App\Support\ValidatedData;
 
 final readonly class RouteNodeEffectExecution implements OperationFamilyExecution
 {
-    public const array Kinds = ['route.router_lan_retire', 'route.workload_firewall', 'route.lan_converge',
+    public const array Kinds = ['route.router_lan_retire', 'route.workload_firewall', 'route.lan_converge', 'route.lan_remove',
         'route.public_firewall', 'route.shared_php_withdraw', 'route.transfer_php_withdraw', 'route.transfer_lan_remove'];
 
     public function context(Operation $operation): array
