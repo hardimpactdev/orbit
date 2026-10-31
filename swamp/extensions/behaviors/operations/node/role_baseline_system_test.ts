@@ -133,12 +133,28 @@ Deno.test("storage refuses missing accounts without host mutation", async () => 
 });
 Deno.test("hibernation validates both trees, repairs only owned modes, and preserves protected roots", async () => {
   const self = [Deno.uid(), Deno.gid()];
-  const transport: SystemTransport = (command, signal) =>
-    command.stdin?.includes("grp.getgrnam('caddy')")
-      ? Promise.resolve({ success: true, stdout: JSON.stringify(self) })
-      : fixtureTransport(command, signal);
-  const before = await Deno.stat("/tmp");
   await scratch(async (directory) => {
+    const parent = directory.slice(0, directory.lastIndexOf("/"));
+    const before = await Deno.stat(parent);
+    const transport: SystemTransport = (command, signal) => {
+      if (command.stdin?.includes("grp.getgrnam('caddy')")) {
+        return Promise.resolve({ success: true, stdout: JSON.stringify(self) });
+      }
+      // Sandbox the real filesystem action at this fixture's disposable root.
+      // The production protected-root policy remains unchanged.
+      const boundary = `PROTECTED.add(${JSON.stringify(parent)})
+fixture_chmod = os.chmod
+def owned_chmod(path, *args, **kwargs):
+    if os.path.commonpath([${JSON.stringify(directory)}, path]) != ${JSON.stringify(directory)}:
+        raise AssertionError('Fixture chmod escaped its scratch directory')
+    return fixture_chmod(path, *args, **kwargs)
+os.chmod = owned_chmod
+`;
+      return fixtureTransport({
+        ...command,
+        stdin: command.stdin?.replace("def main(data):", boundary + "def main(data):"),
+      }, signal);
+    };
     const input = {
       marker_directory: `${directory}/markers/hibernation`,
       log_directory: `${directory}/logs/hibernation`,
@@ -158,7 +174,8 @@ Deno.test("hibernation validates both trees, repairs only owned modes, and prese
         assertEquals([metadata.uid, metadata.gid], self);
       }
     }
-    assertEquals((await Deno.stat("/tmp")).mode, before.mode);
+    const after = await Deno.stat(parent);
+    assertEquals([after.mode, after.uid, after.gid], [before.mode, before.uid, before.gid]);
   });
 });
 Deno.test("hibernation refuses an invalid second tree and an unavailable Caddy group before creating the first", async () => {

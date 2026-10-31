@@ -5,11 +5,13 @@ visibility: private
 license: MIT
 description: Native script assets for standalone Node-local leaf certificates.
 behaviors:
-  - operations/certificates/script_assets.ts
+- operations/certificates/script_assets.ts
+- operations/certificates/role_assets.ts
 additionalFiles:
-  - scripts/local.py
-  - scripts/request.py
-  - scripts/publish.py
-  - scripts/remove.py
-  - scripts/inspect.py
-  - scripts/trust.py
+- scripts/local.py
+- scripts/request.py
+- scripts/publish.py
+- scripts/remove.py
+- scripts/inspect.py
+- scripts/trust.py
+- scripts/role_policy.py
