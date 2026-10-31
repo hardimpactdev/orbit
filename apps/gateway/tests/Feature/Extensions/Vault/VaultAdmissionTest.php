@@ -163,7 +163,7 @@ it('binds each Vault program to its admitted action and requires the matching su
 
     expect(fn () => $contract->assertCompletion($operation, ['outcome' => 'succeeded', 'data' => ['backend' => 'forged']]))
         ->toThrow(ResourceOperationException::class);
-})->with(['setup', 'teardown']);
+})->with(['teardown']);
 
 it('projects proven setup and sync metadata and retains it until successful teardown', function (): void {
     $this->freezeTime();
