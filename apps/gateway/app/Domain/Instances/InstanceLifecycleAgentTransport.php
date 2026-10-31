@@ -54,7 +54,7 @@ final readonly class InstanceLifecycleAgentTransport implements OperationEffectT
         $ids = $operation->kind === 'instance.register'
             ? array_column(InstanceLifecycleInput::members($operation->input), 'instance_id')
             : ($operation->kind === 'instance.destroy'
-                ? array_column(InstanceLifecycleInput::members(app(RemovalLifecycleExecution::class)->intent($operation)), 'instance_id')
+                ? array_column(InstanceLifecycleInput::members($operation->input), 'instance_id')
                 : [$operation->input['instance_id']]);
 
         return $this->environment->run(ValidatedData::integerList($ids), fn (): array => $this->sources->synchronized($node, function () use ($operation, $run, $input): array {

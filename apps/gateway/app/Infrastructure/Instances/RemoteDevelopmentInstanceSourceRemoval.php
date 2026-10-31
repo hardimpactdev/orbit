@@ -94,7 +94,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             force: $force,
             inspectContent: $inspectContent && (! $this->failedCreation($instance) || $instance->registration_request_id !== null),
             unresolved: $this->failedCreation($instance) && $instance->starting_commit === null,
-            allowAbsent: $this->failedCreation($instance),
+            allowAbsent: $force || $this->failedCreation($instance),
         );
 
         if (

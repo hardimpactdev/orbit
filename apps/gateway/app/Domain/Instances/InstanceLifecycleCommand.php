@@ -11,7 +11,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
 use App\Models\Process;
@@ -30,7 +29,6 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'required' => ['action', 'operation_id'], 'properties' => [
                 'action' => ['type' => 'string', 'enum' => [
                     'configuration', 'clone-checkpoint', 'activate', 'finish', 'clone-environment', 'clone-sqlite-intent', 'clone-sqlite-attach', 'clone-definitions', 'registration-activate',
-                    'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete',
                     'transfer-cutover', 'transfer-finish', 'transfer-sqlite-intent', 'database-intent',
                 ]],
                 'operation_id' => ['type' => 'integer', 'minimum' => 1],
@@ -57,7 +55,6 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
             'transfer-sqlite-intent' => app(InstanceSqliteSeedIntent::class)->prepareTransfer($operation),
             'clone-definitions' => $this->captureDefinitions($operation),
             'registration-activate' => $this->registrationActivate($operation, ValidatedData::integer($input['instance_id'])),
-            'removal-production-prepare', 'removal-production-finalize', 'removal-route-detach', 'removal-inspect', 'removal-revalidate', 'removal-accept', 'removal-route-clear', 'removal-database-intent', 'removal-runtime-intent', 'removal-row-delete' => app(InstanceRemovalState::class)->transition($operation, $input),
             'transfer-cutover', 'transfer-finish' => app(InstanceTransferState::class)->transition($operation, $input),
             'database-intent' => app(InstanceDatabaseIntent::class)->record($operation),
             'finish' => $this->finish($operation),
@@ -129,15 +126,6 @@ final readonly class InstanceLifecycleCommand implements OperationGatewayCommand
     private function finish(Operation $operation): array
     {
         app(InstanceLifecycleExecution::class)->assertEvidence($operation);
-        if ($operation->kind === 'instance.destroy') {
-            $intent = app(RemovalLifecycleExecution::class)->intent($operation);
-            $removal = InstanceRemoval::query()->findOrFail(ValidatedData::string($intent['removal_id']));
-            if ($removal->members()->whereNull('row_deleted_at')->exists()) {
-                throw new ResourceOperationException('operation.completion_unproven', 'The admitted removal set is incomplete.', 409);
-            }
-
-            return ['lifecycle_complete' => true, 'instance_id' => $intent['instance_id'], 'removal_id' => $removal->id, 'status' => 'completed', 'total' => $removal->total, 'completed' => $removal->total, 'remaining' => 0];
-        }
         $instance = $this->state->instance($operation);
         if ($operation->kind === 'instance.rename') {
             $source = app(InstanceLifecycleExecution::class)->proven($operation, 'rename-inspect');

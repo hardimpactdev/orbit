@@ -30,7 +30,6 @@ final readonly class InstanceLifecycleChildren
             'instance.rename' => $this->rename($parent),
             'instance.register' => $this->register($parent),
             'instance.clone' => $this->clone($parent, $id),
-            'instance.destroy' => $this->destroy($parent),
             'instance.transfer' => $this->transfer($parent, $id),
             default => [],
         };
@@ -150,52 +149,6 @@ final readonly class InstanceLifecycleChildren
         }
 
         return $children;
-    }
-
-    /** @return list<ChildIntent> */
-    private function destroy(Operation $parent): array
-    {
-        $input = app(RemovalLifecycleExecution::class)->intent($parent);
-        if (! isset($input['members'])) {
-            return [];
-        }
-        $children = [];
-        foreach (InstanceLifecycleInput::members($input) as $member) {
-            $id = ValidatedData::integer($member['instance_id']);
-            if (($member['row_deleted_at'] ?? null) !== null) {
-                continue;
-            }
-            if ($member['run_teardown'] === true && $this->ready($parent, 'removal-inspect')) {
-                $children[] = $this->steps($parent, "teardown-{$id}", $id, 'teardown', $member['teardown_digest']);
-            }
-            if ($this->ready($parent, "removal-{$id}-source-prepare")) {
-                if ($member['route_id'] !== null && $member['environment'] !== 'production' && ($member['route_cleared_at'] ?? null) === null) {
-                    $children[] = $this->child($parent, "withdraw-{$id}", 'route.withdraw', ['route_id' => $member['route_id']], ValidatedData::integer($member['route_node_id']));
-                }
-                if ($member['environment'] !== 'production') {
-                    $children[] = $this->child($parent, "withdraw-instance-{$id}", 'route.withdraw_instance', ['instance_id' => $id]);
-                }
-            }
-            if ($this->ready($parent, "removal-{$id}-database-intent")
-                && app(InstanceRemovalRuntime::class)->succeeded($parent, $id)
-                && $this->succeeded($parent, "cleanup-instance-{$id}")) {
-                $children[] = app(InstanceDatabaseIntent::class)->child($parent, "remove-databases-{$id}");
-            }
-            if ($this->ready($parent, "removal-{$id}-runtime-intent")) {
-                $children = [...$children, ...app(InstanceRemovalRuntime::class)->children($parent, $id)];
-                if (app(InstanceRemovalRuntime::class)->succeeded($parent, $id)) {
-                    $children[] = $this->child($parent, "cleanup-instance-{$id}", 'route.cleanup_instance', ['instance_id' => $id]);
-                }
-            }
-        }
-        if ($this->ready($parent, 'removal-revalidate')) {
-            foreach (ValidatedData::integerList($input['additional_route_ids']) as $route) {
-                $projection = array_find(InstanceLifecycleInput::members(['members' => $input['additional_routes']]), static fn (array $entry): bool => $entry['route_id'] === $route);
-                $children[] = $this->child($parent, "withdraw-extra-{$route}", 'route.withdraw', ['route_id' => $route], ValidatedData::integer($projection['node_id'] ?? null));
-            }
-        }
-
-        return [...$children, ...app(ProductionRemovalIntent::class)->children($parent)];
     }
 
     /** @return list<ChildIntent> */

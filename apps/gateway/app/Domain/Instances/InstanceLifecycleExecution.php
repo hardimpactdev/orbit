@@ -55,7 +55,6 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             'instance.rename' => [$this->inspect($operation, 'rename-inspect')],
             'instance.clone' => ($operation->input['initial_completed'] ?? false) ? [] : $this->clone($operation),
             'instance.register' => app(RegistrationLifecycleExecution::class)->descriptors($operation),
-            'instance.destroy' => app(RemovalLifecycleExecution::class)->descriptors($operation),
             'instance.transfer', 'instance.transfer_destination' => app(TransferLifecycleExecution::class)->descriptors($operation),
             default => throw $this->forbidden(),
         };
@@ -156,7 +155,6 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         match ($operation->kind) {
             'instance.register' => app(RegistrationLifecycleExecution::class)->beforeRun($operation, $run),
-            'instance.destroy' => app(RemovalLifecycleExecution::class)->beforeRun($operation, $run),
             'instance.transfer', 'instance.transfer_destination' => app(TransferLifecycleExecution::class)->beforeRun($operation, $run),
             default => null,
         };
@@ -223,9 +221,6 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
         }
         if ($operation->kind === 'instance.register') {
             return app(RegistrationLifecycleExecution::class)->received($operation, $run, $receipt);
-        }
-        if ($operation->kind === 'instance.destroy') {
-            return app(RemovalLifecycleExecution::class)->received($operation, $run, $receipt);
         }
         if (in_array($operation->kind, ['instance.transfer', 'instance.transfer_destination'], true)) {
             return app(TransferLifecycleExecution::class)->received($operation, $run, $receipt);
@@ -359,29 +354,6 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
             }
             if ($input['run_setup'] === true) {
                 $this->assertStepList($operation, 'setup');
-            }
-        } elseif ($operation->kind === 'instance.destroy') {
-            $intent = app(RemovalLifecycleExecution::class)->intent($operation);
-            foreach (ValidatedData::integerList($intent['additional_route_ids']) as $route) {
-                $this->assertChild($operation, "withdraw-extra-{$route}", 'route.withdraw');
-            }
-            foreach (InstanceLifecycleInput::members($intent) as $member) {
-                if (($member['row_deleted_at'] ?? null) !== null) {
-                    continue;
-                }
-                $id = ValidatedData::integer($member['instance_id']);
-                if ($member['run_teardown'] === true) {
-                    $this->assertStepList($operation, "teardown-{$id}");
-                }
-                if ($member['environment'] !== 'production') {
-                    if ($member['route_id'] !== null && ($member['route_cleared_at'] ?? null) === null) {
-                        $this->assertChild($operation, "withdraw-{$id}", 'route.withdraw');
-                    }
-                    $this->assertChild($operation, "withdraw-instance-{$id}", 'route.withdraw_instance');
-                }
-                $this->assertChild($operation, "remove-databases-{$id}", 'database.destroy_owned');
-                app(InstanceRemovalRuntime::class)->assertRemoved($operation, $id);
-                $this->assertChild($operation, "cleanup-instance-{$id}", 'route.cleanup_instance');
             }
         } elseif ($operation->kind === 'instance.transfer' && $input['initial_completed'] !== true) {
             if ($input['initial_cutover'] !== true) {

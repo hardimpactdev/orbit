@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $project_id
  * @property int $node_id
  * @property int|null $route_id
+ * @property list<int>|null $route_ids
  * @property string $name
  * @property string $environment
  * @property string $source_layout
@@ -53,6 +54,7 @@ final class InstanceRemovalMember extends Model
         'project_id',
         'node_id',
         'route_id',
+        'route_ids',
         'name',
         'environment',
         'source_layout',
@@ -86,6 +88,7 @@ final class InstanceRemovalMember extends Model
     protected function casts(): array
     {
         return [
+            'route_ids' => 'array',
             'linked_worktree_paths' => 'array',
             'runtime_published' => 'boolean',
             'source_prepared_at' => 'datetime',

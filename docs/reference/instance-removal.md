@@ -14,6 +14,14 @@ covers:
 
 # Instance removal
 
+Development removal is one native Swamp workflow, `operation-instance-destroy`. The Gateway records immutable source, runtime and owned-database artifacts and marks the complete member set Removing in the same SQLite IMMEDIATE transaction. The owning database save guard excludes later additions and ownership changes. Native phases stop Schedules, then Processes, then remove databases before source finalization. The Gateway projects records only after the complete bound native result succeeds. There is no destroy executor claim, run registration or Gateway child admission inside that workflow.
+
+The native result validates every ordered database result against the admitted artifact and sends a SHA-256 digest of the normalized result list. Projection checks the same complete list and digest before invoking the owning database record projector. A missing, duplicate, changed or foreign result cannot delete records. The digest bounds the parent result without dropping a connection from its proof.
+
+A forced development removal can reconcile an already absent checkout. The Node must still prove that the exact admitted path has no symlink or replacement. This does not skip teardown, PHP withdrawal, local Caddy publication, runtime cleanup, certificates, databases or atomic record projection.
+
+Publication methods take identity only before the canonical `route-publication-node-<node-id>` model lock. They read current data inside that awaited method. PHP configurations use private material bound to the root Node, including the empty object required for an unrouted Instance. A content hash proves integrity, not freshness. Foreign participant access and coordination with retained publishers remain prerequisites for activating the complete cutover; this source grants no new authority. Production removal and Task workspace caller retirement require their owning complete native implementations before the old synchronous database methods can be removed.
+
 Instance removal on a workload Node returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
 
 `instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. Swamp composes the owning Route and runtime child Operations; a missing production PHP service is reported as a bounded resource failure.

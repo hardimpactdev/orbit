@@ -1032,6 +1032,27 @@ describe('recorded source removal commands', function (): void {
     })->with([true, false]);
 });
 
+it('admits genuinely absent active source only with force and keeps the agent absence checks', function (bool $force): void {
+    [$removal, $agents, $instance] = sourceRemovalFixture();
+    $agents->answer('instance.inspect-source', static function (array $input) use ($force): array {
+        expect($input['allow_absent'])->toBe($force);
+        $row = sourceRemovalEvidence($input['checkout'], false);
+        $row['source_identity'] = base64_encode('absent');
+        $row['commit'] = base64_encode(str_repeat('0', 40));
+
+        return $row;
+    });
+    if (! $force) {
+        expect(fn () => $removal->inspect($instance, false, false))->toThrow(RuntimeConvergenceException::class);
+    } else {
+        $inventory = $removal->inspect($instance, true, false);
+        expect($inventory->sourceIdentity)->toBe('absent')
+            ->and($inventory->linkedWorktreePaths)->toBe([$instance->checkout_path]);
+    }
+    expect($agents->commands())->not->toContain('instance.prepare-source-removal', 'instance.finalize-source-removal');
+    $this->assertModelExists($instance);
+})->with([false, true]);
+
 /** @return array{RemoteDevelopmentInstanceSourceRemoval, FakeAgentCommandRunner, Instance, RemovalCommandLock} */
 function sourceRemovalFixture(bool $worktree = false): array
 {

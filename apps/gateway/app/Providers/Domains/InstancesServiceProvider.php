@@ -29,6 +29,8 @@ use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceCreateEnvironmentSeed;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceDestroyPhpSecret;
+use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Instances\InstanceRemover;
@@ -133,7 +135,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

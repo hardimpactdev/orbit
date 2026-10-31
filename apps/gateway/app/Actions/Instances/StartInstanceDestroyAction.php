@@ -6,8 +6,8 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
-use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceLifecycleChildren;
 use App\Domain\Instances\InstanceLifecycleInput;
 use App\Domain\Instances\InstanceLifecycleState;
@@ -37,6 +37,7 @@ use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use App\Models\WebSocketAppTarget;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /** Admission and read-only source validation for development removal. */
@@ -56,15 +57,17 @@ final readonly class StartInstanceDestroyAction
         if (($replay = $this->idempotency->replay('instance.destroy')) !== null) {
             return $replay;
         }
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.destroy');
-        $input = $this->snapshot($instance, $force, $this->idempotency->parent);
+        $snapshot = $this->snapshot($instance, $force, $this->idempotency->parent);
 
-        return $this->operations->execute('instance.destroy', 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId): Operation {
+            $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+
+            return $this->operations->execute('instance.destroy', 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId, expectedWriter: 'direct');
+        });
     }
 
     public function rollback(Operation $parent): Operation
     {
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.destroy');
         if (! app(InstanceLifecycleChildren::class)->canRemoveFailedCreate($parent)) {
             throw new ResourceOperationException('operation.child_forbidden', 'This create has no proven failure that allows rollback removal.', 422);
         }
@@ -76,7 +79,11 @@ final readonly class StartInstanceDestroyAction
         }
         $input['members'] = array_map(static fn (array $member): array => [...$member, 'run_teardown' => false], $members);
 
-        return $this->operations->execute('instance.destroy', 'instance', $instance->id, $parent->node_id, $input, 'instance.create', $parent->request_id);
+        return DB::transaction(function () use ($input, $instance, $parent): Operation {
+            $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
+
+            return $this->operations->execute('instance.destroy', 'instance', $instance->id, $parent->node_id, $recorded, 'instance.create', $parent->request_id, expectedWriter: 'direct');
+        });
     }
 
     /** @return array<string, mixed> */

@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\InstanceDestroyCancelGuard;
 use App\Domain\Instances\InstanceLifecycleChildAdmission;
 use App\Domain\Instances\InstanceLifecycleCompletion;
 use App\Domain\Instances\InstanceLifecycleExecution;
@@ -37,12 +36,6 @@ return (static function (): array {
             $agent('instance.laravel-registration-receipt'),
             $agent('instance.inspect-development-profile'), $url,
         ],
-        'destroy' => [
-            $agent('instance.prepare-source-removal'),
-            $agent('instance.finalize-source-removal', $git),
-            $agent('instance.clean-removal-receipt'),
-            $agent('instance.clear-current-release'), $agent('instance.remove-production-home'),
-        ],
         'transfer' => [$agent('instance.transfer-source', [], false)],
     ];
     $children = [
@@ -50,7 +43,6 @@ return (static function (): array {
         'rename' => ['route.update'],
         'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],
-        'destroy' => ['route.caddy_converge', 'instance.run_steps', 'route.withdraw', 'route.withdraw_instance', 'route.cleanup_instance', 'process.destroy', 'schedule.destroy', 'database.destroy_owned'],
         'transfer' => ['process.instance_runtime', 'instance.transfer_destination', 'instance.transfer_activate', 'instance.transfer_rollback', 'route.retire_source'],
     ];
     $kinds = [];
@@ -61,7 +53,6 @@ return (static function (): array {
             'execution' => InstanceLifecycleExecution::class,
             'runs' => [...$runs, $gateway],
             'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], $children[$verb]),
-            ...($verb === 'destroy' ? ['admission' => InstanceLifecycleChildAdmission::class] : []),
             'completion_contract' => [
                 'step' => 'lifecycle-finish', 'transport' => 'gateway',
                 'name' => 'instance.lifecycle-state', 'result' => ['lifecycle_complete' => true],
@@ -86,7 +77,13 @@ return (static function (): array {
         ];
     }
 
-    $kinds['instance.destroy']['cancel_guard'] = InstanceDestroyCancelGuard::class;
+    $kinds['instance.destroy'] = [
+        'executor' => 'swamp',
+        'admission' => InstanceLifecycleChildAdmission::class,
+        'result_fields' => ['error_code', 'removed', 'removal_id',
+            ['name' => 'instance_ids', 'type' => 'list', 'items' => 'integer', 'max' => 1024],
+            'database_results_sha256'],
+    ];
     if (OperationKinds::supports('compensations')) {
         $kinds['instance.transfer']['compensations'] = ['instance.transfer_rollback'];
         $kinds['instance.transfer']['cancellation_boundary'] = 'transfer-stop-source';
