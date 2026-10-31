@@ -16,27 +16,28 @@ Before an open action writes to GitHub, it saves the first authenticated public
 candidate in a native `open_plan` resource, keyed by Operation ID. The resource
 contains the admitted public intent, base commit and recipe blob, candidate
 content and branch. It contains no token. It lasts two days under native GC,
-covering Amsterdam's 25-hour autumn date while retries still pass the date gate. A
-retry validates the same admitted intent and reuses that candidate even if
+covering Amsterdam's 25-hour autumn date while retries still pass the date gate.
+A retry validates the same admitted intent and reuses that candidate even if
 artifact indexes have advanced. Existing branch content suppresses a repeated
 content write, and an existing PR on that branch suppresses repeated creation.
 The expected-old-head update protects refresh pushes: after a successful push,
 the old admitted head is absent and retry makes no second reachable ref update.
 
 Closed date or pin PRs remain closed. Retirement rechecks App ownership and head
-before closing an obsolete snapshot PR. GitHub uncertainty records `operation.native_outcome_unknown` and fails the native run
-for inspection; there is no Gateway execution cache, retry timer or receipt.
+before closing an obsolete snapshot PR. GitHub uncertainty records
+`operation.native_outcome_unknown` and fails the native run for inspection;
+there is no Gateway execution cache, retry timer or receipt.
 
 One stable behavior identity serializes GitHub actions on the admitted Gateway
 Node worker, with matching target and Node label. The approved shared private
 reader mints only for that authenticated Node and exact bound run. This is
 control-plane GitHub work and does not install or converge another Node.
 
-The maintenance producer reads candidates every five minutes when the
-Gateway reports the family ready. It rotates retire, refresh and merge actions
-so each runs at most every fifteen minutes. Daily opens use one Gateway intent
-key per date, variant and serving recipe revision. They retain no Swamp
-admission receipt and poll no Operation status. A deployment mismatch projects
+The maintenance producer reads candidates every five minutes when the Gateway
+reports the family ready. It rotates retire, refresh and merge actions so each
+runs at most every fifteen minutes. Daily opens use one Gateway intent key per
+date, variant and serving recipe revision. They retain no Swamp admission
+receipt and poll no Operation status. A deployment mismatch projects
 `fleet.recipe_pending_deployment` before any GitHub write; a new serving recipe
 revision allows a fresh intent. Unknown mutation outcomes fail natively for
 inspection before recovery. A committed terminal projection prevents native
@@ -66,6 +67,6 @@ uncertain writes, and scans all retained files for credential bytes. This is
 fixture evidence, not a live Gateway, GitHub or worker canary.
 
 The owning conversion includes the writer switch and removal of its old Gateway
-execution and tests. Merge on green, verify live after the normal hot reload, and fix forward,
-as PLAN requires.
-Work on this branch is not live takeover evidence.
+execution and tests. Merge on green, verify live after the normal hot reload,
+and fix forward, as PLAN requires. Work on this branch is not live takeover
+evidence.
