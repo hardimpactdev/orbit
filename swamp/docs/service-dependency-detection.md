@@ -10,6 +10,12 @@ not allocate an update VM merely to scan. Preserve project paths, workspace
 relationships, package-manager identity and existing release-age policy. An
 unsupported or unsolved target remains a typed blocked finding.
 
+The shared `orbit-deps.scan` inventory reads manifests and lockfiles from that
+commit through the existing Git reader. It does not request dependency snapshots
+from the Gateway. Its model needs only the checkout path and branch; scan data
+records the resolved commit and checkout sources. The registry planner consumes
+that inventory as before.
+
 Package tools run only in a disposable planning tree containing tracked
 manifests, lockfiles and required workspace inputs. Repository `.npmrc`, Bun
 configuration, scripts, executables, Git metadata and credentials never enter

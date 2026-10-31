@@ -3,7 +3,7 @@
 // Packagist and the npm registry and records a typed upgrade plan.
 import { z } from "npm:zod@4";
 import semver from "npm:semver@7.7.2";
-import { buildInventory, fetchGatewayInventory, git, type SubProjectInventory } from "./_lib/inventory.ts";
+import { buildInventory, git, type SubProjectInventory } from "./_lib/inventory.ts";
 import {
   type Ecosystem,
   gt,
@@ -16,9 +16,6 @@ import {
 } from "./_lib/versions.ts";
 
 const GlobalArgsSchema = z.object({
-  gatewayUrl: z.string().describe("Gateway API origin, e.g. https://gateway.orbit"),
-  caCertPath: z.string().describe("PEM file of the Orbit root CA"),
-  instanceId: z.number().int().describe("Orbit development Instance whose inventory to read"),
   checkoutDir: z.string().describe("Scratch clone of the Orbit repository (read-only use)"),
   branch: z.string().default("main"),
 });
@@ -35,17 +32,13 @@ const DirectDepSchema = z.object({
 const InventorySchema = z.object({
   commit: z.string(),
   branch: z.string(),
-  instanceId: z.number(),
   scannedAt: z.string(),
-  gatewayError: z.string().nullable(),
   subProjects: z.array(z.object({
     path: z.string(),
     ecosystems: z.array(z.object({
       ecosystem: z.enum(["composer", "npm"]),
       manager: z.enum(["composer", "bun", "npm"]),
-      source: z.enum(["gateway", "checkout"]),
-      reason: z.string().nullable(),
-      observedAt: z.string().nullable(),
+      source: z.literal("checkout"),
       direct: z.array(DirectDepSchema),
     })),
   })),
@@ -96,7 +89,7 @@ const UpgradePlanSchema = z.object({
     unknown: z.number(),
     subtasks: z.number(),
   }),
-  sources: z.array(z.object({ subProject: z.string(), ecosystem: z.string(), source: z.string(), reason: z.string().nullable() })),
+  sources: z.array(z.object({ subProject: z.string(), ecosystem: z.string(), source: z.literal("checkout") })),
   subtasks: z.array(SubtaskSchema),
   packages: z.array(PackageResultSchema),
 });
@@ -198,11 +191,11 @@ function slug(s: string): string {
 
 export const behavior = {
   type: "@nckrtl/orbit-deps",
-  version: "2026.10.30.1",
+  version: "2026.10.31.1",
   globalArguments: GlobalArgsSchema,
   resources: {
     inventory: {
-      description: "Direct dependencies per Orbit sub-project, with where each was read from",
+      description: "Direct dependencies per Orbit sub-project from committed manifests and lockfiles",
       schema: InventorySchema,
       lifetime: "infinite",
       garbageCollection: 20,
@@ -216,47 +209,35 @@ export const behavior = {
   },
   methods: {
     scan: {
-      description: "Read the Gateway dependency inventory; fall back to the scratch checkout where it is stale",
+      description: "Read dependency manifests and lockfiles at the selected Git commit",
       arguments: z.object({}),
       execute: async (
         _args: Record<string, never>,
         context: {
           globalArgs: GlobalArgs;
           writeResource: (spec: string, name: string, data: Record<string, unknown>) => Promise<{ name: string }>;
-          logger: { info: (msg: string, props?: Record<string, unknown>) => void; warning: (msg: string, props?: Record<string, unknown>) => void };
+          logger: { info: (msg: string, props?: Record<string, unknown>) => void };
         },
       ) => {
         const g = context.globalArgs;
         await git(g.checkoutDir, ["fetch", "--quiet", "origin", g.branch]);
         const commit = (await git(g.checkoutDir, ["rev-parse", `origin/${g.branch}`])).trim();
 
-        let gateway = null;
-        let gatewayError: string | null = null;
-        try {
-          gateway = await fetchGatewayInventory(g.gatewayUrl, g.caCertPath, g.instanceId);
-        } catch (e) {
-          gatewayError = (e as Error).message;
-          context.logger.warning("Gateway inventory unavailable: {error}", { error: gatewayError });
-        }
-
-        const subProjects: SubProjectInventory[] = await buildInventory(g.checkoutDir, commit, gateway, gatewayError);
+        const subProjects: SubProjectInventory[] = await buildInventory(g.checkoutDir, commit);
         for (const sp of subProjects) {
           for (const e of sp.ecosystems) {
-            context.logger.info("{path} {eco}: {n} direct from {source}{why}", {
+            context.logger.info("{path} {eco}: {n} direct from {source}", {
               path: sp.path,
               eco: e.ecosystem,
               n: e.direct.length,
               source: e.source,
-              why: e.reason ? ` (${e.reason})` : "",
             });
           }
         }
         const handle = await context.writeResource("inventory", "inventory", {
           commit,
           branch: g.branch,
-          instanceId: g.instanceId,
           scannedAt: new Date().toISOString(),
-          gatewayError,
           subProjects,
         });
         return { dataHandles: [handle] };
@@ -398,7 +379,7 @@ export const behavior = {
             subtasks: subtasks.length,
           },
           sources: inv.subProjects.flatMap((sp) =>
-            sp.ecosystems.map((e) => ({ subProject: sp.path, ecosystem: e.ecosystem, source: e.source, reason: e.reason }))
+            sp.ecosystems.map((e) => ({ subProject: sp.path, ecosystem: e.ecosystem, source: e.source }))
           ),
           subtasks,
           packages,

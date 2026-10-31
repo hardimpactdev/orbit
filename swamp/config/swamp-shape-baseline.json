@@ -130,21 +130,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "curl",
-        "git"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance_worker.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -3595,15 +3580,6 @@
       "rule": "secret-argv",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/orbit_deps.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/orbit_driver.ts",
