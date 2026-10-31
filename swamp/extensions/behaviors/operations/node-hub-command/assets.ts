@@ -61,10 +61,12 @@ export function hubPeerAction(raw: unknown) {
     }
     const removing = mode === "remove" || mode === "restore-remove";
     const key = prepared_peer?.public_key ?? intent.desired.public_key;
-    if (!removing && key === null) {
+    if (!removing && key === null && !mode.startsWith("restore-")) {
         throw new Error("Publishing the peer requires its prepared public key");
     }
-    const desired = removing ? null : { ...intent.desired, public_key: key! };
+    const desired = removing || key === null
+        ? null
+        : { ...intent.desired, public_key: key };
     const restoring = mode.startsWith("restore-");
     return {
         schema_version: 1,
@@ -78,9 +80,40 @@ export function hubPeerAction(raw: unknown) {
         after: restoring ? intent.before : desired,
     };
 }
+const Inventory = z.object({
+    schema_version: z.literal(1),
+    mode: z.literal("inventory"),
+    hub_id: Id,
+    hub_address: z.string(),
+    port: z.number().int().min(1).max(65535),
+    inventory: z.array(Peer).max(4096),
+    retiring: z.array(Peer).max(4096),
+}).strict();
+const PublicResult = z.object({
+    schema_version: z.literal(1),
+    hub_id: Id,
+    context_node_id: Id,
+    projected: z.literal(true),
+    restored: z.boolean(),
+    changed: z.boolean(),
+    retained_peer_count: z.number().int().nonnegative().optional(),
+}).strict();
+export function hubPeerResult(hubId: number, stdout: string) {
+    const result = PublicResult.parse(JSON.parse(stdout));
+    if (result.hub_id !== hubId) {
+        throw new Error("Hub output belongs to another Node");
+    }
+    return {
+        schema_version: 1 as const,
+        hub_id: hubId,
+        status: "succeeded" as const,
+        projected: true as const,
+    };
+}
 const Assets = z.object({
     script: z.string(),
-    action_json: z.string().max(8192),
+    action_json: z.string().max(524288),
+    script_body: z.string().max(1048576),
 }).strict();
 export const behavior = {
     type: "@nckrtl/node-hub-command",
@@ -89,6 +122,58 @@ export const behavior = {
         assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        terminal: {
+            description:
+                "Expose the public official SSH stdout for the shared terminal projector",
+            arguments: z.object({ stdout: z.string().max(65536) }).strict(),
+            execute: async (args: { stdout: string }) => ({
+                stdout: JSON.stringify(
+                    PublicResult.parse(JSON.parse(args.stdout)),
+                ),
+            }),
+        },
+        result: {
+            description:
+                "Project one fixed command stdout as public hub readiness only",
+            arguments: z.object({ hub_id: Id, stdout: z.string().max(65536) })
+                .strict(),
+            execute: async (args: { hub_id: number; stdout: string }) =>
+                hubPeerResult(args.hub_id, args.stdout),
+        },
+        inventory: {
+            description:
+                "Read complete public hub intent and locate its one action",
+            arguments: z.object({ intent: Inventory }).strict(),
+            execute: async (
+                args: { intent: z.infer<typeof Inventory> },
+                ctx: {
+                    extensionFile(name: string): string;
+                    writeResource(
+                        spec: string,
+                        name: string,
+                        value: unknown,
+                    ): Promise<unknown>;
+                },
+            ) => {
+                const result = Assets.parse({
+                    script: ctx.extensionFile("scripts/hub_peer.py"),
+                    action_json: JSON.stringify(Inventory.parse(args.intent)),
+                    script_body: (await Deno.readTextFile(
+                        ctx.extensionFile("scripts/hub_peer.py"),
+                    )).replace(
+                        'HUB_ACTION_JSON = ""',
+                        "HUB_ACTION_JSON = " +
+                            JSON.stringify(
+                                JSON.stringify(
+                                    Inventory.parse(args.intent),
+                                ),
+                            ),
+                    ),
+                });
+                await ctx.writeResource("assets", "assets", result);
+                return result;
+            },
+        },
         read: {
             description:
                 "Validate public peer intent and resolve the shipped one-action script",
@@ -107,6 +192,15 @@ export const behavior = {
                 const result = Assets.parse({
                     script: ctx.extensionFile("scripts/hub_peer.py"),
                     action_json: JSON.stringify(hubPeerAction(args)),
+                    script_body: (await Deno.readTextFile(
+                        ctx.extensionFile("scripts/hub_peer.py"),
+                    )).replace(
+                        'HUB_ACTION_JSON = ""',
+                        "HUB_ACTION_JSON = " +
+                            JSON.stringify(
+                                JSON.stringify(hubPeerAction(args)),
+                            ),
+                    ),
                 });
                 await ctx.writeResource("assets", "assets", result);
                 return result;

@@ -15,6 +15,7 @@ WG = Path("/etc/wireguard")
 UID = 0
 LOCK = Path("/run/lock/orbit-wireguard-peer.lock")
 LIMIT = 1024 * 1024
+HUB_ACTION_JSON = ""
 KEY = re.compile(r"[A-Za-z0-9+/]{43}=")
 
 
@@ -197,6 +198,29 @@ def render(text, action):
     return output, output != text
 
 
+def render_inventory(text, action):
+    if set(action) != {"schema_version", "mode", "hub_id", "hub_address", "port", "inventory", "retiring"} or action["schema_version"] != 1 or action["mode"] != "inventory":
+        raise Refusal("wireguard.hub_config_invalid")
+    rows = action["inventory"] + action["retiring"]
+    if any(len({row[key] for row in rows}) != len(rows) for key in ["node_id", "address", "public_key"]):
+        raise Refusal("wireguard.hub_config_invalid")
+    _, fields, _ = parse_config(text)
+    if fields["Address"] != action["hub_address"] or fields["ListenPort"] != str(action["port"]):
+        raise Refusal("wireguard.hub_config_invalid")
+    result = text
+    for row in rows:
+        retiring = row in action["retiring"]
+        result, _ = render(result, {
+            "schema_version": 1, "hub_id": action["hub_id"], "hub_address": action["hub_address"], "port": action["port"],
+            "context_node_id": row["node_id"], "context_address": row["address"], "restoring": False,
+            "before": row if retiring else None, "after": None if retiring else row,
+        })
+    _, _, current = parse_config(result)
+    known = {row["public_key"] for row in action["inventory"]}
+    retained = sum(peer["public_key"] not in known for peer in current)
+    return result, result != text, retained
+
+
 def command(args):
     options = {
         "stdin": subprocess.DEVNULL,
@@ -255,7 +279,12 @@ def sync_config(config):
 
 def apply(action):
     old = read_config()
-    desired, changed = render(old, action)
+    inventory = action.get("mode") == "inventory"
+    retained = None
+    if inventory:
+        desired, changed, retained = render_inventory(old, action)
+    else:
+        desired, changed = render(old, action)
     command(["/usr/bin/systemctl", "is-active", "--quiet", "wg-quick@orbit"])
     try:
         if changed:
@@ -272,20 +301,23 @@ def apply(action):
         if isinstance(error, Refusal):
             raise
         raise Refusal() from None
-    return {
+    result = {
         "schema_version": 1,
         "hub_id": action["hub_id"],
-        "context_node_id": action["context_node_id"],
+        "context_node_id": action["hub_id"] if inventory else action["context_node_id"],
         "projected": True,
-        "restored": action["restoring"],
+        "restored": False if inventory else action["restoring"],
         "changed": changed,
     }
+    if retained is not None:
+        result["retained_peer_count"] = retained
+    return result
 
 
 def main():
     try:
-        raw = os.environ.pop("ORBIT_HUB_CONTEXT")
-        if len(raw.encode()) > 8192:
+        raw = HUB_ACTION_JSON
+        if len(raw.encode()) > 524288:
             raise Refusal("wireguard.hub_config_invalid")
         # The existing WireGuard tool lock also coordinates remaining canonical writers.
         fd = os.open(LOCK, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)

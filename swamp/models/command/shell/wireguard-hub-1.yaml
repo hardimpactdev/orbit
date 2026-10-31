@@ -1,7 +1,0 @@
-type: command/shell
-id: ca3e41fa-6e92-4f08-90d4-9ed3e55d3a64
-name: wireguard-hub-1
-version: 1
-tags: {}
-globalArguments: {}
-methods: {}

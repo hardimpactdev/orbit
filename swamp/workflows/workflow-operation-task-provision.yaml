@@ -13,10 +13,17 @@ inputs:
       type: string
       enum:
       - tasks.provision
+    _hub_command:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - _hub_command
+  additionalProperties: true
 vaults: []
 jobs:
 - name: admission
@@ -98,7 +105,8 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: bootstrap
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) }}'
   - name: bootstrap_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -135,8 +143,9 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: prepare-network
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) }}'
   - name: prepare_network_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -157,20 +166,61 @@ jobs:
   labels:
     node: ${{ string(steps.admit.outputs.input.gateway_node_id) }}
   steps:
-  - name: publish_hub
-    guard: ${{ !steps.admit.outputs.active }}
-    writes: true
+  - name: publish_hub_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-wireguard-direct'
-      behaviorName: ${{ "wireguard-hub-" + string(steps.admit.outputs.input._wireguard.hub_id) }}
-      methodName: publish
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs._hub_command.hub_id)
+        }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        snapshot: ${{ steps.admit.outputs.input._wireguard }}
+        intent: ${{ inputs._hub_command }}
+        mode: publish
+        prepared_peer: '${{ {"node_id": inputs._hub_command.context_node_id, "public_key":
+          steps.prepare_network.outputs.output.wireguard_public_key} }}'
+    guard: ${{ !steps.admit.outputs.active }}
+  - name: publish_hub_command
+    writes: true
+    dependsOn:
+    - step: publish_hub_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs._hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["publish_hub_assets"].outputs.script_body }}
+    guard: ${{ !steps.admit.outputs.active }}
+  - name: publish_hub
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: publish_hub_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs._hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs._hub_command.hub_id }}
+        stdout: ${{ data.latest("wireguard-hub-" + string(inputs._hub_command.hub_id),
+          "run-script-hub").attributes.stdout }}
+    guard: ${{ !steps.admit.outputs.active }}
   - name: publish_hub_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -207,10 +257,13 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: publish-network
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          }}'
   - name: publish_network_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -247,11 +300,14 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: issue-worker
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) }}'
   - name: issue_worker_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -288,12 +344,15 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: configure-worker
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) }}'
   - name: configure_worker_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -330,13 +389,16 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: worker-ready
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) }}'
   - name: worker_ready_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -363,7 +425,8 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-vm-model-keys'
-      behaviorName: ${{ "task-vm-model-router-" + string(steps.admit.outputs.input.model_router_node_id) }}
+      behaviorName: ${{ "task-vm-model-router-" + string(steps.admit.outputs.input.model_router_node_id)
+        }}
       methodName: issue
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -406,14 +469,18 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: prepare-runtime
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs) ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model)
-          && has(steps.issue_model.outputs) ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs)
+          ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model) && has(steps.issue_model.outputs)
+          ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
           "error_code": null}] : []) }}'
   - name: prepare_runtime_ready
     guard: ${{ !steps.admit.outputs.active }}
@@ -451,16 +518,20 @@ jobs:
         admission: ${{ steps.admit.outputs }}
         stage: confirm-runtime
         provider: ${{ steps.provider.outputs.output }}
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs) ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model)
-          && has(steps.issue_model.outputs) ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
-          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs) ? [steps.prepare_runtime.outputs]
-          : []) }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs)
+          ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model) && has(steps.issue_model.outputs)
+          ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
+          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs)
+          ? [steps.prepare_runtime.outputs] : []) }}'
   - name: confirm_runtime_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -494,17 +565,24 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         run_id: ${{ run.id }}
-        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs) ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model)
-          && has(steps.issue_model.outputs) ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
-          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs) ? [steps.prepare_runtime.outputs]
-          : []) + (has(steps.confirm_runtime) && has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : []) }}'
+        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs
+          : null }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs)
+          ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model) && has(steps.issue_model.outputs)
+          ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
+          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs)
+          ? [steps.prepare_runtime.outputs] : []) + (has(steps.confirm_runtime) &&
+          has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : [])
+          }}'
 - name: workspace
   dependsOn:
   - job: vm-ready
@@ -527,17 +605,24 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         run_id: ${{ run.id }}
-        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs) ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model)
-          && has(steps.issue_model.outputs) ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
-          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs) ? [steps.prepare_runtime.outputs]
-          : []) + (has(steps.confirm_runtime) && has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : []) }}'
+        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs
+          : null }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs)
+          ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model) && has(steps.issue_model.outputs)
+          ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
+          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs)
+          ? [steps.prepare_runtime.outputs] : []) + (has(steps.confirm_runtime) &&
+          has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : [])
+          }}'
   - name: workspace_ready
     guard: ${{ !steps.admit.outputs.active }}
     dependsOn:
@@ -609,18 +694,26 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         run_id: ${{ run.id }}
-        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
-        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.bootstrap)
-          && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs] : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
-          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs) && steps.publish_hub.outputs.status
-          == "succeeded" ? [{"stage": "publish-hub", "ok": true, "output": {"hub_configured": true}, "error_code": null}] : []) + (has(steps.publish_network)
-          && has(steps.publish_network.outputs) ? [steps.publish_network.outputs] : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs)
-          ? [steps.issue_worker.outputs] : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs) ? [steps.configure_worker.outputs]
-          : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs) ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model)
-          && has(steps.issue_model.outputs) ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
-          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs) ? [steps.prepare_runtime.outputs]
-          : []) + (has(steps.confirm_runtime) && has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : []) }}'
-        workspace: '${{ has(steps.workspace) && has(steps.workspace.outputs) ? steps.workspace.outputs : null }}'
+        admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs
+          : null }}'
+        outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs]
+          : []) + (has(steps.bootstrap) && has(steps.bootstrap.outputs) ? [steps.bootstrap.outputs]
+          : []) + (has(steps.prepare_network) && has(steps.prepare_network.outputs)
+          ? [steps.prepare_network.outputs] : []) + (has(steps.publish_hub) && has(steps.publish_hub.outputs)
+          && steps.publish_hub.outputs.status == "succeeded" ? [{"stage": "publish-hub",
+          "ok": true, "output": {"hub_configured": true}, "error_code": null}] : [])
+          + (has(steps.publish_network) && has(steps.publish_network.outputs) ? [steps.publish_network.outputs]
+          : []) + (has(steps.issue_worker) && has(steps.issue_worker.outputs) ? [steps.issue_worker.outputs]
+          : []) + (has(steps.configure_worker) && has(steps.configure_worker.outputs)
+          ? [steps.configure_worker.outputs] : []) + (has(steps.worker_ready) && has(steps.worker_ready.outputs)
+          ? [steps.worker_ready.outputs] : []) + (has(steps.issue_model) && has(steps.issue_model.outputs)
+          ? [{"stage": "issue-model", "ok": true, "output": {"issued": steps.issue_model.outputs.issued},
+          "error_code": null}] : []) + (has(steps.prepare_runtime) && has(steps.prepare_runtime.outputs)
+          ? [steps.prepare_runtime.outputs] : []) + (has(steps.confirm_runtime) &&
+          has(steps.confirm_runtime.outputs) ? [steps.confirm_runtime.outputs] : [])
+          }}'
+        workspace: '${{ has(steps.workspace) && has(steps.workspace.outputs) ? steps.workspace.outputs
+          : null }}'
 - name: failure
   dependsOn:
   - job: projection

@@ -37,6 +37,25 @@ final readonly class NodeWireGuardCommandInput
             'desired' => ['node_id' => $context->id, 'name' => $context->name, 'address' => $address, 'public_key' => $context->wireguard_public_key]];
     }
 
+    /** Full public standalone intent. Unknown fresh host peers are retained, never guessed stale.
+     * @return array<string,mixed>
+     */
+    public function captureHub(Node $hub): array
+    {
+        $bound = app(NodeWireGuardInput::class)->capture($hub);
+        if ($bound['hub_id'] !== $hub->id || ! is_string($hub->wireguard_ip)) {
+            throw new ResourceOperationException('node.network_unsupported', 'Hub intent requires the current active VPN owner.', 422);
+        }
+        $settings = app(VpnSettings::class);
+        $subnet = Ipv4Subnet::from($settings->subnet());
+        $peers = Node::query()->whereKeyNot($hub->id)->whereNotNull('wireguard_ip')->whereNotNull('wireguard_public_key')->orderBy('id')->get();
+
+        return ['schema_version' => 1, 'mode' => 'inventory', 'hub_id' => $hub->id,
+            'hub_address' => $hub->wireguard_ip.'/'.$subnet->prefixLength(), 'port' => (int) $settings->port(),
+            'inventory' => $peers->filter(static fn (Node $node): bool => $node->status !== LifecycleStatus::Removing)->map(self::peer(...))->values()->all(),
+            'retiring' => $peers->filter(static fn (Node $node): bool => $node->status === LifecycleStatus::Removing)->map(self::peer(...))->values()->all()];
+    }
+
     /** @return array{node_id:int,name:string,address:string,public_key:string} */
     private static function peer(Node $node): array
     {

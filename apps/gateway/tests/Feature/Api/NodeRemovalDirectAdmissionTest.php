@@ -347,7 +347,7 @@ it('restores a failed Node to failed after a native compensation result', functi
     expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
 });
 
-it('restores membership and selects the canonical hub view in one parent callback transaction', function (bool $valid): void {
+it('restores membership without the retired hub callback binding', function (bool $valid): void {
     FleetFixtures::bind();
     $root = FleetFixtures::node('removal-checkpoint-root', [RoleName::Gateway]);
     $hub = FleetFixtures::node('removal-checkpoint-hub', [RoleName::Vpn]);
@@ -365,18 +365,8 @@ it('restores membership and selects the canonical hub view in one parent callbac
     app(NodeRemovalRecords::class)->begin($snapshot);
     $data = ['run_id' => $run, 'status' => 'running', 'started_at' => '2026-10-31T08:00:00.000Z', 'result' => ['restoring' => true]];
 
-    if (! $valid) {
-        expect(fn () => app(NodeRemovalProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class);
-        expect($node->fresh()->status)->toBe(LifecycleStatus::Removing);
-        expect($operation->fresh()->state)->not->toHaveKey('node_wireguard_restoring');
-        expect($operation->fresh()->result)->toBe(['removing' => true]);
-
-        return;
-    }
     app(NodeRemovalProjection::class)->apply($operation, $data);
-
     expect($node->fresh()->status)->toBe(LifecycleStatus::Active);
-    expect($operation->fresh()->state['node_wireguard_restoring'])->toBeTrue();
-    expect(NodeWireGuardInput::bound($operation->fresh()))->toBe($restore);
+    expect($operation->fresh()->state)->not->toHaveKey('node_wireguard_restoring');
     expect($operation->fresh()->input)->toBe($input);
 })->with(['valid restoration' => true, 'invalid restoration rolls back' => false]);

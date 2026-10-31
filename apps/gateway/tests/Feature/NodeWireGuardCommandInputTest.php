@@ -43,3 +43,13 @@ it('refuses prospective hub address ownership', function (): void {
     expect(fn () => app(NodeWireGuardCommandInput::class)->capture($this->peer, $this->hub->wireguard_ip))
         ->toThrow(ResourceOperationException::class);
 });
+
+
+it('separates captured desired and retiring peers without private config or fake Node identity', function (): void {
+    $retiring = FleetFixtures::node('retiring-hub-peer');
+    $retiring->update(['wireguard_public_key' => base64_encode(str_repeat('r', 32)), 'status' => LifecycleStatus::Removing]);
+    $intent = app(NodeWireGuardCommandInput::class)->captureHub($this->hub);
+    expect(array_column($intent['inventory'], 'node_id'))->toContain($this->peer->id)->not->toContain($retiring->id)
+        ->and(array_column($intent['retiring'], 'node_id'))->toBe([$retiring->id])
+        ->and(json_encode($intent))->not->toContain('private_key', '$secret', 'configuration');
+});

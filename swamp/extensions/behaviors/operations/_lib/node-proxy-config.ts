@@ -1,13 +1,9 @@
 import { z } from "npm:zod@4.4.3";
-import contract from "../node-command/scripts/proxy_contract.json" with {
-  type: "json",
-};
-export const proxyCgroupPattern = contract.cgroup_pattern;
+export const proxyCgroupPattern =
+  "^0::/system\\.slice/orbit-node-proxy-worker-([1-9][0-9]*)\\.service(?:/[^\\n]*)?$";
 export function proxyAddress(node: 1 | 18) {
-  return contract.targets[String(node) as "1" | "18"].host;
+  return node === 1 ? "10.44.0.1" : "10.44.0.13";
 }
-export const proxyTargets = Object.values(contract.targets);
-
 const identityShape = {
   node_id: z.union([z.literal(1), z.literal(18)]),
   host: z.string(),

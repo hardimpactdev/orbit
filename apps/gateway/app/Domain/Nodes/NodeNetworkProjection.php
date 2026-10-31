@@ -41,7 +41,8 @@ final readonly class NodeNetworkProjection implements DirectOperationProjection,
     public function input(Operation $operation): array
     {
         return ['network' => ValidatedData::object($operation->input['_network'] ?? []),
-            'hub' => ValidatedData::object($operation->input['_wireguard'] ?? [])];
+            'hub' => ValidatedData::object($operation->input['_wireguard'] ?? []),
+            'hub_command' => ValidatedData::object($operation->input['_hub_command'] ?? [])];
     }
 
     public function apply(Operation $operation, array $data): Operation

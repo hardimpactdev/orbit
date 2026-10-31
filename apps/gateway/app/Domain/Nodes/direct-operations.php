@@ -14,13 +14,15 @@ use App\Domain\Nodes\NodeWireGuardHubProjection;
 
 return ['node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'hub', 'step' => 'terminal'],
     'projection' => NodeWireGuardHubProjection::class,
-    'private_material' => ['configuration' => 'node.vpn_configuration'],
 ], 'node.remove' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'private_material' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity', 'configuration' => 'node.vpn_configuration', 'metrics_runtime' => 'metrics.fleet_runtime',
         ...NodeRemovalEnvironmentSource::privateMaterial()],
 ], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'private_material' => ['configuration' => 'node.vpn_configuration'],

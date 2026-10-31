@@ -141,7 +141,7 @@ final readonly class TaskVmEnrollmentIntent
         return [...$references, 'participant_node_ids' => array_values(array_unique([$rootNodeId, $host->id, $gateway->id, $issuer->id, $node->id, $network->server->id, $routerNodeId])),
             'private_bindings' => $bindings, 'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuer->id,
             'model_router_node_id' => $routerNodeId, 'model_origin' => $this->keys->origin(),
-            '_wireguard' => $hub,
+            '_wireguard' => $hub, '_hub_command' => app(\App\Domain\Nodes\NodeWireGuardCommandInput::class)->capture($node, $vm->wireguard_ip),
             'network' => ['server_public_key' => $network->serverPublicKey, 'endpoint' => $network->endpoint,
                 'address' => $network->peerAddress, 'subnet' => $network->subnet, 'dns_server' => $network->dnsServer, 'domains' => [$network->domain]],
             'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256],

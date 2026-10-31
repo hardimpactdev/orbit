@@ -17,11 +17,13 @@ return ['task_vm.resume' => [
     'projection' => TaskVmResumeProjection::class,
     'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],
 ], 'task_vm.provision' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-task-vm-provision',
     'projection' => TaskVmProvisionProjection::class,
     'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'configuration' => 'node.vpn_configuration', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
     'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
 ], 'task_vm.enroll' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-task-vm-enroll',
     'projection' => TaskVmEnrollmentProjection::class,
     'private_material' => ['installation' => 'task_vm.installation', 'configuration' => 'node.vpn_configuration', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],

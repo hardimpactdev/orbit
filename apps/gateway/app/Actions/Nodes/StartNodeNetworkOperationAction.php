@@ -31,6 +31,7 @@ final readonly class StartNodeNetworkOperationAction
 
         return $this->operations->execute('node.network_converge', 'node', $node->id, $node->id,
             ['_network' => $this->network->capture($node, $rolelessOperator), '_wireguard' => $hub,
+                '_hub_command' => app(\App\Domain\Nodes\NodeWireGuardCommandInput::class)->capture($node),
                 'configuration' => ['$secret' => 'node.vpn_configuration', 'id' => $hubId],
                 'participant_node_ids' => array_values(array_unique([$node->id, $hubId, $executor])),
                 'private_bindings' => [

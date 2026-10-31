@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -21,9 +20,14 @@ class HubRemoteSerialization(NativeTestCase):
 
     def test_two_served_parent_runs_cannot_overlap_the_same_hub(self):
         root = self.repo
-        model = Path('models/command/shell/wireguard-hub-1.yaml')
+        model = Path('models/@swamp/ssh/wireguard-hub-1.yaml')
         (root / model).parent.mkdir(parents=True)
-        shutil.copy(ROOT / model, root / model)
+        # Core model serialization fixture only; this does not emulate SSH.
+        definition = yaml.safe_load((ROOT / model).read_text())
+        definition['type'] = 'command/shell'
+        definition.pop('typeVersion', None)
+        definition['globalArguments'] = {}
+        (root / model).write_text(yaml.safe_dump(definition))
         cli_binary = os.environ.get("SWAMP_BIN", "swamp")
         command = root / "context_mutation.py"
         command.write_text("""import os
@@ -50,6 +54,8 @@ print('{"projected":true}')
         # Retain production placement, executing model and writes policy. Only
         # replace the privileged action/metadata with a harmless overlap probe.
         step.pop("dependsOn")
+        step["task"]["behaviorType"] = "command/shell"
+        step["task"]["methodName"] = "execute"
         step["task"]["inputs"] = {
             "run": "/usr/bin/python3 " + str(command),
             "env": {"ORBIT_SLOT": "${{ inputs.slot }}"},

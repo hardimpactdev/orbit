@@ -110,9 +110,6 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection,
             app(NodeRemovalRecords::class)->begin($snapshot);
         } elseif ($status === 'running' && $result === ['restoring' => true]) {
             app(NodeRemovalRecords::class)->restore($snapshot, $operation->input['route_prior_states'] ?? []);
-            if (($execution['hub'] ?? null) !== null) {
-                NodeWireGuardInput::beginRestoration($operation);
-            }
         } elseif ($status === 'succeeded') {
             app(NodeRemovalRecords::class)->remove($snapshot, $result,
                 ValidatedData::object($execution['routes'] ?? []));

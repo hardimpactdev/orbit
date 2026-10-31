@@ -91,6 +91,7 @@ final readonly class NodeRemovalInput
 
         return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'snapshot' => $snapshot, 'retained_on_node' => $retained, 'online_blocker' => $onlineBlocker, 'unavailable_node_ids' => $unavailable, 'placements' => array_map(static fn (int $id): array => [
             'effect_node_id' => $id, 'execution_node_id' => $id, 'transport' => 'local'], $ids),
+            'hub_command' => $hub === null ? null : app(NodeWireGuardCommandInput::class)->capture($context),
             'hub' => $hub, 'restore_hub' => $hub === null ? null : NodeWireGuardInput::restorationSnapshot($hub),
             'restore_certificates' => $this->certificates($routes),
             'retirement' => $retirement, 'host_retained' => $context->platform !== 'linux' || $context->ssh_host_fingerprint === null,

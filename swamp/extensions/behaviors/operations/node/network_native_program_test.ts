@@ -84,27 +84,6 @@ assert os.stat(WG+'/orbit.key').st_ino==before.st_ino
 assert sum(name=='wg' and args==['genkey'] for name,args in calls)==1
 `));
 
-Deno.test("native live hub publication synchronizes peers without restarting its active tunnel", () =>
-  python(`
-config='[Interface]\\nAddress = 10.44.0.1/24\\nPrivateKey = '+PRIVATE+'\\n'
-assert hub({'config':config})=={}
-assert read('orbit.conf')==config
-assert ['wg',['syncconf','orbit',WG+'/orbit-native-runtime.conf']] in calls
-assert not any(name=='systemctl' and args[0] in ['stop','restart'] for name,args in calls)
-assert read('orbit-native-runtime.conf',True) is None
-assert read('orbit-candidate.conf',True) is None
-`));
-
-Deno.test("native hub activation failure restores exact prior config and service state", () =>
-  python(`
-broken=lambda name,args:name=='wg' and args[0]=='syncconf'
-try:hub({'config':'[Interface]\\nAddress = 10.44.0.1/24\\nPrivateKey = '+PRIVATE+'\\n'});assert False
-except Refusal as error:assert str(error)=='wireguard.hub_start_failed'
-assert read('orbit.conf')==old
-assert live=={'active':True,'enabled':'enabled'}
-assert read('orbit-native-runtime.conf',True) is None
-`));
-
 Deno.test("native peer failed activation restores original resolver config and service state", () =>
   python(`
 broken=lambda name,args:name=='systemctl' and args[0]=='start'

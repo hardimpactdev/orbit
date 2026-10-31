@@ -1,5 +1,5 @@
 manifestVersion: 1
-name: '@nckrtl/node-hub-command'
+name: "@nckrtl/node-hub-command"
 version: 2026.10.31.1
 visibility: private
 license: MIT

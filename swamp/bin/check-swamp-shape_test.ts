@@ -1,5 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+  movedLimits,
+  proveProxyHttpMove,
+  PROXY_HTTP_MOVE,
+} from "./swamp-shape-relocations.ts";
+import {
   agentPythonFindings,
   agentShellFindings,
   aggregate,
@@ -8,7 +13,6 @@ import {
   analyzeYaml,
   GATEWAY_PRIMITIVES,
   gatewayShellFindings,
-  inlinePythonScripts,
   isGatewayPrimitive,
   ratchet,
   SCHEMA,
@@ -812,41 +816,6 @@ Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock command
   }
 });
 
-Deno.test("shared proxy heredoc inspects only remote Python programs", () => {
-  const head =
-    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
-  assertEquals(
-    inlinePythonScripts(head + " <<'ORBIT_ACTION'\nprintf ok\nORBIT_ACTION\n"),
-    [],
-  );
-  assertEquals(
-    inlinePythonScripts(
-      head +
-        " <<'ORBIT_ACTION'\n/usr/bin/python3 - <<'PYTHON'\nprint('remote')\nPYTHON\nORBIT_ACTION\n",
-    ),
-    ["print('remote')"],
-  );
-});
-
-Deno.test("canonical proxy envelope preserves remote shell control and agent enforcement", () => {
-  const head =
-    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
-  for (
-    const [body, rule] of [[
-      "while true; do printf bad; done",
-      "custom-control",
-    ], ["orbit-agent command cli.install", "agent-action"]]
-  ) {
-    const run = head + " <<'ORBIT_ACTION'\n" + body + "\nORBIT_ACTION\n";
-    const source = workflow("        run: " + JSON.stringify(run) + "\n");
-    assert(
-      analyzeYaml("workflows/proxy.yaml", source, inventory).findings.some(
-        (f) => f.rule === rule,
-      ),
-      rule,
-    );
-  }
-});
 Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
   for (
     const source of [
@@ -907,4 +876,179 @@ Deno.test("Python cross-scope and walrus writes invalidate captured command prov
       );
     }
   }
+});
+
+const moveFixture = JSON.parse(
+  Deno.readTextFileSync(
+    new URL(
+      "../tests/fixtures/shape/proxy-http-source-move.json",
+      import.meta.url,
+    ),
+  ),
+);
+const moveRow = (file: string, count = 1) => ({
+  file,
+  rule: "gateway-http",
+  count,
+  evidence: [] as string[],
+});
+const moveBaseline = (entries: ReturnType<typeof moveRow>[]) => ({
+  schema: SCHEMA,
+  entries,
+});
+function moveSource() {
+  const { from, to, caller } = PROXY_HTTP_MOVE;
+  const origin = new Map<string, string>([[from, moveFixture.from as string], [
+    caller,
+    moveFixture.caller as string,
+  ]]);
+  const head = new Map<string, string>([[
+    from,
+    "export const proxyLaunch = () => {};",
+  ], [
+    to,
+    moveFixture.target as string,
+  ], [
+    caller,
+    (moveFixture.caller as string).replace(
+      'import { proxyGatewayRequest, runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+      'import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";\nimport { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+    ),
+  ]]);
+  const originBaseline = moveBaseline([moveRow(from)]);
+  const proof = (
+    candidate = head,
+    base = origin,
+    previous = originBaseline,
+    before = [moveRow(from)],
+    after = [moveRow(to)],
+  ) =>
+    proveProxyHttpMove(
+      origin,
+      base,
+      candidate,
+      originBaseline,
+      previous,
+      before,
+      after,
+    );
+  return { origin, head, originBaseline, proof };
+}
+Deno.test("the exact approved HTTP extraction conserves one cap while the physical ledger only shrinks", () => {
+  const { head, proof, originBaseline } = moveSource();
+  assertEquals(moveFixture.origin, PROXY_HTTP_MOVE.origin);
+  const move = proof();
+  assert(move);
+  const actual = [moveRow(PROXY_HTTP_MOVE.to)];
+  const raw = moveBaseline([]);
+  assert(ratchet(actual, raw, originBaseline).length > 0);
+  assertEquals(ratchet([], raw, originBaseline), []);
+  assertEquals(ratchet(actual, movedLimits(raw, [move])), []);
+  assertEquals(ratchet(actual, movedLimits(originBaseline, [move])), []);
+  assertEquals(
+    raw.entries,
+    [],
+    "Derived limits never mutate or write the checked-in baseline",
+  );
+  assert(
+    ratchet([], movedLimits(raw, [move]), originBaseline).length > 0,
+    "A physical new row is still forbidden",
+  );
+  assert(
+    proof(head, head, raw, actual, actual),
+    "A retained proved move remains accounted with no ledger row",
+  );
+});
+Deno.test("HTTP source relocation rejects changed definitions, imports, retained debt and new callers", () => {
+  const { head, proof, origin } = moveSource();
+  const { from, to, caller } = PROXY_HTTP_MOVE;
+  const mutate = (file: string, source: string) =>
+    new Map([...head, [file, source]]);
+  for (
+    const candidate of [
+      mutate(to, head.get(to)!.replace("timeoutMs + 1000", "timeoutMs + 2000")),
+      mutate(to, head.get(to)! + "\nexport const another = 1;"),
+      mutate(to, head.get(to)! + '\nimport { helper } from "./other.ts";'),
+      mutate(
+        to,
+        head.get(to)!.replace("commandOutput }", "commandOutput as output }"),
+      ),
+      mutate(from, origin.get(from)!),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'import {proxyGatewayRequest} from "./operations/_lib/node-proxy-http.ts"; proxyGatewayRequest();',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'import * as http from "./operations/_lib/node-proxy-http.ts"; http.proxyGatewayRequest();',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'export * from "./operations/_lib/node-proxy-http.ts";',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'const load=import("./operations/_lib/"+"node-proxy-http.ts");',
+      ),
+      mutate(caller, head.get(caller)! + "\nproxyGatewayRequest();"),
+      mutate(caller, head.get(caller)! + "\nconst alias=proxyGatewayRequest;"),
+      mutate(
+        caller,
+        head.get(caller)!.replace("        timeoutMs,", "        timeoutMs+1,"),
+      ),
+    ]
+  ) assertEquals(proof(candidate), undefined);
+  assertEquals(
+    proof(head, origin, moveBaseline([])),
+    undefined,
+    "A deleted old cap cannot be revived",
+  );
+  assertEquals(
+    proof(head, origin, undefined, []),
+    undefined,
+    "No historical cap without actual live debt",
+  );
+  assertEquals(
+    proof(head, origin, undefined, undefined, [moveRow(to, 2)]),
+    undefined,
+    "No count growth",
+  );
+  assertEquals(
+    proof(head, origin, undefined, undefined, [moveRow(from), moveRow(to)]),
+    undefined,
+    "No retained second site",
+  );
+  const changedBase = new Map(origin);
+  changedBase.set(
+    from,
+    origin.get(from)!.replace("timeoutMs + 1000", "timeoutMs + 2000"),
+  );
+  assertEquals(
+    proof(head, changedBase),
+    undefined,
+    "The actual base must preserve the immutable declarations",
+  );
+});
+
+Deno.test("HTTP move proof follows the unchanged caller body and distinguishes local assertions from module loaders", () => {
+  const { head, proof } = moveSource();
+  const { caller } = PROXY_HTTP_MOVE;
+  const added = "extensions/behaviors/assertions.ts";
+  for (
+    const source of [
+      'const require=(ok:unknown)=>{if(!ok)throw new Error("refused")}; require(condition);',
+      "function require(ok:unknown): asserts ok {if(!ok)failure();} require(condition);",
+    ]
+  ) assert(proof(new Map([...head, [added, source]])));
+  for (
+    const source of [
+      "const require=(path:string)=>import(path); require(name);",
+      'import {createRequire} from "node:module"; const load=createRequire(import.meta.url); load(name);',
+      'const load=await import("node:module");',
+      'require("./operations/_lib/"+"node-proxy-http.ts");',
+    ]
+  ) assertEquals(proof(new Map([...head, [added, source]])), undefined);
+  const changedCaller = head.get(caller)!.replace("if (proxy)", "if (true)");
+  assert(changedCaller !== head.get(caller));
+  assertEquals(proof(new Map([...head, [caller, changedCaller]])), undefined);
 });

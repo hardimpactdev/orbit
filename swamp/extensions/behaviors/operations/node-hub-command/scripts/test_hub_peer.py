@@ -166,6 +166,25 @@ class FilesystemRollbackTests(unittest.TestCase):
         with self.assertRaises(hub.Refusal):
             hub.render(BASE, action(None, peer(A, "10.44.0.1")))
 
+    def test_inventory_ensures_captured_peers_and_preserves_newer_unknown_peers(self):
+        extra = peer(C, "10.44.0.4", 4)
+        intent = {"schema_version": 1, "mode": "inventory", "hub_id": 1, "hub_address": "10.44.0.1/24", "port": 51820,
+                  "inventory": [peer(A)], "retiring": [peer(B, "10.44.0.3", 3)]}
+        current = config(peer(B, "10.44.0.3", 3), extra)
+        result, changed, retained = hub.render_inventory(current, intent)
+        self.assertTrue(changed)
+        self.assertIn(A, result)
+        self.assertIn(C, result)
+        self.assertNotIn(B, result)
+        self.assertEqual(retained, 1)
+        self.assertEqual(hub.render_inventory(result, intent), (result, False, 1))
+
+    def test_inventory_refuses_a_foreign_owner_at_the_admitted_address(self):
+        intent = {"schema_version": 1, "mode": "inventory", "hub_id": 1, "hub_address": "10.44.0.1/24", "port": 51820,
+                  "inventory": [peer(A)], "retiring": []}
+        with self.assertRaises(hub.Refusal):
+            hub.render_inventory(config(peer(B)), intent)
+
 
 if __name__ == "__main__":
     unittest.main()

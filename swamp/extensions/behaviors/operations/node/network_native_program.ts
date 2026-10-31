@@ -130,32 +130,6 @@ def apply_dns(server,domains,old):
             time.sleep(.2)
     write('orbit.dns-link','orbit\n'+server+'\n'+'\n'.join(domains)+'\n')
 
-def hub(data):
-    config=data['config']
-    if not config or len(config)>1024*1024 or any(re.match(r'(?i)^\s*(PreUp|PostUp|PreDown|PostDown)\s*=',line) for line in config.splitlines()):refuse('wireguard.hub_config_invalid')
-    write('orbit-candidate.conf',config)
-    if command('wg-quick',['strip',WG+'/orbit-candidate.conf'],check=False).returncode:
-        remove('orbit-candidate.conf');refuse('wireguard.hub_config_invalid')
-    prior=read('orbit.conf',True);saved=state();runtime=None
-    try:
-        command('sysctl',['-w','net.ipv4.ip_forward=1']);write('orbit.conf',config);command('systemctl',['enable',SERVICE])
-        if saved['active']:
-            runtime='orbit-native-runtime.conf';write(runtime,command('wg-quick',['strip',WG+'/orbit.conf']).stdout)
-            command('wg',['syncconf','orbit',WG+'/'+runtime])
-        else:command('systemctl',['start',SERVICE])
-        command('systemctl',['is-active','--quiet',SERVICE]);command('systemctl',['is-enabled','--quiet',SERVICE])
-    except Exception:
-        try:
-            if prior is None:remove('orbit.conf')
-            else:write('orbit.conf',prior)
-            set_state(saved)
-        except Exception:raise Uncertain()
-        refuse('wireguard.hub_start_failed')
-    finally:
-        remove('orbit-candidate.conf')
-        if runtime:remove(runtime)
-    return {}
-
 def prepare(data):
     existing=read('orbit.key',True)
     if existing is None:
@@ -272,7 +246,7 @@ def main():
             except BlockingIOError:
                 if time.monotonic()>deadline:refuse('wireguard.peer_busy')
                 time.sleep(.05)
-        actions={'wireguard.prepare-peer-key':prepare,'wireguard.publish-peer':publish,'wireguard.commit-peer':commit,'wireguard.rollback-peer':rollback,'wireguard.recover-peer':recover_peer,'wireguard.project-hub':hub,'wireguard.repair-peer-dns':repair_dns}
+        actions={'wireguard.prepare-peer-key':prepare,'wireguard.publish-peer':publish,'wireguard.commit-peer':commit,'wireguard.rollback-peer':rollback,'wireguard.recover-peer':recover_peer,'wireguard.repair-peer-dns':repair_dns}
         if message['name'] not in actions:raise Uncertain()
         return actions[message['name']](message['input'])
     finally:os.close(fd)

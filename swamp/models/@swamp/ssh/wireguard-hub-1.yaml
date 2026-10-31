@@ -1,0 +1,18 @@
+type: '@swamp/ssh'
+id: ca3e41fa-6e92-4f08-90d4-9ed3e55d3a64
+name: wireguard-hub-1
+version: 1
+tags: {}
+globalArguments:
+  name: wireguard-hub-1
+  transport:
+    kind: ssh
+    user: orbit
+    identityFile: /etc/orbit/node-proxy/id_ed25519
+    hostKeys:
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG
+  hosts:
+  - name: hub
+    address: 10.44.0.1
+methods: {}
+typeVersion: 2026.10.20.1

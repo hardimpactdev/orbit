@@ -14,10 +14,17 @@ inputs:
       type: string
       enum:
       - task_vm.enroll
+    _hub_command:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - _hub_command
+  additionalProperties: true
 jobs:
 - name: admission
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
@@ -138,20 +145,59 @@ jobs:
     node: ${{ string(data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes._wireguard.executor_node_id)
       }}
   steps:
-  - name: publish-hub
-    writes: true
+  - name: publish-hub_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
-      behaviorType: '@nckrtl/node-wireguard-direct'
-      behaviorName: ${{ "wireguard-hub-" + string(data.latest("task-vm-enrollment-" + run.id,
-        "placement-" + run.id).attributes._wireguard.hub_id) }}
-      methodName: publish
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs._hub_command.hub_id)
+        }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
-        snapshot: ${{ data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes._wireguard }}
+        intent: ${{ inputs._hub_command }}
+        mode: publish
+        prepared_peer: '${{ {"node_id": inputs._hub_command.context_node_id, "public_key":
+          data.latest("task-vm-enrollment-" + run.id, "prepare-network-" + run.id).attributes.result.wireguard_public_key}
+          }}'
+  - name: publish-hub_command
+    writes: true
+    dependsOn:
+    - step: publish-hub_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs._hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["publish-hub_assets"].outputs.script_body }}
+  - name: publish-hub
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: publish-hub_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs._hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs._hub_command.hub_id }}
+        stdout: ${{ data.latest("wireguard-hub-" + string(inputs._hub_command.hub_id),
+          "run-script-hub").attributes.stdout }}
   - name: hub-published
     dependsOn:
     - step: publish-hub

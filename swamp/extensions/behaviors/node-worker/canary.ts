@@ -88,11 +88,53 @@ export async function inspect(
   });
 }
 
+/** Disposable direct-command effect; leaves no file or directory behind. */
+export async function exercise(
+  args: z.infer<typeof Args>,
+  invoke: NodeCommand = nodeRun,
+  placement?: NodeProxy | null,
+) {
+  if (![1, 18].includes(args.node_id)) {
+    throw new Error("Proxy canary is limited to the two approved light Nodes");
+  }
+  const proof = await inspect(args, invoke, placement);
+  const result = await invoke(
+    [
+      "/usr/bin/python3",
+      "-c",
+      `import os,tempfile,json
+with tempfile.TemporaryDirectory(prefix='orbit-proxy-canary-',dir='/run') as directory:
+ path=directory+'/proof'
+ with open(path,'xb') as f:f.write(b'orbit-proxy-direct-command');f.flush();os.fsync(f.fileno())
+ with open(path,'rb') as f:
+  if f.read()!=b'orbit-proxy-direct-command':raise RuntimeError('canary readback failed')
+if os.path.lexists(directory):raise RuntimeError('canary cleanup failed')
+print(json.dumps({'effect':True,'cleaned':True}))
+`,
+    ],
+    undefined,
+    "root",
+  );
+  if (!result.success) throw new Error("Proxy direct-command effect failed");
+  const effect = z.object({ effect: z.literal(true), cleaned: z.literal(true) })
+    .strict().parse(JSON.parse(new TextDecoder().decode(result.stdout)));
+  return { ...proof, ...effect };
+}
+
 export const behavior = {
   type: "@nckrtl/node-worker-canary",
-  version: "2026.10.31.2",
+  version: "2026.10.31.1",
   globalArguments: z.object({}).strict(),
   resources: {
+    effect: {
+      description: "Disposable direct-command effect and cleanup",
+      schema: Proof.extend({
+        effect: z.literal(true),
+        cleaned: z.literal(true),
+      }),
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
     proof: {
       description: "Placed Node identity and effective sudo readiness",
       schema: Proof,
@@ -101,6 +143,25 @@ export const behavior = {
     },
   },
   methods: {
+    exercise: {
+      description:
+        "Write, read and remove one disposable runtime file on the exact proxy Node",
+      arguments: Args,
+      execute: async (
+        args: z.infer<typeof Args>,
+        ctx: {
+          writeResource: (
+            spec: string,
+            name: string,
+            value: unknown,
+          ) => Promise<unknown>;
+        },
+      ) => ({
+        dataHandles: [
+          await ctx.writeResource("effect", "effect", await exercise(args)),
+        ],
+      }),
+    },
     inspect: {
       description:
         "Prove worker account and effective sudo without host mutation",

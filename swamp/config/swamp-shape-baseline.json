@@ -2112,7 +2112,7 @@
     {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "inline-script",
-      "count": 296,
+      "count": 270,
       "evidence": []
     },
     {
@@ -2349,26 +2349,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node/test-fixture.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/wireguard_direct.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/wireguard_direct.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/wireguard_local.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []

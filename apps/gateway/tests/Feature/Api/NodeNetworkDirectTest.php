@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Nodes\NodeNetworkCommandInput;
 use App\Domain\Nodes\NodeNetworkParticipantInput;
 use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeWireGuardInput;
@@ -215,18 +214,4 @@ it('refuses an unselected public network target before intent', function (): voi
     $this->post("/api/v1/nodes/{$peer->id}/network/converge", [], ['Accept' => 'application/json'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'node.network_unsupported');
     expect(Operation::query()->exists())->toBeFalse();
-});
-
-it('captures the command workflow envelope without hydrating execution secrets', function (): void {
-    [$operation, $peer, $hub, $snapshot] = nativeNetworkFixture();
-    $network = ['schema_version' => 1, 'node_id' => $peer->id, 'existing_key' => $peer->wireguard_public_key,
-        'peer' => ['endpoint' => 'vpn.example.test:51820', 'domains' => ['orbit']],
-        'trust' => ['desired' => [], 'remove' => [], 'enable' => false]];
-    $names = ['configuration' => ['vault' => 'orbit', 'key' => 'hub-configuration-generation']];
-    $operation->update(['input' => [...$operation->input, '_network' => $network, 'execution_secrets' => $names]]);
-    $envelope = app(NodeNetworkCommandInput::class)->capture($operation);
-    expect($envelope)->toBe(['intent' => ['schema_version' => 1, 'node_id' => $peer->id,
-        'participant_node_ids' => [$peer->id, $hub->id], 'network' => $network, 'hub' => $snapshot],
-        'execution_secrets' => $names]);
-    expect(json_encode($envelope))->not->toContain('private_key', 'node.vpn_configuration', '$secret');
 });

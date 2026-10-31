@@ -2,7 +2,6 @@
 import json
 import os
 import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -15,9 +14,14 @@ from native_harness import ROOT, NativeTestCase
 class HubCommands(NativeTestCase):
     def setUp(self):
         super().setUp()
-        model = Path('models/command/shell/wireguard-hub-1.yaml')
+        model = Path('models/@swamp/ssh/wireguard-hub-1.yaml')
         (self.repo / model).parent.mkdir(parents=True)
-        shutil.copy(ROOT / model, self.repo / model)
+        # This domain fixture bypasses SSH; lane21 proves the official transport.
+        definition = yaml.safe_load((ROOT / model).read_text())
+        definition['type'] = 'command/shell'
+        definition.pop('typeVersion', None)
+        definition['globalArguments'] = {}
+        (self.repo / model).write_text(yaml.safe_dump(definition))
 
     def test_shipped_asset_removes_only_context_and_returns_public_result(self):
         self.copy_behaviors('operations/node-hub-command')
@@ -48,7 +52,9 @@ class HubCommands(NativeTestCase):
                 step.pop('labels', None)
                 if step['name'] == 'mutate':
                     step['dependsOn'] = [{'step': 'assets', 'condition': {'type': 'succeeded'}}]
-                    step['task']['inputs']['run'] = '/usr/bin/python3 -I \"${{ steps.assets.outputs.script }}\"'
+                    step['task']['behaviorType'] = 'command/shell'
+                    step['task']['methodName'] = 'execute'
+                    step['task']['inputs'] = {'run': "/usr/bin/python3 - <<'ORBIT_DOMAIN_FIXTURE'\n${{ steps.assets.outputs.script_body }}\nORBIT_DOMAIN_FIXTURE"}
         (self.repo / 'workflows/workflow-node-hub-peer-mutation.yaml').write_text(json.dumps(workflow))
         peer = {'node_id': 2, 'name': 'guest', 'address': '10.44.0.2', 'public_key': key}
         intent = {'schema_version': 1, 'hub_id': 1, 'hub_address': '10.44.0.1/24', 'port': 51820, 'context_node_id': 2,
