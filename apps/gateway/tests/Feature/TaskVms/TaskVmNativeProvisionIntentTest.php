@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmProvisionAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
@@ -11,6 +12,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
@@ -29,6 +31,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
@@ -40,6 +43,7 @@ beforeEach(function (): void {
     $model = Mockery::mock(ModelKeyIssuer::class);
     $model->shouldReceive('origin')->andReturn(TaskVmSettingsBuilder::Origin);
     $model->shouldReceive('assertReady');
+    $model->shouldReceive('ownerNodeId')->andReturn($this->gateway->id);
     app()->instance(ModelKeyIssuer::class, $model);
     $certificates = Mockery::mock(LeafCertificateSigner::class);
     $certificates->shouldReceive('rootCertificate')->andReturn('ROOT CERTIFICATE');
@@ -96,6 +100,8 @@ it('freezes image and reserves exact guest and Process intent without contacting
         ->and(Node::query()->count())->toBe(5)
         ->and($input['issuer_node_id'])->toBe($this->issuer->id)
         ->and($input['participant_node_ids'])->toContain($this->host->id, $this->gateway->id, $this->issuer->id, $input['guest_node_id'])
+        ->and($input)->not->toHaveKey('network')
+        ->and($input['enrollment']['network']['address'])->toStartWith($this->vm->wireguard_ip)
         ->and($input['private_bindings']['installation']['owner_node_id'])->toBe($input['guest_node_id'])
         ->and(json_encode($input, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64))->not->toContain($this->vm->fresh()->model_key);
 });
@@ -218,4 +224,30 @@ it('exposes only public provision input to admitted participants without a globa
     expect($input['guest_node_id'])->toBe($operation->input['guest_node_id'])
         ->and($input)->not->toHaveKeys(['installation', 'enrollment_network', 'first_visit', 'upcloud_token']);
     expect(fn () => $projection->publicInput($operation, 999999))->toThrow(ResourceOperationException::class);
+});
+
+it('ordinary allocation records the native parent instead of dispatching provision jobs', function (): void {
+    TaskVmRecipeImages::ready($this->host->id);
+    $group = Task::topLevel()->create(['project_id' => $this->vm->group->project_id, 'title' => 'New provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
+    config(['swamp.run_token' => 'fixture.fake']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-task-vm-provision', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    $vm = app(AllocateTaskVmAction::class)->execute($group);
+    $operation = Operation::query()->where('kind', 'task_vm.provision')->sole();
+    expect($operation->target_id)->toBe($vm->id)
+        ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
+        ->and($operation->input['guest_node_id'])->toBe($vm->fresh()->node_id)
+        ->and(app(AllocateTaskVmAction::class)->execute($group)->id)->toBe($vm->id)
+        ->and(Operation::query()->count())->toBe(1);
+});
+
+it('refused native admission rolls back ordinary allocation instead of stranding a VM', function (): void {
+    TaskVmRecipeImages::ready($this->host->id);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)], 'devClusterId' => null]);
+    $group = Task::topLevel()->create(['project_id' => $this->vm->group->project_id, 'title' => 'New provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
+    expect(fn () => app(AllocateTaskVmAction::class)->execute($group))
+        ->toThrow(TaskVmException::class);
+    expect(TaskVm::forGroup($group))->toBeNull()->and(Operation::query()->count())->toBe(0);
 });

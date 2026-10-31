@@ -14,7 +14,6 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\UpCloudServers;
-use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -49,10 +48,6 @@ final readonly class AllocateTaskVmAction
                 throw $exception;
             }
             throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: another placement is running.');
-        }
-
-        if ($vm->wasRecentlyCreated) {
-            ProvisionTaskVm::dispatch($vm->id);
         }
 
         return $vm;
@@ -112,6 +107,7 @@ final readonly class AllocateTaskVmAction
             }
             $vm = $this->record->execute($group, $target, $size);
             $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $fingerprint]);
+            app(StartTaskVmProvisionAction::class)->execute($vm->id);
 
             return $vm;
         });
