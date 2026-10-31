@@ -1,366 +1,477 @@
-import registration from "./registration.json" with { type: "json" };
 import { z } from "npm:zod@4.4.3";
-import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
+import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import {
-  type Context,
-  Executor,
-  Globals,
-  Operation,
-} from "../../operation-runner/mod.ts";
+  DirectArgs,
+  GatewayOperation,
+  Globals as SharedGlobals,
+} from "../_lib/direct.ts";
+import { certificateActions } from "./actions.ts";
+import { type CertificateCaVault, signCertificateBatch } from "./signing.ts";
 import {
-  Completion,
-  EffectReceipt,
-  Invocation,
+  Applied,
   Leaf,
-  Result,
+  Presence,
+  Removal,
+  Request,
   Scope,
-} from "./contract.ts";
-import { CertificateRefusal } from "./contract.ts";
+  Signed,
+} from "./input.ts";
+
+const Globals = SharedGlobals.extend({
+  vaultName: z.string().min(1).optional(),
+  secretKey: z.string().min(1).optional(),
+});
+const Args = DirectArgs.extend({
+  node_id: z.number().int().positive(),
+  target_node_id: z.number().int().positive().optional(),
+});
+const Intent = z.object({
+  leaf: z.union([Leaf, Removal]),
+  cancelled: z.boolean(),
+});
+const InputResult = z.record(z.string(), z.unknown());
+type Context = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+  vaultService?: CertificateCaVault["vaultService"];
+  writeResource: (
+    spec: string,
+    name: string,
+    value: unknown,
+  ) => Promise<unknown>;
+};
+type ArgsType = z.infer<typeof Args>;
+
+const RequestRecord = z.union([
+  z.object({
+    node_id: z.number().int().positive(),
+    scope: z.string(),
+    state: z.literal("current"),
+  }).strict(),
+  z.object({
+    node_id: z.number().int().positive(),
+    scope: z.string(),
+    state: z.literal("request"),
+    request_base64: z.string().max(32768),
+  }).strict(),
+]);
+const SignedRecord = z.object({
+  node_id: z.number().int().positive(),
+  scope: z.string(),
+  certificate_base64: z.string(),
+  root_certificate_base64: z.string(),
+}).strict();
+const SignedBatch = z.object({ certificates: z.array(SignedRecord).max(256) })
+  .strict();
 
 export function certificates(
-  makeHttp = (ctx: Context) =>
-    gatewayHttp(
-      ctx.globalArgs.gatewayUrl,
-      ctx.globalArgs.caFile,
-      ctx.signal,
-      600_000,
-    ),
+  makeHttp: (ctx: Context) => Http = (ctx) =>
+    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
+  actions = certificateActions(),
+  signBatch = signCertificateBatch,
 ) {
+  const custody = (ctx: Context): CertificateCaVault => {
+    if (
+      !ctx.vaultService || !ctx.globalArgs.vaultName ||
+      !ctx.globalArgs.secretKey
+    ) {
+      throw new Error("certificate.ca_custody_unconfigured");
+    }
+    return {
+      vaultService: ctx.vaultService,
+      vaultName: ctx.globalArgs.vaultName,
+      secretKey: ctx.globalArgs.secretKey,
+    };
+  };
+  const output = async (ctx: Context, spec: string, value: unknown) => ({
+    dataHandles: [await ctx.writeResource(spec, spec, { [spec]: value })],
+  });
+  const gateway = (args: ArgsType, ctx: Context) =>
+    new GatewayOperation(makeHttp(ctx), args);
+  const target = (args: ArgsType, leaf: { node_id: number }) => {
+    if ((args.target_node_id ?? args.node_id) !== leaf.node_id) {
+      throw new Error(
+        "Certificate effect Node differs from admitted step placement",
+      );
+    }
+  };
+  const scope = (leaf: z.infer<typeof Leaf>) => ({
+    node_id: leaf.node_id,
+    scope: leaf.scope,
+    home: leaf.home,
+    agent_sha256: leaf.agent_sha256,
+  });
   return {
-    type: "@nckrtl/operation-certificates",
-    version: "2026.10.28.1",
+    type: "@nckrtl/certificates",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     resources: {
-      assignment: {
-        description: "Bind a dispatch retry to its original claimed Operation",
-        schema: z.object({ operation_id: z.number().int().positive() }),
-        lifetime: "7d",
+      requests: {
+        schema: z.object({ requests: z.array(RequestRecord).max(256) }),
+        lifetime: "1d",
         garbageCollection: 1,
       },
-      invocation: {
-        description: "Certificate invocation identity before a Node effect",
-        schema: Invocation,
-        lifetime: "infinite",
-        garbageCollection: 10,
+      signedBatch: {
+        schema: SignedBatch,
+        lifetime: "1d",
+        garbageCollection: 1,
       },
-      receipt: {
-        description: "Permanent certificate completion intent",
-        schema: Completion,
-        lifetime: "infinite",
-        garbageCollection: 10,
+
+      intent: {
+        schema: z.object({ intent: Intent }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      request: {
+        schema: z.object({ request: Request }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      signed: {
+        schema: z.object({ signed: Signed }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      applied: {
+        schema: z.object({ applied: Applied }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      presence: {
+        schema: z.object({ presence: Presence }),
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
+      result: {
+        schema: z.object({ result: InputResult }),
+        lifetime: "1d",
+        garbageCollection: 1,
       },
     },
     methods: {
-      execute: {
-        description: "Converge or remove one Node-owned certificate scope",
-        arguments: z.object({
-          kind: z.string().refine((kind) => registration.kinds.includes(kind)),
-          worker: z.string(),
-        }),
+      requestAll: {
+        description: "Request all leaves placed on one admitted participant",
+        arguments: Args.extend({ leaves: z.array(Leaf).max(256) }),
         execute: async (
-          dispatch: { kind: string; worker: string },
+          args: ArgsType & { leaves: z.infer<typeof Leaf>[] },
           ctx: Context,
         ) => {
-          if (!registration.kinds.includes(dispatch.kind)) {
-            throw new Error("Unregistered family kind");
-          }
-          const http = makeHttp(ctx);
-          const executor = new Executor(http);
-          const attempt = `assignment-${dispatch.worker}`;
-          const assigned = await ctx.readResource(attempt);
-          let id: number;
-          if (assigned) {
-            id = z.object({ operation_id: z.number().int().positive() })
-              .parse(assigned).operation_id;
-            const saved = await ctx.readResource(`operation-${id}`);
-            if (saved) {
-              const completion = Completion.parse(saved);
-              const outcome = z.object({
-                id: z.number().int().positive(),
-                kind: z.string(),
-                status: z.string(),
-                result: z.preprocess(
-                  (value) =>
-                    Array.isArray(value) && value.length === 0 ? {} : value,
-                  z.record(z.string(), z.unknown()).nullable(),
-                ),
-                error_code: z.string().nullable(),
-              }).parse(await executor.operation(id));
-              if (
-                ["succeeded", "failed", "cancelled"].includes(outcome.status)
-              ) {
-                const ordered = (value: unknown): unknown =>
-                  Array.isArray(value)
-                    ? value.map(ordered)
-                    : value !== null && typeof value === "object"
-                    ? Object.fromEntries(
-                      Object.entries(value).sort(([a], [b]) =>
-                        a.localeCompare(b)
-                      )
-                        .map(([key, item]) => [key, ordered(item)]),
-                    )
-                    : value;
-                if (
-                  outcome.id !== id || outcome.kind !== dispatch.kind ||
-                  outcome.status !== completion.status ||
-                  outcome.error_code !== completion.error_code ||
-                  JSON.stringify(ordered(outcome.result ?? {})) !==
-                    JSON.stringify(ordered(completion.result))
-                ) {
-                  throw new Error("Unproven saved certificates completion");
-                }
-                return { status: completion.status };
-              }
-            }
-          } else {
-            const claimed = await executor.claim(
-              dispatch.kind,
-              dispatch.worker,
-            );
-            if (!claimed) return { status: "idle" };
-            if (claimed.kind !== dispatch.kind) {
-              throw new Error("Wrong claimed certificates kind");
-            }
-            id = claimed.id;
-            await ctx.writeResource("assignment", attempt, {
-              operation_id: id,
+          const requests: z.infer<typeof RequestRecord>[] = [];
+          for (const leaf of args.leaves) {
+            target(args, leaf);
+            const request = await actions.request(leaf, ctx.signal);
+            if ("error_code" in request) throw new Error(request.error_code);
+            requests.push({
+              node_id: leaf.node_id,
+              scope: leaf.scope,
+              ...request,
             });
           }
-          const args = { operationId: id, worker: dispatch.worker };
-          const path = String(id), resource = `operation-${path}`;
-          const saved = await ctx.readResource(resource);
-          const operation = Operation.parse(
-            await executor.post(`${path}/heartbeat`, { worker: args.worker }),
-          );
-          if (operation.id !== id || operation.kind !== dispatch.kind) {
-            throw new Error("Wrong certificates assignment");
-          }
-          if (saved) {
-            const completion = Completion.parse(saved);
-            await executor.post(`${path}/complete`, {
-              worker: args.worker,
-              ...completion,
-            });
-            return { status: completion.status };
-          }
-          if (
-            !["certificate.converge", "certificate.remove"].includes(
-              operation.kind,
-            )
-          ) throw new Error("Unknown certificate kind");
-          const leaf = operation.kind === "certificate.converge"
-            ? Leaf.parse(operation.input)
-            : null;
-          const scope = Scope.parse(operation.input);
-          let heartbeatError: unknown;
-          const timer = setInterval(() => {
-            executor.post(`${path}/heartbeat`, { worker: args.worker }).catch(
-              (error) => {
-                heartbeatError = error;
-              },
-            );
-          }, 30_000);
-          const step = async (
-            key: string,
-            transport: string,
-            name: string,
-            input: Record<string, unknown>,
-          ) => {
-            const recorded = operation.step_results[key];
-            if (recorded) {
-              return Result.parse(recorded);
-            }
-            await executor.post(`${path}/step`, {
-              worker: args.worker,
-              key: `${key}:start`,
-              name: key,
-              status: "running",
-              output: `${key}\n`,
-            });
-            const invocation = { key, transport, name, input };
-            const invocationResource = `${resource}-effect-${key}`;
-            const attempted = transport === "gateway"
-              ? null
-              : await ctx.readResource(invocationResource);
-            let recovered: Record<string, unknown> | undefined;
-            if (attempted) {
-              if (
-                JSON.stringify(Invocation.parse(attempted)) !==
-                  JSON.stringify(invocation)
-              ) {
-                throw new Error(
-                  "Certificate effect input changed during recovery",
-                );
-              }
-              const response = await http(
-                "GET",
-                `/api/v1/operation-executor/${path}/receipts/${
-                  encodeURIComponent(key)
-                }`,
-              );
-              if (response.status !== 200) {
-                throw new Error("Certificate effect receipt unavailable");
-              }
-              const effect = EffectReceipt.parse(
-                z.object({ data: z.unknown() }).parse(response.body).data,
-              );
-              if (effect.effect_key !== `op-${path}.${key}`) {
-                throw new Error(
-                  "Certificate effect receipt has another identity",
-                );
-              }
-              if (effect.state === "running") {
-                throw new Error("Certificate effect is still running");
-              }
-              if (effect.state === "succeeded" || effect.state === "failed") {
-                if (!effect.result) {
-                  throw new Error("Certificate effect receipt has no result");
-                }
-                recovered = effect.state === "failed" &&
-                    typeof effect.result.error_code !== "string"
-                  ? {
-                    ...effect.result,
-                    error_code: "operation.effect_failed",
-                  }
-                  : effect.result;
-              }
-            } else if (transport !== "gateway") {
-              await ctx.writeResource(
-                "invocation",
-                invocationResource,
-                invocation,
-              );
-            }
-            const result = Result.parse(
-              recovered ??
-                await executor.post(`${path}/run`, {
-                  worker: args.worker,
-                  ...invocation,
-                }),
-            );
-            if (heartbeatError) throw heartbeatError;
-            const error = typeof result.error_code === "string"
-              ? result.error_code
-              : null;
-            if (error && !/^[a-z0-9_.-]+$/.test(error)) {
-              throw new Error("Invalid certificate refusal code");
-            }
-            await executor.post(`${path}/step`, {
-              worker: args.worker,
-              key: `${key}:finish`,
-              name: key,
-              status: error ? "failed" : "succeeded",
-              result,
-              error_code: error,
-              output: error ? `${error}\n` : `${key} succeeded\n`,
-            });
-            if (error) throw new CertificateRefusal(error);
-            return result;
+          return {
+            dataHandles: [
+              await ctx.writeResource("requests", `requests-${args.run_id}`, {
+                requests,
+              }),
+            ],
           };
-          try {
-            let completion: z.infer<typeof Completion>;
-            if (
-              operation.cancel_requested && operation.steps.length === 0 &&
-              !operation.step_results["certificate-inspect"]
-            ) {
-              completion = {
-                status: "cancelled",
-                result: {},
-                error_code: null,
-              };
-            } else {
-              try {
-                let result: Record<string, unknown>;
-                if (!leaf) {
-                  result = await step(
-                    "certificate-remove",
-                    "agent",
-                    "certificate.remove-leaf",
-                    scope,
-                  );
-                } else {
-                  const request = await step(
-                    "certificate-request",
-                    "certificate-request",
-                    "certificate.request-leaf",
-                    leaf,
-                  );
-                  if (request.state === "request") {
-                    if (typeof request.request_base64 !== "string") {
-                      throw new Error("Unproven signing request");
-                    }
-                    const signed = await step(
-                      "certificate-sign",
-                      "gateway",
-                      "certificate.sign-leaf",
-                      {
-                        domain: leaf.domain,
-                        request_base64: request.request_base64,
-                      },
-                    );
-                    if (signed.signed !== true) {
-                      throw new Error("Unproven certificate signature");
-                    }
-                    await step(
-                      "certificate-publish",
-                      "agent",
-                      "certificate.publish-leaf",
-                      {
-                        ...leaf,
-                        certificate: {
-                          $secret: "certificate.leaf",
-                          id: operation.id,
-                        },
-                        root_certificate: {
-                          $secret: "certificate.leaf",
-                          id: operation.id,
-                        },
-                      },
-                    );
-                  } else if (request.state !== "current") {
-                    throw new Error("Unproven certificate request");
-                  }
-                  result = await step(
-                    "certificate-inspect",
-                    "agent",
-                    "certificate.inspect-leaf",
-                    scope,
-                  );
-                  if (result.present !== true) {
-                    throw new Error("Unproven certificate publication");
-                  }
-                }
-                completion = { status: "succeeded", result, error_code: null };
-              } catch (error) {
-                if (!(error instanceof CertificateRefusal)) throw error;
-                completion = {
-                  status: error.code === "operation.cancelled"
-                    ? "cancelled"
-                    : "failed",
-                  result: { error_code: error.code },
-                  error_code: error.code,
-                };
-              }
-            }
-            const handle = await ctx.writeResource(
-              "receipt",
-              resource,
-              completion,
+        },
+      },
+      signBatch: {
+        description:
+          "Sign admitted public leaf requests in the control worker using Swamp vault custody",
+        arguments: Args.extend({
+          leaves: z.array(Leaf).max(256),
+          requests: z.array(z.array(RequestRecord).max(256)).max(
+            256,
+          ),
+        }),
+        execute: async (
+          args: z.infer<typeof Args> & {
+            leaves: z.infer<typeof Leaf>[];
+            requests: z.infer<typeof RequestRecord>[][];
+          },
+          ctx: Context,
+        ) => {
+          const requests = args.requests.flat();
+          const batch = requests.every((request) => request.state === "current")
+            ? { certificates: [] }
+            : await signBatch(args.leaves, requests, custody(ctx), ctx.signal);
+          return {
+            dataHandles: [
+              await ctx.writeResource(
+                "signedBatch",
+                `signed-${args.run_id}`,
+                batch,
+              ),
+            ],
+          };
+        },
+      },
+      sign: {
+        description:
+          "Sign one public request in the control worker without exporting CA material",
+        arguments: Args.extend({ leaf: Leaf, request: Request }),
+        execute: async (
+          args: z.infer<typeof Args> & {
+            leaf: z.infer<typeof Leaf>;
+            request: z.infer<typeof Request>;
+          },
+          ctx: Context,
+        ) => {
+          let signed: z.infer<typeof Signed>;
+          if ("error_code" in args.request) signed = args.request;
+          else if (args.request.state === "current") signed = { skipped: true };
+          else {
+            const batch = await signBatch(
+              [args.leaf],
+              [{
+                node_id: args.leaf.node_id,
+                scope: args.leaf.scope,
+                ...args.request,
+              }],
+              custody(ctx),
+              ctx.signal,
             );
-            await executor.post(`${path}/complete`, {
-              worker: args.worker,
-              ...completion,
+            const match = batch.certificates.find((cert) =>
+              cert.node_id === args.leaf.node_id &&
+              cert.scope === args.leaf.scope
+            );
+            if (!match) throw new Error("app-dev.certificate_sign_failed");
+            signed = Signed.parse({
+              certificate_base64: match.certificate_base64,
+              root_certificate_base64: match.root_certificate_base64,
             });
-            return { dataHandles: [handle], status: completion.status };
-          } finally {
-            clearInterval(timer);
           }
+          return {
+            dataHandles: [
+              await ctx.writeResource("signed", "signed", { signed }),
+            ],
+          };
+        },
+      },
+      publishAll: {
+        description: "Publish and inspect all leaves on one participant",
+        arguments: Args.extend({
+          leaves: z.array(Leaf).max(256),
+          requests: z.array(RequestRecord).max(256),
+          signed: z.array(SignedRecord).max(256),
+        }),
+        execute: async (
+          args: ArgsType & {
+            leaves: z.infer<typeof Leaf>[];
+            requests: z.infer<typeof RequestRecord>[];
+            signed: z.infer<typeof SignedRecord>[];
+          },
+          ctx: Context,
+        ) => {
+          for (const leaf of args.leaves) {
+            target(args, leaf);
+            const record = args.requests.find((r) =>
+              r.node_id === leaf.node_id && r.scope === leaf.scope
+            );
+            if (!record) {
+              throw new Error("Public request missing for admitted leaf");
+            }
+            const request = record.state === "current"
+              ? { state: "current" as const }
+              : {
+                state: "request" as const,
+                request_base64: record.request_base64,
+              };
+            const signed = args.signed.find((r) =>
+              r.node_id === leaf.node_id && r.scope === leaf.scope
+            );
+            const signature = signed
+              ? {
+                certificate_base64: signed.certificate_base64,
+                root_certificate_base64: signed.root_certificate_base64,
+              }
+              : { skipped: true };
+            const applied = await actions.publish(
+              leaf,
+              request,
+              signature,
+              ctx.signal,
+            );
+            const presence = await actions.inspect(scope(leaf), applied);
+            if ("error_code" in presence) throw new Error(presence.error_code);
+            if (!presence.present) {
+              throw new Error("certificate.presence_mismatch");
+            }
+          }
+          return output(ctx, "presence", { present: true });
+        },
+      },
+
+      admit: {
+        description: "Read standalone admitted public certificate intent",
+        arguments: Args,
+        execute: async (args: ArgsType, ctx: Context) => {
+          const g = gateway(args, ctx);
+          const current = z.object({
+            id: z.literal(args.operation_id),
+            kind: z.literal(args.kind),
+            node_id: z.literal(args.node_id),
+            input: z.unknown(),
+            cancel_requested: z.boolean(),
+          }).parse(await g.read(ctx.signal));
+          const leaf = args.kind === "certificate.converge"
+            ? Leaf.parse(current.input)
+            : Removal.parse(current.input);
+          target(args, leaf);
+          await g.project({
+            status: "running",
+            started_at: new Date().toISOString(),
+          });
+          return output(ctx, "intent", {
+            leaf,
+            cancelled: current.cancel_requested,
+          });
+        },
+      },
+      request: {
+        description: "Prepare local key and public CSR",
+        arguments: Args.extend({
+          leaf: Leaf,
+          cancelled: z.boolean().default(false),
+        }),
+        execute: async (
+          args: ArgsType & { leaf: z.infer<typeof Leaf>; cancelled: boolean },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          return output(
+            ctx,
+            "request",
+            args.cancelled
+              ? { error_code: "operation.cancelled" }
+              : await actions.request(args.leaf, ctx.signal),
+          );
+        },
+      },
+      publish: {
+        description: "Publish signed public leaf with local private key",
+        arguments: Args.extend({
+          leaf: Leaf,
+          request: Request,
+          signed: Signed,
+        }),
+        execute: async (
+          args: ArgsType & {
+            leaf: z.infer<typeof Leaf>;
+            request: z.infer<typeof Request>;
+            signed: z.infer<typeof Signed>;
+          },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          return output(
+            ctx,
+            "applied",
+            await actions.publish(
+              args.leaf,
+              args.request,
+              args.signed,
+              ctx.signal,
+            ),
+          );
+        },
+      },
+      remove: {
+        description: "Remove an admitted unused local certificate",
+        arguments: Args.extend({
+          leaf: Removal,
+          cancelled: z.boolean().default(false),
+        }),
+        execute: async (
+          args: ArgsType & {
+            leaf: z.infer<typeof Removal>;
+            cancelled: boolean;
+          },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          return output(
+            ctx,
+            "applied",
+            args.cancelled
+              ? { error_code: "operation.cancelled" }
+              : await actions.remove(args.leaf, ctx.signal),
+          );
+        },
+      },
+      removeLeaf: {
+        description: "Remove and inspect a leaf as one reusable parent step",
+        arguments: Args.extend({ leaf: Removal }),
+        execute: async (
+          args: ArgsType & { leaf: z.infer<typeof Removal> },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          const applied = await actions.remove(args.leaf, ctx.signal);
+          const presence = await actions.inspect({
+            node_id: args.leaf.node_id,
+            scope: args.leaf.scope,
+            home: args.leaf.home,
+            agent_sha256: args.leaf.agent_sha256,
+          }, applied);
+          if ("error_code" in presence) throw new Error(presence.error_code);
+          if (presence.present) {
+            throw new Error("certificate.presence_mismatch");
+          }
+          return output(ctx, "presence", presence);
+        },
+      },
+      inspect: {
+        description: "Observe local certificate presence after its effect",
+        arguments: Args.extend({ leaf: Scope, previous: Applied }),
+        execute: async (
+          args: ArgsType & {
+            leaf: z.infer<typeof Scope>;
+            previous: z.infer<typeof Applied>;
+          },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          return output(
+            ctx,
+            "presence",
+            await actions.inspect(args.leaf, args.previous, ctx.signal),
+          );
+        },
+      },
+      project: {
+        description: "Project standalone bounded presence or refusal",
+        arguments: Args.extend({ presence: Presence }),
+        execute: async (
+          args: ArgsType & { presence: z.infer<typeof Presence> },
+          ctx: Context,
+        ) => {
+          const p = args.presence;
+          let result: Record<string, unknown> = p;
+          let status = "error_code" in p
+            ? (p.error_code === "operation.cancelled" ? "cancelled" : "failed")
+            : "succeeded";
+          if (
+            "present" in p &&
+            p.present !== (args.kind === "certificate.converge")
+          ) {
+            status = "failed";
+            result = { error_code: "certificate.presence_mismatch" };
+          }
+          if (status === "cancelled") result = {};
+          await gateway(args, ctx).project({
+            status,
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            result,
+            error_code: result.error_code ?? null,
+          });
+          if (status === "failed") throw new Error(String(result.error_code));
+          return output(ctx, "result", { status });
         },
       },
     },
   };
 }
-export const behavior = {
-  ...certificates(),
-  type: "@nckrtl/operation-certificates",
-};
+export const behavior = { ...certificates(), type: "@nckrtl/certificates" };

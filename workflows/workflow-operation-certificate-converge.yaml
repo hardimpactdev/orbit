@@ -1,0 +1,165 @@
+id: d321071e-bf48-44fc-84bc-a67939f587f8
+name: operation-certificate-converge
+description: Converge an admitted certificate with native local steps.
+writes: true
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - certificate.converge
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: certificate
+  steps:
+  - name: admit
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
+      methodName: admit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  - name: request
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: admit
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
+      methodName: request
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaf: ${{ steps.admit.outputs.intent.leaf }}
+        cancelled: ${{ steps.admit.outputs.intent.cancelled }}
+  - name: sign
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: request
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: orbit-certificate-signing
+      methodName: sign
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaf: ${{ steps.admit.outputs.intent.leaf }}
+        request: ${{ steps.request.outputs.request }}
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: sign
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
+      methodName: publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaf: ${{ steps.admit.outputs.intent.leaf }}
+        request: ${{ steps.request.outputs.request }}
+        signed: ${{ steps.sign.outputs.signed }}
+  - name: inspect
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
+      methodName: inspect
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        leaf:
+          node_id: ${{ steps.admit.outputs.intent.leaf.node_id }}
+          scope: ${{ steps.admit.outputs.intent.leaf.scope }}
+          home: ${{ steps.admit.outputs.intent.leaf.home }}
+          agent_sha256: ${{ steps.admit.outputs.intent.leaf.agent_sha256 }}
+        previous: ${{ steps.publish.outputs.applied }}
+  - name: project
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificates'
+      behaviorName: ${{ "certificate-node-" + string(inputs.node_id) }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        presence: ${{ steps.inspect.outputs.presence }}
+- name: terminal-failure
+  dependsOn:
+  - job: certificate
+    condition:
+      type: or
+      conditions:
+      - type: failed
+      - type: skipped
+  steps:
+  - name: report-native-failure
+    writes: true
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: certificate-cluster-failure
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
