@@ -70,7 +70,12 @@ function fixture(nodes: NodeIntent[] = [node(9)], families: string[] = []) {
       body: { data: structuredClone(current) },
     });
   };
+  const resources: unknown[] = [];
   const context = {
+    writeResource: (_spec: string, _name: string, value: unknown) => {
+      resources.push(value);
+      return Promise.resolve({});
+    },
     globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/unused" },
   };
   const run = (call: NativeReadCall) => {
@@ -115,6 +120,7 @@ function fixture(nodes: NodeIntent[] = [node(9)], families: string[] = []) {
   return {
     behavior,
     context,
+    resources,
     events,
     projects,
     agent,
@@ -185,6 +191,7 @@ Deno.test("private Schedule commands stay within the observation callback and ne
   );
   assert(!JSON.stringify(result).includes("private-sentinel-command"));
   assert(!JSON.stringify(f.projects).includes("private-sentinel-command"));
+  assert(!JSON.stringify(f.resources).includes("private-sentinel-command"));
   assertEquals(f.events[0], "bound-read");
   assert(
     f.agent.every((call) => call.node.id === 9),

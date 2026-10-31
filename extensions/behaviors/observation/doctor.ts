@@ -73,7 +73,19 @@ const NodeOutput = z.object({
   healthy: z.boolean(),
   families: z.array(FamilyOutput),
 });
-type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
+type Context = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+  writeResource: (
+    spec: string,
+    name: string,
+    value: unknown,
+  ) => Promise<unknown>;
+};
+async function publish<T>(ctx: Context, spec: string, value: T): Promise<T> {
+  await ctx.writeResource(spec, spec, value);
+  return value;
+}
 type NativeArgs = z.infer<typeof Args>;
 
 function admitted(raw: unknown, args: NativeArgs) {
@@ -152,8 +164,25 @@ export function doctor(
     new GatewayOperation(makeHttp(ctx), args);
   return {
     type: "@nckrtl/doctor",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
+    resources: {
+      plan: {
+        description: "Admitted Node IDs for the native inspection fan-out",
+        schema: z.object({ node_ids: z.array(z.number().int().positive()) })
+          .strict(),
+        lifetime: "1d",
+        garbageCollection: 10,
+      },
+      node_report: {
+        description: "Bounded public report from one admitted Node",
+        schema: NodeOutput.or(
+          z.object({ cancelled: z.literal(true) }).strict(),
+        ),
+        lifetime: "1d",
+        garbageCollection: 10,
+      },
+    },
     methods: {
       prepare: {
         description: "Read bound Doctor intent and select placed observations",
@@ -164,15 +193,15 @@ export function doctor(
           if (
             ["succeeded", "failed", "cancelled"].includes(current.status) ||
             current.cancel_requested
-          ) return { node_ids: [] };
+          ) return await publish(ctx, "plan", { node_ids: [] });
           await gateway.project({
             status: "running",
             started_at: new Date().toISOString(),
           });
-          return {
+          return await publish(ctx, "plan", {
             node_ids: current.input.nodes.filter((n) => n.managed && !n.parked)
               .map((n) => n.id),
-          };
+          });
         },
       },
       inspect: {
@@ -195,9 +224,7 @@ export function doctor(
             );
           }
           if (current.cancel_requested || ctx.signal?.aborted) {
-            return {
-              cancelled: true,
-            };
+            return await publish(ctx, "node_report", { cancelled: true });
           }
           const invoke = async (name: string, body: Row, _sudo = true) => {
             const result = await run({ name, input: body, node }, ctx.signal);
@@ -288,7 +315,11 @@ export function doctor(
           const ordered = input.families.map((f) =>
             reports.find((r) => r.family === f) ?? report(f, 0, [])
           );
-          return nodeReport(node, bounded(ordered));
+          return await publish(
+            ctx,
+            "node_report",
+            nodeReport(node, bounded(ordered)),
+          );
         },
       },
       finish: {

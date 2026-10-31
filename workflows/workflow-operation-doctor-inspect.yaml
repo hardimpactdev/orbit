@@ -12,6 +12,7 @@ jobs:
   - name: prepare
     steps:
       - name: prepare
+        writes: true
         target: '${{ "orbit-node-" + string(inputs.node_id) }}'
         labels: { node: "${{ string(inputs.node_id) }}" }
         task:
@@ -28,6 +29,7 @@ jobs:
     dependsOn: [{ job: prepare, condition: { type: succeeded } }]
     steps:
       - name: inspect-${{ self.node }}
+        writes: true
         forEach:
           item: node
           in: "${{ steps.prepare.outputs.node_ids }}"

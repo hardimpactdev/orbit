@@ -2,7 +2,12 @@
 
 Doctor admission records stored expectations and starts
 `operation-doctor-inspect`. Its native DAG reads bound intent, fans out to exact
-`orbit-node-N` workers, and combines their bounded reports on the root Node.
+`orbit-node-N` workers, and combines their bounded reports on the root Node. The
+prepare step publishes its Node list as a native resource before fan-out
+planning. Each inspection publishes its bounded report as a native resource
+before aggregation. Plain method return values do not populate cross-job step
+outputs.
+
 Worker failures become unverifiable findings and never clear an earlier
 observation scope. Parked and unmanaged Nodes need no placed inspection. Doctor
 runs native domain reads directly, including SQL through native database
