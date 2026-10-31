@@ -272,11 +272,9 @@ final readonly class GatewayReleaseCommands
     /** @return array<string, mixed> */
     public function handoffPhase(GatewayReleaseLayout $layout, string $id, string $phase, string $stepLock): array
     {
-        $required = match ($phase) {
-            'serve' => 'caddy',
-            'schedule' => 'scheduler',
-            default => throw $this->malformed('handoff', 'gateway.release_handoff_failed'),
-        };
+        if (! in_array($phase, ['serve', 'schedule'], true)) {
+            throw $this->malformed('handoff', 'gateway.release_handoff_failed');
+        }
         $result = $this->run($layout, 'gateway.handoff-release', [
             'release' => GatewayReleaseCommit::assertId($id), 'phase' => $phase, 'step_lock' => $stepLock,
         ], 'handoff', 'gateway.release_handoff_failed');
@@ -290,12 +288,8 @@ final readonly class GatewayReleaseCommands
             }
             $data[$key] = $value;
         }
-        $phaseResult = $data[$required] ?? null;
-        $valid = $phase === 'serve'
-            ? (($phaseResult === 'submitted' && is_int($data['caddy_operation_id'] ?? null) && $data['caddy_operation_id'] > 0)
-                || ($phaseResult === 'unchanged' && array_key_exists('caddy_operation_id', $data) && $data['caddy_operation_id'] === null))
-            : is_string($phaseResult);
-        if (! $result['succeeded'] || ! $valid) {
+        // The target release owns phase execution and its report schema. The caller can be older than it.
+        if (! $result['succeeded']) {
             throw new GatewayReleaseException(
                 'handoff',
                 is_string($data['error_code'] ?? null) ? $data['error_code'] : 'gateway.release_handoff_failed',

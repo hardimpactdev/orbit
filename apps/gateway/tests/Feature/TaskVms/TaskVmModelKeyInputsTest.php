@@ -5,12 +5,11 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmModelKeyInputs;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use Tests\Support\FakeRoutePublicationSocket;
 
 final class ModelKeyStepIssuer implements ModelKeyIssuer
 {
@@ -154,29 +153,20 @@ it('refuses an invalid router owner before reading private material or copying s
 });
 
 it('uses the real shared execution-copy helper without a family transport', function (): void {
-    config()->set(['swamp.run_token' => 'synthetic-swamp-run-token', 'swamp.ca_path' => '/fixture/ca.pem']);
-    $runner = new class implements ProcessRunner
-    {
-        /** @var list<array{arguments:list<string>,value:string}> */
-        public array $calls = [];
-
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $input = $invocation->protectedInput ?? throw new LogicException('Protected input is required.');
-            $this->calls[] = ['arguments' => $invocation->arguments, 'value' => stream_get_contents($input->stream())];
-
-            return new CommandResult(0, '{}', '', 1, false);
-        }
-    };
-    app()->instance(ProcessRunner::class, $runner);
+    config()->set(['swamp.address' => '192.0.2.209', 'swamp.run_token' => 'synthetic-swamp-run-token', 'swamp.ca_path' => '/fixture/ca.pem']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'],
+        'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'],
+            'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     $shared = app(SwampCommandStep::class);
     $vm = (new TaskVm)->forceFill(['id' => 42, 'model_key' => str_repeat('1', 64), 'ai_router_origin' => 'http://10.44.0.3:8317']);
     $capture = (new TaskVmModelKeyInputs(new ModelKeyStepIssuer))->capture($vm, 14, $shared->executionCopy(...));
 
-    expect($capture['execution_secrets'])->toBe(modelKeyStepDescriptors())->and($runner->calls)->toHaveCount(3);
-    foreach ($runner->calls as $call) {
-        expect(array_slice($call['arguments'], 1, 3))->toBe(['vault', 'put', 'orbit-control-inputs'])
-            ->and(str_contains(json_encode($call['arguments'], JSON_THROW_ON_ERROR), $call['value']))->toBeFalse();
-    }
-    expect(array_column($runner->calls, 'value'))->toBe([str_repeat('1', 64), 'synthetic-management', str_repeat('2', 64)]);
+    expect($capture['execution_secrets'])->toBe(modelKeyStepDescriptors())->and($socket->sent)->toHaveCount(3);
+    expect(array_column(array_column($socket->sent, 'payload'), 'key'))
+        ->toBe(['task-vm-model-key-42', 'model-router-management-node-3', 'model-router-anchor-node-3']);
+    expect(array_column(array_column($socket->sent, 'payload'), 'value'))
+        ->toBe([str_repeat('1', 64), 'synthetic-management', str_repeat('2', 64)]);
+    expect(json_encode($capture, JSON_THROW_ON_ERROR))->not->toContain('synthetic-management', str_repeat('1', 64), str_repeat('2', 64));
 });

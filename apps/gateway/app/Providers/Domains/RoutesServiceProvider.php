@@ -32,7 +32,7 @@ final class RoutesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->bindIf(WebSocketClient::class, StreamWebSocketClient::class);
+        $this->app->bindIf(WebSocketClient::class, StreamWebSocketClient::forSwamp(...));
         $this->app->tag([RouteEnvironmentMaterialSource::class], OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);
     }

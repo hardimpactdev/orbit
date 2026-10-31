@@ -5,12 +5,11 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmProviderHostKey;
 use App\Domain\TaskVms\TaskVmUpCloudWorkflowInput;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 /** @return array<string,mixed> */
@@ -55,17 +54,18 @@ it('generates interoperable Ed25519 host intent without a production subprocess 
 });
 
 it('records one encrypted bootstrap pair and reuses the exact shared descriptors', function (): void {
-    config(['swamp.run_token' => 'synthetic-run-token', 'swamp.ca_path' => '/public/root.pem']);
+    config(['swamp.address' => '192.0.2.209', 'swamp.run_token' => 'synthetic-run-token', 'swamp.ca_path' => '/public/root.pem']);
     app()->instance(UpCloudApi::class, new UpCloudApi(TaskVmSettingsBuilder::make(), 'ucat_synthetic'));
     $writes = [];
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->twice()->andReturnUsing(function (ProcessInvocation $call) use (&$writes): CommandResult {
-        $input = $call->protectedInput ?? throw new LogicException('Protected stdin required.');
-        $writes[$call->arguments[4]] = stream_get_contents($input->stream());
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static function (array $request) use (&$writes): array {
+        $writes[$request['payload']['key']] = $request['payload']['value'];
 
-        return new CommandResult(0, '{}', '', 1, false);
-    });
-    app()->instance(ProcessRunner::class, $runner);
+        return [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+            'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption',
+        ]]]];
+    };
+    app()->instance(WebSocketClient::class, $socket);
     $vm = upcloudCommandVm();
     $capture = app(TaskVmUpCloudWorkflowInput::class);
     $first = $capture->capture($vm, upcloudCommandAllocation($vm));
@@ -74,6 +74,7 @@ it('records one encrypted bootstrap pair and reuses the exact shared descriptors
     $pair = $fresh->provider_bootstrap ?? throw new LogicException('Missing captured host pair.');
 
     expect($second)->toBe($first);
+    expect($socket->sent)->toHaveCount(2);
     expect($first['intent']['provider_host_public_key'])->toBe($pair['public']);
     expect($vm->ssh_host_key)->toBe($pair['public']);
     expect($fresh->ssh_host_key)->toBe($pair['public']);
@@ -88,12 +89,12 @@ it('refuses a foreign executor before generating or copying a provider credentia
     $vm = upcloudCommandVm();
     $allocation = upcloudCommandAllocation($vm);
     $allocation['node_id'] = 209;
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldNotReceive('run');
-    app()->instance(ProcessRunner::class, $runner);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
 
     expect(fn () => app(TaskVmUpCloudWorkflowInput::class)->capture($vm, $allocation))->toThrow(ResourceOperationException::class);
     expect(TaskVm::query()->findOrFail($vm->id)->provider_bootstrap)->toBeNull();
+    expect($socket->sent)->toBeEmpty();
 });
 
 it('refuses an existing unpinned provider before generating a replacement host identity', function (): void {
@@ -105,15 +106,16 @@ it('refuses an existing unpinned provider before generating a replacement host i
 });
 
 it('rolls bootstrap intent back with outer admission when the shared vault copy refuses', function (): void {
-    config(['swamp.run_token' => 'synthetic-run-token', 'swamp.ca_path' => '/public/root.pem']);
+    config(['swamp.address' => '192.0.2.209', 'swamp.run_token' => 'synthetic-run-token', 'swamp.ca_path' => '/public/root.pem']);
     app()->instance(UpCloudApi::class, new UpCloudApi(TaskVmSettingsBuilder::make(), 'ucat_synthetic'));
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->once()->andThrow(new RuntimeException('Synthetic transport refusal'));
-    app()->instance(ProcessRunner::class, $runner);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (): never => throw new RuntimeException('Synthetic transport refusal');
+    app()->instance(WebSocketClient::class, $socket);
     $vm = upcloudCommandVm();
     expect(fn () => DB::transaction(fn () => app(TaskVmUpCloudWorkflowInput::class)->capture($vm, upcloudCommandAllocation($vm))))
         ->toThrow(ResourceOperationException::class);
     $fresh = TaskVm::query()->findOrFail($vm->id);
     expect($fresh->provider_bootstrap)->toBeNull()->and($fresh->ssh_host_key)->toBeNull();
+    expect($socket->sent)->toHaveCount(1);
     expect(DB::table('operations')->count())->toBe(0);
 });

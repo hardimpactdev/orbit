@@ -5,11 +5,10 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmEnrollmentWorkflowInput;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\TaskVm;
 use Illuminate\Support\Arr;
+use Tests\Support\FakeRoutePublicationSocket;
 
 /** @return array{array<string,mixed>,array<string,mixed>} */
 function commandEnrollmentCapture(): array
@@ -84,7 +83,7 @@ it('keeps UpCloud execution on the admitted Gateway and carries only its public 
 });
 
 it('composes canonical model descriptors and Pi copy through the shared helper only', function (): void {
-    config(['swamp.run_token' => 'synthetic-run.private', 'swamp.ca_path' => '/public/root.pem']);
+    config(['swamp.address' => '192.0.2.209', 'swamp.run_token' => 'synthetic-run.private', 'swamp.ca_path' => '/public/root.pem']);
     $issuer = Mockery::mock(ModelKeyIssuer::class);
     $issuer->shouldReceive('origin')->andReturn('https://models.example.test');
     $issuer->shouldReceive('ownerNodeId')->andReturn(3);
@@ -92,16 +91,15 @@ it('composes canonical model descriptors and Pi copy through the shared helper o
         ->andReturn(['management_key' => 'synthetic-management', 'anchor_key' => str_repeat('2', 64)]);
     app()->instance(ModelKeyIssuer::class, $issuer);
     $writes = [];
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->times(4)->andReturnUsing(function (ProcessInvocation $call) use (&$writes): CommandResult {
-        $input = $call->protectedInput ?? throw new LogicException('An execution copy requires protected stdin.');
-        $value = stream_get_contents($input->stream());
-        expect(json_encode($call->arguments))->not->toContain($value);
-        $writes[] = $call->arguments[4];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static function (array $request) use (&$writes): array {
+        $writes[] = $request['payload']['key'];
 
-        return new CommandResult(0, '{}', '', 1, false);
-    });
-    app()->instance(ProcessRunner::class, $runner);
+        return [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+            'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption',
+        ]]]];
+    };
+    app()->instance(WebSocketClient::class, $socket);
     $vm = (new TaskVm)->forceFill(['id' => 184, 'model_key' => str_repeat('1', 64),
         'pi_token' => str_repeat('3', 64), 'ai_router_origin' => 'https://models.example.test']);
     [$intent, $placement] = commandEnrollmentCapture();
@@ -111,6 +109,7 @@ it('composes canonical model descriptors and Pi copy through the shared helper o
     $envelope = $supplier->envelope($captured);
 
     expect($writes)->toBe(['task-vm-model-key-184', 'model-router-management-node-3', 'model-router-anchor-node-3', 'task-vm-pi-token-184']);
+    expect($socket->sent)->toHaveCount(4);
     expect($envelope['intent'])->toBe($public);
     expect(array_keys($envelope['execution_secrets']))->toBe(['model_key', 'model_router_management', 'model_router_anchor', 'pi_token']);
     expect(Arr::only($envelope['execution_secrets'], ['model_key', 'model_router_management', 'model_router_anchor']))
