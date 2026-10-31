@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
 import { nativeEffect } from "./native_effect.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 
 const Name = z.string().regex(/^[A-Za-z0-9_]{1,64}$/);

@@ -13,3 +13,6 @@ additionalFiles:
   - scripts/write_acl.py
   - scripts/ready.py
   - scripts/wait_ready.py
+  - scripts/user_common.py
+  - scripts/user_wal.py
+  - scripts/user_apply.py

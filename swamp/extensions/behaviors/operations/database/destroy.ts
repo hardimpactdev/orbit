@@ -8,7 +8,7 @@ import {
   postgresRemoval,
 } from "./destroy_statements.ts";
 import { ValkeyClient } from "./valkey_client.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 
 const Name = z.string().regex(/^[A-Za-z0-9_]{1,64}$/);
 const User = z.string().min(1).max(128).refine((v) => !/[\s\0]/.test(v));

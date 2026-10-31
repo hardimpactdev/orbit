@@ -62,6 +62,10 @@ export const behavior = {
                 "Shape bounded public native step outcomes for the shared terminal projector",
             arguments: z.object({
                 completed: z.boolean(),
+                failure_code: z.enum([
+                    "database.server_create_outcome_unknown",
+                    "database.user_create_outcome_unknown",
+                ]).optional(),
                 steps: z.record(
                     z.string(),
                     z.object({
@@ -73,6 +77,9 @@ export const behavior = {
             execute: async (
                 args: {
                     completed: boolean;
+                    failure_code?:
+                        | "database.server_create_outcome_unknown"
+                        | "database.user_create_outcome_unknown";
                     steps: Record<
                         string,
                         { status: string; outputs?: Record<string, unknown> }
@@ -80,9 +87,11 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
+                const failure = args.failure_code ??
+                    "database.server_create_outcome_unknown";
                 let result: Record<string, unknown> = args.completed
                     ? { backend: "active" }
-                    : { error_code: "database.server_create_outcome_unknown" };
+                    : { error_code: failure };
                 for (const step of Object.values(args.steps)) {
                     const outputs = step.outputs ?? {};
                     // Native child-workflow outputs are keyed by their result step.
@@ -96,7 +105,7 @@ export const behavior = {
                             (output.exitCode ?? 0) === 0
                     ) continue;
                     result = {
-                        error_code: "database.server_create_outcome_unknown",
+                        error_code: failure,
                     };
                     try {
                         const raw = JSON.parse(

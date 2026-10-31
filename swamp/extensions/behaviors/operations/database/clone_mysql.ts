@@ -6,7 +6,7 @@ import {
   CreateResult,
   sqlLiteral,
 } from "./create.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 
 export const MysqlCloneInput = CreateInput.safeExtend({
   driver: z.literal("mysql"),

@@ -232,6 +232,8 @@ Key patterns limit keys, not the database index. Valkey 8 has no ACL rule for an
 
 ## Add a user
 
+SQL user creation runs `operation-database-user-create` with full public intent and a vault descriptor. All steps run on 209 and reach the admitted server through official SSH. PostgreSQL replication requests have a separate read-only WAL check before the SQL action. The existing recorded SQL and admin password use the shared vault execution copy; neither enters workflow inputs, argv or public output. The shared terminal subscriber records the user after native success. Native terminal-delivery resume does not repeat SQL. Valkey users remain separate database connections.
+
 `database:user:create` adds or updates a user on a MySQL or PostgreSQL server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.
 
 ```bash

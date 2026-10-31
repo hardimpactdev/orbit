@@ -1,12 +1,12 @@
 id: 2c8195ba-b28b-4bb1-9c65-abda5b48a477
 name: operation-database-user-create
-description: Apply one admitted SQL login and grants on its owning Node.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Apply recorded SQL user intent through separate native WAL and SQL actions over official
+  SSH from209.
 writes: true
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -18,59 +18,295 @@ inputs:
       type: string
       enum:
       - database_user.create
+    intent:
+      type: object
+      properties:
+        driver:
+          type: string
+          enum:
+          - mysql
+          - pgsql
+        container:
+          type: string
+        username:
+          type: string
+        replication:
+          type: boolean
+        known_user:
+          type: boolean
+        ssh:
+          type: object
+      required:
+      - driver
+      - container
+      - username
+      - replication
+      - known_user
+      - ssh
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        user_create:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^database-user-create-intent-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - user_create
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
 - name: user
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
   steps:
-  - name: create
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-user-create'
-      behaviorName: ${{ "database-user-server-" + string(inputs.node_id) }}
-      methodName: create
+      behaviorType: '@nckrtl/database-server-command-assets'
+      behaviorName: ${{ "database-user-assets-" + run.id }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
+        intent: ${{ inputs.intent }}
+  - name: directory
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      globalArgs: &id002
+        name: ${{ "database-user-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: copy
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    allowFailure: true
     dependsOn:
-    - step: create
+    - step: assets
+      condition:
+        type: succeeded
+    - step: directory
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-user-create'
-      behaviorName: ${{ "database-user-server-" + string(inputs.node_id) }}
-      methodName: project
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: copy
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.create.outputs.outcome }}
-  - name: failure-create
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+        hosts: name:server
+        src: ${{ steps.assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
+        direction: to
+        recursive: true
+  - name: prepared
+    target: orbit-node-209
+    labels: *id001
+    writes: false
     dependsOn:
-    - step: create
+    - step: copy
       condition:
-        type: failed
+        type: always
+    task:
+      type: assert
+      expr: steps.directory.outputs.exitCode == 0 && steps.copy.status == "succeeded"
+      severity: high
+      message: SQL user command files unavailable.
+  - name: wal
+    target: orbit-node-209
+    labels: *id001
+    guard: ${{ !(inputs.intent.driver == "pgsql" && inputs.intent.replication) }}
+    writes: false
+    allowFailure: true
+    dependsOn:
+    - step: prepared
+      condition:
+        type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: exec
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) + "/user_wal.py" }}
+        - ${{ steps.assets.outputs.intent_json }}
+        okExitCodes:
+        - 0
+        - 1
+        stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key)
+          }}
+  - name: wal_checked
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    dependsOn:
+    - step: wal
+      condition:
+        type: always
+    - step: prepared
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: '!(inputs.intent.driver == "pgsql" && inputs.intent.replication) || (has(steps.wal) && has(steps.wal.outputs)
+        && steps.wal.outputs.exitCode == 0)'
+      severity: high
+      message: Replication user WAL check refused.
+  - name: apply
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    allowFailure: true
+    dependsOn:
+    - step: wal_checked
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) + "/user_apply.py" }}
+        - ${{ steps.assets.outputs.intent_json }}
+        okExitCodes:
+        - 0
+        - 1
+        stdin: ${{ vault.get(inputs.execution_secrets.user_create.vault, inputs.execution_secrets.user_create.key)
+          }}
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: copy
+      condition:
+        type: always
+    - step: prepared
+      condition:
+        type: always
+    - step: wal
+      condition:
+        type: always
+    - step: wal_checked
+      condition:
+        type: always
+    - step: apply
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-server-command-assets'
+      behaviorName: ${{ "database-user-assets-" + run.id }}
+      methodName: result
+      inputs:
+        completed: ${{ has(steps.apply) && has(steps.apply.outputs) && steps.apply.outputs.exitCode ==
+          0 }}
+        failure_code: database.user_create_outcome_unknown
+        steps: ${{ steps }}
+  - name: cleanup
+    target: orbit-node-209
+    labels: *id001
+    guard: ${{ steps.result.outputs.exitCode != 0 }}
+    allowFailure: true
+    writes: true
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-user-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-database-user-" + string(inputs.operation_id) }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: accept_result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    - step: cleanup
+      condition:
+        type: always
+    writes: false
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: SQL user creation did not complete.

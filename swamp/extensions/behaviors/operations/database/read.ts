@@ -2,7 +2,7 @@ import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { nativeEffect } from "./native_effect.ts";
 import { runSqliteLocal } from "./sqlite_local.ts";
-import type { PrivateMaterialUse } from "./user_create_action.ts";
+import type { PrivateMaterialUse } from "./private_material.ts";
 import { assertReadSql } from "./read_sql.ts";
 
 const Input = z.object({
