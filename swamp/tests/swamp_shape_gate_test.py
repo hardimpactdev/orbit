@@ -232,6 +232,7 @@ PHP_RUNTIME = textwrap.dedent("""\
     import pathlib
     import re
     import stat
+
     P = pathlib.Path
     class Refused(Exception):
         pass
@@ -265,6 +266,8 @@ PHP_RUNTIME = textwrap.dedent("""\
 """)
 PHP_ACTIONS = textwrap.dedent("""\
     from runtime_common import Host, Runtime, runtime_lock
+
+
     def context():
         data = {'user': 'orbit_app'}
         host = Host()
@@ -277,7 +280,7 @@ PHP_ACTIONS = textwrap.dedent("""\
     def execute(action):
         return action(*context())
 """)
-PHP_ENTRY = "from monitor_common import execute, stage\nexecute(stage)\n"
+PHP_ENTRY = "from monitor_common import execute, stage\n\nexecute(stage)\n"
 
 
 class PhpHostTool(unittest.TestCase):
