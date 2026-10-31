@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Select CI builds from changed inputs; main always supplies its deployable web artifact."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+
+JOBS = ('php', 'cli', 'docs', 'api-reference', 'web')
+
+
+def select(paths, main=False):
+    jobs = dict.fromkeys(JOBS, False)
+    agent = False
+    for path in paths:
+        if '/' not in path and path.endswith(('.md', '.mdx')):
+            jobs['docs'] = True
+            continue
+        if path.startswith(('.github/', 'bin/', 'tools/', '.agents/')) or '/' not in path:
+            jobs = dict.fromkeys(JOBS, True)
+        if path.endswith('.php') or path.endswith(('composer.json', 'composer.lock')):
+            jobs['php'] = True
+        if path.startswith(('apps/cli/tests/', 'apps/gateway/tests/', 'packages/php-sdk/tests/')):
+            continue
+        if path.startswith(('apps/cli/', 'packages/php-sdk/')):
+            jobs['cli'] = jobs['api-reference'] = jobs['web'] = True
+        if path.startswith(('docs/', 'apps/docs/')):
+            jobs['docs'] = True
+        if path.startswith('apps/gateway/'):
+            jobs['api-reference'] = jobs['web'] = True
+        if path.startswith('apps/web/'):
+            jobs['web'] = True
+            if path.startswith('apps/web/tools/api-types/'):
+                jobs['api-reference'] = True
+        if path.startswith('apps/agent/'):
+            agent = True
+        if not path.startswith(('apps/', 'packages/', 'docs/', '.github/', 'bin/', 'tools/', '.agents/')) and '/' in path:
+            jobs = dict.fromkeys(JOBS, True)
+    jobs['web'] |= main
+    return {'jobs': jobs, 'agent': agent}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--base', required=True)
+    p.add_argument('--main', action='store_true')
+    p.add_argument('--github-output', type=Path)
+    a = p.parse_args()
+    paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', a.base, 'HEAD']).decode().rstrip('\0').split('\0')
+    result = select(paths, a.main)
+    print(json.dumps(result))
+    if a.github_output:
+        with a.github_output.open('a') as output:
+            for name, value in result.items():
+                output.write(f'{name}={json.dumps(value, separators=(",", ":"))}\n')
+
+
+if __name__ == '__main__':
+    main()
