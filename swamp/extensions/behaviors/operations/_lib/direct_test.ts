@@ -165,123 +165,90 @@ Deno.test("shared gateway client binds every projection to the workflow run and 
   );
 });
 
-Deno.test("native first read waits only for an unbound run before any projection or effect", async () => {
+Deno.test("a bound legacy read proceeds once before its original projections and effect", async () => {
   const f = fixture();
   const calls: string[] = [];
-  let bound = false;
-  const gateway = new GatewayOperation(
-    async (method, path, body) => {
-      calls.push(method);
-      assertEquals(path.startsWith("/api/v1/direct-operations/71"), true);
-      if (!bound) {
-        assertEquals(method, "GET");
-        assertEquals(f.effects(), 0);
-        return {
-          status: 409,
-          body: { error: { code: "operation.run_unbound" } },
-        };
-      }
-      if (method === "POST") {
-        await f.gateway.project(
-          body as Record<string, unknown>,
-        );
-      }
-      return { status: 200, body: { data: await f.gateway.read() } };
-    },
-    args,
-    () => {
-      bound = true;
-      return Promise.resolve();
-    },
-  );
+  const gateway = new GatewayOperation(async (method, path, body) => {
+    calls.push(method);
+    assertEquals(path.startsWith("/api/v1/direct-operations/71"), true);
+    if (method === "POST") {
+      await f.gateway.project(body as Record<string, unknown>);
+    }
+    return { status: 200, body: { data: await f.gateway.read() } };
+  }, args);
 
   await directOperation(args, gateway, f.action, (r) => r);
 
-  assertEquals(calls, ["GET", "GET", "POST", "POST"]);
+  assertEquals(calls, ["GET", "POST", "POST"]);
   assertEquals(f.effects(), 1);
 });
 
-Deno.test("native binding wait stops on its deadline or cancellation without effects", async () => {
-  for (const cancel of [false, true]) {
-    let now = 0;
-    let reads = 0;
-    const controller = new AbortController();
-    const gateway = new GatewayOperation(
-      () => {
-        reads++;
-        return Promise.resolve({
-          status: 409,
-          body: { error: { code: "operation.run_unbound" } },
-        });
-      },
-      args,
-      () => {
-        now = 90_000;
-        if (cancel) controller.abort(new Error("native cancellation"));
-        return Promise.resolve();
-      },
-      () => now,
-    );
-
-    await assertRejects(
-      () => gateway.read(controller.signal),
-      Error,
-      cancel ? "native cancellation" : "deadline expired",
-    );
-    assertEquals(reads, 1);
-  }
-});
-
-Deno.test("native first read never waits for other errors and never retries a mutation", async () => {
+Deno.test("an unbound or refused legacy read fails once before any effect or projection", async () => {
   for (
-    const [status, code] of [[409, "operation.run_mismatch"], [
-      403,
-      "node.access_denied",
-    ], [503, "operation.run_unbound"]] as const
+    const [status, code] of [
+      [409, "operation.run_unbound"],
+      [409, "operation.run_mismatch"],
+      [403, "node.access_denied"],
+      [503, "operation.run_unbound"],
+    ] as const
   ) {
-    let calls = 0;
-    const gateway = new GatewayOperation(
-      () => {
-        calls++;
-        return Promise.resolve({ status, body: { error: { code } } });
-      },
-      args,
-      () => {
-        throw new Error("must not wait");
-      },
+    const f = fixture();
+    const calls: string[] = [];
+    const gateway = new GatewayOperation((method) => {
+      calls.push(method);
+      return Promise.resolve({ status, body: { error: { code } } });
+    }, args);
+    await assertRejects(
+      () => directOperation(args, gateway, f.action, (r) => r),
+      Error,
+      "request did not succeed",
     );
-    await assertRejects(() => gateway.read(), Error, "request did not succeed");
-    assertEquals(calls, 1);
+    assertEquals(calls, ["GET"]);
+    assertEquals(f.effects(), 0);
+    assertEquals(f.projected, []);
+    await assertRejects(
+      () => gateway.primitive(),
+      Error,
+      "request did not succeed",
+    );
+    assertEquals(calls, ["GET", "POST"]);
   }
-  let calls = 0;
-  const gateway = new GatewayOperation(
-    () => {
-      calls++;
-      return Promise.resolve({
-        status: 409,
-        body: { error: { code: "operation.run_unbound" } },
-      });
-    },
-    args,
-    () => {
-      throw new Error("must not wait");
-    },
-  );
-  await assertRejects(() => gateway.primitive(), Error, "not bound");
-  assertEquals(calls, 1);
 });
 
-Deno.test("native cancellation bounds an unresolved first read without effects", async () => {
-  const controller = new AbortController();
-  let calls = 0;
+Deno.test("a pre-cancelled bound legacy read records cancellation without an effect", async () => {
+  const f = fixture();
+  let reads = 0;
   const gateway = new GatewayOperation(() => {
-    calls++;
-    return new Promise(() => {});
+    reads++;
+    return Promise.resolve({ status: 200, body: { data: {} } });
   }, args);
-  const pending = gateway.read(controller.signal);
-  controller.abort(new Error("cancel pending read"));
-  await assertRejects(() => pending, Error, "cancel pending read");
-  assertEquals(calls, 1);
+  const signal = AbortSignal.abort();
+  assertEquals(await gateway.read(signal), {});
+  assertEquals(reads, 1);
+  assertEquals(
+    await directOperation(args, f.gateway, f.action, (r) => r, signal),
+    { status: "cancelled" },
+  );
+  assertEquals(f.effects(), 0);
+});
+
+Deno.test("cancellation during the single legacy read refuses before an effect or projection", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  let reads = 0;
+  const gateway = new GatewayOperation(() => {
+    reads++;
+    controller.abort(new Error("native cancellation"));
+    return Promise.resolve({ status: 200, body: { data: {} } });
+  }, args);
+  await assertRejects(
+    () => directOperation(args, gateway, f.action, (r) => r, controller.signal),
+    Error,
+    "native cancellation",
+  );
+  assertEquals(reads, 1);
+  assertEquals(f.effects(), 0);
+  assertEquals(f.projected, []);
 });
 
 Deno.test("a read-only pending wait observes Gateway cancellation before accepting an applied result", async () => {
@@ -368,7 +335,6 @@ Deno.test("shared GitHub mint requests only the bound run and keeps the credenti
     },
     args,
     undefined,
-    undefined,
     revokeOk,
   );
   const result = await gateway.withGitHubToken((token, grant) => {
@@ -404,7 +370,6 @@ Deno.test("shared GitHub mint refuses unsafe scope expiry and transport replies 
       () => Promise.resolve({ status: 200, body: { data } }),
       args,
       undefined,
-      undefined,
       revokeOk,
     );
     const error = await assertRejects(
@@ -425,7 +390,6 @@ Deno.test("shared GitHub mint refuses unsafe scope expiry and transport replies 
     },
     args,
     undefined,
-    undefined,
     revokeOk,
   );
   await assertRejects(
@@ -439,7 +403,6 @@ Deno.test("shared GitHub callback failures and attempted credential outputs are 
     new GatewayOperation(
       () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
       args,
-      undefined,
       undefined,
       revokeOk,
     );
@@ -472,7 +435,6 @@ Deno.test("shared GitHub result serialization cannot leak through thrown diagnos
     new GatewayOperation(
       () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
       args,
-      undefined,
       undefined,
       revokeOk,
     );
@@ -533,7 +495,6 @@ Deno.test("shared GitHub credentials revoke on success action failure and invali
       () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
       args,
       undefined,
-      undefined,
       github,
     );
     const action = (token: string) => {
@@ -569,7 +530,6 @@ Deno.test("shared GitHub credentials revoke a raw token when grant parsing fails
       () =>
         Promise.resolve({ status: 200, body: { data: tokenFixture(change) } }),
       args,
-      undefined,
       undefined,
       (url, init) => {
         assertEquals(url, "https://api.github.com/installation/token");
@@ -610,7 +570,6 @@ Deno.test("shared GitHub revoke failures preserve a successful write and report 
         () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
         args,
         undefined,
-        undefined,
         () => {
           if (fail) throw new Error("ephemeral-sentinel");
           return Promise.resolve(
@@ -646,7 +605,6 @@ Deno.test("shared GitHub expiry validation uses the injected clock", async () =>
           },
         }),
       args,
-      undefined,
       () => now,
       revokeOk,
     );
@@ -676,7 +634,6 @@ Deno.test("a revoke failure cannot replace the GitHub action refusal", async () 
       () => Promise.resolve({ status: 200, body: { data: tokenFixture() } }),
       args,
       undefined,
-      undefined,
       () => {
         throw new Error("ephemeral-sentinel");
       },
@@ -704,7 +661,6 @@ Deno.test("shared GitHub mint permits only one attempt per step even when called
       return Promise.resolve({ status: 200, body: { data: tokenFixture() } });
     },
     args,
-    undefined,
     undefined,
     () => {
       revokes++;
@@ -736,7 +692,6 @@ Deno.test("shared GitHub private custody accepts and revokes stateless installat
     () =>
       Promise.resolve({ status: 200, body: { data: tokenFixture({ token }) } }),
     args,
-    undefined,
     undefined,
     (_url, init) => {
       assertEquals(

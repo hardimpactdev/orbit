@@ -5,6 +5,8 @@ import re
 import sys
 from urllib.parse import urlsplit
 
+from swamp_shape_host_tools import php_runtime_transaction
+
 SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|token|identity", re.I)
 # Guide rule 6: these are existing per-host tool transactions, not workflow locks.
 HOST_TOOL_LOCKS = {
@@ -16,7 +18,7 @@ HOST_TOOL_LOCKS = {
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
 
 
-def scan(source, gateway_primitives=()):
+def scan(source, gateway_primitives=(), context=None):
     findings = []
     try:
         tree = ast.parse(source)
@@ -176,8 +178,12 @@ def scan(source, gateway_primitives=()):
         return None
 
     def host_tool_lock(node):
-        if len(node.args) != 2 or lock_path(node.args[0], node) not in HOST_TOOL_LOCKS:
+        if len(node.args) != 2:
             return False
+        if lock_path(node.args[0], node) not in HOST_TOOL_LOCKS:
+            descriptor = bound(node.args[0].id, node) if isinstance(node.args[0], ast.Name) else None
+            if not php_runtime_transaction(tree, context or {}, descriptor, node):
+                return False
         flags = node.args[1]
         parts = [flags.left, flags.right] if isinstance(flags, ast.BinOp) and isinstance(flags.op, ast.BitOr) else [flags]
         modes = {name(part) for part in parts}
@@ -261,4 +267,9 @@ def scan(source, gateway_primitives=()):
 
 if __name__ == "__main__":
     primitives = json.loads(sys.argv[1]) if len(sys.argv) > 1 else []
-    print(json.dumps(scan(sys.stdin.read(), primitives)))
+    payload = sys.stdin.read()
+    if len(sys.argv) > 2 and sys.argv[2] == "--source-context":
+        payload = json.loads(payload)
+        print(json.dumps(scan(payload["source"], primitives, payload["sources"])))
+    else:
+        print(json.dumps(scan(payload, primitives)))

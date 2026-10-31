@@ -38,6 +38,10 @@ if name=='systemctl' and sys.argv[1]=='enable' and os.environ.get('FIXTURE_REFUS
  root=Path(os.environ['FIXTURE_HOST']); other=root/'newer-config'; other.write_text('# Managed by Orbit: Node Caddy build\\n{ admin off }\\n'); (root/'Caddyfile').unlink(); (root/'Caddyfile').symlink_to(other); sys.exit(1)
 if name=='systemctl' and sys.argv[1]=='enable' and os.environ.get('FIXTURE_REFUSE')=='identical':
  root=Path(os.environ['FIXTURE_HOST']); live=root/'Caddyfile'; content=live.read_bytes(); other=root/'orbit-versions'/'newer-identical'; other.mkdir(); (other/'Caddyfile').write_bytes(content); (other/'loaded.json').write_text(json.dumps({'sha256':__import__('hashlib').sha256(content).hexdigest(),'invocation_id':'a'*32})); live.unlink(); live.symlink_to(other/'Caddyfile'); sys.exit(1)
+if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FIXTURE_REFUSE')=='stopped-after-load': Path(os.environ['FIXTURE_AUDIT']+'.loaded').touch()
+if name=='systemctl' and sys.argv[1]=='is-active' and os.environ.get('FIXTURE_REFUSE')=='stopped-after-load' and Path(os.environ['FIXTURE_AUDIT']+'.loaded').exists(): sys.exit(3)
+if name=='systemctl' and sys.argv[1]=='is-enabled' and Path(os.environ['FIXTURE_AUDIT']+'.disabled').exists(): sys.exit(1)
+if name=='systemctl' and sys.argv[1]=='enable': Path(os.environ['FIXTURE_AUDIT']+'.disabled').unlink(missing_ok=True)
 if name=='systemctl' and sys.argv[1]=='show': print('a'*32)
 if name=='caddy': print('v2.10.2 fixture')
 if name=='ip': print('1: wg0 inet 10.44.0.9/24 scope global')
@@ -417,6 +421,17 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
         self.assertEqual(live.read_text(), "newer accepted config")
         self.assertFalse((self.host / ".orbit-staging").exists())
         self.assertFalse(self.audit.exists())
+
+    def test_matching_loaded_config_still_converges_a_disabled_service(self):
+        self.run_caddy()
+        self.audit.unlink()
+        Path(str(self.audit) + ".disabled").touch()
+        self.run_caddy()
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertIn(["systemctl", "enable", "--quiet", "caddy"], calls)
+
+    def test_terminal_refuses_a_service_that_stopped_after_load(self):
+        self.run_caddy("stopped-after-load", success=False)
 
     def test_native_unchanged_does_not_stage_enable_or_reload(self):
         self.run_caddy()

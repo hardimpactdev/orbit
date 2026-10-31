@@ -13,6 +13,10 @@ final readonly class ProcessSpecification
 {
     public function assertOptions(AddProcessData $data): void
     {
+        $paths = RequiredMountPaths::parse($data->requiredMountPaths);
+        if ($paths !== [] && ($data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.option_invalid', 'Required mount paths require an ordinary systemd Process.');
+        }
         if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
             throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
         }
@@ -31,6 +35,7 @@ final readonly class ProcessSpecification
                 ...($data->environment === [] ? [] : ['environment' => $data->environment]),
                 ...($data->preset === null ? [] : ['preset' => $data->preset]),
                 ...($data->user === null ? [] : ['user' => $data->user]),
+                ...($data->requiredMountPaths === [] ? [] : ['required_mount_paths' => RequiredMountPaths::parse($data->requiredMountPaths)]),
             ]
             : [
                 'image' => $data->image,

@@ -508,14 +508,6 @@
     },
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "gateway-http",
       "count": 3,
       "evidence": [
