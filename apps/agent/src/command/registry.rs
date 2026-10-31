@@ -570,6 +570,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn metrics_keeps_only_read_only_host_observations() {
+        for name in [
+            "metrics.node-exporter",
+            "metrics.cadvisor",
+            "metrics.service-runtime",
+            "metrics.runtime",
+            "metrics.certificate",
+            "metrics.publication-firewall",
+        ] {
+            assert!(find(name).is_none(), "{name} must execute in Swamp");
+        }
+        for name in [
+            "metrics.exporter-state",
+            "metrics.runtime-health",
+            "metrics.credentials",
+        ] {
+            assert!(
+                !find(name)
+                    .expect("Metrics observation is registered")
+                    .mutates
+            );
+        }
+    }
+
     /// Commands that change one shared host resource hold its lock, so they serialize with each other.
     #[test]
     fn shared_host_mutations_hold_one_lock_per_resource() {
@@ -579,8 +604,6 @@ mod tests {
             "docker.restore-migration-policies",
             "gateway.converge-release-units",
             "image.clean",
-            "metrics.cadvisor",
-            "metrics.node-exporter",
             "node.bootstrap",
             "php.configure-runtime",
             "php.install-build",
@@ -602,10 +625,6 @@ mod tests {
             "firewall.task-vm-hub",
             "image.firewall",
             "incus.prepare-host",
-            "metrics.cadvisor",
-            "metrics.node-exporter",
-            "metrics.publication-firewall",
-            "metrics.service-runtime",
         ];
         for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {
             for name in names {

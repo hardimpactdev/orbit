@@ -63,10 +63,9 @@ mod incus;
 pub mod instances;
 pub mod laravel;
 mod macos_enrollment;
-pub mod metrics_certificate;
-mod metrics_exporter;
-mod metrics_publication;
-mod metrics_runtime;
+mod metrics_credentials_observer;
+mod metrics_exporter_observer;
+mod metrics_runtime_observer;
 mod node_bootstrap;
 mod node_dns_listener;
 mod node_identity;
@@ -92,7 +91,6 @@ pub mod recipe_delivery;
 pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
-pub mod service_metrics;
 pub mod source;
 pub mod sqlite_copy;
 mod sqlite_query;
@@ -384,14 +382,9 @@ pub fn all() -> Vec<Entry> {
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
         entry::<health::AwaitHealthy>(),
-        entry::<metrics_certificate::MetricsCertificate>(),
-        entry::<metrics_exporter::NodeExporter>(),
-        entry::<metrics_exporter::Cadvisor>(),
-        entry::<metrics_runtime::MetricsRuntime>(),
-        entry::<metrics_publication::Publication>(),
-        entry::<metrics_runtime::MetricsHealth>(),
-        entry::<metrics_runtime::MetricsCredentials>(),
-        entry::<service_metrics::ServiceRuntime>(),
+        entry::<metrics_credentials_observer::MetricsCredentials>(),
+        entry::<metrics_exporter_observer::ExporterState>(),
+        entry::<metrics_runtime_observer::MetricsHealth>(),
         entry::<project_source::UpdateProjectSource>(),
         entry::<database_server::DatabaseServerAdmin>(),
         entry::<hibernation::PrepareDirectories>(),

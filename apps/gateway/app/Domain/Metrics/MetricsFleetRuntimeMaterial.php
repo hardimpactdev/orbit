@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\LifecycleStatus;
@@ -39,7 +38,7 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
     {
         $plan = ValidatedData::object($operation->input['metrics_fleet'] ?? []);
         MetricsFleetCapture::assertDigest($plan);
-        if ($key !== '' || $parameter !== 'fleet_runtime' || ! DirectOperation::owns($operation) || $operation->status->terminal()
+        if ($key !== '' || $parameter !== 'fleet_runtime' || $operation->status->terminal()
             || ! is_string($operation->state['swamp_run_id'] ?? null) || $id !== $this->ownerId($operation) || $id !== ($plan['metrics_node_id'] ?? null)
             || array_any(MetricsFleetCapture::members($plan), static fn (array $node): bool => $node['worker'] !== true)
             || ! NodeRole::query()->whereKey($plan['assignment_id'])->where('node_id', $id)->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active)->exists()) {

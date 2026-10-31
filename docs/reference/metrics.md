@@ -224,16 +224,16 @@ Prometheus stays unpublished. Grafana's datasource proxy reuses the publication 
 
 ## Native fleet reconciliation
 
-The native fleet replacement stays held in source: `metrics.reconcile` retains its polled execution contract and has no production direct declaration. Existing Node, role and Route composition remains unchanged until their native parents can compose Metrics in one run. Draft status does not control writer selection.
+`metrics.reconcile` records the complete fleet and starts one native Swamp DAG. Each Node runs its own exporter, service and Caddy stages. The Gateway records the native result without reconstructing execution proofs. The former PHP fleet orchestrator and all polled Metrics child registrations are deleted. Unported parent commands return `operation.kind_unavailable`.
 
-The candidate native workflow refuses workerless or incomplete fleet coverage before snapshots or effects. Nodes 1 and 18 stay in the complete owner capture; their placement needs Nick's decision before activation. Caddy publication follows fresh desired state. Exporter, FPM and service snapshots can restore local runtime, but Caddy is not claimed as a snapshot rollback and is not republished during recovery.
+Admission retains every selected Node, including vpn1 and usexit18. Each stage uses that Node's exact worker target and label, including when a proxy hosts the worker. Missing workers fail before snapshots or host changes. Private runtime configuration uses the existing Grafana credential through shared private material.
 
-Private material remains confined to an owned bound root through the existing shared transport. Candidate direct hydration and result tests use a test-only contribution; this does not register or activate a production writer.
+Caddy publication follows fresh desired state. Exporter, FPM and service snapshots can restore local runtime. Recovery does not claim to restore a Caddy snapshot or republish Caddy.
 
 ### Role changes with unchanged monitoring intent
 
 The Metrics owner compares complete before and after captures through `MetricsRoleReconcileImpact::compare`. It requires reconciliation when the desired fleet projection differs. A verified identical projection makes reconciliation nonapplicable; this is not evidence that any host action ran.
 
-The comparison retains every selected Node, including worker-free Nodes 1 and 18. It includes Node identity, addresses, exporter selection, Caddy/FPM flags, hosts, Instance and pool plans, and public runtime files. Worker availability, executable delivery, Ingress publication capability and the reason for an unchanged selection do not change desired monitoring configuration. The native publisher still rebuilds managed Ingress Nodes when desired Caddy monitoring is false, so an old scrape site can be removed.
+The comparison retains every selected Node, including Nodes 1 and 18. It includes Node identity, addresses, exporter selection, Caddy/FPM flags, hosts, Instance and pool plans, and public runtime files. Worker availability, executable delivery, Ingress publication capability and the reason for an unchanged selection do not change desired monitoring configuration. The native publisher still rebuilds managed Ingress Nodes when desired Caddy monitoring is false, so an old scrape site can be removed.
 
-Adding or removing a CI runner or database role while Shark retains app-dev leaves this projection unchanged. The role owner must capture both sides around its admitted intent; it cannot supply a reduced Node list or substitute its own equality rule. Existing PHP baseline behavior remains until that owning root consumes this policy.
+Adding or removing a CI runner or database role while Shark retains app-dev leaves this projection unchanged. The role owner must capture both sides around its admitted intent; it cannot supply a reduced Node list or substitute its own equality rule. An unported owning root refuses the change when reconciliation is required.

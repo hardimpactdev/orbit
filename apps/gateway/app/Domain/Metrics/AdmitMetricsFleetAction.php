@@ -5,36 +5,49 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
-use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
-/** Candidate intent admission; refuses while its production direct declaration is held. */
-final readonly class AdmitMetricsFleetAction
+/** Capture intent and start one native fleet root. */
+final readonly class AdmitMetricsFleetAction implements MetricsFleetReconciler
 {
-    public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations) {}
+    public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations, private OperationIdempotency $idempotency) {}
 
-    /** @param list<int> $canaryNodeIds Explicit effect scope, never an owner-selection filter. */
-    public function execute(array $canaryNodeIds = []): Operation
+    public function reconcile(): void
     {
-        if (app(DirectOperation::class)->writer('metrics.reconcile') !== 'direct') {
-            throw new ResourceOperationException('metrics.writer_held', 'Native Metrics activation awaits fleet placement and parent composition.', 503);
-        }
-        $plan = $this->capture->capture();
-        $ready = ValidatedData::integerList(array_column(array_filter(MetricsFleetCapture::members($plan), static fn (array $node): bool => $node['worker'] === true), 'node_id'));
-        if (count($canaryNodeIds) !== count(array_unique($canaryNodeIds)) || array_diff($canaryNodeIds, $ready) !== []) {
-            throw new ResourceOperationException('metrics.canary_scope_invalid', 'Canary effects require their own admitted workers.', 422);
-        }
-        $nodeId = $plan['metrics_node_id'];
-        if (! is_int($nodeId)) {
-            throw new ResourceOperationException('metrics.assignment_missing', 'The native Metrics root needs its serving Node.', 409);
-        }
-        $input = ['metrics_fleet' => $plan, 'fleet_runtime' => ['$secret' => 'metrics.fleet_runtime', 'id' => $nodeId]];
-        if ($canaryNodeIds !== []) {
-            $input['canary_node_ids'] = $canaryNodeIds;
+        $this->execute();
+    }
+
+    public function retire(Node $node): void
+    {
+        throw new ResourceOperationException('operation.kind_unavailable', 'Node retirement requires its native Metrics stage.', 503);
+    }
+
+    public function execute(): Operation
+    {
+        if (($replay = $this->idempotency->replay('metrics.reconcile')) !== null) {
+            return $replay;
         }
 
-        return $this->operations->execute('metrics.reconcile', 'metrics', $nodeId, $nodeId, $input, 'operator', null, expectedWriter: 'direct');
+        return DB::transaction(function (): Operation {
+            $plan = $this->capture->capture();
+            Node::query()->whereKey($plan['metrics_node_id'])->lockForUpdate()->firstOrFail();
+            if (Operation::query()->where('node_id', $plan['metrics_node_id'])->whereIn('kind', ['metrics.reconcile', 'metrics.credentials_reset', 'metrics.exporter_enable', 'metrics.exporter_disable'])
+                ->whereNotIn('status', [OperationStatus::Succeeded, OperationStatus::Failed, OperationStatus::Cancelled])->exists()) {
+                throw new ResourceOperationException('metrics.fleet_busy', 'A Metrics fleet change has not ended.', 409);
+            }
+            $nodeId = $plan['metrics_node_id'];
+            if (! is_int($nodeId)) {
+                throw new ResourceOperationException('metrics.assignment_missing', 'The native Metrics root needs its serving Node.', 409);
+            }
+            $input = ['participant_node_ids' => array_column(MetricsFleetCapture::members($plan), 'node_id'), 'metrics_fleet' => $plan, 'fleet_runtime' => ['$secret' => 'metrics.fleet_runtime', 'id' => $nodeId]];
+
+
+            return $this->operations->execute('metrics.reconcile', 'metrics', $nodeId, $nodeId, $input, 'operator', null);
+        });
     }
 }

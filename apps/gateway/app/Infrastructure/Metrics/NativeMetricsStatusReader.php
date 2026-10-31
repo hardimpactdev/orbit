@@ -9,10 +9,9 @@ use App\Data\Metrics\MetricsExporterData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsHostObserver;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -22,8 +21,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
 {
     public function __construct(
         private MetricsExporterProjection $projection,
-        private MetricsRuntimeLifecycle $runtime,
-        private MetricsExporterLifecycle $exporters,
+        private MetricsHostObserver $observations,
         private ExporterDegradationRepository $degradations,
         private MetricsReconcileDegradationRepository $reconcileDegradation = new MetricsReconcileDegradationRepository,
     ) {}
@@ -58,7 +56,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
             $actual = 'unknown';
             if ($degradation === null) {
                 try {
-                    $actual = $this->exporters->actual($node);
+                    $actual = $this->observations->actual($node, $metrics);
                 } catch (\Throwable) {
                 }
             }
@@ -88,8 +86,8 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
             true,
             $url,
             MetricsAssignmentData::fromModel($assignment),
-            $this->runtime->health($metrics, 'prometheus') ? 'healthy' : 'unhealthy',
-            $this->runtime->health($metrics, 'grafana') ? 'healthy' : 'unhealthy',
+            $this->observations->health($metrics, 'prometheus') ? 'healthy' : 'unhealthy',
+            $this->observations->health($metrics, 'grafana') ? 'healthy' : 'unhealthy',
             $items,
             $reconcileErrorCode,
             $reconcileErrorCode === null ? 'healthy' : 'degraded',

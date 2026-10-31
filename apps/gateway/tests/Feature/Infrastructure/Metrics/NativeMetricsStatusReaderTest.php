@@ -7,9 +7,8 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
-use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsHostObserver;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
@@ -19,8 +18,7 @@ use App\Models\NodeRole;
 it('reports disabled state when no metrics assignment exists', function (): void {
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         app(ExporterDegradationRepository::class),
     );
 
@@ -34,8 +32,7 @@ it('fails closed when metrics has multiple assignments', function (): void {
     NodeRole::query()->create(['node_id' => $second->id, 'role' => 'metrics', 'status' => 'active']);
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         app(ExporterDegradationRepository::class),
     );
 
@@ -56,8 +53,7 @@ it('returns healthy services and deterministic exporter reasons', function (): v
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -85,8 +81,7 @@ it('selects a node whose role is still provisioning', function (): void {
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -115,8 +110,7 @@ it('keeps failed Metrics assignments visible', function (): void {
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         app(ExporterDegradationRepository::class),
     )
         ->status()
@@ -142,8 +136,7 @@ it('reports a skipped node as unknown with its recorded degradation reason', fun
 
     $data = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
-        new StatusRuntimeFake,
-        new StatusExporterFake,
+        new StatusHostObserverFake,
         $degradations,
     )
         ->status()
@@ -174,8 +167,7 @@ it('degrades reconciliation until an explicitly desired exporter is active', fun
     $preferences->put($node->id, ExporterPreference::Enabled);
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        new StatusRuntimeFake,
-        new StatusExporterFake([$node->id => $actual]),
+        new StatusHostObserverFake([$node->id => $actual]),
         app(ExporterDegradationRepository::class),
     );
 
@@ -198,8 +190,7 @@ it('keeps reconciliation healthy for an inactive exporter that is not desired', 
     $preferences->put($node->id, ExporterPreference::Disabled);
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        new StatusRuntimeFake,
-        new StatusExporterFake([$node->id => 'inactive']),
+        new StatusHostObserverFake([$node->id => 'inactive']),
         app(ExporterDegradationRepository::class),
     );
 
@@ -220,8 +211,7 @@ it('preserves a recorded reconcile error ahead of an inactive exporter observati
     app(MetricsReconcileDegradationRepository::class)->put($failed->id, 'metrics.exporter_service_verify_failed');
     $reader = new NativeMetricsStatusReader(
         new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
-        new StatusRuntimeFake,
-        new StatusExporterFake([$inactive->id => 'inactive']),
+        new StatusHostObserverFake([$inactive->id => 'inactive']),
         app(ExporterDegradationRepository::class),
     );
 
@@ -244,36 +234,18 @@ function statusNode(string $name): Node
     ]);
 }
 
-final class StatusRuntimeFake implements MetricsRuntimeLifecycle
+final readonly class StatusHostObserverFake implements MetricsHostObserver
 {
-    public function converge(Node $node, NodeRole $assignment): void {}
-
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+    /** @param array<int, string> $states */
+    public function __construct(private array $states = []) {}
 
     public function health(Node $node, string $service): bool
     {
         return true;
     }
-}
 
-final class StatusExporterFake implements MetricsExporterLifecycle
-{
-    /** @param array<int, string> $states */
-    public function __construct(private readonly array $states = []) {}
-
-    public function converge(Node $node, NodeRole $assignment): void {}
-
-    public function remove(Node $node, NodeRole $assignment): void {}
-
-    public function removeNode(Node $node, Node $metricsNode): void {}
-
-    public function actual(Node $node): string
+    public function actual(Node $node, Node $metricsNode): string
     {
         return $this->states[$node->id] ?? 'active';
-    }
-
-    public function targets(Node $metricsNode): array
-    {
-        return [];
     }
 }
