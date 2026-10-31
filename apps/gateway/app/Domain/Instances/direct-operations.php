@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
+use App\Domain\Instances\InstanceRenameResult;
 use App\Domain\Instances\InstanceTransferDiscardProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
@@ -13,6 +14,7 @@ return [
         'projection' => NativeInstanceEnvironmentProjection::class,
         'private_material' => ['environment_material' => 'instance.environment_sync'],
     ],
+    'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
         'writer_config' => 'swamp.direct_writers',
