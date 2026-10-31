@@ -26,7 +26,7 @@ beforeEach(function (): void {
     $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->socket = $socket;
-    config(['swamp.run_token' => 'fixture.shared.token', 'swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$this->gateway->id]]);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->payload = ['url' => 'https://vault.orbit', 'client_id' => 'fixture-client', 'client_secret' => 'private-vault-client', 'master_password' => 'private-vault-master', 'organization' => 'Orbit', 'collection' => 'Test'];
 });
@@ -58,7 +58,7 @@ it('refuses hidden wanted-item values echoed in scalar or nested direct result m
     $secrets->store($this->operation, $snapshot);
     $data = ['backend' => 'synced', 'sources' => [], 'cipher_ids' => [], 'revisions' => [], 'fingerprints' => [], ...$echo];
     $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => $data]))->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
-    expect($this->operation->fresh()->status->value)->toBe('queued');
+    expect($this->operation->fresh()->status->value)->toBe('running');
     Http::assertNothingSent();
 })->with([
     'scalar' => [['email' => 'hidden-item-private-sentinel']],
@@ -82,7 +82,7 @@ it('projects the stored sync ledger and cleans the terminal snapshot without lea
     $this->assertDatabaseMissing('vault_items', ['source' => 'orphan']);
     $this->assertDatabaseHas('vault_items', ['source' => 'database:7', 'cipher_id' => 'cipher']);
     expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
-    expect(json_encode([$this->operation->fresh()->toArray(), $this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
+    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
     $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
     Http::assertNothingSent();
 });
@@ -95,17 +95,7 @@ it('refuses foreign material access, secret echoes and incomplete sync metadata'
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced', 'email' => 'private-vault-client']]))->assertUnprocessable();
     $this->postJson($this->path.'/result', directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced']]))->assertConflict();
-    expect($this->operation->fresh()->status->value)->toBe('queued');
-    Http::assertNothingSent();
-});
-
-it('refuses the removed sync writer and its legacy claim', function (): void {
-    admitDirectVault($this);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'vault.sync', 'worker' => 'old-worker'])->assertUnprocessable();
-    $this->operation->update(['status' => 'failed']);
-    config(['swamp.direct_writers' => ['vault.sync' => 'polled']]);
-    $this->postJson('/api/v1/vault/sync')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('operations', 1);
+    expect($this->operation->fresh()->status->value)->toBe('running');
     Http::assertNothingSent();
 });
 
@@ -123,14 +113,6 @@ it('starts setup directly and projects encrypted settings only after proven safe
     expect(Setting::query()->where('key', 'vault.configuration')->value('value'))->not->toContain('private-vault-client');
     expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-vault-client')->not->toContain('private-vault-master');
     $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertConflict();
-    Http::assertNothingSent();
-});
-
-it('refuses the removed setup writer and legacy claim', function (): void {
-    config(['swamp.direct_writers' => ['vault.setup' => 'polled']]);
-    $this->putJson('/api/v1/vault', $this->payload)->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'vault.setup', 'worker' => 'old-worker'])->assertUnprocessable();
-    $this->assertDatabaseCount('operations', 0);
     Http::assertNothingSent();
 });
 
@@ -166,11 +148,51 @@ it('preserves settings and ledger after a failed direct teardown and forgets its
     Http::assertNothingSent();
 });
 
-it('refuses the removed teardown writer and legacy claim', function (): void {
-    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'fixture-client', 'private-vault-client', 'private-vault-master', 'fixture-device'), 'fixture@example.test', 'org', 'Orbit', 'collection', 'Test'));
-    config(['swamp.direct_writers' => ['vault.teardown' => 'polled']]);
-    $this->deleteJson('/api/v1/vault')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'vault.teardown', 'worker' => 'old-worker'])->assertUnprocessable();
-    $this->assertDatabaseCount('operations', 0);
+it('replays a terminal native result without resolving deleted credentials or replacing newer ledger state', function (): void {
+    admitDirectVault($this);
+    $projection = directVaultProjection($this, ['outcome' => 'succeeded', 'data' => ['backend' => 'synced',
+        'sources' => ['database:7'], 'cipher_ids' => ['first'], 'revisions' => ['revision'], 'fingerprints' => ['fingerprint']]]);
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+    VaultItem::query()->where('source', 'database:7')->update(['cipher_id' => 'newer']);
+    app(VaultSettings::class)->clear();
+
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+
+    $this->assertDatabaseHas('vault_items', ['source' => 'database:7', 'cipher_id' => 'newer']);
+    expect(app(VaultSettings::class)->configuration())->toBeNull();
+    expect($this->operation->fresh()->result)->toBe($projection['result']);
     Http::assertNothingSent();
 });
+
+it('records and replays a native dispatch failure without private snapshot resolution', function (): void {
+    admitDirectVault($this, 'teardown');
+    $projection = directVaultProjection($this, ['error_code' => 'operation.native_dispatch_failed']);
+    $projection['status'] = 'failed';
+    $projection['error_code'] = 'operation.native_dispatch_failed';
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    expect(Setting::query()->where('key', 'vault.operation.'.$this->operation->id)->exists())->toBeFalse();
+
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+
+    expect($this->operation->fresh()->status->value)->toBe('failed');
+    expect(app(VaultSettings::class)->configuration())->not->toBeNull();
+    Http::assertNothingSent();
+});
+
+it('preserves a later Vault configuration when a terminal setup or teardown result is replayed', function (string $action): void {
+    admitDirectVault($this, $action);
+    $result = $action === 'setup'
+        ? ['backend' => 'configured', 'email' => 'fixture@example.test', 'organization_id' => 'org', 'organization_name' => 'Orbit', 'collection_id' => 'collection', 'collection_name' => 'Test']
+        : ['backend' => 'absent'];
+    $projection = directVaultProjection($this, ['outcome' => 'succeeded', 'data' => $result]);
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+    app(VaultSettings::class)->put(new VaultConfiguration(new VaultCredentials('https://vault.orbit', 'new-client', 'new-private-client', 'new-private-master', 'new-device'),
+        'new@example.test', 'new-org', 'New Organization', 'new-collection', 'New Collection'));
+
+    $this->postJson($this->path.'/result', $projection)->assertOk();
+
+    expect(app(VaultSettings::class)->configuration()?->collectionId)->toBe('new-collection');
+    expect(app(VaultSettings::class)->configuration()?->credentials->clientSecret)->toBe('new-private-client');
+    Http::assertNothingSent();
+})->with(['setup', 'teardown']);

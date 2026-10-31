@@ -204,6 +204,6 @@ Direct setup, sync, and teardown results carry only collection identifiers and l
 
 ## Direct Swamp writer
 
-`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and require their direct writers. An explicit `polled` setting refuses because its old execution contract is removed. Rollback reverts the owning PR.
+`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and use their fixed direct declarations. No polling writer or Kit result contract is loaded. Rollback reverts the owning PR.
 
-The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.
+The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway filters bounded public metadata, projects the ledger and removes terminal credential snapshots. It does not load a Kit execution contract. Terminal replay returns the recorded result without resolving deleted credentials or projecting the ledger again. No family route, token or relay is added.

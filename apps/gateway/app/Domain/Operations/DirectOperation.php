@@ -15,7 +15,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
+    /** @var array<string, array{workflow: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -81,7 +81,7 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
+    /** @return array{workflow: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
