@@ -94,3 +94,11 @@ it('refuses a cross-Cluster public web root before reserving any destination Rou
     expect(fn () => app(NativeRouteTransferPlan::class)->capture($this->transfer))->toThrow(ResourceOperationException::class);
     expect($this->transfer->fresh()->destination_route_id)->toBeNull()->and(Route::query()->count())->toBe(2);
 });
+
+it('captures account intent from stored Node users without resolving any host account', function (): void {
+    $this->mock(ManagedUserAccountResolver::class)->shouldNotReceive('resolve');
+    $snapshot = app(NativeRouteTransferPlan::class)->capture($this->transfer);
+    expect($snapshot['target']['certificates'][0])->not->toHaveKey('home')
+        ->and($snapshot['target']['certificates'][0]['user'])->toBe('orbit')
+        ->and($snapshot['retire_nodes'][0])->not->toHaveKey('home');
+});

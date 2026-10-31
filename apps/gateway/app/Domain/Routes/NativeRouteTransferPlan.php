@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Actions\Routes\StartCertificateOperationAction;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -79,9 +77,9 @@ final readonly class NativeRouteTransferPlan
                 $scope = $route->hasWebRoot() ? "route-{$route->id}" : "app-instance-{$instance->id}";
                 $prepared[] = ['route_id' => $route->id, 'instance_id' => $instance->id, 'node_id' => $destination->id,
                     'production' => false, 'certificate_scope' => $scope];
-                $leaves[] = app(StartCertificateOperationAction::class)->convergenceInput($destination, $scope, $route->domain);
+                $leaves[] = app(NativeRouteCertificateInput::class)->convergenceInput($destination, $scope, $route->domain);
                 if ($router->id !== $destination->id) {
-                    $leaves[] = app(StartCertificateOperationAction::class)->convergenceInput($router, "route-{$route->id}-router", $route->domain);
+                    $leaves[] = app(NativeRouteCertificateInput::class)->convergenceInput($router, "route-{$route->id}-router", $route->domain);
                 }
             }
             $dns = PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all();
@@ -89,12 +87,11 @@ final readonly class NativeRouteTransferPlan
             sort($nodes);
             $retire = [];
             foreach ([$instance->node, Node::query()->findOrFail($transfer->source_router_node_id)] as $node) {
-                $account = app(ManagedUserAccountResolver::class)->resolve($node);
                 $scopes = $node->id === $instance->node_id ? ["app-instance-{$instance->id}", ...$routes->filter(fn (Route $route): bool => $route->hasWebRoot())->map(fn (Route $route): string => "route-{$route->id}")->all()] : [];
                 if ($node->id === $transfer->source_router_node_id) {
                     $scopes = [...$scopes, ...$routes->map(fn (Route $route): string => "route-{$route->id}-router")->all()];
                 }
-                $retire[$node->id] = ['node_id' => $node->id, 'user' => $account->user, 'home' => $account->home,
+                $retire[$node->id] = ['node_id' => $node->id, 'user' => $node->user,
                     'agent_sha256' => app(AgentDelivery::class)->pin($node), 'certificate_scopes' => array_values(array_unique($scopes)),
                     'lan_route_ids' => $node->id === $instance->node_id ? $routes->modelKeys() : [], 'shared_php' => $node->id === $instance->node_id,
                     'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
