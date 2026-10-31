@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskParkIntent;
 use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmResumeIntent;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\TaskVm;
@@ -77,6 +78,9 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
+        if ($operation->kind === 'task_vm.resume') {
+            app(TaskVmResumeIntent::class)->owned($operation);
+        }
         if ($this->ownerId($operation) !== $id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The secret reference is not owned by this target.', 422);
         }

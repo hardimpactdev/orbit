@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskVm;
 
 /**
  * The gate before work that needs a group's task VM. Work goes on unless the VM is `parked`. A parked VM is
- * queued to start, and the work waits for a later tick: `ResumeTaskVm` sets the row `ready` once the Node agent
- * and Pi answer. A ready VM observed stopped enters the same parked/resume path before work retries. Failed stays final.
+ * admitted to its native resume, and work waits until Swamp projects the row ready. A ready VM observed stopped
+ * enters the same parked/resume path before work retries. Failed stays final.
  */
 final readonly class WakeTaskVmAction
 {
@@ -50,8 +49,7 @@ final readonly class WakeTaskVmAction
         if ($vm?->state !== TaskVmState::Parked) {
             return true;
         }
-        $vm->update(['stop_confirmed_at' => null]);
-        ResumeTaskVm::dispatch($vm->id);
+        app(StartTaskVmResumeAction::class)->execute($vm->id);
 
         return false;
     }
