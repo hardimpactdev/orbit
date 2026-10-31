@@ -2,19 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\CreateRouteAction;
-use App\Data\Routes\CreateRouteData;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Analytics\AnalyticsIntentProjection;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use Tests\Support\FakeRoutePublicationSocket;
 
 function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cluster, RoleName $role): Node
 {
@@ -77,15 +82,17 @@ function instance_analytics_app_route(
     RoutePublication $publication,
     bool $activate = true,
 ): Route {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $instance->project_id,
-        domain: $domain,
-        publication: $publication,
-        instanceId: $instance->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-
+    $route = Route::query()->create([
+        'kind' => RouteKind::App,
+        'project_id' => $instance->project_id,
+        'domain' => $domain,
+        'cluster_id' => $instance->node->cluster_id,
+        'node_id' => $instance->node->cluster_id === null ? $instance->node_id : null,
+        'publication' => $publication,
+        'provenance' => RouteProvenance::Explicit,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     if ($activate) {
         $route->update(['status' => RouteStatus::Active]);
     }
@@ -93,10 +100,58 @@ function instance_analytics_app_route(
     return $route->refresh();
 }
 
-final readonly class InstanceAnalyticsProjectionOwner implements DevelopmentProjectionOperationLock
+/** Seed an observed tracking Route without invoking the retired PHP enable executor. */
+function instance_analytics_tracking(Instance $instance, ?string $domain = null): Route
 {
-    public function run(Closure $operation): mixed
-    {
-        return $operation();
-    }
+    $owner = $instance->unsetRelation('routes')->authoritativeRoute();
+    $route = Route::query()->create([
+        'kind' => RouteKind::AnalyticsTracking,
+        'domain' => $domain ?? 'analytics.'.$owner->domain,
+        'node_id' => $owner->node_id, 'cluster_id' => $owner->cluster_id,
+        'publication' => $owner->publication, 'provenance' => RouteProvenance::Explicit,
+        'status' => RouteStatus::Pending, 'sites_published' => false,
+        'replacement_step' => $owner->publication === RoutePublication::Public ? RouteReplacementStep::PublicActivated : null,
+    ]);
+    $route->analyticsTracking()->create(['instance_id' => $instance->id]);
+    $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+
+    return $route->refresh();
+}
+
+function analytics_intent_socket(): FakeRoutePublicationSocket
+{
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\npublic-root\n-----END CERTIFICATE-----");
+    app()->instance(LeafCertificateSigner::class, $signer);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'],
+        'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'analytics-test-token']);
+
+    return $socket;
+}
+
+function analytics_intent_result(string $status, array $result = [], ?string $error = null): array
+{
+    return ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => $status,
+        'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z',
+        'result' => $result, 'error_code' => $error];
+}
+
+function analytics_intent_success(): array
+{
+    return ['ready' => true, 'enabled' => true, 'domain' => 'shop.example.com', 'timezone' => 'Europe/Amsterdam', 'readable' => true];
+}
+
+function analytics_intent_start(mixed $test, array $body = []): Operation
+{
+    analytics_intent_socket();
+    $id = $test->postJson($test->url, $body)->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    app(AnalyticsIntentProjection::class)->apply($operation, analytics_intent_result('running'));
+
+    return $operation->refresh();
 }

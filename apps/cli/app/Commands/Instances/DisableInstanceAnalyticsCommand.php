@@ -7,7 +7,7 @@ namespace App\Commands\Instances;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 {
@@ -45,12 +45,12 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         $response = $this->sendWithProgress(
             $connector,
             new DisableInstanceAnalyticsRequest($instanceId),
-            InstanceAnalyticsResponse::class,
-            ['Disable analytics', 'Removing tracking hosts', 'Removed tracking hosts'],
+            OperationResponse::class,
+            ['Disable analytics', 'Requesting analytics disable', 'Analytics request accepted'],
         );
 
-        return $response instanceof InstanceAnalyticsResponse
-            ? $this->renderAnalytics($response, 'Analytics tracking disabled.')
+        return $response instanceof OperationResponse
+            ? $this->finishOperation($connector, $repository, $response, $instanceId, 'Analytics tracking disabled.')
             : self::FAILURE;
     }
 }
