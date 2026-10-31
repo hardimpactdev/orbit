@@ -35,9 +35,9 @@ final readonly class NodeRoleFirewallInput
     }
 
     /** @return array<string, mixed> */
-    public function trust(Node $node): array
+    public function trust(Node $node, ?string $admittedAddress = null): array
     {
-        return $this->rules([$this->catalog->forNode($node)[1]]);
+        return $this->rules([$this->catalog->wireguardMemberTrust($node, $admittedAddress)]);
     }
 
     /** @return array<string, mixed> */

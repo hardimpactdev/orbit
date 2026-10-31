@@ -113,7 +113,7 @@ Deno.test("role tool steps retain full pins, one exec per manager, native guards
     const steps = roleToolSteps("tools", "inputs.tools", globals, "bootstrap");
     for (const step of steps) {
         assertEquals(step.target, "orbit-node-209");
-        assertEquals(step.labels, { node: "209" });
+        assertEquals("labels" in step, false);
     }
     for (const manager of ["apt", "javascript", "composer"]) {
         const step = steps.find((s) => s.name === "tools_" + manager)!;

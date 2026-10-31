@@ -52,7 +52,7 @@ final readonly class NodeNetworkInput
                 'subnet' => $subnet->value(), 'dns_server' => $this->dns->serverForOverride($dnsOverride, $hub->wireguard_ip),
                 'domains' => $roleless ? [$this->vpn->domain()] : $this->dns->domainsForAdmittedNode($node, $tld),
                 'operator_dns' => $roleless ? $hub->wireguard_ip : null, 'retain' => $node->wireguard_public_key !== null],
-            'trust' => $this->firewall->trust($node)];
+            'trust' => $this->firewall->trust($node, $address)];
 
         return $snapshot;
     }

@@ -32,12 +32,18 @@ final readonly class NodeEnrollmentPolicy
             || ($mac && $node->exists && $data->platformProvided && $data->platform !== 'macos')) {
             throw $this->refuse('node.platform_unsupported', 'The Node platform cannot be changed by enrollment.');
         }
+        if ($data->sshJumpNodeId !== null || $node->ssh_jump_node_id !== null) {
+            throw $this->refuse('node.jump_host_unsupported', 'Enrollment connects directly from Node209.');
+        }
         $managed = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
         $bootstrap = $data->user ?? ($node->exists ? $node->user : 'root');
         foreach ([$managed, $bootstrap] as $user) {
             if (! LinuxUserName::isValid($user)) {
                 throw $this->refuse('node.invalid_linux_user', 'The Node account name is invalid.');
             }
+        }
+        if ($managed === 'root') {
+            throw $this->refuse('node.invalid_linux_user', 'The managed Node account must be non-root.');
         }
         if ($node->exists && $managed !== $node->user && ($node->roles()->exists() || ($mac && $node->ssh_host_fingerprint !== null))) {
             throw $this->refuse('node.user_change_unsupported', 'The Node cannot change its managed account while it owns roles or an enrolled Mac identity.', 409);
@@ -115,17 +121,18 @@ final readonly class NodeEnrollmentPolicy
         if (! $tldOnly && ($host === '' || $fingerprint === null)) {
             throw $this->refuse('node.ssh_host_fingerprint_required', 'Enrollment requires a pinned public SSH host.');
         }
+        if (! $tldOnly && preg_match('/\ASHA256:[A-Za-z0-9+\/]{43}\z/D', $fingerprint) !== 1) {
+            throw $this->refuse('node.ssh_host_fingerprint_required', 'Enrollment requires one complete SHA256 host fingerprint.');
+        }
         if ($data->expectedSshHostFingerprint !== null && $node->ssh_host_fingerprint !== null
             && ! hash_equals($node->ssh_host_fingerprint, $data->expectedSshHostFingerprint)) {
             throw $this->refuse('node.ssh_host_key_mismatch', 'The requested fingerprint differs from the recorded Node identity.', 409);
         }
-        $prospective = clone $node;
-        $prospective->fill(['platform' => $platform, 'cluster_id' => $clusterId]);
         foreach ($data->roles as $role) {
             if (! $this->roles->definition($role)->assignableDuringProvisioning) {
                 throw new RoleAssignmentException('The requested role cannot be assigned during enrollment.');
             }
-            $this->assign->preflight($prospective, $role, $data->roles);
+            $this->assign->preflight($node, $role, $data->roles);
         }
 
         $unobservedMac = $mac && $node->ssh_host_fingerprint === null;
@@ -139,7 +146,7 @@ final readonly class NodeEnrollmentPolicy
                 'wireguard_ip' => $address, 'lan_ip' => $lan,
                 'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
                 'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
-                'ssh_jump_node_id' => $data->sshJumpNodeId ?? $node->ssh_jump_node_id]];
+                'ssh_jump_node_id' => null]];
     }
 
     private function tldOnly(Node $node, ProvisionNodeData $data, ?string $tld, ?int $clusterId): bool

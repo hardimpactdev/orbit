@@ -12,6 +12,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsFootprint;
@@ -305,9 +306,12 @@ final readonly class NodeFirewallRuleCatalog
         return $clone;
     }
 
-    private function wireguardMemberTrust(Node $node): UfwManagedRule
+    public function wireguardMemberTrust(Node $node, ?string $admittedAddress = null): UfwManagedRule
     {
-        $destination = $this->wireguardIp($node);
+        $destination = $admittedAddress ?? $this->wireguardIp($node);
+        if (filter_var($destination, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new \InvalidArgumentException('The admitted firewall address must be IPv4.');
+        }
 
         return new UfwManagedRule(
             new UfwRuleShape(
@@ -551,7 +555,8 @@ final readonly class NodeFirewallRuleCatalog
 
     private function wireguardIp(Node $node): string
     {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+        $address = app(RouteRenderContext::class)->wireguardIp($node);
+        if (! is_string($address) || $address === '') {
             throw new FirewallOperationException(
                 step: 'host-firewall',
                 errorCode: 'node.firewall_convergence_failed',
@@ -559,6 +564,6 @@ final readonly class NodeFirewallRuleCatalog
             );
         }
 
-        return $node->wireguard_ip;
+        return $address;
     }
 }

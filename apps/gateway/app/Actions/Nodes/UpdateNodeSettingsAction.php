@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -93,6 +94,21 @@ final readonly class UpdateNodeSettingsAction
         }
 
         return ['settings' => $this->normalizer->stored($normalized), 'storage' => $storage];
+    }
+
+    /** Admission-only settings capture; account discovery and root preparation remain native.
+     * @return array{settings:array<string,mixed>|null,storage:array{root:?string,user:string,create_missing:bool,protected_roots:list<string>,managed_checkouts:list<string>}}
+     */
+    public function captureForEnrollment(Node $actual, NodeEnrollmentCandidate $candidate, ?NodeSettingsData $settings, bool $create): array
+    {
+        if ($actual->id !== $candidate->nodeId) {
+            throw new \InvalidArgumentException('Enrollment settings require their actual Node.');
+        }
+        $normalized = $this->normalizer->normalize($settings);
+        $this->validateHostBridge($actual, $normalized);
+
+        return ['settings' => $this->normalizer->storedOver($actual->settings, $normalized),
+            'storage' => [...$this->validator->directIntent($normalized, $actual, $create), 'user' => $candidate->user]];
     }
 
     private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void

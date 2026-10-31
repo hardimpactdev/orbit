@@ -270,7 +270,7 @@ Path(os.environ['VP_HOME']).joinpath('config.json').write_text(json.dumps({'defa
         steps = json.loads(output)
         for step in steps:
             self.assertEqual(step.pop("target"), "orbit-node-209")
-            self.assertEqual(step.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", step)
         steps.append(
             {
                 "name": "verify-receipt",

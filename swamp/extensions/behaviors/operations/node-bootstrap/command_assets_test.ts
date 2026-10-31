@@ -143,3 +143,41 @@ Deno.test("observer delivery reads its canonical asset from the artifact alone",
         })
     );
 });
+
+Deno.test("enrollment pin refuses mismatches before platform or action work", async () => {
+    const { enrollmentBootstrapPin, enrollmentOperatingSystem } = await import(
+        "./command_assets.ts"
+    );
+    assertEquals(
+        enrollmentBootstrapPin({
+            expected_fingerprint: "SHA256:approved",
+            host_key: observation.host_key,
+        }).host_keys,
+        ["ssh-ed25519 AAAA"],
+    );
+    assertThrows(
+        () =>
+            enrollmentBootstrapPin({
+                expected_fingerprint: "SHA256:other",
+                host_key: observation.host_key,
+            }),
+        Error,
+        "node.ssh_host_key_mismatch",
+    );
+    assertThrows(() =>
+        enrollmentBootstrapPin({
+            expected_fingerprint: "SHA256:approved",
+            host_key: { ...observation.host_key, algorithm: "ssh-rsa" },
+        })
+    );
+    assertEquals(
+        enrollmentOperatingSystem('ID=ubuntu\nVERSION_CODENAME="resolute"\n'),
+        { operating_system_ready: true },
+    );
+    assertThrows(
+        () =>
+            enrollmentOperatingSystem("ID=unknown\nVERSION_CODENAME=unknown\n"),
+        Error,
+        "node.platform_unsupported",
+    );
+});

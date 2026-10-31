@@ -9,6 +9,8 @@ behaviors:
   - operations/node-bootstrap/ssh_access.ts
   - operations/node-bootstrap/command_assets.ts
   - operations/node-bootstrap/role_tool_assets.ts
+  - operations/node-bootstrap/enrollment_settings.ts
+  - operations/node-bootstrap/enrollment_intent.ts
 additionalFiles:
   - scripts/bootstrap_authorized_key.py
   - scripts/bootstrap_packages.py
@@ -20,3 +22,5 @@ additionalFiles:
   - tool_scripts/install_javascript.py
   - tool_scripts/prepare_composer.py
   - tool_scripts/install_browser.py
+  - scripts/bootstrap_macos_observer.sh
+  - scripts/bootstrap_observer_identity.py

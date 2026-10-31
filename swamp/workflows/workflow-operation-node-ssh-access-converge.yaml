@@ -43,13 +43,9 @@ inputs:
 jobs:
 - name: ssh_access
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: authorize_assets
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/node-ssh-access'
@@ -60,8 +56,6 @@ jobs:
         public_key: ${{ inputs.intent.public_key }}
   - name: authorize
     target: orbit-node-209
-    labels:
-      node: '209'
     writes: true
     dependsOn:
     - step: authorize_assets
@@ -92,8 +86,6 @@ jobs:
         script: ${{ steps["authorize_assets"].outputs.script_body }}
   - name: verify-own-key
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: authorize
       condition:
@@ -121,8 +113,6 @@ jobs:
         - /usr/bin/true
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: verify-own-key
       condition:

@@ -2,7 +2,7 @@ import { roleActionSteps } from "../node-role-command/steps.ts";
 
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const placement = { target: "orbit-node-209", labels: { node: "209" } };
+const placement = { target: "orbit-node-209" };
 const after = (names: string[], optional: Set<string>) =>
     names.map((step) => ({
         step,
@@ -23,6 +23,7 @@ export function roleToolSteps(
     fullGlobals: Fields,
     dependency?: string,
     guard?: string,
+    options: { sudoExpr?: string } = {},
 ): Fields[] {
     const optional = new Set([
         name + "_caddy_assets",
@@ -91,7 +92,7 @@ export function roleToolSteps(
                 expr(stage + ' + "/tool_scripts/' + script + '"'),
             ],
             stdin: expr('steps["' + assets + '"].outputs.' + manager + "_json"),
-            sudo: true,
+            sudo: options.sudoExpr ? expr(options.sudoExpr) : true,
         }, dependencies) as Fields;
         if (manager !== "apt") {
             step.guard = expr(intent + "." + manager + " == null");
