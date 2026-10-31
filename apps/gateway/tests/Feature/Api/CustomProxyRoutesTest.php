@@ -765,11 +765,14 @@ describe('Process updates with targeting Routes', function (): void {
         $ports = $change === 'drop' ? [$retained] : [$retained, $address.':8096:8080/tcp'];
         $update = process_route_ports_update($process, $ports);
         $updater = app(UpdateProcessAction::class);
-        $this->runtime->duringStatus = function (): void {
-            $this->runtime->duringStatus = null;
-            Fiber::suspend();
-        };
-        $peer = new Fiber(fn (): Process => $updater->execute($process, $update));
+        $suspended = false;
+        Process::updating(function (Process $updating) use ($process, &$suspended): void {
+            if ($updating->id === $process->id && ! $suspended) {
+                $suspended = true;
+                Fiber::suspend();
+            }
+        });
+        $peer = new Fiber(fn (): Operation => $updater->admit($process, $update));
         $peer->start();
         expect($peer->isSuspended())->toBeTrue();
 
@@ -822,7 +825,7 @@ describe('Process updates with targeting Routes', function (): void {
             }
             $attempted = true;
             try {
-                $updater->execute($process, $update);
+                $updater->admit($process, $update);
                 test()->fail('The update must not pass an in-progress Route reservation.');
             } catch (ProcessOperationException $exception) {
                 expect($exception->errorCode)->toBe('process.runtime_lock_failed');
@@ -836,7 +839,7 @@ describe('Process updates with targeting Routes', function (): void {
             ->and($route->status->value)->toBe('active')
             ->and($process->refresh()->runtime_config)->toBe($before);
         try {
-            $updater->execute($process, $update);
+            $updater->admit($process, $update);
             test()->fail('The reserved Route must protect its listener.');
         } catch (ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('process.route_upstream_changed')

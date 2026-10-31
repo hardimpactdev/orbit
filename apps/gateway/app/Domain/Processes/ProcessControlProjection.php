@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\CaddyPublicationPlan;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -24,12 +23,12 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
     public function input(Operation $operation): array
     {
         $input = Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
-        if (in_array($operation->kind, ['process.start', 'process.restart', 'process.create'], true) && isset($operation->input['vite_plan'])) {
+        if (in_array($operation->kind, ['process.start', 'process.restart', 'process.create', 'process.update'], true) && isset($operation->input['vite_plan'])) {
             $input['vite_plan'] = $operation->input['vite_plan'];
             $input['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id));
         }
 
-        if ($operation->kind === 'process.create') {
+        if (in_array($operation->kind, ['process.create', 'process.update'], true)) {
             $installation = Arr::only($operation->input, ['process_id', 'agent_sha256', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec']);
             $installation['retired'] = isset($operation->input['retired_runtime'])
                 ? ['runtime' => $operation->input['retired_runtime'], 'name' => $operation->input['retired_name']] : null;
@@ -50,18 +49,11 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
             OperationStatus::Failed => ['error_code' => $code],
             default => [],
         };
-        if (($status === OperationStatus::Succeeded && ($reported['ready'] ?? null) !== true)
-            || ($status === OperationStatus::Failed && ($code === null || ($reported['error_code'] ?? null) !== $code))
-            || ($status !== OperationStatus::Failed && $code !== null)
-            || ($status === OperationStatus::Succeeded && $operation->kind !== 'process.destroy'
-                && (! is_string($reported['state'] ?? null) || preg_match('/\A[a-z][a-z_-]{0,63}\z/D', $reported['state']) !== 1))) {
-            throw new ResourceOperationException('operation.result_invalid', 'The Process needs a bounded native outcome.', 422);
-        }
 
         return DB::transaction(function () use ($operation, $data, $status, $code, $result): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
-            $projected = $this->direct->project($operation, $data, $result, 'process-control');
+            $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal && $status->terminal()) {
                 $outcome = match ($status) {
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),
