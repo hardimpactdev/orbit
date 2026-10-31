@@ -26,6 +26,9 @@ class DirectConvergeNative(NativeTestCase):
             shutil.copy(ROOT / 'extensions/behaviors/operations/fleet' / name, target / 'operations/fleet' / name)
         module = target / 'operations/node/converge_direct.ts'
         module.write_text('import {fixtureHttp, fixtureAction} from "./converge_direct_native_fixture.ts";\n' + module.read_text().replace('export const behavior = nodeConverge();', 'export const behavior = nodeConverge(fixtureAction, () => fixtureHttp);'))
+        failure = (ROOT / 'extensions/behaviors/operations/failure.ts').read_text()
+        (target / 'operations/failure.ts').write_text('import {fixtureHttp} from "./node/converge_direct_native_fixture.ts";\n' + failure.replace(
+            'export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
         source = ROOT / 'workflows/workflow-operation-node-converge-direct.yaml'
         # Placement is inspected in source and proved separately on the real worker venue.
         text = source.read_text()
@@ -191,6 +194,10 @@ class DirectConvergeNative(NativeTestCase):
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if self.path == '/api/v1/direct-operations/7/failure':
+                    owner.assertIn(body['run_id'], private_reads)
+                    # An uncertain effect has no terminal proof in this fixture.
+                    return self.respond({'data': owner.state['operation']})
                 if self.path != '/api/v1/direct-operations/7/result':
                     errors.append('Unexpected HTTP fixture write')
                     return self.respond({}, 404)
