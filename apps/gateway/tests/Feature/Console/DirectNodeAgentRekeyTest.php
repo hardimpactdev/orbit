@@ -137,9 +137,11 @@ it('refuses wrong runs, undeclared outputs, private public results and source dr
     $this->postJson($path.'/secret-output', ['run_id' => $runId, 'outputs' => ['secret_hash' => 'invalid-hash']])->assertConflict();
     $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T03:00:00.000Z',
         'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['rekeyed' => true, 'restarted' => true, 'secret_hash' => $hash]])->assertUnprocessable();
-    $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'failed', 'started_at' => '2026-10-31T03:00:00.000Z',
-        'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['rekeyed' => false, 'error_code' => 'swamp.node_worker_not_ready'],
-        'error_code' => 'swamp.node_worker_not_ready'])->assertUnprocessable();
+    foreach (['agent.configure_failed', 'swamp.node_worker_not_ready', 'swamp.node_worker_memory_low'] as $code) {
+        $this->postJson($path.'/result', ['run_id' => $runId, 'status' => 'failed', 'started_at' => '2026-10-31T03:00:00.000Z',
+            'finished_at' => '2026-10-31T03:00:01.000Z', 'result' => ['rekeyed' => false, 'error_code' => $code],
+            'error_code' => $code])->assertUnprocessable();
+    }
     $state = $source->state;
     $state['executor_runs']['footprint-agent']['input']['configuration'] .= '# changed';
     $source->update(['state' => $state]);

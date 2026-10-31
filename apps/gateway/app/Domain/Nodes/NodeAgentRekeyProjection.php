@@ -37,7 +37,7 @@ final readonly class NodeAgentRekeyProjection implements DirectOperationProjecti
         $code = $data['error_code'] ?? null;
         if (($status === OperationStatus::Succeeded && (count($result) !== 2 || ($result['rekeyed'] ?? null) !== true || ($result['restarted'] ?? null) !== true || $code !== null))
             || ($status === OperationStatus::Failed && (count($result) !== 2 || ($result['rekeyed'] ?? null) !== false || ($result['error_code'] ?? null) !== $code
-                || ! in_array($code, ['agent.version_mismatch', 'agent.update_busy', 'swamp.node_worker_memory_low'], true)))
+                || ! in_array($code, ['agent.version_mismatch', 'agent.update_busy'], true)))
             || (! in_array($status, [OperationStatus::Succeeded, OperationStatus::Failed], true) && ($result !== [] || $code !== null))) {
             throw new ResourceOperationException('operation.result_invalid', 'Agent recovery requires a bounded proven outcome.', 422);
         }
