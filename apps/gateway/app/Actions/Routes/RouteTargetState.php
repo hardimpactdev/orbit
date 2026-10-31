@@ -6,7 +6,9 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
+use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteExecutionProof;
+use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
@@ -22,6 +24,29 @@ use Illuminate\Support\Facades\DB;
 final readonly class RouteTargetState
 {
     public function __construct(private RouteTargetSetGuard $guard) {}
+
+    /** @param list<int> $expectedTargetIds */
+    public function clear(Route $route, array $expectedTargetIds): Route
+    {
+        if (! $route->isApp()) {
+            throw new ResourceOperationException('route.kind_unsupported', 'Only a Project Route can own Instance targets.', 409);
+        }
+        $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+        $current = $locked->targets()->orderBy('instance_id')->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
+        if ($current !== $expectedTargetIds) {
+            throw new ResourceOperationException('env.owner_changed', 'The Instance environment owner changed during the operation.', 409);
+        }
+        if ($current !== []) {
+            if ($locked->isUnactivatedReplacement()) {
+                throw new ResourceOperationException('route.target_conflict', "Route [{$locked->id}] is a replacement that never activated. Remove it with route:destroy; the Route it replaces keeps its target.", 409);
+            }
+            app(RouteAssociationGuard::class)->assertTargetsDetachable($locked);
+            app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
+            $locked->targets()->delete();
+        }
+
+        return $locked->load('targets');
+    }
 
     /** @param list<int> $ids
      * @return list<array{instance_id: int, node_id: int, checkout_path: string}>
