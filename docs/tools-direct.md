@@ -66,9 +66,9 @@ executor registration. Rollback is a revert PR. If the owning writer needs a
 release, merge first, then canary immediately against a test target and revert
 on failure. The shared boundary lane owns final executor API deletion.
 
-`tool.install`, `tool.update`, `tool.remove` and `tool.adopt` are absent from the
-retained `operation-tools` discovery and executor invocation. Only manager
-convergence remains there until its owning one-kind cutover. Native history and data are preserved;
+All five Tool kinds use the direct workflow. The legacy `operation-tools`
+schedule, discovery model, slot models, executor registration, claim runner and
+receipt schemas are retired. Existing native history and data are preserved;
 source retirement does not run `swamp workflow delete`.
 
 The Gateway records the bounded constraint string. `constraints.ts` is the
