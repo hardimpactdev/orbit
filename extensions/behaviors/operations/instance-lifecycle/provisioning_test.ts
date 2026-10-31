@@ -47,6 +47,9 @@ function plan() {
     project_id: 1,
     node_id: 9,
     node_user: "orbit",
+    platform: "linux",
+    architecture: "x86_64",
+    vp_materialize: { user: "orbit" },
     environment: "development",
     user: "orbit",
     checkout: "/srv/apps/proof/test",
@@ -216,6 +219,19 @@ class Gateway {
           output_tail: "",
           truncated: false,
         });
+      },
+      {
+        local: (mode, input) => {
+          if (mode !== "project") throw new Error("unexpected Vite effect");
+          return this.invoke({
+            name: "tool.read-vp-project",
+            input,
+            pin: "",
+            sudo: false,
+            mutates: false,
+            deadlineMs: 120000,
+          });
+        },
       },
     );
 }
@@ -751,6 +767,9 @@ Deno.test("create default dispatcher completes real source and environment effec
       project_id: 1,
       node_id: 9,
       node_user: f.user,
+      platform: "linux",
+      architecture: "x86_64",
+      vp_materialize: { user: f.user },
       environment: "development",
       user: f.user,
       checkout: f.checkout,
