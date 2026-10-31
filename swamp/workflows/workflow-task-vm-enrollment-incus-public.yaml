@@ -1,0 +1,170 @@
+id: 81ad76b6-e62f-475a-a360-cd076af66aab
+name: task-vm-enrollment-incus-public
+description: Public first-visit observations on the admitted Incus host; no Gateway callback or private material.
+vaults: []
+inputs:
+  type: object
+  properties:
+    intent:
+      type: object
+  required:
+  - intent
+  additionalProperties: false
+jobs:
+- name: bootstrap-public
+  target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.intent.execution_node_id) }}
+  steps:
+  - name: public-input
+    target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment-inputs'
+      behaviorName: ${{ "enrollment-inputs-" + run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: cloud-init
+    target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: public-input
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "enrollment-cloud-init-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$ORBIT_PROJECT" exec --mode=non-interactive --user 0 --group 0 -- "$ORBIT_VM_NAME" /usr/bin/cloud-init status --wait >/dev/null
+          printf '{"cloud_init_ready":true}\n'
+        env:
+          ORBIT_PROJECT: ${{ steps["public-input"].outputs.project }}
+          ORBIT_VM_NAME: ${{ steps["public-input"].outputs.name }}
+  - name: guest-account
+    target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: cloud-init
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "enrollment-guest-account-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$ORBIT_PROJECT" exec --mode=non-interactive --user 0 --group 0 -- "$ORBIT_VM_NAME" /usr/bin/python3 -c '
+          import json
+          import pwd
+          from pathlib import Path
+
+          account = pwd.getpwnam("orbit")
+          if (
+              account.pw_uid != 1000
+              or account.pw_gid != 1000
+              or not Path(account.pw_dir).is_absolute()
+          ):
+              raise SystemExit(1)
+          print(json.dumps({"user": "orbit", "uid": 1000, "gid": 1000, "home": account.pw_dir}))
+          '
+        env:
+          ORBIT_PROJECT: ${{ steps["public-input"].outputs.project }}
+          ORBIT_VM_NAME: ${{ steps["public-input"].outputs.name }}
+  - name: observer-digest
+    target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: guest-account
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "enrollment-observer-digest-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$ORBIT_PROJECT" exec --mode=non-interactive --user 0 --group 0 -- "$ORBIT_VM_NAME" /usr/bin/python3 -c '
+          import hashlib
+          import json
+          import os
+          import stat
+          import sys
+
+          path = "/usr/local/bin/orbit-agent"
+          info = os.lstat(path)
+          if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+              raise SystemExit(1)
+          fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+          with os.fdopen(fd, "rb") as source:
+              digest = hashlib.file_digest(source, "sha256").hexdigest()
+          if digest != sys.argv[1]:
+              raise SystemExit(1)
+          print(json.dumps({"agent_sha256": digest}))
+          ' "$ORBIT_AGENT_SHA256"
+        env:
+          ORBIT_PROJECT: ${{ steps["public-input"].outputs.project }}
+          ORBIT_VM_NAME: ${{ steps["public-input"].outputs.name }}
+          ORBIT_AGENT_SHA256: ${{ steps["public-input"].outputs.agent_sha256 }}
+  - name: guest-host-key
+    target: ${{ "orbit-node-" + string(inputs.intent.execution_node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: observer-digest
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "enrollment-guest-host-key-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/sudo -n -- /usr/bin/incus --project "$ORBIT_PROJECT" exec --mode=non-interactive --user 0 --group 0 -- "$ORBIT_VM_NAME" /usr/bin/python3 -c '
+          import base64
+          import hashlib
+          import json
+          import os
+          import stat
+
+          path = "/etc/ssh/ssh_host_ed25519_key.pub"
+          info = os.lstat(path)
+          if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+              raise SystemExit(1)
+          fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+          with os.fdopen(fd, "rb") as source:
+              content = source.read(4097)
+          if len(content) > 4096:
+              raise SystemExit(1)
+          parts = content.decode("ascii").strip().split()
+          if len(parts) < 2 or parts[0] != "ssh-ed25519":
+              raise SystemExit(1)
+          blob = base64.b64decode(parts[1], validate=True)
+          if len(blob) != 51 or blob[:19] != b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20":
+              raise SystemExit(1)
+          fingerprint = "SHA256:" + base64.b64encode(
+              hashlib.sha256(blob).digest()
+          ).decode().rstrip("=")
+          print(
+              json.dumps(
+                  {
+                      "ssh_host_key_type": parts[0],
+                      "ssh_host_key": parts[1],
+                      "ssh_host_fingerprint": fingerprint,
+                  }
+              )
+          )
+          '
+        env:
+          ORBIT_PROJECT: ${{ steps["public-input"].outputs.project }}
+          ORBIT_VM_NAME: ${{ steps["public-input"].outputs.name }}
