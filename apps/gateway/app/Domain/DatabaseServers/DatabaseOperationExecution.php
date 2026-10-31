@@ -136,7 +136,6 @@ final readonly class DatabaseOperationExecution implements OperationFamilyChildr
                 }
             }
         }
-
     }
 
     public function received(Operation $operation, array $run, array $receipt): array

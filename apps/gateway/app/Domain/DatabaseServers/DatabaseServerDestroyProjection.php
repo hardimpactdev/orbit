@@ -26,8 +26,7 @@ final readonly class DatabaseServerDestroyProjection implements DirectOperationP
         if ($operation->kind !== 'database_server.destroy' || $operation->target_type !== 'database_server'
             || ($input['server_id'] ?? null) !== $operation->target_id
             || ! is_string($input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $input['agent_sha256']) !== 1
-            || ($id === null ? $container !== null : (! is_int($id) || $id < 1 || ! is_string($container)
-                || preg_match('/\Aorbit-process-'.$id.'-[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $container) !== 1))) {
+            || ($id === null ? $container !== null : (! is_int($id) || $id < 1 || ! is_string($container)))) {
             $this->invalid();
         }
         if (! $operation->status->terminal()) {
