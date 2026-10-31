@@ -90,7 +90,21 @@ contributing source literal once, including when a wrapper passes it to Python.
 The scanner resolves TypeScript literals, templates, tagged templates,
 concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
-polling, retries and lock calls are counted separately. Agent calls are checked
+polling, retries and lock calls are counted separately.
+
+The approved Route private DNS grace is the sole sleep exception. It matches only
+`workflows/workflow-route-dns-grace.yaml`, job `grace`, step
+`wait-private-dns-ttl`, target `orbit-node-209`, labels `{node: '209'}`, and the
+exact `command/shell` behavior `route-dns-grace.execute` with the sole input
+`run: /usr/bin/sleep 31`. The workflow contains one job and one step. This covers
+the existing 30-second private DNS TTL after replacement publication and before
+old Caddy sites, certificate scopes and LAN allowances retire, including restore.
+Core and the official workflows extension provide no native delay. The binding
+guide's **Approved exception: Route private DNS grace** records the approval.
+Other files, steps, tasks, durations, flags, wrappers and commands remain findings;
+the grandfather baseline does not grow. The Route owner owns phase ordering.
+
+Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,
 not passing. The agent rule examines executable command positions in shell and
 Python subprocess calls, including sudo, shell and SSH wrappers. Service units
@@ -173,11 +187,29 @@ helpers import that module directly. Importing `direct.ts` also reaches the
 retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
-`Swamp Deno tests`. The reusable workflow accepts `working-directory` and
+`Swamp Deno tests`. The reusable workflow splits every Operations test file
+across ten parallel jobs with Deno's native `--shard` and directory flags.
+Four general shards exclude the database effect directories (`local-sql-effects/`,
+`read-effects/`, `create-effects/`, `write-effects/`, `server-create-effects/`)
+and `process-commands/`. Each excluded directory has its own job. The database
+engine cases use separate native test modules, so `--parallel` runs their
+unchanged effects concurrently. New files enter the general shards automatically,
+or their assigned directory job.
+Each shard keeps `--parallel -A` and `DENO_JOBS=4`, runs the same
+prerequisite checks and receives no validation credentials. The pinned official
+`setup-deno` action caches downloaded modules and packages; Deno still performs
+its native type checking. All shards run even when one fails. The single
+`Swamp Deno tests` aggregate always runs on `ubuntu-26.04` and succeeds only
+when the complete matrix succeeds; failed,
+cancelled or skipped shards fail
+the aggregate. The root `Required checks` continues to require this reusable
+workflow.
+
+The reusable workflow accepts `working-directory` and
 `base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
 with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
-tests run with four workers, including disposable database effect tests.
+tests run with four workers per shard, including disposable database effect tests.
 
 Native assertion expressions and guards use Swamp CEL, including grouping,
 `has()` and collection macros such as `all()`. Workflow validation owns CEL
