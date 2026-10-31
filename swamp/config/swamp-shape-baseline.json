@@ -69,15 +69,39 @@
     },
     {
       "file": "bin/swamp-liveness.py",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET <unknown>"
+      ]
+    },
+    {
+      "file": "bin/swamp-liveness.py",
       "rule": "ruff.I001",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/_lib/dependency_credentials.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "POST <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/_lib/dependency_inventory.ts",
       "rule": "custom-control",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/_lib/dependency_projects.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/_lib/dependency_results.ts",
@@ -87,6 +111,26 @@
     },
     {
       "file": "extensions/behaviors/_lib/gateway_stage.ts",
+      "rule": "gateway-http",
+      "count": 13,
+      "evidence": [
+        "GET /api/v1/operations/{operation_id}",
+        "GET <unknown>",
+        "PATCH <unknown>",
+        "POST <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/_lib/group_assistance.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET <unknown>",
+        "POST <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/_lib/inventory.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
@@ -103,8 +147,12 @@
     {
       "file": "extensions/behaviors/_lib/maintenance_worker.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "GET /api/v1/operations/{operation_id}",
+        "GET <unknown>",
+        "POST <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/_lib/maintenance/batch.ts",
@@ -127,6 +175,32 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/_lib/package_target.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "GET <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/_lib/project_admission.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET /api/v1/task-groups",
+        "GET <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/_lib/project_schedule.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET <unknown>",
+        "POST /api/v1/task-groups"
+      ]
+    },
+    {
       "file": "extensions/behaviors/_lib/repository_analysis.ts",
       "rule": "custom-control",
       "count": 2,
@@ -135,8 +209,20 @@
     {
       "file": "extensions/behaviors/_lib/review_capacity.ts",
       "rule": "gateway-http",
+      "count": 6,
+      "evidence": [
+        "GET /api/v1/operations/{operation_id}",
+        "GET <unknown>",
+        "POST <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/_lib/service_detection.ts",
+      "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/_lib/service_workspace.ts",
@@ -156,7 +242,9 @@
       "file": "extensions/behaviors/automatic-deploy/development.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/automatic-deploy/gateway.ts",
@@ -167,14 +255,18 @@
     {
       "file": "extensions/behaviors/automatic-deploy/gateway.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/automatic-deploy/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/dependency_scanner.ts",
@@ -215,6 +307,12 @@
         "/usr/bin/systemctl",
         "/usr/bin/systemd-run"
       ]
+    },
+    {
+      "file": "extensions/behaviors/node-worker/canary.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "extensions/behaviors/node-worker/canary.ts",
@@ -292,6 +390,14 @@
     {
       "file": "extensions/behaviors/node-worker/rotation.ts",
       "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/observation/contract.ts",
+      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -355,10 +461,18 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/observation/doctor.ts",
+      "file": "extensions/behaviors/observation/doctor_node.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/observation/doctor.ts",
+      "rule": "gateway-http",
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/observation/doctor.ts",
@@ -369,8 +483,10 @@
     {
       "file": "extensions/behaviors/observation/maintenance.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/observation/maintenance.ts",
@@ -387,14 +503,20 @@
     {
       "file": "extensions/behaviors/observation/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>",
+        "POST <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operation-runner/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET claimable"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
@@ -407,8 +529,11 @@
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
@@ -441,10 +566,18 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/ai-router/accounts_direct.ts",
+      "file": "extensions/behaviors/operations/_lib/node-proxy.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/ai-router/accounts_direct.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/ai-router/accounts.ts",
@@ -456,11 +589,19 @@
       "file": "extensions/behaviors/operations/ai-router/accounts.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/ai-router/accounts.ts",
       "rule": "private-material",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/ai-router/source.ts",
+      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -476,8 +617,10 @@
     {
       "file": "extensions/behaviors/operations/analytics/hosts.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/analytics/initialization.ts",
@@ -499,8 +642,10 @@
     {
       "file": "extensions/behaviors/operations/analytics/lifecycle.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/analytics/lifecycle.ts",
@@ -511,8 +656,10 @@
     {
       "file": "extensions/behaviors/operations/analytics/update.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/analytics/update.ts",
@@ -523,8 +670,10 @@
     {
       "file": "extensions/behaviors/operations/certificates/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/certificates/role-actions.ts",
@@ -569,6 +718,15 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/conn/maintenance.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET /api/v1/conn/environments",
+        "POST <unknown>"
+      ]
+    },
+    {
       "file": "extensions/behaviors/operations/conn/mod.ts",
       "rule": "custom-control",
       "count": 1,
@@ -577,8 +735,10 @@
     {
       "file": "extensions/behaviors/operations/conn/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/conn/mod.ts",
@@ -590,13 +750,17 @@
       "file": "extensions/behaviors/operations/database/cleanup.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/clone.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/clone.ts",
@@ -608,7 +772,9 @@
       "file": "extensions/behaviors/operations/database/connection_update.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/connection_update.ts",
@@ -620,7 +786,9 @@
       "file": "extensions/behaviors/operations/database/create.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/create.ts",
@@ -631,8 +799,10 @@
     {
       "file": "extensions/behaviors/operations/database/destroy_owned.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/destroy_owned.ts",
@@ -650,7 +820,9 @@
       "file": "extensions/behaviors/operations/database/destroy.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/destroy.ts",
@@ -670,14 +842,18 @@
     {
       "file": "extensions/behaviors/operations/database/native_effect.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/read.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/read.ts",
@@ -689,7 +865,9 @@
       "file": "extensions/behaviors/operations/database/server_close.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/server_close.ts",
@@ -708,8 +886,11 @@
     {
       "file": "extensions/behaviors/operations/database/server_create.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET default"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/server_create.ts",
@@ -726,8 +907,10 @@
     {
       "file": "extensions/behaviors/operations/database/sqlite_native.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/sqlite_program.ts",
@@ -758,8 +941,10 @@
     {
       "file": "extensions/behaviors/operations/database/user_create.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/database/user_create.ts",
@@ -785,6 +970,15 @@
       ]
     },
     {
+      "file": "extensions/behaviors/operations/dependency-merge/admission.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET <unknown>",
+        "POST <unknown>"
+      ]
+    },
+    {
       "file": "extensions/behaviors/operations/dependency-merge/contents.ts",
       "rule": "custom-control",
       "count": 4,
@@ -795,8 +989,10 @@
     {
       "file": "extensions/behaviors/operations/dependency-merge/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/dependency-merge/mod.ts",
@@ -819,22 +1015,35 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/failure.ts",
+      "file": "extensions/behaviors/operations/documents/cleanup.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/failure.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>",
+        "POST /failure"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/firewall/direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/firewall/inspection.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/cli_install_program.ts",
@@ -861,8 +1070,10 @@
     {
       "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/docker_migration_direct.ts",
@@ -889,13 +1100,17 @@
       "file": "extensions/behaviors/operations/fleet/maintenance.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
@@ -906,14 +1121,18 @@
     {
       "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/recipe_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/recipe_local.ts",
@@ -942,7 +1161,9 @@
       "file": "extensions/behaviors/operations/fleet/recipe-pr/direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
@@ -977,8 +1198,10 @@
     {
       "file": "extensions/behaviors/operations/fleet/release.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/github-app/mod.ts",
@@ -989,8 +1212,10 @@
     {
       "file": "extensions/behaviors/operations/github-app/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/github-app/mod.ts",
@@ -1022,6 +1247,14 @@
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/app_step.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "GET <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-deploy/app_step.ts",
       "rule": "multi-action",
       "count": 2,
       "evidence": [
@@ -1032,8 +1265,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
@@ -1052,8 +1287,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_production.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 6,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_production.ts",
@@ -1096,13 +1333,17 @@
       "file": "extensions/behaviors/operations/instance-deploy/policy_activity.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/rollback_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/runner_local.ts",
@@ -1122,8 +1363,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/setup_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/vp_local_python.ts",
@@ -1191,7 +1434,9 @@
       "file": "extensions/behaviors/operations/instance-environment/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-environment/runtime_cache_program.ts",
@@ -1204,6 +1449,14 @@
       "rule": "gateway-http",
       "count": 1,
       "evidence": []
+    },
+    {
+      "file": "extensions/behaviors/operations/instance-lifecycle/children.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/clone_root.ts",
@@ -1221,7 +1474,9 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_database.ts",
@@ -1238,8 +1493,10 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_material.ts",
@@ -1251,7 +1508,9 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_php.ts",
@@ -1262,14 +1521,18 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_root.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_steps.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/destroy_system.ts",
@@ -1304,7 +1567,9 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/production_home_system.ts",
@@ -1333,8 +1598,10 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_root.ts",
@@ -1352,7 +1619,9 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/provisioning_source.ts",
@@ -1364,13 +1633,17 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/register_root.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/rename_root.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
@@ -1383,8 +1656,10 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_archive.ts",
@@ -1399,8 +1674,10 @@
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
@@ -1412,7 +1689,9 @@
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
@@ -1446,8 +1725,10 @@
     {
       "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
@@ -1467,8 +1748,11 @@
     {
       "file": "extensions/behaviors/operations/integrations/metrics_fleet_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/integrations/metrics_fleet_direct.ts",
@@ -1514,7 +1798,9 @@
       "file": "extensions/behaviors/operations/integrations/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/integrations/websocket_direct.ts",
@@ -1527,8 +1813,10 @@
     {
       "file": "extensions/behaviors/operations/integrations/websocket_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/integrations/websocket_runtime_system.ts",
@@ -1594,8 +1882,10 @@
     {
       "file": "extensions/behaviors/operations/node-bootstrap/direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node-bootstrap/direct.ts",
@@ -1607,7 +1897,9 @@
       "file": "extensions/behaviors/operations/node-bootstrap/packages.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
@@ -1652,8 +1944,10 @@
     {
       "file": "extensions/behaviors/operations/node/converge_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/converge_dns_program.ts",
@@ -1673,7 +1967,9 @@
       "file": "extensions/behaviors/operations/node/converge_footprint.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/converge_footprint.ts",
@@ -1818,7 +2114,9 @@
       "file": "extensions/behaviors/operations/node/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
@@ -1837,8 +2135,10 @@
     {
       "file": "extensions/behaviors/operations/node/network_root.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/observer_install_system.ts",
@@ -1890,8 +2190,10 @@
     {
       "file": "extensions/behaviors/operations/node/rekey_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/rekey_local.ts",
@@ -1910,8 +2212,10 @@
     {
       "file": "extensions/behaviors/operations/node/removal_root.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/removal_root.ts",
@@ -1959,20 +2263,26 @@
     {
       "file": "extensions/behaviors/operations/node/role_certificates.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_metrics.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_metrics.ts",
@@ -1983,8 +2293,10 @@
     {
       "file": "extensions/behaviors/operations/node/role_publication.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_relocate_direct_local.ts",
@@ -2010,14 +2322,18 @@
     {
       "file": "extensions/behaviors/operations/node/role_removal.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
@@ -2044,7 +2360,9 @@
       "file": "extensions/behaviors/operations/node/settings.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/test-fixture.ts",
@@ -2055,8 +2373,10 @@
     {
       "file": "extensions/behaviors/operations/node/wireguard_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/node/wireguard_direct.ts",
@@ -2152,13 +2472,17 @@
       "file": "extensions/behaviors/operations/processes-schedules/control.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/create.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/installation.ts",
@@ -2199,8 +2523,10 @@
     {
       "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/instance.ts",
@@ -2212,7 +2538,9 @@
       "file": "extensions/behaviors/operations/processes-schedules/process-control.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/process-installation.ts",
@@ -2252,6 +2580,14 @@
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "GET https://gateway.orbit/api/v1/schedules/<dynamic>/complete"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
       "rule": "multi-action",
       "count": 11,
       "evidence": [
@@ -2280,7 +2616,9 @@
       "file": "extensions/behaviors/operations/processes-schedules/start.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/vite-system.ts",
@@ -2316,8 +2654,10 @@
     {
       "file": "extensions/behaviors/operations/routes/cluster-router.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
@@ -2330,8 +2670,10 @@
     {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
@@ -2389,7 +2731,9 @@
       "file": "extensions/behaviors/operations/routes/mutation-steps.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/php-shared-program.ts",
@@ -2400,14 +2744,18 @@
     {
       "file": "extensions/behaviors/operations/routes/publication.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/removal.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 5,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/removal.ts",
@@ -2457,8 +2805,10 @@
     {
       "file": "extensions/behaviors/operations/routes/target-set.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 6,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/target-set.ts",
@@ -2470,13 +2820,17 @@
       "file": "extensions/behaviors/operations/routes/target-unset.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/verification.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/routes/verification.ts",
@@ -2491,8 +2845,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 3,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/cache_fill_direct.ts",
@@ -2513,10 +2869,20 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/task-vms/driver.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
       "file": "extensions/behaviors/operations/task-vms/enrollment_direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/enrollment_runtime.ts",
@@ -2643,8 +3009,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_build_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_cleanup.ts",
@@ -2702,8 +3070,11 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_reaper.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_reaper.ts",
@@ -2762,7 +3133,9 @@
       "file": "extensions/behaviors/operations/task-vms/incus_direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/incus_local.ts",
@@ -2782,7 +3155,9 @@
       "file": "extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/lifecycle.ts",
@@ -2802,13 +3177,17 @@
       "file": "extensions/behaviors/operations/task-vms/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/model_keys_native.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
@@ -2821,8 +3200,11 @@
     {
       "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> /v0/management/api-keys",
+        "<unknown> /v1/models"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/model_keys.ts",
@@ -2867,8 +3249,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/park.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/pi_delivery.ts",
@@ -2923,14 +3307,18 @@
     {
       "file": "extensions/behaviors/operations/task-vms/provision_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/resume_direct.ts",
@@ -2961,8 +3349,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/resume.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/resume.ts",
@@ -2989,7 +3379,9 @@
       "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
@@ -3006,8 +3398,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/sweep.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_image_api.ts",
@@ -3020,8 +3414,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_image_direct.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_image_direct.ts",
@@ -3046,8 +3442,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_sweep.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/upcloud_sweep.ts",
@@ -3065,7 +3463,9 @@
       "file": "extensions/behaviors/operations/tasks/analysis.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/cancellation.ts",
@@ -3079,7 +3479,9 @@
       "file": "extensions/behaviors/operations/tasks/cancellation.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/check_program.ts",
@@ -3107,8 +3509,10 @@
     {
       "file": "extensions/behaviors/operations/tasks/check.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 4,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/check.ts",
@@ -3126,13 +3530,17 @@
       "file": "extensions/behaviors/operations/tasks/provision.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/publish.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/script_program.ts",
@@ -3153,7 +3561,9 @@
       "file": "extensions/behaviors/operations/tasks/script.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tasks/turn.ts",
@@ -3164,6 +3574,14 @@
     {
       "file": "extensions/behaviors/operations/tasks/turn.ts",
       "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/operations/tools/direct-contract.ts",
+      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -3171,7 +3589,9 @@
       "file": "extensions/behaviors/operations/tools/direct.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
@@ -3209,6 +3629,12 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/operations/tools/node.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
       "count": 232,
@@ -3223,8 +3649,10 @@
     {
       "file": "extensions/behaviors/operations/vault/mod.ts",
       "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/vault/mod.ts",
@@ -3239,6 +3667,15 @@
       "evidence": []
     },
     {
+      "file": "extensions/behaviors/orbit_deps.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>",
+        "GET <unknown>"
+      ]
+    },
+    {
       "file": "extensions/behaviors/orbit_driver.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3248,7 +3685,9 @@
       "file": "extensions/behaviors/orbit_gateway.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "GET <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/orbit_group_run.ts",
@@ -3280,7 +3719,9 @@
       "file": "extensions/behaviors/production-smoke/failure.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/production-smoke/mod.ts",
@@ -3294,16 +3735,45 @@
       "file": "extensions/behaviors/production-smoke/mod.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/production-smoke/recovery.ts",
       "rule": "gateway-http",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
     },
     {
       "file": "extensions/behaviors/production-smoke/repair.ts",
+      "rule": "gateway-http",
+      "count": 1,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
+      "rule": "gateway-http",
+      "count": 3,
+      "evidence": [
+        "GET <unknown>",
+        "POST /api/v1/task-groups"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/projects/horizon-new-dawn/gateway.ts",
+      "rule": "gateway-http",
+      "count": 2,
+      "evidence": [
+        "<unknown> <unknown>"
+      ]
+    },
+    {
+      "file": "extensions/behaviors/projects/horizon-new-dawn/mod.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": []

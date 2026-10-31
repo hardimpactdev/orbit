@@ -4,7 +4,9 @@ import { stringify } from "jsr:@std/yaml@1.0.12";
 Deno.test("placement lint accepts matching nested selectors and refuses a foreign Node label", async () => {
   const root = await Deno.makeTempDir();
   try {
-    for (const directory of ["models", "workflows", "extensions/behaviors"]) {
+    for (
+      const directory of ["models", "workflows", "extensions/behaviors"]
+    ) {
       await Deno.mkdir(`${root}/${directory}`, { recursive: true });
     }
     await Deno.writeTextFile(
@@ -132,9 +134,83 @@ Deno.test("Node workflow imports cannot launch unguarded local processes or file
         stderr: "piped",
       }).output();
       assertEquals(result.success, false);
-      assertStringIncludes(new TextDecoder().decode(result.stderr), reason);
+      assertStringIncludes(
+        new TextDecoder().decode(result.stderr),
+        reason,
+      );
     }
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+const checker = import.meta.resolve("./lint-node-workers.ts");
+
+async function check(
+  task: Record<string, unknown>,
+  labels: Record<string, string> = { node: "209" },
+) {
+  const root = await Deno.makeTempDir({ prefix: "node-worker-lint-" });
+  try {
+    for (const folder of ["extensions/behaviors", "models", "workflows"]) {
+      await Deno.mkdir(`${root}/${folder}`, { recursive: true });
+    }
+    await Deno.writeTextFile(
+      `${root}/workflows/workflow-test.yaml`,
+      stringify({
+        jobs: [{
+          name: "test",
+          steps: [{
+            name: "action",
+            target: "orbit-node-209",
+            labels,
+            task,
+          }],
+        }],
+      }),
+    );
+    const result = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "--allow-read", checker, root],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    return {
+      success: result.success,
+      diagnostic: new TextDecoder().decode(result.stderr),
+    };
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+}
+
+const shell = {
+  type: "behavior",
+  behaviorType: "command/shell",
+  methodName: "execute",
+  inputs: { run: "printf '%s\\n' public" },
+};
+
+Deno.test("reviewed inline native shell is accepted on the matching Node", async () => {
+  assertEquals((await check(shell)).success, true);
+});
+
+Deno.test("native shell keeps exact Node placement checks", async () => {
+  const result = await check(shell, { node: "9" });
+  assertEquals(result.success, false);
+  assertStringIncludes(result.diagnostic, "Node target and label disagree");
+});
+
+Deno.test("native shell exemption is limited to its execute method", async () => {
+  const result = await check({ ...shell, methodName: "other" });
+  assertEquals(result.success, false);
+  assertStringIncludes(result.diagnostic, "command/shell.execute");
+});
+
+Deno.test("third-party behavior types remain refused", async () => {
+  const result = await check({
+    ...shell,
+    behaviorType: "@third-party/shell",
+  });
+  assertEquals(result.success, false);
+  assertStringIncludes(result.diagnostic, "not third-party extensions");
 });
