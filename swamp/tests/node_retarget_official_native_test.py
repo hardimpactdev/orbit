@@ -124,7 +124,7 @@ elif args[:2]==['/usr/bin/wg','show']:print('orbit')
                         globals_ = task["globalArgs"]
                         globals_["sshBinary"] = str(ssh)
                         if isinstance(globals_["transport"], dict):
-                            globals_["transport"].pop("identityContent")
+                            globals_["transport"].pop("identityContent", None)
                             globals_["transport"]["identityFile"] = str(key)
             (self.repo / "workflows" / workflow_file).write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
@@ -146,7 +146,12 @@ elif args[:2]==['/usr/bin/wg','show']:print('orbit')
             "address": "10.44.0.2",
             "public_key": public,
         }
-        intent = {"node_id": 2, "has_roles": True, "target": target}
+        intent = {
+            "node_id": 2,
+            "has_roles": True,
+            "target": target,
+            "identity_file": str(key),
+        }
 
         def run(current, success=True):
             result = json.loads(
@@ -163,7 +168,7 @@ elif args[:2]==['/usr/bin/wg','show']:print('orbit')
                     "--input",
                     "intent:json=" + json.dumps(current),
                     "--input",
-                    'execution_secrets:json={"identity":{"vault":"orbit-control-inputs","key":"bootstrap-identity-node-14"}}',
+                    "execution_secrets:json={}",
                     success=success,
                 ).stdout
             )

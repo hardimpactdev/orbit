@@ -21,31 +21,6 @@
       },
       "execution_secrets": {
         "type": "object",
-        "properties": {
-          "identity": {
-            "type": "object",
-            "properties": {
-              "vault": {
-                "type": "string",
-                "enum": [
-                  "orbit-control-inputs"
-                ]
-              },
-              "key": {
-                "type": "string",
-                "pattern": "^bootstrap-identity-node-[1-9][0-9]*$"
-              }
-            },
-            "required": [
-              "vault",
-              "key"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "identity"
-        ],
         "additionalProperties": false
       }
     },
@@ -79,7 +54,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ inputs.intent.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ inputs.intent.identity_file }}",
                 "hostKeys": "${{ inputs.intent.target.host_keys }}"
               },
               "hosts": [
@@ -156,7 +131,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -266,7 +241,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -475,7 +450,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -555,7 +530,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -609,7 +584,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -693,7 +668,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -773,7 +748,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -857,7 +832,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [
@@ -1073,7 +1048,7 @@
               "transport": {
                 "kind": "ssh",
                 "user": "${{ self.candidate.target.user }}",
-                "identityContent": "${{ vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key) }}",
+                "identityFile": "${{ self.candidate.identity_file }}",
                 "hostKeys": "${{ self.candidate.target.host_keys }}"
               },
               "hosts": [

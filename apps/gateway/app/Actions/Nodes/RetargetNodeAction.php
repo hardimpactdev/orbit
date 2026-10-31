@@ -6,15 +6,13 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\RetargetNodeData;
-use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeNetworkInput;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeWireGuardCommandInput;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -23,9 +21,9 @@ use Illuminate\Support\Facades\DB;
 /** Captures the prior endpoint; only terminal native success commits its replacement. */
 final readonly class RetargetNodeAction
 {
-    public function __construct(private StartOperationAction $operations, private GatewayServingHost $gateway,
+    public function __construct(private StartOperationAction $operations, private SwampSshExecutionInput $ssh,
         private NodeNetworkInput $network, private NodeWireGuardCommandInput $hub,
-        private SshKeyProvider $keys, private SwampCommandStep $steps, private NodeProvisioningLock $lock) {}
+        private NodeProvisioningLock $lock) {}
 
     public function execute(RetargetNodeData $data): Operation
     {
@@ -55,16 +53,9 @@ final readonly class RetargetNodeAction
                 || ! is_string($node->ssh_host_fingerprint) || $node->ssh_host_fingerprint === '') {
                 throw new ResourceOperationException('node.retarget_requires_vpn', 'Retarget requires an active Node with its pinned WireGuard identity.', 409);
             }
-            $gateway = $this->gateway->nodeId();
-            if ($gateway === null || ! Node::query()->whereKey($gateway)->where('status', LifecycleStatus::Active)->exists()) {
-                throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Retarget requires the active Gateway SSH identity owner.', 409);
-            }
+            $execution = $this->ssh->identity();
             $roles = $node->roles()->exists();
-            $identity = file_get_contents($this->keys->privateKeyPath());
-            if (! is_string($identity) || $identity === '') {
-                throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The managed SSH identity is unavailable.', 503);
-            }
-            $intent = ['node_id' => $node->id, 'has_roles' => $roles,
+            $intent = ['node_id' => $node->id, 'has_roles' => $roles, 'identity_file' => $execution['identity_file'],
                 'target' => ['host' => $roles ? $node->wireguard_ip : $data->publicSshHost,
                     'port' => $roles ? 22 : $data->publicSshPort, 'user' => $node->user,
                     'host_keys' => [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
@@ -74,10 +65,9 @@ final readonly class RetargetNodeAction
                 $intent += ['hub' => $this->hub->capture($node), 'network' => $this->network->capture($node, true)];
             }
 
-            return $this->operations->execute('node.retarget', 'node', $node->id, 209,
-                ['intent' => $intent, 'execution_secrets' => ['identity' => $this->steps->executionCopy(
-                    'orbit-control-inputs', 'bootstrap-identity-node-'.$gateway, $identity)],
-                    'participant_node_ids' => array_values(array_unique([209, $gateway, $node->id, ...($roles ? [] : [ValidatedData::integer(ValidatedData::object($intent['hub'])['hub_id'])])]))],
+            return $this->operations->execute('node.retarget', 'node', $node->id, $execution['control_node_id'],
+                ['intent' => $intent, 'execution_secrets' => [],
+                    'participant_node_ids' => array_values(array_unique([$execution['control_node_id'], $node->id, ...($roles ? [] : [ValidatedData::integer(ValidatedData::object($intent['hub'])['hub_id'])])]))],
                 'operator', request()->attributes->getString('orbit.request_id'));
         });
     }

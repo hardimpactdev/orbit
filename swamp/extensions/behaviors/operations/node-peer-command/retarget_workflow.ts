@@ -8,9 +8,7 @@ const globals = {
     transport: {
         kind: "ssh",
         user: e("inputs.intent.target.user"),
-        identityContent: e(
-            "vault.get(inputs.execution_secrets.identity.vault, inputs.execution_secrets.identity.key)",
-        ),
+        identityFile: e("inputs.intent.identity_file"),
         hostKeys: e("inputs.intent.target.host_keys"),
     },
     hosts: [{
@@ -286,25 +284,6 @@ export function retargetWorkflow() {
                 intent: { type: "object" },
                 execution_secrets: {
                     type: "object",
-                    properties: {
-                        identity: {
-                            type: "object",
-                            properties: {
-                                vault: {
-                                    type: "string",
-                                    enum: ["orbit-control-inputs"],
-                                },
-                                key: {
-                                    type: "string",
-                                    pattern:
-                                        "^bootstrap-identity-node-[1-9][0-9]*$",
-                                },
-                            },
-                            required: ["vault", "key"],
-                            additionalProperties: false,
-                        },
-                    },
-                    required: ["identity"],
                     additionalProperties: false,
                 },
             },

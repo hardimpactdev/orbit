@@ -21,6 +21,9 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(FleetFixtures::node('key-gateway', [RoleName::Gateway]));
     $this->peer = FleetFixtures::node('key-peer');
     Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'public_ssh_host' => '192.0.2.209']);
+    $this->hub->update(['wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '203.0.113.11']);
+    $this->gateway->update(['wireguard_ip' => '10.44.0.12', 'public_ssh_host' => '203.0.113.12']);
+    $this->peer->update(['wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '203.0.113.13']);
     $this->peer->update(['ssh_host_fingerprint' => null, 'wireguard_public_key' => base64_encode(str_repeat('a', 32))]);
     $this->old = $this->peer->wireguard_public_key;
     $this->key = base64_encode(str_repeat('b', 32));

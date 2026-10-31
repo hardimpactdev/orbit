@@ -9,7 +9,7 @@ covers:
 
 # Node retarget
 
-`php artisan orbit:node-retarget NAME HOST [--ssh-port=PORT]` admits one `node.retarget` Operation. Workers on Node209 verify the admitted endpoint through official SSH. The target Node needs no Swamp binary or worker. The Gateway records the new public SSH host and port only after native terminal success. The pinned host key, WireGuard address and other identity fields stay unchanged.
+`php artisan orbit:node-retarget NAME HOST [--ssh-port=PORT]` admits one `node.retarget` Operation. Workers on Node209 verify the admitted endpoint through official SSH. The target Node needs no Swamp binary or worker. The canonical public SSH descriptor supplies the approved identity-file locator on Node209; Retarget captures the admitted target endpoint and its stored host pins. The Gateway records the new public SSH host and port only after native terminal success. The pinned host key, WireGuard address and other identity fields stay unchanged.
 
 ## One lifecycle owner per Node name
 
@@ -55,6 +55,4 @@ Admission refusals leave the endpoint unchanged. Native failures belong to the r
 | `node.provisioning_busy` | Another admission holds the Node-name lifecycle lock. |
 | `node.not_active` | The selected Node does not exist. |
 | `node.retarget_requires_vpn` | The Node is inactive or lacks its recorded pinned WireGuard identity. |
-| `node.bootstrap_gateway_unavailable` | There is no active Gateway SSH identity owner. |
-| `node.bootstrap_identity_unavailable` | The existing Gateway SSH execution identity is unavailable. |
 | `operation.native_failed` | A native verification or effect failed; inspect the Operation and native run. |

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RetargetNodeAction;
 use App\Data\Nodes\RetargetNodeData;
-use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeRetargetProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
@@ -22,17 +21,14 @@ use Tests\Support\Fleet\FleetFixtures;
 beforeEach(function (): void {
     FleetFixtures::bind();
     $this->gateway = $this->markAsGateway(FleetFixtures::node('retarget-gateway', [RoleName::Gateway]));
-    app(GatewayServingHost::class)->remember($this->gateway);
     $this->hub = FleetFixtures::node('retarget-hub', [RoleName::Vpn]);
     $this->peer = FleetFixtures::node('retarget-peer');
     Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'public_ssh_host' => '192.0.2.209']);
     $this->peer->update(['user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAA',
         'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
     $this->prior = $this->peer->only(['public_ssh_host', 'public_ssh_port', 'wireguard_public_key']);
-    $this->identity = config('orbit.home').'/retarget-identity';
-    file_put_contents($this->identity, 'synthetic-retarget-identity');
     $keys = Mockery::mock(SshKeyProvider::class);
-    $keys->shouldReceive('privateKeyPath')->andReturn($this->identity);
+    $keys->shouldNotReceive('privateKeyPath');
     app()->instance(SshKeyProvider::class, $keys);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run', 'runOver');
@@ -55,7 +51,19 @@ it('captures immutable candidate and exact hub context without modifying the cur
         ->and($operation->input['intent']['target']['host'])->toBe('192.0.2.100')
         ->and($operation->input['intent']['hub']['context_node_id'])->toBe($this->peer->id)
         ->and($this->peer->refresh()->only(array_keys($this->prior)))->toBe($this->prior)
-        ->and(json_encode($operation->input))->not->toContain('synthetic-retarget-identity');
+        ->and($operation->input['execution_secrets'])->toBe([])
+        ->and($operation->input['intent']['identity_file'])->toBe('/run/credentials/orbit-node-worker.service/proxy-ssh-identity')
+        ->and($this->socket->sent)->toHaveCount(1)
+        ->and($this->socket->sent[0]['type'])->toBe('workflow.run');
+});
+
+it('uses Node209 public SSH capture without a Gateway worker or private key', function (): void {
+    config(['swamp_workers.nodes' => []]);
+    $this->gateway->roles()->delete();
+    $this->peer->roles()->create(['role' => RoleName::CiRunner]);
+    $operation = app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 2222));
+    expect($operation->node_id)->toBe(209)->and($operation->input['execution_secrets'])->toBe([])
+        ->and($operation->input['intent']['target']['host'])->toBe($this->peer->wireguard_ip);
 });
 
 it('verifies an existing role owner through WireGuard without scheduling peer or hub changes', function (): void {
