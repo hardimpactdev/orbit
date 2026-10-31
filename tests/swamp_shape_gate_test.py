@@ -57,6 +57,38 @@ class ShapeGate(unittest.TestCase):
             git("add", ".")
             self.assertNotEqual(gate().returncode, 0)
 
+    def test_initial_import_uses_preserved_source_history_and_matching_repo_identity(self):
+        with tempfile.TemporaryDirectory(prefix="shape-import-") as scratch:
+            root = Path(scratch)
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
+            git("init", "--quiet")
+            git("config", "user.email", "shape@example.invalid")
+            git("config", "user.name", "Shape fixture")
+            (root / "config").mkdir()
+            (root / "extensions/behaviors").mkdir(parents=True)
+            (root / ".swamp.yaml").write_text("repoId: fixture-repository\n")
+            (root / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
+            (root / "config/swamp-shape-baseline.json").write_text('{"schema":1,"entries":[]}')
+            (root / "extensions/behaviors/read.ts").write_text("export const value=1;\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "original Swamp tree")
+            source = git("rev-parse", "HEAD")
+            swamp = root / "swamp"
+            swamp.mkdir()
+            for name in ["config", "extensions", ".swamp.yaml"]:
+                (root / name).rename(swamp / name)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "preserve source under swamp")
+            command = [DENO,"run","-A",str(ROOT / "bin/check-swamp-shape.ts"),"--base",source,"--python-analyzer",str(ROOT / "bin/swamp-shape-python.py")]
+            for event in ("pull_request", "push"):
+                # The import PR and first main push both compare to a pre-import Orbit tree.
+                result = subprocess.run(command, cwd=swamp, capture_output=True, text=True, env={**os.environ, "GITHUB_EVENT_NAME": event})
+                self.assertEqual(result.returncode, 0, f"{event}: {result.stderr}")
+            (swamp / ".swamp.yaml").write_text("repoId: unrelated-repository\n")
+            result = subprocess.run(command, cwd=swamp, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

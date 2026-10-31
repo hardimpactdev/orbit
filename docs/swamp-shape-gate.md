@@ -60,3 +60,10 @@ agent actions are grandfathered; only growing counts or new action evidence fail
 Unknown agent targets remain unknown findings. A fresh PR also cannot reuse a
 stale allowance after the base source reduced its debt. The baseline must match
 current findings, so removals reduce the checked-in list in the same PR.
+
+For the history-preserving monorepo import only, the caller may pass the recorded
+Swamp source SHA when the actual comparison base has no `swamp/.swamp.yaml`.
+This applies to the import PR and its first main push. The checker accepts the
+unprefixed source tree only when that commit is an ancestor and its repository
+identity matches. Subsequent runs compare the actual Orbit base under `swamp/`.
+Lane24 records the import provenance and selects this one-time base.

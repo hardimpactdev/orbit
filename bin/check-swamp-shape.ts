@@ -497,6 +497,29 @@ export function analyzeTs(
   return result;
 }
 
+/** Public vault/key descriptors are references, including closed named containers. */
+export function referenceOnlySchema(raw: unknown): boolean {
+  const schema = object(raw),
+    properties = object(schema.properties),
+    keys = Object.keys(properties);
+  if (
+    schema.type !== "object" || schema.additionalProperties !== false ||
+    !keys.length
+  ) return false;
+  const required = schema.required;
+  if (!Array.isArray(required) || keys.some((key) => !required.includes(key))) {
+    return false;
+  }
+  if (keys.length === 2 && keys.includes("vault") && keys.includes("key")) {
+    const vault = object(properties.vault), key = object(properties.key);
+    return vault.type === "string" && Array.isArray(vault.enum) &&
+      vault.enum.length > 0 && vault.enum.every((value) =>
+        typeof value === "string"
+      ) && key.type === "string" && typeof key.pattern === "string";
+  }
+  return Object.values(properties).every(referenceOnlySchema);
+}
+
 export function analyzeYaml(file: string, source: string): Analysis {
   const result = empty();
   const add = (rule: string, evidence: string[] = [], count = 1) =>
@@ -574,7 +597,10 @@ export function analyzeYaml(file: string, source: string): Analysis {
       return;
     }
     for (const [key, item] of Object.entries(object(value))) {
-      if (path.join(".") === "inputs.properties" && secret(key)) {
+      if (
+        path[0] === "inputs" && path.at(-1) === "properties" && secret(key) &&
+        !referenceOnlySchema(item)
+      ) {
         add("secret-input");
       }
       if (
@@ -736,15 +762,50 @@ async function run(argv: string[], stdin?: string) {
 }
 let gitPrefix = "";
 async function filesAt(ref?: string): Promise<Map<string, string>> {
-  const listed = await run(
+  let listed = await run(
     ref
       ? ["git", "ls-tree", "-rz", "--name-only", ref, "--", "."]
       : ["git", "ls-files", "-z"],
   );
   if (!listed.success) throw new Error("Cannot enumerate source tree");
-  const names = listed.text.split("\0").filter((f) =>
-    scope(f) || f === BASELINE || f === INVENTORY
-  );
+  let blobPrefix = gitPrefix;
+  const selected = (text: string) =>
+    text.split("\0").filter((f) =>
+      scope(f) || f === BASELINE || f === INVENTORY
+    );
+  if (ref && gitPrefix && !selected(listed.text).length) {
+    // Initial history-preserving import: the explicit source base is still at its old root.
+    const original = await run(["git", "show", `${ref}:.swamp.yaml`]);
+    const lineage = await run([
+      "git",
+      "merge-base",
+      "--is-ancestor",
+      ref,
+      "HEAD",
+    ]);
+    const current = object(parse(await Deno.readTextFile(".swamp.yaml")));
+    if (
+      !original.success || !lineage.success || !current.repoId ||
+      object(parse(original.text)).repoId !== current.repoId
+    ) {
+      throw new Error(
+        "No matching Swamp base tree; pass the preserved source commit for the first import",
+      );
+    }
+    const root = (await run(["git", "rev-parse", "--show-toplevel"])).text
+      .trim();
+    listed = await run([
+      "git",
+      "-C",
+      root,
+      "ls-tree",
+      "-rz",
+      "--name-only",
+      ref,
+    ]);
+    blobPrefix = "";
+  }
+  const names = selected(listed.text);
   if (!ref) {
     return new Map(
       await Promise.all(
@@ -754,7 +815,7 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   const batch = await run(
     ["git", "cat-file", "--batch"],
-    names.map((f) => `${ref}:${gitPrefix}${f}\n`).join(""),
+    names.map((f) => `${ref}:${blobPrefix}${f}\n`).join(""),
   );
   if (!batch.success) throw new Error("Cannot read base source tree");
   let offset = 0;

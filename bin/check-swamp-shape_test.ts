@@ -273,3 +273,49 @@ Deno.test("native stdin and protected environment do not become argv findings", 
     ).includes("secret-argv"),
   );
 });
+
+Deno.test("closed execution_secrets containers carry only public vault-key references", () => {
+  const ref = {
+    type: "object",
+    properties: {
+      vault: { type: "string", enum: ["orbit-control-inputs"] },
+      key: { type: "string", pattern: "^bootstrap-identity-node-[1-9][0-9]*$" },
+    },
+    required: ["vault", "key"],
+    additionalProperties: false,
+  };
+  const container = {
+    type: "object",
+    properties: { bootstrap_identity: ref },
+    required: ["bootstrap_identity"],
+    additionalProperties: false,
+  };
+  const yaml = (schema: unknown) =>
+    "inputs:\n  properties:\n    execution_secrets: " + JSON.stringify(schema) +
+    "\n" + workflow("        run: true\n");
+  assert(
+    !analyzeYaml("workflows/pilot.yaml", yaml(container)).findings.some((f) =>
+      f.rule === "secret-input"
+    ),
+  );
+  for (
+    const bad of [{ ...container, additionalProperties: true }, {
+      ...container,
+      properties: { password: { type: "string" } },
+    }, {
+      ...container,
+      properties: {
+        bootstrap_identity: {
+          ...ref,
+          properties: { ...ref.properties, value: { type: "string" } },
+        },
+      },
+    }]
+  ) {
+    assert(
+      analyzeYaml("workflows/pilot.yaml", yaml(bad)).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+});
