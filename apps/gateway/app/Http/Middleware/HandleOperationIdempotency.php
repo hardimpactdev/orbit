@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Data\Operations\OperationData;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationRequestFingerprint;
 use App\Http\Requests\Operations\StartsOperation;
@@ -33,6 +34,7 @@ final readonly class HandleOperationIdempotency
         if ($start === null) {
             return $next($request);
         }
+        app(DirectOperation::class)->writer($start->kind);
         if (! $request->headers->has('Idempotency-Key')) {
             if ($start->requiresKey) {
                 throw ValidationException::withMessages(['Idempotency-Key' => ['Idempotency-Key is required.']]);

@@ -16,8 +16,8 @@ final readonly class StartsOperation
 
     public static function forRoute(Route $route): ?self
     {
-        $controller = $route->getController();
-        if (! is_object($controller)) {
+        $controller = $route->getControllerClass();
+        if (! is_string($controller)) {
             return null;
         }
         $attribute = new \ReflectionMethod($controller, $route->getActionMethod())->getAttributes(self::class)[0] ?? null;

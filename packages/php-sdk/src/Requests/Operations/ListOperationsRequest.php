@@ -10,7 +10,7 @@ use Orbit\Sdk\Responses\Operations\OperationsResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 
-/** Lists the 50 newest operations the caller can access, newest first, without steps. */
+/** Lists the 50 newest operations the caller can access, newest first. */
 final class ListOperationsRequest extends GatewayRequest
 {
     #[\Override]

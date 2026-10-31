@@ -51,10 +51,7 @@ const recordedFixture = (name: string): Fixture => {
 
 const META = { request_id: "0198e15c-bf97-7c23-8f1f-61b8fe67a844" };
 
-const DEMO_STEPS: Record<string, string[]> = {
-    "instance.deploy": ["source_preparation", "environment_sync", "activation", "cleanup"],
-    "instance.rollback": ["rollback", "activation", "process_restart"],
-};
+
 const ok = (data: unknown, status = 200): Answer => ({ status, payload: { data, meta: META } });
 const failure = (status: number, code: string, message: string): Answer => ({
     status,
@@ -871,15 +868,14 @@ export function createDemoGateway() {
                             .filter(
                                 (operation) =>
                                     targetId === null || String(operation.target_id) === targetId,
-                            )
-                            .map(({ steps: _steps, ...operation }) => operation),
+                            ),
                     );
                 },
             ],
             [
                 "GET",
                 /^\/api\/v1\/operations\/(\d+)(?:\?(.*))?$/,
-                ([id = "", query = ""]) => readDemoOperation(Number(id), query),
+                ([id = ""]) => readDemoOperation(Number(id)),
             ],
             [
                 "GET",
@@ -1179,7 +1175,7 @@ export function createDemoGateway() {
             ],
         ];
 
-    /** A demo deploy or rollback: each read moves it one step on, so the page shows a run without a worker. */
+    /** A demo deploy or rollback: each read advances its native status, so the page shows a run without a worker. */
     function startDemoOperation(
         kind: string,
         instanceId: number,
@@ -1221,15 +1217,12 @@ export function createDemoGateway() {
             finished_at: null,
             // The demo has no worker to wait for, so the page reads again at once.
             poll_after_seconds: 0,
-            steps: [],
         };
         operations.push(operation);
-        const { steps: _steps, ...answer } = operation;
-
-        return ok(answer, 202);
+        return ok(operation, 202);
     }
 
-    function readDemoOperation(id: number, query: string): Answer {
+    function readDemoOperation(id: number): Answer {
         const operation = operations.find((candidate) => candidate.id === id);
 
         if (operation === undefined) {
@@ -1237,74 +1230,23 @@ export function createDemoGateway() {
         }
 
         advanceDemoOperation(operation);
-        const after = Number(new URLSearchParams(query).get("after_sequence") ?? -1);
-
-        return ok({
-            ...operation,
-            steps: (operation.steps ?? []).filter((step) => step.sequence > after),
-        });
+        return ok(operation);
     }
 
     function advanceDemoOperation(operation: Operation): void {
         if (TERMINAL.includes(operation.status)) {
             return;
         }
-
         const now = new Date().toISOString();
         const sequence = operation.sequence + 1;
-        const steps = operation.steps ?? [];
-
         if (operation.status === "queued") {
             Object.assign(operation, { status: "running", attempts: 1, started_at: now, sequence });
-            operation.steps = (DEMO_STEPS[operation.kind] ?? []).map((name, index) => ({
-                name,
-                position: index + 1,
-                status: "pending",
-                resumable: true,
-                sequence,
-                started_at: null,
-                finished_at: null,
-                error_code: null,
-                output: null,
-                output_truncated: false,
-            }));
-
             return;
         }
-
-        const running = steps.find((step) => step.status === "running");
-
-        if (running !== undefined) {
-            Object.assign(running, { status: "succeeded", finished_at: now, sequence });
-        }
-
-        const next = steps.find((step) => step.status === "pending");
-
-        if (next === undefined) {
-            Object.assign(operation, {
-                status: "succeeded",
-                current_step: null,
-                finished_at: now,
-                poll_after_seconds: null,
-                result: {
-                    deployment_id: null,
-                    release: null,
-                    selected_release: null,
-                    commit: null,
-                },
-                sequence,
-            });
-
-            return;
-        }
-
-        Object.assign(next, {
-            status: "running",
-            started_at: now,
-            output: `${next.name}: done\n`,
-            sequence,
+        Object.assign(operation, {
+            status: "succeeded", finished_at: now, poll_after_seconds: null,
+            result: { deployment_id: null, release: null, selected_release: null, commit: null }, sequence,
         });
-        Object.assign(operation, { current_step: next.name, sequence });
     }
 
     const documents = createDemoDocuments();
