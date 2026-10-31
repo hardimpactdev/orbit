@@ -11,11 +11,13 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Doctor\RunDoctorRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 
 final class DoctorRunsController extends Controller
 {
+    #[StartsOperation('doctor.inspect')]
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function store(
         RunDoctorRequest $request,
