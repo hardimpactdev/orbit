@@ -13,10 +13,8 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -58,7 +56,7 @@ it('projects safe native results once and refuses conflicting or unproven comple
     $this->postJson($this->path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'schedule.run_failed', 'result' => ['error_code' => 'schedule.run_failed']])->assertConflict();
 });
 
-it('refuses an intent without admitted start identity and never binds from a result', function (): void {
+it('refuses worker access before Gateway start binding and never binds from a result', function (): void {
     $this->operation->update(['state' => ['schedule_control_writer' => 'direct']]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
     $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'running', 'started_at' => '2026-10-30T12:00:00.000Z'])->assertConflict();
@@ -71,13 +69,13 @@ it('checks shared start-response and first-read ordering without a family token 
     config(['swamp.direct_writers' => ['schedule.run' => 'direct']]);
     $operation = app(StartOperationAction::class)->execute('schedule.run', 'node_schedules', $this->node->id, $this->node->id, ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit'], 'test', null);
     $path = '/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId;
-    $this->getJson($path)->assertConflict()->assertJsonPath('error.code', 'operation.run_unverified');
-    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run.search']);
+    $this->getJson($path)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
+    expect($this->socket->sent)->toBe([]);
     DB::commit();
     $this->getJson($path)->assertOk();
-    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run.search', 'workflow.run']);
+    expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->endpoint->bearerToken)->toBe('shared.scoped.fixture');
-    expect($this->socket->sent[1]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.run', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
+    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.run', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
@@ -108,33 +106,9 @@ it('projects a bounded failure without enabling the timer', function (): void {
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
 });
 
-it('projects a successful enable into desired timer state', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
-    $this->schedule->update(['desired_timer_state' => 'disabled']);
-    Event::fake([RecordBroadcast::class]);
-    $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    expect($this->schedule->fresh()->desired_timer_state->value)->toBe('enabled');
-    expect($this->schedule->fresh()->error_code)->toBeNull();
-    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleUpdated && $event->id === $this->schedule->id);
-});
-
-it('starts native enable on an executor Node without invoking the PHP runtime', function (): void {
-    $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-    $project = Project::query()->create(['name' => 'Enable proof', 'slug' => 'enable-proof', 'repository_url' => 'https://example.test/enable-proof.git']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'main',
-        'environment' => 'development', 'checkout_path' => '/home/orbit/apps/enable-proof', 'status' => 'active', 'provisioning_step' => 'active']);
-    $this->schedule->update(['target_type' => Instance::MorphAlias, 'target_id' => $instance->id, 'desired_timer_state' => 'disabled']);
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
-    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
-    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
-    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/activate')->assertAccepted()->assertJsonPath('data.kind', 'schedule.enable')->json('data.id');
-    $operation = Operation::query()->findOrFail($id);
-    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
-    expect($operation->state['schedule_control_writer'])->toBe('direct');
-    expect($operation->state['swamp_run_id'])->toBe($this->runId);
-    expect($operation->lock_key)->toBeNull();
-    expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
-    expect($this->socket->sent)->toHaveCount(1);
+it('keeps unconverted enable polled even with a stale direct setting', function (): void {
+    config(['swamp.direct_writers' => ['schedule.enable' => 'direct']]);
+    expect(app(DirectOperation::class)->writer('schedule.enable'))->toBeNull();
 });
 
 it('exposes admitted removal input and deletes the Schedule only on native success', function (): void {

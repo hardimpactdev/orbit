@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Schedules\CreateScheduleAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\Schedules\ScheduleOperationAdmission;
-use App\Domain\Schedules\ScheduleOperationExecution;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Schedules\ScheduleTargetType;
@@ -51,27 +50,34 @@ it('keeps unconverted executor Node Schedule mutations synchronous', function (s
     $id = $this->postJson('/api/v1/schedules', $payload)->assertCreated()
         ->assertJsonPath('data.status', 'active')->assertJsonMissingPath('data.kind')->json('data.id');
     $this->postJson('/api/v1/schedules', $payload)->assertOk()->assertJsonPath('data.id', $id);
+    $enabled = $this->postJson('/api/v1/schedules/'.$id.'/activate');
+    if ($owner === 'instance') {
+        $enabled->assertOk()->assertJsonPath('data.desired_timer_state', 'enabled');
+    } else {
+        $enabled->assertUnprocessable()->assertJsonPath('error.code', 'schedule.target_invalid');
+    }
+
     expect($this->runtime->installed)->toBe([$id, $id])
-        ->and($this->runtime->activated)->toBe([])
+        ->and($this->runtime->activated)->toBe($owner === 'instance' ? [$id] : [])
         ->and($this->runtime->removed)->toBe([]);
     $this->assertDatabaseHas('schedules', ['id' => $id]);
     $this->assertDatabaseCount('operations', 0);
 })->with(['services', 'worker'])->with(['node', 'instance']);
 
-it('fences a polled create when its Node becomes an executor before dispatch', function (): void {
+it('fences a polled enable when its Node becomes an executor before dispatch', function (): void {
     $schedule = app(CreateScheduleAction::class)->execute(new AddScheduleData(
         ScheduleTargetType::Node, $this->node->id, 'queued-schedule', 'daily', 'true', 60,
     ))['schedule'];
-    $operation = app(ScheduleOperationAdmission::class)->execute($schedule, 'create');
+    $operation = app(ScheduleOperationAdmission::class)->execute($schedule, 'enable');
     config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.create', 'worker' => 'schedule-safety'])->assertOk();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.enable', 'worker' => 'schedule-safety'])->assertOk();
 
     $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', [
-        'worker' => 'schedule-safety', 'key' => 'schedule-install', 'transport' => 'agent', 'name' => 'schedule.install',
-        'input' => app(ScheduleOperationExecution::class)->context($operation)['descriptors'][0]['input'],
+        'worker' => 'schedule-safety', 'key' => 'schedule-activate', 'transport' => 'agent', 'name' => 'schedule.activate',
+        'input' => array_intersect_key($operation->input, array_flip(['id', 'user', 'working_directory'])),
     ])->assertConflict()->assertJsonPath('error.code', 'schedule.executor_dependency');
 
-    expect($operation->refresh()->state['executor_runs']['schedule-install']['started'] ?? false)->toBeFalse();
-    expect(fn () => app(ScheduleOperationAdmission::class)->inputFor($schedule, 'create'))
+    expect($operation->refresh()->state['executor_runs']['schedule-activate']['started'] ?? false)->toBeFalse();
+    expect(fn () => app(ScheduleOperationAdmission::class)->inputFor($schedule, 'enable'))
         ->toThrow(ResourceOperationException::class, 'Schedules on Swamp executor Nodes require synchronous control.');
 });
