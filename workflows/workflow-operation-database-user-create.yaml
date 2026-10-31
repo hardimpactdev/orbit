@@ -1,0 +1,45 @@
+id: 2c8195ba-b28b-4bb1-9c65-abda5b48a477
+name: operation-database-user-create
+description: Apply one admitted SQL login and grants on its owning Node.
+target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [database_user.create] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: user
+    steps:
+      - name: create
+        dataOutputOverrides:
+          - specName: outcome
+            vary: [run_id]
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-user-create"
+          behaviorName: '${{ "database-user-server-" + string(inputs.node_id) }}'
+          methodName: create
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: project
+        dependsOn:
+          - step: create
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-user-create"
+          behaviorName: '${{ "database-user-server-" + string(inputs.node_id) }}'
+          methodName: project
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            outcome: "${{ steps.create.outputs.outcome }}"

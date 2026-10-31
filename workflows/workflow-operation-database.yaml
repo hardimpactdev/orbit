@@ -18,7 +18,7 @@ jobs:
           methodName: discover
           inputs:
             family: operation-database
-            kinds: ["database_server.create", "database_server.destroy", "database_server.close", "database.create", "database.destroy", "database_user.create", "database.write", "database.clone", "database.destroy_owned", "database.sqlite_export", "database.sqlite_seed", "database.sqlite_seed_abandon"]
+            kinds: ["database_server.create", "database_server.destroy", "database_server.close", "database.create", "database.destroy", "database.write", "database.clone", "database.destroy_owned", "database.sqlite_export", "database.sqlite_seed", "database.sqlite_seed_abandon"]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
