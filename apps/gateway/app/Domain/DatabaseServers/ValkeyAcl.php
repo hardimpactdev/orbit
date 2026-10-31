@@ -23,6 +23,10 @@ final readonly class ValkeyAcl
      */
     public static function users(DatabaseServer $server): array
     {
+        if ($server->default_open === null) {
+            throw new LogicException('Verify unknown default access before generating Valkey ACLs.');
+        }
+
         $users = $server->default_open
             ? []
             : [ValkeyAclUser::ADMIN => ValkeyAclUser::withPassword(ValkeyAclUser::ADMIN, ValkeyAclUser::ADMIN_RULES, $server->root_password)];
