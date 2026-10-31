@@ -78,8 +78,7 @@ it('projects manager refusal without synthesizing Gateway executor state', funct
 it('requires direct install without legacy discovery or claims and retains immutable ownership', function (): void {
     $direct = app(DirectOperation::class);
     expect($direct->writer('tool.install', $this->input, 209))->toBe('direct');
-    expect(fn () => $direct->writer('tool.install', $this->input, 210))->toThrow(ResourceOperationException::class);
-    expect(fn () => $direct->writer('tool.install'))->toThrow(ResourceOperationException::class);
+    expect($direct->writer('tool.install', $this->input, 210))->toBe('direct');
     config(['swamp.direct_writers' => ['tool.install' => 'polled']]);
     expect(fn () => $direct->writer('tool.install', $this->input, 209))->toThrow(ResourceOperationException::class);
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'tool.install', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable()->assertJsonPath('error.code', 'operation.executor_invalid');
@@ -91,14 +90,14 @@ it('requires direct install without legacy discovery or claims and retains immut
 it('starts a direct run after intent commits without a target hold', function (): void {
     config(['swamp.direct_writers' => ['tool.install' => 'direct'], 'swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     DB::beginTransaction();
     $operation = app(StartOperationAction::class)->execute('tool.install', 'node_tools', $this->node->id, $this->node->id, $this->input, 'operator', null);
     expect($operation->lock_key)->toBeNull();
     expect($socket->sent)->toBe([]);
     DB::commit();
-    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-direct');
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-install-direct');
     config(['swamp.direct_writers' => ['tool.install' => 'polled']]);
     expect(DirectOperation::owns($operation->fresh()))->toBeTrue();
 });
@@ -116,7 +115,7 @@ it('refuses first read until Gateway binds its start response and exposes only s
         $id = $request['payload']['inputs']['operation_id'];
         $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
 
-        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
+        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     };
     app()->instance(WebSocketClient::class, $socket);
     $operation = app(StartOperationAction::class)->execute('tool.install', 'node_tools', $this->node->id, $this->node->id, [...$this->input, 'materialize_command' => 'private', 'private' => 'discard'], 'operator', null);
@@ -165,7 +164,7 @@ it('projects exact removal idempotently and keeps manager intent', function (): 
 it('admits direct package and manager intents with immutable account pin and recipe data', function (): void {
     config(['swamp.direct_writers' => ['tool.install' => 'direct', 'tool.manager_converge' => 'direct'], 'swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'composer', 'vendor/package', null);
@@ -185,7 +184,7 @@ it('admits direct package and manager intents with immutable account pin and rec
 it('admits every supported Linux manager directly with no descriptor fields', function (string $manager): void {
     config(['swamp.run_token' => 'fixture-token']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-tool-direct', 'runId' => $this->runId]]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
     app()->instance(WebSocketClient::class, $socket);
     $operation = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::from($manager));
     expect($operation->state['tool_writer'])->toBe('direct');

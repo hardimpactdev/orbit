@@ -24,7 +24,7 @@ it('stamps each converted Tool kind directly without a target hold', function (s
     expect($operation->lock_key)->toBeNull();
 })->with(['tool.install', 'tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge']);
 
-it('refuses foreign missing or child targets for each converted Tool kind', function (string $kind): void {
+it('keeps the other Tool kinds scoped to standalone Node 209', function (string $kind): void {
     scopedToolNode(209);
     $direct = app(DirectOperation::class);
     expect($direct->writer($kind, ['manager' => 'vp'], 209))->toBe('direct');
@@ -33,7 +33,38 @@ it('refuses foreign missing or child targets for each converted Tool kind', func
     app(OperationIdempotency::class)->parent = new Operation()->forceFill(['id' => 1]);
     expect(fn () => $direct->writer($kind, ['parent_operation_id' => null], 209))->toThrow(ResourceOperationException::class);
     $this->assertDatabaseCount('operations', 0);
-})->with(['tool.install', 'tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge']);
+})->with(['tool.update', 'tool.remove', 'tool.adopt', 'tool.manager_converge']);
+
+it('starts a standalone install on its admitted Node with that account and agent pin', function (int $id, string $user): void {
+    $node = scopedToolNode($id);
+    $node->update(['user' => $user]);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture-token']);
+
+    $operation = app(StartToolOperationAction::class)->execute('install', $id, 'apt', 'hello', null);
+
+    expect($operation->node_id)->toBe($id);
+    expect($operation->target_id)->toBe($id);
+    expect($operation->input['user'])->toBe($user);
+    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($node));
+    expect($operation->parent_operation_id)->toBeNull();
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-install-direct');
+    expect($socket->sent[0]['payload']['inputs'])->toMatchArray(['node_id' => $id, 'kind' => 'tool.install']);
+})->with([[14, 'orbit'], [9, 'nckrtl'], [209, 'orbit']]);
+
+it('refuses a child install before recording or starting it', function (): void {
+    scopedToolNode(14);
+    $socket = scopedToolSocket();
+    app(OperationIdempotency::class)->parent = new Operation()->forceFill(['id' => 1]);
+
+    expect(fn () => app(StartToolOperationAction::class)->execute('install', 14, 'apt', 'hello', null))
+        ->toThrow(ResourceOperationException::class);
+
+    $this->assertDatabaseCount('operations', 0);
+    expect($socket->sent)->toBeEmpty();
+});
 
 it('refuses a disabled direct writer before recording work', function (string $kind): void {
     scopedToolNode(209);
