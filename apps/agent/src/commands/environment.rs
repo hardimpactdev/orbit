@@ -1,4 +1,9 @@
-//! Read-only Instance environment observation. Swamp owns all environment writes and merges.
+//! `instance.read-environment` and `instance.write-environment`: reads and replaces an Instance's `.env`, and merges Orbit's keys into
+//! `.env.testing`, inside its checkout or production home. The walk to the directory follows no link, the file must be
+//! the Instance user's regular file, and a write publishes a private candidate with one rename after it checked that
+//! neither the directory nor the file changed. This replaces the Python of `RemoteInstanceEnvironmentAccess`, check for
+//! check. It runs as root, so it checks the Instance user's ownership itself, writes through the directory's open
+//! descriptor, hands the candidate to the user, and runs Git as the user.
 
 #[cfg(target_os = "linux")]
 use crate::command::identity;
@@ -7,11 +12,17 @@ use crate::command_errors;
 #[cfg(target_os = "linux")]
 use base64::Engine;
 #[cfg(target_os = "linux")]
-use rustix::fs::{fstat, openat, Mode, OFlags, CWD};
+use rustix::fs::{fstat, openat, statat, AtFlags, Mode, OFlags, CWD};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 #[cfg(target_os = "linux")]
-use std::{fs, io::Read, os::fd::OwnedFd};
+use std::{
+    collections::BTreeSet,
+    fs,
+    io::{Read, Write},
+    os::fd::{AsFd, OwnedFd},
+    process::{Command as Process, Stdio},
+};
 
 command_errors! {
     pub enum EnvironmentError {
@@ -25,6 +36,8 @@ pub enum Operation {
     ReadCheck,
     Read,
     WriteCheck,
+    Write,
+    Merge,
 }
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -42,24 +55,38 @@ pub struct EnvironmentInput {
     /// `.env` or `.env.testing`.
     #[serde(default = "default_file")]
     pub file: String,
+    /// The keys a merge owns in `.env.testing`.
+    #[serde(default)]
+    pub managed_keys: Vec<String>,
+    /// The new content of a write, or the managed lines of a merge.
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 fn default_file() -> String {
     ".env".into()
 }
 
+/// One outcome, as the Python program printed it.
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Ok,
     Missing,
+    Tracked,
+    TrackingUnknown,
+    Changed,
+    Unchanged,
+    /// A boundary check refused before anything changed.
     Refused,
+    /// The work failed; with `installed`, after the replacement was in place.
     Failed,
 }
 
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Outcome {
     pub state: State,
+    /// The file's content in base64, for a read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     pub installed: bool,
@@ -78,6 +105,7 @@ fn outcome(state: State) -> Outcome {
 enum Stop {
     Boundary,
     Missing,
+    TrackingUnknown,
     Failed,
 }
 
@@ -87,12 +115,14 @@ impl From<std::io::Error> for Stop {
         Stop::Failed
     }
 }
+
 #[cfg(target_os = "linux")]
 impl From<rustix::io::Errno> for Stop {
     fn from(_: rustix::io::Errno) -> Self {
         Stop::Failed
     }
 }
+
 #[cfg(target_os = "linux")]
 fn boundary(condition: bool) -> Result<(), Stop> {
     if condition {
@@ -106,6 +136,7 @@ fn boundary(condition: bool) -> Result<(), Stop> {
 struct Access<'a> {
     input: &'a EnvironmentInput,
     uid: u32,
+    gid: u32,
 }
 
 #[cfg(target_os = "linux")]
@@ -183,6 +214,145 @@ impl Access<'_> {
             .map(|(_, metadata)| (metadata.st_dev, metadata.st_ino));
         boundary(current == destination)
     }
+
+    /// Whether Git tracks the file, asked as the user.
+    fn tracked(&self) -> Result<bool, Stop> {
+        let git = |arguments: &[&str]| {
+            let mut command = Process::new("git");
+            command
+                .args([
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-C",
+                    &self.input.base,
+                ])
+                .args(arguments)
+                .env("GIT_OPTIONAL_LOCKS", "0")
+                .env("LC_ALL", "C")
+                .stdin(Stdio::null());
+            identity::drop_to(&mut command, &self.input.user).map_err(|_| Stop::TrackingUnknown)?;
+            command.output().map_err(|_| Stop::TrackingUnknown)
+        };
+        let inside = git(&["rev-parse", "--is-inside-work-tree"])?;
+        let reason = inside
+            .stderr
+            .split(|byte| *byte == b'\n')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if inside.status.code() == Some(128)
+            && reason.starts_with(b"fatal: not a git repository (or any ")
+        {
+            return Ok(false);
+        }
+        if !inside.status.success() || inside.stdout != b"true\n" {
+            return Err(Stop::TrackingUnknown);
+        }
+        let listed = git(&["ls-files", "--error-unmatch", "--", &self.input.file])?;
+        match listed.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(Stop::TrackingUnknown),
+        }
+    }
+}
+
+/// A managed key and its whole line.
+#[cfg(target_os = "linux")]
+type Managed = (Vec<u8>, Vec<u8>);
+
+/// The managed lines of a merge, in their order: complete lines, each managed key once, and at least one.
+#[cfg(target_os = "linux")]
+fn managed_lines(supplied: &[u8], keys: &BTreeSet<Vec<u8>>) -> Result<Vec<Managed>, Stop> {
+    let mut updates: Vec<Managed> = Vec::new();
+    for line in supplied.split_inclusive(|byte| *byte == b'\n') {
+        let key = line
+            .split(|byte| *byte == b'=')
+            .next()
+            .unwrap_or_default()
+            .to_vec();
+        let repeated = updates.iter().any(|(seen, _)| *seen == key);
+        boundary(line.ends_with(b"\n") && !(keys.contains(&key) && repeated))?;
+        if keys.contains(&key) {
+            updates.push((key, line.to_vec()));
+        }
+    }
+    boundary(!updates.is_empty())?;
+    Ok(updates)
+}
+
+/// The key an assignment line sets, as `[ \t]*(export[ \t]+)?KEY[ \t]*=` reads it.
+#[cfg(target_os = "linux")]
+fn assigned_key(line: &[u8]) -> Option<&[u8]> {
+    let mut rest = line;
+    let skip = |rest: &[u8]| {
+        rest.iter()
+            .take_while(|byte| **byte == b' ' || **byte == b'\t')
+            .count()
+    };
+    rest = &rest[skip(rest)..];
+    if let Some(after) = rest.strip_prefix(b"export") {
+        let blank = skip(after);
+        if blank > 0 {
+            rest = &after[blank..];
+        }
+    }
+    let first = *rest.first()?;
+    if !(first.is_ascii_alphabetic() || first == b'_') {
+        return None;
+    }
+    let length = rest
+        .iter()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'_' || **byte == b'.')
+        .count();
+    let after = &rest[length..];
+    let after = &after[skip(after)..];
+    after.starts_with(b"=").then_some(&rest[..length])
+}
+
+/// The existing file with each managed key's line replaced once, its other assignments dropped, and the missing
+/// managed lines added at the end.
+#[cfg(target_os = "linux")]
+fn merged(existing: &[u8], keys: &BTreeSet<Vec<u8>>, updates: &[Managed]) -> Vec<u8> {
+    let mut lines: Vec<Vec<u8>> = Vec::new();
+    let mut written = BTreeSet::new();
+    for line in existing.split_inclusive(|byte| *byte == b'\n') {
+        match assigned_key(line) {
+            Some(key) if keys.contains(key) => {
+                if let Some((_, update)) = updates.iter().find(|(managed, _)| managed == key) {
+                    if written.insert(key.to_vec()) {
+                        lines.push(update.clone());
+                    }
+                }
+            }
+            _ => lines.push(line.to_vec()),
+        }
+    }
+    let missing: Vec<Vec<u8>> = updates
+        .iter()
+        .filter(|(key, _)| !written.contains(key))
+        .map(|(_, line)| line.clone())
+        .collect();
+    if !missing.is_empty() {
+        if let Some(last) = lines.last_mut() {
+            if !last.ends_with(b"\n") {
+                last.push(b'\n');
+            }
+        }
+    }
+    lines.into_iter().chain(missing).flatten().collect()
+}
+
+#[cfg(target_os = "linux")]
+fn valid_key(key: &str) -> bool {
+    let bytes = key.as_bytes();
+    !bytes.is_empty()
+        && bytes[0].is_ascii_uppercase()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || *byte == b'_')
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -192,33 +362,72 @@ pub fn access(_: &EnvironmentInput) -> Outcome {
 
 #[cfg(target_os = "linux")]
 pub fn access(input: &EnvironmentInput) -> Outcome {
-    match read(input) {
-        Ok(value) => value,
+    let mut installed = false;
+    match run(input, &mut installed) {
+        Ok(outcome) => outcome,
         Err(Stop::Missing) => outcome(State::Missing),
-        Err(Stop::Boundary) => outcome(State::Refused),
-        Err(Stop::Failed) => outcome(State::Failed),
+        Err(Stop::TrackingUnknown) => outcome(State::TrackingUnknown),
+        Err(Stop::Boundary) if !installed => outcome(State::Refused),
+        Err(_) => Outcome {
+            state: State::Failed,
+            content: None,
+            installed,
+        },
     }
 }
 
 #[cfg(target_os = "linux")]
-fn read(input: &EnvironmentInput) -> Result<Outcome, Stop> {
-    let (uid, _, home) = identity::account(&input.user).map_err(|_| Stop::Boundary)?;
+fn run(input: &EnvironmentInput, installed: &mut bool) -> Result<Outcome, Stop> {
+    let (uid, gid, home) = identity::account(&input.user).map_err(|_| Stop::Boundary)?;
     boundary(!input.require_home || home == input.base)?;
-    boundary(
-        input.base.starts_with('/')
-            && input.base != "/"
-            && input.base[1..]
-                .split('/')
-                .all(|part| !part.is_empty() && part != "." && part != ".."),
-    )?;
+    let normal = input.base.starts_with('/')
+        && input.base[1..]
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..");
+    boundary(normal && input.base != "/")?;
     boundary(input.file == ".env" || input.file == ".env.testing")?;
-    let access = Access { input, uid };
+    let keys: BTreeSet<Vec<u8>> = input
+        .managed_keys
+        .iter()
+        .map(|key| key.as_bytes().to_vec())
+        .collect();
+    if input.mode == Operation::Merge {
+        boundary(
+            input.file == ".env.testing"
+                && !keys.is_empty()
+                && input.managed_keys.iter().all(|key| valid_key(key)),
+        )?;
+    }
+    let access = Access { input, uid, gid };
     let directory = access.open_base()?;
-    let metadata = fstat(&directory)?;
-    let directory_identity = (metadata.st_dev, metadata.st_ino);
+    let directory_metadata = fstat(&directory)?;
+    let directory_identity = (directory_metadata.st_dev, directory_metadata.st_ino);
     let destination = access.destination(&directory)?;
-    if input.mode == Operation::WriteCheck {
-        boundary(metadata.st_uid == uid && metadata.st_mode & 0o300 == 0o300)?;
+    let destination_identity = destination
+        .as_ref()
+        .map(|(_, metadata)| (metadata.st_dev, metadata.st_ino));
+
+    let mut value = None;
+    if matches!(input.mode, Operation::ReadCheck | Operation::Read) {
+        let Some((descriptor, metadata)) = &destination else {
+            return Err(if input.mode == Operation::Read {
+                Stop::Missing
+            } else {
+                Stop::Boundary
+            });
+        };
+        boundary(u64::try_from(metadata.st_size).unwrap_or(u64::MAX) <= input.maximum)?;
+        value = Some(Access::reopen(
+            descriptor,
+            (metadata.st_dev, metadata.st_ino),
+        )?);
+    }
+    if matches!(
+        input.mode,
+        Operation::WriteCheck | Operation::Write | Operation::Merge
+    ) {
+        // As the user: a directory the user owns and may write and enter.
+        boundary(directory_metadata.st_uid == uid && directory_metadata.st_mode & 0o300 == 0o300)?;
         let filesystem = rustix::fs::fstatvfs(&directory)?;
         boundary(
             !filesystem
@@ -228,33 +437,128 @@ fn read(input: &EnvironmentInput) -> Result<Outcome, Stop> {
         boundary(
             filesystem.f_bavail.saturating_mul(filesystem.f_frsize) >= input.required_capacity,
         )?;
+    }
+
+    match input.mode {
+        Operation::ReadCheck | Operation::WriteCheck => {
+            access.unchanged(directory_identity, destination_identity)?;
+            Ok(outcome(State::Ok))
+        }
+        Operation::Read => {
+            let data = access.read_bounded(value.ok_or(Stop::Failed)?)?;
+            Ok(Outcome {
+                state: State::Ok,
+                content: Some(base64::engine::general_purpose::STANDARD.encode(data)),
+                installed: false,
+            })
+        }
+        Operation::Write | Operation::Merge => {
+            let supplied = input.content.as_deref().unwrap_or_default().as_bytes();
+            let payload = if input.mode == Operation::Merge {
+                if access.tracked()? {
+                    access.unchanged(directory_identity, destination_identity)?;
+                    return Ok(outcome(State::Tracked));
+                }
+                boundary(supplied.len() as u64 <= input.maximum)?;
+                let updates = managed_lines(supplied, &keys)?;
+                let payload = match &destination {
+                    Some((descriptor, metadata)) => {
+                        boundary(
+                            u64::try_from(metadata.st_size).unwrap_or(u64::MAX) <= input.maximum,
+                        )?;
+                        let existing = access.read_bounded(Access::reopen(
+                            descriptor,
+                            (metadata.st_dev, metadata.st_ino),
+                        )?)?;
+                        merged(&existing, &keys, &updates)
+                    }
+                    // A new file takes the supplied lines as they are.
+                    None => supplied.to_vec(),
+                };
+                boundary(payload.len() as u64 <= input.maximum)?;
+                payload
+            } else {
+                supplied.to_vec()
+            };
+            write(
+                &access,
+                &directory,
+                directory_identity,
+                destination.as_ref(),
+                &payload,
+                installed,
+            )
+        }
+    }
+}
+
+/// Publishes the payload with one rename, unless the file already holds it with mode 0600.
+#[cfg(target_os = "linux")]
+fn write(
+    access: &Access,
+    directory: &OwnedFd,
+    directory_identity: (u64, u64),
+    destination: Option<&(OwnedFd, rustix::fs::Stat)>,
+    payload: &[u8],
+    installed: &mut bool,
+) -> Result<Outcome, Stop> {
+    let name = format!(".env.orbit-{:032x}", rand::random::<u128>());
+    let candidate = openat(
+        directory,
+        name.as_str(),
+        OFlags::RDWR | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    )?;
+    let candidate_metadata = fstat(&candidate)?;
+    let candidate_identity = (candidate_metadata.st_dev, candidate_metadata.st_ino);
+    let cleanup = || {
+        if statat(directory, name.as_str(), AtFlags::SYMLINK_NOFOLLOW)
+            .is_ok_and(|metadata| (metadata.st_dev, metadata.st_ino) == candidate_identity)
+        {
+            let _ = rustix::fs::unlinkat(directory, name.as_str(), AtFlags::empty());
+        }
+    };
+    let result = (|| -> Result<Outcome, Stop> {
+        rustix::fs::fchown(
+            &candidate,
+            Some(rustix::fs::Uid::from_raw(access.uid)),
+            Some(rustix::fs::Gid::from_raw(access.gid)),
+        )?;
+        let mut file = fs::File::from(candidate.as_fd().try_clone_to_owned()?);
+        file.write_all(payload)?;
+        rustix::fs::fchmod(&candidate, Mode::from_raw_mode(0o600))?;
+        file.sync_all()?;
+        let same = match destination {
+            Some((descriptor, metadata)) if metadata.st_mode & 0o7777 == 0o600 => {
+                let mut existing = Vec::new();
+                Access::reopen(descriptor, (metadata.st_dev, metadata.st_ino))?
+                    .read_to_end(&mut existing)?;
+                existing == payload
+            }
+            _ => false,
+        };
         access.unchanged(
             directory_identity,
-            destination
-                .as_ref()
-                .map(|(_, metadata)| (metadata.st_dev, metadata.st_ino)),
+            destination.map(|(_, metadata)| (metadata.st_dev, metadata.st_ino)),
         )?;
-        return Ok(outcome(State::Ok));
+        if same {
+            cleanup();
+            return Ok(outcome(State::Unchanged));
+        }
+        rustix::fs::renameat(
+            directory,
+            name.as_str(),
+            directory,
+            access.input.file.as_str(),
+        )?;
+        *installed = true;
+        rustix::fs::fsync(directory)?;
+        Ok(outcome(State::Changed))
+    })();
+    if result.is_err() && !*installed {
+        cleanup();
     }
-    let Some((descriptor, metadata)) = destination else {
-        return Err(if input.mode == Operation::Read {
-            Stop::Missing
-        } else {
-            Stop::Boundary
-        });
-    };
-    boundary(u64::try_from(metadata.st_size).unwrap_or(u64::MAX) <= input.maximum)?;
-    let file = Access::reopen(&descriptor, (metadata.st_dev, metadata.st_ino))?;
-    if input.mode == Operation::ReadCheck {
-        access.unchanged(directory_identity, Some((metadata.st_dev, metadata.st_ino)))?;
-        return Ok(outcome(State::Ok));
-    }
-    let bytes = access.read_bounded(file)?;
-    Ok(Outcome {
-        state: State::Ok,
-        content: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
-        installed: false,
-    })
+    result
 }
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -274,7 +578,7 @@ pub struct SyncInspection {
 }
 
 fn inspect_sync(input: SyncInput) -> SyncInspection {
-    let mut input = EnvironmentInput {
+    let mut access_input = EnvironmentInput {
         mode: Operation::WriteCheck,
         base: input.base,
         user: input.user,
@@ -282,11 +586,13 @@ fn inspect_sync(input: SyncInput) -> SyncInspection {
         require_home: input.require_home,
         required_capacity: input.required_capacity,
         file: default_file(),
+        managed_keys: Vec::new(),
+        content: None,
     };
-    let preflight = access(&input);
+    let preflight = access(&access_input);
     let existing = if preflight.state == State::Ok {
-        input.mode = Operation::Read;
-        Some(access(&input))
+        access_input.mode = Operation::Read;
+        Some(access(&access_input))
     } else {
         None
     };
@@ -296,8 +602,8 @@ fn inspect_sync(input: SyncInput) -> SyncInspection {
     }
 }
 
-/// Observes write eligibility and current bytes without creating or replacing a file.
 pub struct InspectEnvironmentSync;
+
 impl Command for InspectEnvironmentSync {
     const NAME: &'static str = "instance.inspect-environment-sync";
     const SUMMARY: &'static str =
@@ -307,15 +613,18 @@ impl Command for InspectEnvironmentSync {
     type Input = SyncInput;
     type Output = SyncInspection;
     type Error = EnvironmentError;
+
     fn privilege(platform: Platform) -> Option<Privilege> {
         super::linux_only(platform, Privilege::Owner)
     }
+
     fn run(input: SyncInput, _: &Context) -> Result<SyncInspection, EnvironmentError> {
         Ok(inspect_sync(input))
     }
 }
 
 pub struct ReadEnvironment;
+
 impl Command for ReadEnvironment {
     const NAME: &'static str = "instance.read-environment";
     const SUMMARY: &'static str =
@@ -325,10 +634,52 @@ impl Command for ReadEnvironment {
     type Input = EnvironmentInput;
     type Output = Outcome;
     type Error = EnvironmentError;
+
+    /// Root opens a production home that only its user may enter.
     fn privilege(platform: Platform) -> Option<Privilege> {
         super::linux_only(platform, Privilege::Owner)
     }
+
     fn run(input: EnvironmentInput, _: &Context) -> Result<Outcome, EnvironmentError> {
+        if !matches!(
+            input.mode,
+            Operation::ReadCheck | Operation::Read | Operation::WriteCheck
+        ) {
+            return Err(EnvironmentError::Invalid {
+                check: "a read names a read or a check".into(),
+            });
+        }
+        Ok(access(&input))
+    }
+}
+
+pub struct WriteEnvironment;
+
+impl Command for WriteEnvironment {
+    const NAME: &'static str = "instance.write-environment";
+    const SUMMARY: &'static str =
+        "Replace an Instance's .env, or merge Orbit's keys into .env.testing.";
+    const MUTATES: bool = true;
+    const TIMEOUT: Duration = Duration::from_secs(60);
+    type Input = EnvironmentInput;
+    type Output = Outcome;
+    type Error = EnvironmentError;
+
+    /// Root writes in a production home that only its user may enter, and Git runs as that user.
+    fn privilege(platform: Platform) -> Option<Privilege> {
+        super::linux_only(platform, Privilege::Owner)
+    }
+
+    fn target(input: &EnvironmentInput) -> Option<String> {
+        Some(format!("environment:{}", input.base))
+    }
+
+    fn run(input: EnvironmentInput, _: &Context) -> Result<Outcome, EnvironmentError> {
+        if !matches!(input.mode, Operation::Write | Operation::Merge) {
+            return Err(EnvironmentError::Invalid {
+                check: "a write names a write or a merge".into(),
+            });
+        }
         Ok(access(&input))
     }
 }

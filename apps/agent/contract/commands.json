@@ -2982,48 +2982,6 @@
       ]
     },
     {
-      "name": "instance.inspect-registration-source",
-      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.relocate-registration-source",
-      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.laravel-registration-receipt",
-      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
       "name": "instance.prepare-release",
       "summary": "Clone a new production release of a branch and link its environment and shared paths.",
       "mutates": true,
@@ -3233,6 +3191,19 @@
       "name": "instance.inspect-environment-sync",
       "summary": "Check that an Instance's .env can be replaced, then read its existing workload keys.",
       "mutates": false,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "owner",
+        "macos": null
+      },
+      "errors": [
+        "instance.environment_input_invalid"
+      ]
+    },
+    {
+      "name": "instance.write-environment",
+      "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
+      "mutates": true,
       "timeout_seconds": 60,
       "privilege": {
         "linux": "owner",
@@ -3756,20 +3727,6 @@
       ]
     },
     {
-      "name": "caddy.publish",
-      "summary": "Validate and publish a rendered Node Caddyfile, restoring the previous configuration on reload failure.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "caddy.publication_invalid",
-        "caddy.publication_failed"
-      ]
-    },
-    {
       "name": "caddy.check-addresses",
       "summary": "Check that every Caddy listen address exists on the Node.",
       "mutates": false,
@@ -3779,7 +3736,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },
@@ -3793,7 +3749,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },

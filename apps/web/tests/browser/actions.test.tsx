@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
-import { setTransport } from "../../src/api/client";
+import { setTransport, type Transport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
 import { applyEvent } from "../../src/realtime/apply";
 import { connectRealtime } from "../../src/realtime/connect";
@@ -157,29 +157,62 @@ it("lists live UFW on a node and keeps Orbit's own rules without actions", async
     await expect.element(page.getByRole("menuitem", { name: "remove" })).toBeVisible();
 });
 
-it("enables analytics tracking from the menu, shows what to do next, then disables it after a confirmation", async () => {
-    const app = await openApp("/instances/1");
+async function completeDemoAnalytics(
+    transport: Transport,
+    method: "POST" | "DELETE",
+    instanceId: number,
+): Promise<void> {
+    const answer = await transport(method, `/api/v1/instances/${instanceId}/analytics`, {});
+    expect(answer.status).toBe(202);
+    const { data } = answer.payload as { data: { id: number } };
+    await transport("GET", `/api/v1/operations/${data.id}`, undefined);
+    await transport("GET", `/api/v1/operations/${data.id}`, undefined);
+}
+
+it("starts analytics operations without replacing the observed state or claiming completion", async () => {
+    const requests: { method: string; path: string }[] = [];
+    const app = await openApp("/instances/1", {
+        wrapTransport: (inner) => async (method, path, body, options) => {
+            requests.push({ method, path });
+            if (
+                (method === "POST" || method === "DELETE") &&
+                path === "/api/v1/instances/1/analytics"
+            ) {
+                return {
+                    status: 202,
+                    payload: {
+                        data: {
+                            id: method === "POST" ? 789 : 790,
+                            kind: method === "POST" ? "analytics.enable" : "analytics.disable",
+                            status: "running",
+                            input: { instance_id: 1 },
+                            result: null,
+                        },
+                    },
+                };
+            }
+
+            return inner(method, path, body, options);
+        },
+    });
     await expect.element(pane("Application log")).toBeVisible();
     await expect.element(pane("Properties")).not.toMatchTextContent("Analytics");
+    const observed = queryClient.getQueryData(["instance-analytics", 1]);
 
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
 
-    const modal = page.getByRole("dialog");
     await expect
-        .element(modal)
-        .toMatchTextContent("DNS CNAME analytics.dev.charlie-shop.test -> dev.charlie-shop.test");
-    await expect
-        .element(modal)
-        .toMatchTextContent('src="https://analytics.dev.charlie-shop.test/js/script.js"');
-    expect(
-        app.gateway.requests.some(
-            (request) =>
-                request.method === "POST" && request.path === "/api/v1/instances/1/analytics",
-        ),
-    ).toBe(true);
+        .element(footer())
+        .toMatchTextContent("Analytics enable for [charlie-shop/dev] started as operation 789.");
+    expect(requests).toContainEqual({ method: "POST", path: "/api/v1/instances/1/analytics" });
+    expect(queryClient.getQueryData(["instance-analytics", 1])).toEqual(observed);
+    await expect.element(pane("Properties")).not.toMatchTextContent("Analytics");
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
 
-    await userEvent.keyboard("{Escape}");
+    // A later Gateway read reports the native workflow's publication.
+    await completeDemoAnalytics(app.gateway.transport, "POST", 1);
+    await queryClient.invalidateQueries({ queryKey: ["instance-analytics", 1] });
     await expect
         .element(pane("Properties"))
         .toMatchTextContent("Analyticsanalytics.dev.charlie-shop.test");
@@ -189,30 +222,41 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     await expect.element(pane("Top pages")).toMatchTextContent("/");
     await expect.element(pane("Top pages")).toMatchTextContent("120");
 
-    // Enabled now, so the menu offers the opposite, and asks before it stops the tracking.
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "disable analytics", exact: true }).click();
     await expect
         .element(pane("charlie-shop/dev"))
         .toMatchTextContent("Confirm? Remove every analytics tracking host");
-    expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
+    expect(requests.some((request) => request.method === "DELETE")).toBe(false);
 
     await userEvent.keyboard("{Enter}");
+
     await expect
         .element(footer())
-        .toMatchTextContent("Analytics tracking disabled for [charlie-shop/dev].");
+        .toMatchTextContent("Analytics disable for [charlie-shop/dev] started as operation 790.");
+    expect(requests).toContainEqual({ method: "DELETE", path: "/api/v1/instances/1/analytics" });
+    expect(queryClient.getQueryData(["instance-analytics", 1])).toMatchObject({
+        instance_id: 1,
+        enabled: true,
+    });
+    await expect.element(pane("Analytics")).toMatchTextContent("Live visitors");
+    expect(requests.some((request) => /^\/api\/v1\/operations\/(789|790)/.test(request.path))).toBe(
+        false,
+    );
+
+    await completeDemoAnalytics(app.gateway.transport, "DELETE", 1);
+    await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["instance-analytics", 1] }),
+        queryClient.invalidateQueries({ queryKey: ["instance-analytics-stats", 1] }),
+    ]);
     await expect.element(pane("Properties")).not.toMatchTextContent("Analytics");
     await expect.element(pane("Analytics")).not.toBeInTheDocument();
 });
 
 it("shows a warn analytics panel when stats cannot be read, not zeros", async () => {
-    await openApp("/instances/2");
-    await expect.element(pane("Application log")).toBeVisible();
-    await expect.element(pane("Analytics")).not.toBeInTheDocument();
-
-    await page.getByRole("button", { name: "Actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
-    await userEvent.keyboard("{Escape}");
+    const app = await openApp("/instances");
+    await completeDemoAnalytics(app.gateway.transport, "POST", 2);
+    await app.router.navigate({ to: "/$section/$id", params: { section: "instances", id: "2" } });
 
     const analytics = pane("Analytics");
     await expect.element(analytics).toHaveAttribute("data-state", "warn");
