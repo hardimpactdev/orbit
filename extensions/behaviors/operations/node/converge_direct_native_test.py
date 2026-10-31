@@ -19,7 +19,7 @@ class DirectConvergeNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.native_env['SWAMP_NO_INBOX_NOTICE'] = '1'
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/node')
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/node', 'node-worker', 'operations/routes', 'operations/certificates')
         target = self.repo / 'extensions/behaviors'
         (target / 'operations/fleet').mkdir()
         for name in ['contract.ts', 'peer_dns_local.ts']:

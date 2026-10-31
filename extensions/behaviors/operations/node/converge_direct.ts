@@ -2,13 +2,8 @@ import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
 import { GatewayOperation } from "../_lib/direct.ts";
-import {
-  Args,
-  Code,
-  Outcome,
-  Snapshot,
-  Stage,
-} from "./converge_direct_contract.ts";
+import { Args, Outcome, Snapshot, Stage } from "./converge_direct_contract.ts";
+import { footprintProof } from "./footprint_proof.ts";
 import { convergeFootprintStage } from "./converge_footprint.ts";
 
 const Admission = z.object({
@@ -239,17 +234,11 @@ export function nodeConverge(
             return { status: args.admission.status };
           }
           const snapshot = Snapshot.parse(args.admission.snapshot);
-          if (
-            snapshot.node_id !== args.node_id ||
-            new Set(args.outcomes.map((o) => o.stage)).size !==
-              args.outcomes.length
-          ) {
-            throw new Error("Projection differs from the admitted native DAG");
+          if (snapshot.node_id !== args.node_id) {
+            throw new Error("Projection changed Node");
           }
-          const failure = args.outcomes.find((o) => !o.ok);
-          if (!failure && args.outcomes.length !== Stage.options.length) {
-            throw new Error("A native stage outcome is uncertain");
-          }
+          const result = footprintProof(snapshot, args.outcomes);
+          const failure = args.outcomes.find((outcome) => !outcome.ok);
           if (failure?.error_code === "operation.cancelled") {
             const gateway = new GatewayOperation(
               makeHttp(ctx),
@@ -269,26 +258,7 @@ export function nodeConverge(
             });
             return { status: "cancelled" };
           }
-          const artifacts = args.outcomes.flatMap((o) =>
-            o.entry ? [o.entry] : []
-          );
-          const names = new Set(artifacts.map((a) => a.name));
-          if (names.size !== artifacts.length) {
-            throw new Error("Artifact outcomes are duplicated");
-          }
-          const code = failure?.error_code ??
-            args.outcomes.find((o) => o.deferred_error)?.deferred_error;
-          if (!code && snapshot.artifacts.some((a) => !names.has(a.name))) {
-            throw new Error("Footprint completion is unproven");
-          }
-          const result = {
-            artifacts,
-            footprint_proven: !code,
-            ...(code ? { error_code: Code.parse(code) } : {}),
-            ...(failure?.failed_artifact
-              ? { failed_artifact: failure.failed_artifact }
-              : {}),
-          };
+          const code = result.error_code;
           const status = code ? "failed" : "succeeded";
           const gateway = new GatewayOperation(
             makeHttp(ctx),

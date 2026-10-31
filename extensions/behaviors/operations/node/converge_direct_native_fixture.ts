@@ -49,17 +49,20 @@ export const fixtureAction: StageAction = async (
   await Deno.writeTextFile(file, JSON.stringify(state));
   if (privateHttp && stage === "agent") {
     return await footprintActions({
-      agent: (call) => {
+      action: () => Promise.reject(new Error("Unexpected native action")),
+      installWorker: () =>
+        Promise.resolve({ configured: true, changed: false }),
+      system: (command) => {
+        const input = JSON.parse(command.stdin!);
         const expected = Deno.env.get("ORBIT_CONVERGE_PRIVATE_HASH");
         const enrollment = Deno.env.get("ORBIT_CONVERGE_PRIVATE_ENROLLMENT");
         const access = Deno.env.get("ORBIT_CONVERGE_PRIVATE_ACCESS");
-        const credentials = call.input.worker_credentials as
+        const credentials = input.worker_credentials as
           | Record<string, unknown>
           | undefined;
         if (
-          call.name !== "agent.configure" ||
-          call.input.allow_secret_rotation !== false ||
-          call.input.secret_hash !== expected ||
+          input.allow_secret_rotation !== false ||
+          input.secret_hash !== expected ||
           credentials?.enrollment_token !== enrollment ||
           credentials?.server_token !== access
         ) throw new Error("Native private fixture received the wrong intent");
@@ -67,10 +70,13 @@ export const fixtureAction: StageAction = async (
           throw new Error(`${expected}:${enrollment}:${access}`);
         }
         return Promise.resolve({
-          secret_hash: expected,
-          restarted: false,
-          unclosed: [],
-          diagnostic: enrollment,
+          success: true,
+          stdout: JSON.stringify({
+            configured: true,
+            secret_hash: expected,
+            restarted: false,
+            unclosed: [],
+          }),
         });
       },
       account: () => Promise.resolve({ home: "/home/orbit", group: "orbit" }),

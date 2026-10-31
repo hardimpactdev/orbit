@@ -11,7 +11,6 @@ import {
   type LocalDependencies,
 } from "./converge_footprint.ts";
 import { GatewayOperation } from "../_lib/direct.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
 
 const args = {
   operation_id: 7,
@@ -30,7 +29,7 @@ const snapshot = (name = "agent"): Snapshot => ({
   refusal: null,
   payloads: {
     agent: {
-      configuration: "swamp_worker = true\n",
+      configuration: '[swamp_worker]\nnode_id=209\nuser="orbit"\n',
       certificate: "CA",
       unit: "[Service]\nProtectHome=yes\n",
       user: "orbit",
@@ -65,13 +64,14 @@ function fixture() {
   return { writes, posts, current, http, context };
 }
 function dependencies() {
-  const calls: NodeCall[] = [];
+  const calls: { name: string; input: Record<string, unknown> }[] = [];
   const deps: LocalDependencies = {
-    agent: (call) => {
+    action: (call) => {
       calls.push(call);
       return Promise.resolve({ changed: false });
     },
-    program: () => Promise.resolve({ result: "unchanged" }),
+    system: () => Promise.reject(new Error("Unexpected system effect")),
+    installWorker: () => Promise.resolve({ configured: true, changed: false }),
     install: () => Promise.resolve({ changed: false }),
     account: () => Promise.resolve({ home: "/home/orbit", group: "orbit" }),
     dns: () => Promise.resolve({ ready: true }),
@@ -125,12 +125,17 @@ Deno.test("uncertain native stage cannot be projected as failure or success", as
 });
 Deno.test("configure preserves legacy hashes and strips the returned hash inside the private callback", async () => {
   const f = dependencies();
-  f.deps.agent = (call) => {
-    f.calls.push(call);
+  f.deps.system = (command) => {
+    const input = JSON.parse(command.stdin!);
+    f.calls.push({ name: "configureObserver", input });
     return Promise.resolve({
-      secret_hash: "protected-output",
-      restarted: false,
-      unclosed: [],
+      success: true,
+      stdout: JSON.stringify({
+        configured: true,
+        secret_hash: "c".repeat(64),
+        restarted: false,
+        unclosed: [],
+      }),
     });
   };
   const result = await footprintActions(f.deps)(
@@ -162,7 +167,7 @@ Deno.test("configure preserves legacy hashes and strips the returned hash inside
 });
 Deno.test("private callback errors never expose protected bytes or a fabricated safe outcome", async () => {
   const f = dependencies();
-  f.deps.agent = () => Promise.reject(new Error("private-enrollment"));
+  f.deps.system = () => Promise.reject(new Error("private-enrollment"));
   const error = await assertRejects(() =>
     footprintActions(f.deps)(
       "agent",
@@ -176,10 +181,13 @@ Deno.test("private callback errors never expose protected bytes or a fabricated 
 });
 Deno.test("nonrotation refusal is bounded and never returns the hash", async () => {
   const f = dependencies();
-  f.deps.agent = () =>
+  f.deps.system = () =>
     Promise.resolve({
-      error_code: "agent.secret_mismatch",
-      secret_hash: "protected",
+      success: true,
+      stdout: JSON.stringify({
+        configured: false,
+        error_code: "agent.secret_mismatch",
+      }),
     });
   const result = await footprintActions(f.deps)(
     "agent",
@@ -214,7 +222,7 @@ Deno.test("PHP runtime dispatch covers every admitted version and stops on a rea
   );
   assertEquals(f.calls.map((c) => c.input.version), ["8.4", "8.5"]);
   f.calls.length = 0;
-  f.deps.agent = (call) => {
+  f.deps.action = (call) => {
     f.calls.push(call);
     return Promise.resolve({ error_code: "php.runtime_failed" });
   };
@@ -241,7 +249,7 @@ Deno.test("only Caddy validation refusal is skippable and first-visit failure st
       unserved: true,
     },
   };
-  f.deps.program = () =>
+  f.deps.action = () =>
     Promise.resolve({
       error_code: "caddy.publication_failed",
       stage: "validate",
@@ -265,7 +273,7 @@ Deno.test("only Caddy validation refusal is skippable and first-visit failure st
       .deferred_error,
     undefined,
   );
-  f.deps.program = () =>
+  f.deps.action = () =>
     Promise.resolve({
       error_code: "caddy.publication_failed",
       stage: "reload",
@@ -281,7 +289,7 @@ Deno.test("DNS publication happens only after a proven listener install", async 
   const input = snapshot("private-dns");
   input.payloads = { "private-dns": { listener: {}, publication: {} } };
   const events: string[] = [];
-  f.deps.agent = (call) => {
+  f.deps.action = (call) => {
     events.push(call.name);
     return Promise.resolve({ installed: true, changed: false });
   };
@@ -410,20 +418,13 @@ Deno.test("root composes the canonical network action and stores only its safe a
     },
   };
   let dispatched = 0;
-  local.deps.network = nodeNetwork((policy) => {
+  local.deps.network = nodeNetwork((_argv, stdin) => {
     dispatched++;
-    return Promise.resolve({
-      changed: false,
-      result: {
-        state: `orbit\n${policy.server}\n${policy.domains.join("\n")}`,
-        hooks:
-          `PostUp = resolvectl dns %i ${policy.server}; resolvectl domain %i \\~gateway.orbit`,
-        dns: `Link 2 (orbit): ${policy.server}`,
-        domains: "Link 2 (orbit): ~gateway.orbit",
-        default_route: "Link 2 (orbit): no",
-        uplink: true,
-      },
+    assertEquals(JSON.parse(stdin ?? ""), {
+      name: "wireguard.repair-peer-dns",
+      input: input.network!.peer_dns,
     });
+    return Promise.resolve({ success: true, stdout: "{}" });
   });
   const operation = nodeConverge(footprintActions(local.deps), () => f.http);
   const admission = {
@@ -443,7 +444,7 @@ Deno.test("root composes the canonical network action and stores only its safe a
   assertEquals(f.writes, [{
     stage: "peer-dns",
     ok: true,
-    entry: { name: "peer-dns", status: "unchanged" },
+    entry: { name: "peer-dns", status: "applied" },
   }]);
   await assertRejects(() =>
     operation.methods.stage.execute({
