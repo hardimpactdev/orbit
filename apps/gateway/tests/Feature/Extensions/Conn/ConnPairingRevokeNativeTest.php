@@ -95,3 +95,27 @@ it('rolls back admission when the shared execution copy is refused', function ()
     expect($this->pairing->fresh()->credential)->toBe('private-pairing');
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put']);
 });
+
+it('settles native failure without result output and preserves captured pairings', function (string $status): void {
+    $this->postJson($this->url)->assertAccepted();
+    $operation = Operation::query()->sole();
+    $run = ['id' => $this->run, 'workflowName' => 'operation-conn-pairing-revoke', 'status' => $status,
+        'inputs' => ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets'], 'operation_id' => $operation->id, 'node_id' => $this->gateway->id, 'kind' => 'conn.pairing_revoke'],
+        'startedAt' => now()->toIso8601String(), 'completedAt' => now()->toIso8601String(),
+        'jobs' => [['name' => 'finish', 'steps' => [['name' => 'result', 'status' => 'skipped']]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
+    app(SwampCommandStep::class)->projectTerminal($operation->fresh(), $run, ['job' => 'finish', 'step' => 'result']);
+
+    expect($operation->fresh()->status->value)->toBe('failed');
+    expect($operation->fresh()->error_code)->toBe('operation.native_failed');
+    expect($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($this->run);
+    expect($this->pairing->fresh()->revoked_at)->toBeNull();
+    expect($this->pairing->fresh()->credential)->toBe('private-pairing');
+    expect($this->foreign->fresh()->revoked_at)->toBeNull();
+    expect($this->foreign->fresh()->credential)->toBe('private-foreign');
+    expect(array_count_values(array_column($this->socket->sent, 'type'))['workflow.history.get'])->toBe(1);
+    Http::assertNothingSent();
+})->with(['failed', 'interrupted']);

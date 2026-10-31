@@ -52,7 +52,7 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
         if ($result === [] && $status !== OperationStatus::Succeeded) {
             return [];
         }
-        if (array_keys($result) === ['error_code'] && is_string($result['error_code']) && (preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $result['error_code']) === 1 || $result['error_code'] === 'operation.native_dispatch_failed')) {
+        if (array_keys($result) === ['error_code'] && is_string($result['error_code']) && (preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $result['error_code']) === 1 || in_array($result['error_code'], ['operation.native_dispatch_failed', 'operation.native_failed'], true))) {
             return $result;
         }
         if ($operation->kind !== 'conn.pairing_create') {
