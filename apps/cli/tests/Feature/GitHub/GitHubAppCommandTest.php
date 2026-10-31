@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
+use Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -42,8 +43,6 @@ beforeEach(function (): void {
         }
     };
     app()->instance(BrowserLauncher::class, $this->browser);
-    config()->set('orbit.github.install_poll_seconds', 0);
-    config()->set('orbit.github.install_wait_seconds', 30);
 });
 
 afterEach(function (): void {
@@ -201,128 +200,44 @@ describe('github:app:install', function (): void {
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
-    it('opens the install page and reports the account that installed the App', function (): void {
+    it('opens the install page and returns pending without polling', function (): void {
+        $reads = 0;
         MockClient::global([
-            ShowGitHubAppRequest::class => github_show_sequence([
-                github_app_payload(['installations' => []]),
-                github_app_payload(['installations' => []]),
-                github_app_payload(),
-            ]),
-            InstallGitHubAppRequest::class => MockResponse::make([
-                'data' => [
-                    'step' => 'install',
-                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
-                    'accounts' => [],
-                ],
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-        ]);
+            ShowGitHubAppRequest::class => function () use (&$reads): MockResponse {
+                $reads++;
 
+                return MockResponse::make(['data' => github_app_payload(), 'meta' => ['request_id' => github_request_id()]]);
+            },
+            InstallGitHubAppRequest::class => MockResponse::make(['data' => [
+                'step' => 'install', 'url' => 'https://github.com/apps/orbit-acme/installations/new', 'accounts' => ['acme'],
+            ], 'meta' => ['request_id' => github_request_id()]]),
+        ]);
         $output = github_run('github:app:install');
-
-        expect($output)
-            ->toContain('https://github.com/apps/orbit-acme/installations/new')
-            ->toContain('Installed the App on acme.')
-            ->and($this->browser->opened)
-            ->toBe(['https://github.com/apps/orbit-acme/installations/new']);
+        expect($output)->toContain('Registration and installation are pending.', 'github:app:sync')
+            ->not->toContain('Installed the App on');
+        expect($this->browser->opened)->toBe(['https://github.com/apps/orbit-acme/installations/new']);
+        expect($reads)->toBe(1);
     });
+});
 
-    it('stops waiting and reports a Gateway failure instead of polling on', function (): void {
-        MockClient::global([
-            ShowGitHubAppRequest::class => github_show_sequence([
-                github_app_payload(['installations' => []]),
-            ], failAfter: 1),
-            InstallGitHubAppRequest::class => MockResponse::make([
-                'data' => [
-                    'step' => 'install',
-                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
-                    'accounts' => [],
-                ],
-                'meta' => ['request_id' => github_request_id()],
-            ]),
+describe('github:app:sync', function (): void {
+    it('records one native refresh and returns its Operation without following it', function (bool $json): void {
+        $mock = MockClient::global([
+            SyncGitHubAppRequest::class => MockResponse::make(['data' => [
+                'id' => 42, 'kind' => 'github.app_sync', 'target_type' => 'node', 'target_id' => 14,
+                'input' => ['app_id' => 4242], 'status' => 'queued', 'sequence' => 1,
+            ], 'meta' => ['request_id' => github_request_id()]], 202),
         ]);
-        config()->set('orbit.github.install_wait_seconds', 600);
-
-        $output = github_run('github:app:install', expectedStatus: 1);
-
-        expect($output)
-            ->toContain('Could not reach api.github.com.')
-            ->not->toContain('Stopped waiting before the Gateway saw a new installation.');
-    });
-
-    it('ignores an account that was already installed when the step was issued', function (): void {
-        MockClient::global([
-            ShowGitHubAppRequest::class => MockResponse::make([
-                'data' => github_app_payload(),
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-            InstallGitHubAppRequest::class => MockResponse::make([
-                'data' => [
-                    'step' => 'install',
-                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
-                    'accounts' => ['acme'],
-                ],
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-        ]);
-
-        config()->set('orbit.github.install_wait_seconds', 0);
-
-        $output = github_run('github:app:install', expectedStatus: 1);
-
-        expect($output)->toContain('Stopped waiting before the Gateway saw a new installation.');
-    });
-
-    it('treats numeric duration configuration as whole seconds', function (float|string $wait): void {
-        MockClient::global([
-            ShowGitHubAppRequest::class => MockResponse::make([
-                'data' => github_app_payload(),
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-            InstallGitHubAppRequest::class => MockResponse::make([
-                'data' => [
-                    'step' => 'install',
-                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
-                    'accounts' => ['acme'],
-                ],
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-        ]);
-        config()->set('orbit.github.install_poll_seconds', '0');
-        config()->set('orbit.github.install_wait_seconds', $wait);
-
-        $output = github_run('github:app:install', expectedStatus: 1);
-
-        expect($output)->toContain('Stopped waiting before the Gateway saw a new installation.');
-    })->with([
-        'numeric string' => '0',
-        'float' => 0.0,
-    ]);
-
-    it('refuses a duration setting that is not a number', function (): void {
-        MockClient::global([
-            ShowGitHubAppRequest::class => MockResponse::make([
-                'data' => github_app_payload(),
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-            InstallGitHubAppRequest::class => MockResponse::make([
-                'data' => [
-                    'step' => 'install',
-                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
-                    'accounts' => ['acme'],
-                ],
-                'meta' => ['request_id' => github_request_id()],
-            ]),
-        ]);
-        config()->set('orbit.github.install_wait_seconds', ['600']);
-
-        $output = new BufferedOutput;
-        $status = app(Kernel::class)->handle(new StringInput('github:app:install'), $output);
-
-        expect($status)->toBe(1)
-            ->and($output->fetch())
-            ->toContain('Configuration [orbit.github.install_wait_seconds] must be a number of seconds.');
-    });
+        $output = github_run('github:app:sync --idempotency-key=refresh-one'.($json ? ' --json' : ''));
+        if ($json) {
+            $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            expect($decoded['id'])->toBe(42)->and($decoded['status'])->toBe('queued');
+        } else {
+            expect($output)->toContain('Operation 42: queued.', 'orbit operation:show 42');
+        }
+        expect($mock->getLastRequest())->toBeInstanceOf(SyncGitHubAppRequest::class);
+        expect($mock->getLastRequest()->headers()->get('Idempotency-Key'))->toBe('refresh-one');
+    })->with([true, false]);
 });
 
 function github_run(string $command, int $expectedStatus = 0): string
@@ -336,37 +251,15 @@ function github_run(string $command, int $expectedStatus = 0): string
 }
 
 /**
- * @param  list<array<string, mixed>>  $payloads
- */
-function github_show_sequence(array $payloads, ?int $failAfter = null): Closure
-{
-    $index = 0;
-
-    return static function () use ($payloads, $failAfter, &$index): MockResponse {
-        $current = $index++;
-
-        if ($failAfter !== null && $current >= $failAfter) {
-            return MockResponse::make(
-                ['error' => ['code' => 'github.unavailable', 'message' => 'Could not reach api.github.com.']],
-                502,
-                ['X-Orbit-Request-Id' => github_request_id()],
-            );
-        }
-
-        return MockResponse::make([
-            'data' => $payloads[min($current, count($payloads) - 1)],
-            'meta' => ['request_id' => github_request_id()],
-        ]);
-    };
-}
-
-/**
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
  */
 function github_app_payload(array $overrides = []): array
 {
     return [
+        'status' => 'registered',
+        'installations_status' => 'current',
+        'observed_at' => '2026-10-31T08:00:00.000Z',
         'name' => 'orbit-acme',
         'slug' => 'orbit-acme',
         'app_id' => 4242,

@@ -5,11 +5,12 @@ declare(strict_types=1);
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\NodeRoleBaselinePlan;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\NodeRole;
 use Tests\Support\Fleet\FleetFixtures;
 
-it('delegates integration effects to exactly the six owned role kinds', function (RoleName $role, bool $remove): void {
+it('delegates integration effects to the remaining owned runtime role kinds', function (RoleName $role, bool $remove): void {
     $node = FleetFixtures::node('role-plan-integration', [$role]);
     $assignment = $node->roles->sole();
     $planner = app(NodeRoleBaselinePlan::class);
@@ -20,8 +21,8 @@ it('delegates integration effects to exactly the six owned role kinds', function
         'node_id' => $node->id, 'input' => $remove ? ['purge_data' => true, 'offline' => true] : [], 'optional' => false]]);
     expect($assignment->fresh()->node_id)->toBe($node->id);
 })->with([
-    [RoleName::Metrics, false], [RoleName::Analytics, false], [RoleName::WebSocket, false],
-    [RoleName::Metrics, true], [RoleName::Analytics, true], [RoleName::WebSocket, true],
+    [RoleName::Metrics, false], [RoleName::WebSocket, false],
+    [RoleName::Metrics, true], [RoleName::WebSocket, true],
 ]);
 
 it('keeps app-dev storage DNS hibernation Caddy and firewall in the proven order', function (): void {
@@ -104,3 +105,20 @@ it('orders CI prerequisites before the host and firewall and retains data unless
     expect($planner->remove($node, $assignment, true, false)[0])->toMatchArray(['input' => ['action' => 'purge'], 'result' => ['outcome' => 'removed']]);
     expect($planner->remove($node, $assignment, false, true))->toBe([]);
 });
+
+it('refuses the retired Analytics child plan without changing its assignment', function (bool $remove): void {
+    $node = FleetFixtures::node('role-plan-analytics', [RoleName::Analytics]);
+    $assignment = $node->roles->sole();
+    $before = $assignment->getAttributes();
+    $planner = app(NodeRoleBaselinePlan::class);
+
+    try {
+        $remove ? $planner->remove($node, $assignment, true, true)
+            : $planner->converge($node, $assignment, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+        test()->fail('The retired Analytics plan must refuse.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('operation.kind_unavailable');
+    }
+
+    expect($assignment->fresh()->getAttributes())->toBe($before);
+})->with([false, true]);

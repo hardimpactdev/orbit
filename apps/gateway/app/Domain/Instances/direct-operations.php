@@ -7,9 +7,13 @@ use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
 use App\Domain\Instances\InstanceTransferDiscardProjection;
+use App\Domain\Instances\NativeInstanceProvisioningProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.create' => ['workflow' => 'operation-instance-create', 'projection' => NativeInstanceProvisioningProjection::class,
+        'private_material' => ['git_read' => 'instance.lifecycle_git', 'environment_material' => 'instance.environment_sync', 'setup_programs' => 'instance.provisioning_setup'],
+        'secret_outputs' => ['environment_template' => 'instance.create_environment']],
     'instance.sync_environment' => [
         'workflow' => 'operation-instance-environment',
         'projection' => NativeInstanceEnvironmentProjection::class,
