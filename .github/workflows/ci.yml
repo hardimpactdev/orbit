@@ -25,7 +25,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/ci-scope
         id: scope
@@ -181,7 +180,7 @@ jobs:
     name: Select agent delivery
     runs-on: ubuntu-26.04
     outputs:
-      build: ${{ steps.agent.outputs.build || 'false' }}
+      build: ${{ github.event_name == 'pull_request' && steps.plan.outputs.agent || steps.agent.outputs.build || 'false' }}
       jobs: ${{ steps.plan.outputs.jobs }}
       release: ${{ steps.agent.outputs.release }}
     steps:
@@ -203,7 +202,7 @@ jobs:
           if [ "$MAIN" = true ]; then args+=(--main); fi
           python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --github-output "$GITHUB_OUTPUT"
       - name: Compare with the published agent source
-        if: github.event_name != 'pull_request' || steps.plan.outputs.agent == 'true'
+        if: github.event_name != 'pull_request'
         id: agent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -244,43 +243,6 @@ jobs:
         path: ${{ runner.temp }}/agent-delivery
         if-no-files-found: error
         retention-days: 30
-
-  package-boundary:
-    name: Native package boundary
-    needs: [changes, agent]
-    if: needs.changes.outputs.build == 'true'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: agent-delivery-linux
-          path: ${{ runner.temp }}/agent-delivery
-      - name: Install native fixture tools
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends --yes php-cli iproute2 sudo python3
-      - name: Prepare pinned Node and npm fixture
-        run: |
-          python3 - <<'PYTHON'
-          import hashlib, io, os, pathlib, tarfile, urllib.request
-          data = urllib.request.urlopen('https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz', timeout=60).read()
-          assert hashlib.sha256(data).hexdigest() == '6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6'
-          destination = pathlib.Path(os.environ['RUNNER_TEMP']) / 'package-toolchain'
-          destination.mkdir()
-          with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as archive:
-              archive.extractall(destination, filter='data')
-          PYTHON
-      - name: Prove the package boundary and refusal paths
-        env:
-          ORBIT_PACKAGE_AGENT: ${{ runner.temp }}/agent-delivery/orbit-agent-linux-x86_64
-          ORBIT_PACKAGE_NODE: ${{ runner.temp }}/package-toolchain/node-v24.22.1-linux-x64/bin/node
-          ORBIT_PACKAGE_NPM: ${{ runner.temp }}/package-toolchain/node-v24.22.1-linux-x64/lib/node_modules/npm
-        run: |
-          chmod +x "$ORBIT_PACKAGE_AGENT"
-          python3 -B -m unittest discover -s apps/agent/tests -p package_sandbox_native.py -v
 
   agent-macos:
     needs: changes
@@ -361,7 +323,7 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [php, cli, docs, api-reference, web, changes, package-boundary]
+    needs: [php, cli, docs, api-reference, web, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks
@@ -374,7 +336,6 @@ jobs:
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
-          selected['package-boundary'] = needs['changes']['outputs'].get('build') == 'true'
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')

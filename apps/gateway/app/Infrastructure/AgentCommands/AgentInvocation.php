@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\AgentCommands;
 
 use App\Domain\GitHub\GitReadEnvironment;
-use App\Domain\Operations\EffectReceiptMetadata;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
@@ -26,31 +25,23 @@ final readonly class AgentInvocation
      *
      * @param  array<string, mixed>  $input
      */
-    public static function envelope(string $pin, float $budgetSeconds, #[\SensitiveParameter] array $input, ?int $streamBytes = null, ?EffectReceiptMetadata $effect = null): string
+    public static function envelope(string $pin, float $budgetSeconds, #[\SensitiveParameter] array $input, ?int $streamBytes = null): string
     {
-        return json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budgetSeconds * 1000), 'input' => (object) $input, ...($streamBytes === null ? [] : ['stream_bytes' => $streamBytes]), ...($effect === null ? [] : ['effect_receipt' => $effect->envelope()])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+        return json_encode(['agent_sha256' => $pin, 'deadline_ms' => (int) floor($budgetSeconds * 1000), 'input' => (object) $input, ...($streamBytes === null ? [] : ['stream_bytes' => $streamBytes])], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
     }
 
     /**
      * The input as the agent receives it, with each credential in its wire form, and whether it carries one.
      *
      * @param  array<string, mixed>  $input
-     * @return array{0: array<string, mixed>, 1: bool, 2: EffectReceiptMetadata|null}
+     * @return array{0: array<string, mixed>, 1: bool}
      */
     public static function wire(#[\SensitiveParameter] array $input): array
     {
-        $credential = false;
-        $effect = null;
-        foreach ($input as $key => $value) {
-            if ($key === EffectReceiptMetadata::InputKey) {
-                if (! $value instanceof EffectReceiptMetadata) {
-                    throw new \LogicException('Protected effect metadata must be a server-owned value.');
-                }
-                $effect = $value;
-                unset($input[$key]);
+        self::rejectCallerMetadata($input);
 
-                continue;
-            }
+        $credential = false;
+        foreach ($input as $key => $value) {
             if ($value instanceof AgentGitHubToken) {
                 $credential = true;
                 $input[$key] = $value->value;
@@ -61,7 +52,7 @@ final readonly class AgentInvocation
             }
         }
 
-        return [$input, $credential, $effect];
+        return [$input, $credential];
     }
 
     /** @param  array<string, mixed>  $input */
@@ -69,13 +60,19 @@ final readonly class AgentInvocation
     {
         $spec = $this->contract->command($command);
 
-        if (array_key_exists(EffectReceiptMetadata::InputKey, $input)) {
-            throw new \LogicException('Keyed effects use AgentCommandRunner protected transport.');
-        }
+        self::rejectCallerMetadata($input);
 
         return new RemoteCommand(
             [...($spec->needsSudo('linux') ? ['sudo', '-n'] : []), SshAgentTransport::LinuxBinary, 'command', $spec->name],
             input: self::envelope($this->delivery->pin($node), (float) $spec->timeoutSeconds, $input),
         );
+    }
+
+    /** @param array<string, mixed> $input */
+    private static function rejectCallerMetadata(array $input): void
+    {
+        if (array_key_exists('__orbit_effect_receipt', $input)) {
+            throw new \LogicException('Agent effect receipt metadata is retired.');
+        }
     }
 }
