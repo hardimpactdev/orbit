@@ -106,6 +106,47 @@ import { runtimeProgram } from "./proxy-runtime.ts";
 import { runtimeFixture } from "./proxy-runtime.fixture.ts";
 import { publishProgram } from "./files.ts";
 
+Deno.test("derived public keys accept OpenSSH comments but refuse malformed wire data or multiple lines", async () => {
+  let publicOutput = vpn.host_key + " orbit-light-node-proxy\n";
+  const invoke: NodeCommand = (argv) => {
+    let output = "";
+    if (argv[0] === "/usr/bin/python3") {
+      output = argv[2] === runtimeProgram
+        ? JSON.stringify(runtimeFixture)
+        : JSON.stringify({
+          uid: 0,
+          gid: 0,
+          kind: argv[3].endsWith("id_ed25519") ? "file" : "directory",
+          mode: argv[3].endsWith("id_ed25519") ? 0o600 : 0o755,
+        });
+    } else if (argv[0] === "/usr/bin/cat") {
+      output = "MemAvailable: 4000000 kB\n";
+    } else if (argv[0] === "/usr/bin/ssh-keygen" && argv.includes("-y")) {
+      output = publicOutput;
+    } else throw new Error("Unexpected key or unit mutation");
+    return Promise.resolve({
+      success: true,
+      code: 0,
+      stdout: new TextEncoder().encode(output),
+    });
+  };
+  assertEquals(await prepareProxyKey(invoke, runtimeFixture), vpn.host_key);
+  publicOutput = vpn.host_key + "\n";
+  assertEquals(await prepareProxyKey(invoke, runtimeFixture), vpn.host_key);
+  for (
+    const malformed of [
+      vpn.host_key + "\n" + exit.host_key,
+      vpn.host_key + "\n\n",
+      "ssh-ed25519 YWJjZA==",
+      "ssh-rsa " + vpn.host_key.split(" ")[1],
+      "diagnostic\n" + vpn.host_key,
+    ]
+  ) {
+    publicOutput = malformed;
+    await assertRejects(() => prepareProxyKey(invoke, runtimeFixture));
+  }
+});
+
 Deno.test("proxy activation composes canonical issuer and keeps both credential pairs on stdin", async () => {
   const calls: { argv: readonly string[]; stdin?: Uint8Array }[] = [];
   const files = new Map<

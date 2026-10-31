@@ -190,7 +190,7 @@ type Context = {
 const PublicKey = z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/);
 export const behavior = {
   type: "@nckrtl/node-proxy-workers",
-  version: "2026.10.31.3",
+  version: "2026.10.31.4",
   globalArguments: z.object({}).strict(),
   resources: {
     runtime: {

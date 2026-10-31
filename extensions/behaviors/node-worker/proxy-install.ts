@@ -18,15 +18,7 @@ const key = root + "/id_ed25519";
 
 export async function knownHost(target: ProxyTarget): Promise<string> {
   const v = ProxyTarget.parse(target);
-  const wire = Uint8Array.from(
-    atob(v.host_key.split(" ")[1]),
-    (c) => c.charCodeAt(0),
-  );
-  if (
-    wire.length !== 51 || new DataView(wire.buffer).getUint32(0) !== 11 ||
-    new TextDecoder().decode(wire.slice(4, 15)) !== "ssh-ed25519" ||
-    new DataView(wire.buffer).getUint32(15) !== 32
-  ) throw new Error("Invalid recorded host key");
+  const wire = ed25519Wire(v.host_key);
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", wire));
   const fingerprint = "SHA256:" +
     btoa(String.fromCharCode(...hash)).replace(/=+$/, "");
@@ -34,6 +26,30 @@ export async function knownHost(target: ProxyTarget): Promise<string> {
     throw new Error("Recorded SSH host fingerprint mismatch");
   }
   return `${v.host} ${v.host_key}\n`;
+}
+
+function ed25519Wire(publicKey: string): Uint8Array<ArrayBuffer> {
+  const wire = Uint8Array.from(
+    atob(publicKey.split(" ")[1]),
+    (c) => c.charCodeAt(0),
+  );
+  if (
+    wire.length !== 51 || new DataView(wire.buffer).getUint32(0) !== 11 ||
+    new TextDecoder().decode(wire.slice(4, 15)) !== "ssh-ed25519" ||
+    new DataView(wire.buffer).getUint32(15) !== 32
+  ) throw new Error("Invalid Ed25519 public key wire data");
+  return wire;
+}
+
+/** ssh-keygen -y may retain the private key's public comment. */
+function derivedPublicKey(output: string): string {
+  const line = output.replace(/\r?\n$/, "");
+  const match = /^ssh-ed25519 ([A-Za-z0-9+/]+={0,2})(?: [^\r\n]*)?$/
+    .exec(line);
+  if (!match || match[0] !== line) throw new Error("Invalid proxy public key");
+  const publicKey = `ssh-ed25519 ${match[1]}`;
+  ed25519Wire(publicKey);
+  return publicKey;
 }
 
 const identityProgram = `import os,stat,tomllib
@@ -95,13 +111,9 @@ export async function prepareProxyKey(
   if (!owned(await metadata(invoke, key), "file", 0o600)) {
     throw new Error("Unsafe proxy key custody");
   }
-  const publicKey = text(
+  return derivedPublicKey(text(
     await required(invoke, ["/usr/bin/ssh-keygen", "-y", "-f", key]),
-  ).trim();
-  if (!/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/.test(publicKey)) {
-    throw new Error("Invalid proxy public key");
-  }
-  return publicKey;
+  ));
 }
 
 export function proxyUnit(node: 1 | 18): string {
