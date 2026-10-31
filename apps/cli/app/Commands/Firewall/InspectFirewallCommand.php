@@ -30,8 +30,11 @@ final class InspectFirewallCommand extends FirewallCommand
             return self::FAILURE;
         }
         $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
+        }
         $profile = $this->activeGatewayProfile($repository);
-        if ($connector === null || $profile === null) {
+        if ($profile === null) {
             return self::FAILURE;
         }
         $key = $this->option('idempotency-key');

@@ -44,7 +44,7 @@ The first role convergence removes `orbit:public-ssh-recovery`. So a Node with a
 
 In the live list, each live rule has a `match` value. `exact` means it equals a managed or operator rule. `drift` means its comment names such a rule but the rule differs. `unmanaged` means its comment names no managed or operator rule, or it has no comment. A managed or operator rule that is absent from UFW is listed as missing. An inactive, absent, or unreachable UFW returns no live rows. The web app lists the live rules, shows `drift` and `unmanaged` rules in red, and flags missing rules. When it cannot read live UFW, it shows the operator rules and the managed catalog instead.
 
-## `orbit firewall:inspect`
+## orbit firewall:inspect
 
 `orbit firewall:inspect --node=7 [--idempotency-key=KEY] [--json]` starts the native read and follows its Operation. `POST /api/v1/nodes/{node}/firewall-inspection` returns the same Operation with `202 Accepted`. Only the admitted Node can submit the bounded snapshot. The Node agent is not invoked.
 
