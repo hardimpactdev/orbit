@@ -99,8 +99,20 @@ it('refuses a stale stored-site render before any Node mutation', function (): v
     expect($this->agents->calls)->toBe([]);
 });
 
+it('withdraws only the recorded Route LAN rule and requires its cleanup receipt', function (): void {
+    $this->route->update(['sites_published' => false]);
+    ($this->claimOperation)('route.lan_remove', 'route_effect', ['route_id' => $this->route->id]);
+    $this->agents->answer('firewall.route-lan', ['matches' => true]);
+    ($this->runStep)('node-effect-prepare')->assertOk();
+    ($this->runStep)('node-effect-proof')->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    ($this->runStep)('node-effect')->assertOk()->assertJsonPath('data.ready', true);
+    ($this->runStep)('node-effect-proof')->assertOk();
+    expect($this->agents->calls)->toHaveCount(1)->and($this->agents->calls[0]['input'])
+        ->toMatchArray(['operation' => 'remove', 'route_id' => $this->route->id, 'effect_key' => 'op-'.$this->operation->id.'.node-effect']);
+});
+
 it('does not withdraw firewall or pools while the Route still publishes sites', function (): void {
-    ($this->claimOperation)('route.shared_php_withdraw', 'route_effect', ['route_id' => $this->route->id]);
+    ($this->claimOperation)('route.lan_remove', 'route_effect', ['route_id' => $this->route->id]);
     ($this->runStep)('node-effect-prepare')->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
     expect($this->agents->calls)->toBe([]);
 });

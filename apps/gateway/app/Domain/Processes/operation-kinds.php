@@ -14,16 +14,12 @@ return (static function (): array {
     }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
-    foreach (['create', 'update', 'restart'] as $verb) {
+    foreach (['create', 'update'] as $verb) {
         $runs = [];
-        if (in_array($verb, ['create', 'update'], true)) {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.stage-unit', 'input_fields' => ['process_id', 'unit', 'content'], 'input_values' => [], 'secrets' => ['content' => 'process.unit_content']];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.activate-unit', 'input_fields' => ['process_id', 'unit', 'desired', 'on_demand', 'change'], 'input_values' => []];
-            $runs[] = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment'], 'input_values' => [], 'secrets' => ['environment' => 'process.environment', 'command' => 'process.command']];
-        } else {
-            $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => $verb]];
-        }
+        $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.stage-unit', 'input_fields' => ['process_id', 'unit', 'content'], 'input_values' => [], 'secrets' => ['content' => 'process.unit_content']];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.activate-unit', 'input_fields' => ['process_id', 'unit', 'desired', 'on_demand', 'change'], 'input_values' => []];
+        $runs[] = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => ['process_id', 'container', 'desired', 'spec', 'image', 'command', 'restart', 'working_directory', 'ports', 'mounts', 'environment'], 'input_values' => [], 'secrets' => ['environment' => 'process.environment', 'command' => 'process.command']];
         $runs[] = ['transport' => 'agent', 'name' => 'process.check-release', 'input_fields' => ['directory'], 'input_values' => []];
         foreach (['suspend' => ['operation', 'marker'], 'awake' => ['operation', 'marker'], 'environment' => ['operation', 'application', 'path', 'instance_id', 'marker', 'content']] as $variant => $fields) {
             $runs[] = ['transport' => 'agent', 'name' => 'vite.set-traffic', 'input_fields' => [], 'input_values' => [],
@@ -35,7 +31,7 @@ return (static function (): array {
         $runs[] = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [...$artifact, 'on_demand'], 'input_values' => ['operation' => 'stop']];
         $runs[] = ['transport' => 'agent', 'name' => 'process.status', 'input_fields' => $artifact, 'input_values' => []];
         foreach ($runs as &$run) {
-            $run['resumable'] = ! ($run['name'] === 'process.control' && $run['input_values']['operation'] === 'restart');
+            $run['resumable'] = true;
         }
         unset($run);
         $runs[] = ['transport' => 'gateway', 'name' => 'process.runtime_ready', 'resumable' => true, 'input_fields' => ['process_id'], 'input_values' => []];
@@ -44,6 +40,8 @@ return (static function (): array {
             'completion_contract' => ['step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready', 'result' => ['ready' => true]],
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
     }
+
+    $kinds['process.restart'] = ['executor' => 'swamp', 'admission' => ProcessRuntimeChildAdmission::class, 'result_fields' => ['ready', 'state', 'error_code']];
 
     $kinds['process.start'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
 
