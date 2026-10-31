@@ -215,23 +215,40 @@ Deno.test("an unbound or refused legacy read fails once before any effect or pro
   }
 });
 
-Deno.test("native cancellation is checked before and after a single transport-owned read", async () => {
-  for (const before of [true, false]) {
-    const controller = new AbortController();
-    let reads = 0;
-    const gateway = new GatewayOperation(() => {
-      reads++;
-      controller.abort(new Error("native cancellation"));
-      return Promise.resolve({ status: 200, body: { data: {} } });
-    }, args);
-    if (before) controller.abort(new Error("native cancellation"));
-    await assertRejects(
-      () => gateway.read(controller.signal),
-      Error,
-      "native cancellation",
-    );
-    assertEquals(reads, before ? 0 : 1);
-  }
+Deno.test("a pre-cancelled bound legacy read records cancellation without an effect", async () => {
+  const f = fixture();
+  let reads = 0;
+  const gateway = new GatewayOperation(() => {
+    reads++;
+    return Promise.resolve({ status: 200, body: { data: {} } });
+  }, args);
+  const signal = AbortSignal.abort();
+  assertEquals(await gateway.read(signal), {});
+  assertEquals(reads, 1);
+  assertEquals(
+    await directOperation(args, f.gateway, f.action, (r) => r, signal),
+    { status: "cancelled" },
+  );
+  assertEquals(f.effects(), 0);
+});
+
+Deno.test("cancellation during the single legacy read refuses before an effect or projection", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  let reads = 0;
+  const gateway = new GatewayOperation(() => {
+    reads++;
+    controller.abort(new Error("native cancellation"));
+    return Promise.resolve({ status: 200, body: { data: {} } });
+  }, args);
+  await assertRejects(
+    () => directOperation(args, gateway, f.action, (r) => r, controller.signal),
+    Error,
+    "native cancellation",
+  );
+  assertEquals(reads, 1);
+  assertEquals(f.effects(), 0);
+  assertEquals(f.projected, []);
 });
 
 Deno.test("a read-only pending wait observes Gateway cancellation before accepting an applied result", async () => {

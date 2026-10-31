@@ -69,9 +69,11 @@ export class GatewayOperation {
     return z.object({ data: z.unknown() }).parse(response.body).data;
   }
   async read(signal?: AbortSignal): Promise<unknown> {
-    signal?.throwIfAborted();
+    // A pre-cancelled legacy invocation still reads its bound row so the
+    // existing directOperation path can record cancellation without an effect.
+    const readSignal = signal?.aborted ? undefined : signal;
     const response = await this.call("GET", `?run_id=${this.args.run_id}`);
-    signal?.throwIfAborted();
+    readSignal?.throwIfAborted();
     return response;
   }
   project(body: Record<string, unknown>) {
