@@ -1,258 +1,207 @@
-"""Actual native PHP monitoring DAG against owned scratch files and fake tool boundaries."""
+"""Native dedicated-pool monitoring with unmodified official file actions."""
 
-import hashlib
+import grp
 import json
 import os
 import pwd
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
-FAMILY = "operations/php/monitor-command"
 
 
 class PhpMonitorCommandNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors(FAMILY)
-        self.host = self.repo / "host"
-        self.host.mkdir()
-        self.user = pwd.getpwuid(os.getuid()).pw_name
-        home = self.host / "home" / self.user
-        application = home / "releases/initial"
-        application.mkdir(parents=True)
-        self.directory = self.host / "etc/orbit/php-fpm" / self.user
-        generated = self.directory / "generated"
-        generated.mkdir(parents=True)
-        self.units = self.host / "units"
-        self.units.mkdir()
-        (self.host / "locks").mkdir()
-        (self.host / "proc/sys/kernel/random").mkdir(parents=True)
-        (self.host / "proc/sys/kernel/random/boot_id").write_text(
-            "a075eb23-7ac4-4487-80d1-57a038a92676\n"
+        self.copy_behaviors("operations/php/monitor-command")
+        self.connection = dict(
+            install_cfgmgmt(self), nodeIdentityFile="/unused/fixture-key", become=True
         )
-        service = f"orbit-{self.user}-php8.5-fpm.service"
-        self.service = self.host / "service.json"
-        self.service.write_text(
-            json.dumps({"active": True, "fail_reload": False, "calls": []})
-        )
-        self.fpm = self.host / "php-fpm"
-        self.fpm.write_text("""#!/usr/bin/env python3
-import os, sys
-if "-i" in sys.argv: print(os.environ["PHP_INI_SCAN_DIR"].split(":")[-1]+"/master.ini")
-""")
-        self.fpm.chmod(0o700)
-        common = (
-            self.repo / "extensions/behaviors" / FAMILY / "scripts/runtime_common.py"
-        )
-        common.write_text(
-            common.read_text()
-            + f"""
-class FixtureHost(Host):
-    def __init__(self):
-        base=P({str(self.host)!r})
-        self.homes=base/'home';self.etc=base/'etc/orbit';self.units=base/'units'
-        self.locks=base/'locks';self.proc=base/'proc';self.php_conf=base/'php';self.sockets=base/'sockets'
-        self.root_uid=os.getuid();self.root_gid=self.caddy_gid=os.getgid()
-    def active(self, service): return json.loads(P({str(self.service)!r}).read_text())['active']
-    def pid(self, service): return 11
-    def start(self, pid): return 100
-    def fpm(self, version): return P({str(self.fpm)!r})
-    def ok(self, *args):
-        path=P({str(self.service)!r});state=json.loads(path.read_text());state['calls'].append(list(args))
-        fail=state['fail_reload'] and args[0]=='reload'
-        if fail: state['fail_reload']=False
-        path.write_text(json.dumps(state));return not fail
-Host=FixtureHost
+        self.host = self.repo / "php"
+        self.directory = self.host / "orbit-app-9/generated"
+        self.directory.mkdir(parents=True)
+        (self.directory / "php-fpm.conf").write_text("existing main")
+        (self.directory / "pool.conf").write_text("previous pool")
+        (self.directory.parent / "local.conf").write_text("operator local tuning")
+        self.home = self.repo / "home"
+        (self.home / "current").mkdir(parents=True)
+        self.audit = self.repo / "audit"
+        commands = self.repo / "commands"
+        commands.mkdir()
+        script = r"""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+name=Path(sys.argv[0]).name
+with open(os.environ['FIXTURE_AUDIT'],'a') as out:out.write(json.dumps([name,*sys.argv[1:]])+'\n')
+if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
 """
-        )
-        # Fixture-only import keeps the actual script assets, ownership checks,
-        # file transactions and native dependencies intact.
-        common.write_text("import json\n" + common.read_text())
-        main = f"[global]\ninclude = {generated}/pool.conf\ninclude = {self.directory}/local.conf\n"
-        pool = f"[orbit-{self.user}]\nchdir = {application}\n"
-        desired = (
-            pool
-            + f"pm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/{self.user}.sock.status\n"
-        )
-        self.prior = pool + f"\n; Orbit application release: {application}\n"
-        local = f"[orbit-{self.user}]\npm = ondemand\n"
-        for path, text in [
-            (self.directory / "orbit.identity", "fixture:9"),
-            (self.directory / "local.conf", local),
-            (generated / "php-fpm.conf", main),
-            (generated / "pool.conf", self.prior),
-            (generated / "master.ini", "; fixture\n"),
-            (
-                generated / "local.sha256",
-                hashlib.sha256(local.encode()).hexdigest() + "\n",
-            ),
-            (self.units / service, "unit\n"),
-        ]:
-            path.write_text(text)
-            path.chmod(0o644)
-        generation = hashlib.sha256(
-            b"".join(
-                line + b"\n"
-                for line in self.prior.encode().split(b"\n")
-                if line.startswith((b"chdir = ", b"; Orbit application release: "))
-            )
-        ).hexdigest()
-        receipt = self.directory / ".runtime-generation.applied"
-        receipt.write_text(
-            generation + "\na075eb23-7ac4-4487-80d1-57a038a92676\n11\n100\n"
-        )
-        receipt.chmod(0o600)
-        self.runtime = {
-            "user": self.user,
-            "home": str(home),
-            "version": "8.5",
-            "marker": "fixture:9",
-            "mode": "monitor",
-            "application": str(application),
-            "initial_application": str(application),
-            "configuration": {
-                "main": main,
-                "pool": desired,
-                "initial_pool": desired,
-                "local_defaults": local,
-                "master_ini": "; fixture\n",
-                "unit": "unit\n",
-            },
-        }
+        for name in ("php-fpm8.5", "systemctl"):
+            path = commands / name
+            path.write_text(script)
+            path.chmod(0o700)
+        self.native_env.update(FIXTURE_AUDIT=str(self.audit))
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-php-monitor.yaml").read_text()
         )
         for job in workflow["jobs"]:
-            self.assertIn("target", job)
             job.pop("target")
             job.pop("labels")
             for step in job["steps"]:
                 self.assertIn("target", step)
+                self.assertIn("labels", step)
                 step.pop("target")
                 step.pop("labels")
                 task = step["task"]
-                if task["behaviorType"] == "command/shell":
-                    task["inputs"]["run"] = task["inputs"]["run"].replace(
-                        "sudo --preserve-env=ORBIT_PHP_MONITOR_INPUT ", ""
+                if task["behaviorType"] == "@swamp/cfgmgmt/file":
+                    task["globalArgs"].update(
+                        path=str(self.directory / "pool.conf"),
+                        owner=pwd.getpwuid(os.getuid()).pw_name,
+                        group=grp.getgrgid(os.getgid()).gr_name,
+                        become=False,
                     )
+                if task["behaviorType"] == "command/shell":
+                    original_probe = (
+                        task["inputs"]["run"] if step["name"] == "probe" else None
+                    )
+                    task["inputs"]["run"] = (
+                        task["inputs"]["run"]
+                        .replace("sudo --preserve-env=PHP_INI_SCAN_DIR ", "")
+                        .replace("sudo ", "")
+                        .replace("/etc/orbit/php-fpm", str(self.host))
+                        .replace("/usr/sbin/php-fpm", str(commands / "php-fpm"))
+                        .replace("/usr/bin/systemctl", str(commands / "systemctl"))
+                    )
+                    if original_probe is not None:
+                        task["inputs"]["run"] = original_probe.replace(
+                            "/etc/orbit/php-fpm", str(self.host)
+                        )
+                    if step["name"] == "validate":
+                        task["inputs"]["env"]["ORBIT_PHP_MAIN"] = str(
+                            self.directory / "php-fpm.conf"
+                        )
         (self.repo / "workflows/workflow-operation-php-monitor.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
+        self.runtime = {
+            "user": "orbit-app-9",
+            "home": str(self.home),
+            "version": "8.5",
+            "marker": "fixture:9",
+            "mode": "monitor",
+            "application": str(self.home / "current"),
+            "initial_application": str(self.home / "releases/initial"),
+            "configuration": {
+                "main": "existing main",
+                "pool": "desired monitoring pool",
+                "initial_pool": "initial monitoring pool",
+                "local_defaults": "local",
+                "master_ini": "ini",
+                "unit": "unit",
+            },
+        }
 
     def run_monitor(self, success=True):
-        return self.cli(
+        inputs = {
+            "operation_id": 17,
+            "node_id": 209,
+            "kind": "metrics.reconcile",
+            "execution_secrets": {},
+            "intent": {
+                "node_id": 9,
+                "control_node_id": 14,
+                "connection": self.connection,
+                "php_runtime": self.runtime,
+            },
+        }
+        result = self.cli(
             "workflow",
             "run",
             "operation-php-monitor",
             "--input",
-            json.dumps(
-                {
-                    "operation_id": 17,
-                    "node_id": 9,
-                    "kind": "metrics.reconcile",
-                    "intent": {"node_id": 9, "php_runtime": self.runtime},
-                    "execution_secrets": {},
-                }
-            ),
+            json.dumps(inputs),
             success=success,
         )
+        return json.loads(result.stdout)
 
-    def test_monitor_success_changes_only_pool_and_reloads(self):
+    def test_monitor_writes_only_pool_then_validates_and_reloads(self):
+        self.assertEqual(self.run_monitor()["status"], "succeeded")
+        self.assertEqual(
+            (self.directory / "pool.conf").read_text(), "desired monitoring pool"
+        )
+        self.assertEqual((self.directory / "php-fpm.conf").read_text(), "existing main")
+        self.assertEqual(
+            (self.directory.parent / "local.conf").read_text(), "operator local tuning"
+        )
+        calls = [json.loads(line) for line in self.audit.read_text().splitlines()]
+        self.assertEqual(
+            calls,
+            [
+                [
+                    "php-fpm8.5",
+                    "-t",
+                    "--fpm-config",
+                    str(self.directory / "php-fpm.conf"),
+                ],
+                ["systemctl", "reload", "orbit-orbit-app-9-php8.5-fpm.service"],
+            ],
+        )
+
+    def test_validation_failure_skips_reload(self):
+        self.native_env["FIXTURE_FAIL"] = "validate"
+        self.assertEqual(self.run_monitor(success=False)["status"], "failed")
+        self.assertNotIn("systemctl", self.audit.read_text())
+
+    def test_initial_pool_is_selected_without_a_current_release(self):
+        (self.home / "current").rmdir()
         self.run_monitor()
-        self.assertIn(
-            "pm.status_path", (self.directory / "generated/pool.conf").read_text()
-        )
         self.assertEqual(
-            json.loads(self.service.read_text())["calls"],
-            [["reload", f"orbit-{self.user}-php8.5-fpm.service"]],
+            (self.directory / "pool.conf").read_text(), "initial monitoring pool"
         )
-        self.assertFalse((self.directory / ".metrics-pool.pending").exists())
-        self.assertFalse(list(self.directory.glob(".metrics-native-*")))
 
-    def test_reload_failure_restores_original_pool_in_native_recovery_branch(self):
-        data = json.loads(self.service.read_text())
-        data["fail_reload"] = True
-        self.service.write_text(json.dumps(data))
-        self.run_monitor(success=False)
+    def test_absent_runtime_is_reported_without_file_or_service_effects(self):
+        (self.directory / "php-fpm.conf").unlink()
+        (self.directory / "pool.conf").unlink()
+        self.assertEqual(self.run_monitor()["status"], "succeeded")
+        self.assertFalse((self.directory / "pool.conf").exists())
+        self.assertFalse(self.audit.exists())
+
+    def test_current_pool_is_selected_through_a_private_production_home(self):
+        if os.geteuid() == 0:
+            self.skipTest("Permission-denied fixture requires a non-root worker")
+        if (
+            shutil.which("sudo") is None
+            or subprocess.run(
+                ["sudo", "-n", "true"], check=False, capture_output=True
+            ).returncode
+        ):
+            self.skipTest(
+                "Private production-home fixture requires noninteractive sudo"
+            )
+        owner = f"{os.getuid()}:{os.getgid()}"
+        self.addCleanup(
+            subprocess.run,
+            ["sudo", "-n", "chown", "-R", owner, str(self.home)],
+            check=True,
+        )
+        self.home.chmod(0o700)
+        subprocess.run(
+            ["sudo", "-n", "chown", "65534:65534", str(self.home)], check=True
+        )
+        self.assertNotEqual(
+            subprocess.run(
+                ["/usr/bin/test", "-d", str(self.home / "current")], check=False
+            ).returncode,
+            0,
+        )
+        self.assertEqual(self.run_monitor()["status"], "succeeded")
         self.assertEqual(
-            (self.directory / "generated/pool.conf").read_text(), self.prior
+            (self.directory / "pool.conf").read_text(), "desired monitoring pool"
         )
-        self.assertEqual(len(json.loads(self.service.read_text())["calls"]), 2)
-        self.assertFalse((self.directory / ".metrics-pool.pending").exists())
-
-    def test_unchanged_pool_has_no_reload_and_still_returns_terminal_result(self):
-        configuration = self.runtime["configuration"]
-        configuration["pool"] = "\n".join(
-            line
-            for line in configuration["pool"].split("\n")
-            if not line.startswith("pm.status_")
-        )
-        configuration["initial_pool"] = configuration["pool"]
-        result = self.run_monitor()
-        self.assertIn('"status": "succeeded"', result.stdout)
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
-        self.assertFalse(list(self.directory.glob(".metrics-native-*")))
-
-    def test_absent_runtime_is_observed_without_adoption(self):
-        (self.directory / "orbit.identity").unlink()
-        self.run_monitor()
-        self.assertFalse((self.directory / "orbit.identity").exists())
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
-
-    def test_private_operator_tuning_never_reaches_native_history(self):
-        local = self.directory / "local.conf"
-        local.write_text(local.read_text() + "; private-operator-sentinel-901f\n")
-        result = self.run_monitor()
-        self.assertNotIn(
-            "private-operator-sentinel-901f", result.stdout + result.stderr
-        )
-        self.assertIn("private-operator-sentinel-901f", local.read_text())
-        self.assertFalse(list(self.directory.glob(".metrics-native-*")))
-
-    def test_foreign_deployment_between_publish_and_reload_is_preserved(self):
-        script = self.repo / "extensions/behaviors" / FAMILY / "scripts/reload.py"
-        script.write_text(
-            "import monitor_common as m\nh,r,d,w=m.context()\n(r.generated/'php-fpm.conf').write_text('foreign main\\n')\nr.receipt(m.PENDING).write_text('foreign deployment\\n')\nraise SystemExit(m.execute(m.reload_pool))\n"
-        )
-        self.run_monitor(success=False)
-        self.assertEqual(
-            (self.directory / "generated/php-fpm.conf").read_text(), "foreign main\n"
-        )
-        self.assertEqual(
-            (self.directory / ".runtime-generation.pending").read_text(),
-            "foreign deployment\n",
-        )
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
-
-    def test_interrupted_journal_publication_restores_without_orphan_backup(self):
-        script = self.repo / "extensions/behaviors" / FAMILY / "scripts/publish.py"
-        script.write_text(
-            "import monitor_common as m\noriginal=m.publish\ndef fail(parent,path,value,mode):\n    if path.name==m.METRICS_PENDING: raise OSError('fixture interruption')\n    return original(parent,path,value,mode)\nm.publish=fail\nraise SystemExit(m.execute(m.publish_pool))\n"
-        )
-        self.run_monitor(success=False)
-        self.assertEqual(
-            (self.directory / "generated/pool.conf").read_text(), self.prior
-        )
-        self.assertFalse((self.directory / ".metrics-pool.backup").exists())
-        self.assertFalse((self.directory / ".metrics-pool.pending").exists())
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
-
-    def test_unrelated_pool_change_refuses_before_publication(self):
-        original = self.prior + "[unrelated]\nchdir = /srv/new\n"
-        (self.directory / "generated/pool.conf").write_text(original)
-        self.run_monitor(success=False)
-        self.assertEqual((self.directory / "generated/pool.conf").read_text(), original)
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])
-
-    def test_stopped_service_is_not_started(self):
-        data = json.loads(self.service.read_text())
-        data["active"] = False
-        self.service.write_text(json.dumps(data))
-        self.run_monitor()
-        self.assertEqual(json.loads(self.service.read_text())["calls"], [])

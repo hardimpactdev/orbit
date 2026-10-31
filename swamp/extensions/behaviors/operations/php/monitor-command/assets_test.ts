@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
-import { monitorAssets } from "./assets.ts";
+import { prepareMonitorInput } from "./assets.ts";
 const runtime = {
     user: "orbit-app-9",
     home: "/home/orbit-app-9",
@@ -17,51 +17,47 @@ const runtime = {
         unit: "unit",
     },
 };
-Deno.test("monitor metadata preserves public runtime and resolves one script per action", () => {
-    const args = {
-        run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-        target_node_id: 9,
+Deno.test("monitor selects the canonical captured pool and dedicated service", () => {
+    const result = prepareMonitorInput({
         runtime,
-    };
-    const result = monitorAssets(args, (name) => "/native-cache/" + name);
-    assertEquals(JSON.parse(result.input_json), {
-        run_id: args.run_id,
-        runtime: args.runtime,
+        observation: '{"present":true,"initial":false}',
     });
-    assertEquals(Object.keys(result.scripts).length, 10);
-    assertEquals(result.scripts.publish, "/native-cache/scripts/publish.py");
+    assertEquals(result, {
+        present: true,
+        pool: "pool",
+        path: "/etc/orbit/php-fpm/orbit-app-9/generated/pool.conf",
+        main: "/etc/orbit/php-fpm/orbit-app-9/generated/php-fpm.conf",
+        service: "orbit-orbit-app-9-php8.5-fpm.service",
+        version: "8.5",
+        scan_dir:
+            "/etc/php/8.5/fpm/conf.d:/etc/orbit/php-fpm/orbit-app-9/generated",
+    });
+    assertEquals(
+        prepareMonitorInput({
+            runtime,
+            observation: '{"present":true,"initial":true}',
+        }).pool,
+        "initial",
+    );
 });
-Deno.test("monitor metadata refuses operational modes, traversal and env overflow", () => {
-    for (
-        const value of [{ ...runtime, mode: "converge" }, {
-            ...runtime,
-            home: "/home/../etc",
-        }, {
-            ...runtime,
-            configuration: {
-                ...runtime.configuration,
-                pool: "x".repeat(65536),
-            },
-        }]
-    ) {
-        assertThrows(() =>
-            monitorAssets({
-                run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-                target_node_id: 9,
-                runtime: value,
-            }, () => "unused")
-        );
-    }
-});
-
-Deno.test("proxy effect placement refuses before resolving command assets", () => {
-    for (const target_node_id of [1, 18]) {
-        assertThrows(() =>
-            monitorAssets({
-                run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
-                target_node_id,
-                runtime,
-            }, () => "unused")
-        );
-    }
+Deno.test("monitor projects absent runtimes and refuses non-monitor intent", () => {
+    assertEquals(
+        prepareMonitorInput({
+            runtime,
+            observation: '{"present":false,"initial":true}',
+        }).present,
+        false,
+    );
+    assertThrows(() =>
+        prepareMonitorInput({
+            runtime: { ...runtime, mode: "converge" },
+            observation: "{}",
+        })
+    );
+    assertThrows(() =>
+        prepareMonitorInput({
+            runtime: { ...runtime, user: "bad;command" },
+            observation: "{}",
+        })
+    );
 });

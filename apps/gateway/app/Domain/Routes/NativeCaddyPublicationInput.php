@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Gateway\GatewayCommandNode;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
 
@@ -32,6 +34,22 @@ final readonly class NativeCaddyPublicationInput
             throw new ResourceOperationException('caddy.render_failed', 'The admitted Node Caddy configuration cannot be rendered.', 422);
         }
 
-        return array_intersect_key($publication, array_flip(['node_id', 'user', 'caddy']));
+        return [...array_intersect_key($publication, array_flip(['node_id', 'user', 'caddy'])), ...$this->connectionForNode($node)];
+    }
+
+    /** @return array{control_node_id: int, connection: array{nodeHost: string, nodeUser: string, nodeIdentityFile: string, become: true}} */
+    public function connectionForNode(Node $node): array
+    {
+        $gateway = GatewayCommandNode::find();
+        if ($gateway === null || $node->wireguard_ip === null || $node->user === '') {
+            throw new ResourceOperationException('caddy.connection_unavailable', 'Publication requires the active Gateway and admitted Node SSH identity.', 503);
+        }
+
+        return ['control_node_id' => $gateway->id, 'connection' => [
+            'nodeHost' => $node->wireguard_ip,
+            'nodeUser' => $node->user,
+            'nodeIdentityFile' => app(SshKeyProvider::class)->privateKeyPath(),
+            'become' => true,
+        ]];
     }
 }

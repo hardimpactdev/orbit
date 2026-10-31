@@ -1,21 +1,8 @@
 manifestVersion: 1
 name: '@nckrtl/php-monitor-command'
-version: 2026.10.31.1
+version: 2026.10.31.2
 visibility: private
 license: MIT
-description: Dedicated PHP monitoring as visible placed command actions.
+description: Public metadata for official PHP monitoring file actions.
 behaviors:
   - operations/php/monitor-command/assets.ts
-additionalFiles:
-  - scripts/confirm.py
-  - scripts/finish_restore.py
-  - scripts/inspect_pool.py
-  - scripts/monitor_common.py
-  - scripts/publish.py
-  - scripts/reload.py
-  - scripts/reload_restored.py
-  - scripts/restore.py
-  - scripts/runtime_common.py
-  - scripts/stage.py
-  - scripts/validate.py
-  - scripts/cleanup.py
