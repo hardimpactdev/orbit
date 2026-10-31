@@ -109,7 +109,7 @@ The service sends an authenticated Node request to the Gateway run endpoint. Its
 
 Creation uses `@swamp/cfgmgmt/file` to deploy the public units, the official exec model to reload systemd, and `@swamp/cfgmgmt/systemd` to converge the timer to its recorded enabled/running or disabled/stopped intent. Repeating create converges the same Schedule UUID. Obsolete script and completion files are removed through `@swamp/cfgmgmt/file`; they are not executed or copied into native history.
 
-A failed create or destroy records `operation.native_failed` through the shared native terminal projection. Successful actions stay applied. Correct the cause and repeat the operation to converge; these workflows do not keep snapshots or roll back host state. Definition installation and enable retain their existing canonical installer and recovery behavior.
+A failed create, enable or destroy records `operation.native_failed` through the shared native terminal projection. Successful actions stay applied. Correct the cause and repeat the operation to converge; these workflows do not keep snapshots or roll back host state. Definition installation retains its canonical installer and recovery behavior.
 
 ## Direct Swamp control
 
@@ -117,7 +117,7 @@ A failed create or destroy records `operation.native_failed` through the shared 
 
 When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
 
-The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. For enable, the selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. These DAGs project only bounded ready/error fields through the shared endpoint.
+The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. Enable uses `operation-schedule-control`, placed on Node 209, with the Schedule UUID and canonical public SSH target supplied as run inputs. Official `@swamp/cfgmgmt/systemd` enables and starts the installed timer. It reads no command bytes, rewrites no units and calls no Gateway endpoint. The shared terminal subscriber projects the fixed public result.
 
 `schedule.run` uses `operation-schedule-run`. Every step runs on a Node 209 worker. The Gateway supplies the complete public execution context, the canonical pinned SSH target and the existing command execution-copy vault descriptor. Official `@swamp/ssh` checks the recorded account and directory, verifies the command hash, then executes the command on the target through stdin. No target worker or forwarded environment is required. The command timeout remains 1 through 86,400 seconds; the SSH execution deadline includes the existing ten-second termination margin. Native dependencies control ordering and recovery. The shared terminal subscriber projects only the fixed public result. Timer intent stays unchanged.
 
@@ -125,7 +125,7 @@ The shared [direct Operation boundary](/reference/operations#direct-swamp-starts
 
 Creation reloads after applying the files, including on rerun; the systemd model's content-triggered reload alone would miss a previous reload failure. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal uses an unconditional official exec stop so an activating oneshot is stopped too. These paths read no private command source and need no command execution copy.
 
-Enable retains its current target-worker placement until converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
+Enable consumes the same shared worker host pins and approved identity as create and destroy. There is no target worker, Gateway execution relay, child Operation, polled claim or receipt.
 
 Definition installation composes the same Schedule installer as steps of its parent native DAG. It does not create child Operations.
 
@@ -133,9 +133,9 @@ Definition installation composes the same Schedule installer as steps of its par
 
 Production Schedules require a selected release. Each execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active.
 
-A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. Production Instance installation requires a selected `current` release even when the timer is disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
+A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. Production Instance installation requires a selected `current` release even when the timer is disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer and is idempotent.
 
-Enable turns on and starts the timer of an active Instance Schedule, checks both states, and stores `enabled`. It is idempotent. When it fails, it restores the earlier timer state and returns `schedule.activation_failed`, or `schedule.rollback_failed` when the restore fails too. A Node Schedule refuses enable with `schedule.target_invalid`, because its timer is always on.
+Enable turns on and starts the timer of an active Instance Schedule and stores `enabled` after native success. If an action fails, the desired state stays unchanged and applied host actions remain. Repeat enable after correcting the cause to converge. A missing timer fails without installing a replacement. A Node Schedule refuses enable with `schedule.target_invalid`, because its timer is always on.
 
 Manual run and timer run admit the same native command DAG. The DAG waits for the command result and projects success or a bounded failure. A manual run leaves timer intent unchanged.
 

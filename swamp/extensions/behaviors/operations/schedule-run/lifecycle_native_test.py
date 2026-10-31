@@ -67,7 +67,9 @@ if action=='show':
 elif action=='is-active':
  print(current['active'] if isinstance(current['active'],str) else 'active' if current['active'] else 'inactive')
 elif action in ['enable','disable']:current['enabled']=action=='enable'
-elif action in ['start','stop']:current['active']=action=='start'
+elif action in ['start','stop']:
+ if action=='start' and not (Path(UNITS)/unit).exists():p.write_text(json.dumps(s));raise SystemExit(5)
+ current['active']=action=='start'
 elif action=='daemon-reload':s['loaded']={p.name:p.read_text() for p in Path(UNITS).glob('*')}
 p.write_text(json.dumps(s))
 """.replace("STATE", repr(str(self.state))).replace(
@@ -80,7 +82,7 @@ p.write_text(json.dumps(s))
             path.chmod(0o700)
         shutil.copyfile(tools / "ssh", self.ssh)
         shutil.copyfile(tools / "scp", self.scp)
-        for kind in ["create", "destroy"]:
+        for kind in ["create", "destroy", "control"]:
             workflow = yaml.safe_load(
                 (
                     ROOT / f"workflows/workflow-operation-schedule-{kind}.yaml"
@@ -178,6 +180,63 @@ p.write_text(json.dumps(s))
             )
         )
         self.assertFalse(list(self.host.glob("**/*snapshot*")))
+
+    def run_enable(self, success=True):
+        self.inputs["kind"] = "schedule.enable"
+        self.inputs["intent"] = {
+            "schedule": {"id": self.inputs["intent"]["schedule"]["id"]},
+            "ssh_execution": self.inputs["intent"]["ssh_execution"],
+        }
+        reply = self.cli(
+            "workflow",
+            "run",
+            "operation-schedule-control",
+            "--stdin",
+            input=json.dumps(self.inputs),
+            success=success,
+        )
+        self.run = json.JSONDecoder().raw_decode(reply.stdout.lstrip())[0]
+
+    def test_enable_starts_only_the_installed_timer_without_private_material(self):
+        self.run_lifecycle()
+        before = {p.name: p.read_text() for p in (self.host / "units").iterdir()}
+        self.save_state(calls=[])
+        self.run_enable()
+        self.assertEqual(self.result(), {"ready": True})
+        self.assertEqual(self.current("timer"), {"active": True, "enabled": True})
+        self.assertEqual(
+            {p.name: p.read_text() for p in (self.host / "units").iterdir()}, before
+        )
+        self.assertEqual(
+            [c[0] for c in json.loads(self.state.read_text())["calls"]],
+            ["show", "enable", "start", "show"],
+        )
+        self.save_state(calls=[])
+        self.run_enable()
+        self.assertEqual(self.result(), {"ready": True})
+        self.assertEqual(
+            [c[0] for c in json.loads(self.state.read_text())["calls"]], ["show"]
+        )
+
+    def test_failed_enable_skips_success_and_rerun_converges_without_rollback(self):
+        self.run_lifecycle()
+        self.save_state(calls=[], failures=["start"])
+        self.run_enable(success=False)
+        self.assertEqual(self.run["status"], "failed")
+        self.assertEqual(self.result(), {})
+        self.assertEqual(self.current("timer"), {"active": False, "enabled": True})
+        self.assertNotIn(
+            "disable", [c[0] for c in json.loads(self.state.read_text())["calls"]]
+        )
+        self.run_enable()
+        self.assertEqual(self.current("timer"), {"active": True, "enabled": True})
+        self.assertEqual(self.result(), {"ready": True})
+
+    def test_enable_missing_timer_fails_without_creating_units(self):
+        self.run_enable(success=False)
+        self.assertEqual(self.run["status"], "failed")
+        self.assertEqual(self.result(), {})
+        self.assertEqual(list((self.host / "units").iterdir()), [])
 
     def test_disabled_create_removes_obsolete_files_without_reading_private_bytes(self):
         identity = self.inputs["intent"]["schedule"]["id"]
