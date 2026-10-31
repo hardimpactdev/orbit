@@ -42,3 +42,18 @@ jobs:
           deno fmt --check extensions/behaviors/operation-runner extensions/behaviors/operations
           deno lint extensions/behaviors/operation-runner extensions/behaviors/operations
           deno check extensions/behaviors/operation-runner/mod.ts extensions/behaviors/operations/*/mod.ts extensions/behaviors/operations/routes/publication.ts extensions/behaviors/operations/_lib/direct_test.ts
+      - name: Match Process admission fixture with Gateway main
+        run: |
+          curl --fail --silent --show-error --location --max-time 30 \
+            https://raw.githubusercontent.com/hardimpactdev/orbit/main/apps/gateway/tests/Fixtures/Processes/create-admitted-input.json \
+            --output "$RUNNER_TEMP/process-create-gateway.json"
+          python3 - "$RUNNER_TEMP/process-create-gateway.json" <<'PYTHON'
+          import hashlib, pathlib, sys
+          native = pathlib.Path('extensions/behaviors/operations/processes-schedules/create-admitted-input.json')
+          gateway = pathlib.Path(sys.argv[1])
+          native_hash = hashlib.sha256(native.read_bytes()).hexdigest()
+          gateway_hash = hashlib.sha256(gateway.read_bytes()).hexdigest()
+          if native_hash != gateway_hash:
+              sys.exit(f'Process admission fixture mismatch: native={native_hash}, Gateway={gateway_hash}')
+          print(f'Process admission fixtures match: {native_hash}')
+          PYTHON
