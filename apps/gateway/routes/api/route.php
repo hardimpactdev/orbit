@@ -19,6 +19,9 @@ Route::middleware([
     Route::patch('routes/{route}', [RoutesController::class, 'update'])
         ->whereNumber('route')
         ->name('route:update');
+    Route::post('routes/{route}/converge', [RoutesController::class, 'converge'])
+        ->whereNumber('route')
+        ->name('route:converge');
     Route::put('routes/{route}/target', [RoutesController::class, 'setTarget'])
         ->whereNumber('route')
         ->name('route:target:set');

@@ -1,6 +1,6 @@
 ---
-title: Native Route creation
-description: Route creation through one placed Swamp workflow.
+title: Native Route creation and convergence
+description: Route creation and recovery through one placed Swamp workflow.
 ---
 
 Route creation records one Operation and starts one native Swamp workflow. The Gateway validates the Route, its recorded targets and its participant Nodes. Swamp prepares the workloads, requests and publishes certificates, converges PHP and LAN access, and publishes Caddy and DNS through placed steps in that run.
@@ -14,3 +14,9 @@ An initial failure withdraws the candidate sites before Swamp republishes the re
 Instance environment material uses the existing declared private path. It is rendered only for the bound participant and passed directly to the native effect callback. Certificate signing runs on the canonical control worker; the Gateway does not execute a signer or store a CSR checkpoint. The frozen agent performs no Route actions.
 
 See [Routes](/reference/routes) and [Operations](/reference/operations) for the public command contracts.
+
+## Converge an existing Route
+
+`POST /api/v1/routes/{route}/converge` accepts an empty body and returns a `route.converge` Operation. Its native workflow is `operation-route-converge`. It republishes the existing admitted intent; the caller cannot supply another domain, target or placement. Pending, failed and active app or custom proxy Routes use the same canonical workload and publication steps as creation. A failed Route keeps its failure until the native result records recovery.
+
+The Gateway refuses convergence of a retiring Route or a Route with a replacement, placement transition or target-set intent in progress. Those intents finish through their recorded withdrawal or update. Analytics tracking hosts remain owned by their Analytics parent. Authorization uses the Route's actual serving Nodes, and participant callbacks stay bound to the one native root.
