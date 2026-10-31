@@ -587,12 +587,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/ai-router/source.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/analytics/clickhouse.ts",
       "rule": "multi-action",
       "count": 2,
@@ -3741,32 +3735,14 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-dependency-package.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-dependency-results-prune.yaml",
       "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
     },
     {
-      "file": "workflows/workflow-dependency-routine.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-group-fanout.yaml",
       "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "unknown-nested-workflow",
       "count": 1,
       "evidence": []
     },
@@ -3789,12 +3765,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-groups-driver.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-horizon-new-dawn-detect.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -3803,18 +3773,6 @@
     {
       "file": "workflows/workflow-maintenance-workers.yaml",
       "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-node-worker-enroll.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-node-worker-rotation.yaml",
-      "rule": "unknown-nested-workflow",
       "count": 1,
       "evidence": []
     },

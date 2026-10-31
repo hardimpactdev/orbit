@@ -715,6 +715,103 @@ Deno.test("agent invocations inside shell substitutions and interpreter bodies a
   );
 });
 
+Deno.test("static native child workflows are scanned through their local source graph", () => {
+  const child = (run = "true") =>
+    `id: 11111111-1111-4111-8111-111111111111\n${
+      workflow("        run: " + JSON.stringify(run) + "\n").replace(
+        "name: example",
+        "name: child",
+      )
+    }`;
+  const parent = (reference: string) =>
+    `name: parent\njobs:\n- steps:\n  - task:\n      type: workflow\n      workflowIdOrName: ${
+      JSON.stringify(reference)
+    }\n`;
+  for (const reference of ["child", "11111111-1111-4111-8111-111111111111"]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["workflows/child.yaml", child()],
+    ]);
+    const clean = analyze(sources, inventory);
+    assertEquals(clean.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(workflowCoverage(clean), {
+      total: 2,
+      clean: 2,
+      unknown: 0,
+      baseline_accepted: 0,
+    });
+    sources.set(
+      "workflows/child.yaml",
+      child("orbit-agent command cli.install"),
+    );
+    assertEquals(workflowCoverage(analyze(sources, inventory)), {
+      total: 2,
+      clean: 0,
+      unknown: 0,
+      baseline_accepted: 2,
+    });
+  }
+  for (const reference of ["missing", "${{ inputs.child }}"]) {
+    const analyses = analyze(
+      new Map([["workflows/parent.yaml", parent(reference)], [
+        "workflows/child.yaml",
+        child(),
+      ]]),
+      inventory,
+    );
+    assert(analyses.get("workflows/parent.yaml")!.unknown);
+    assert(
+      analyses.get("workflows/parent.yaml")!.findings.some((f) =>
+        f.rule === "unknown-nested-workflow"
+      ),
+    );
+    assertEquals(workflowCoverage(analyses).unknown, 1);
+  }
+  const ambiguous = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      child(),
+    ], ["workflows/duplicate.yaml", child()]]),
+    inventory,
+  );
+  assert(ambiguous.get("workflows/parent.yaml")!.unknown);
+  const unresolvedBehavior = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      "name: child\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: '@missing/behavior'}\n",
+    ]]),
+    inventory,
+  );
+  assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
+});
+
+Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {
+  for (
+    const program of [
+      "import subprocess\nsubprocess.run(['flock','/tmp/workflow.lock','true'])",
+      "import os\nos.system('sleep 30')",
+      "from subprocess import run as execute\nexecute(['bash','-c','sudo -S sleep 30'])",
+      "import subprocess\nsubprocess.run(['ssh','host','flock /tmp/workflow.lock true'])",
+    ]
+  ) {
+    assertEquals(
+      agentPythonFindings(file, program, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      program,
+    );
+    const heredoc = `python3 <<'PY'\n${program}\nPY`;
+    assertEquals(
+      agentShellFindings(file, heredoc, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      heredoc,
+    );
+  }
+});
+
 Deno.test("shared proxy heredoc inspects only remote Python programs", () => {
   const head =
     '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
