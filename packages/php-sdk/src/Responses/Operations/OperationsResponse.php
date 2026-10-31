@@ -18,7 +18,7 @@ final readonly class OperationsResponse
         return [
             'operations' => array_map(
                 static function (OperationResponse $operation): array {
-                    $data = $operation->toArray(withSteps: false);
+                    $data = $operation->toArray();
                     unset($data['request_id']);
 
                     return $data;

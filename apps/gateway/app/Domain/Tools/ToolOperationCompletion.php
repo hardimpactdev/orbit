@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tools;
 
-use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -14,7 +13,7 @@ use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
 /** Projects bounded native results into Gateway intent. Contains no Node work. */
-final readonly class ToolOperationCompletion implements OperationCompletion
+final readonly class ToolOperationCompletion
 {
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
