@@ -128,7 +128,14 @@ else:raise SystemExit(9)
             )
         self.tuple = {"port": 443, "protocol": "tcp", "source": "192.168.6.2"}
 
-    def run_lan(self, ensure="present", migrate=True, success=True, rules=None):
+    def run_lan(
+        self,
+        ensure="present",
+        migrate=True,
+        success=True,
+        rules=None,
+        legacy_router=None,
+    ):
         value = {
             "operation_id": 1,
             "node_id": 9,
@@ -146,11 +153,26 @@ else:raise SystemExit(9)
                 "host_keys": [PIN],
             },
         }
+        workflow = "operation-route-lan-remove"
+        if legacy_router is not None:
+            workflow = "route-lan-apply"
+            old = value["intent"]
+            value["intent"] = {
+                "control_node_id": 209,
+                "connection": self.connection,
+                "host_keys": [PIN],
+                "rule": {
+                    "node_id": 9,
+                    "rules": old["rules"],
+                    "migrate": migrate,
+                    **({"legacy_router": True} if legacy_router else {}),
+                },
+            }
         result = json.loads(
             self.cli(
                 "workflow",
                 "run",
-                "operation-route-lan-remove",
+                workflow,
                 "--input",
                 json.dumps(value),
                 success=success,
@@ -247,3 +269,48 @@ else:raise SystemExit(9)
         _, state, _ = self.run_lan(rules=[])
         self.assertEqual(state["legacy"], [])
         self.assertEqual(state["tuples"], [])
+
+    def test_router_cleanup_requires_explicit_flag_and_keeps_wireguard_and_foreign_tags(
+        self,
+    ):
+        tags = [
+            "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2",
+            "192.168.6.9 53/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-dns-tcp",
+            "192.168.6.9 53/udp ALLOW IN 192.168.6.2 # orbit:router-lan-dns-udp:2",
+            "10.44.0.9 ALLOW IN Anywhere on orbit # orbit:wireguard-members",
+            "192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:operator",
+        ]
+        self.initialize(legacy=tags)
+        _, state, _ = self.run_lan(legacy_router=False)
+        self.assertEqual(state["legacy"], tags)
+        result, state, calls = self.run_lan(legacy_router=True)
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(state["legacy"], tags[3:])
+        self.assertEqual(state["tuples"], [self.tuple])
+        self.assertTrue(any(c[:2] == ["--force", "delete"] for c in calls))
+
+    def test_router_no_effect_official_add_cannot_remove_legacy_rules(self):
+        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2"]
+        self.initialize(legacy=legacy, ignore_apply=True)
+        result, state, calls = self.run_lan(legacy_router=True, success=False)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(state["legacy"], legacy)
+        self.assertFalse(any("numbered" in c for c in calls))
+
+    def test_router_migration_preserves_every_shared_desired_tuple(self):
+        legacy = ["192.168.6.9 443/tcp ALLOW IN 192.168.6.2 # orbit:router-lan-https:2"]
+        dns_tcp = {**self.tuple, "port": 53}
+        dns_udp = {**dns_tcp, "protocol": "udp"}
+        self.initialize(legacy=legacy)
+        desired = [self.tuple, dns_tcp, dns_udp]
+        rules = [
+            {**row, "ensure": "present", "model_name": f"r{index}"}
+            for index, row in enumerate(desired)
+        ]
+        _, state, calls = self.run_lan(legacy_router=True, rules=rules)
+        self.assertEqual(state["legacy"], [])
+        self.assertCountEqual(state["tuples"], desired)
+        first_delete = next(
+            i for i, c in enumerate(calls) if c[:2] == ["--force", "delete"]
+        )
+        self.assertEqual(sum(c[:1] == ["allow"] for c in calls[:first_delete]), 3)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Firewall\RouterLanIngressPolicy;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -23,7 +24,7 @@ final readonly class NativeClusterRouterPublicationInput
         private NativeRouteCertificateInput $certificates, private NativeCaddyPublicationInput $connections) {}
 
     /** @param array<string,mixed> $inventory
-     * @return array{route_mutations:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>}
+     * @return array{cluster_router:array<string,mixed>,route_mutations:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>}
      */
     public function capture(Operation $operation, array $inventory): array
     {
@@ -83,11 +84,14 @@ final readonly class NativeClusterRouterPublicationInput
         $forwardRetire = [];
         $restoreRetire = [];
         $lan = app(NativeRouteLanInput::class);
+        $routerIds = array_column(RouteExecutionProof::objects($inventory['old_nodes']), 'node_id');
         foreach ($rows as $row) {
             $node = Node::query()->findOrFail(ValidatedData::integer($row['node_id']));
-            $previous = $lan->forSites($node, $before);
-            $desired = $lan->forSites($node, $after);
-            $union = array_values(array_unique([...$previous, ...$lan->forSites($node, $prepared), ...$desired], SORT_REGULAR));
+            $oldRouter = in_array($node->id, $routerIds, true) ? $this->routerTuples($node) : [];
+            $newRouter = $candidate?->node_id === $node->id ? $this->routerTuples($node) : [];
+            $previous = $this->tuples($lan->forSites($node, $before), $oldRouter);
+            $desired = $this->tuples($lan->forSites($node, $after), $newRouter, $oldRouter);
+            $union = $this->tuples($previous, $lan->forSites($node, $prepared), $desired);
             if ($union === [] && ! $lan->migrationPending($node->id)) {
                 continue;
             }
@@ -96,11 +100,47 @@ final readonly class NativeClusterRouterPublicationInput
             $forwardRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $desired), 'migrate' => false];
             $restoreRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $previous), 'migrate' => false];
         }
+        if ($candidate !== null) {
+            $inventory['candidate']['firewall'] = ['node_id' => $candidate->node_id,
+                'rules' => $lan->changes([], $this->tuples($lan->forSites($candidate->node, $prepared), $this->routerTuples($candidate->node))),
+                'migrate' => true, 'legacy_router' => true];
+        }
+        $oldNodes = [];
+        foreach (RouteExecutionProof::objects($inventory['old_nodes']) as $old) {
+            $node = Node::query()->findOrFail(ValidatedData::integer($old['node_id']));
+            $survivors = $lan->forSites($node, $after);
+            $old['firewall'] = ['node_id' => $node->id,
+                'rules' => $lan->changes($this->tuples($lan->forSites($node, $prepared), $this->routerTuples($node)), $survivors),
+                'migrate' => true, 'legacy_router' => true];
+            $oldNodes[] = $old;
+        }
+        $inventory['old_nodes'] = $oldNodes;
 
-        return ['route_mutations' => [
+        return ['cluster_router' => $inventory, 'route_mutations' => [
             'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves),
             'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $restoreRetire, $forwardLeaves)],
             'certificates' => array_values(array_unique([...$forwardLeaves, ...$restoreLeaves], SORT_REGULAR)), 'participant_node_ids' => $participantIds];
+    }
+
+    /** @return list<array{port:int,protocol:string,source:string}> */
+    private function routerTuples(Node $node): array
+    {
+        $tuples = [];
+        foreach (app(RouterLanIngressPolicy::class)->eligibleSources($node) as $source) {
+            foreach (RouterLanIngressPolicy::Families as $family) {
+                $tuples[] = ['port' => (int) $family['port'], 'protocol' => $family['protocol'], 'source' => (string) $source->lan_ip];
+            }
+        }
+
+        return $tuples;
+    }
+
+    /** @param list<array{port:int,protocol:string,source:string}> ...$groups
+     * @return list<array{port:int,protocol:string,source:string}>
+     */
+    private function tuples(array ...$groups): array
+    {
+        return array_values(array_unique(array_merge(...$groups), SORT_REGULAR));
     }
 
     /** @param list<array<string,mixed>> $leaves

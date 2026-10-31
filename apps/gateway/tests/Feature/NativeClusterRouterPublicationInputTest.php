@@ -159,3 +159,42 @@ it('starts with the full captured public intent and never renders a fresh partic
         ->and($input['intent']['certificates'])->not->toBeEmpty()
         ->and($input['intent']['route_mutations'])->toHaveKeys(['forward', 'restore']);
 });
+
+it('captures official Router ingress families and preserves shared workload tuples at retirement', function (): void {
+    foreach ([[$this->old, '192.168.6.11'], [$this->candidate, '192.168.6.12'], [$this->workload, '192.168.6.13']] as [$node, $address]) {
+        $node->update(['lan_ip' => $address, 'wireguard_public_key' => 'public-wg-fixture']);
+    }
+    $this->old->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Old Router workload', 'slug' => 'old-router-workload', 'repository_url' => 'https://example.test/old-workload.git', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->old->id, 'name' => 'development',
+        'checkout_path' => '/srv/old-router-workload', 'status' => 'active', 'source_is_laravel' => false]);
+    $route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $this->cluster->id, 'domain' => 'old-workload.cluster.test',
+        'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true]);
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $intent = $capture['cluster_router'];
+    $plan = $intent['candidate']['firewall'];
+    expect($plan)->toHaveKeys(['node_id', 'rules', 'migrate', 'legacy_router'])
+        ->and($plan['legacy_router'])->toBeTrue()->and($plan['migrate'])->toBeTrue();
+    $fromWorkload = array_values(array_filter($plan['rules'], fn (array $rule): bool => $rule['source'] === '192.168.6.13'));
+    expect(array_map(fn (array $rule): array => array_intersect_key($rule, array_flip(['port', 'protocol', 'source', 'ensure'])), $fromWorkload))
+        ->toBe([
+            ['port' => 443, 'protocol' => 'tcp', 'source' => '192.168.6.13', 'ensure' => 'present'],
+            ['port' => 53, 'protocol' => 'udp', 'source' => '192.168.6.13', 'ensure' => 'present'],
+            ['port' => 53, 'protocol' => 'tcp', 'source' => '192.168.6.13', 'ensure' => 'present'],
+        ]);
+    foreach ($plan['rules'] as $rule) {
+        expect($rule)->not->toHaveKeys(['destination', 'comment', 'in_interface', 'out_interface']);
+    }
+    $obsolete = $intent['old_nodes'][0]['firewall']['rules'];
+    $shared = array_values(array_filter($obsolete, fn (array $rule): bool => $rule['port'] === 443 && $rule['source'] === '192.168.6.12'));
+    expect(array_column($shared, 'ensure'))->toBe(['present']);
+    $dns = array_values(array_filter($obsolete, fn (array $rule): bool => $rule['port'] === 53 && $rule['source'] === '192.168.6.12'));
+    expect(array_column($dns, 'ensure'))->toBe(['absent', 'absent'])
+        ->and($this->oldRole->fresh()->status->value)->toBe('active')
+        ->and($this->candidateRole->fresh()->status->value)->toBe('provisioning');
+});

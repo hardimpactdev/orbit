@@ -75,7 +75,8 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         }
         $mutations = ValidatedData::object($operation->input['route_mutations'] ?? []);
         $forward = ValidatedData::object($mutations['forward'] ?? []);
-        $admitted = array_column(RouteExecutionProof::objects($forward['lan'] ?? []), 'node_id');
+        $admitted = [...array_column(RouteExecutionProof::objects($forward['lan'] ?? []), 'node_id'),
+            ...$this->ids($intent['old_nodes'], 'node_id'), ...(is_array($candidate) ? [$candidate['node_id']] : [])];
         app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($admitted), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
         $selected = ($result['selected'] ?? false) === true && ($result['restored'] ?? false) !== true;
         if ($status === OperationStatus::Succeeded || $selected) {

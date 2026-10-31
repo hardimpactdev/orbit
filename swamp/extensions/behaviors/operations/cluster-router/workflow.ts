@@ -51,128 +51,87 @@ const common = {
     kind: expr("inputs.kind"),
     execution_secrets: {},
 };
-function child(
-    name: string,
-    workflow: string,
-    list: string,
-    dependency?: string,
-    guard?: string,
-): Fields {
-    return {
-        name,
-        ...placement,
-        forEach: { item: "member", in: expr(list) },
-        ...(dependency ? { dependsOn: after(dependency) } : {}),
-        ...(guard ? { guard: expr(guard) } : {}),
-        task: {
-            type: "workflow",
-            workflowIdOrName: workflow,
-            inputs: { ...common, intent: expr("self.member") },
-        },
-    };
-}
 export function clusterRouterWorkflow(): Fields {
-    const candidate = "inputs.intent.cluster_router.candidate";
-    const active =
-        '!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-")) && steps[key].status == "failed")';
-    const prepare: Fields = {
-        name: "prepare",
-        ...placement,
-        guard: expr(
-            `inputs.intent.cluster_router.noop || ${candidate} == null`,
-        ),
-        task: {
-            type: "workflow",
-            workflowIdOrName: "cluster-router-prepare",
-            inputs: { ...common, intent: expr(candidate) },
-        },
-    };
-    const forward = routeMutationSteps(
-        "forward",
-        "inputs.intent.route_mutations",
-        "forward",
-        active,
-    );
-    for (const step of forward) {
-        (step.dependsOn as Fields[]).push({
-            step: "prepare",
-            condition: completed,
-        });
-    }
-    const verify: Fields = {
-        name: "verify",
-        ...placement,
-        forEach: {
-            item: "probe",
-            in: expr(
-                `(${active} && ${candidate} != null) ? ${candidate}.probes : []`,
+    const steps: Fields[] = [
+        {
+            name: "prepare",
+            ...placement,
+            guard: expr(
+                "inputs.intent.cluster_router.noop || inputs.intent.cluster_router.candidate == null",
             ),
-        },
-        dependsOn: [
-            "prepare",
-            "forward_prepare_certificates",
-            "forward_php",
-            "forward_lan",
-        ].map((step) => ({ step, condition: { type: "always" } })),
-        guard: expr(
-            'steps.exists(key, (key.startsWith("forward_") || key == "prepare") && steps[key].status == "failed")',
-        ),
-        task: {
-            type: "workflow",
-            workflowIdOrName: "cluster-router-probe",
-            inputs: {
-                ...common,
-                intent: expr("self.probe"),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "cluster-router-prepare",
+                inputs: {
+                    ...common,
+                    intent: expr("inputs.intent.cluster_router.candidate"),
+                },
             },
         },
-    };
-    for (
-        const step of forward.filter((s) =>
-            ["forward_prepare_caddy", "forward_prepare_dns"].includes(
-                String(s.name),
-            )
-        )
-    ) {
-        (step.dependsOn as Fields[]).push({
-            step: "verify",
-            condition: completed,
-        });
-    }
-    const restore = routeMutationSteps(
-        "restore",
-        "inputs.intent.route_mutations",
-        "restore",
-        'steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-")) && steps[name].status == "failed")',
-    );
-    for (const step of restore) {
-        (step.dependsOn as Fields[]).push({
-            step: "forward",
-            condition: { type: "always" },
-        });
-    }
-    const retire = child(
-        "retire",
-        "cluster-router-retire",
-        "inputs.intent.cluster_router.old_nodes",
-        "forward",
-        '!("forward-0" in steps && steps["forward-0"].status == "succeeded")',
-    );
-    retire.dependsOn = [{ step: "forward", condition: { type: "always" } }];
-    const steps = [
-        prepare,
-        ...forward.slice(0, 3),
-        verify,
-        ...forward.slice(3),
-        ...restore,
-        retire,
+        {
+            name: "forward",
+            ...placement,
+            dependsOn: after("prepare", "always"),
+            guard: expr(
+                'inputs.intent.cluster_router.noop || steps.exists(key, key == "prepare" && steps[key].status == "failed")',
+            ),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "cluster-router-forward",
+                inputs: {
+                    ...common,
+                    intent: expr("inputs.intent"),
+                    parent_run_id: expr("run.id"),
+                },
+            },
+        },
+        {
+            name: "restore",
+            ...placement,
+            dependsOn: after("forward", "always"),
+            guard: expr(
+                '!("forward" in steps) || steps.forward.status != "succeeded" || steps.forward.outputs.result.ready',
+            ),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "cluster-router-restore",
+                inputs: {
+                    ...common,
+                    intent: expr("inputs.intent"),
+                    parent_run_id: expr("run.id"),
+                },
+            },
+        },
+        {
+            name: "retire",
+            ...placement,
+            dependsOn: after("forward", "always"),
+            forEach: {
+                item: "old",
+                in: expr("inputs.intent.cluster_router.old_nodes"),
+            },
+            guard: expr(
+                '!("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready',
+            ),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "route-lan-apply",
+                inputs: {
+                    ...common,
+                    intent: {
+                        rule: expr("self.old.firewall"),
+                        control_node_id: 209,
+                        connection: expr("self.old.connection"),
+                        host_keys: expr("self.old.host_keys"),
+                    },
+                },
+            },
+        },
     ];
     steps.push({
         name: "result",
         ...placement,
-        dependsOn: steps.map((s) => ({
-            step: s.name,
-            condition: { type: "always" },
-        })),
+        dependsOn: steps.map((s) => ({ step: s.name, condition: completed })),
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/cluster-router-result",
@@ -180,22 +139,111 @@ export function clusterRouterWorkflow(): Fields {
             methodName: "read",
             inputs: {
                 noop: expr("inputs.intent.cluster_router.noop"),
-                dns_count: expr(
-                    "size(inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null))",
-                ),
                 old_count: expr("size(inputs.intent.cluster_router.old_nodes)"),
                 steps: expr("steps"),
             },
+        },
+    });
+    steps.push({
+        name: "complete",
+        ...placement,
+        dependsOn: after("result"),
+        task: {
+            type: "behavior",
+            behaviorType: "@nckrtl/cluster-router-result",
+            behaviorName: expr('"cluster-router-complete-" + run.id'),
+            methodName: "complete",
+            inputs: { stdout: expr("steps.result.outputs.stdout") },
         },
     });
     return {
         id: "30f3bb33-0431-4fdf-9cd5-b54c5da45354",
         name: "operation-cluster-router",
         description:
-            "One immutable Router transition on209 with official SSH children and terminal-only projection.",
+            "One immutable Router transition on209 through shared native publication children.",
         vaults: [],
         inputs: envelope,
         jobs: [{ name: "router", steps }],
+    };
+}
+/** Reuse the canonical Route factory; native allowed failures preserve its partial public outcomes. */
+export function publicationWorkflow(mode: "forward" | "restore"): Fields {
+    const predicate =
+        '!steps.exists(key, key.startsWith("verify-") && steps[key].status == "failed")';
+    const steps = routeMutationSteps(
+        mode,
+        "inputs.intent.route_mutations",
+        mode,
+        predicate,
+        "inputs.parent_run_id",
+    );
+    if (mode === "forward") {
+        const verify: Fields = {
+            name: "verify",
+            ...placement,
+            forEach: {
+                item: "probe",
+                in: expr(
+                    "inputs.intent.cluster_router.candidate == null ? [] : inputs.intent.cluster_router.candidate.probes",
+                ),
+            },
+            dependsOn: steps.slice(0, 3).map((s) => ({
+                step: s.name,
+                condition: completed,
+            })),
+            guard: expr(
+                'steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed")',
+            ),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "cluster-router-probe",
+                inputs: { ...common, intent: expr("self.probe") },
+            },
+        };
+        for (const step of steps.slice(3)) {
+            (step.dependsOn as Fields[]).push({
+                step: "verify",
+                condition: completed,
+            });
+        }
+        steps.splice(3, 0, verify);
+    }
+    for (const step of steps) step.allowFailure = true;
+    steps.push({
+        name: "result",
+        ...placement,
+        dependsOn: steps.map((s) => ({ step: s.name, condition: completed })),
+        task: {
+            type: "behavior",
+            behaviorType: "@nckrtl/cluster-router-result",
+            behaviorName: expr('"cluster-router-phase-" + run.id'),
+            methodName: "phase",
+            inputs: {
+                mode,
+                dns_count: expr(
+                    `size(inputs.intent.route_mutations.${mode}.publications.filter(p,p.prepared.dns != null))`,
+                ),
+                steps: expr("steps"),
+            },
+        },
+    });
+    return {
+        id: mode === "forward"
+            ? "8c9d019a-a5f2-46b6-8042-c1e8e28e6ab4"
+            : "52f89117-562e-409e-a91a-07969d17a37b",
+        name: `cluster-router-${mode}`,
+        description:
+            "Shared Route publication with exact contribution proof and public recovery summary.",
+        vaults: [],
+        inputs: {
+            ...envelope,
+            properties: {
+                ...envelope.properties,
+                parent_run_id: { type: "string", format: "uuid" },
+            },
+            required: [...envelope.required, "parent_run_id"],
+        },
+        jobs: [{ name: mode, steps }],
     };
 }
 export function prepareWorkflow(): Fields {
@@ -221,15 +269,24 @@ export function prepareWorkflow(): Fields {
             "packages",
         ),
     ];
-    // Canonical Router firewall child is composed after the package action.
-    steps.push(
-        child(
-            "firewall",
-            "cluster-router-firewall",
-            "[inputs.intent]",
-            "caddy",
-        ),
-    );
+    steps.push({
+        name: "firewall",
+        ...placement,
+        dependsOn: after("caddy"),
+        task: {
+            type: "workflow",
+            workflowIdOrName: "route-lan-apply",
+            inputs: {
+                ...common,
+                intent: {
+                    rule: expr("inputs.intent.firewall"),
+                    control_node_id: 209,
+                    connection: expr("inputs.intent.connection"),
+                    host_keys: expr("inputs.intent.host_keys"),
+                },
+            },
+        },
+    });
     return {
         id: "19bf171c-cf2a-4509-beb7-3373c29f19af",
         name: "cluster-router-prepare",
@@ -238,142 +295,6 @@ export function prepareWorkflow(): Fields {
         vaults: [],
         inputs: envelope,
         jobs: [{ name: "prepare", steps }],
-    };
-}
-export function retireWorkflow(): Fields {
-    return {
-        id: "a16dc0bb-cdb5-45ea-9341-0cdbfd767a3d",
-        name: "cluster-router-retire",
-        description:
-            "Retire only the admitted obsolete Router firewall policy after native Route cleanup.",
-        vaults: [],
-        inputs: envelope,
-        jobs: [{
-            name: "retire",
-            steps: [
-                child("firewall", "cluster-router-firewall", "[inputs.intent]"),
-            ],
-        }],
-    };
-}
-export function firewallWorkflow(): Fields {
-    const globals = sshGlobals();
-    const dir = expr('"/tmp/orbit-router-" + run.id');
-    const ssh = (
-        name: string,
-        argv: unknown[],
-        dependency: string,
-        sudo = false,
-    ): Fields => ({
-        name,
-        ...placement,
-        writes: true,
-        dependsOn: after(dependency),
-        task: {
-            type: "behavior",
-            behaviorType: "@swamp/ssh",
-            behaviorName: expr('"router-firewall-" + run.id'),
-            methodName: "exec",
-            globalArgs: globals,
-            inputs: {
-                hosts: "name:target",
-                argv,
-                ...(sudo ? { sudo: true } : {}),
-            },
-        },
-    });
-    const steps: Fields[] = [
-        {
-            name: "assets",
-            ...placement,
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/router-firewall-assets",
-                behaviorName: expr('"router-firewall-assets-" + run.id'),
-                methodName: "read",
-                inputs: {
-                    firewall: expr("inputs.intent.firewall"),
-                    router_lan: expr("inputs.intent.router_lan"),
-                },
-            },
-        },
-        ssh(
-            "prepare-assets",
-            ["/usr/bin/mkdir", "-p", "-m", "0700", dir],
-            "assets",
-        ),
-        {
-            name: "copy-assets",
-            ...placement,
-            dependsOn: after("prepare-assets"),
-            task: {
-                type: "behavior",
-                behaviorType: "@swamp/ssh",
-                behaviorName: expr('"router-firewall-copy-" + run.id'),
-                methodName: "copy",
-                globalArgs: globals,
-                inputs: {
-                    hosts: "name:target",
-                    src: expr("steps.assets.outputs.scripts_directory"),
-                    dst: expr('"/tmp/orbit-router-" + run.id + "/"'),
-                    direction: "to",
-                    recursive: true,
-                },
-            },
-        },
-        ssh(
-            "rules",
-            [
-                "env",
-                expr('"ORBIT_ROUTER_INPUT=" + steps.assets.outputs.rules_json'),
-                "/usr/bin/python3",
-                "-B",
-                expr('"/tmp/orbit-router-" + run.id + "/scripts/rules.py"'),
-            ],
-            "copy-assets",
-            true,
-        ),
-        ssh(
-            "router-lan",
-            [
-                "env",
-                expr(
-                    '"ORBIT_ROUTER_INPUT=" + steps.assets.outputs.router_json',
-                ),
-                "/usr/bin/python3",
-                "-B",
-                expr(
-                    '"/tmp/orbit-router-" + run.id + "/scripts/router_lan.py"',
-                ),
-            ],
-            "rules",
-            true,
-        ),
-        ssh("cleanup-assets", ["/usr/bin/rm", "-rf", dir], "router-lan"),
-        {
-            name: "result",
-            ...placement,
-            dependsOn: after("cleanup-assets"),
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/router-firewall-assets",
-                behaviorName: expr('"router-firewall-result-" + run.id'),
-                methodName: "decode",
-                inputs: {
-                    rules_stdout: expr("steps.rules.outputs.stdout"),
-                    router_stdout: expr('steps["router-lan"].outputs.stdout'),
-                },
-            },
-        },
-    ];
-    return {
-        id: "aa3b320a-572a-4fc6-93f0-442e123a9b13",
-        name: "cluster-router-firewall",
-        description:
-            "Two separate canonical UFW actions for one admitted Router through official SSH.",
-        vaults: [],
-        inputs: envelope,
-        jobs: [{ name: "firewall", steps }],
     };
 }
 export function probeWorkflow(): Fields {
@@ -410,8 +331,8 @@ if (import.meta.main) {
     console.log(JSON.stringify({
         "workflow-operation-cluster-router.yaml": clusterRouterWorkflow(),
         "workflow-cluster-router-prepare.yaml": prepareWorkflow(),
-        "workflow-cluster-router-retire.yaml": retireWorkflow(),
-        "workflow-cluster-router-firewall.yaml": firewallWorkflow(),
+        "workflow-cluster-router-forward.yaml": publicationWorkflow("forward"),
+        "workflow-cluster-router-restore.yaml": publicationWorkflow("restore"),
         "workflow-cluster-router-probe.yaml": probeWorkflow(),
     }));
 }

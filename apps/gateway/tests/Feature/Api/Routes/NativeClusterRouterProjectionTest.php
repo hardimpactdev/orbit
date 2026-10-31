@@ -25,7 +25,7 @@ beforeEach(function (): void {
     $this->candidate = Node::query()->create(['name' => 'candidate-router', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active', 'cluster_id' => $cluster->id]);
     $this->oldRole = $this->old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
     $this->newRole = $this->candidate->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'provisioning']);
-    $this->operation = new Operation(['kind' => 'cluster.router_set', 'target_id' => $cluster->id, 'input' => ['cluster_router' => ['candidate' => ['assignment_id' => $this->newRole->id], 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]]]);
+    $this->operation = new Operation(['kind' => 'cluster.router_set', 'target_id' => $cluster->id, 'input' => ['cluster_router' => ['candidate' => ['assignment_id' => $this->newRole->id, 'node_id' => $this->candidate->id], 'old_nodes' => [['assignment_id' => $this->oldRole->id, 'node_id' => $this->old->id]]]]]);
 });
 
 it('projects the authoritative selection only at native terminal completion', function (): void {
@@ -66,7 +66,7 @@ it('keeps the authoritative candidate active after a later native DNS failure', 
 
 it('clears only admitted obsolete assignments after a native unset completes', function (): void {
     $this->operation->kind = 'cluster.router_unset';
-    $this->operation->input = ['cluster_router' => ['candidate' => null, 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]];
+    $this->operation->input = ['cluster_router' => ['candidate' => null, 'old_nodes' => [['assignment_id' => $this->oldRole->id, 'node_id' => $this->old->id]]]];
     app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true]]);
     expect($this->oldRole->fresh())->toBeNull()->and($this->newRole->fresh())->not->toBeNull();
 });
@@ -90,8 +90,7 @@ it('captures the complete obsolete Router baseline for unset without changing as
         $intent = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
         expect($intent['candidate'])->toBeNull()->and($intent['old_nodes'])->toHaveCount(2)
             ->and(array_column($intent['old_nodes'], 'assignment_id'))->toBe([$this->oldRole->id, $this->newRole->id])
-            ->and($intent['old_nodes'][0]['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
-            ->and($intent['old_nodes'][0]['router_lan'])->toBe(['desired' => [], 'expand' => false, 'prune' => true])
+            ->and($intent['old_nodes'][0])->not->toHaveKeys(['firewall', 'router_lan'])
             ->and($intent['old_nodes'][0]['user'])->toBe('orbit')
             ->and($intent['old_nodes'][0])->not->toHaveKey('home')
             ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
@@ -120,7 +119,7 @@ it('captures the complete obsolete Router baseline for unset without changing as
             ->and($setting['leaves'][0]['user'])->toBe('orbit')
             ->and($setting['leaves'][0]['root_hash'])->toBe(hash('sha256', 'public-root-fixture'))
             ->and($setting['leaves'][0])->not->toHaveKey('home')
-            ->and($setting['candidate']['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
+            ->and($setting['candidate'])->not->toHaveKeys(['firewall', 'router_lan'])
             ->and($setting['old_nodes'])->toHaveCount(1)
             ->and($this->newRole->fresh()->status)->toBe(LifecycleStatus::Provisioning);
     } finally {

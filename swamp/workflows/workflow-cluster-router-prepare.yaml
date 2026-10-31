@@ -45,9 +45,7 @@ jobs:
     labels:
       node: '209'
     dependsOn:
-    - step: account_assets
-      condition:
-        type: succeeded
+    - {step: account_assets, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -75,9 +73,7 @@ jobs:
     labels:
       node: '209'
     dependsOn:
-    - step: account_command
-      condition:
-        type: succeeded
+    - {step: account_command, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-command'
@@ -90,9 +86,7 @@ jobs:
     labels:
       node: '209'
     dependsOn:
-    - step: account
-      condition:
-        type: succeeded
+    - {step: account, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-bootstrap-command'
@@ -107,9 +101,7 @@ jobs:
       node: '209'
     writes: true
     dependsOn:
-    - step: packages_assets
-      condition:
-        type: succeeded
+    - {step: packages_assets, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -137,9 +129,7 @@ jobs:
     labels:
       node: '209'
     dependsOn:
-    - step: packages
-      condition:
-        type: succeeded
+    - {step: packages, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-command'
@@ -154,9 +144,7 @@ jobs:
       node: '209'
     writes: true
     dependsOn:
-    - step: caddy_assets
-      condition:
-        type: succeeded
+    - {step: caddy_assets, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -184,9 +172,7 @@ jobs:
     labels:
       node: '209'
     dependsOn:
-    - step: caddy_command
-      condition:
-        type: succeeded
+    - {step: caddy_command, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-command'
@@ -198,19 +184,18 @@ jobs:
     target: orbit-node-209
     labels:
       node: '209'
-    forEach:
-      item: member
-      in: ${{ [inputs.intent] }}
     dependsOn:
-    - step: caddy
-      condition:
-        type: succeeded
+    - {step: caddy, condition: {type: succeeded}}
     task:
       type: workflow
-      workflowIdOrName: cluster-router-firewall
+      workflowIdOrName: route-lan-apply
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         execution_secrets: {}
-        intent: ${{ self.member }}
+        intent:
+          rule: ${{ inputs.intent.firewall }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.connection }}
+          host_keys: ${{ inputs.intent.host_keys }}

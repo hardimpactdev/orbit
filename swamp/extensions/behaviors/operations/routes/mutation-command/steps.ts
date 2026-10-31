@@ -8,6 +8,7 @@ export function routeMutationSteps(
     intent: string,
     mode: "forward" | "restore",
     guard?: string,
+    parentRunId = "run.id",
 ): Fields[] {
     const side = `${intent}.${mode}`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
@@ -73,7 +74,7 @@ export function routeMutationSteps(
             list,
             targetIntent("leaf"),
             {},
-            { parent_run_id: expr("run.id"), restoring: mode === "restore" },
+            { parent_run_id: expr(parentRunId), restoring: mode === "restore" },
         );
     }
     function caddy(
