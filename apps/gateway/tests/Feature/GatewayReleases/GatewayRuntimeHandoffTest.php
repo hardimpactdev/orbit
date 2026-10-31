@@ -109,6 +109,8 @@ function handoff_gateway(): Node
         'public_ssh_host' => '192.0.2.2',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.2',
+        'ssh_host_key_type' => 'ssh-ed25519',
+        'ssh_host_key' => 'fixture-public-host-key',
     ]);
     $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 

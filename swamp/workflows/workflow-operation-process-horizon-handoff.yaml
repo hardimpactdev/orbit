@@ -1,6 +1,6 @@
 id: 2c2668b7-1864-48aa-966b-9705870cf69d
 name: operation-process-horizon-handoff
-description: Horizon handoff from complete admitted public inputs, with one inline command action per placed step.
+description: Horizon handoff on Node 209 through official SSH to the captured Gateway target.
 vaults: []
 inputs:
   type: object
@@ -47,6 +47,8 @@ inputs:
           pattern: ^[a-z_][a-z0-9_-]{0,31}$
         created:
           type: boolean
+        ssh_execution:
+          type: object
       required:
       - process_id
       - unit
@@ -56,6 +58,7 @@ inputs:
       - directory
       - user
       - created
+      - ssh_execution
       additionalProperties: false
   required:
   - operation_id
@@ -66,61 +69,95 @@ inputs:
   additionalProperties: false
 jobs:
 - name: horizon
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
-    node: ${{ string(inputs.node_id) }}
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
   steps:
-  - name: inspect
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-inspect-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@nckrtl/horizon-observation'
+      behaviorName: ${{ "horizon-observation-" + string(inputs.operation_id) }}
+      methodName: assets
+      inputs: {}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
       inputs:
-        run: |
-          set -eu
-          : "${UNIT:?}" "${PROCESS_ID:?}" "${EXPECTED_HASH:?}"
-          sudo -n /usr/bin/env UNIT="$UNIT" PROCESS_ID="$PROCESS_ID" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          import subprocess
-
-          unit = os.environ["UNIT"]
-          path = "/etc/systemd/system/" + unit
-          present, matches = False, False
-          try:
-              fd = os.open(path, os.O_RDONLY)
-          except FileNotFoundError:
-              fd = None
-          if fd is not None:
-              with os.fdopen(fd, "rb") as source:
-                  content = source.read(65537)
-              if (
-                  "X-Orbit-Process-ID=" + os.environ["PROCESS_ID"]
-              ).encode() not in content.splitlines():
-                  raise SystemExit("process.horizon_foreign_unit")
-              present = True
-              matches = hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]
-          state = subprocess.run(
-              ["/usr/bin/systemctl", "is-active", unit],
-              capture_output=True,
-              text=True,
-              check=False,
-          ).stdout.strip()
-          print(json.dumps({"present": present, "matches": matches, "active": state == "active"}))
-          PY
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-horizon-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-horizon-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: inspect
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "UNIT=" + inputs.intent.unit }}
+        - ${{ "PROCESS_ID=" + string(inputs.intent.process_id) }}
+        - ${{ "EXPECTED_HASH=" + inputs.intent.content_hash }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-horizon-" + run.id + "/scripts/inspect.py" }}
+        sudo: true
+      globalArgs: *id002
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
   - name: observation
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -133,9 +170,8 @@ jobs:
       inputs:
         stdout: ${{ steps.inspect.outputs.stdout }}
   - name: stage-unit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -152,51 +188,27 @@ jobs:
     guard: ${{ steps.observation.outputs.matches }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-stage-unit-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${UNIT_CONTENT:?}" "${CANDIDATE:?}" "${EXPECTED_HASH:?}"
-          sudo -n /usr/bin/env UNIT_CONTENT="$UNIT_CONTENT" CANDIDATE="$CANDIDATE" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
-          import hashlib
-          import os
-          import pathlib
-          import tempfile
-
-          content = os.environ["UNIT_CONTENT"].encode()
-          if (
-              len(content) > 65536
-              or hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]
-          ):
-              raise SystemExit("process.horizon_unit_changed")
-          path = pathlib.Path(os.environ["CANDIDATE"])
-          parent = path.parent
-          parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-          fd, name = tempfile.mkstemp(prefix=".horizon-", suffix=".service", dir=parent)
-          try:
-              with os.fdopen(fd, "wb") as output:
-                  output.write(content)
-                  output.flush()
-                  os.fchmod(output.fileno(), 0o644)
-                  os.fsync(output.fileno())
-              os.replace(name, path)
-          finally:
-              if os.path.exists(name):
-                  os.unlink(name)
-          print("staged")
-          PY
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
-          UNIT_CONTENT: ${{ inputs.intent.content }}
-          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "UNIT=" + inputs.intent.unit }}
+        - ${{ "PROCESS_ID=" + string(inputs.intent.process_id) }}
+        - ${{ "EXPECTED_HASH=" + inputs.intent.content_hash }}
+        - ${{ "UNIT_CONTENT=" + inputs.intent.content }}
+        - ${{ "CANDIDATE=" + "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit
+          }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-horizon-" + run.id + "/scripts/stage_unit.py" }}
+        sudo: true
+      globalArgs: *id002
   - name: validate-unit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -219,23 +231,20 @@ jobs:
     guard: ${{ steps.observation.outputs.matches }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-validate-unit-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${CANDIDATE:?}"
-          sudo -n /usr/bin/systemd-analyze verify "$CANDIDATE"
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
-          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+        hosts: name:target
+        argv:
+        - /usr/bin/systemd-analyze
+        - verify
+        - ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+        sudo: true
+      globalArgs: *id002
   - name: publish-unit
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -264,47 +273,26 @@ jobs:
     guard: ${{ steps.observation.outputs.matches }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-publish-unit-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${CANDIDATE:?}" "${UNIT:?}" "${EXPECTED_HASH:?}"
-          sudo -n /usr/bin/env CANDIDATE="$CANDIDATE" UNIT="$UNIT" EXPECTED_HASH="$EXPECTED_HASH" /usr/bin/python3 - <<'PY'
-          import hashlib
-          import os
-          import pathlib
-
-          candidate = pathlib.Path(os.environ["CANDIDATE"])
-          target = pathlib.Path("/etc/systemd/system") / os.environ["UNIT"]
-          try:
-              fd = os.open(target, os.O_RDONLY)
-          except FileNotFoundError:
-              fd = None
-          if fd is not None:
-              with os.fdopen(fd, "rb") as current:
-                  content = current.read(65537)
-              if hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]:
-                  print("unchanged")
-                  raise SystemExit(0)
-          fd = os.open(candidate, os.O_RDONLY)
-          with os.fdopen(fd, "rb") as source:
-              content = source.read(65537)
-          if hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]:
-              raise SystemExit("process.horizon_invalid_candidate")
-          os.replace(candidate, target)
-          print("published")
-          PY
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
-          CANDIDATE: ${{ "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit }}
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "UNIT=" + inputs.intent.unit }}
+        - ${{ "PROCESS_ID=" + string(inputs.intent.process_id) }}
+        - ${{ "EXPECTED_HASH=" + inputs.intent.content_hash }}
+        - ${{ "CANDIDATE=" + "/etc/orbit/horizon-candidates/" + string(inputs.operation_id) + "-" + inputs.intent.unit
+          }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-horizon-" + run.id + "/scripts/publish_unit.py" }}
+        sudo: true
+      globalArgs: *id002
   - name: reload-units
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -339,21 +327,19 @@ jobs:
     guard: ${{ steps.observation.outputs.matches }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-reload-units-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          sudo -n /usr/bin/systemctl daemon-reload
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+      globalArgs: *id002
   - name: enable
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -393,22 +379,20 @@ jobs:
         - type: skipped
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-enable-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${UNIT:?}"
-          sudo -n /usr/bin/systemctl enable "$UNIT"
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - enable
+        - ${{ inputs.intent.unit }}
+        sudo: true
+      globalArgs: *id002
   - name: graceful-handoff
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -455,26 +439,27 @@ jobs:
     guard: ${{ !steps.observation.outputs.active }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-graceful-handoff-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${RUN_USER:?}" "${PHP_BINARY:?}" "${APPLICATION:?}"
-          cd "$APPLICATION"
-          sudo -n --user "$RUN_USER" -- "$PHP_BINARY" artisan horizon:terminate
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
-          RUN_USER: ${{ inputs.intent.user }}
-          PHP_BINARY: ${{ inputs.intent.command[0] }}
-          APPLICATION: ${{ inputs.intent.directory }}
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - --user
+        - ${{ inputs.intent.user }}
+        - --
+        - /usr/bin/env
+        - ${{ "--chdir=" + inputs.intent.directory }}
+        - ${{ inputs.intent.command[0] }}
+        - artisan
+        - horizon:terminate
+        sudo: true
+      globalArgs: *id002
   - name: start
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -527,23 +512,21 @@ jobs:
     guard: ${{ steps.observation.outputs.active }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-start-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${UNIT:?}"
-          sudo -n /usr/bin/systemctl start "$UNIT"
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - start
+        - ${{ inputs.intent.unit }}
+        sudo: true
+      globalArgs: *id002
   - name: verify
     guard: ${{ steps.observation.outputs.active }}
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -601,22 +584,21 @@ jobs:
         - type: skipped
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "horizon-verify-" + string(inputs.operation_id) }}
-      methodName: execute
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
       inputs:
-        run: |
-          set -eu
-          : "${UNIT:?}"
-          sudo -n /usr/bin/systemctl is-active --quiet "$UNIT"
-        env:
-          UNIT: ${{ inputs.intent.unit }}
-          PROCESS_ID: ${{ string(inputs.intent.process_id) }}
-          EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - is-active
+        - --quiet
+        - ${{ inputs.intent.unit }}
+        sudo: true
+      globalArgs: *id002
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
     - step: inspect
       condition:
@@ -684,10 +666,13 @@ jobs:
       behaviorName: ${{ "horizon-result-" + string(inputs.operation_id) }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
+        run: 'set -eu
+
           : "${OUTCOME:?}" "${PROCESS_ID:?}"
-          printf '{"ready":true,"state":"%s","outcome":"%s","process_id":%s}\n' "$STATE" "$OUTCOME" "$PROCESS_ID"
+
+          printf ''{"ready":true,"state":"%s","outcome":"%s","process_id":%s}\n'' "$STATE" "$OUTCOME" "$PROCESS_ID"
+
+          '
         env:
           UNIT: ${{ inputs.intent.unit }}
           PROCESS_ID: ${{ string(inputs.intent.process_id) }}
@@ -695,3 +680,25 @@ jobs:
           STATE: '${{ steps.observation.outputs.active ? "unknown" : "active" }}'
           OUTCOME: '${{ steps.observation.outputs.active ? "terminated" : (inputs.intent.created ? "created" : "started")
             }}'
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "horizon-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-horizon-" + run.id }}
+        sudo: true
+    allowFailure: true
