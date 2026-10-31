@@ -113,15 +113,22 @@ export async function signCertificateBatch(
       "orbit-certificate-signing",
     );
     const ca = Ca.parse(JSON.parse(material));
-    const response = await invoke(certificateSigningProgram, {
-      leaves,
-      requests,
-      ca,
-    }, signal);
-    if (response.error_code !== undefined) {
-      throw new Error("Certificate signing failed");
+    const certificates: z.infer<typeof CertificateSignedRecord>[] = [];
+    const pending = requests.filter((request) => request.state === "request");
+    // The canonical local runner bounds stdout to 64 KiB. Eight RSA certificate
+    // bundles fit that bound while the parent still receives one public batch.
+    for (let offset = 0; offset < pending.length; offset += 8) {
+      const response = await invoke(certificateSigningProgram, {
+        leaves,
+        requests: pending.slice(offset, offset + 8),
+        ca,
+      }, signal);
+      if (response.error_code !== undefined) {
+        throw new Error("Certificate signing failed");
+      }
+      certificates.push(...Batch.parse(response).certificates);
     }
-    return Batch.parse(response);
+    return Batch.parse({ certificates });
   } catch {
     // Vault/provider errors can carry private values; only this fixed error leaves the step.
     throw new Error("app-dev.certificate_sign_failed");
