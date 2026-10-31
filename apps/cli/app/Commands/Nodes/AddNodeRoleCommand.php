@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayConnector;
@@ -18,9 +16,7 @@ use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 
 final class AddNodeRoleCommand extends NodeCommand
 {
-    use FollowsOperations {
-        writeOperationSummary as private operationSummary;
-    }
+    use FollowsNodeRoleOperations;
 
     #[\Override]
     protected $signature = 'node:role:add
@@ -81,15 +77,6 @@ final class AddNodeRoleCommand extends NodeCommand
 
         return $profile === null ? self::FAILURE
             : $this->followOperation($connector, $profile, $response, 'Add Node role', 'Node role');
-    }
-
-    private function writeOperationSummary(OperationResponse $operation): void
-    {
-        $this->operationSummary($operation);
-        $followUp = $operation->result['follow_up'] ?? null;
-        if (is_string($followUp)) {
-            ConsoleWriter::write($this->output, NodeOutput::followUpWarning($this->consoleMode(), $followUp));
-        }
     }
 
     /**

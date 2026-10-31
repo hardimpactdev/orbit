@@ -12,6 +12,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleMetricsInput;
+use App\Domain\Nodes\NodeRolePlacement;
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRemoveInput;
@@ -26,7 +27,6 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -49,7 +49,7 @@ final readonly class AdmitNodeRoleOperationAction
 
     public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false): Operation
     {
-        $kind = 'node.role_add';
+        $kind = $converge ? 'node.role_converge' : 'node.role_add';
         if (($existing = $this->idempotency->replay($kind)) !== null) {
             return $existing;
         }
@@ -60,7 +60,7 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
-                || ! app(NodeWorkerRollout::class)->allows($node)) {
+                || ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
             }
             if (! $this->roles->definition($role)->mutable) {
@@ -134,7 +134,7 @@ final readonly class AdmitNodeRoleOperationAction
         return DB::transaction(function () use ($node, $role, $purgeData, $offline, $deleted, $requestId): Operation {
             $node = Node::query()->lockForUpdate()->findOrFail($node->id);
             $this->guardMutable($node, $role);
-            if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeWorkerRollout::class)->allows($node)) {
+            if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role removal requires its exact managed Node worker.', 422);
             }
             $this->routes->assertRoleRemovable($node, $role);
@@ -144,11 +144,14 @@ final readonly class AdmitNodeRoleOperationAction
                     'reason' => 'instances_attached', 'role' => $role->value,
                 ]);
             }
+            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
+                ['node_id' => $node->id, 'role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline], 'operator', $requestId);
+            if (! $operation->wasRecentlyCreated) {
+                return $operation;
+            }
             $assignment->claimRemoval();
             $snapshot = app(NodeRoleRemoveInput::class)->capture($node, $assignment, $purgeData, $offline, $deleted);
-            $operation = $this->operations->execute('node.role_remove', 'node', $node->id, $node->id,
-                ['role' => $role->value, 'purge_data' => $purgeData, 'offline' => $offline, '_role_remove' => $snapshot,
-                    'participant_node_ids' => array_values(array_unique([$node->id, ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication']))]))], 'operator', $requestId);
+            $this->bindRemoval($operation, $snapshot);
 
             return $operation;
         });
@@ -167,18 +170,48 @@ final readonly class AdmitNodeRoleOperationAction
             $prepared = $input->prepare($target, $role, $force, $from);
             $source = Node::query()->lockForUpdate()->findOrFail($prepared['source']->id);
             $assignment = NodeRole::query()->lockForUpdate()->findOrFail($prepared['assignment']->id);
+            $operation = $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
+                ['node_id' => $target->id, 'role' => $role->value, 'source_node_id' => $source->id], 'operator', $requestId);
+            if (! $operation->wasRecentlyCreated) {
+                return $operation;
+            }
             $assignment->update(['node_id' => $target->id]);
             $assignment->claimConvergence();
             app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
+            if ($role === RoleName::Gateway) {
+                app(GrantGatewayRoleAccessAction::class)->execute($target);
+            }
             app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
             $snapshot = $input->capture($target->refresh(), $source, $assignment);
+            $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+            $owner = $metrics === null ? $target->id : ValidatedData::integer($metrics['metrics_node_id']);
+            $this->store->change($operation, ['input' => [...$operation->input,
+                '_relocate' => $snapshot,
+                'participant_node_ids' => array_values(array_unique([$source->id, $target->id,
+                    ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
+                    ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
+                    ...NodeRoleMetricsInput::participants($metrics)])),
+                'metrics_runtime' => $metrics === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $owner],
+                'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]],
+                'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
+                'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]]]);
 
-            return $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
-                ['role' => $role->value, '_relocate' => $snapshot,
-                    'participant_node_ids' => array_values(array_unique([$source->id, $target->id, ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication']))])),
-                    'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
-                    'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]], 'operator', $requestId);
+            return $operation;
         });
+    }
+
+    /** @param array<string,mixed> $snapshot */
+    private function bindRemoval(Operation $operation, array $snapshot): void
+    {
+        $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+        $owner = $metrics === null ? $operation->node_id : ValidatedData::integer($metrics['metrics_node_id']);
+        $this->store->change($operation, ['input' => [...$operation->input, '_role_remove' => $snapshot,
+            'participant_node_ids' => array_values(array_unique([$operation->node_id,
+                ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
+                ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
+                ...NodeRoleMetricsInput::participants($metrics)])),
+            'metrics_runtime' => $metrics === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $owner],
+            'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]]]]);
     }
 
     private function guardMutable(Node $node, RoleName $role): void

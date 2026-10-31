@@ -813,10 +813,22 @@ a nonempty cache owned by root or a symlink. Credential ownership stays the same
 
 ## Native role additions
 
-Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` reuses the same parent kind for an existing assignment. VPN and Router retain their protected-role policy.
+Adding `gateway`, `ingress`, `app-dev`, `app-prod`, `metrics`, `database`, `websocket`, `analytics`, or `ci-runner` records one `node.role_add` Operation and returns HTTP 202. `node:role:add` follows that Operation. `--converge` records `node.role_converge` for an existing assignment and uses the same target DAG. VPN and Router retain their protected-role policy.
 
 The Gateway validates the Node and records its assignment, runtime intent, public certificate plan and exact participants. Swamp performs the baseline, runtime, certificate and publication work in one native DAG. Role additions and Node convergence generate their footprint stages from one template. Agent actions, child Operations and polled execution are absent. The frozen agent continues to provide observations.
 
 The root records certificate publication before rendering Caddy, then records WebSocket serving state before publishing DNS. It captures the final footprint after those state changes, so a successful role records the files it actually published. Analytics runtime success records its managed Process even when a later publication fails. Gateway DNS routing failures remain follow-up warnings and retain Gateway authority.
 
-Execution requires an admitted Node worker for every applicable effect participant. A complete Metrics fleet containing a workerless member refuses before host effects; it does not drop that member or claim success. Existing credential types stay inside the shared private callback. Role additions can read their admitted agent hash and cannot write it.
+Execution requires an admitted Node worker or the approved canonical proxy for every applicable effect participant. A complete Metrics fleet containing a member with neither transport refuses before host effects; it does not drop that member or claim success. Existing credential types stay inside the shared private callback. Role additions can read their admitted agent hash and cannot write it.
+
+### Native role lifecycle
+
+Role convergence uses the same native chain as role addition. Removal first records the assignment as removing, then publishes the remaining PHP, Caddy and DNS state and reconciles the complete Metrics fleet. It removes only the withdrawn role's runtime, certificate and firewall rules. The last role restores public SSH before closing role access. Shared packages and Tool managers remain.
+
+Relocation converges and publishes the target before it withdraws the source. The parent records target readiness immediately. A later source-cleanup failure leaves that target active and reports the cleanup failure. WebSocket source teardown observes the private DNS withdrawal grace period. Source and target work stay in the same native parent run.
+
+### Reuse role lowers in a native parent
+
+The owning parent admits role snapshots and private bindings. Inside its private material source, `NodeRoleRuntimeSource::resolveRoleMaterial($snapshot, $nodeId)` validates the assignment, Node, pin and runtime reference before rendering existing credential types. It returns an `OperationSecretValue`; aggregate its in-memory value and redaction strings without serializing protected bytes. The standalone source retains its own Operation ownership and field binding checks.
+
+After checking its admitted publication participant, the parent uses `NodeRolePublicationInput::forPlan($plan, $node)` for fresh Caddy, PHP and private DNS input. The lower renders only duties in that immutable plan. Role removal, relocation source, role, Metrics and proxy metadata stay in the owning public view. These internal lower APIs create no Operation and grant no new private endpoint authority.

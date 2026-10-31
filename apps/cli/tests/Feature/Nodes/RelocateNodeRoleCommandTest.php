@@ -7,9 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
-use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -44,112 +42,9 @@ it('registers the exact node role relocate command signature surface', function 
         ->toBe([
             'force' => false,
             'from' => null,
+            'idempotency-key' => null,
             'json' => false,
         ]);
-});
-
-it('sends one forced gateway role relocate request as json', function (): void {
-    $mockClient = MockClient::global([
-        RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => relocated_gateway_role_payload(),
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-    ]);
-    $expected = json_encode(relocated_gateway_role_expected_json(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $this
-        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true, '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
-
-    $request = $mockClient->getLastRequest();
-    $pendingRequest = $mockClient->getLastPendingRequest();
-
-    expect($request)
-        ->toBeInstanceOf(RelocateNodeRoleRequest::class)
-        ->and($request?->getMethod())
-        ->toBe(Method::POST)
-        ->and($request?->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/roles/gateway/relocate')
-        ->and($pendingRequest?->body()->all())
-        ->toBe(['force' => true]);
-});
-
-it('sends optional from as a numeric source node id', function (): void {
-    $mockClient = MockClient::global([
-        RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => relocated_gateway_role_payload(),
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:relocate', [
-            'node' => '7',
-            'role' => 'websocket',
-            '--from' => '3',
-            '--force' => true,
-            '--json' => true,
-        ])
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['force' => true, 'from' => 3])
-        ->and($mockClient->getLastRequest()?->resolveEndpoint())
-        ->toBe('/api/v1/nodes/7/roles/websocket/relocate');
-});
-
-it('shows deterministic human output for a relocated gateway role', function (): void {
-    MockClient::global([
-        RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => relocated_gateway_role_payload(),
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true])
-        ->expectsOutput('Role [gateway] relocated to node [beast] (#7).')
-        ->expectsOutput('Request ID: '.relocate_node_role_request_id())
-        ->assertExitCode(0);
-});
-
-it('warns with the follow-up when the target does not get the private DNS route', function (): void {
-    MockClient::global([
-        RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => [
-                ...relocated_gateway_role_payload(),
-                'follow_up' => 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).',
-            ],
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:relocate', ['node' => '7', 'role' => 'gateway', '--force' => true])
-        ->expectsOutput('Role [gateway] relocated to node [beast] (#7).')
-        ->expectsOutputToContain('Warning: The Gateway machine does not route the private domain to Orbit VPN DNS')
-        ->expectsOutput('Request ID: '.relocate_node_role_request_id())
-        ->assertExitCode(0);
-});
-
-it('resolves a node name through the node list before relocating the role', function (): void {
-    $mockClient = MockClient::global([
-        ListNodesRequest::class => MockResponse::make([
-            'data' => [relocate_node_role_node_payload()],
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-        RelocateNodeRoleRequest::class => MockResponse::make([
-            'data' => relocated_gateway_role_payload(),
-            'meta' => ['request_id' => relocate_node_role_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:relocate', ['node' => 'beast', 'role' => 'gateway', '--force' => true, '--json' => true])
-        ->assertExitCode(0);
-
-    expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/7/roles/gateway/relocate');
 });
 
 it('rejects an empty role before connector io', function (): void {

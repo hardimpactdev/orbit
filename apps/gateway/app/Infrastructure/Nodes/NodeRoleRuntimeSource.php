@@ -66,9 +66,23 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
         $snapshot = $this->snapshot($operation);
         $reference = ['$secret' => $this->name(), 'id' => $id];
         if ($id !== $this->ownerId($operation) || $key !== '' || $parameter !== 'runtime_material'
-            || ($snapshot['schema_version'] ?? null) !== 1
+            || ($operation->input['runtime_material'] ?? null) !== $reference || $operation->status->terminal()) {
+            $this->refuse();
+        }
+
+        return $this->resolveRoleMaterial($snapshot, $id);
+    }
+
+    /** Render existing credential types after the owning parent admits this exact role snapshot.
+     * No Operation authority is granted by this lower renderer.
+     *
+     * @param  array<string,mixed>  $snapshot
+     */
+    public function resolveRoleMaterial(array $snapshot, int $id): OperationSecretValue
+    {
+        $reference = ['$secret' => $this->name(), 'id' => $id];
+        if (($snapshot['schema_version'] ?? null) !== 1 || ($snapshot['node_id'] ?? null) !== $id
             || ! is_string($snapshot['agent_sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $snapshot['agent_sha256']) !== 1
-            || ($operation->input['runtime_material'] ?? null) !== $reference || $operation->status->terminal()
             || ! NodeRole::query()->whereKey($snapshot['assignment_id'] ?? null)->where('node_id', $id)->where('role', $snapshot['role'] ?? null)->exists()) {
             $this->refuse();
         }
