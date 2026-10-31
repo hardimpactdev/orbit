@@ -714,4 +714,4 @@ Git credentials and Vite+ materialization input are delivered through the existi
 
 A pending default Route projection refuses manual deployment with `deployment.projection_pending`. Automatic deployment settles the existing independent `instance.repair_projection` before admitting a newer commit. Publication remains owned by that repair path; native development deployment admits no Route or runtime child Operations.
 
-Before this writer releases, development admission must be fenced while pre-cutover polled development Operations and their children drain through their owning executor. An empty active-operation read alone does not prove that boundary. Existing intents must not be adopted into the native writer, replayed, or assigned fabricated completion evidence.
+Before this writer releases, development admission must be fenced while development Operations admitted to the polled writer and their children drain through their owning executor. An empty active-operation read alone does not prove that boundary. Existing intents must not be adopted into the native writer, replayed, or assigned fabricated completion evidence.

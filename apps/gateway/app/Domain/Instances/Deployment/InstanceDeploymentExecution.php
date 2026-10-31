@@ -387,7 +387,6 @@ final readonly class InstanceDeploymentExecution implements OperationCompletion,
             return;
         }
         $candidate = InstanceDeploymentIntent::storedRelease($this->candidate($operation));
-        $instance = Instance::query()->findOrFail($operation->target_id);
         $selected = $this->selected($operation);
         $commit = InstanceDeploymentIntent::commit($operation);
         $failed = $operation->steps()->where('status', 'failed')->orderByDesc('position')->value('name');
