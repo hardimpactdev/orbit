@@ -15,9 +15,6 @@ import { role } from "./role.ts";
 import { projectWireGuard } from "./wireguard.ts";
 const LifecycleKinds = [
   "node.add",
-  "node.remove",
-  "node.removal_begin",
-  "node.removal_restore",
   "node.network_projection",
   "node.bootstrap_host",
   "node.bootstrap_verify",

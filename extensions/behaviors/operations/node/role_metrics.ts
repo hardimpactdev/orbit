@@ -46,6 +46,7 @@ export const RoleMetricsPlan = z.object({
 }).passthrough();
 const Args = DirectArgs.extend({
   node_id: Id,
+  restoring: z.boolean().optional(),
 });
 const Current = z.object({
   id: Id,
@@ -132,7 +133,7 @@ export function roleMetrics(
           },
           ctx: Context,
         ) => {
-          await read(args, ctx);
+          await read(args, ctx, args.restoring);
           if (!args.ready) throw new Error(`metrics.${args.phase}_failed`);
           return await output(ctx, args.phase + "_ready", { ok: true });
         },
@@ -142,30 +143,44 @@ export function roleMetrics(
           "Read the complete admitted fleet without filtering workerless members",
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
-          const current = await read(args, ctx);
-          ctx.signal?.throwIfAborted();
-          if (current.cancel_requested) throw new Error("operation.cancelled");
+          const current = await read(args, ctx, args.restoring);
+          if (!args.restoring) ctx.signal?.throwIfAborted();
+          if (current.cancel_requested && !args.restoring) {
+            throw new Error("operation.cancelled");
+          }
           const plan = current.input.metrics_fleet === null
             ? null
             : RoleMetricsPlan.parse(current.input.metrics_fleet);
-          const ids = plan?.fleet.map((node) => node.node_id) ?? [];
+          const excluded = args.kind === "node.remove"
+            ? z.array(Id).parse(current.input.metrics_excluded_node_ids ?? [])
+            : [];
+          const ids =
+            plan?.fleet.filter((node) => !excluded.includes(node.node_id)).map((
+              node,
+            ) => node.node_id) ?? [];
           if (new Set(ids).size !== ids.length) {
             throw new Error("metrics.member_duplicate");
           }
-          if (plan && !ids.includes(plan.metrics_node_id)) {
+          if (
+            plan && !ids.includes(plan.metrics_node_id) &&
+            current.input.metrics_runtime_required !== false
+          ) {
             throw new Error("metrics.owner_missing");
           }
           return await output(ctx, "capture", {
             plan,
             ids,
             available: plan === null ||
-              plan.fleet.every((node) =>
+              plan.fleet.filter((node) => ids.includes(node.node_id)).every((
+                node,
+              ) =>
                 hasRoleTransport(
                   node,
                   ProxyNodeIds.parse(current.input.proxy_node_ids ?? []),
                 )
               ),
             runtime_required: plan !== null &&
+              current.input.metrics_runtime_required !== false &&
               !(args.kind === "node.role_remove" &&
                 current.input.role === "metrics"),
           });
@@ -176,7 +191,7 @@ export function roleMetrics(
           "A placed local fleet phase; rollback ignores cancellation to restore confirmed effects",
         arguments: StepArgs,
         execute: async (args: z.infer<typeof StepArgs>, ctx: Context) => {
-          const restoring = args.phase === "restore";
+          const restoring = args.phase === "restore" || args.restoring === true;
           const current = await read(args, ctx, restoring);
           if (!restoring && (current.cancel_requested || ctx.signal?.aborted)) {
             return await output(ctx, args.phase, {
@@ -207,8 +222,11 @@ export function roleMetrics(
           "Commit the fleet runtime only after all placed member verification",
         arguments: RuntimeArgs,
         execute: async (args: z.infer<typeof RuntimeArgs>, ctx: Context) => {
-          const current = await read(args, ctx);
-          if (current.cancel_requested || ctx.signal?.aborted) {
+          const signal = args.restoring ? undefined : ctx.signal;
+          const current = await read(args, ctx, args.restoring);
+          if (
+            !args.restoring && (current.cancel_requested || signal?.aborted)
+          ) {
             return await output(ctx, "runtime", {
               ok: false,
               committed: false,
@@ -230,14 +248,14 @@ export function roleMetrics(
             run: (program, argv, options) =>
               runMetricsProcess(program, argv, {
                 ...options,
-                signal: ctx.signal,
+                signal: signal,
               }),
             fetch: (url, options) =>
               fetch(url, {
                 ...options,
-                signal: ctx.signal && options?.signal
-                  ? AbortSignal.any([ctx.signal, options.signal])
-                  : ctx.signal ?? options?.signal,
+                signal: signal && options?.signal
+                  ? AbortSignal.any([signal, options.signal])
+                  : signal ?? options?.signal,
               }),
           });
           let attempted = false;
@@ -248,7 +266,7 @@ export function roleMetrics(
           try {
             await gateway(args, ctx).withPrivateMaterial(async (raw) => {
               const material = Material.parse(raw.metrics_runtime);
-              ctx.signal?.throwIfAborted();
+              signal?.throwIfAborted();
               const verify = async () => {
                 const verified = await effects.credential({
                   address: args.node.address,
@@ -266,7 +284,7 @@ export function roleMetrics(
                 };
                 return;
               }
-              ctx.signal?.throwIfAborted();
+              signal?.throwIfAborted();
               attempted = true;
               const applied = await effects.runtime({
                 address: args.node.address,
@@ -285,7 +303,7 @@ export function roleMetrics(
                 committed = true;
                 result = { ok: true, committed: true };
                 if (initializes) {
-                  ctx.signal?.throwIfAborted();
+                  signal?.throwIfAborted();
                   if (!await verify()) {
                     result = {
                       ok: false,
@@ -301,7 +319,7 @@ export function roleMetrics(
               result = {
                 ok: false,
                 committed: true,
-                error_code: ctx.signal?.aborted
+                error_code: signal?.aborted
                   ? "operation.cancelled"
                   : "metrics.credentials_unverified",
               };

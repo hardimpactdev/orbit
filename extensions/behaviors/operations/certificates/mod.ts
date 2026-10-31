@@ -229,6 +229,7 @@ export function certificates(
         description:
           "Sign admitted public leaf requests in the control worker using Swamp vault custody",
         arguments: Args.extend({
+          restoring: z.boolean().optional(),
           leaves: z.array(SigningLeaf).max(256),
           requests: z.array(z.array(RequestRecord).max(256)).max(
             256,
@@ -236,15 +237,34 @@ export function certificates(
         }),
         execute: async (
           args: z.infer<typeof Args> & {
+            restoring?: boolean;
             leaves: z.infer<typeof SigningLeaf>[];
             requests: z.infer<typeof RequestRecord>[][];
           },
           ctx: Context,
         ) => {
+          if (args.restoring) {
+            const current = z.object({
+              id: z.literal(args.operation_id),
+              node_id: z.literal(args.node_id),
+              kind: z.literal("node.remove"),
+              status: z.enum(["queued", "running"]),
+              result: z.object({ restoring: z.literal(true) }),
+            })
+              .parse(await new GatewayOperation(makeHttp(ctx), args).read());
+            if (!current.result.restoring) {
+              throw new Error("operation.execution_forbidden");
+            }
+          }
           const requests = args.requests.flat();
           const batch = requests.every((request) => request.state === "current")
             ? { certificates: [] }
-            : await signBatch(args.leaves, requests, custody(ctx), ctx.signal);
+            : await signBatch(
+              args.leaves,
+              requests,
+              custody(ctx),
+              args.restoring ? undefined : ctx.signal,
+            );
           return {
             dataHandles: [
               await ctx.writeResource(

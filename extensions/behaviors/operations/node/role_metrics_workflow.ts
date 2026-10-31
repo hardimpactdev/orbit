@@ -14,7 +14,7 @@ const args = { ...root, run_id: expr("run.id") };
 /** Same native root: snapshot all members, apply, verify, commit, then reconcile confirmed failure. */
 export function roleMetricsJobs(
   afterJob: string,
-  options: { prefix?: string; blocked?: string } = {},
+  options: { prefix?: string; blocked?: string; restoring?: boolean } = {},
 ) {
   const prefix = options.prefix ?? "role_metrics";
   const names = Object.fromEntries(
@@ -55,7 +55,11 @@ export function roleMetricsJobs(
     behaviorType: "@nckrtl/node-role-metrics",
     behaviorName: expr('"node-role-metrics-" + string(' + nodeId + ")"),
     methodName,
-    inputs: { ...args, ...extra },
+    inputs: {
+      ...args,
+      ...(options.restoring ? { restoring: true } : {}),
+      ...extra,
+    },
   });
   const placed = (nodeId: string) => ({
     target: expr('"orbit-node-" + string(' + nodeId + ")"),
@@ -87,7 +91,9 @@ export function roleMetricsJobs(
     steps: [{
       name: prefix + "_availability",
       ...placed("inputs.node_id"),
-      ...(blocked ? { guard: expr(blocked) } : {}),
+      guard: expr(
+        `"${names.capture}" in steps ? steps.${names.capture}.status != "succeeded" : true`,
+      ),
       task: {
         type: "assert",
         expr: `${capture}.available`,

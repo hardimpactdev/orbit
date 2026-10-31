@@ -374,3 +374,19 @@ Deno.test("fleet checkpoint refuses a failed aggregate before the next native ph
     "metrics.root_mismatch",
   );
 });
+
+Deno.test("Node removal excludes the offline target while retaining approved light-box proxy transport", async () => {
+  const f = fixture();
+  f.current.kind = "node.remove";
+  Object.assign(f.current.input, {
+    metrics_excluded_node_ids: [18],
+    proxy_node_ids: [1],
+  });
+  const result = await f.behavior.methods.capture.execute({
+    ...args,
+    kind: "node.remove",
+  }, f.ctx) as { ids: number[]; available: boolean };
+  assertEquals(result.ids, [1, 9, 13]);
+  assertEquals(result.available, true);
+  assertEquals(f.stages, []);
+});

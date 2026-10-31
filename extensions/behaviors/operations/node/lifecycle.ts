@@ -11,9 +11,6 @@ const Run = Common.extend({
   type: z.literal("run"),
   transport: z.enum(["gateway", "agent", "bootstrap-ssh"]),
   name: z.enum([
-    "node.begin-removal",
-    "node.restore-removal-state",
-    "agent.remove",
     "firewall.rules",
     "firewall.router-lan",
     "wireguard.repair-peer-dns",
@@ -32,9 +29,6 @@ const Run = Common.extend({
 const Child = Common.extend({
   type: z.literal("child"),
   kind: z.enum([
-    "node.role_remove",
-    "node.removal_begin",
-    "node.removal_restore",
     "node.wireguard_hub_converge",
     "node.network_projection",
     "route.caddy_converge",
@@ -117,11 +111,8 @@ export async function lifecycle(
       execution.operation.execution_context?.result?.node_restore_required ===
         true
     ) {
-      const restoringEnrollment = execution.operation.kind === "node.add";
-      const restoreKey = restoringEnrollment ? "add-restore" : "remove-restore";
-      const restoreKind = restoringEnrollment
-        ? "node.enrollment_restore"
-        : "node.removal_restore";
+      const restoreKey = "add-restore";
+      const restoreKind = "node.enrollment_restore";
       let restore = children.find((child) => child.key === restoreKey);
       if (!restore) {
         await execution.child(restoreKey);

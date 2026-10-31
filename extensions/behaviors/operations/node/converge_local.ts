@@ -1,4 +1,3 @@
-import { localCommand } from "../_lib/local-worker.ts";
 import { certificateActions } from "../certificates/actions.ts";
 import { certificateProgram } from "../certificates/system.ts";
 import {
@@ -26,63 +25,48 @@ async function output(
   args: string[],
   stdin?: unknown,
   deadline = 60000,
+  invoke: SystemTransport = localSystemCommand,
+  signal?: AbortSignal,
 ) {
-  const child = localCommand(command, {
+  return await invoke({
+    command,
     args,
-    stdin: stdin === undefined ? "null" : "piped",
-    stdout: "piped",
-    stderr: "null",
-    signal: AbortSignal.timeout(deadline),
-  }).spawn();
-  let finished = false;
-  try {
-    if (stdin !== undefined) {
-      const writer = child.stdin.getWriter();
-      await writer.write(
-        new TextEncoder().encode(JSON.stringify(stdin) + "\n"),
-      );
-      await writer.close();
-    }
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for await (const chunk of child.stdout) {
-      size += chunk.length;
-      if (size > 65536) {
-        throw new Error("Local footprint output exceeded its bound");
-      }
-      chunks.push(chunk);
-    }
-    const status = await child.status;
-    finished = true;
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return { bytes, success: status.success };
-  } finally {
-    if (!finished) {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* Already exited. */ }
-      await child.status.catch(() => {});
-    }
-  }
+    stdin: stdin === undefined ? undefined : JSON.stringify(stdin) + "\n",
+    timeoutMs: deadline,
+    maxOutputBytes: 65536,
+  }, signal);
 }
 
-export async function localAccount(user: string) {
+export async function localAccount(
+  user: string,
+  invoke: SystemTransport = localSystemCommand,
+  signal?: AbortSignal,
+) {
   z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).parse(user);
-  const passwd = await output("/usr/bin/getent", ["passwd", user]);
-  const row = new TextDecoder().decode(passwd.bytes).trim().split(":");
+  const passwd = await output(
+    "/usr/bin/getent",
+    ["passwd", user],
+    undefined,
+    60000,
+    invoke,
+    signal,
+  );
+  const row = passwd.stdout.trim().split(":");
   if (
     !passwd.success || row.length !== 7 || row[0] !== user ||
     !/^\d+$/.test(row[2]) || row[2] === "0" || !/^\d+$/.test(row[3])
   ) {
     throw new Error("The admitted Node account cannot be resolved");
   }
-  const group = await output("/usr/bin/getent", ["group", row[3]]);
-  const fields = new TextDecoder().decode(group.bytes).trim().split(":");
+  const group = await output(
+    "/usr/bin/getent",
+    ["group", row[3]],
+    undefined,
+    60000,
+    invoke,
+    signal,
+  );
+  const fields = group.stdout.trim().split(":");
   if (!group.success || fields.length !== 4 || fields[2] !== row[3]) {
     throw new Error("The Node account group cannot be resolved");
   }
@@ -158,6 +142,7 @@ export function installAgent(
 export async function publishDns(
   input: Record<string, unknown>,
   signal?: AbortSignal,
+  invoke: SystemTransport = localSystemCommand,
 ) {
   const payload = z.object({
     records: z.string().max(4194304),
@@ -169,12 +154,14 @@ export async function publishDns(
     ["-n", "--", "/usr/bin/python3", "-c", DnsProgram],
     payload,
     65000,
+    invoke,
+    signal,
   );
   if (!reply.success) {
     throw new Error("Private DNS publication outcome is uncertain");
   }
   return z.record(z.string(), z.unknown()).parse(
-    JSON.parse(new TextDecoder().decode(reply.bytes)),
+    JSON.parse(reply.stdout),
   );
 }
 

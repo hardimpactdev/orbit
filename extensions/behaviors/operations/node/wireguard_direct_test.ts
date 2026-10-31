@@ -271,3 +271,48 @@ Deno.test("cancellation during the hub private read refuses the next effect boun
   );
   assertEquals(effects, 0);
 });
+
+Deno.test("only an active recorded Node removal restoration may ignore cancellation at the shared hub boundary", async () => {
+  for (const approved of [true, false]) {
+    const f = fixture(true);
+    let effects = 0, privateReads = 0;
+    const opArgs = { ...args, kind: "node.remove" };
+    const http: Http = (method, path, body) => {
+      if (path.includes("private-material")) {
+        privateReads++;
+        return f.http(method, path, body);
+      }
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            id: 7,
+            node_id: 1,
+            kind: "node.remove",
+            status: "running",
+            cancel_requested: true,
+            result: { restoring: approved },
+            input: { restore_hub: snapshot },
+          },
+        },
+      });
+    };
+    const behavior = nodeWireGuard(
+      undefined,
+      () => http,
+      fakeNetworkSystem(() => {
+        effects++;
+        return Promise.resolve({});
+      }),
+    );
+    const call = () =>
+      behavior.methods.publish.execute(
+        { ...opArgs, snapshot, restoring: true },
+        { ...f.ctx, signal: AbortSignal.abort() },
+      );
+    if (approved) assertEquals((await call()).status, "succeeded");
+    else await assertRejects(call);
+    assertEquals(effects, approved ? 1 : 0);
+    assertEquals(privateReads, approved ? 1 : 0);
+  }
+});
