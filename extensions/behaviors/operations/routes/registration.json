@@ -5,7 +5,6 @@
     "route.withdraw_instance",
     "route.cleanup_instance",
     "route.lan_converge",
-    "route.lan_remove",
     "route.public_firewall",
     "route.shared_php_withdraw",
     "route.transfer_php_withdraw",

@@ -18,7 +18,7 @@ jobs:
           methodName: discover
           inputs:
             family: operation-routes
-            kinds: ["route.workload_prepare", "route.offline_residue_clean", "route.withdraw_instance", "route.cleanup_instance", "route.lan_converge", "route.lan_remove", "route.public_firewall", "route.shared_php_withdraw", "route.transfer_php_withdraw", "route.transfer_lan_remove", "route.analytics_publish", "route.analytics_remove", "route.analytics_host_prepare", "route.analytics_host_withdraw", "route.workload_firewall", "route.create", "route.converge", "route.withdraw", "route.destroy", "route.update", "route.target_set", "route.target_unset", "route.retire_source", "cluster.router_set", "cluster.router_unset", "route.router_lan_retire"]
+            kinds: ["route.workload_prepare", "route.offline_residue_clean", "route.withdraw_instance", "route.cleanup_instance", "route.lan_converge", "route.public_firewall", "route.shared_php_withdraw", "route.transfer_php_withdraw", "route.transfer_lan_remove", "route.analytics_publish", "route.analytics_remove", "route.analytics_host_prepare", "route.analytics_host_withdraw", "route.workload_firewall", "route.create", "route.converge", "route.withdraw", "route.destroy", "route.update", "route.target_set", "route.target_unset", "route.retire_source", "cluster.router_set", "cluster.router_unset", "route.router_lan_retire"]
             worker: "${{ run.id }}"
   - name: execute
     dependsOn: [{ job: discover, condition: { type: succeeded } }]
