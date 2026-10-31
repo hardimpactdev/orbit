@@ -19,7 +19,7 @@ const Inputs = {
     file_snapshot_cleanup: FileSnapshot,
     observer_identity: z.object({}).strict(),
     observer_checkout: z.object({ checkout: Path }).strict(),
-    storage: z.object({ root: Path, user: Account, group: Account }).strict(),
+    storage: z.object({ root: Path, user: Account, group: Account, create_missing: z.boolean().default(true) }).strict(),
     account_directory: z.object({
         scope: z.enum([
             "apps",

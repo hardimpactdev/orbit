@@ -23,6 +23,8 @@ def apply(data):
             if not stat.S_ISDIR(os.lstat(current).st_mode) or os.path.realpath(current) != current:
                 raise ValueError("Storage root is not a real directory")
         else:
+            if not data.get("create_missing", True):
+                raise ValueError("Storage root must already exist")
             os.mkdir(current, 0o755)
             os.chown(current, uid, gid)
             changed = True

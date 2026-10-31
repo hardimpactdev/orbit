@@ -23,7 +23,10 @@ Deno.test("baseline assets deliver admitted public input without treating it as 
         ],
     }).output();
     assertEquals(result.code, 0);
-    assertEquals(JSON.parse(new TextDecoder().decode(result.stdout)), input);
+    assertEquals(JSON.parse(new TextDecoder().decode(result.stdout)), {
+        ...input,
+        create_missing: true,
+    });
 });
 
 Deno.test("baseline action refuses foreign paths, resource names and uncertain outcomes", async () => {

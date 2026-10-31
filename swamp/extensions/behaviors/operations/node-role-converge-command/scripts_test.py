@@ -214,6 +214,18 @@ class StorageTest(unittest.TestCase):
             "group": grp.getgrgid(os.getgid()).gr_name,
         }
 
+    def test_explicit_existing_root_does_not_create_or_repair_any_path(self):
+        intent = {**self.intent, "root": str(self.root / "nested" / "explicit"), "create_missing": False}
+        with self.assertRaises(ValueError):
+            storage.apply(intent)
+        self.assertFalse(Path(intent["root"]).exists())
+        self.assertFalse(Path(intent["root"]).parent.exists())
+        Path(intent["root"]).mkdir(mode=0o750, parents=True)
+        before = Path(intent["root"]).stat()
+        self.assertEqual(storage.apply(intent), {"ready": True, "changed": False})
+        after = Path(intent["root"]).stat()
+        self.assertEqual((before.st_uid, before.st_gid, before.st_mode), (after.st_uid, after.st_gid, after.st_mode))
+
     def test_missing_tree_is_created_and_a_second_run_preserves_it(self):
         self.assertEqual(storage.apply(self.intent), {"ready": True, "changed": True})
         self.assertEqual(storage.apply(self.intent), {"ready": True, "changed": False})
