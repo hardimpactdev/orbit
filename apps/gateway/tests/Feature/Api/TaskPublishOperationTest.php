@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
@@ -111,7 +112,7 @@ it('mints only the existing write token for publish and keeps it out of public i
 
 it('recognizes native publication evidence when preserving approved work for cleanup', function (): void {
     [$group] = native_publish_group();
-    $group->project->update(['review_and_merge' => true]);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks', 'source_access' => 'github_app']);
     $sha = str_repeat('a', 40);
     $reviewed = TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => $sha, 'source' => 'orbit_push']);
     Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'succeeded', 'input' => [], 'result' => ['commit' => $sha, 'branch' => 'task-'.$group->id]]);
