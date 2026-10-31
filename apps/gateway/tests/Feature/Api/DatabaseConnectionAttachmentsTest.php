@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
-use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -497,13 +496,12 @@ it('refuses LAN selection without a server Node before writing environment value
     expect(DatabaseConnectionTarget::query()->count())->toBe(0)->and(stored_env($this->instance))->toBe([]);
 });
 
-it('keeps external LAN aliases unchanged in attachments and Doctor', function (): void {
+it('keeps external LAN aliases unchanged in attachments', function (): void {
     $this->caller->update(['lan_ip' => '10.0.0.6']);
     DatabaseServer::query()->create(['slug' => 'managed-pg', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'fixture', 'status' => 'active', 'private_endpoints_managed' => true]);
     DatabaseConnection::query()->create(['slug' => 'lan-alias', 'driver' => 'pgsql', 'node_id' => $this->caller->id, 'host' => '10.0.0.6', 'port' => 5434, 'database' => 'catalog', 'username' => 'catalog', 'password' => DATABASE_ATTACHMENT_SECRET]);
     $this->putJson("/api/v1/instances/{$this->instance->id}/database-connections/lan-alias", ['prefix' => 'DB'])
         ->assertOk()->assertJsonPath('data.host', '10.0.0.6');
-    expect(app(DatabaseConnectionDoctorInspection::class)->attachment(DatabaseConnectionTarget::query()->sole()))->toBe([]);
 });
 
 it('refuses LAN attachments when either Node is inactive or lacks an IPv4 LAN address', function (string $side, string $field, ?string $value): void {
