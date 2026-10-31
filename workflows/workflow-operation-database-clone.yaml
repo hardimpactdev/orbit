@@ -1,6 +1,7 @@
 id: 3c44f7b0-9f87-4a6e-b899-6d0b4bb71292
 name: operation-database-clone
-description: One admitted MySQL or SQLite clone with native placement and snapshot data.
+description: One admitted MySQL or SQLite clone with native placement and snapshot
+  data.
 vaults: []
 inputs:
   properties:
@@ -29,7 +30,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(inputs.node_id) }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: admit
       inputs:
         operation_id: ${{ inputs.operation_id }}
@@ -38,7 +39,7 @@ jobs:
         run_id: ${{ run.id }}
 - name: failure-admission
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: &id001
+  labels:
     node: ${{ string(inputs.node_id) }}
   dependsOn:
   - job: admission
@@ -61,10 +62,10 @@ jobs:
   - job: admission
     condition:
       type: succeeded
-  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
-    }}
+  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + run.id, "admitted-"
+    + run.id).attributes.intent.source_node_id) }}
   labels:
-    node: ${{ string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
+    node: ${{ string(data.latest("database-clone-" + run.id, "admitted-" + run.id).attributes.intent.source_node_id)
       }}
   writes: true
   steps:
@@ -72,34 +73,15 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
-        }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: export
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        stage: ${{ data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes }}
-- name: failure-source
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: source
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
+          + run.id).attributes.intent.source_node_id }}
 - name: target
   dependsOn:
   - job: source
@@ -114,15 +96,15 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(inputs.node_id) }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: prepare
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        stage: ${{ data.latest("database-clone-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-"
-          + run.id).attributes.intent.source_node_id), "exported-" + run.id).attributes }}
+        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
+          + run.id).attributes.intent.node_id }}
   - name: apply
     dependsOn:
     - step: prepare
@@ -131,45 +113,52 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(inputs.node_id) }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: apply
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        stage: ${{ data.latest("database-clone-" + string(inputs.node_id), "prepared-" + run.id).attributes }}
-- name: failure-target
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
+        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
+          + run.id).attributes.intent.node_id }}
+- name: cleanup-target
   dependsOn:
-  - job: target
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: cleanup
-  dependsOn:
-  - job: source
+  - job: admission
     condition:
       type: succeeded
   - job: target
     condition:
       type: always
-  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
-    }}
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
-    node: ${{ string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
+    node: ${{ string(inputs.node_id) }}
+  writes: true
+  steps:
+  - name: cleanupTarget
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-clone'
+      behaviorName: ${{ "database-clone-" + run.id }}
+      methodName: cleanupTarget
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        selected_node_id: ${{ inputs.node_id }}
+- name: cleanup
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  - job: cleanup-target
+    condition:
+      type: always
+  target: ${{ "orbit-node-" + string(data.latest("database-clone-" + run.id, "admitted-"
+    + run.id).attributes.intent.source_node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-clone-" + run.id, "admitted-" + run.id).attributes.intent.source_node_id)
       }}
   writes: true
   steps:
@@ -177,43 +166,23 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-" + run.id).attributes.intent.source_node_id)
-        }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: cleanup
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        stage: ${{ data.latest("database-clone-" + string(data.latest("database-clone-" + string(inputs.node_id), "admitted-"
-          + run.id).attributes.intent.source_node_id), "exported-" + run.id).attributes }}
-- name: failure-cleanup
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: cleanup
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-clone-" + run.id, "admitted-"
+          + run.id).attributes.intent.source_node_id }}
 - name: projection
   dependsOn:
-  - job: target
+  - job: admission
     condition:
       type: succeeded
   - job: cleanup
     condition:
-      type: succeeded
+      type: always
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
@@ -223,11 +192,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/database-clone'
-      behaviorName: ${{ "database-clone-" + string(inputs.node_id) }}
+      behaviorName: ${{ "database-clone-" + run.id }}
       methodName: project
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        stage: ${{ data.latest("database-clone-" + string(inputs.node_id), "applied-" + run.id).attributes }}

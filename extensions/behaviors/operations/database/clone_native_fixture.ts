@@ -1,5 +1,5 @@
 import type { DatabaseSqlCall, SqlOutcome } from "./local_sql.ts";
-import type { SqliteInvoke } from "./sqlite_local.ts";
+import { runSqliteLocal, type SqliteInvoke } from "./sqlite_local.ts";
 
 /** Fake only the local SQL action; exercise real native checkpoints and private Gateway reads. */
 export async function fixtureSqlInvoke(
@@ -37,5 +37,14 @@ export async function fixtureSqlInvoke(
 }
 
 /** MySQL native fixtures must never fall through to real SQLite process execution. */
-export const fixtureSqliteInvoke: SqliteInvoke = () =>
-  Promise.reject(new Error("Unexpected SQLite action in MySQL fixture"));
+export const fixtureSqliteInvoke: SqliteInvoke = async (call, signal) => {
+  if (Deno.env.get("CLONE_SQLITE") !== "1") {
+    throw new Error("Unexpected SQLite action in MySQL fixture");
+  }
+  await Deno.writeTextFile(
+    "effects",
+    "sqlite-" + String(call.input.operation) + "\n",
+    { append: true },
+  );
+  return await runSqliteLocal(call, signal);
+};

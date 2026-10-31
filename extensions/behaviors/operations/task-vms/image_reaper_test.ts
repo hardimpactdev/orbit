@@ -444,7 +444,7 @@ Deno.test("schedule has native thirty-minute cadence and exact discovery/host pl
     jobs: {
       steps: {
         target: string;
-        labels: { node: string };
+        labels: { node: string; pool?: string };
         task: { methodName: string };
         writes?: boolean;
       }[];
@@ -452,7 +452,11 @@ Deno.test("schedule has native thirty-minute cadence and exact discovery/host pl
   };
   assertEquals(workflow.concurrency, 1);
   assertEquals(workflow.trigger.schedule, "0 */30 * * * *");
-  assertEquals(workflow.jobs[0].steps[0].target, "orbit-node-209");
+  assertEquals(workflow.jobs[0].steps[0].target, "swamp209-migration-a");
+  assertEquals(workflow.jobs[0].steps[0].labels, {
+    node: "209",
+    pool: "migration",
+  });
   assertEquals(
     workflow.jobs[1].steps[0].target,
     "orbit-node-${{ self.host.node_id }}",
