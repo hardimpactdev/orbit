@@ -12,7 +12,7 @@ $intent = [
 ];
 
 return [
-    'tool.install' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
+    'tool.install' => [...$intent, 'workflow' => 'operation-tool-install-direct', 'writer_scope' => ['parent_operation_id' => null]],
     'tool.update' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
     'tool.remove' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
     'tool.adopt' => [...$intent, 'writer_scope' => ['node_id' => 209, 'parent_operation_id' => null]],
