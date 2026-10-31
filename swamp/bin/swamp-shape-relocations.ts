@@ -58,11 +58,34 @@ function callerUses(sources: Sources, moved: boolean): string[] | undefined {
     const root = parse(file, source);
     let invalid = false;
     let localName: string | undefined;
+    // `require` can be a locally declared assertion, not a CommonJS loader.
+    // Its body is still traversed, so dynamic import remains unprovable.
+    const localRequire = root.statements.some((statement) =>
+      ts.isFunctionDeclaration(statement) &&
+        statement.name?.text === "require" ||
+      ts.isVariableStatement(statement) &&
+        statement.declarationList.declarations.some((declaration) =>
+          ts.isIdentifier(declaration.name) &&
+          declaration.name.text === "require" && declaration.initializer &&
+          (ts.isArrowFunction(declaration.initializer) ||
+            ts.isFunctionExpression(declaration.initializer))
+        )
+    );
     const walk = (node: ts.Node) => {
+      if (
+        ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        ["node:module", "module"].includes(node.moduleSpecifier.text)
+      ) invalid = true;
+      if (
+        (ts.isCallExpression(node) || ts.isNewExpression(node)) &&
+        ts.isIdentifier(node.expression) &&
+        ["eval", "Function"].includes(node.expression.text)
+      ) invalid = true;
       if (
         ts.isCallExpression(node) &&
         (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          ts.isIdentifier(node.expression) &&
+          !localRequire && ts.isIdentifier(node.expression) &&
             node.expression.text === "require")
       ) {
         if (
@@ -70,7 +93,8 @@ function callerUses(sources: Sources, moved: boolean): string[] | undefined {
           !ts.isStringLiteralLike(node.arguments[0])
         ) invalid = true;
         else if (
-          resolves(file, node.arguments[0].text) === PROXY_HTTP_MOVE.from
+          resolves(file, node.arguments[0].text) === PROXY_HTTP_MOVE.from ||
+          ["node:module", "module"].includes(node.arguments[0].text)
         ) invalid = true;
       }
       // Namespace imports, re-exports, require and dynamic imports cannot hide a
@@ -132,7 +156,15 @@ function callerUses(sources: Sources, moved: boolean): string[] | undefined {
           if (
             ts.isCallExpression(node.parent) && node.parent.expression === node
           ) {
-            uses.push(node.parent.getText());
+            let enclosing: ts.Node = node.parent;
+            while (enclosing.parent && !ts.isFunctionDeclaration(enclosing)) {
+              enclosing = enclosing.parent;
+            }
+            if (
+              !ts.isFunctionDeclaration(enclosing) ||
+              enclosing.name?.text !== "gatewayHttp"
+            ) invalid = true;
+            else uses.push(enclosing.getText() + "\n" + node.parent.getText());
           } else invalid = true;
         }
         ts.forEachChild(node, references);
