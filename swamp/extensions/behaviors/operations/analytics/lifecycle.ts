@@ -262,7 +262,7 @@ export function analyticsLifecycle(
     new GatewayOperation(makeHttp(ctx), args);
   return {
     type: "@nckrtl/analytics-lifecycle",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       plan: { schema: Plan, lifetime: "7d", garbageCollection: 10 },
