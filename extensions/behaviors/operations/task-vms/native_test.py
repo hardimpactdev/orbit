@@ -19,6 +19,9 @@ class TaskVmNativeTest(NativeTestCase):
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
+        cache = self.repo / 'extensions/behaviors/operations/task-vms/cache_fill_direct.ts'
+        cache.write_text('import { fixtureHttp, fixtureCacheAction } from "../../_test/executor.ts";\n' + cache.read_text().replace(
+            '...cacheFillDirect()', '...cacheFillDirect(() => fixtureHttp, fixtureCacheAction)'))
         for name, factory, relative in (("operation-runner", "operationDiscovery", "../_test/executor.ts"), ("operations/task-vms", "taskVms", "../../_test/executor.ts")):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)").replace("behavior = taskVms()", "behavior = taskVms(() => fixtureHttp)")
@@ -26,9 +29,6 @@ class TaskVmNativeTest(NativeTestCase):
         direct = self.repo / 'extensions/behaviors/operations/task-vms/lifecycle_intent_direct.ts'
         direct.write_text('import { fixtureHttp } from "../../_test/executor.ts";\n' + direct.read_text().replace(
             '...lifecycleIntent()', '...lifecycleIntent(() => fixtureHttp)'))
-        cache = self.repo / 'extensions/behaviors/operations/task-vms/cache_fill_direct.ts'
-        cache.write_text('import { fixtureHttp, fixtureCacheAction } from "../../_test/executor.ts";\n' + cache.read_text().replace(
-            '...cacheFillDirect()', '...cacheFillDirect(() => fixtureHttp, fixtureCacheAction)'))
         for path in ROOT.glob("workflows/workflow-operation-*.yaml"):
             # Local receipt recovery uses fresh processes; worker placement has its own harness.
             source = "\n".join(line for line in path.read_text().splitlines()
