@@ -58,6 +58,18 @@ class ImportBaseTest(unittest.TestCase):
                     ['python3', loader.path, '--base', imported, '--swamp-base'],
                     cwd=root, timeout=60))
                 self.assertFalse(result['swamp_initial_import'])
+                # Deleting the marker cannot make an existing Swamp tree an initial import again.
+                git('rm', 'swamp/.swamp.yaml')
+                git('commit', '-m', 'Remove the Swamp marker')
+                without_marker = git('rev-parse', 'HEAD')
+                (root / 'swamp/workflow.yaml').write_text('name: changed\n')
+                git('add', '.')
+                git('commit', '-m', 'A change after marker removal')
+                self.assertEqual(without_marker, plan.swamp_comparison_base(without_marker, 'HEAD'))
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', without_marker, '--swamp-base'],
+                    cwd=root, timeout=60))
+                self.assertFalse(result['swamp_initial_import'])
                 # Ordinary job scopes work with a shallow checkout; only the central selector resolves history.
                 shallow = root / 'shallow'
                 git('clone', '--depth=1', root.as_uri(), str(shallow))
