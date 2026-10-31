@@ -63,7 +63,7 @@ The note says that Orbit manages the item. Orbit overwrites changes made in Vaul
 
 ## Sync
 
-The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a placed Swamp integration worker. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
+The scheduler runs `orbit:vault-sync` every minute while the `vault` extension is on and Vaultwarden is set up. It does not run while `vault` is off, so a published item stays as it was until the switch turns on again. The first run after that creates, rewrites, and deletes whatever changed meanwhile. The scheduler records an Operation for a Swamp integration worker on Node 209. It skips every unfinished Operation, including one waiting for children. The command builds the wanted items from the database records and compares them with the published items it recorded:
 
 | Wanted item | Published item | Action |
 | --- | --- | --- |
@@ -202,7 +202,7 @@ Direct setup, sync, and teardown results carry only collection identifiers and l
 
 ### Native sync with the official Bitwarden CLI
 
-The Gateway starts `operation-vault-sync` with full public intent. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach action scripts through the whole environment expression. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
+The Gateway starts `operation-vault-sync` with full public intent. All steps run on Node 209; the Gateway Node ID identifies the Operation target. This integration calls Vaultwarden over HTTPS and needs no worker or CLI installation on the Gateway Node. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach action scripts through the whole environment expression. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
 
 Swamp core workflows and command execution fit. Official extensions were checked at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies API-key login, password-env unlock, item JSON on stdin and permanent deletion. Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be available on the placed worker; normal npm package execution/cache resolves the pinned official CLI.
 

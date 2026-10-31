@@ -102,9 +102,9 @@ jobs:
 - name: prepare
   steps:
   - name: assets
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: &id001
-      node: ${{ string(inputs.node_id) }}
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/vault-sync-plan'
@@ -113,7 +113,7 @@ jobs:
         intent: ${{ inputs.intent }}
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
   - name: workspace
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -136,7 +136,7 @@ jobs:
       condition:
         type: succeeded
   - name: configure
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -162,7 +162,7 @@ jobs:
       condition:
         type: succeeded
   - name: login
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -187,7 +187,7 @@ jobs:
       condition:
         type: succeeded
   - name: unlock
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -212,7 +212,7 @@ jobs:
       condition:
         type: succeeded
   - name: sync
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -237,7 +237,7 @@ jobs:
       condition:
         type: succeeded
   - name: inventory
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -263,7 +263,7 @@ jobs:
       condition:
         type: succeeded
   - name: trash
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -289,7 +289,7 @@ jobs:
       condition:
         type: succeeded
   - name: plan
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -311,7 +311,7 @@ jobs:
       type: succeeded
   steps:
   - name: delete
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -343,7 +343,7 @@ jobs:
       type: succeeded
   steps:
   - name: write
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -375,7 +375,7 @@ jobs:
       type: always
   steps:
   - name: logout
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -397,7 +397,7 @@ jobs:
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-logout" }}
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
   - name: remove-cache
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
@@ -427,7 +427,7 @@ jobs:
       type: always
   steps:
   - name: result
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels: *id001
     task:
       type: behavior
