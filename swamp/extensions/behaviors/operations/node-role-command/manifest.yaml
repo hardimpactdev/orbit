@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/node-role-command'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public role action assets for official SSH on Node209.
+behaviors:
+  - operations/node-role-command/assets.ts
+additionalFiles:
+  - scripts/account.py
+  - scripts/caddy_package.py

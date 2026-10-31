@@ -7,6 +7,7 @@ description: Public result projection for the official SSH bootstrap probe.
 behaviors:
   - operations/node-bootstrap/probe_result.ts
   - operations/node-bootstrap/command_assets.ts
+  - operations/node-bootstrap/enrollment_result.ts
 additionalFiles:
   - scripts/bootstrap_packages.py
   - scripts/bootstrap_account.py

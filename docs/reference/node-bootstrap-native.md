@@ -36,6 +36,14 @@ Node209 runs serve and all Swamp workers. Enrollment installs no Swamp binary or
 
 Core workflow dependencies, failure conditions and history provide sequencing and recovery. Official SSH supplies the transport and its native identity-file support. Official `cfgmgmt` package, user, authorized-key, file and node models were checked at package `2026.10.27.1`: their connection schemas do not accept the admitted full host-key list. Enrollment uses official SSH methods for that pinned connection contract. Each step performs one action from the repository.
 
+### Managed SSH access and role actions
+
+Bootstrap and the tracked observer footprint use the public key from the shared `SwampSshExecutionInput::identity()` supplier. The footprint digest includes that key and the managed account. Its public `authorized_key` payload feeds the same shipped authorized-key action as bootstrap. The action retains other authorized keys and adds the approved key once. Publication requires an already authorized SSH identity; the new key cannot provide its own first connection.
+
+The native role actions read the account, install the recipe's pinned Caddy package when required, and install the admitted operating-system packages as separate official SSH steps. Caddy package input comes from `AgentCaddyPackage::input`; Route publication owns configuration, validation and reload after package and runtime readiness. No role action calls the Gateway or restores a removed Tool manager executor.
+
+The enrollment result step checks every expanded forward or restoration contribution inside Swamp. Missing, failed or skipped contributions produce an incomplete result. Whole-parent restoration includes roles, runtime, network and Routes; the Gateway records the typed terminal object without rebuilding that execution proof.
+
 ## Swamp execution copies
 
 The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value inside a native `vault.put` frame over the authenticated serve WebSocket using the existing Gateway run credential. It launches no CLI and puts no value in process arguments.
