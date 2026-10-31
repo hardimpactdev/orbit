@@ -17,7 +17,7 @@ use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\MigrateDockerCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
-use App\Console\Commands\RenderNodeProgramsCommand;
+use App\Console\Commands\RenderNodeRecipeCommand;
 use App\Console\Commands\RepairNodeDnsCommand;
 use App\Console\Commands\RetargetNodeCommand;
 use App\Console\Commands\RuntimeHibernatorCommand;
@@ -48,7 +48,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             MigrateDockerCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
-            RenderNodeProgramsCommand::class,
+            RenderNodeRecipeCommand::class,
             RepairNodeDnsCommand::class,
             RetargetNodeCommand::class,
             RuntimeHibernatorCommand::class,
