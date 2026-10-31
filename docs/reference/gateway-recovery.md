@@ -107,6 +107,8 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 ### Prepare a release
 
+The observer is frozen at the published delivery in `apps/gateway/resources/agent/frozen-manifest.json`. Prepare resolves the Gateway commit independently and verifies that fixed delivery's manifest, checksums and provenance. It never waits for the Gateway commit's CLI release or for new agent builds. The desired fleet state keeps the same agent commit and binary digests. Changing agent source does not change the delivered agent.
+
 As `orbit`, build a release for one commit:
 
 ```bash
