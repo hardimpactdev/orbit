@@ -27,22 +27,6 @@ final readonly class DirectOperationPrivateMaterial
         return $this->sources->hydrate($operation, '', $input, $declaration)['input'];
     }
 
-    public function artifact(Operation $operation, string $field): OperationArtifact
-    {
-        $declaration = $this->declaration($operation, 'private_material');
-        $name = $declaration[$field] ?? null;
-        if ($name === null) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Only a declared artifact field is available.', 422);
-        }
-        $source = $this->sources->source($name);
-        if (! $source instanceof OperationArtifactSource) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The field is not an artifact source.', 422);
-        }
-        $references = $this->sources->references($operation, [$field => Arr::get($operation->input, $field)], [$field => $name]);
-
-        return $source->artifact($operation, $references[$field]['id']);
-    }
-
     /** @param array<string,mixed> $values
      * @return array<string,array{'$secret':string,id:int}>
      */
