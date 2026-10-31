@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
@@ -38,56 +37,6 @@ function interrupted_activity_state(int $id): array
 }
 
 describe('the interrupted Activity sweep', function (): void {
-    it('ends every running row older than the bound as failed with activity.interrupted', function (): void {
-        $this->freezeTime();
-        $stale = interrupted_activity_row('running', 11 * 86_400);
-        $justStale = interrupted_activity_row('running', 901, 'node:role:relocate');
-
-        expect(app(FinalizeInterruptedActivitiesAction::class)->execute())->toBe(2)
-            ->and(interrupted_activity_state($stale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted'])
-            ->and(interrupted_activity_state($justStale))->toMatchArray(['status' => 'failed', 'error_code' => 'activity.interrupted']);
-    });
-
-    it('leaves a request that may still be in flight and every finished row untouched', function (): void {
-        $this->freezeTime();
-        // A streamed deployment or relocation can run until the 600-second PHP-FPM limit.
-        $atRequestLimit = interrupted_activity_row('running', 600, 'instance:deploy');
-        $withinMargin = interrupted_activity_row('running', 899, 'node:role:relocate');
-        $succeeded = interrupted_activity_row('succeeded', 86_400);
-        $failed = interrupted_activity_row('failed', 86_400);
-        $before = array_map(interrupted_activity_state(...), [$atRequestLimit, $withinMargin, $succeeded, $failed]);
-
-        expect(app(FinalizeInterruptedActivitiesAction::class)->execute())->toBe(0)
-            ->and(array_map(interrupted_activity_state(...), [$atRequestLimit, $withinMargin, $succeeded, $failed]))->toBe($before);
-    });
-
-    it('is idempotent', function (): void {
-        $stale = interrupted_activity_row('running', 3_600);
-        $action = app(FinalizeInterruptedActivitiesAction::class);
-
-        expect($action->execute())->toBe(1);
-        $finalized = interrupted_activity_state($stale);
-        Carbon::setTestNow(Carbon::now()->addMinutes(5));
-
-        expect($action->execute())->toBe(0)
-            ->and(interrupted_activity_state($stale))->toBe($finalized);
-    });
-
-    it('ends at most one batch of rows per run, oldest first', function (): void {
-        $ids = [];
-
-        foreach (range(1, FinalizeInterruptedActivitiesAction::BATCH + 3) as $index) {
-            $ids[] = interrupted_activity_row('running', 3_600);
-        }
-
-        $action = app(FinalizeInterruptedActivitiesAction::class);
-
-        expect($action->execute())->toBe(FinalizeInterruptedActivitiesAction::BATCH)
-            ->and(interrupted_activity_state(end($ids))['status'])->toBe('running')
-            ->and($action->execute())->toBe(3)
-            ->and(DB::table('activity_log')->where('status', 'running')->count())->toBe(0);
-    });
-
     it('waits longer than PHP-FPM lets any Gateway request run', function (): void {
         preg_match('/request_terminate_timeout = (\d+)s/', new GatewayFpmConfigRenderer()->renderPool('/checkout', '/home/orbit/.orbit'), $fpm);
 

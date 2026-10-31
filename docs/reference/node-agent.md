@@ -270,7 +270,7 @@ The runner picks the transport from the Node or build guest. Every adapter carri
 | An Incus build guest | `incus exec` through its managed host, before guest networking or SSH exists |
 | An UpCloud build guest | Guest SSH with the host identity that Orbit generated and pinned through user-data |
 
-Image building installs command mode before the first recipe command through the runner's guest interface. Images need no observer, WireGuard identity, agent secret, or PHP to run commands. Enrollment adds the Node identity later. `orbit:node-programs` also renders enrollment commands as `orbit-agent command <name>` with the pinned envelope on standard input for external consumers.
+Native bootstrap and image consumers receive typed public input from `orbit:node-recipe`: the Node account and roles, bootstrap input, stored machine recipe, and frozen observer delivery. Swamp supplies the system programs and runs their effects. The export contains no agent actions, executable programs or command fingerprints.
 
 Only binary staging may change a Node outside a named command. First admission uses a fixed `uname -sm` staging probe because no agent exists yet. It validates the platform and architecture before installing a candidate. A root bootstrap login runs root commands directly; other Linux logins use passwordless sudo. The installer owns atomic replacement and the cleanup of each candidate it runs from.
 

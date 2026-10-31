@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -26,11 +24,11 @@ beforeEach(function (): void {
     $registry = app(ChangeWebSocketRegistryAction::class)->execute('sync', null, $this->gateway->id, 'direct-fixture');
     $this->registry = $registry;
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    config(['swamp.run_token' => 'fixture.shared', 'swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$this->gateway->id]]);
+    config(['swamp.run_token' => 'fixture.shared']);
     $this->operation = Operation::query()->create(['kind' => 'websocket.sync', 'target_type' => 'websocket_sync', 'target_id' => $registry->revision,
         'node_id' => $this->gateway->id, 'status' => 'queued', 'sequence' => 1,
         'input' => ['registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision, 'password' => 'private-sentinel'],
-        'state' => ['websocket_registry_writer' => 'direct', 'swamp_run_id' => $this->run]]);
+        'state' => ['swamp_run_id' => $this->run]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $socket = new FakeRoutePublicationSocket;
@@ -38,14 +36,46 @@ beforeEach(function (): void {
         'kind' => 'started', 'workflowName' => 'operation-websocket-registry', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     $this->body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-30T18:30:00.000Z', 'finished_at' => '2026-10-30T18:30:01.000Z',
-        'result' => ['outcome' => 'succeeded', 'data' => ['backend' => 'applied'], 'secret' => 'private-sentinel']];
+        'result' => ['outcome' => 'succeeded', 'data' => ['backend' => 'applied', 'secret' => 'private-sentinel'], 'secret' => 'private-sentinel']];
+});
+
+it('records native completion without requiring a current Reverb report', function (): void {
+    $this->postJson($this->path.'/result', $this->body)
+        ->assertOk()->assertJsonPath('data.status', 'succeeded')
+        ->assertJsonPath('data.result', ['outcome' => 'succeeded', 'data' => ['backend' => 'applied']])
+        ->assertDontSee('private-sentinel');
+
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Succeeded);
+    expect(WebSocketRuntime::query()->count())->toBe(0);
+});
+
+it('records a native failure without a second registry error allowlist', function (): void {
+    $code = 'websocket.transport_unavailable';
+    $this->postJson($this->path.'/result', [...$this->body, 'status' => 'failed', 'error_code' => $code,
+        'result' => ['error_code' => $code, 'secret' => 'private-sentinel']])
+        ->assertOk()->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.result', ['error_code' => $code])->assertDontSee('private-sentinel');
+
+    expect($this->operation->fresh()->error_code)->toBe($code);
+});
+
+it('records native completion after the registry history row is removed', function (): void {
+    $this->registry->delete();
+
+    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
+        'registry_operation_id' => $this->registry->id, 'epoch' => $this->registry->epoch, 'revision' => $this->registry->revision,
+    ])->assertDontSee('private-sentinel');
+    $this->postJson($this->path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded');
+    $sequence = $this->operation->fresh()->sequence;
+    $this->postJson($this->path.'/result', $this->body)->assertOk();
+    expect($this->operation->fresh()->sequence)->toBe($sequence);
 });
 
 it('selects direct registry kinds by default and binds root starts before exposing safe input', function (): void {
     foreach (['websocket.sync', 'websocket.app_create', 'websocket.app_destroy', 'websocket.app_rotate'] as $kind) {
         expect(app(DirectOperation::class)->writer($kind))->toBe('direct');
     }
-    $this->operation->update(['state' => ['websocket_registry_writer' => 'direct']]);
+    $this->operation->update(['state' => []]);
     $this->getJson($this->path.'?run_id='.$this->run)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
     app(StartSwampRun::class)->start($this->operation);
     $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
@@ -60,13 +90,12 @@ it('starts direct sync from the existing endpoint without an execution lease or 
     $response = $this->withHeader('Idempotency-Key', 'direct-sync-start')->postJson('/api/v1/websocket-sync')->assertAccepted();
 
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->kind)->toBe('websocket.sync')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->kind)->toBe('websocket.sync');
     expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
     Http::assertNothingSent();
 });
 
-it('rejects forged success until every current required Reverb boot has applied the registry', function (): void {
-    $this->postJson($this->path.'/result', $this->body)->assertConflict()->assertJsonPath('error.code', 'websocket.registry_pending');
+it('replays native completion after the current Reverb boot changes', function (): void {
     $version = app(WebSocketRegistry::class)->version();
     $runtime = WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-only',
         'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $version['epoch'], 'applied_revision' => $version['revision']]);
@@ -78,37 +107,25 @@ it('rejects forged success until every current required Reverb boot has applied 
     expect($this->operation->fresh()->attempts)->toBe(0)->and($this->operation->fresh()->worker)->toBeNull();
 });
 
-it('refuses Gateway effects foreign workers and mismatched registry intent', function (): void {
+it('refuses Gateway effects foreign workers and another native run', function (): void {
     $this->postJson($this->path.'/primitive', ['run_id' => $this->run])->assertUnprocessable();
-    $this->operation->update(['input' => [...$this->operation->input, 'revision' => 999]]);
-    $this->getJson($this->path.'?run_id='.$this->run)->assertUnprocessable()->assertJsonPath('error.code', 'websocket.registry_invalid');
+    $this->getJson($this->path.'?run_id='.(string) Str::uuid())->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
+    $this->postJson($this->path.'/result', [...$this->body, 'run_id' => (string) Str::uuid()])->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
     $other = Node::query()->create(['name' => 'foreign-worker', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.18', 'public_ssh_host' => '192.0.2.18']);
-    config(['operation_executor.worker_node_ids' => [$other->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip])->getJson($this->path.'?run_id='.$this->run)->assertForbidden();
+    $this->postJson($this->path.'/result', $this->body)->assertForbidden();
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
-it('projects only typed terminal registry failures', function (string $code): void {
+it('records native registry failure codes', function (string $code): void {
     $this->postJson($this->path.'/result', [...$this->body, 'status' => 'failed', 'error_code' => $code, 'result' => ['error_code' => $code, 'secret' => 'private-sentinel']])
         ->assertOk()->assertJsonPath('data.result', ['error_code' => $code])->assertDontSee('private-sentinel');
 })->with(['websocket.registry_pending', 'websocket.registry_superseded']);
 
-it('refuses the deleted sync writer without recording intent and offers no Gateway execution', function (): void {
-    $operations = Operation::query()->count();
-    $registry = WebSocketRegistryOperation::query()->count();
-    config(['swamp.direct_writers' => ['websocket.sync' => 'polled']]);
-    $this->postJson('/api/v1/websocket-sync')->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect(Operation::query()->count())->toBe($operations)->and(WebSocketRegistryOperation::query()->count())->toBe($registry);
-    expect(fn () => app(OperationExecutionContract::class)->authorizeRun($this->operation, [
-        'worker' => 'obsolete', 'key' => 'probe', 'transport' => 'remote_program', 'name' => 'websocket.registry-applied',
-        'input' => ['registry_operation_id' => $this->registry->id],
-    ]))->toThrow(ResourceOperationException::class);
-});
-
 it('starts app creation directly and exposes only recorded confirmation input', function (): void {
     $response = $this->withHeader('Idempotency-Key', 'direct-create')->postJson('/api/v1/websocket-apps', ['name' => 'direct-disposable'])->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->kind)->toBe('websocket.app_create')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->kind)->toBe('websocket.app_create');
     expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
     $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     $path = '/api/v1/direct-operations/'.$operation->id;
@@ -117,21 +134,11 @@ it('starts app creation directly and exposes only recorded confirmation input', 
     $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input', [
         'registry_operation_id' => $registry->id, 'epoch' => $registry->epoch, 'revision' => $registry->revision,
     ])->assertDontSee($secret);
-    $this->postJson($path.'/result', $this->body)->assertConflict()->assertJsonPath('error.code', 'websocket.registry_pending');
     WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-create',
         'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
     $this->postJson($path.'/result', $this->body)->assertOk()->assertJsonPath('data.status', 'succeeded')->assertDontSee($secret);
     expect(WebSocketApp::query()->where('name', 'direct-disposable')->count())->toBe(1);
     Http::assertNothingSent();
-});
-
-it('refuses deleted app-create polling before recording the registry mutation', function (): void {
-    $registry = WebSocketRegistryOperation::query()->count();
-    config(['swamp.direct_writers' => ['websocket.app_create' => 'polled']]);
-    $this->withHeader('Idempotency-Key', 'refused-create')->postJson('/api/v1/websocket-apps', ['name' => 'refused-disposable'])
-        ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
-    expect(WebSocketApp::query()->where('name', 'refused-disposable')->exists())->toBeFalse();
 });
 
 it('replays direct app creation with the same key without another credential revision or native start', function (): void {
@@ -186,9 +193,13 @@ it('returns 503 and preserves committed direct app intent when Swamp refuses the
     $operation = Operation::query()->where('kind', 'websocket.app_create')->sole();
     $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     expect($registry->result['id'])->toBe($app->id);
-    expect($operation->status)->toBe(OperationStatus::Queued);
+    expect($operation->status)->toBe(OperationStatus::Failed);
+    expect($operation->error_code)->toBe('swamp.start_refused');
     expect($operation->state)->not->toHaveKey('swamp_run_id');
+    $this->postJson('/api/v1/websocket-apps', ['name' => 'start-refused-disposable'])
+        ->assertAccepted()->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.status', 'failed');
     expect($socket->sent)->toHaveCount(1);
+    expect(WebSocketApp::query()->where('name', 'start-refused-disposable')->count())->toBe(1);
     $response->assertDontSee($app->secret);
 });
 
@@ -197,7 +208,7 @@ it('confirms app destruction directly without repeating or exposing the saved re
     $secret = WebSocketApp::query()->where('name', 'direct-disposable')->sole()->secret;
     $response = $this->withHeader('Idempotency-Key', 'direct-destroy')->deleteJson('/api/v1/websocket-apps/direct-disposable')->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->kind)->toBe('websocket.app_destroy')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->kind)->toBe('websocket.app_destroy');
     expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
     $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     $path = '/api/v1/direct-operations/'.$operation->id;
@@ -212,16 +223,6 @@ it('confirms app destruction directly without repeating or exposing the saved re
     Http::assertNothingSent();
 });
 
-it('refuses deleted app-destroy polling without deleting the app', function (): void {
-    app(ChangeWebSocketRegistryAction::class)->execute('create', 'refused-disposable', $this->gateway->id, 'seed-refused-destroy');
-    $registry = WebSocketRegistryOperation::query()->count();
-    config(['swamp.direct_writers' => ['websocket.app_destroy' => 'polled']]);
-    $this->withHeader('Idempotency-Key', 'refused-destroy')->deleteJson('/api/v1/websocket-apps/refused-disposable')
-        ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
-    expect(WebSocketApp::query()->where('name', 'refused-disposable')->exists())->toBeTrue();
-});
-
 it('confirms rotation directly without transferring or rotating credentials twice', function (): void {
     app(ChangeWebSocketRegistryAction::class)->execute('create', 'direct-disposable', $this->gateway->id, 'seed-rotate');
     $app = WebSocketApp::query()->where('name', 'direct-disposable')->sole();
@@ -229,7 +230,7 @@ it('confirms rotation directly without transferring or rotating credentials twic
     $generation = $app->credential_generation;
     $response = $this->withHeader('Idempotency-Key', 'direct-rotate')->postJson('/api/v1/websocket-apps/direct-disposable/rotate')->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect($operation->kind)->toBe('websocket.app_rotate')->and($operation->state['websocket_registry_writer'])->toBe('direct');
+    expect($operation->kind)->toBe('websocket.app_rotate');
     expect($operation->state['swamp_run_id'])->toBe($this->run)->and($operation->lock_key)->toBeNull()->and($operation->attempts)->toBe(0);
     expect($app->refresh()->credential_generation)->toBe($generation + 1)->and($app->secret)->not->toBe($secret);
     $rotated = $app->secret;
@@ -246,28 +247,20 @@ it('confirms rotation directly without transferring or rotating credentials twic
     Http::assertNothingSent();
 });
 
-it('refuses deleted app-rotate polling without changing credentials or recording intent', function (): void {
-    app(ChangeWebSocketRegistryAction::class)->execute('create', 'refused-disposable', $this->gateway->id, 'seed-refused-rotate');
-    $app = WebSocketApp::query()->where('name', 'refused-disposable')->sole();
-    $secret = $app->secret;
-    $generation = $app->credential_generation;
-    $registry = WebSocketRegistryOperation::query()->count();
-    config(['swamp.direct_writers' => ['websocket.app_rotate' => 'polled']]);
-    $this->withHeader('Idempotency-Key', 'refused-rotate')->postJson('/api/v1/websocket-apps/refused-disposable/rotate')
-        ->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
-    expect(WebSocketRegistryOperation::query()->count())->toBe($registry);
-    expect($app->refresh()->secret)->toBe($secret)->and($app->credential_generation)->toBe($generation);
-});
-
-it('rejects a forged applied result after the admitted app change is superseded', function (): void {
+it('records native supersession without changing the newer app credentials', function (): void {
     app(ChangeWebSocketRegistryAction::class)->execute('create', 'superseded-disposable', $this->gateway->id, 'seed-superseded');
     $response = $this->withHeader('Idempotency-Key', 'superseded-rotate')->postJson('/api/v1/websocket-apps/superseded-disposable/rotate')->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    $registry = WebSocketRegistryOperation::query()->findOrFail($operation->input['registry_operation_id']);
     app(ChangeWebSocketRegistryAction::class)->execute('rotate', 'superseded-disposable', $this->gateway->id, 'superseding-rotate');
-    WebSocketRuntime::query()->create(['id' => (string) Str::uuid(), 'node_id' => $this->gateway->id, 'registry_token' => 'test-superseded',
-        'boot_id' => (string) Str::uuid(), 'state' => 'serving', 'reported_at' => now(), 'epoch' => $registry->epoch, 'applied_revision' => $registry->revision]);
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', $this->body)
-        ->assertConflict()->assertJsonPath('error.code', 'websocket.registry_superseded');
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
+    $app = WebSocketApp::query()->where('name', 'superseded-disposable')->sole();
+    $secret = $app->secret;
+    $generation = $app->credential_generation;
+    $code = 'websocket.registry_superseded';
+
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', [...$this->body,
+        'status' => 'failed', 'error_code' => $code, 'result' => ['error_code' => $code]])
+        ->assertOk()->assertJsonPath('data.status', 'failed')->assertDontSee($secret);
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed);
+    expect($app->refresh()->secret)->toBe($secret)->and($app->credential_generation)->toBe($generation);
 });

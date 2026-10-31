@@ -11,7 +11,7 @@ enum TopologyNodePurpose: string
     case Workload = 'workload';
 
     /**
-     * The Orbit roles of the test Gateway and of the operator, whose convergence programs `orbit:node-programs` renders.
+     * The Orbit roles of the test Gateway and operator, included in public `orbit:node-recipe` metadata.
      * A workload Node's roles come from the catalog.
      *
      * @return list<string>
