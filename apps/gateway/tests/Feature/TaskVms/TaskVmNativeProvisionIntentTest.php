@@ -22,9 +22,6 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
@@ -91,24 +88,17 @@ it('composes the canonical enrollment public capture with its actual provider al
 });
 
 it('captures the full command envelope with canonical execution copies and no private values', function (): void {
-    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem', 'swamp.vault_server' => 'wss://provision-command.test']);
+    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem', 'swamp.address' => '192.0.2.209']);
     $issuer = Mockery::mock(ModelKeyIssuer::class);
     $issuer->shouldReceive('origin')->andReturn(TaskVmSettingsBuilder::Origin);
     $issuer->shouldReceive('ownerNodeId')->andReturn($this->gateway->id);
     $issuer->shouldReceive('assertReady');
     $issuer->shouldReceive('privateMaterial')->andReturn(['management_key' => 'synthetic-management-key', 'anchor_key' => str_repeat('2', 64)]);
     app()->instance(ModelKeyIssuer::class, $issuer);
-    $writes = [];
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->times(4)->andReturnUsing(function (ProcessInvocation $call) use (&$writes): CommandResult {
-        $protected = $call->protectedInput ?? throw new LogicException('The shared copy must use protected input.');
-        $value = stream_get_contents($protected->stream());
-        expect(json_encode($call->arguments, JSON_THROW_ON_ERROR))->not->toContain($value);
-        $writes[] = $call->arguments[4];
-
-        return new CommandResult(0, '{}', '', 1, false);
-    });
-    app()->instance(ProcessRunner::class, $runner);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'],
+        'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     $allocation = app(TaskVmProvisionIntent::class)->capture($this->vm);
 
     $inputs = app(TaskVmProvisionWorkflowInputs::class)->capture($this->vm, $allocation);
@@ -118,7 +108,8 @@ it('captures the full command envelope with canonical execution copies and no pr
         ->and($inputs['intent'])->toMatchArray(['task_vm_id' => $this->vm->id, 'node_id' => $this->host->id,
             'guest_node_id' => $allocation['guest_node_id'], 'vm' => $allocation['vm'], 'create' => $allocation['create']])
         ->and(array_keys($inputs['execution_secrets']))->toBe(['model_key', 'model_router_management', 'model_router_anchor', 'pi_token'])
-        ->and($writes)->toBe(['task-vm-model-key-'.$this->vm->id, 'model-router-management-node-'.$this->gateway->id,
+        ->and($socket->sent)->toHaveCount(4)
+        ->and(array_column(array_column($socket->sent, 'payload'), 'key'))->toBe(['task-vm-model-key-'.$this->vm->id, 'model-router-management-node-'.$this->gateway->id,
             'model-router-anchor-node-'.$this->gateway->id, 'task-vm-pi-token-'.$this->vm->id]);
     expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($this->vm->model_key, $this->vm->pi_token,
         'synthetic-management-key', str_repeat('2', 64), 'private_bindings', '$secret');
@@ -126,16 +117,17 @@ it('captures the full command envelope with canonical execution copies and no pr
 });
 
 it('refuses the command envelope when the shared vault cannot accept execution copies', function (): void {
-    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem', 'swamp.vault_server' => 'wss://provision-refused.test']);
+    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem', 'swamp.address' => '192.0.2.209']);
     $issuer = Mockery::mock(ModelKeyIssuer::class);
     $issuer->shouldReceive('origin')->andReturn(TaskVmSettingsBuilder::Origin);
     $issuer->shouldReceive('ownerNodeId')->andReturn($this->gateway->id);
     $issuer->shouldReceive('assertReady');
     $issuer->shouldReceive('privateMaterial')->once()->andReturn(['management_key' => 'synthetic-management-key', 'anchor_key' => str_repeat('2', 64)]);
     app()->instance(ModelKeyIssuer::class, $issuer);
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(new CommandResult(1, '', 'synthetic-private-failure', 1, false));
-    app()->instance(ProcessRunner::class, $runner);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'],
+        'code' => 'forbidden', 'message' => 'synthetic-private-failure']];
+    app()->instance(WebSocketClient::class, $socket);
     $allocation = app(TaskVmProvisionIntent::class)->capture($this->vm);
 
     try {
@@ -146,6 +138,8 @@ it('refuses the command envelope when the shared vault cannot accept execution c
             ->and((string) $error)->not->toContain('synthetic-private-failure')
             ->and($error->getPrevious())->toBeNull();
     }
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->closed)->toBeTrue();
     expect(Operation::query()->count())->toBe(0)
         ->and($this->vm->fresh()->state)->toBe(TaskVmState::Provisioning);
 });
@@ -153,9 +147,8 @@ it('refuses the command envelope when the shared vault cannot accept execution c
 it('checks the captured root executor before requesting any execution copies', function (): void {
     $allocation = app(TaskVmProvisionIntent::class)->capture($this->vm);
     $allocation['node_id'] = $this->issuer->id;
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldNotReceive('run');
-    app()->instance(ProcessRunner::class, $runner);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
 
     try {
         app(TaskVmProvisionWorkflowInputs::class)->capture($this->vm, $allocation);
@@ -163,6 +156,8 @@ it('checks the captured root executor before requesting any execution copies', f
     } catch (ResourceOperationException $error) {
         expect($error->errorCode)->toBe('task_vm.provision_refused');
     }
+    expect($socket->connections)->toBeEmpty();
+    expect($socket->sent)->toBeEmpty();
     expect(Operation::query()->count())->toBe(0);
 });
 
