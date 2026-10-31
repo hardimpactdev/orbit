@@ -16,6 +16,7 @@ use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Swamp\SwampRunSubscriber;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -64,6 +65,7 @@ final class AgentViewServiceProvider extends ServiceProvider
                     clock: CacheAgentStateView::now(...),
                     workingDirectory: base_path(),
                 ),
+                swamp: $app->make(SwampRunSubscriber::class),
             ),
         );
     }
