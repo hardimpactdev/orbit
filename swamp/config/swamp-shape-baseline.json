@@ -2467,22 +2467,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
       "rule": "custom-control",
       "count": 1,

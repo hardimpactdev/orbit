@@ -6,7 +6,6 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\ClusterRouterReplacementStep;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeClusterRouterProjection;
@@ -26,22 +25,34 @@ beforeEach(function (): void {
     $this->candidate = Node::query()->create(['name' => 'candidate-router', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active', 'cluster_id' => $cluster->id]);
     $this->oldRole = $this->old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
     $this->newRole = $this->candidate->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'provisioning']);
-    $this->operation = new Operation(['kind' => 'cluster.router_set', 'target_id' => $cluster->id, 'input' => ['cluster_router' => ['candidate' => ['assignment_id' => $this->newRole->id], 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]]]);
+    $this->operation = new Operation(['kind' => 'cluster.router_set', 'target_id' => $cluster->id, 'input' => ['cluster_router' => ['candidate' => ['assignment_id' => $this->newRole->id, 'node_id' => $this->candidate->id], 'old_nodes' => [['assignment_id' => $this->oldRole->id, 'node_id' => $this->old->id]]]]]);
 });
 
-it('projects serving, authoritative selection and old cleanup without Gateway execution proof', function (): void {
+it('projects the authoritative selection only at native terminal completion', function (): void {
     $projection = app(NativeClusterRouterProjection::class);
-    $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'router-serving']]);
-    expect($this->newRole->fresh()->failed_step)->toBe(ClusterRouterReplacementStep::RouterCaddy->value)
-        ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
     $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'router-selected']]);
+    expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Provisioning)
+        ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
+
+    $projection->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true, 'selected' => true, 'cleanup_complete' => true]]);
+    expect($this->oldRole->fresh())->toBeNull()
+        ->and($this->newRole->fresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($this->newRole->fresh()->failed_step)->toBeNull();
+});
+
+it('retains the selected Router when obsolete baseline cleanup fails', function (): void {
+    app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'failed', 'error_code' => 'cluster.router_failed',
+        'result' => ['ready' => false, 'selected' => true, 'cleanup_complete' => false, 'failed_step' => 'retire-0']]);
     expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Active)
         ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Removing)
-        ->and($this->oldRole->fresh()->failed_step)->toBeNull();
-    $projection->project($this->operation, ['status' => 'running', 'result' => ['checkpoint' => 'old-router-withdrawn']]);
-    expect($this->oldRole->fresh()->failed_step)->toBe(ClusterRouterTransition::OldRouterCleanup);
-    $projection->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true]]);
-    expect($this->oldRole->fresh())->toBeNull()->and($this->newRole->fresh()->failed_step)->toBeNull();
+        ->and($this->oldRole->fresh()->failed_step)->toBe(ClusterRouterTransition::OldRouterCleanup);
+});
+
+it('preserves the old assignment when native restoration succeeds', function (): void {
+    app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'failed', 'error_code' => 'cluster.router_failed',
+        'result' => ['ready' => false, 'selected' => false, 'restored' => true, 'cleanup_complete' => false]]);
+    expect($this->newRole->fresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
 });
 
 it('keeps the authoritative candidate active after a later native DNS failure', function (): void {
@@ -55,7 +66,7 @@ it('keeps the authoritative candidate active after a later native DNS failure', 
 
 it('clears only admitted obsolete assignments after a native unset completes', function (): void {
     $this->operation->kind = 'cluster.router_unset';
-    $this->operation->input = ['cluster_router' => ['candidate' => null, 'old_nodes' => [['assignment_id' => $this->oldRole->id]]]];
+    $this->operation->input = ['cluster_router' => ['candidate' => null, 'old_nodes' => [['assignment_id' => $this->oldRole->id, 'node_id' => $this->old->id]]]];
     app(NativeClusterRouterProjection::class)->project($this->operation, ['status' => 'succeeded', 'result' => ['ready' => true]]);
     expect($this->oldRole->fresh())->toBeNull()->and($this->newRole->fresh())->not->toBeNull();
 });
@@ -71,16 +82,15 @@ it('captures the complete obsolete Router baseline for unset without changing as
             throw new RuntimeException('Router admission must not look up an account on a Node.');
         }
     });
-    $this->old->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9']);
-    $this->candidate->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.18']);
+    $this->old->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+    $this->candidate->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.18', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
     $this->operation->kind = 'cluster.router_unset';
     $this->operation->input = ['cluster_id' => $this->old->cluster_id];
     try {
         $intent = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
         expect($intent['candidate'])->toBeNull()->and($intent['old_nodes'])->toHaveCount(2)
             ->and(array_column($intent['old_nodes'], 'assignment_id'))->toBe([$this->oldRole->id, $this->newRole->id])
-            ->and($intent['old_nodes'][0]['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
-            ->and($intent['old_nodes'][0]['router_lan'])->toBe(['desired' => [], 'expand' => false, 'prune' => true])
+            ->and($intent['old_nodes'][0])->not->toHaveKeys(['firewall', 'router_lan'])
             ->and($intent['old_nodes'][0]['user'])->toBe('orbit')
             ->and($intent['old_nodes'][0])->not->toHaveKey('home')
             ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
@@ -109,7 +119,7 @@ it('captures the complete obsolete Router baseline for unset without changing as
             ->and($setting['leaves'][0]['user'])->toBe('orbit')
             ->and($setting['leaves'][0]['root_hash'])->toBe(hash('sha256', 'public-root-fixture'))
             ->and($setting['leaves'][0])->not->toHaveKey('home')
-            ->and($setting['candidate']['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
+            ->and($setting['candidate'])->not->toHaveKeys(['firewall', 'router_lan'])
             ->and($setting['old_nodes'])->toHaveCount(1)
             ->and($this->newRole->fresh()->status)->toBe(LifecycleStatus::Provisioning);
     } finally {
@@ -119,7 +129,7 @@ it('captures the complete obsolete Router baseline for unset without changing as
 
 it('authorizes only the captured root candidate and publication participants', function (): void {
     $this->operation->node_id = $this->candidate->id;
-    $this->operation->input = ['cluster_router' => [
+    $this->operation->input = ['participant_node_ids' => [$this->candidate->id, $this->old->id, 8001, 8002, 8003], 'cluster_router' => [
         'candidate' => ['node_id' => $this->candidate->id],
         'old_nodes' => [['node_id' => $this->old->id]],
         'workloads' => [['node_id' => 8001]], 'edge_node_ids' => [8002], 'dns_node_ids' => [8003],
