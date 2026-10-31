@@ -18,7 +18,12 @@ import {
   routeTargetActions,
 } from "../routes/target-set.ts";
 import { removalActions } from "../routes/removal-local.ts";
-import type { FileContext } from "../database/sqlite_actions.ts";
+import {
+  type FileContext,
+  snapshotFile,
+  SnapshotRef,
+} from "../database/sqlite_actions.ts";
+import { TransferSqlite, transferSqliteActions } from "./transfer_sqlite.ts";
 
 import { TransferRuntime, transferRuntimeActions } from "./transfer_runtime.ts";
 
@@ -41,6 +46,7 @@ const Plan = z.object({
   }).strict(),
   cutover: z.boolean(),
   completed: z.boolean(),
+  sqlite: TransferSqlite.nullable().default(null),
 });
 const Current = z.object({
   id: z.number(),
@@ -97,6 +103,7 @@ export function transferRoot(
   targetActions = routeTargetActions,
   retirement = removalActions,
   runtime = transferRuntimeActions(),
+  sqlite = transferSqliteActions(),
 ) {
   const gateway = (args: Args, ctx: Context) =>
     new GatewayOperation(makeHttp(ctx, args), args);
@@ -117,6 +124,19 @@ export function transferRoot(
       (value.cancel_requested || ctx.signal?.aborted)
     ) {
       throw new Error("operation.cancelled");
+    }
+    const plan = value.input.direct_transfer;
+    if (
+      plan.sqlite && (plan.sqlite.owner_instance_id !== plan.instance_id ||
+        plan.sqlite.source.node_id !== plan.source_node_id ||
+        plan.sqlite.target.node_id !== plan.destination_node_id ||
+        plan.sqlite.source.base !== plan.source.source ||
+        plan.sqlite.source.source_path !== plan.source.sqlite_source ||
+        plan.sqlite.source.source_user !== plan.source.user ||
+        plan.sqlite.target.base !== plan.destination.destination ||
+        plan.sqlite.target.target_user !== plan.destination.user)
+    ) {
+      throw new Error("instance.transfer_intent_invalid");
     }
     return value;
   }
@@ -146,10 +166,15 @@ export function transferRoot(
   };
   return {
     type: "@nckrtl/instance-transfer",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
-    files: { archive: archiveFile },
+    files: { archive: archiveFile, snapshot: snapshotFile },
     resources: {
+      sqliteSnapshot: {
+        schema: SnapshotRef.nullable(),
+        lifetime: "workflow",
+        garbageCollection: 1,
+      },
       paused: {
         schema: z.object({ attempted: z.literal(true) }),
         lifetime: "workflow",
@@ -295,6 +320,76 @@ export function transferRoot(
             }
             if (args.phase === "verify") await runtime.verify(batch);
             if (args.phase === "retire") await runtime.retire(batch);
+          }
+          return { ready: true };
+        },
+      },
+      sqlite: {
+        arguments: Effect.extend({
+          phase: z.enum([
+            "export",
+            "install",
+            "cleanup-source",
+            "cleanup-target",
+          ]),
+        }),
+        description:
+          "Snapshot and seed SQLite on admitted participants; cleanup survives cancellation",
+        execute: async (
+          args: Effect & {
+            phase: "export" | "install" | "cleanup-source" | "cleanup-target";
+          },
+          ctx: Context,
+        ) => {
+          const cleanup = args.phase.startsWith("cleanup-");
+          const current = await read(args, ctx, cleanup);
+          const plan = current.input.direct_transfer;
+          const source = args.phase === "export" ||
+            args.phase === "cleanup-source";
+          placed(
+            current,
+            args,
+            source ? plan.source_node_id : plan.destination_node_id,
+          );
+          if (cleanup) {
+            if (plan.sqlite) {
+              if (source) await sqlite.cleanupSource(plan.sqlite);
+              else await sqlite.cleanupTarget(plan.sqlite);
+            }
+            return { ready: true };
+          }
+          if (plan.cutover) {
+            throw new Error("instance.transfer_already_cutover");
+          }
+          if (args.phase === "export") {
+            const snapshot = plan.sqlite
+              ? await sqlite.export(plan.sqlite, ctx, args.run_id, ctx.signal)
+              : null;
+            return output(ctx, "sqliteSnapshot", "sqliteSnapshot", snapshot);
+          }
+          if (plan.sqlite) {
+            const snapshot = SnapshotRef.parse(
+              await ctx.readResource("sqliteSnapshot"),
+            );
+            if (
+              snapshot.model_id !== ctx.modelId ||
+              snapshot.name !== `snapshot-${args.run_id}`
+            ) {
+              throw new Error("database.sqlite_snapshot_invalid");
+            }
+            await sqlite.install(
+              plan.sqlite,
+              snapshot,
+              ctx,
+              () => read(args, ctx),
+              ctx.signal,
+            );
+            await read(args, ctx);
+            await sqlite.environment(
+              plan.sqlite,
+              plan.destination.environment,
+              ctx.signal,
+            );
           }
           return { ready: true };
         },

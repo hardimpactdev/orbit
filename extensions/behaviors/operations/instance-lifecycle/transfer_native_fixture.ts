@@ -27,6 +27,11 @@ export const transferHttp =
       const data = body as Record<string, unknown>;
       const result = data.result as Record<string, unknown>;
       value.callbacks.push(data);
+      if (["succeeded", "failed", "cancelled"].includes(String(data.status))) {
+        value.terminal_effects = value.effects.map((v: { name: string }) =>
+          v.name
+        );
+      }
       if (result?.checkpoint === "cutover") {
         operation.input.direct_transfer.cutover = true;
         value.cutover = true;
@@ -253,6 +258,43 @@ export const fixtureRuntime = {
   },
   retire: () => {
     effect("retire-runtime");
+    return Promise.resolve();
+  },
+};
+
+export const fixtureSqlite = {
+  export: (_plan: unknown, ctx: { modelId: string }, runId: string) => {
+    effect("sqlite-export");
+    return Promise.resolve({
+      model_id: ctx.modelId,
+      name: `snapshot-${runId}`,
+      version: 1,
+      bytes: 4096,
+      sha256: "a".repeat(64),
+    });
+  },
+  install: async (
+    _plan: unknown,
+    _snapshot: unknown,
+    _ctx: unknown,
+    refresh: () => Promise<unknown>,
+  ) => {
+    effect("sqlite-prepare");
+    await refresh();
+    effect("sqlite-receive");
+    await refresh();
+    effect("sqlite-install");
+  },
+  environment: () => {
+    effect("sqlite-environment");
+    return Promise.resolve();
+  },
+  cleanupSource: () => {
+    effect("sqlite-cleanup-source");
+    return Promise.resolve();
+  },
+  cleanupTarget: () => {
+    effect("sqlite-cleanup-target");
     return Promise.resolve();
   },
 };

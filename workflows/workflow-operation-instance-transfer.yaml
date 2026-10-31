@@ -54,8 +54,7 @@ jobs:
     - step: admission
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   - name: pause-source
@@ -79,6 +78,27 @@ jobs:
     - step: destination-ready
       condition:
         type: succeeded
+  - name: sqlite-export
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: sqlite
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ inputs.node_id }}
+        phase: export
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    dependsOn:
+    - step: pause-source
+      condition:
+        type: succeeded
   - name: capture
     writes: true
     task:
@@ -92,7 +112,7 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
     dependsOn:
-    - step: pause-source
+    - step: sqlite-export
       condition:
         type: succeeded
   - name: materialize
@@ -113,8 +133,28 @@ jobs:
     - step: capture
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    labels:
+      node: ${{ string(steps.admission.outputs.destination_node_id) }}
+  - name: sqlite-install
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: sqlite
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
+        phase: install
+    dependsOn:
+    - step: materialize
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
 - name: requests
@@ -239,8 +279,7 @@ jobs:
     - step: cutover
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   - name: environment
@@ -261,8 +300,7 @@ jobs:
     - step: prepare
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   - name: prepare-runtime
@@ -279,8 +317,7 @@ jobs:
         run_id: ${{ run.id }}
         target_node_id: ${{ steps.admission.outputs.destination_node_id }}
         phase: prepare
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
     dependsOn:
@@ -305,8 +342,7 @@ jobs:
     - step: prepare-runtime
       condition:
         type: succeeded
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   dependsOn:
@@ -423,8 +459,7 @@ jobs:
         run_id: ${{ run.id }}
         target_node_id: ${{ steps.admission.outputs.destination_node_id }}
         phase: install
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
   - name: verify-runtime
@@ -441,8 +476,7 @@ jobs:
         run_id: ${{ run.id }}
         target_node_id: ${{ steps.admission.outputs.destination_node_id }}
         phase: verify
-    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.admission.outputs.destination_node_id) }}
     dependsOn:
@@ -533,23 +567,6 @@ jobs:
     - step: source-remove
       condition:
         type: succeeded
-  - name: finish
-    writes: true
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/instance-transfer'
-      behaviorName: ${{ "instance-transfer-" + run.id }}
-      methodName: finish
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        failed: false
-    dependsOn:
-    - step: retire
-      condition:
-        type: succeeded
   dependsOn:
   - job: retirement
     condition:
@@ -571,7 +588,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-    guard: ${{ "finish" in steps && steps.finish.status == "succeeded" }}
+    guard: ${{ "retire" in steps && steps.retire.status == "succeeded" }}
   - name: rollback
     writes: true
     task:
@@ -719,6 +736,59 @@ jobs:
   - job: recover-runtime
     condition:
       type: succeeded
+- name: sqlite-cleanup-source
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: recover-leaves
+    condition:
+      type: always
+  steps:
+  - name: sqlite-cleanup-source
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: sqlite
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ inputs.node_id }}
+        phase: cleanup-source
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+- name: sqlite-cleanup-target
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: recover-leaves
+    condition:
+      type: always
+  steps:
+  - name: sqlite-cleanup-target
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: sqlite
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ steps.admission.outputs.destination_node_id }}
+        phase: cleanup-target
+    target: ${{ "orbit-node-" + string(steps.admission.outputs.destination_node_id) }}
+    labels:
+      node: ${{ string(steps.admission.outputs.destination_node_id) }}
+    guard: ${{ !("admission" in steps && "outputs" in steps.admission) }}
 - name: recover-cleanup
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
@@ -738,12 +808,44 @@ jobs:
         run_id: ${{ run.id }}
         decision: ${{ steps.recovery.outputs }}
         target_node_id: ${{ steps.recovery.outputs.destination_node_id }}
-    target: ${{ "orbit-node-" + string(steps.recovery.outputs.destination_node_id)
-      }}
+    target: ${{ "orbit-node-" + string(steps.recovery.outputs.destination_node_id) }}
     labels:
       node: ${{ string(steps.recovery.outputs.destination_node_id) }}
     guard: ${{ !("recovery" in steps && "outputs" in steps.recovery && steps.recovery.outputs.recover)
       }}
+  dependsOn:
+  - job: recover-leaves
+    condition:
+      type: succeeded
+  - job: sqlite-cleanup-source
+    condition:
+      type: succeeded
+  - job: sqlite-cleanup-target
+    condition:
+      type: succeeded
+- name: final-outcome
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: recover-cleanup
+    condition:
+      type: succeeded
+  steps:
+  - name: finish
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-transfer'
+      behaviorName: ${{ "instance-transfer-" + run.id }}
+      methodName: finish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed: false
+    guard: ${{ !("retire" in steps && steps.retire.status == "succeeded") }}
   - name: failed
     writes: true
     task:
@@ -757,21 +859,21 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         failed: true
-        decision: ${{ steps.recovery.outputs }}
+        decision: '${{ ("recovery" in steps && "outputs" in steps.recovery) ? steps.recovery.outputs :
+          {"recover": false, "cancelled": false, "destination_node_id": inputs.node_id, "caddy_node_ids":
+          [], "dns_node_ids": []} }}'
     dependsOn:
-    - step: discard
+    - step: finish
       condition:
-        type: succeeded
-  dependsOn:
-  - job: recover-leaves
-    condition:
-      type: succeeded
+        type: always
+    guard: ${{ ("retire" in steps && steps.retire.status == "succeeded") || !("discard" in steps && steps.discard.status
+      == "succeeded") }}
 - name: last-resort
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
   dependsOn:
-  - job: recover-cleanup
+  - job: final-outcome
     condition:
       type: always
   steps:

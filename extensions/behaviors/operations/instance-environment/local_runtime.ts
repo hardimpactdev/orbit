@@ -92,7 +92,8 @@ class Access:
    self.unchanged();return {'preflight':{'state':'ok'},'existing':self.perform_read()}
   supplied=self.data['content'].encode('utf8');check(len(supplied)<=self.maximum)
   if mode=='merge':
-   keys=self.data['managed_keys'];check(self.file=='.env.testing' and keys and all(re.fullmatch('[A-Z][A-Z0-9_]*',key) for key in keys))
+   keys=self.data['managed_keys'];check(keys and all(re.fullmatch('[A-Z][A-Z0-9_]*',key) for key in keys))
+   check(self.file=='.env.testing' or (self.file=='.env' and set(keys)=={'DB_CONNECTION','DB_DATABASE'}))
    if self.tracked():self.unchanged();return {'state':'tracked','installed':False}
    updates={}
    for line in supplied.splitlines(keepends=True):

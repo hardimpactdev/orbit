@@ -201,3 +201,37 @@ Deno.test("native sync refuses loss of unmanaged workload keys before writing", 
     );
   });
 });
+
+Deno.test("SQLite transfer merges only DB keys into the archived private environment", async () => {
+  await fixture(async (base) => {
+    const privateLine = "TOKEN=retain-private-value\nUNRELATED=true\n";
+    await write(
+      base,
+      privateLine + "DB_CONNECTION=old\nDB_DATABASE=/old/path\n",
+    );
+    assertEquals(
+      (await write(
+        base,
+        "DB_CONNECTION=sqlite\nDB_DATABASE='/new/path with space.sqlite'\n",
+        { mode: "merge", managed_keys: ["DB_CONNECTION", "DB_DATABASE"] },
+      )).state,
+      "changed",
+    );
+    assertEquals(
+      await Deno.readTextFile(`${base}/.env`),
+      privateLine +
+        "DB_CONNECTION=sqlite\nDB_DATABASE='/new/path with space.sqlite'\n",
+    );
+    assertEquals(
+      (await write(base, "TOKEN=replaced\n", {
+        mode: "merge",
+        managed_keys: ["TOKEN"],
+      })).state,
+      "refused",
+    );
+    assertEquals(
+      (await Deno.readTextFile(`${base}/.env`)).startsWith(privateLine),
+      true,
+    );
+  });
+});

@@ -34,3 +34,14 @@ and verifies running Vite listeners. Only then does it retire source units and
 files. A failed partial pause records native restoration intent before the first
 stop; recovery restores source runtime before discarding destination resources.
 No source installation material is readable after cutover.
+
+A selected SQLite database uses the canonical database snapshot and seed actions
+inside this DAG. Transfer currently accepts it only without PHP/Laravel runtime
+or external database bindings: stopping managed Processes does not fence HTTP
+writers. Export follows Process pause, the archive excludes the database and
+sidecars, and destination installation precedes cutover. A bounded native merge
+changes only DB_CONNECTION and DB_DATABASE in the archived environment; all
+other private lines remain intact. Both participants clean their temporary DB
+artifacts on success, failure and cancellation before terminal reporting. A
+cleanup failure cannot claim success or completed restoration. Database bytes
+use a native file resource and never enter JSON or Gateway.
