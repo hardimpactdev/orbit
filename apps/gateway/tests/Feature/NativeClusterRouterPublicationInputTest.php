@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeClusterRouterIntent;
+use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
 use App\Domain\Routes\RoutePublicationSites;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -100,11 +101,15 @@ it('captures destination-scoped LAN retirement with the selected source kept in 
 
     $forward = $capture['route_mutations']['forward'];
     $restore = $capture['route_mutations']['restore'];
-    expect($forward['lan'])->toBe([['node_id' => $this->workload->id, 'route_id' => $this->route->id, 'operation' => 'converge',
-        'router' => '192.168.6.12', 'destination' => '192.168.6.13']]);
-    expect($forward['retire_lan'])->toBe([['node_id' => $this->workload->id, 'route_id' => $this->route->id, 'destination' => '192.168.6.13',
-        'operation' => 'retire', 'keep' => ['192.168.6.12']]]);
-    expect($restore['retire_lan'][0]['keep'])->toBe(['192.168.6.11']);
+    $forwardRules = collect($forward['lan'])->firstWhere('node_id', $this->workload->id)['rules'];
+    expect(array_column($forwardRules, 'source'))->toBe(['192.168.6.11', '192.168.6.12'])
+        ->and(array_column($forwardRules, 'ensure'))->toBe(['present', 'present']);
+    $retired = collect($forward['retire_lan'])->firstWhere('node_id', $this->workload->id)['rules'];
+    expect(array_column($retired, 'source'))->toBe(['192.168.6.12', '192.168.6.11'])
+        ->and(array_column($retired, 'ensure'))->toBe(['present', 'absent']);
+    $restored = collect($restore['retire_lan'])->firstWhere('node_id', $this->workload->id)['rules'];
+    expect(array_column($restored, 'source'))->toBe(['192.168.6.11', '192.168.6.12'])
+        ->and(array_column($restored, 'ensure'))->toBe(['present', 'absent']);
 });
 
 it('captures unset by withdrawing Router sites and preserving the workload identity', function (): void {
@@ -139,4 +144,18 @@ it('preserves unrelated private sites and excludes their leaf scopes from cleanu
         expect($old[$phase]['caddy']['content'])->toContain('unrelated.private.test');
     }
     expect(array_column($forward['cleanup'], 'scope'))->not->toContain('route-'.$other->id);
+});
+
+it('starts with the full captured public intent and never renders a fresh participant callback', function (): void {
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+    $this->operation->input = [...$this->operation->input, 'cluster_router' => $inventory, ...$capture];
+    $expected = $this->operation->input;
+    $this->candidate->update(['wireguard_ip' => '10.44.0.250']);
+
+    $input = app(NativeClusterRouterProjection::class)->input($this->operation);
+
+    expect($input)->toBe(['intent' => $expected, 'execution_secrets' => []])
+        ->and($input['intent']['certificates'])->not->toBeEmpty()
+        ->and($input['intent']['route_mutations'])->toHaveKeys(['forward', 'restore']);
 });

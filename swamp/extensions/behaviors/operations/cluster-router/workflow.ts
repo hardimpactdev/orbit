@@ -6,10 +6,7 @@ import { routeMutationSteps } from "../routes/mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 const placement = { target: "orbit-node-209", labels: { node: "209" } };
-const completed = {
-    type: "or",
-    conditions: [{ type: "succeeded" }, { type: "skipped" }],
-};
+const completed = { type: "always" };
 const after = (
     name: string,
     type = "succeeded",
@@ -77,7 +74,7 @@ function child(
 export function clusterRouterWorkflow(): Fields {
     const candidate = "inputs.intent.cluster_router.candidate";
     const active =
-        '!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status == "failed")';
+        '!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-")) && steps[key].status == "failed")';
     const prepare: Fields = {
         name: "prepare",
         ...placement,
@@ -111,21 +108,21 @@ export function clusterRouterWorkflow(): Fields {
                 `(${active} && ${candidate} != null) ? ${candidate}.probes : []`,
             ),
         },
-        dependsOn: [{ step: "forward_lan", condition: { type: "always" } }],
+        dependsOn: [
+            "prepare",
+            "forward_prepare_certificates",
+            "forward_php",
+            "forward_lan",
+        ].map((step) => ({ step, condition: { type: "always" } })),
         guard: expr(
             'steps.exists(key, (key.startsWith("forward_") || key == "prepare") && steps[key].status == "failed")',
         ),
         task: {
-            type: "behavior",
-            behaviorType: "@swamp/ssh",
-            behaviorName: expr('"cluster-router-probe-" + run.id'),
-            methodName: "exec",
-            globalArgs: sshGlobals(candidate),
+            type: "workflow",
+            workflowIdOrName: "cluster-router-probe",
             inputs: {
-                hosts: "name:target",
-                argv: expr(
-                    '["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",self.probe.probe.address + ":" + string(self.probe.probe.port),"-servername",self.probe.probe.domain,"-verify_hostname",self.probe.probe.domain,"-verify_return_error"]',
-                ),
+                ...common,
+                intent: expr("self.probe"),
             },
         },
     };
@@ -145,7 +142,7 @@ export function clusterRouterWorkflow(): Fields {
         "restore",
         "inputs.intent.route_mutations",
         "restore",
-        'steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")',
+        'steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-")) && steps[name].status == "failed")',
     );
     for (const step of restore) {
         (step.dependsOn as Fields[]).push({
@@ -379,11 +376,42 @@ export function firewallWorkflow(): Fields {
         jobs: [{ name: "firewall", steps }],
     };
 }
+export function probeWorkflow(): Fields {
+    return {
+        id: "5cbf1292-9922-444b-9225-fb2b682111f7",
+        name: "cluster-router-probe",
+        description:
+            "Verify one admitted workload TLS endpoint from the candidate Router through official SSH.",
+        vaults: [],
+        inputs: envelope,
+        jobs: [{
+            name: "probe",
+            steps: [{
+                name: "probe",
+                ...placement,
+                task: {
+                    type: "behavior",
+                    behaviorType: "@swamp/ssh",
+                    behaviorName: expr('"cluster-router-probe-" + run.id'),
+                    methodName: "exec",
+                    globalArgs: sshGlobals(),
+                    inputs: {
+                        hosts: "name:target",
+                        argv: expr(
+                            '["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]',
+                        ),
+                    },
+                },
+            }],
+        }],
+    };
+}
 if (import.meta.main) {
     console.log(JSON.stringify({
         "workflow-operation-cluster-router.yaml": clusterRouterWorkflow(),
         "workflow-cluster-router-prepare.yaml": prepareWorkflow(),
         "workflow-cluster-router-retire.yaml": retireWorkflow(),
         "workflow-cluster-router-firewall.yaml": firewallWorkflow(),
+        "workflow-cluster-router-probe.yaml": probeWorkflow(),
     }));
 }

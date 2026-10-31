@@ -50,7 +50,7 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
             $raw = ValidatedData::object($data['result'] ?? []);
-            $result = Arr::only($raw, ['ready', 'selected', 'restored', 'cleanup_complete', 'failed_step', 'error_code']);
+            $result = Arr::only($raw, ['ready', 'selected', 'restored', 'cleanup_complete', 'failed_step', 'error_code', 'migrated_node_ids']);
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
                 $this->project($projected, [...$data, 'result' => $result]);
@@ -73,6 +73,10 @@ final readonly class NativeClusterRouterProjection implements DirectOperationPro
         if (! $status->terminal()) {
             return $result;
         }
+        $mutations = ValidatedData::object($operation->input['route_mutations'] ?? []);
+        $forward = ValidatedData::object($mutations['forward'] ?? []);
+        $admitted = array_column(RouteExecutionProof::objects($forward['lan'] ?? []), 'node_id');
+        app(NativeRouteLanInput::class)->recordMigrations(ValidatedData::integerList($admitted), ValidatedData::integerList($result['migrated_node_ids'] ?? []));
         $selected = ($result['selected'] ?? false) === true && ($result['restored'] ?? false) !== true;
         if ($status === OperationStatus::Succeeded || $selected) {
             NodeRole::query()->whereKey($oldIds)->update(['status' => LifecycleStatus::Removing,

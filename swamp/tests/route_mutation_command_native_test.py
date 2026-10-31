@@ -184,6 +184,17 @@ print('{"ready":true}')
             )
         )
 
+    def test_empty_optional_fanouts_do_not_skip_required_publication(self):
+        self.plan['lan'] = []
+        self.plan['url_writes'] = []
+        self.plan['cleanup'] = []
+        self.plan['retire_lan'] = []
+        self.parent()
+        history = self.run_parent()
+        result = next(step for step in history['jobs'][0]['steps'] if step['name'] == 'forward-0')
+        self.assertTrue(result['outputs']['ready'])
+        self.assertEqual(result['outputs']['contributions']['forward_lan'], 0)
+
     def test_false_guard_creates_no_effects_and_no_completion_claim(self):
         self.parent(guard="false")
         history = self.run_parent()

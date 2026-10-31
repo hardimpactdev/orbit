@@ -2496,22 +2496,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/cluster-router.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/routes/convergence.ts",
       "rule": "custom-control",
       "count": 1,
@@ -2555,20 +2539,6 @@
         "/usr/bin/python3",
         "/usr/bin/timeout"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/firewall-program.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/firewall-program.ts",
-      "rule": "inline-script",
-      "count": 311,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/local-program.ts",
@@ -2641,12 +2611,6 @@
         "/usr/bin/stat",
         "/usr/bin/test"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/router-lan.ts",
-      "rule": "inline-script",
-      "count": 40,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/router-preparation.ts",

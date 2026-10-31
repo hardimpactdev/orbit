@@ -1,5 +1,13 @@
 import { z } from "npm:zod@4.4.3";
-const State = z.object({ status: z.string() }).passthrough();
+const State = z.object({
+    status: z.string(),
+    outputs: z.object({
+        migrated_node_ids: z.array(z.number().int().positive()).optional(),
+        result: z.object({
+            migrated_node_ids: z.array(z.number().int().positive()).optional(),
+        }).passthrough().optional(),
+    }).passthrough().optional(),
+}).passthrough();
 const Args = z.object({
     noop: z.boolean(),
     dns_count: z.number().int().nonnegative(),
@@ -30,6 +38,14 @@ export function routerResult(raw: unknown) {
             selected,
             restored,
             cleanup_complete: ready,
+            migrated_node_ids: [
+                ...new Set(
+                    Object.values(steps).flatMap((step) => [
+                        ...(step.outputs?.migrated_node_ids ?? []),
+                        ...(step.outputs?.result?.migrated_node_ids ?? []),
+                    ]),
+                ),
+            ],
             ...(!ready
                 ? {
                     failed_step: failure?.[0] ?? "router-preparation",

@@ -14,15 +14,13 @@ class ClusterNative(NativeTestCase):
         super().setUp()
         self.copy_behaviors('operations/cluster-router', 'operations/routes/mutation-command', 'operations/routes/publication-command', 'operations/node-role-command', 'operations/node-bootstrap')
         source=yaml.safe_load((ROOT/'workflows/workflow-operation-cluster-router.yaml').read_text())
-        source['jobs'][0]['steps']=[s for s in source['jobs'][0]['steps'] if s['name']!='verify']
         for s in source['jobs'][0]['steps']:
             s.pop('target',None);s.pop('labels',None)
-            s['dependsOn']=[d for d in s.get('dependsOn',[]) if d['step']!='verify']
         (self.repo/'workflows/workflow-operation-cluster-router.yaml').write_text(yaml.safe_dump(source,sort_keys=False))
         names={s['task']['workflowIdOrName'] for s in source['jobs'][0]['steps'] if s['task']['type']=='workflow'}
         command="""python3 - <<'PY'
 import json,os,pathlib
-p=pathlib.Path('native-cluster.json');s=json.loads(p.read_text());name=os.environ['ACTION']
+p=pathlib.Path('native-cluster.json');s=json.loads(p.read_text());name=os.environ['ACTION'];name='probe' if name=='cluster-router-probe' else name
 s['events'].append(name);p.write_text(json.dumps(s))
 if s.get('fail')==name:
  s['fail']=None;p.write_text(json.dumps(s));raise SystemExit(1)
@@ -49,6 +47,12 @@ PY"""
         result,events=self.run_parent();self.assertTrue(result['ready']);self.assertTrue(result['selected']);self.assertTrue(result['cleanup_complete']);self.assertEqual('cluster-router-retire',events[-1]);self.assertLess(events.index('route-dns-grace'),events.index('route-certificate-remove'))
     def test_unset_skips_candidate_preparation(self):
         self.intent['cluster_router']['candidate']=None;result,events=self.run_parent();self.assertTrue(result['ready']);self.assertNotIn('cluster-router-prepare',events)
+    def test_workload_probe_precedes_candidate_caddy_and_dns(self):
+        self.intent['cluster_router']['candidate'].update(connection=dict(nodeHost='fixture',nodeUser='orbit',nodePort=22,nodeIdentityFile='/fixture/key'),host_keys=['fixture'],probes=[dict(connection=dict(nodeHost='fixture',nodeUser='orbit',nodePort=22,nodeIdentityFile='/fixture/key'),host_keys=['fixture'],probe=dict(address='192.0.2.13',port=443,domain='app.test'))])
+        result,events=self.run_parent();self.assertTrue(result['ready']);self.assertLess(events.index('probe'),events.index('operation-route-caddy-delta'));self.assertLess(events.index('probe'),events.index('route-dns-publish'))
+    def test_workload_probe_failure_suppresses_candidate_publication(self):
+        self.intent['cluster_router']['candidate'].update(connection=dict(nodeHost='fixture',nodeUser='orbit',nodePort=22,nodeIdentityFile='/fixture/key'),host_keys=['fixture'],probes=[dict(connection=dict(nodeHost='fixture',nodeUser='orbit',nodePort=22,nodeIdentityFile='/fixture/key'),host_keys=['fixture'],probe=dict(address='192.0.2.13',port=443,domain='app.test'))])
+        self.state['fail']='probe';result,events=self.run_parent(False);self.assertFalse(result['ready']);self.assertFalse(result['selected']);self.assertTrue(result['restored']);self.assertLess(events.index('probe'),events.index('operation-route-caddy-delta'))
     def test_noop_runs_no_effect(self):
         self.intent['cluster_router'].update(noop=True,old_nodes=[]);result,events=self.run_parent();self.assertTrue(result['ready']);self.assertEqual([],events)
     def test_failed_dns_restores_before_terminal_failure(self):

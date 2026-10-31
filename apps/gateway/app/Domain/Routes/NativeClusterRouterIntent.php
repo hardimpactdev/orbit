@@ -62,6 +62,7 @@ final readonly class NativeClusterRouterIntent
                     if ($route->sites_published) {
                         $address = is_string($node->lan_ip) && $node->lan_ip !== '' ? $node->lan_ip : $node->wireguard_ip;
                         $probes[] = ['protocol' => 'tls', 'agent_sha256' => $this->agents->pin($candidate->node),
+                            ...app(NativeCaddyPublicationInput::class)->connectionForNode($candidate->node),
                             'probe' => ['address' => $address, 'port' => 443, 'domain' => $route->domain]];
                     }
                 }

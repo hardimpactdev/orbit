@@ -21,6 +21,7 @@ Deno.test("Router terminal selection retains cleanup failure and exact native re
             selected: true,
             restored: false,
             cleanup_complete: false,
+            migrated_node_ids: [],
             failed_step: "retire-0",
             error_code: "cluster.router_failed",
         },

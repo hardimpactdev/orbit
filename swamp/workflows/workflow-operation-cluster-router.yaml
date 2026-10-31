@@ -49,15 +49,13 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-certificate-publish
@@ -82,18 +80,16 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: operation-route-php-delta
@@ -118,8 +114,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.lan }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -129,10 +126,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -154,37 +148,33 @@ jobs:
       node: '209'
     forEach:
       item: probe
-      in: '${{ (!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-        == "failed") && inputs.intent.cluster_router.candidate != null) ? inputs.intent.cluster_router.candidate.probes
+      in: '${{ (!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+        && steps[key].status == "failed") && inputs.intent.cluster_router.candidate != null) ? inputs.intent.cluster_router.candidate.probes
         : [] }}'
     dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: forward_prepare_certificates
+      condition:
+        type: always
+    - step: forward_php
+      condition:
+        type: always
     - step: forward_lan
       condition:
         type: always
     guard: ${{ steps.exists(key, (key.startsWith("forward_") || key == "prepare") && steps[key].status == "failed")
       }}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "cluster-router-probe-" + run.id }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "cluster-router-ssh-" + run.id }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.cluster_router.candidate.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.cluster_router.candidate.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.cluster_router.candidate.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.cluster_router.candidate.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.cluster_router.candidate.host_keys }}
+      type: workflow
+      workflowIdOrName: cluster-router-probe
       inputs:
-        hosts: name:target
-        argv: ${{ ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",self.probe.probe.address
-          + ":" + string(self.probe.probe.port),"-servername",self.probe.probe.domain,"-verify_hostname",self.probe.probe.domain,"-verify_return_error"]
-          }}
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent: ${{ self.probe }}
   - name: forward_prepare_caddy
     target: orbit-node-209
     labels:
@@ -192,8 +182,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -206,16 +197,10 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     - step: verify
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -243,8 +228,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.url_writes }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -260,10 +246,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-environment-write
@@ -287,8 +270,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -307,16 +291,10 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     - step: verify
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
@@ -342,8 +320,9 @@ jobs:
       item: part
       in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest
         != p.after.dns.digest) ? [{}] : [] }}'
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -365,10 +344,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-dns-grace
@@ -385,8 +361,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -411,10 +388,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -442,8 +416,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.certificates }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -471,10 +446,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-certificate-publish
@@ -499,8 +471,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -531,10 +504,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: operation-route-caddy-delta
@@ -562,8 +532,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -597,10 +568,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-dns-publish
@@ -625,8 +593,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.cleanup }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -663,10 +632,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-certificate-remove
@@ -691,8 +657,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.retire_lan }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status == "failed") }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) || steps.exists(key, key.startsWith("forward_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -732,10 +699,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: workflow
       workflowIdOrName: route-lan-apply
@@ -758,8 +722,8 @@ jobs:
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.forward] }}
-    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, key == "prepare" && steps[key].status
-      == "failed")) }}
+    guard: ${{ !(!inputs.intent.cluster_router.noop && !steps.exists(key, (key == "prepare" || key.startsWith("verify-"))
+      && steps[key].status == "failed")) }}
     dependsOn:
     - step: forward_prepare_certificates
       condition:
@@ -802,10 +766,7 @@ jobs:
         type: always
     - step: prepare
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: always
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
@@ -844,8 +805,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.certificates }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: forward
       condition:
@@ -874,8 +836,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -907,8 +870,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.lan }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -941,8 +905,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.url_writes }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -979,8 +944,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1024,8 +990,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null) }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1070,8 +1037,9 @@ jobs:
       item: part
       in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && p.before.dns.digest
         != p.after.dns.digest) ? [{}] : [] }}'
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1110,8 +1078,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1164,8 +1133,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.cleanup }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1218,8 +1188,9 @@ jobs:
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.retire_lan }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) || steps.exists(key,
-      key.startsWith("restore_") && steps[key].status == "failed") }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) || steps.exists(key, key.startsWith("restore_") && steps[key].status
+      == "failed") }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:
@@ -1273,7 +1244,8 @@ jobs:
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.restore] }}
-    guard: ${{ !(steps.exists(name, name.startsWith("forward_") && steps[name].status == "failed")) }}
+    guard: ${{ !(steps.exists(name, (name.startsWith("forward_") || name == "forward-0" || name.startsWith("verify-"))
+      && steps[name].status == "failed")) }}
     dependsOn:
     - step: restore_prepare_certificates
       condition:

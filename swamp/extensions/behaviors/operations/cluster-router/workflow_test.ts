@@ -4,6 +4,7 @@ import {
     clusterRouterWorkflow,
     firewallWorkflow,
     prepareWorkflow,
+    probeWorkflow,
     retireWorkflow,
 } from "./workflow.ts";
 Deno.test("checked-in Cluster Router DAGs match the single native composition", async () => {
@@ -13,6 +14,7 @@ Deno.test("checked-in Cluster Router DAGs match the single native composition", 
             "workflow-cluster-router-prepare.yaml": prepareWorkflow(),
             "workflow-cluster-router-retire.yaml": retireWorkflow(),
             "workflow-cluster-router-firewall.yaml": firewallWorkflow(),
+            "workflow-cluster-router-probe.yaml": probeWorkflow(),
         })
     ) {
         assertEquals(

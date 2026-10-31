@@ -1,4 +1,5 @@
-// Canonical UFW engine shared with the native Router script assets.
-export const FirewallProgram = await Deno.readTextFile(
-    new URL("./firewall-command/scripts/firewall.py", import.meta.url),
-);
+// Text imports keep the single canonical UFW source in native bundles.
+import source from "./firewall-command/scripts/firewall.py" with {
+    type: "text",
+};
+export const FirewallProgram = source;

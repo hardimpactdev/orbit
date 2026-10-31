@@ -16,7 +16,6 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Collection;
 
 /** Capture Router publication phases without selecting a Router or changing Route rows.
- * @phpstan-type LanRule array{node_id:int,route_id:int,operation:'converge',router:string,destination:string}
  */
 final readonly class NativeClusterRouterPublicationInput
 {
@@ -81,50 +80,46 @@ final readonly class NativeClusterRouterPublicationInput
         $restoreLeaves = $this->leaves($before, $domains);
         $forwardLan = [];
         $restoreLan = [];
-        foreach (RouteExecutionProof::objects($inventory['workloads']) as $workload) {
-            if (is_array($workload['firewall'] ?? null)) {
-                $rule = $workload['firewall'];
-                $forwardLan[] = ['node_id' => ValidatedData::integer($workload['node_id']), 'route_id' => ValidatedData::integer($rule['route_id']), 'operation' => 'converge',
-                    'router' => ValidatedData::string($rule['router']), 'destination' => ValidatedData::string($rule['workload'])];
+        $forwardRetire = [];
+        $restoreRetire = [];
+        $lan = app(NativeRouteLanInput::class);
+        foreach ($rows as $row) {
+            $node = Node::query()->findOrFail(ValidatedData::integer($row['node_id']));
+            $previous = $lan->forSites($node, $before);
+            $desired = $lan->forSites($node, $after);
+            $union = array_values(array_unique([...$previous, ...$lan->forSites($node, $prepared), ...$desired], SORT_REGULAR));
+            if ($union === [] && ! $lan->migrationPending($node->id)) {
+                continue;
             }
-            foreach (RouteExecutionProof::objects(ValidatedData::object($workload['retire_firewall'] ?? [])['remove'] ?? []) as $rule) {
-                $restoreLan[] = ['node_id' => ValidatedData::integer($workload['node_id']), 'route_id' => ValidatedData::integer($workload['route_id']), 'operation' => 'converge',
-                    'router' => ValidatedData::string($rule['source']), 'destination' => ValidatedData::string($rule['destination'])];
-            }
+            $forwardLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($previous, $union), 'migrate' => $lan->migrationPending($node->id)];
+            $restoreLan[] = ['node_id' => $node->id, 'rules' => $lan->changes($desired, $union), 'migrate' => $lan->migrationPending($node->id)];
+            $forwardRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $desired), 'migrate' => false];
+            $restoreRetire[] = ['node_id' => $node->id, 'rules' => $lan->changes($union, $previous), 'migrate' => false];
         }
-        $allLan = array_values(array_unique([...$forwardLan, ...$restoreLan], SORT_REGULAR));
 
         return ['route_mutations' => [
-            'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $allLan, $restoreLeaves),
-            'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $allLan, $forwardLeaves)],
+            'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves),
+            'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $restoreRetire, $forwardLeaves)],
             'certificates' => array_values(array_unique([...$forwardLeaves, ...$restoreLeaves], SORT_REGULAR)), 'participant_node_ids' => $participantIds];
     }
 
     /** @param list<array<string,mixed>> $leaves
-     * @param  list<LanRule>  $lan
+     * @param  list<array<string,mixed>>  $lan
      * @param  Collection<int,DevelopmentSite>  $sites
      * @param  Collection<int,Route>  $routes
      * @param  list<array<string,mixed>>  $rows
-     * @param  list<LanRule>  $allLan
+     * @param  list<array<string,mixed>>  $retire
      * @param  list<array<string,mixed>>  $previousLeaves
      * @return array<string,mixed>
      */
-    private function stage(array $leaves, array $lan, Collection $sites, Collection $routes, array $rows, array $allLan, array $previousLeaves): array
+    private function stage(array $leaves, array $lan, Collection $sites, Collection $routes, array $rows, array $retire, array $previousLeaves): array
     {
-        $retire = [];
-        foreach ($allLan as $rule) {
-            $key = $rule['node_id'].':'.$rule['route_id'].':'.$rule['destination'];
-            $keep = array_values(array_unique(array_column(array_filter($lan, static fn (array $kept): bool => $kept['node_id'] === $rule['node_id']
-                && $kept['route_id'] === $rule['route_id'] && $kept['destination'] === $rule['destination']), 'router')));
-            $retire[$key] = array_intersect_key($rule, array_flip(['node_id', 'route_id', 'destination'])) + ['operation' => 'retire', 'keep' => $keep];
-        }
-
         return ['routes' => $routes->map(static fn (Route $route): array => ['route_id' => $route->id, 'domain' => $route->domain,
             'node_ids' => $sites->where('domain', $route->domain)->pluck('nodeId')->unique()->values()->all(),
             'certificate_scopes' => array_values(array_map(static fn (array $leaf): array => array_intersect_key($leaf, array_flip(['node_id', 'scope'])),
                 array_filter($leaves, static fn (array $leaf): bool => $leaf['domain'] === $route->domain)))])->all(), 'publications' => $rows, 'certificates' => $leaves,
             'prepare_certificates' => $leaves, 'url_writes' => [], 'lan' => array_values(array_unique($lan, SORT_REGULAR)),
-            'retire_lan' => array_values($retire), 'cleanup' => $this->cleanup($previousLeaves, $leaves)];
+            'retire_lan' => $retire, 'cleanup' => $this->cleanup($previousLeaves, $leaves)];
     }
 
     /** @param Collection<int,DevelopmentSite> $sites

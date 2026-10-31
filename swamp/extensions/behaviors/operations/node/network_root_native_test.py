@@ -24,7 +24,7 @@ class NetworkNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         self.copy_behaviors('operations/node-bootstrap')
         ops = self.repo / 'extensions/behaviors/operations'
-        routes = ops / 'routes'; routes.mkdir()
+        routes = ops / 'routes'; routes.mkdir(exist_ok=True)
         for name in ['firewall-local.ts', 'firewall-program.ts', 'local-program.ts', 'router-lan.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/routes' / name, routes / name)
         node = ops / 'node'; node.mkdir()

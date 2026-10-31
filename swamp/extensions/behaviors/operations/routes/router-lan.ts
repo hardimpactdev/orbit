@@ -1,12 +1,13 @@
 import { z } from "npm:zod@4.4.3";
 import { FirewallProgram } from "./firewall-program.ts";
 import { runLocalProgram } from "./local-program.ts";
-export const RouterLanExtension = (await Deno.readTextFile(
-    new URL(
-        "./firewall-command/scripts/router_lan.py",
-        import.meta.url,
-    ),
-)).split("def main(value):")[0].replace(/^import firewall as engine$/m, "")
+import source from "./firewall-command/scripts/router_lan.py" with {
+    type: "text",
+};
+export const RouterLanExtension = source.split("def main(value):")[0].replace(
+    /^import firewall as engine$/m,
+    "",
+)
     .replace(/^from firewall import \([\s\S]*?^\)/m, "").replace(
         /^from firewall import .*$/m,
         "",
