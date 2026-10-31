@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/route-publication-command'
-version: 2026.10.31.2
+version: 2026.10.31.3
 visibility: private
 license: MIT
 description: Pure public Route publication composition for official file actions.
