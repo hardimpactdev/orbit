@@ -1958,7 +1958,6 @@ function static_repair_tracking_route(Route $appRoute): Route
     return $route;
 }
 
-
 it('renames a Cluster without validating unrelated unhealthy tracking placement', function (): void {
     [$cluster, $appRoute, $member] = cluster_tld_generated_route();
     static_repair_tracking_route($appRoute);

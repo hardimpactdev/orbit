@@ -12,7 +12,6 @@ use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\DockerMigrationProcesses;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutMembership;
-use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayServingHost;
