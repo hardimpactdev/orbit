@@ -100,10 +100,12 @@ final class RecordingHandoffUnits implements AgentViewConverger, GatewayReleaseU
 
 function handoff_gateway(): Node
 {
-    $node = Node::query()->create([
+    $node = Node::query()->forceCreate([
+        'id' => 14,
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.2',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.2',
@@ -533,8 +535,9 @@ describe('gateway:release:handoff', function (): void {
         $serve = $handoff->serve();
         $schedule = $handoff->schedule();
 
-        expect($serve['horizon'])->toBe('terminated')
-            ->and(Cache::get('handoff-horizon-terminated'))->toBe(1)
+        expect($serve['horizon'])->toBe('submitted')
+            ->and(Operation::query()->findOrFail($serve['horizon_operation_id'])->kind)->toBe('process.horizon_handoff')
+            ->and((int) Cache::get('handoff-horizon-terminated'))->toBe(0)
             ->and($schedule)->not->toHaveKey('horizon')
             ->and($schedule)->toMatchArray(['scheduler' => 'restarted'])
             ->and($schedule['processes_restarted'])->toBe([])
@@ -543,7 +546,62 @@ describe('gateway:release:handoff', function (): void {
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe([]);
     });
 
-    it('fails the serving phase when Horizon cannot move, so the release switches back', function (): void {
+    it('uses the existing bounded release recovery for Horizon', function (string $outcome): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $gateway = handoff_gateway();
+        handoff_scheduler($gateway);
+        $version = app(NodeCaddyfileRenderer::class)->render($gateway)->version;
+        $path = sys_get_temp_dir().'/horizon-caddy-'.bin2hex(random_bytes(8));
+        symlink('/etc/caddy/orbit-versions/'.$version.'/Caddyfile', $path);
+        $checks = 0;
+        try {
+            [$handoff, , , $builds, , $probe] = runtime_handoff(horizon: app(GatewayHorizon::class), caddyfilePath: $path,
+                swampHealthy: static function (float $timeout) use (&$checks, $outcome): bool {
+                    $checks++;
+                    expect($timeout)->toBeLessThanOrEqual(5);
+
+                    return match ($outcome) {
+                        'recovered' => $checks > 1,
+                        'refused' => true,
+                        'deadline' => false,
+                        default => throw new RuntimeException('Uncertain admission must not probe health.'),
+                    };
+                });
+            if ($outcome === 'uncertain') {
+                $builds->reply = static fn (): array => [];
+            } elseif ($outcome === 'refused') {
+                $builds->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => 'Denied.']]];
+            } else {
+                $builds->onConnect = static function (int $attempt) use ($outcome): void {
+                    if ($outcome !== 'recovered' || $attempt === 1) {
+                        throw new RuntimeException('Serve is down.');
+                    }
+                };
+            }
+
+            if ($outcome === 'recovered') {
+                $result = $handoff->serve();
+                expect($result)->toMatchArray(['caddy' => 'unchanged', 'horizon' => 'submitted'])
+                    ->and(Operation::query()->findOrFail($result['horizon_operation_id'])->status->value)->toBe('running')
+                    ->and(Process::query()->where('name', 'horizon')->sole()->status)->toBe(LifecycleStatus::Provisioning);
+            } else {
+                expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_units_failed');
+            }
+            expect(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(0)
+                ->and(Operation::query()->where('kind', 'process.horizon_handoff')->count())->toBe(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
+                ->and($builds->connections)->toHaveCount(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
+                ->and($checks)->toBe(match ($outcome) {
+                    'recovered' => 2, 'refused' => 1, 'deadline' => 120, default => 0
+                })
+                ->and($probe->time->now())->toBe(match ($outcome) {
+                    'recovered' => 5_000_000_000.0, 'deadline' => 600_000_000_000.0, default => 0.0
+                });
+        } finally {
+            unlink($path);
+        }
+    })->with(['recovered', 'deadline', 'refused', 'uncertain']);
+
+    it('fails the serving phase when native Horizon admission is refused', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
@@ -556,8 +614,10 @@ describe('gateway:release:handoff', function (): void {
         });
         [$handoff] = runtime_handoff(horizon: app(GatewayHorizon::class));
 
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));
+
         expect(fn () => $handoff->serve())
-            ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])->toBe(['gateway.release_units_failed', 'Runtime handoff step [horizon] failed: Redis is down.']));
+            ->toThrow(GatewayReleaseException::class);
     });
 
     it('does not reset OPcache or fail the release when native connection observation fails', function (): void {

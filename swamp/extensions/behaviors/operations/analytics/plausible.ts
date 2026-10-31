@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { Domain } from "./host-intent.ts";
 
 const Text = z.string().min(1).max(2000).regex(/^[^\r\n\0]+$/);
 const Props = z.record(z.string().min(1), Text)
@@ -53,7 +54,7 @@ function goalIdentity(value: GoalIntent) {
 }
 
 export const Site = z.object({
-  domain: z.string().regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/).max(253),
+  domain: Domain,
   previous_domain: z.string().nullable().default(null),
   timezone: z.string().min(1).max(100),
   goals: z.array(Goal).max(100).default([]),
