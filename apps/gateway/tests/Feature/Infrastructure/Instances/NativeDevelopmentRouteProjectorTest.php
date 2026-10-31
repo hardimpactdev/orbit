@@ -17,7 +17,6 @@ use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
@@ -40,7 +39,6 @@ use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
-use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
@@ -49,7 +47,6 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
-use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -1645,16 +1642,6 @@ function orb127_route_projector(?Closure $refuse = null, bool $failDns = false, 
         $sourceAccess,
     );
     app()->instance(DevelopmentSourceAccess::class, $sourceAccess);
-    app()->instance(
-        ClusterRouterReplacementProjector::class,
-        new NativeClusterRouterReplacementProjector(
-            $certificates,
-            $caddy,
-            new RemoteAppDevRouteFirewallManager($agents),
-            $dns,
-            $agents,
-        ),
-    );
 
     return [$projector, $agents, $processes, $home];
 }

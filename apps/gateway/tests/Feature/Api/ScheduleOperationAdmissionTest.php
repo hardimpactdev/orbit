@@ -13,7 +13,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-schedule-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
     app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
@@ -51,19 +51,10 @@ it('admits a manual run without changing desired timer state', function (): void
     expect($schedule->refresh()->desired_timer_state->value)->toBe('enabled');
 });
 
-it('holds the owning Node across concurrent changes to different Schedules', function (): void {
+it('admits different Schedules without Gateway target holds', function (): void {
     $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
     $this->postJson('/api/v1/schedules', [...$this->payload, 'name' => 'another-timer'])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
-    expect(Schedule::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
-});
-
-it('admits a receipt read before the first effect and refuses an undeclared Schedule step', function (): void {
-    $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted();
-    $operation = Operation::query()->sole();
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.create', 'worker' => 'schedule-worker'])->assertOk();
-    $this->getJson('/api/v1/operation-executor/'.$operation->id.'/receipts/schedule-install')->assertOk()->assertJsonPath('data.state', 'unknown');
-    $this->getJson('/api/v1/operation-executor/'.$operation->id.'/receipts/unrelated')->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-    expect($operation->refresh()->state)->not->toHaveKey('executor_runs');
+        ->assertAccepted()->assertJsonPath('data.kind', 'schedule.create');
+    expect(Schedule::query()->count())->toBe(2)->and(Operation::query()->count())->toBe(2);
+    expect(Operation::query()->whereNotNull('lock_key')->count())->toBe(0);
 });

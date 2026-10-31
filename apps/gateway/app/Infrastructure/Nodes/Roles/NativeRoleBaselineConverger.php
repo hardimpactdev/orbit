@@ -12,6 +12,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeAgentRoleConverger;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -32,7 +33,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?ClusterRouterOperationLock $clusterRouterOperations = null,
         private ?DatabaseRoleBaseline $database = null,
         private ?WebSocketRoleBaseline $websocket = null,
-        private ?AnalyticsRoleBaseline $analytics = null,
         private ?NodeAgentRoleConverger $agentConverger = null,
         private ?IngressRoleBaseline $ingress = null,
         private ?MetricsReconcileDeferral $metricsDeferral = null,
@@ -153,7 +153,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::AppProd => $this->appProd,
             RoleName::Metrics => $this->metrics,
             RoleName::WebSocket => $this->websocket ?? app(WebSocketRoleBaseline::class),
-            RoleName::Analytics => $this->analytics ?? app(AnalyticsRoleBaseline::class),
+            RoleName::Analytics => throw new ResourceOperationException('operation.kind_unavailable', 'Analytics requires its native parent workflow.', 503),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
             RoleName::CiRunner => $this->ciRunner ?? app(CiRunnerRoleBaseline::class),

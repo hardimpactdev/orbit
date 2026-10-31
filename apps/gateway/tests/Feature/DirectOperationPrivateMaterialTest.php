@@ -2,16 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\GitReadEnvironment;
+use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
+use App\Domain\Operations\OperationSecrets;
+use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tools\ToolIntentProjection;
+use App\Infrastructure\AgentCommands\AgentGitHubToken;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -47,6 +54,72 @@ it('hydrates only fixed owner-checked material without changing Operation state'
     expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('shared-private-admin-sentinel');
     Http::assertNothingSent();
 });
+
+it('returns declared typed private credentials in the native wire shape', function (string $parameter, bool $hasToken): void {
+    $token = $hasToken ? 'private-wire-github-sentinel' : null;
+    $gitRead = $token === null ? GitReadEnvironment::none() : GitReadEnvironment::forGitHubToken($token);
+    $plain = [false, null, '', [], ['count' => 7]];
+    $value = $parameter === 'destruction'
+        ? ['git_read' => $gitRead, 'plain' => $plain, 'installation_token' => new AgentGitHubToken('private-wire-installation-sentinel')]
+        : $gitRead;
+    $expected = $parameter === 'destruction'
+        ? ['git_read' => ['github_token' => $token], 'plain' => $plain, 'installation_token' => 'private-wire-installation-sentinel']
+        : ['github_token' => $token];
+    $source = new readonly class($value) implements OperationSecretSource
+    {
+        public function __construct(#[SensitiveParameter] private mixed $value) {}
+
+        public function name(): string
+        {
+            return 'fixture.typed_wire';
+        }
+
+        public function targetTypes(): array
+        {
+            return ['conn_pairing'];
+        }
+
+        public function ownerId(Operation $operation): ?int
+        {
+            return $operation->target_id;
+        }
+
+        public function resolve(Operation $operation, int $ownerId, string $key, string $parameter): OperationSecretValue
+        {
+            return new OperationSecretValue($this->value);
+        }
+    };
+    app()->instance(OperationSecrets::class, new OperationSecrets([$source], app(LogRedactor::class)));
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $definitions = $reflection->getProperty('definitions')->getValue(app(DirectOperation::class));
+    $definitions['conn.pairing_create']['private_material'] = [$parameter => $source->name()];
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, $definitions);
+    app()->instance(DirectOperation::class, $direct);
+    app()->forgetInstance(DirectOperationPrivateMaterial::class);
+    $input = ['undeclared' => 'outside-the-private-map'];
+    Arr::set($input, $parameter, ['$secret' => $source->name(), 'id' => $this->pairing->id]);
+    $this->operation->update(['input' => $input]);
+    $before = $this->operation->fresh()->getAttributes();
+    $expectedData = [];
+    Arr::set($expectedData, $parameter, $expected);
+
+    $response = $this->getJson($this->path.'/private-material?run_id='.$this->run)
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+
+    expect($response->json('data'))->toBe($expectedData);
+    expect($response->getContent())->not->toContain('GIT_CONFIG_')->not->toContain('outside-the-private-map');
+    expect($this->operation->fresh()->getAttributes())->toBe($before);
+    expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('private-wire-github-sentinel')->not->toContain('private-wire-installation-sentinel');
+    Http::assertNothingSent();
+})->with([
+    'top-level token' => ['git_read', true],
+    'top-level anonymous' => ['git_read', false],
+    'nested declaration token' => ['destruction.git_read', true],
+    'nested declaration anonymous' => ['destruction.git_read', false],
+    'nested source value token' => ['destruction', true],
+    'nested source value anonymous' => ['destruction', false],
+]);
 
 it('calls the existing encrypted owner store and accepts only exact replay', function (): void {
     config(['operation_executor.worker_node_ids' => []]);

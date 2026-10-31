@@ -7,14 +7,11 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
-use App\Domain\Instances\Deployment\InstanceDeploymentAvailability;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -38,27 +35,29 @@ final readonly class StartInstanceDeployAction
         if ($commit !== null) {
             GitCommitSha::validate($commit);
         }
-        $deployment = $this->intent->snapshot($instance);
-        InstanceDeploymentAvailability::assertAvailable($deployment);
-        $development = $deployment['variant'] === 'development';
-        if ($development && $deployment['projection_route_id'] !== null) {
-            throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
-        }
 
-        $input = ['instance_id' => $instance->id, 'development' => $development, 'deployment' => $deployment, ...($commit === null ? [] : ['commit' => $commit])];
-        if ($development) {
-            $input['git_read'] = ['$secret' => 'instance.deployment', 'id' => $instance->id];
-            $input['vp_materialize'] = ['$secret' => 'instance.deployment', 'id' => $instance->id];
-            if (app(DirectOperation::class)->writer(OperationKinds::InstanceDeploy, $input, $instance->node_id) !== 'direct') {
-                throw new ResourceOperationException('operation.writer_invalid', 'Development deployment requires its native Swamp writer.', 503);
+        return DB::transaction(function () use ($instance, $triggeredBy, $requestId, $commit, $callerNodeId): Operation {
+            $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
+            $development = $instance->placedOnAppDev();
+            if (! $development) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'Production deployment is not yet available through its native workflow.', 503);
             }
-            $input['agent_sha256'] = app(AgentDelivery::class)->pin($instance->node);
-        }
-        if ($callerNodeId !== null) {
-            $input['caller_node_id'] = $callerNodeId;
-        }
+            $deployment = $this->intent->snapshot($instance);
+            if ($deployment['projection_route_id'] !== null) {
+                throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
+            }
+            $private = ['$secret' => 'instance.deployment', 'id' => $instance->id];
+            $input = ['instance_id' => $instance->id, 'deployment' => $deployment,
+                'node_id' => $instance->node_id, 'platform' => $instance->node->platform, 'architecture' => $instance->node->architecture,
+                'git_read' => $private, 'vp_materialize' => $private,
+                ...($commit === null ? [] : ['commit' => $commit])];
+            if ($callerNodeId !== null) {
+                $input['caller_node_id'] = $callerNodeId;
+            }
 
-        return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, $input, $triggeredBy, $requestId);
+            return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id,
+                $instance->node_id, $input, $triggeredBy, $requestId);
+        });
     }
 
     /** Public pins validate the recorded Project identity before admitting the existing operation. */

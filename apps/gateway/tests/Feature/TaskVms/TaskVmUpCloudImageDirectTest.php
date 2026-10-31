@@ -148,7 +148,6 @@ it('records an intent and directly starts one Swamp root without reading the pro
     $operation = app(UpCloudTaskVmImageBuilder::class)->build($recipe);
     expect($operation->kind)->toBe('task_vm.upcloud_image_build')
         ->and($operation->node_id)->toBe($this->node->id)
-        ->and($operation->state['task_vm_upcloud_image_writer'])->toBe('direct')
         ->and($operation->state['swamp_run_id'])->toBe('ede34ced-7d0e-4764-84c1-cfc533d9e980')
         ->and($operation->lock_key)->toBeNull()
         ->and(Operation::query()->where('parent_operation_id', $operation->id)->count())->toBe(0);
