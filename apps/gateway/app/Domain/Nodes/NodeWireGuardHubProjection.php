@@ -15,13 +15,17 @@ final readonly class NodeWireGuardHubProjection implements DirectOperationProjec
 {
     public function input(Operation $operation): array
     {
-        return NodeWireGuardInput::bound($operation)
-            ?? throw new ResourceOperationException('operation.execution_forbidden', 'The hub differs from its admitted root.', 422);
+        $intent = $operation->input['_hub_inventory'] ?? null;
+        if (! is_array($intent) || $operation->kind !== 'node.wireguard_hub_converge' || $operation->target_type !== 'node' || $operation->node_id !== $operation->target_id || ($intent['hub_id'] ?? null) !== $operation->target_id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The hub differs from its admitted root.', 422);
+        }
+
+        return ['intent' => $intent, 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
         return app(DirectOperation::class)->project($operation, $data,
-            array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['projected', 'error_code'])));
+            array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['projected', 'retained_peer_count', 'error_code'])));
     }
 }

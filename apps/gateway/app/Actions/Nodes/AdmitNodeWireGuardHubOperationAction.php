@@ -31,9 +31,6 @@ final readonly class AdmitNodeWireGuardHubOperationAction
         }
 
         return $this->operations->execute('node.wireguard_hub_converge', 'node', $node->id, $node->id,
-            ['_wireguard' => $snapshot, 'participant_node_ids' => [$node->id],
-                'configuration' => ['$secret' => 'node.vpn_configuration', 'id' => $node->id],
-                'private_bindings' => ['configuration' => ['owner_node_id' => $node->id,
-                    'read_node_ids' => [$node->id], 'write_node_ids' => []]]], 'operator', $requestId);
+            ['_hub_inventory' => app(\App\Domain\Nodes\NodeWireGuardCommandInput::class)->captureHub($node), 'participant_node_ids' => [$node->id]], 'operator', $requestId);
     }
 }

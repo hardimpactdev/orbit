@@ -7,20 +7,32 @@ use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeRemovalEnvironmentSource;
 use App\Domain\Nodes\NodeRemovalProjection;
+use App\Domain\Nodes\NodeRetargetProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 use App\Domain\Nodes\NodeWireGuardHubProjection;
+use App\Domain\Nodes\NodeWireGuardKeyProjection;
 
-return ['node.wireguard_hub_converge' => [
+return ['node.retarget' => [
+    'workflow' => 'operation-node-retarget',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'retarget', 'step' => 'terminal'],
+    'projection' => NodeRetargetProjection::class,
+], 'node.wireguard_key' => [
+    'workflow' => 'operation-node-wireguard-key',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'hub', 'step' => 'terminal'],
+    'projection' => NodeWireGuardKeyProjection::class,
+], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
+    'workflow_inputs' => true, 'terminal_result' => ['job' => 'hub', 'step' => 'terminal'],
     'projection' => NodeWireGuardHubProjection::class,
-    'private_material' => ['configuration' => 'node.vpn_configuration'],
 ], 'node.remove' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'private_material' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity', 'configuration' => 'node.vpn_configuration', 'metrics_runtime' => 'metrics.fleet_runtime',
         ...NodeRemovalEnvironmentSource::privateMaterial()],
 ], ...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-node-network-converge',
     'projection' => NodeNetworkProjection::class,
     'private_material' => ['configuration' => 'node.vpn_configuration'],

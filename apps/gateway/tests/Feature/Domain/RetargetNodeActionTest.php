@@ -4,698 +4,122 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RetargetNodeAction;
 use App\Data\Nodes\RetargetNodeData;
-use App\Domain\Nodes\NodeProvisioningException;
-use App\Domain\Nodes\NodeProvisioningLock;
-use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\NodeRetargetProjection;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
+use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\WireGuard\WireGuardPeerConverger;
-use App\Models\Node;
-use Tests\Support\FakeRetargetAgentRunner;
+use App\Models\Operation;
+use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\Fleet\FleetFixtures;
 
-describe(RetargetNodeAction::class, function (): void {
-    beforeEach(function (): void {
-        app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
-        {
-            public bool $throws = false;
+beforeEach(function (): void {
+    FleetFixtures::bind();
+    $this->gateway = $this->markAsGateway(FleetFixtures::node('retarget-gateway', [RoleName::Gateway]));
+    app(GatewayServingHost::class)->remember($this->gateway);
+    $this->hub = FleetFixtures::node('retarget-hub', [RoleName::Vpn]);
+    $this->peer = FleetFixtures::node('retarget-peer');
+    $this->peer->update(['user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAA',
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
+    $this->prior = $this->peer->only(['public_ssh_host', 'public_ssh_port', 'wireguard_public_key']);
+    $this->identity = config('orbit.home').'/retarget-identity';
+    file_put_contents($this->identity, 'synthetic-retarget-identity');
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn($this->identity);
+    app()->instance(SshKeyProvider::class, $keys);
+    $agents = Mockery::mock(AgentCommandRunner::class);
+    $agents->shouldNotReceive('run', 'runOver');
+    app()->instance(AgentCommandRunner::class, $agents);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => '2371ac7a-5a0b-4a14-9261-8456cb658fae']]];
+    app()->instance(WebSocketClient::class, $this->socket);
+    config(['swamp.run_token' => 'fixture-token']);
+    app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', domain: 'orbit');
+    @mkdir(config('orbit.home').'/wireguard', 0700, true);
+    file_put_contents(config('orbit.home').'/wireguard/public.key', base64_encode(str_repeat('h', 32)));
+});
 
-            /** @var list<array{host:string,port:int}> */
-            public array $scans = [];
+it('captures immutable candidate and exact hub context without modifying the current endpoint', function (): void {
+    $operation = app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 2222));
+    expect($operation->kind)->toBe('node.retarget')->and($operation->node_id)->toBe($this->gateway->id)
+        ->and($operation->target_id)->toBe($this->peer->id)
+        ->and($operation->input['intent']['target']['host'])->toBe('192.0.2.100')
+        ->and($operation->input['intent']['hub']['context_node_id'])->toBe($this->peer->id)
+        ->and($this->peer->refresh()->only(array_keys($this->prior)))->toBe($this->prior)
+        ->and(json_encode($operation->input))->not->toContain('synthetic-retarget-identity');
+});
 
-            public function scan(string $host, int $port, ?Node $via = null): HostKey
-            {
-                $this->scans[] = ['host' => $host, 'port' => $port];
+it('verifies an existing role owner through WireGuard without scheduling peer or hub changes', function (): void {
+    $this->peer->roles()->create(['role' => RoleName::CiRunner]);
+    $operation = app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 2222));
+    expect($operation->input['intent']['has_roles'])->toBeTrue()
+        ->and($operation->input['intent']['target']['host'])->toBe($this->peer->wireguard_ip)
+        ->and($operation->input['intent']['target']['port'])->toBe(22)
+        ->and($operation->input['intent'])->not->toHaveKeys(['hub', 'network']);
+});
 
-                if ($this->throws) {
-                    throw new RuntimeException('scan failed');
-                }
+it('commits the new endpoint only on terminal success, once', function (string $status): void {
+    $operation = app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 2222));
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $status === 'succeeded' ? $hosts->shouldReceive('put')->once() : $hosts->shouldNotReceive('put');
+    app()->instance(KnownHostsStore::class, $hosts);
+    $data = ['run_id' => $operation->state['swamp_run_id'], 'status' => $status, 'started_at' => now()->toISOString(),
+        'finished_at' => now()->toISOString(), 'error_code' => $status === 'succeeded' ? null : 'node.retarget_failed',
+        'result' => ['retargeted' => $status === 'succeeded', 'restored' => $status !== 'succeeded']];
+    $projection = app(NodeRetargetProjection::class);
+    $projection->apply($operation, $data);
+    $projection->apply($operation->refresh(), $data);
+    expect($this->peer->refresh()->public_ssh_host)->toBe($status === 'succeeded' ? '192.0.2.100' : $this->prior['public_ssh_host']);
+})->with(['succeeded', 'failed', 'cancelled']);
 
-                return new HostKey('ssh-ed25519', 'host-key', 'SHA256:pinned');
-            }
-        });
-        app()->instance(KnownHostsStore::class, new class implements KnownHostsStore
-        {
-            /** @var list<array{host:string,port:int,fingerprint:string}> */
-            public array $writes = [];
+it('rejects missing, inactive, and unpinned Nodes before copying credentials', function (string $state): void {
+    if ($state === 'missing') {
+        $this->peer->delete();
+    } elseif ($state === 'fingerprint') {
+        $this->peer->update(['ssh_host_fingerprint' => null]);
+    } elseif ($state === 'unpinned') {
+        $this->peer->update(['ssh_host_key' => null]);
+    } else {
+        $this->peer->update(['status' => $state]);
+    }
+    expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 22)))
+        ->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([]);
+})->with(['missing', 'failed', 'provisioning', 'removing', 'unpinned', 'fingerprint']);
 
-            public function put(string $host, int $port, HostKey $key): void
-            {
-                $this->writes[] = ['host' => $host, 'port' => $port, 'fingerprint' => $key->fingerprint];
-            }
+it('rejects malformed endpoint intent before copying credentials', function (string $host, int $port): void {
+    expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, $host, $port)))
+        ->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([]);
+})->with([['', 22], ['bad host', 22], ['192.0.2.100', 0], ['192.0.2.100', 65536]]);
 
-            public function path(): string
-            {
-                return '/tmp/known-hosts';
-            }
-        });
-        app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
-        {
-            public function privateKeyPath(): string
-            {
-                return '/tmp/id_ed25519';
-            }
-
-            public function publicKey(): string
-            {
-                return 'ssh-ed25519 AAAAC3Nza';
-            }
-        });
-        app()->instance(AdmissionAgentRunner::class, new FakeRetargetAgentRunner);
-        app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger
-        {
-            public ?Node $node = null;
-
-            public ?SshConnection $connection = null;
-
-            public ?bool $rolelessOperator = null;
-
-            public ?Throwable $throws = null;
-
-            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
-            {
-                $this->node = $node;
-                $this->connection = $connection;
-                $this->rolelessOperator = $rolelessOperator;
-
-                if ($this->throws instanceof Throwable) {
-                    throw $this->throws;
-                }
-            }
-        });
+it('honors the existing lifecycle guard before admission', function (): void {
+    new NativeNodeProvisioningLock()->run($this->peer->name, function (): void {
+        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 22)))
+            ->toThrow(ResourceOperationException::class);
     });
+    expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([])
+        ->and($this->peer->refresh()->only(array_keys($this->prior)))->toBe($this->prior);
+});
 
-    it('retargets a roleless node in operator DNS mode over public ssh and preserves its identity fields', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'architecture' => 'x86_64',
-            'tld' => 'app-dev.orbit',
-            'public_ssh_host' => '192.0.2.10',
-            'public_ssh_port' => 2222,
-            'user' => 'nckrtl',
-            'wireguard_ip' => '10.44.0.3',
-            'wireguard_endpoint_override' => '198.51.100.10:51820',
-            'dns_server_override' => '10.44.0.1',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
+it('admits the console request and leaves the endpoint unchanged until native completion', function (): void {
+    $this->artisan('orbit:node-retarget', ['name' => $this->peer->name, 'host' => '192.0.2.100', '--ssh-port' => '2222'])
+        ->expectsOutputToContain('Node retarget Operation [')->assertSuccessful();
+    expect(Operation::query()->sole()->kind)->toBe('node.retarget')
+        ->and($this->peer->refresh()->only(array_keys($this->prior)))->toBe($this->prior);
+});
 
-        $retargeted = app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-            publicSshPort: 2202,
-        ));
-
-        /** @var KnownHostsStore&object{writes:list<array{host:string,port:int,fingerprint:string}>} $knownHosts */
-        $knownHosts = app(KnownHostsStore::class);
-        /** @var WireGuardPeerConverger&object{connection:?SshConnection,rolelessOperator:?bool} $wireGuard */
-        $wireGuard = app(WireGuardPeerConverger::class);
-        /** @var FakeRetargetAgentRunner $ssh */
-        $ssh = app(AdmissionAgentRunner::class);
-
-        expect($retargeted->only([
-            'status',
-            'platform',
-            'architecture',
-            'tld',
-            'public_ssh_host',
-            'public_ssh_port',
-            'user',
-            'wireguard_ip',
-            'wireguard_endpoint_override',
-            'dns_server_override',
-        ]))
-            ->toBe([
-                'status' => LifecycleStatus::Active,
-                'platform' => 'linux',
-                'architecture' => 'x86_64',
-                'tld' => 'app-dev.orbit',
-                'public_ssh_host' => '198.51.100.25',
-                'public_ssh_port' => 2202,
-                'user' => 'nckrtl',
-                'wireguard_ip' => '10.44.0.3',
-                'wireguard_endpoint_override' => '198.51.100.10:51820',
-                'dns_server_override' => '10.44.0.1',
-            ])
-            ->and($knownHosts->writes)
-            ->toBe([
-                ['host' => '198.51.100.25', 'port' => 2202, 'fingerprint' => 'SHA256:pinned'],
-                ['host' => '10.44.0.3', 'port' => 22, 'fingerprint' => 'SHA256:pinned'],
-            ])
-            ->and($wireGuard->connection?->host)
-            ->toBe('198.51.100.25')
-            ->and($wireGuard->connection?->port)
-            ->toBe(2202)
-            ->and($wireGuard->connection?->user)
-            ->toBe('nckrtl')
-            ->and($wireGuard->rolelessOperator)
-            ->toBeTrue()
-            ->and($ssh->calls)
-            ->toHaveCount(1)
-            ->and($ssh->calls[0]['connection']->user)
-            ->toBe('nckrtl');
+it('reports console contention without remote output or state changes', function (): void {
+    new NativeNodeProvisioningLock()->run($this->peer->name, function (): void {
+        $this->artisan('orbit:node-retarget', ['name' => $this->peer->name, 'host' => '192.0.2.100'])
+            ->expectsOutput('Node retarget failed with error [node.provisioning_busy].')->assertFailed();
     });
-
-    it('rejects an invalid public ssh host', function (): void {
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: 'bad host',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('validation')
-                    ->and($exception->errorCode)
-                    ->toBe('node.public_ssh_host_invalid');
-            });
-    });
-
-    it('rejects an invalid public ssh port', function (int $port): void {
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-            publicSshPort: $port,
-        )))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('validation')
-                    ->and($exception->errorCode)
-                    ->toBe('node.public_ssh_port_invalid');
-            });
-    })->with([0, 65536]);
-
-    it('rejects a missing or inactive node', function (LifecycleStatus $status): void {
-        Node::query()->create([
-            'name' => 'app-dev',
-            'status' => $status,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)->toBe('lookup')->and($exception->errorCode)->toBe('node.not_active');
-            });
-    })->with([LifecycleStatus::Provisioning, LifecycleStatus::Failed]);
-
-    it('rejects a missing node', function (): void {
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'missing',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(NodeProvisioningException::class, 'Node [missing] does not exist as an active node.');
-    });
-
-    it('rejects retarget contention before remote effects or state writes', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-        app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock
-        {
-            public function run(string $nodeName, Closure $callback): mixed
-            {
-                throw new NodeProvisioningLockException($nodeName);
-            }
-        });
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))->toThrow(function (ResourceOperationException $exception) use ($node): void {
-            expect($exception->errorCode)
-                ->toBe('node.provisioning_busy')
-                ->and($exception->status)
-                ->toBe(409)
-                ->and($exception->getMessage())
-                ->toBe('Node [app-dev] is already changing.')
-                ->and($node->refresh()->status)
-                ->toBe(LifecycleStatus::Active)
-                ->and($node->public_ssh_host)
-                ->toBe('192.0.2.10');
-        });
-
-        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-        $scanner = app(HostKeyScanner::class);
-        expect($scanner->scans)->toBeEmpty();
-    });
-
-    it('re-reads identity and eligibility after acquiring the lifecycle guard', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-        app()->instance(NodeProvisioningLock::class, new class($node) implements NodeProvisioningLock
-        {
-            public function __construct(private Node $node) {}
-
-            public function run(string $nodeName, Closure $callback): mixed
-            {
-                $this->node->update(['status' => LifecycleStatus::Failed]);
-
-                return $callback();
-            }
-        });
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))->toThrow(function (NodeProvisioningException $exception) use ($node): void {
-            expect($exception->errorCode)
-                ->toBe('node.not_active')
-                ->and($node->refresh()->public_ssh_host)
-                ->toBe('192.0.2.10');
-        });
-
-        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-        $scanner = app(HostKeyScanner::class);
-        expect($scanner->scans)->toBeEmpty();
-    });
-
-    it('discovers deletion after acquiring the lifecycle guard', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-        app()->instance(NodeProvisioningLock::class, new class($node) implements NodeProvisioningLock
-        {
-            public function __construct(private Node $node) {}
-
-            public function run(string $nodeName, Closure $callback): mixed
-            {
-                $this->node->delete();
-
-                return $callback();
-            }
-        });
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))->toThrow(NodeProvisioningException::class, 'Node [app-dev] does not exist as an active node.');
-
-        /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-        $scanner = app(HostKeyScanner::class);
-        expect($scanner->scans)->toBeEmpty();
-    });
-
-    it('releases the lifecycle guard after a verification failure', function (): void {
-        /** @var HostKeyScanner&object{throws:bool} $scanner */
-        $scanner = app(HostKeyScanner::class);
-        $scanner->throws = true;
-        Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))->toThrow(NodeProvisioningException::class);
-
-        expect((new NativeNodeProvisioningLock)->run('app-dev', static fn (): string => 'released'))
-            ->toBe('released');
-    });
-
-    it('rejects retarget while another lifecycle owner holds the same node name', function (): void {
-        $holder = new NativeNodeProvisioningLock;
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        $holder->run('app-dev', function () use ($node): void {
-            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-            )))->toThrow(function (ResourceOperationException $exception) use ($node): void {
-                expect($exception->errorCode)
-                    ->toBe('node.provisioning_busy')
-                    ->and($node->refresh()->public_ssh_host)
-                    ->toBe('192.0.2.10');
-            });
-
-            /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-            $scanner = app(HostKeyScanner::class);
-            expect($scanner->scans)->toBeEmpty();
-        });
-    });
-
-    it('allows an independent node name to proceed while another lifecycle guard is held', function (): void {
-        $holder = new NativeNodeProvisioningLock;
-        Node::query()->create([
-            'name' => 'free-node',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.11',
-            'wireguard_ip' => '10.44.0.4',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        $holder->run('held-node', function (): void {
-            $retargeted = app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'free-node',
-                publicSshHost: '198.51.100.26',
-            ));
-
-            expect($retargeted->public_ssh_host)->toBe('198.51.100.26');
-        });
-    });
-
-    it('marks the node failed when host key scanning fails', function (): void {
-        /** @var HostKeyScanner&object{throws:bool} $scanner */
-        $scanner = app(HostKeyScanner::class);
-        $scanner->throws = true;
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception) use ($node): void {
-                expect($exception->step)
-                    ->toBe('ssh-host-key')
-                    ->and($exception->errorCode)
-                    ->toBe('node.ssh_host_key_scan_failed')
-                    ->and($node->refresh()->status)
-                    ->toBe(LifecycleStatus::Failed)
-                    ->and($node->failed_step)
-                    ->toBe('ssh-host-key')
-                    ->and($node->error_code)
-                    ->toBe('node.ssh_host_key_scan_failed');
-            });
-    });
-
-    it('marks the node failed when the scanned host key does not match', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:expected',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception) use ($node): void {
-                expect($exception->step)
-                    ->toBe('ssh-host-key')
-                    ->and($exception->errorCode)
-                    ->toBe('node.ssh_host_key_mismatch')
-                    ->and($node->refresh()->status)
-                    ->toBe(LifecycleStatus::Failed)
-                    ->and($node->public_ssh_host)
-                    ->toBe('192.0.2.10');
-            });
-    });
-
-    it('restores the public ssh target and lifecycle evidence when wireguard convergence fails', function (): void {
-        /** @var WireGuardPeerConverger&object{throws:?Throwable} $wireGuard */
-        $wireGuard = app(WireGuardPeerConverger::class);
-        $wireGuard->throws = new NodeProvisioningException('wireguard', 'vpn.peer_config_failed', 'wireguard failed');
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'public_ssh_port' => 22,
-            'wireguard_ip' => '10.44.0.3',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-            publicSshPort: 2202,
-        )))
-            ->toThrow(function (NodeProvisioningException $exception) use ($node): void {
-                expect($exception->step)
-                    ->toBe('wireguard')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.peer_config_failed')
-                    ->and($node->refresh()->status)
-                    ->toBe(LifecycleStatus::Failed)
-                    ->and($node->public_ssh_host)
-                    ->toBe('192.0.2.10')
-                    ->and($node->public_ssh_port)
-                    ->toBe(22)
-                    ->and($node->failed_step)
-                    ->toBe('wireguard')
-                    ->and($node->error_code)
-                    ->toBe('vpn.peer_config_failed');
-            });
-    });
-
-    it('fails when the private wireguard ssh probe fails', function (): void {
-        /** @var FakeRetargetAgentRunner $ssh */
-        $ssh = app(AdmissionAgentRunner::class);
-        $ssh->failure = new RuntimeException('wireguard ssh failed');
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'wireguard_ip' => '10.44.0.3',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception) use ($node, $ssh): void {
-                expect($exception->step)
-                    ->toBe('wireguard-ssh')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.peer_ssh_failed')
-                    ->and($exception->getPrevious())
-                    ->toBe($ssh->failure)
-                    ->and($node->refresh()->status)
-                    ->toBe(LifecycleStatus::Failed)
-                    ->and($node->public_ssh_host)
-                    ->toBe('192.0.2.10');
-            });
-    });
-
-    it('fails closed when the node has no wireguard address for the private probe', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.10',
-            'ssh_host_fingerprint' => 'SHA256:pinned',
-        ]);
-
-        expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-            name: 'app-dev',
-            publicSshHost: '198.51.100.25',
-        )))
-            ->toThrow(function (NodeProvisioningException $exception) use ($node): void {
-                expect($exception->step)
-                    ->toBe('wireguard-address')
-                    ->and($exception->errorCode)
-                    ->toBe('vpn.peer_address_missing')
-                    ->and($node->refresh()->status)
-                    ->toBe(LifecycleStatus::Failed)
-                    ->and($node->public_ssh_host)
-                    ->toBe('192.0.2.10');
-            });
-    });
-
-    describe('converged node', function (): void {
-        beforeEach(function (): void {
-            $this->node = Node::query()->create([
-                'name' => 'app-dev',
-                'status' => LifecycleStatus::Active,
-                'platform' => 'linux',
-                'architecture' => 'x86_64',
-                'tld' => 'app-dev.orbit',
-                'public_ssh_host' => '192.0.2.10',
-                'public_ssh_port' => 22,
-                'user' => 'nckrtl',
-                'wireguard_ip' => '10.44.0.3',
-                'ssh_host_fingerprint' => 'SHA256:pinned',
-            ]);
-            $this->node
-                ->roles()
-                ->create([
-                    'role' => RoleName::AppDev,
-                    'status' => LifecycleStatus::Active,
-                ]);
-        });
-
-        it('retargets over wireguard and never opens a public ssh connection', function (): void {
-            $retargeted = app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-                publicSshPort: 2202,
-            ));
-
-            /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-            $scanner = app(HostKeyScanner::class);
-            /** @var KnownHostsStore&object{writes:list<array{host:string,port:int,fingerprint:string}>} $knownHosts */
-            $knownHosts = app(KnownHostsStore::class);
-            /** @var WireGuardPeerConverger&object{node:?Node} $wireGuard */
-            $wireGuard = app(WireGuardPeerConverger::class);
-            /** @var FakeRetargetAgentRunner $ssh */
-            $ssh = app(AdmissionAgentRunner::class);
-
-            expect($retargeted->only(['status', 'public_ssh_host', 'public_ssh_port', 'wireguard_ip']))
-                ->toBe([
-                    'status' => LifecycleStatus::Active,
-                    'public_ssh_host' => '198.51.100.25',
-                    'public_ssh_port' => 2202,
-                    'wireguard_ip' => '10.44.0.3',
-                ])
-                ->and($scanner->scans)
-                ->toBe([['host' => '10.44.0.3', 'port' => 22]])
-                ->and($wireGuard->node)
-                ->toBeNull()
-                ->and($ssh->calls)
-                ->toHaveCount(1)
-                ->and($ssh->calls[0]['connection']->host)
-                ->toBe('10.44.0.3')
-                ->and($ssh->calls[0]['connection']->port)
-                ->toBe(22)
-                ->and($ssh->calls[0]['connection']->user)
-                ->toBe('nckrtl')
-                ->and($ssh->calls[0]['command'])
-                ->toBe('agent.status')
-                ->and($ssh->calls[0]['input'])->toBe([])
-                ->and($knownHosts->writes)
-                ->toBe([
-                    ['host' => '10.44.0.3', 'port' => 22, 'fingerprint' => 'SHA256:pinned'],
-                    ['host' => '198.51.100.25', 'port' => 2202, 'fingerprint' => 'SHA256:pinned'],
-                ]);
-        });
-
-        it('treats any role row as a closed public ssh boundary', function (LifecycleStatus $status): void {
-            $this->node->roles()->sole()->update(['status' => $status]);
-
-            app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-            ));
-
-            /** @var HostKeyScanner&object{scans:list<array{host:string,port:int}>} $scanner */
-            $scanner = app(HostKeyScanner::class);
-
-            expect($scanner->scans)->toBe([['host' => '10.44.0.3', 'port' => 22]]);
-        })->with([LifecycleStatus::Provisioning, LifecycleStatus::Failed]);
-
-        it('fails closed without touching the record when the node is unreachable over wireguard', function (): void {
-            /** @var HostKeyScanner&object{throws:bool} $scanner */
-            $scanner = app(HostKeyScanner::class);
-            $scanner->throws = true;
-
-            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-            )))
-                ->toThrow(function (NodeProvisioningException $exception): void {
-                    expect($exception->step)
-                        ->toBe('wireguard-ssh')
-                        ->and($exception->errorCode)
-                        ->toBe('node.retarget_requires_vpn')
-                        ->and($exception->getMessage())
-                        ->toContain('/etc/wireguard/orbit.conf')
-                        ->and($this->node->refresh()->status)
-                        ->toBe(LifecycleStatus::Active)
-                        ->and($this->node->public_ssh_host)
-                        ->toBe('192.0.2.10')
-                        ->and($this->node->failed_step)
-                        ->toBeNull()
-                        ->and($this->node->error_code)
-                        ->toBeNull();
-                });
-        });
-
-        it('marks the node failed when the wireguard host key does not match', function (): void {
-            $this->node->update(['ssh_host_fingerprint' => 'SHA256:expected']);
-
-            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-            )))
-                ->toThrow(function (NodeProvisioningException $exception): void {
-                    expect($exception->step)
-                        ->toBe('ssh-host-key')
-                        ->and($exception->errorCode)
-                        ->toBe('node.ssh_host_key_mismatch')
-                        ->and($this->node->refresh()->status)
-                        ->toBe(LifecycleStatus::Failed)
-                        ->and($this->node->public_ssh_host)
-                        ->toBe('192.0.2.10');
-                });
-        });
-
-        it('restores the public ssh target when the wireguard probe fails', function (): void {
-            /** @var FakeRetargetAgentRunner $ssh */
-            $ssh = app(AdmissionAgentRunner::class);
-            $ssh->failure = new RuntimeException('wireguard ssh failed');
-
-            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-                publicSshPort: 2202,
-            )))
-                ->toThrow(function (NodeProvisioningException $exception): void {
-                    expect($exception->step)
-                        ->toBe('wireguard-ssh')
-                        ->and($exception->errorCode)
-                        ->toBe('vpn.peer_ssh_failed')
-                        ->and($this->node->refresh()->status)
-                        ->toBe(LifecycleStatus::Failed)
-                        ->and($this->node->public_ssh_host)
-                        ->toBe('192.0.2.10')
-                        ->and($this->node->public_ssh_port)
-                        ->toBe(22)
-                        ->and($this->node->failed_step)
-                        ->toBe('wireguard-ssh')
-                        ->and($this->node->error_code)
-                        ->toBe('vpn.peer_ssh_failed');
-                });
-        });
-
-        it('fails closed when the node has no wireguard address', function (): void {
-            $this->node->update(['wireguard_ip' => null]);
-
-            expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
-                name: 'app-dev',
-                publicSshHost: '198.51.100.25',
-            )))
-                ->toThrow(function (NodeProvisioningException $exception): void {
-                    expect($exception->step)
-                        ->toBe('wireguard-address')
-                        ->and($exception->errorCode)
-                        ->toBe('vpn.peer_address_missing')
-                        ->and($this->node->refresh()->status)
-                        ->toBe(LifecycleStatus::Failed)
-                        ->and($this->node->public_ssh_host)
-                        ->toBe('192.0.2.10');
-                });
-        });
-    });
+    expect(Operation::query()->exists())->toBeFalse()->and($this->socket->sent)->toBe([]);
 });

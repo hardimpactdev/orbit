@@ -4,260 +4,81 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Data\Nodes\NodeData;
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\RetargetNodeData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Nodes\NodeNetworkInput;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\NodeWireGuardCommandInput;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\HostKeyScanner;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\SshConnection;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\WireGuard\WireGuardPeerConverger;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
-use Throwable;
+use App\Models\Operation;
+use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 
-/**
- * Retarget an active node to a new public SSH host.
- *
- * A node without role rows still exposes the public SSH recovery rule, so
- * the retarget pins the host key on the new public address and rewrites the
- * node's WireGuard peer over public SSH. Role convergence removes that rule,
- * so a node with any role row is reachable only through WireGuard. Its
- * retarget pins the host key over the tunnel and only updates the public
- * record; the node-side WireGuard endpoint must already point at the Gateway.
- */
+/** Captures the prior endpoint; only terminal native success commits its replacement. */
 final readonly class RetargetNodeAction
 {
-    public const string VPN_RECOVERY_HINT =
-        'The node is reachable only through WireGuard after role provisioning. '
-        .'On the node, as root, set "Endpoint" in /etc/wireguard/orbit.conf to the Gateway address, '
-        .'run "systemctl restart wg-quick@orbit", then retry the retarget.';
+    public function __construct(private StartOperationAction $operations, private GatewayServingHost $gateway,
+        private NodeNetworkInput $network, private NodeWireGuardCommandInput $hub,
+        private SshKeyProvider $keys, private SwampCommandStep $steps, private NodeProvisioningLock $lock) {}
 
-    public function __construct(
-        private HostKeyScanner $hostKeys,
-        private KnownHostsStore $knownHosts,
-        private SshKeyProvider $sshKeys,
-        private AdmissionAgentRunner $agents,
-        private WireGuardPeerConverger $wireGuard,
-        private NodeProvisioningLock $provisioningLock,
-        private ?RecordEventBroadcaster $broadcaster = null,
-    ) {}
-
-    public function execute(RetargetNodeData $data): Node
+    public function execute(RetargetNodeData $data): Operation
     {
-        if (
-            $data->publicSshHost === ''
-            || filter_var($data->publicSshHost, FILTER_VALIDATE_IP) === false
-            && filter_var($data->publicSshHost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
-        ) {
-            throw new NodeProvisioningException(
-                'validation',
-                'node.public_ssh_host_invalid',
-                'The public SSH host is invalid.',
-            );
-        }
-
-        if ($data->publicSshPort < 1 || $data->publicSshPort > 65535) {
-            throw new NodeProvisioningException(
-                'validation',
-                'node.public_ssh_port_invalid',
-                'The public SSH port is invalid.',
-            );
+        if ($data->publicSshHost === '' || (filter_var($data->publicSshHost, FILTER_VALIDATE_IP) === false
+            && filter_var($data->publicSshHost, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false)
+            || $data->publicSshPort < 1 || $data->publicSshPort > 65535) {
+            throw new ResourceOperationException('node.public_ssh_host_invalid', 'The public SSH endpoint is invalid.', 422);
         }
 
         try {
-            return $this->provisioningLock->run($data->name, fn (): Node => $this->retarget($data));
+            return $this->lock->run($data->name, fn (): Operation => $this->admit($data));
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }
     }
 
-    private function retarget(RetargetNodeData $data): Node
+    private function admit(RetargetNodeData $data): Operation
     {
-        $node = Node::query()->where('name', $data->name)->first();
-        if (! $node instanceof Node || $node->status !== LifecycleStatus::Active) {
-            throw new NodeProvisioningException(
-                'lookup',
-                'node.not_active',
-                "Node [{$data->name}] does not exist as an active node.",
-            );
-        }
+        return DB::transaction(function () use ($data): Operation {
+            $node = Node::query()->where('name', $data->name)->lockForUpdate()->first();
+            if (! $node instanceof Node) {
+                throw new ResourceOperationException('node.not_active', 'The selected Node does not exist as an active Node.', 404);
+            }
+            if ($node->status !== LifecycleStatus::Active || ! is_string($node->wireguard_ip)
+                || ! is_string($node->ssh_host_key_type) || $node->ssh_host_key_type === ''
+                || ! is_string($node->ssh_host_key) || $node->ssh_host_key === ''
+                || ! is_string($node->ssh_host_fingerprint) || $node->ssh_host_fingerprint === '') {
+                throw new ResourceOperationException('node.retarget_requires_vpn', 'Retarget requires an active Node with its pinned WireGuard identity.', 409);
+            }
+            $gateway = $this->gateway->nodeId();
+            if ($gateway === null || ! Node::query()->whereKey($gateway)->where('status', LifecycleStatus::Active)->exists()) {
+                throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Retarget requires the active Gateway worker.', 409);
+            }
+            $roles = $node->roles()->exists();
+            $identity = file_get_contents($this->keys->privateKeyPath());
+            if (! is_string($identity) || $identity === '') {
+                throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The managed SSH identity is unavailable.', 503);
+            }
+            $intent = ['node_id' => $node->id, 'has_roles' => $roles,
+                'target' => ['host' => $roles ? $node->wireguard_ip : $data->publicSshHost,
+                    'port' => $roles ? 22 : $data->publicSshPort, 'user' => $node->user,
+                    'host_keys' => [$node->ssh_host_key_type.' '.$node->ssh_host_key]],
+                'candidate' => ['public_ssh_host' => $data->publicSshHost, 'public_ssh_port' => $data->publicSshPort],
+                'prior' => $node->only(['public_ssh_host', 'public_ssh_port', 'ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint'])];
+            if (! $roles) {
+                $intent += ['hub' => $this->hub->capture($node), 'network' => $this->network->capture($node, true)];
+            }
 
-        return $node->roles()->exists()
-            ? $this->retargetOverWireGuard($node, $data)
-            : $this->retargetOverPublicSsh($node, $data);
-    }
-
-    private function retargetOverPublicSsh(Node $node, RetargetNodeData $data): Node
-    {
-        try {
-            $key = $this->hostKeys->scan($data->publicSshHost, $data->publicSshPort);
-        } catch (Throwable $exception) {
-            $node->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => 'ssh-host-key',
-                'error_code' => 'node.ssh_host_key_scan_failed',
-            ]);
-            throw new NodeProvisioningException(
-                'ssh-host-key',
-                'node.ssh_host_key_scan_failed',
-                "Could not scan the SSH host key for node [{$node->name}].",
-                $exception,
-            );
-        }
-        $this->requirePinned($node, $key);
-
-        return $this->commit($node, $data, function (Node $node, RetargetNodeData $data) use ($key): void {
-            $this->knownHosts->put($data->publicSshHost, $data->publicSshPort, $key);
-            $this->wireGuard->converge($node, new SshConnection(
-                $data->publicSshHost,
-                $node->user,
-                $data->publicSshPort,
-                $this->sshKeys->privateKeyPath(),
-                $this->knownHosts->path(),
-            ), rolelessOperator: true);
-            $address = $this->wireGuardAddress($node);
-            $this->probeWireGuard($node, $address);
-            $this->knownHosts->put($address, 22, $key);
+            return $this->operations->execute('node.retarget', 'node', $node->id, $gateway,
+                ['intent' => $intent, 'execution_secrets' => ['identity' => $this->steps->executionCopy(
+                    'orbit-control-inputs', 'bootstrap-identity-node-'.$gateway, $identity)],
+                    'participant_node_ids' => array_values(array_unique([$gateway, $node->id, ...($roles ? [] : [ValidatedData::integer(ValidatedData::object($intent['hub'])['hub_id']), 209])]))],
+                'operator', request()->attributes->getString('orbit.request_id'));
         });
-    }
-
-    private function retargetOverWireGuard(Node $node, RetargetNodeData $data): Node
-    {
-        try {
-            $address = $this->wireGuardAddress($node);
-        } catch (NodeProvisioningException $exception) {
-            $node->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-
-        try {
-            $key = $this->hostKeys->scan($address, 22);
-        } catch (Throwable $exception) {
-            // The tunnel must be repaired on the node first, so the record stays active and unchanged.
-            throw new NodeProvisioningException(
-                'wireguard-ssh',
-                'node.retarget_requires_vpn',
-                "Could not reach node [{$node->name}] through WireGuard. ".self::VPN_RECOVERY_HINT,
-                $exception,
-            );
-        }
-        $this->requirePinned($node, $key);
-
-        return $this->commit($node, $data, function (Node $node, RetargetNodeData $data) use ($address, $key): void {
-            $this->knownHosts->put($address, 22, $key);
-            $this->probeWireGuard($node, $address);
-            $this->knownHosts->put($data->publicSshHost, $data->publicSshPort, $key);
-        });
-    }
-
-    private function requirePinned(Node $node, HostKey $key): void
-    {
-        if ($node->ssh_host_fingerprint === null || ! hash_equals($node->ssh_host_fingerprint, $key->fingerprint)) {
-            $node->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => 'ssh-host-key',
-                'error_code' => 'node.ssh_host_key_mismatch',
-            ]);
-            throw new NodeProvisioningException(
-                'ssh-host-key',
-                'node.ssh_host_key_mismatch',
-                "The SSH host fingerprint did not match for node [{$node->name}].",
-            );
-        }
-    }
-
-    /** @param \Closure(Node, RetargetNodeData): void $verify */
-    private function commit(Node $node, RetargetNodeData $data, \Closure $verify): Node
-    {
-        $oldHost = $node->public_ssh_host;
-        $oldPort = $node->public_ssh_port;
-        $node->update([
-            'status' => LifecycleStatus::Provisioning,
-            'public_ssh_host' => $data->publicSshHost,
-            'public_ssh_port' => $data->publicSshPort,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        try {
-            $verify($node, $data);
-            $node->update(['status' => LifecycleStatus::Active]);
-        } catch (Throwable $exception) {
-            $failure = $exception instanceof NodeProvisioningException
-                ? $exception
-                : new NodeProvisioningException(
-                    'retarget',
-                    'node.retarget_failed',
-                    "Could not retarget node [{$node->name}].",
-                    $exception,
-                );
-            $node->update([
-                'status' => LifecycleStatus::Failed,
-                'public_ssh_host' => $oldHost,
-                'public_ssh_port' => $oldPort,
-                'failed_step' => $failure->step,
-                'error_code' => $failure->errorCode,
-            ]);
-            throw $failure;
-        }
-
-        $result = $node->refresh();
-
-        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-            RecordEventType::NodeUpdated,
-            $result->id,
-            NodeData::fromModel($result)->toArray(),
-        );
-
-        return $result;
-    }
-
-    private function wireGuardAddress(Node $node): string
-    {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            throw new NodeProvisioningException(
-                'wireguard-address',
-                'vpn.peer_address_missing',
-                "Node [{$node->name}] has no WireGuard address.",
-            );
-        }
-
-        return $node->wireguard_ip;
-    }
-
-    private function probeWireGuard(Node $node, string $address): void
-    {
-        try {
-            $this->agents->runOver(
-                $node,
-                new SshConnection(
-                    $address,
-                    $node->user,
-                    22,
-                    $this->sshKeys->privateKeyPath(),
-                    $this->knownHosts->path(),
-                ),
-                'agent.status',
-            );
-        } catch (Throwable $exception) {
-            throw new NodeProvisioningException(
-                'wireguard-ssh',
-                'vpn.peer_ssh_failed',
-                "Could not reach node [{$node->name}] through WireGuard.",
-                previous: $exception,
-            );
-        }
     }
 }

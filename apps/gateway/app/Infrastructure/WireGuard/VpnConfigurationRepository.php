@@ -116,17 +116,7 @@ final readonly class VpnConfigurationRepository
                 throw $this->invalid('The WireGuard key assignment lock is unavailable.');
             }
 
-            $hubKeyPath = rtrim($this->orbitHome, '/').'/wireguard/public.key';
-            $hubKey = is_file($hubKeyPath) ? file_get_contents($hubKeyPath) : false;
-
-            if ((is_string($hubKey) && trim($hubKey) === $publicKey)
-                || Node::query()->whereKeyNot($node->id)->where('wireguard_public_key', $publicKey)->exists()) {
-                throw new ResourceOperationException(
-                    'node.wireguard_key_conflict',
-                    'The WireGuard public key is already assigned to another peer or the hub.',
-                    409,
-                );
-            }
+            $this->assertPeerKeyAvailable($node, $publicKey);
 
             if ($save !== null) {
                 $save();
@@ -136,6 +126,16 @@ final readonly class VpnConfigurationRepository
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
+        }
+    }
+
+    public function assertPeerKeyAvailable(Node $node, string $publicKey): void
+    {
+        $path = rtrim($this->orbitHome, '/').'/wireguard/public.key';
+        $hubKey = is_file($path) ? file_get_contents($path) : false;
+        if ((is_string($hubKey) && trim($hubKey) === $publicKey)
+            || Node::query()->whereKeyNot($node->id)->where('wireguard_public_key', $publicKey)->exists()) {
+            throw new ResourceOperationException('node.wireguard_key_conflict', 'The WireGuard public key is already assigned to another peer or the hub.', 409);
         }
     }
 

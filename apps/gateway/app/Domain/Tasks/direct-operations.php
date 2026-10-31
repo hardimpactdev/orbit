@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskTurnProjection;
 $vmProvision = (require __DIR__.'/../TaskVms/direct-operations.php')['task_vm.provision'];
 
 return ['tasks.provision' => [
+    'workflow_inputs' => true,
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class,
     'private_material' => ['git_read' => 'instance.lifecycle_git', ...$vmProvision['private_material']],
     'secret_outputs' => $vmProvision['secret_outputs'],

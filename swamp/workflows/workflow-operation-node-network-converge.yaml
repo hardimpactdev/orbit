@@ -1,681 +1,637 @@
-{
-  "id": "3c0eb942-9c7f-438d-8d4c-7c739642c155",
-  "name": "operation-node-network-converge",
-  "description": "One native peer and canonical hub DAG without Gateway children.",
-  "inputs": {
-    "type": "object",
-    "properties": {
-      "operation_id": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "node_id": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "kind": {
-        "type": "string",
-        "enum": [
-          "node.network_converge"
-        ]
-      }
-    },
-    "required": [
-      "operation_id",
-      "node_id",
-      "kind"
-    ],
-    "additionalProperties": false
-  },
-  "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-  "labels": {
-    "node": "${{ string(inputs.node_id) }}"
-  },
-  "jobs": [
-    {
-      "name": "admission",
-      "steps": [
-        {
-          "name": "admit",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "admit",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "peer_key",
-      "dependsOn": [
-        {
-          "job": "admission",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "prepare",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "prepare",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "prepared",
-          "dependsOn": [
-            {
-              "step": "prepare",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.prepare.outputs.status == \"succeeded\"",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "record",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "record",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "prepared",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        }
-      ]
-    },
-    {
-      "name": "hub",
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.executor_node_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.executor_node_id) }}"
-      },
-      "dependsOn": [
-        {
-          "job": "peer_key",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "hub_publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        }
-      ]
-    },
-    {
-      "name": "peer_publish",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "hub_result",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "hubResult",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}",
-              "hub_outcome": "${{ steps.hub_publish.outputs }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "hub_proven",
-          "dependsOn": [
-            {
-              "step": "hub_result",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.hub_result.outputs.ok",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "hub_proven",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "published",
-          "dependsOn": [
-            {
-              "step": "publish",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.publish.outputs.status == \"succeeded\"",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "commit",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "commit",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}",
-              "published": "${{ steps.publish.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "published",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "committed",
-          "dependsOn": [
-            {
-              "step": "commit",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.commit.outputs.status == \"succeeded\"",
-            "message": "The native peer commit refused its admitted input",
-            "severity": "high"
-          }
-        }
-      ]
-    },
-    {
-      "name": "failure_admission",
-      "dependsOn": [
-        {
-          "job": "admission",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "report_admission",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/operation-failure",
-            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
-            "methodName": "report",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_peer_key",
-      "dependsOn": [
-        {
-          "job": "peer_key",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_peer_key",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_peer_key",
-      "dependsOn": [
-        {
-          "job": "recover_peer_key",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_peer_key",
-          "writes": true,
-          "guard": "${{ !steps.recover_peer_key.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "failure_peer_key",
-      "dependsOn": [
-        {
-          "job": "peer_key",
-          "condition": {
-            "type": "failed"
-          }
-        },
-        {
-          "job": "recover_peer_key",
-          "condition": {
-            "type": "always"
-          }
-        },
-        {
-          "job": "restore_hub_peer_key",
-          "condition": {
-            "type": "always"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "report_peer_key",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/operation-failure",
-            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
-            "methodName": "report",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_hub",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_hub",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_hub",
-      "dependsOn": [
-        {
-          "job": "recover_hub",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_hub",
-          "writes": true,
-          "guard": "${{ !steps.recover_hub.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "failure_hub",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "failed"
-          }
-        },
-        {
-          "job": "recover_hub",
-          "condition": {
-            "type": "always"
-          }
-        },
-        {
-          "job": "restore_hub_hub",
-          "condition": {
-            "type": "always"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "report_hub",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/operation-failure",
-            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
-            "methodName": "report",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_peer_publish",
-      "dependsOn": [
-        {
-          "job": "peer_publish",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_peer_publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_peer_publish",
-      "dependsOn": [
-        {
-          "job": "recover_peer_publish",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_peer_publish",
-          "writes": true,
-          "guard": "${{ !steps.recover_peer_publish.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "failure_peer_publish",
-      "dependsOn": [
-        {
-          "job": "peer_publish",
-          "condition": {
-            "type": "failed"
-          }
-        },
-        {
-          "job": "recover_peer_publish",
-          "condition": {
-            "type": "always"
-          }
-        },
-        {
-          "job": "restore_hub_peer_publish",
-          "condition": {
-            "type": "always"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "report_peer_publish",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/operation-failure",
-            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
-            "methodName": "report",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    }
-  ]
-}
+id: 3c0eb942-9c7f-438d-8d4c-7c739642c155
+name: operation-node-network-converge
+description: One native peer and canonical hub DAG without Gateway children.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - node.network_converge
+    network:
+      type: object
+    hub:
+      type: object
+    hub_command:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - hub_command
+  additionalProperties: false
+target: ${{ "orbit-node-" + string(inputs.node_id) }}
+labels:
+  node: ${{ string(inputs.node_id) }}
+jobs:
+- name: admission
+  steps:
+  - name: admit
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: admit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: peer_key
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  steps:
+  - name: prepare
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: prepared
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+    task:
+      type: assert
+      expr: steps.prepare.outputs.status == "succeeded"
+      message: The native network stage refused its admitted input
+      severity: high
+  - name: record
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: record
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+        prepared: ${{ steps.prepare.outputs }}
+    dependsOn:
+    - step: prepared
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+- name: hub
+  target: ${{ "orbit-node-" + string(steps.admit.outputs.hub.executor_node_id) }}
+  labels:
+    node: ${{ string(steps.admit.outputs.hub.executor_node_id) }}
+  dependsOn:
+  - job: peer_key
+    condition:
+      type: succeeded
+  steps:
+  - name: hub_publish_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.hub_command }}
+        mode: publish
+        prepared_peer: '${{ has(steps.prepare) && has(steps.prepare.outputs) && has(steps.prepare.outputs.public_key)
+          ? {"node_id": inputs.node_id, "public_key": steps.prepare.outputs.public_key}
+          : null }}'
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: hub_publish_command
+    writes: true
+    dependsOn:
+    - step: hub_publish_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["hub_publish_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: hub_publish
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: hub_publish_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs.hub_command.hub_id }}
+        stdout: ${{ steps["hub_publish_command"].outputs.stdout }}
+    guard: ${{ !steps.admit.outputs.ready }}
+- name: peer_publish
+  dependsOn:
+  - job: hub
+    condition:
+      type: succeeded
+  steps:
+  - name: hub_result
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: hubResult
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+        prepared: ${{ steps.prepare.outputs }}
+        hub_outcome: ${{ steps.hub_publish.outputs }}
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: hub_proven
+    dependsOn:
+    - step: hub_result
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+    task:
+      type: assert
+      expr: steps.hub_result.outputs.ok
+      message: The native network stage refused its admitted input
+      severity: high
+  - name: publish
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+        prepared: ${{ steps.prepare.outputs }}
+    dependsOn:
+    - step: hub_proven
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: published
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+    task:
+      type: assert
+      expr: steps.publish.outputs.status == "succeeded"
+      message: The native network stage refused its admitted input
+      severity: high
+  - name: commit
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: commit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+        prepared: ${{ steps.prepare.outputs }}
+        published: ${{ steps.publish.outputs }}
+    dependsOn:
+    - step: published
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+  - name: committed
+    dependsOn:
+    - step: commit
+      condition:
+        type: succeeded
+    guard: ${{ !steps.admit.outputs.ready }}
+    task:
+      type: assert
+      expr: steps.commit.outputs.status == "succeeded"
+      message: The native peer commit refused its admitted input
+      severity: high
+- name: failure_admission
+  dependsOn:
+  - job: admission
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: report_admission
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "node-network-failure-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: recover_peer_key
+  dependsOn:
+  - job: peer_key
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: recover_peer_key
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: recover
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+- name: restore_hub_peer_key
+  dependsOn:
+  - job: recover_peer_key
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(steps.admit.outputs.hub.hub_id) }}
+  labels:
+    node: ${{ string(steps.admit.outputs.hub.hub_id) }}
+  steps:
+  - name: restore_hub_peer_key_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.hub_command }}
+        mode: restore-publish
+        prepared_peer: '${{ has(steps.prepare) && has(steps.prepare.outputs) && has(steps.prepare.outputs.public_key)
+          ? {"node_id": inputs.node_id, "public_key": steps.prepare.outputs.public_key}
+          : null }}'
+    guard: ${{ !steps.recover_peer_key.outputs.restore_hub }}
+  - name: restore_hub_peer_key_command
+    writes: true
+    dependsOn:
+    - step: restore_hub_peer_key_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["restore_hub_peer_key_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
+    guard: ${{ !steps.recover_peer_key.outputs.restore_hub }}
+  - name: restore_hub_peer_key
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: restore_hub_peer_key_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs.hub_command.hub_id }}
+        stdout: ${{ steps["restore_hub_peer_key_command"].outputs.stdout }}
+    guard: ${{ !steps.recover_peer_key.outputs.restore_hub }}
+- name: failure_peer_key
+  dependsOn:
+  - job: peer_key
+    condition:
+      type: failed
+  - job: recover_peer_key
+    condition:
+      type: always
+  - job: restore_hub_peer_key
+    condition:
+      type: always
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: report_peer_key
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "node-network-failure-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: recover_hub
+  dependsOn:
+  - job: hub
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: recover_hub
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: recover
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+- name: restore_hub_hub
+  dependsOn:
+  - job: recover_hub
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(steps.admit.outputs.hub.hub_id) }}
+  labels:
+    node: ${{ string(steps.admit.outputs.hub.hub_id) }}
+  steps:
+  - name: restore_hub_hub_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.hub_command }}
+        mode: restore-publish
+        prepared_peer: '${{ has(steps.prepare) && has(steps.prepare.outputs) && has(steps.prepare.outputs.public_key)
+          ? {"node_id": inputs.node_id, "public_key": steps.prepare.outputs.public_key}
+          : null }}'
+    guard: ${{ !steps.recover_hub.outputs.restore_hub }}
+  - name: restore_hub_hub_command
+    writes: true
+    dependsOn:
+    - step: restore_hub_hub_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["restore_hub_hub_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
+    guard: ${{ !steps.recover_hub.outputs.restore_hub }}
+  - name: restore_hub_hub
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: restore_hub_hub_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs.hub_command.hub_id }}
+        stdout: ${{ steps["restore_hub_hub_command"].outputs.stdout }}
+    guard: ${{ !steps.recover_hub.outputs.restore_hub }}
+- name: failure_hub
+  dependsOn:
+  - job: hub
+    condition:
+      type: failed
+  - job: recover_hub
+    condition:
+      type: always
+  - job: restore_hub_hub
+    condition:
+      type: always
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: report_hub
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "node-network-failure-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: recover_peer_publish
+  dependsOn:
+  - job: peer_publish
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: recover_peer_publish
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-network-direct'
+      behaviorName: ${{ "node-network-" + string(inputs.node_id) }}
+      methodName: recover
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.admit.outputs }}
+- name: restore_hub_peer_publish
+  dependsOn:
+  - job: recover_peer_publish
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(steps.admit.outputs.hub.hub_id) }}
+  labels:
+    node: ${{ string(steps.admit.outputs.hub.hub_id) }}
+  steps:
+  - name: restore_hub_peer_publish_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-assets-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.hub_command }}
+        mode: restore-publish
+        prepared_peer: '${{ has(steps.prepare) && has(steps.prepare.outputs) && has(steps.prepare.outputs.public_key)
+          ? {"node_id": inputs.node_id, "public_key": steps.prepare.outputs.public_key}
+          : null }}'
+    guard: ${{ !steps.recover_peer_publish.outputs.restore_hub }}
+  - name: restore_hub_peer_publish_command
+    writes: true
+    dependsOn:
+    - step: restore_hub_peer_publish_assets
+      condition:
+        type: succeeded
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+      methodName: script
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["restore_hub_peer_publish_assets"].outputs.script_body }}
+      globalArgs:
+        name: ${{ "wireguard-hub-" + string(inputs.hub_command.hub_id) }}
+        transport: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.transport
+          }}
+        hosts: ${{ model["wireguard-hub-" + string(inputs.hub_command.hub_id)].input.globalArguments.hosts
+          }}
+    guard: ${{ !steps.recover_peer_publish.outputs.restore_hub }}
+  - name: restore_hub_peer_publish
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: restore_hub_peer_publish_command
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-hub-command'
+      behaviorName: ${{ "wireguard-hub-result-" + string(inputs.hub_command.hub_id)
+        }}
+      methodName: result
+      inputs:
+        hub_id: ${{ inputs.hub_command.hub_id }}
+        stdout: ${{ steps["restore_hub_peer_publish_command"].outputs.stdout }}
+    guard: ${{ !steps.recover_peer_publish.outputs.restore_hub }}
+- name: failure_peer_publish
+  dependsOn:
+  - job: peer_publish
+    condition:
+      type: failed
+  - job: recover_peer_publish
+    condition:
+      type: always
+  - job: restore_hub_peer_publish
+    condition:
+      type: always
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: report_peer_publish
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "node-network-failure-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}

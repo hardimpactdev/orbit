@@ -40,6 +40,7 @@ export const RemovalAdmission = z.object({
   proxy_node_ids: ProxyNodeIds.default([]),
   placements: z.array(RemovalPlacement),
   hub: HubPublicationInput.nullable(),
+  hub_command: z.unknown().nullable().default(null),
   online_blocker: z.string().regex(/^[a-z0-9_.-]+$/).nullable().default(null),
   effective_offline: z.boolean().optional(),
   unavailable_node_ids: z.array(z.number().int().positive()).default([]),
