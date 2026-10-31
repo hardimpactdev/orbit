@@ -46,6 +46,21 @@ including native history, logs and bundles. Family files retain their fixture
 injection, workflow placement checks and domain assertions. The harness leaves
 workflow placement intact; a local fixture is not a serving-worker canary.
 
+For direct HTTP fixtures, import `directHttp` from
+`tests/_support/native_direct.ts` and pass the family state filename. The state
+contains `operation`, `calls`, and `bound`; optional `loseProjection` simulates
+a committed result with a lost reply. The adapter records requests, refuses
+unbound reads and rejects execution relays. Keep domain actions and assertions
+in the owning family fixture. `NativeTestCase` copies the shared adapter into
+each scratch repository. Firewall and Route verification use this path.
+
 ## Frozen agent command check
 
-CI checks production agent call sites against `config/frozen-agent/frozen-commands.json`, captured from the published `cli-v0.7261.0` binary with `orbit-agent contract`. It verifies the binary SHA-256 and regenerates that contract in CI; a cache avoids downloading it again. Run `bin/check-frozen-agent-commands` locally. Unknown commands fail with the file and line number. Port the action into a native Swamp program instead of changing the frozen agent. Caddy publication uses the existing native publisher, including Node footprint and residue cleanup.
+CI checks production agent call sites against
+`config/frozen-agent/frozen-commands.json`, captured from the published
+`cli-v0.7261.0` binary with `orbit-agent contract`. It verifies the binary
+SHA-256 and regenerates that contract in CI; a cache avoids downloading it
+again. Run `bin/check-frozen-agent-commands` locally. Unknown commands fail with
+the file and line number. Port the action into a native Swamp program instead of
+changing the frozen agent. Caddy publication uses the existing native publisher,
+including Node footprint and residue cleanup.
