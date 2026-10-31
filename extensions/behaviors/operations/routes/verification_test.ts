@@ -1,6 +1,8 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { Probe, verification, verifyLocal } from "./verification.ts";
+import { commandLaunch, type NodeCommand } from "../_lib/node-commands.ts";
+import { proxyAddress } from "../_lib/node-proxy-config.ts";
 
 const args = {
   operation_id: 17,
@@ -152,45 +154,63 @@ Deno.test("colocated Route verification cannot skip its network probe", async ()
   );
 });
 
-Deno.test("both Route protocols use a bounded read-only Node call without sudo", async () => {
-  for (const protocol of ["tls", "http"]) {
-    const calls: unknown[] = [];
-    assertEquals(
-      await verifyLocal({ ...input, protocol }, (call) => {
-        calls.push(call);
-        return Promise.resolve({});
-      }),
-      { ready: true },
-    );
-    assertEquals(calls, [{
-      name: protocol === "tls"
-        ? "route.verify-certificate"
-        : "route.verify-http",
-      input: input.probe,
-      pin: input.agent_sha256,
-      sudo: false,
-      mutates: false,
-      deadlineMs: 15000,
-      maxOutputBytes: 4096,
-    }]);
+Deno.test("both Route probes use fixed account commands on each proxy Node", async () => {
+  for (const node of [1, 18] as const) {
+    for (const protocol of ["tls", "http"]) {
+      const command: NodeCommand = (argv, stdin, user, options) => {
+        assertEquals(user, "node");
+        assertEquals(stdin, undefined);
+        assertEquals(options, { deadlineMs: 15000, maxOutputBytes: 4096 });
+        assertEquals(
+          argv[0],
+          protocol === "tls" ? "/usr/bin/timeout" : "/usr/bin/curl",
+        );
+        assertEquals(
+          argv.includes(protocol === "tls" ? "-verify_hostname" : "--head"),
+          true,
+        );
+        assertEquals(
+          argv.includes(
+            protocol === "tls"
+              ? input.probe.domain
+              : `Host: ${input.probe.domain}`,
+          ),
+          true,
+        );
+        const launch = commandLaunch(argv, user, {
+          node_id: node,
+          host: proxyAddress(node),
+          user: "orbit",
+        });
+        assertEquals(launch.args.includes("orbit@" + proxyAddress(node)), true);
+        return Promise.resolve({
+          success: true,
+          code: 0,
+          stdout: new Uint8Array(),
+        });
+      };
+      assertEquals(await verifyLocal({ ...input, protocol }, command), {
+        ready: true,
+      });
+    }
   }
 });
-
-Deno.test("the shared Node refusal stays bounded and an uncertain probe throws", async () => {
-  assertEquals(
-    await verifyLocal(input, () =>
-      Promise.resolve({
-        error_code: "agent.version_mismatch",
-        stderr: "private diagnostic",
-      })),
-    { error_code: "agent.version_mismatch" },
-  );
-  await assertRejects(
-    () =>
-      verifyLocal(input, () => {
-        throw new Error("uncertain probe");
-      }),
-    Error,
-    "uncertain probe",
-  );
+Deno.test("failed and uncertain Route probes expose only a bounded refusal", async () => {
+  for (
+    const command of [
+      (() =>
+        Promise.resolve({
+          success: false,
+          code: 1,
+          stdout: new TextEncoder().encode("private-diagnostic"),
+        })) as NodeCommand,
+      (() => {
+        throw new Error("private-diagnostic");
+      }) as NodeCommand,
+    ]
+  ) {
+    assertEquals(await verifyLocal(input, command), {
+      error_code: "route.certificate_invalid",
+    });
+  }
 });

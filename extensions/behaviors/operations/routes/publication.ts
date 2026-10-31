@@ -79,7 +79,7 @@ export function publication(
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.7",
+    version: "2026.10.31.8",
     globalArguments: Globals,
     methods: {
       removeLan: {

@@ -1,56 +1,42 @@
-import { localCommand } from "../_lib/local-worker.ts";
+import { type NodeCommand, run } from "../_lib/node-commands.ts";
 import { z } from "npm:zod@4.4.3";
-/** Fixed repository-owned local program, bounded by native execution. Public input is data only. */
+/** Fixed Node-local program. The canonical worker transport selects direct or SSH execution. */
 export async function runLocalProgram(
   program: string,
   input: Record<string, unknown>,
   signal?: AbortSignal,
+  command: NodeCommand = run,
 ): Promise<Record<string, unknown>> {
   signal?.throwIfAborted();
-  const child = localCommand("/usr/bin/sudo", {
-    args: [
-      "-n",
-      "--",
-      "/usr/bin/timeout",
-      "--signal=TERM",
-      "--kill-after=5s",
-      "120s",
-      "/usr/bin/python3",
-      "-I",
-      "-c",
-      program,
-    ],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-    signal: AbortSignal.timeout(130000),
-  }).spawn();
-  const writer = child.stdin.getWriter();
-  await writer.write(new TextEncoder().encode(JSON.stringify(input)));
-  await writer.close();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for await (const chunk of child.stdout) {
-    size += chunk.length;
-    if (size > 65536) {
-      child.kill("SIGTERM");
-      throw new Error("Local publication returned no bounded outcome");
-    }
-    chunks.push(chunk);
-  }
-  const status = await child.status;
-  if (!status.success) {
+  let result: Awaited<ReturnType<NodeCommand>>;
+  try {
+    result = await command(
+      [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=5s",
+        "120s",
+        "/usr/bin/python3",
+        "-I",
+        "-c",
+        program,
+      ],
+      new TextEncoder().encode(JSON.stringify(input)),
+      "root",
+      { deadlineMs: 130000, maxOutputBytes: 65536 },
+    );
+  } catch {
     throw new Error("Local publication outcome is uncertain");
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
+  if (result.stdout.length > 65536) {
+    throw new Error("Local publication returned no bounded outcome");
+  }
+  if (!result.success) {
+    throw new Error("Local publication outcome is uncertain");
   }
   try {
     return z.record(z.string(), z.unknown()).parse(
-      JSON.parse(new TextDecoder().decode(bytes)),
+      JSON.parse(new TextDecoder().decode(result.stdout)),
     );
   } catch {
     throw new Error("Local publication returned no typed outcome");

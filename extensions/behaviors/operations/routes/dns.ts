@@ -1,4 +1,4 @@
-import { localCommand } from "../_lib/local-worker.ts";
+import { type NodeCommand, run } from "../_lib/node-commands.ts";
 import { z } from "npm:zod@4.4.3";
 import { privateDnsProgram } from "./dns-publication.ts";
 
@@ -19,11 +19,8 @@ async function hash(text: string) {
 }
 
 export const dnsLaunch = () => ({
-  command: "/usr/bin/sudo",
+  command: "/usr/bin/timeout",
   args: [
-    "-n",
-    "--",
-    "/usr/bin/timeout",
     "--signal=TERM",
     "--kill-after=5s",
     "60s",
@@ -34,57 +31,33 @@ export const dnsLaunch = () => ({
   ],
 });
 
-/** Fixed local code and data on stdin. No RemoteProgram, SSH or Gateway execution relay. */
-export async function runPrivateDns(input: z.infer<typeof DnsPublication>) {
+/** Fixed program and stdin data on the admitted Node, using its canonical worker transport. */
+export async function runPrivateDns(
+  input: z.infer<typeof DnsPublication>,
+  command: NodeCommand = run,
+) {
   const launch = dnsLaunch();
-  const child = localCommand(launch.command, {
-    args: launch.args,
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-    signal: AbortSignal.timeout(70000),
-  }).spawn();
-  let finished = false;
+  let result: Awaited<ReturnType<NodeCommand>>;
   try {
-    const writer = child.stdin.getWriter();
-    await writer.write(
+    result = await command(
+      [launch.command, ...launch.args],
       new TextEncoder().encode(
         JSON.stringify({ records: input.records, catalog: input.catalog }),
       ),
+      "root",
+      { deadlineMs: 70000, maxOutputBytes: 4096 },
     );
-    await writer.close();
-    let size = 0;
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of child.stdout) {
-      size += chunk.length;
-      if (size > 4096) {
-        throw new Error("Private DNS returned no bounded outcome");
-      }
-      chunks.push(chunk);
-    }
-    const status = await child.status;
-    finished = true;
-    if (!status.success) {
-      throw new Error("Private DNS publication is uncertain");
-    }
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    try {
-      return JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      throw new Error("Private DNS returned no typed outcome");
-    }
-  } finally {
-    if (!finished) {
-      try {
-        child.kill("SIGTERM");
-      } catch { /* Already stopped. */ }
-      await child.status.catch(() => {});
-    }
+  } catch {
+    throw new Error("Private DNS publication is uncertain");
+  }
+  if (result.stdout.length > 4096) {
+    throw new Error("Private DNS returned no bounded outcome");
+  }
+  if (!result.success) throw new Error("Private DNS publication is uncertain");
+  try {
+    return JSON.parse(new TextDecoder().decode(result.stdout));
+  } catch {
+    throw new Error("Private DNS returned no typed outcome");
   }
 }
 export async function publishPrivateDns(raw: unknown, invoke = runPrivateDns) {

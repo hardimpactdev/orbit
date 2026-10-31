@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { dnsLaunch, publishPrivateDns, runPrivateDns } from "./dns.ts";
-import { stub } from "jsr:@std/testing@1.0.17/mock";
+import { commandLaunch, type NodeCommand } from "../_lib/node-commands.ts";
+import { proxyAddress } from "../_lib/node-proxy-config.ts";
 const input = {
   node_id: 1,
   records: "",
@@ -58,65 +59,65 @@ Deno.test("DNS confirms exactly the admitted digest and preserves only bounded o
     )
   );
 });
-Deno.test("DNS program is fixed local sudo with a hard timeout, data only on stdin", async () => {
-  const launch = dnsLaunch();
-  assertEquals(launch.command, "/usr/bin/sudo");
-  assertEquals(launch.args.slice(0, 9), [
-    "-n",
-    "--",
-    "/usr/bin/timeout",
-    "--signal=TERM",
-    "--kill-after=5s",
-    "60s",
-    "/usr/bin/python3",
-    "-I",
-    "-c",
-  ]);
-  let received = "";
-  const Command = Deno.Command;
-  using _command = stub(
-    Deno as unknown as {
-      Command: (command: string, options: Deno.CommandOptions) => unknown;
-    },
-    "Command",
-    function (command: string, options: Deno.CommandOptions) {
-      if (command === "/usr/bin/timeout") return new Command(command, options);
-      assertEquals(command, launch.command);
-      assertEquals(options.args, launch.args);
-      assertEquals(options.stderr, "null");
-      return {
-        spawn() {
-          return {
-            stdin: new WritableStream({
-              write(bytes) {
-                received += new TextDecoder().decode(bytes);
-              },
-            }),
-            stdout: new ReadableStream({
-              start(controller) {
-                controller.enqueue(
-                  new TextEncoder().encode(
-                    JSON.stringify({
-                      outcome: "published",
-                      data: { ready: true, digest: input.digest },
-                    }),
-                  ),
-                );
-                controller.close();
-              },
-            }),
-            status: Promise.resolve({ success: true }),
-            kill() {
-              throw new Error("Unexpected kill");
-            },
-          };
-        },
-      };
-    },
-  );
-  await publishPrivateDns(input, runPrivateDns);
-  assertEquals(JSON.parse(received), {
-    records: input.records,
-    catalog: input.catalog,
-  });
+Deno.test("DNS keeps fixed execution and stdin data on each placed proxy Node", async () => {
+  for (const node of [1, 18] as const) {
+    const launch = dnsLaunch();
+    assertEquals(launch.command, "/usr/bin/timeout");
+    assertEquals(launch.args.slice(0, 6), [
+      "--signal=TERM",
+      "--kill-after=5s",
+      "60s",
+      "/usr/bin/python3",
+      "-I",
+      "-c",
+    ]);
+    const command: NodeCommand = (argv, stdin, asUser, options) => {
+      assertEquals(argv, [launch.command, ...launch.args]);
+      assertEquals(JSON.parse(new TextDecoder().decode(stdin)), {
+        records: input.records,
+        catalog: input.catalog,
+      });
+      assertEquals(asUser, "root");
+      assertEquals(options, { deadlineMs: 70000, maxOutputBytes: 4096 });
+      const placed = commandLaunch(argv, asUser, {
+        node_id: node,
+        host: proxyAddress(node),
+        user: "orbit",
+      });
+      assertEquals(placed.args.includes("orbit@" + proxyAddress(node)), true);
+      return Promise.resolve({
+        success: true,
+        code: 0,
+        stdout: new TextEncoder().encode(
+          JSON.stringify({
+            outcome: "published",
+            data: { ready: true, digest: input.digest },
+          }),
+        ),
+      });
+    };
+    const result = await publishPrivateDns(
+      input,
+      (value) => runPrivateDns(value, command),
+    );
+    assertEquals("ready" in result && result.ready, true);
+  }
+});
+Deno.test("DNS never decodes failed or oversized command output as a confirmed publication", async () => {
+  for (
+    const result of [
+      {
+        success: false,
+        code: 1,
+        stdout: new TextEncoder().encode("private-output"),
+      },
+      { success: true, code: 0, stdout: new Uint8Array(4097) },
+    ]
+  ) {
+    const error = await assertRejects(
+      () => runPrivateDns(input, () => Promise.resolve(result)),
+      Error,
+    );
+    assertEquals(error.message.includes("private-output"), false);
+  }
 });
