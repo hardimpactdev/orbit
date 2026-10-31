@@ -172,42 +172,22 @@ A request containing `domain` returns `operation.kind_unavailable` before admiss
 
 ## Register an existing checkout
 
-Run registration on the `app-dev` Node that holds the source. The Node that sends the request is the Node that receives the Instance.
+Run registration on the `app-dev` Node that holds the source. The Node that sends the request receives the Instance. Native registration requires an explicit Project ID, one checkout already at `<apps-root>/<project-slug>/<name>`, and a Project without a Route.
 
 ```bash
-cd ~/src/acme
-orbit instance:register
-orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
+cd /fast/apps/acme/feature
+orbit instance:register --project=12 --name=feature --yes
 ```
 
-The Gateway validates registration and reserves its source set and initial Routes, then returns HTTP 202 with an Operation. Swamp moves the source and configures each endpoint through Gateway-bound steps. `Idempotency-Key` replays the same admission.
+Admission reserves an Instance and returns an `instance.register` Operation. Swamp inspects the real checkout on the admitted Node, verifies its origin against the Project, and adopts it in place. It preserves Git HEAD, the index, dirty files and private environment contents. It removes public permissions from an existing `.env`. Source facts in the native result activate the Instance; a failed adoption leaves it reserved for a later request.
 
-Follow that Operation to success before fetching its captured `target_id` with `instance:show`; the admission response has no `data.instance`. With `--setup`, the registration's immutable `setup_digest` belongs to the parent input and applies to the primary member's setup list.
+Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 
-Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
+The CLI refuses a directory outside Git and an unsafe origin before sending a request. Swamp independently checks the source's path, owner, Git layout, origin, branch and content digest. It never uses the CLI's inspection as proof. Registration creates no Project. Use [`project:create`](/cli/project#orbit-projectcreate) first, then supply its ID.
 
-The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project or infers a nested web root. It inherits the configured Project root unless `--root` supplies an explicit override. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
+The name comes from `--name` or the checkout directory name. An explicit name equal to the Project default branch becomes `default`. Names are lowercase DNS labels of at most 63 characters. The Project root applies unless `--root` supplies a valid override.
 
-The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
-
-| Source | Instance name |
-| --- | --- |
-| An independent checkout whose directory name is the Project slug and whose branch is the `default_branch` | `default` |
-| Any other checkout or linked worktree | `--name`, or the directory name |
-
-A `--name` that equals the Project `default_branch` means `default`, as it does for create. Orbit converts it before it applies this table, so the table stays the only rule: a source that qualifies as `default` accepts it, and any other source gets the name `default`, as it would with `--name=default`. The final Operation result carries `name_converted_from`: the requested `--name` when Orbit converted it, otherwise null. Orbit converts only a name you pass. A directory name that equals the default branch stays as it is, because the table above decides when a source is the default one.
-
-For a source that qualifies as `default`, a `--name` other than `default` or the default branch returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
-
-Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path is adopted in place: Orbit verifies it without moving, copying, or repairing its Git links.
-
-Registration can also adopt an existing `source_resolved` Instance left by a failed or cancelled create. It keeps that Instance and checkout, records the current branch and commit, and continues endpoint setup. The Project, Node, managed path, and Instance name must match. It refuses ambiguous source matches and any queued, running, or waiting create for that Instance or Node path. It does not fetch or check out a seed branch. Active Instances and unresolved creates cannot enter this recovery path.
-
-Source verification covers this source's `HEAD`, branch, index, working tree, and local Git configuration. It does not include other branches, tags, remote-tracking refs, or agent checkpoint refs in the shared repository. Those refs can change while registration runs or between attempts. A change to the source itself before adoption or during a move still refuses registration. An identical retry resumes when the source itself is unchanged. After adoption, the managed destination is authoritative and retries check its Git identity rather than the pre-adoption content digest.
-
-By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. Swamp finishes that move during registration. It does not stop and ask you to change the source yourself.
-
-Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup. A confirmed provisioning failure restores its saved Laravel configuration before the Operation fails. Cancelled or uncertain effects retain the saved receipt for recovery.
+Project inference, source relocation, linked worktrees, `--setup`, and domain requests return `operation.kind_unavailable` before reservation. Projects that serve web traffic also return that refusal. No legacy executor runs those combinations. [instance:register](/cli/instance#orbit-instanceregister) lists the options.
 
 ## Provision the application endpoint
 
