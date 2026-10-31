@@ -4,8 +4,8 @@ Node209 alone runs Swamp Serve and all workers. Every target Node uses official 
 
 Existing target workers and the logical1/18 proxy workers remain until accepted family placements, active/saved roots and worker-recreation paths are cleared. Do not infer clearance from an idle worker. Preserve schedule pauses and retained histories. Platform owns current Node209 maintenance; source fixes do not authorize runtime actions.
 
-## Paused legacy credential rotation
+## Retired proxy enrollment entrypoints
 
-The retained rotation adapter uses `/home/orbit/apps/orbit-monorepo-staging/checkout/swamp` for both native CLI `--repo-dir` and process working directory. It must not index the retired `/home/orbit/apps/orbit-swamp/default` checkout. This path correction changes no token or renewal policy and does not run or resume rotation.
+The old proxy setup, preflight, enrollment and hourly rotation workflows are removed. Source can no longer recreate the dedicated1/18 proxy workers or renew their obsolete tokens through those paths. The existing native token metadata helpers remain for their separate owner. The old fleet renewal planner and its Gateway adapters are removed.
 
-The legacy hourly rotation remains paused. Its retained admissions and non209 worker recreation paths remain retirement dependencies; the single-Node decision does not authorize their replay. Keep209's own runtime pools and the existing SSH identity intact. The former target-worker issuer request is cancelled.
+Existing installed units and credentials stay untouched by this source deletion. Runtime retirement still requires accepted family placement, recreation-path clearance and exact active/saved-root accounting. Keep209's runtime pools and approved SSH identity intact.
