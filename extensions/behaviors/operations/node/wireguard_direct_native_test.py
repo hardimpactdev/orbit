@@ -37,7 +37,7 @@ class HubNative(NativeTestCase):
             'export const behavior = nodeWireGuard();',
             'export const behavior = nodeWireGuard(undefined, () => fixtureHttp, fixtureSystem, fixtureSsh);'))
         self.snapshot = {'schema_version': 1, 'executor_node_id': 1, 'hub_id': 1,
-                         'context_node_id': 13, 'excluded_node_id': 13, 'agent_sha256': 'a' * 64}
+                         'context_node_id': 1, 'excluded_node_id': None, 'agent_sha256': 'a' * 64}
         self.operation = {'id': 7, 'kind': 'node.wireguard_hub_converge', 'node_id': 1,
                           'status': 'queued', 'cancel_requested': False, 'input': self.snapshot}
         self.effects = 0
