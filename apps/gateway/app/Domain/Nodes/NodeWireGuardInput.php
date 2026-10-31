@@ -11,6 +11,8 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 /** Public hub participant admission. The exact hub worker owns the native effect. */
 final readonly class NodeWireGuardInput
@@ -41,10 +43,55 @@ final readonly class NodeWireGuardInput
         return [...$this->capture($context, $excludedNodeId), 'executor_node_id' => $gateway->id];
     }
 
+    /** @param array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:int|null,agent_sha256:string} $cleanup
+     * @return array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:null,agent_sha256:string}
+     */
+    public static function restorationSnapshot(array $cleanup): array
+    {
+        if ($cleanup['excluded_node_id'] !== $cleanup['context_node_id']) {
+            throw new ResourceOperationException('node.network_unsupported', 'Hub restoration requires an admitted exclusion.', 422);
+        }
+
+        return [...$cleanup, 'excluded_node_id' => null];
+    }
+
+    /** Record from the owning root projection, after restoring the Node status in its transaction. */
+    public static function beginRestoration(Operation $operation): void
+    {
+        DB::transaction(function () use ($operation): void {
+            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            if ($operation->status->terminal()) {
+                throw new ResourceOperationException('operation.finished', 'The owning hub Operation has ended.', 409);
+            }
+            $before = $operation->state ?? [];
+            $operation->state = [...$before, 'node_wireguard_restoring' => true];
+            if (self::bound($operation) === null) {
+                $operation->state = $before;
+                throw new ResourceOperationException('operation.execution_forbidden', 'Hub restoration has no matching admitted view.', 422);
+            }
+            $operation->save();
+        });
+    }
+
     /** @return array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:int|null,agent_sha256:string}|null */
     public static function bound(Operation $operation): ?array
     {
         $snapshot = $operation->input['_wireguard'] ?? null;
+        $restoring = $operation->state['node_wireguard_restoring'] ?? false;
+        if (! is_bool($restoring)) {
+            return null;
+        }
+        if ($restoring) {
+            $restore = $operation->input['_wireguard_restore'] ?? null;
+            if (! in_array($operation->kind, ['node.remove', 'task_vm.destroy'], true)
+                || ! is_array($snapshot) || ! is_array($restore)
+                || ($snapshot['excluded_node_id'] ?? null) !== ($snapshot['context_node_id'] ?? null)
+                || Arr::sortRecursive($restore) !== Arr::sortRecursive([...$snapshot, 'excluded_node_id' => null])
+                || Node::query()->whereKey($snapshot['context_node_id'] ?? null)->where('status', LifecycleStatus::Removing)->exists()) {
+                return null;
+            }
+            $snapshot = $restore;
+        }
         if (! is_array($snapshot) || count($snapshot) !== 6 || ($snapshot['schema_version'] ?? null) !== 1
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
