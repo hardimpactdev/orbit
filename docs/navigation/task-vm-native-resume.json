@@ -1,7 +1,9 @@
 {
   "navigation": [
     {
-      "group": "Reference",
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 24,
       "pages": [
         "reference/task-vm-native-resume"
       ]

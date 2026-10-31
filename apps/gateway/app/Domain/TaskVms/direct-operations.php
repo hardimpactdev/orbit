@@ -6,13 +6,14 @@ use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
+use App\Domain\TaskVms\TaskVmResumeProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
 return ['task_vm.resume' => [
     'workflow' => 'operation-task-vm-resume',
-    'projection' => \App\Domain\TaskVms\TaskVmResumeProjection::class,
-    'private_material' => ['credentials' => 'task_vm.resume_credentials'],
+    'projection' => TaskVmResumeProjection::class,
+    'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],
 ]] + array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
     'writer_config' => 'swamp.direct_writers',

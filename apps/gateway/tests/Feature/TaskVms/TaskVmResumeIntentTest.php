@@ -56,8 +56,8 @@ it('freezes exact provider and guest placement without reading the host or start
         ->and($input['pi_url'])->toBe('http://'.$this->guest->wireguard_ip.':3774')
         ->and($input['vm'])->toBe(['project' => 'orbit-tasks', 'name' => $this->vm->name, 'cidr' => '10.251.77.0/24'])
         ->and($operation->input['participant_node_ids'])->toBe([$this->host->id, $this->guest->id])
-        ->and($operation->input['private_bindings']['credentials'])->toBe(['owner_node_id' => $this->host->id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => []])
-        ->and($input)->not->toHaveKeys(['credentials', 'private_bindings', 'participant_node_ids'])
+        ->and($operation->input['private_bindings']['pi_token'])->toBe(['owner_node_id' => $this->guest->id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => []])
+        ->and($input)->not->toHaveKeys(['pi_token', 'upcloud_token', 'private_bindings', 'participant_node_ids'])
         ->and(json_encode($operation->input))->not->toContain('private-pi-token')
         ->and($this->vm->fresh()->getRawOriginal())->toBe($before);
 });
@@ -67,8 +67,8 @@ it('keeps UpCloud API and Pi references on the owning Gateway host without publi
     $operation = savedResumeIntent();
     expect($operation->node_id)->toBe($this->gateway->id)
         ->and($operation->input['participant_node_ids'])->toBe([$this->gateway->id, $this->guest->id])
-        ->and($operation->input['private_bindings']['credentials'])->toBe(['owner_node_id' => $this->gateway->id, 'read_node_ids' => [$this->gateway->id], 'write_node_ids' => []])
-        ->and($operation->input['credentials'])->toBe(['$secret' => 'task_vm.resume_credentials', 'id' => $this->vm->id])
+        ->and($operation->input['private_bindings']['pi_token'])->toBe(['owner_node_id' => $this->guest->id, 'read_node_ids' => [$this->gateway->id], 'write_node_ids' => []])
+        ->and($operation->input['pi_token'])->toBe(['$secret' => 'task_vm.pi_token', 'id' => $this->vm->id])
         ->and(app(TaskVmResumeIntent::class)->input($operation)['vm'])->toBeNull();
 });
 
@@ -186,11 +186,11 @@ it('reads only the exact provider credentials through the bound private callback
     $this->withServerVariables(['REMOTE_ADDR' => $provider === 'upcloud' ? $this->gateway->wireguard_ip : $this->host->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $response = $this->getJson($path.'/private-material?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertOk();
-    $response->assertJsonPath('data.credentials.pi_token', 'private-pi-token');
+    $response->assertJsonPath('data.pi_token', 'private-pi-token');
     if ($provider === 'upcloud') {
-        $response->assertJsonPath('data.credentials.upcloud_token', 'ucat_resume_PRIVATE');
+        $response->assertJsonPath('data.upcloud_token', 'ucat_resume_PRIVATE');
     } else {
-        expect($response->json('data.credentials'))->not->toHaveKey('upcloud_token');
+        $response->assertJsonPath('data.upcloud_token', null);
     }
     $this->getJson($path.'?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertOk()
         ->assertJsonMissing(['pi_token' => 'private-pi-token'])->assertJsonMissing(['upcloud_token' => 'ucat_resume_PRIVATE']);
@@ -199,11 +199,11 @@ it('reads only the exact provider credentials through the bound private callback
     $this->getJson($path.'/private-material?run_id=3fc3ad54-423a-4b4b-8187-99514098426b')->assertUnprocessable();
 })->with(['incus', 'upcloud']);
 
-it('refuses resume credential hydration from another parent kind', function (): void {
+it('refuses private hydration after the admitted Incus host changes', function (): void {
     $operation = savedResumeIntent();
-    $operation->update(['kind' => 'task_vm.destroy']);
-    $source = new TaskVmSecretSource('task_vm.resume_credentials');
-    expect(fn () => $source->resolve($operation, $this->vm->id, '', 'credentials'))->toThrow(ResourceOperationException::class);
+    $operation->update(['node_id' => $this->gateway->id]);
+    $source = new TaskVmSecretSource('task_vm.pi_token');
+    expect(fn () => $source->resolve($operation, $this->vm->id, '', 'pi_token'))->toThrow(ResourceOperationException::class);
 });
 
 it('refuses resume admission when its Incus host is inactive', function (): void {

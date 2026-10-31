@@ -36,13 +36,17 @@ final readonly class TaskVmResumeIntent
 
         return ['task_vm_id' => $vm->id, 'node_id' => $host->id, 'guest_node_id' => $guest->id,
             'participant_node_ids' => array_values(array_unique([$host->id, $guest->id])),
-            'private_bindings' => ['credentials' => ['owner_node_id' => $host->id, 'read_node_ids' => [$host->id], 'write_node_ids' => []]],
+            'private_bindings' => [
+                'pi_token' => ['owner_node_id' => $guest->id, 'read_node_ids' => [$host->id], 'write_node_ids' => []],
+                'upcloud_token' => ['owner_node_id' => $host->id, 'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []],
+            ],
             'name' => $vm->name, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
             'agent_sha256' => $this->agents->pin($host), 'guest_agent_sha256' => $this->agents->pin($guest),
             'user' => $guest->user, 'pi_sha256' => $this->settings->piArtifactSha256, 'pi_url' => $this->pi->baseUrl($guest),
             'deadline_at' => now()->addSeconds(540)->timestamp,
             'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr],
-            'credentials' => ['$secret' => 'task_vm.resume_credentials', 'id' => $vm->id]];
+            'pi_token' => ['$secret' => 'task_vm.pi_token', 'id' => $vm->id],
+            'upcloud_token' => $vm->provider === TaskVmProviderKind::UpCloud ? ['$secret' => 'upcloud.api', 'id' => $vm->id] : null];
     }
 
     public function owned(Operation $operation, bool $lock = false): TaskVm
@@ -69,6 +73,6 @@ final readonly class TaskVmResumeIntent
     {
         $vm = $this->owned($operation);
 
-        return [...Arr::except($operation->input, ['credentials', 'participant_node_ids', 'private_bindings']), 'eligible' => $vm->state === TaskVmState::Parked];
+        return [...Arr::except($operation->input, ['pi_token', 'upcloud_token', 'participant_node_ids', 'private_bindings']), 'eligible' => $vm->state === TaskVmState::Parked];
     }
 }
