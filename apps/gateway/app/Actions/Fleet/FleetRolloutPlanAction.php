@@ -52,6 +52,6 @@ final readonly class FleetRolloutPlanAction
         }
 
         return ['status' => $rollout->status->value, 'rollout' => $rollout->id, 'commit' => $state->commit,
-            'allow_downgrade' => $gate['state'] === 'verified', 'targets' => $targets];
+            'targets' => $targets];
     }
 }

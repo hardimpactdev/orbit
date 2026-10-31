@@ -30,7 +30,10 @@ final readonly class AdmitFleetCliAction
         if ($root === null) {
             throw new ResourceOperationException('fleet.cli_plan_failed', 'The serving Gateway has no recorded Node.', 409);
         }
-        $nodes = $nodeIds === null ? $this->membership->members() : Node::query()->whereIn('id', $nodeIds)->with('roles')->orderBy('id')->get()->all();
+        $nodes = array_values(array_filter($this->membership->members(), static fn (Node $node): bool => $nodeIds === null || in_array($node->id, $nodeIds, true)));
+        if ($nodeIds !== null && count($nodes) !== count($nodeIds)) {
+            throw new ResourceOperationException('fleet.cli_target_excluded', 'The requested Nodes are not eligible fleet members.', 422);
+        }
 
         return $this->admit($nodes, $root, 'swamp', null);
     }
@@ -40,7 +43,7 @@ final readonly class AdmitFleetCliAction
     {
         return $this->start->execute('fleet.cli_converge', 'fleet', $root, $root, [
             'nodes' => array_map(fn (Node $node): array => ['node_id' => $node->id, ...$this->plan->input($node), 'agent' => null,
-                'allow_downgrade' => false, 'daytime' => true], $nodes),
+                'daytime' => true], $nodes),
             'participant_node_ids' => array_values(array_unique([$root, 209, ...array_map(static fn (Node $node): int => $node->id, $nodes)])),
         ], $triggeredBy, $requestId);
     }

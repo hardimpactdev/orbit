@@ -976,9 +976,9 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 
 Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
-`fleet.rollout` starts `operation-fleet-rollout`, one native Swamp DAG for the admitted fleet. Each Node has a placed publication step and a native assertion before the next Node. There are no child Operations, polled claims, target holds or execution receipts. `fleet.cli_converge` uses the same publication behavior in its own native DAG and updates only the CLI.
+`fleet.rollout` starts `operation-fleet-rollout`, one native Swamp DAG for the admitted fleet. Each Node has a placed publication step. Native concurrency is one; each step requires successful prior Node outputs before acting. There are no child Operations, polled claims, target holds or execution receipts. `fleet.cli_converge` uses the same publication behavior in its own native DAG and updates only the CLI.
 
-Each workload Node runs its step on its `orbit-node-ID` worker. vpn1 and usexit18 use lane 21's exact Node-labelled SSH proxy workers on Node 209. They receive no Swamp binary. Control steps run on Node 209. No step asks orbit-agent to act.
+Each workload Node runs its step on its `orbit-node-ID` worker. vpn1 and usexit18 require lane 21's SSH proxy workers on Node 209. Each worker has the target Node's exact label. They receive no Swamp binary. Control steps run on Node 209. No step asks orbit-agent to act.
 
 App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later run.
 
@@ -1034,7 +1034,7 @@ After the rollout, every run visits some Nodes again, one at a time and with the
 | --- | --- |
 | `pending`, `unreachable`, `deferred`, or `waiting` | The rollout did not converge it |
 | New in the rollout set | It joined after the rollout opened |
-| `converged` or `unchanged`, but drifted | Its agent reports another version, its CLI version differs from the desired release, or its footprint digest differs from the one it last received |
+| `converged` or `unchanged`, but drifted | Its observer reports another version or its recorded CLI version differs from the desired release |
 
 So a Node that was offline is converged within 5 minutes after it returns.
 

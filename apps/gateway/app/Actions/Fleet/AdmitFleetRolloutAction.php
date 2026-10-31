@@ -8,11 +8,14 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 
 /** Captures one fleet-wide intent; no probes, target locks or child Operations. */
 final readonly class AdmitFleetRolloutAction
@@ -23,11 +26,25 @@ final readonly class AdmitFleetRolloutAction
     /** @param list<int>|null $nodeIds */
     public function execute(?int $rolloutId = null, ?array $nodeIds = null): Operation
     {
+        if (($replay = app(OperationIdempotency::class)->replay('fleet.rollout')) !== null) {
+            return $replay;
+        }
+
+        return DB::transaction(fn (): Operation => $this->admit($rolloutId, $nodeIds));
+    }
+
+    /** @param list<int>|null $nodeIds */
+    private function admit(?int $rolloutId, ?array $nodeIds): Operation
+    {
         $plan = $this->plan->execute();
         $root = $this->gateway->nodeId();
         if ($root === null || ! isset($plan['rollout']) || ($rolloutId !== null && $rolloutId !== $plan['rollout'])
             || ! in_array($plan['status'], ['running', 'completed'], true)) {
             throw new ResourceOperationException('fleet.rollout_not_ready', 'The serving release has no available fleet rollout.', 409);
+        }
+        FleetRollout::query()->whereKey($plan['rollout'])->lockForUpdate()->firstOrFail();
+        if (Operation::query()->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running'])->exists()) {
+            throw new ResourceOperationException('fleet.rollout_busy', 'A native fleet rollout is already running.', 409);
         }
         $nodes = [];
         foreach ($plan['targets'] ?? [] as $target) {
@@ -41,7 +58,6 @@ final readonly class AdmitFleetRolloutAction
             }
             $nodes[] = ['node_id' => $node->id, 'row_id' => $target['row_id'], ...$this->cli->input($node),
                 'agent' => ['url' => $agent['url'], 'sha256' => $agent['sha256'], 'version' => $this->delivery->reportedVersion($node)],
-                'allow_downgrade' => $plan['allow_downgrade'],
                 'daytime' => $node->roles->isNotEmpty() && $node->roles->every(static fn ($role): bool => $role->role === RoleName::AppDev)];
         }
         if ($nodes === [] || ($nodeIds !== null && count($nodes) !== count($nodeIds))) {
@@ -53,7 +69,7 @@ final readonly class AdmitFleetRolloutAction
             'participant_node_ids' => array_values(array_unique([$root, 209, ...array_column($nodes, 'node_id')])),
         ], 'swamp', null);
         FleetRolloutNode::query()->where('fleet_rollout_id', $plan['rollout'])->whereIn('node_id', array_column($nodes, 'node_id'))
-            ->update(['started_at' => now(), 'finished_at' => null]);
+            ->update(['started_at' => now(), 'finished_at' => null, 'attempts' => DB::raw('attempts + 1')]);
 
         return $operation;
     }

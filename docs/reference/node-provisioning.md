@@ -397,9 +397,9 @@ Completion requires a successful keyed installer step with `outcome: current|app
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets and public profile. Each native step publishes the CLI on its own Node worker, with lane 21's proxy workers serving the two light Nodes. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets and public profile. Each native step publishes the CLI on its own Node worker. The two light Nodes require lane 21's proxy workers. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
 
-`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. Ineligible Nodes and unpublished releases are skipped. Foreign files remain untouched and mark the Node as foreign; a later successful native publication clears the mark. Node workflows may compose the same Swamp publication action directly in their parent run.
+`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Foreign files remain untouched and mark the Node as foreign; a later successful native publication clears the mark. Node workflows may compose the same Swamp publication action directly in their parent run.
 
 | Item | Path or value |
 | --- | --- |
@@ -420,7 +420,7 @@ Swamp runs the publication step and inspects the existing link locally. Both rea
 | An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
 | Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
 
-The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+Swamp takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
 
 | Code | Meaning |
 | --- | --- |
@@ -434,7 +434,9 @@ The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, befo
 
 ## Converge the Orbit footprint
 
-The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence. It never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
+The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence.
+
+Footprint convergence never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
 
 | Artifact | On which Node | Re-apply |
 | --- | --- | --- |
