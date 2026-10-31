@@ -16,7 +16,11 @@ final readonly class NodeBootstrapProjection implements DirectOperationProjectio
 {
     public function input(Operation $operation): array
     {
-        return ['bootstrap' => $operation->input['bootstrap']];
+        $intent = ['bootstrap' => $operation->input['bootstrap']];
+
+        return $operation->kind === 'node.bootstrap_probe'
+            ? ['intent' => $intent, 'execution_secrets' => $operation->input['execution_secrets']]
+            : $intent;
     }
 
     public function apply(Operation $operation, array $data): Operation

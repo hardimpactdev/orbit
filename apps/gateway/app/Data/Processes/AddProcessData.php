@@ -15,6 +15,7 @@ final readonly class AddProcessData
      * @param  array<string, string>  $environment
      * @param  list<string>  $ports
      * @param  list<array{source: string, target: string, read_only: bool}>  $volumes
+     * @param  list<string>  $requiredMountPaths
      */
     public function __construct(
         public ProcessTargetType $targetType,
@@ -34,5 +35,6 @@ final readonly class AddProcessData
         public ?string $preset = null,
         public ?string $user = null,
         public bool $restartOnDeploy = true,
+        public array $requiredMountPaths = [],
     ) {}
 }

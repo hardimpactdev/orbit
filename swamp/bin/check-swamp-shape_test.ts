@@ -1,5 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+  movedLimits,
+  proveProxyHttpMove,
+  PROXY_HTTP_MOVE,
+} from "./swamp-shape-relocations.ts";
+import {
+  agentPythonFindings,
+  agentShellFindings,
   aggregate,
   analyze,
   analyzeTs,
@@ -17,6 +24,134 @@ const inventory = {
   "cli.install": "action",
   "caddy.publish": "action",
 };
+const officialSshFixture = Deno.readTextFileSync(
+  new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
+);
+Deno.test("official SSH transport identity vault fields are native sensitive inputs", () => {
+  assertEquals(
+    analyzeYaml("models/official-ssh.yaml", officialSshFixture).findings,
+    [],
+  );
+  const step = `name: official-ssh
+jobs:
+- name: action
+  steps:
+  - name: run
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '\${{ "wireguard-hub-" + string(inputs.hub_id) }}'
+      methodName: script
+      globalArgs:
+        name: wireguard-hub
+        transport:
+          kind: ssh
+          identityContent: \${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}
+        hosts:
+        - name: hub
+          address: example.invalid
+          transport:
+            identityContent: \${{ vault.get('orbit-control-inputs', 'ssh-hub') }}
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: '\${{ steps.assets.outputs.script }}'
+`;
+  assertEquals(analyzeYaml("workflows/official-ssh.yaml", step).findings, []);
+  assertEquals(
+    analyzeYaml(
+      "workflows/official-ssh.yaml",
+      step.replace("type: behavior", "type: model_method").replace(
+        "behaviorType:",
+        "modelType:",
+      ),
+    ).findings,
+    [],
+  );
+  assert(
+    analyzeYaml(
+      "models/official-ssh.yaml",
+      officialSshFixture.replace(
+        "${{ vault.get('orbit-control-inputs', 'ssh-hub') }}",
+        "plaintext-private-key",
+      ),
+    ).findings.some((entry) => entry.rule === "secret-native-source"),
+  );
+  for (
+    const source of [
+      officialSshFixture.replace("type: '@swamp/ssh'", "type: '@example/ssh'"),
+      officialSshFixture.replaceAll("identityContent:", "identityFile:"),
+      officialSshFixture.replace("globalArguments:", "inputs:"),
+      step.replace(
+        "behaviorType: '@swamp/ssh'",
+        "behaviorType: '@example/ssh'",
+      ),
+      step.replace("globalArgs:", "inputs:").replace(
+        "      inputs:\n        hosts:",
+        "      other:\n        hosts:",
+      ),
+    ]
+  ) {
+    const findings = analyzeYaml(
+      source.startsWith("name: official-ssh\n")
+        ? "workflows/official-ssh.yaml"
+        : "models/official-ssh.yaml",
+      source,
+    ).findings;
+    assert(
+      findings.some((entry) => entry.rule === "vault-placement"),
+      source,
+    );
+  }
+});
+Deno.test("official SSH identity content requires one whole vault value, never raw or composite secrets", () => {
+  const original =
+    "${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}";
+  for (
+    const value of [
+      "plaintext-private-key",
+      "${{ inputs.private_key }}",
+      "${{ env.SSH_IDENTITY }}",
+      "prefix " + original,
+      original + " suffix",
+      "${{ vault.get('vault','key') + string('suffix') }}",
+      "${{ vault.get('vault','key') || identity() }}",
+      "${{ vault.get('vault','key') }}${{ vault.get('other','key') }}",
+      "{not: a string}",
+    ]
+  ) {
+    const findings = analyzeYaml(
+      "models/official-ssh.yaml",
+      officialSshFixture.replace(original, value),
+    ).findings;
+    assert(
+      findings.some((entry) => entry.rule === "secret-native-source"),
+      value,
+    );
+  }
+  for (
+    const value of [
+      "${{ vault.get('vault', inputs.execution_secrets.ssh.key) }}",
+      "${{ vault.get('vault', 'ssh-node-' + string(inputs.node_id)) }}",
+    ]
+  ) {
+    assertEquals(
+      analyzeYaml(
+        "models/official-ssh.yaml",
+        officialSshFixture.replace(original, value),
+      ).findings,
+      [],
+    );
+  }
+  const argv =
+    "name: official-ssh\njobs:\n- steps:\n  - task:\n      type: behavior\n      behaviorType: '@swamp/ssh'\n      inputs:\n        argv:\n        - \"${{ vault.get('vault','key') }}\"\n";
+  assert(
+    analyzeYaml("workflows/official-ssh.yaml", argv).findings.some((entry) =>
+      entry.rule === "secret-argv"
+    ),
+  );
+});
 const rules = (source: string) =>
   analyzeTs(file, source, inventory).findings.map((f) => f.rule);
 const program = (n: number) =>
@@ -31,7 +166,9 @@ Deno.test("embedded threshold is per program, not sum of independent short progr
     ).includes("inline-script"),
   );
   assert(
-    rules(`const p=${JSON.stringify(program(21))};`).includes("inline-script"),
+    rules(`const p=${JSON.stringify(program(21))};`).includes(
+      "inline-script",
+    ),
   );
 });
 Deno.test("script metrics count source once across a tagged template, concatenation and subprocess sink", () => {
@@ -149,7 +286,8 @@ Deno.test("vault values are permitted only as whole command environment values",
     ]
   ) {
     assert(
-      analyzeYaml("workflows/test.yaml", workflow(input)).findings.length > 0,
+      analyzeYaml("workflows/test.yaml", workflow(input)).findings
+        .length > 0,
       input,
     );
   }
@@ -188,7 +326,8 @@ Deno.test("baseline cannot grow, add a rule, move a file or admit a different ag
     ]
   ) {
     assert(
-      ratchet([next], { schema: SCHEMA, entries: [next] }, baseline).length > 0,
+      ratchet([next], { schema: SCHEMA, entries: [next] }, baseline)
+        .length > 0,
     );
   }
   assertEquals(ratchet([], { schema: SCHEMA, entries: [] }, baseline), []);
@@ -197,7 +336,10 @@ Deno.test("workflow coverage separates clean, unknown and accepted debt", () => 
   const sources = new Map([
     ["workflows/clean.yaml", workflow("        run: true\n")],
     ["workflows/debt.yaml", workflow("        run: sleep 10\n")],
-    ["workflows/unknown.yaml", "jobs:\n- steps:\n  - task: {type: unknown}\n"],
+    [
+      "workflows/unknown.yaml",
+      "jobs:\n- steps:\n  - task: {type: unknown}\n",
+    ],
   ]);
   assertEquals(workflowCoverage(analyze(sources, inventory)), {
     total: 3,
@@ -282,7 +424,10 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
     type: "object",
     properties: {
       vault: { type: "string", enum: ["orbit-control-inputs"] },
-      key: { type: "string", pattern: "^bootstrap-identity-node-[1-9][0-9]*$" },
+      key: {
+        type: "string",
+        pattern: "^bootstrap-identity-node-[1-9][0-9]*$",
+      },
     },
     required: ["vault", "key"],
     additionalProperties: false,
@@ -294,12 +439,13 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
     additionalProperties: false,
   };
   const yaml = (schema: unknown) =>
-    "inputs:\n  properties:\n    execution_secrets: " + JSON.stringify(schema) +
+    "inputs:\n  properties:\n    execution_secrets: " +
+    JSON.stringify(schema) +
     "\n" + workflow("        run: true\n");
   assert(
-    !analyzeYaml("workflows/pilot.yaml", yaml(container)).findings.some((f) =>
-      f.rule === "secret-input"
-    ),
+    !analyzeYaml("workflows/pilot.yaml", yaml(container)).findings.some((
+      f,
+    ) => f.rule === "secret-input"),
   );
   for (
     const bad of [{ ...container, additionalProperties: true }, {
@@ -310,7 +456,10 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
       properties: {
         bootstrap_identity: {
           ...ref,
-          properties: { ...ref.properties, value: { type: "string" } },
+          properties: {
+            ...ref.properties,
+            value: { type: "string" },
+          },
         },
       },
     }]
@@ -360,7 +509,10 @@ Deno.test("Gateway primitive exceptions require exact POST routes, never endpoin
     assert(isGatewayPrimitive("POST", path));
     for (const invalid of ["0", "-1", "node", "19/result", "19%2Fresult"]) {
       assert(
-        !isGatewayPrimitive("POST", route.replace("{operation_id}", invalid)),
+        !isGatewayPrimitive(
+          "POST",
+          route.replace("{operation_id}", invalid),
+        ),
       );
     }
     for (const method of ["GET", "PUT", "DELETE", undefined]) {
@@ -392,7 +544,9 @@ Deno.test("Gateway primitive exceptions require exact POST routes, never endpoin
       ).includes("gateway-http"),
     );
   }
-  assert(!isGatewayPrimitive("POST", "/api/v1/direct-operations/19/primitive"));
+  assert(
+    !isGatewayPrimitive("POST", "/api/v1/direct-operations/19/primitive"),
+  );
   assert(
     !isGatewayPrimitive(
       "POST",
@@ -478,7 +632,8 @@ Deno.test("sign and mint names grant no Gateway exception", () => {
 
 Deno.test("native shell Gateway requests use the same two exact POST routes", () => {
   for (const route of GATEWAY_PRIMITIVES) {
-    const url = "https://gateway.orbit" + route.replace("{operation_id}", "19");
+    const url = "https://gateway.orbit" +
+      route.replace("{operation_id}", "19");
     assertEquals(
       gatewayShellFindings(
         "scripts/request.sh",
@@ -487,9 +642,9 @@ Deno.test("native shell Gateway requests use the same two exact POST routes", ()
       [],
     );
     assert(
-      gatewayShellFindings("scripts/request.sh", `curl '${url}'`).some((f) =>
-        f.rule === "gateway-http"
-      ),
+      gatewayShellFindings("scripts/request.sh", `curl '${url}'`).some((
+        f,
+      ) => f.rule === "gateway-http"),
     );
     assert(
       gatewayShellFindings(
@@ -519,4 +674,551 @@ Deno.test("external HTTP calls are not Gateway primitives or callbacks", () => {
     ),
     [],
   );
+});
+
+Deno.test("agent service and artifact operands are data, never agent action calls", () => {
+  for (
+    const source of [
+      "systemctl restart orbit-agent.service",
+      "sudo -n systemctl is-active orbit-agent.service",
+      "sha256sum /usr/local/bin/orbit-agent",
+      "cp /tmp/agent /usr/local/bin/orbit-agent",
+      "rm -f /usr/local/bin/orbit-agent /etc/orbit/agent/config.toml",
+      "echo orbit-agent command cli.install",
+      "ssh -o StrictHostKeyChecking=yes -- node 'sudo systemctl stop orbit-agent.service'",
+      "python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('/usr/local/bin/orbit-agent').stat())\nPY",
+    ]
+  ) {
+    assertEquals(agentShellFindings(file, source, inventory), [], source);
+    assert(
+      !analyzeYaml(
+        "workflows/native.yaml",
+        workflow("        run: " + JSON.stringify(source) + "\n"),
+        inventory,
+      ).findings.some((f) => f.rule.startsWith("agent-")),
+      source,
+    );
+  }
+  assert(
+    !rules("Deno.readFile('/usr/local/bin/orbit-agent');").some((r) =>
+      r.startsWith("agent-")
+    ),
+  );
+  assert(
+    !rules(
+      "new Deno.Command('sha256sum',{args:['/usr/local/bin/orbit-agent']});",
+    ).some((r) => r.startsWith("agent-")),
+  );
+});
+Deno.test("real shell agent invocations remain forbidden through executable wrappers", () => {
+  for (
+    const source of [
+      "/usr/local/bin/orbit-agent command cli.install",
+      "sudo -n -- /usr/local/bin/orbit-agent command cli.install",
+      "env HOME=/tmp /usr/local/bin/orbit-agent command cli.install",
+      "exec /usr/local/bin/orbit-agent command cli.install",
+      "bash -c 'sudo orbit-agent command cli.install'",
+      "ssh -o StrictHostKeyChecking=yes -- node 'sudo orbit-agent command cli.install'",
+      'agent=/usr/local/bin/orbit-agent; "$agent" command cli.install',
+      'echo "$(orbit-agent command cli.install)"',
+    ]
+  ) {
+    assert(
+      agentShellFindings(file, source, inventory).some((f) =>
+        f.rule === "agent-action"
+      ),
+      source,
+    );
+  }
+  assertEquals(
+    agentShellFindings(file, "orbit-agent command agent.status", inventory),
+    [],
+  );
+  assert(
+    agentShellFindings(file, 'orbit-agent command "$command"', inventory)
+      .some((f) => f.rule === "agent-dynamic"),
+  );
+});
+
+Deno.test("closed empty execution secrets admits no private values", () => {
+  for (
+    const schema of [
+      { type: "object", additionalProperties: false },
+      { type: "object", properties: {}, additionalProperties: false },
+      {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+        maxProperties: 0,
+      },
+    ]
+  ) {
+    const source = "inputs:\n  properties:\n    execution_secrets: " +
+      JSON.stringify(schema) + "\n" + workflow("        run: 'true'\n");
+    assert(
+      !analyzeYaml("workflows/empty.yaml", source).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+  for (
+    const schema of [
+      { type: "object" },
+      { type: "object", additionalProperties: true },
+      {
+        type: "object",
+        additionalProperties: false,
+        patternProperties: { ".*": { type: "string" } },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: { password: { type: "string" } },
+      },
+    ]
+  ) {
+    const source = "inputs:\n  properties:\n    execution_secrets: " +
+      JSON.stringify(schema) + "\n";
+    assert(
+      analyzeYaml("workflows/unsafe.yaml", source).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+});
+Deno.test("normalized repository identity is public while authentication identities remain private", () => {
+  const source = (name: string) =>
+    "inputs:\n  properties:\n    intent:\n      type: object\n      properties:\n        " +
+    name + ": {type: string, minLength: 1, maxLength: 4096}\n";
+  assert(
+    !analyzeYaml("workflows/transfer.yaml", source("repository_identity"))
+      .findings.some((f) => f.rule === "secret-input"),
+  );
+  for (
+    const field of [
+      "bootstrap_identity",
+      "ssh_identity",
+      "api_token",
+      "private_key",
+    ]
+  ) {
+    assert(
+      analyzeYaml("workflows/private.yaml", source(field)).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+});
+
+Deno.test("official cfgmgmt identity file workflow input is a public string path", () => {
+  const source = (name: string, schema: unknown) =>
+    "inputs:\n  properties:\n    connection:\n      type: object\n      properties:\n        " +
+    name + ": " + JSON.stringify(schema) + "\n";
+  assert(
+    !analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      source("nodeIdentityFile", { type: "string" }),
+    ).findings.some((f) => f.rule === "secret-input"),
+  );
+  for (const schema of [{}, { type: "object" }, { type: "array" }]) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source("nodeIdentityFile", schema))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  for (
+    const name of ["identityContent", "nodeIdentityContent", "ssh_identity"]
+  ) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source(name, { type: "string" }))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  const vault = "${{ vault.get('execution', 'ssh') }}";
+  assert(
+    analyzeYaml(
+      "models/cfgmgmt.yaml",
+      "globalArguments:\n  nodeIdentityFile: " + vault,
+    )
+      .findings.some((f) => f.rule === "vault-placement"),
+  );
+  assert(
+    analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      workflow(
+        "        run: 'tool $NODE_IDENTITY_FILE'\n",
+      ),
+    ).findings.some((f) => f.rule === "secret-argv"),
+  );
+});
+
+Deno.test("agent invocations inside shell substitutions and interpreter bodies are actions", () => {
+  for (
+    const source of [
+      "sudo -S orbit-agent command cli.install",
+      "env -S 'sudo -S orbit-agent command cli.install'",
+      "printf hello `orbit-agent command cli.install`",
+      "bash <<EOF\norbit-agent command cli.install\nEOF",
+      'python3 -c \'import subprocess; subprocess.run(["orbit-agent","command","cli.install"])\'',
+      "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['orbit-agent','command','cli.install'])\nPY",
+    ]
+  ) {
+    assertEquals(
+      agentShellFindings(file, source, inventory).filter((f) =>
+        f.rule === "agent-action"
+      ).length,
+      1,
+      source,
+    );
+  }
+  assertEquals(
+    agentPythonFindings(
+      file,
+      "import subprocess\nsubprocess.run(['printf','$(orbit-agent command cli.install)'])",
+      inventory,
+    ),
+    [],
+  );
+  assertEquals(
+    agentShellFindings(
+      file,
+      "cat <<'EOF'\norbit-agent command cli.install\nEOF",
+      inventory,
+    ),
+    [],
+  );
+});
+
+Deno.test("static native child workflows are scanned through their local source graph", () => {
+  const child = (run = "true") =>
+    `id: 11111111-1111-4111-8111-111111111111\n${
+      workflow("        run: " + JSON.stringify(run) + "\n").replace(
+        "name: example",
+        "name: child",
+      )
+    }`;
+  const parent = (reference: string) =>
+    `name: parent\njobs:\n- steps:\n  - task:\n      type: workflow\n      workflowIdOrName: ${
+      JSON.stringify(reference)
+    }\n`;
+  for (const reference of ["child", "11111111-1111-4111-8111-111111111111"]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["workflows/child.yaml", child()],
+    ]);
+    const clean = analyze(sources, inventory);
+    assertEquals(clean.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(workflowCoverage(clean), {
+      total: 2,
+      clean: 2,
+      unknown: 0,
+      baseline_accepted: 0,
+    });
+    sources.set(
+      "workflows/child.yaml",
+      child("orbit-agent command cli.install"),
+    );
+    assertEquals(workflowCoverage(analyze(sources, inventory)), {
+      total: 2,
+      clean: 0,
+      unknown: 0,
+      baseline_accepted: 2,
+    });
+  }
+  for (const reference of ["missing", "${{ inputs.child }}"]) {
+    const analyses = analyze(
+      new Map([["workflows/parent.yaml", parent(reference)], [
+        "workflows/child.yaml",
+        child(),
+      ]]),
+      inventory,
+    );
+    assert(analyses.get("workflows/parent.yaml")!.unknown);
+    assert(
+      analyses.get("workflows/parent.yaml")!.findings.some((f) =>
+        f.rule === "unknown-nested-workflow"
+      ),
+    );
+    assertEquals(workflowCoverage(analyses).unknown, 1);
+  }
+  const ambiguous = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      child(),
+    ], ["workflows/duplicate.yaml", child()]]),
+    inventory,
+  );
+  assert(ambiguous.get("workflows/parent.yaml")!.unknown);
+  const unresolvedBehavior = analyze(
+    new Map([["workflows/parent.yaml", parent("child")], [
+      "workflows/child.yaml",
+      "name: child\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: '@missing/behavior'}\n",
+    ]]),
+    inventory,
+  );
+  assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
+});
+
+Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {
+  for (
+    const program of [
+      "import subprocess\nsubprocess.run(['flock','/tmp/workflow.lock','true'])",
+      "import os\nos.system('sleep 30')",
+      "from subprocess import run as execute\nexecute(['bash','-c','sudo -S sleep 30'])",
+      "import subprocess\nsubprocess.run(['ssh','host','flock /tmp/workflow.lock true'])",
+    ]
+  ) {
+    assertEquals(
+      agentPythonFindings(file, program, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      program,
+    );
+    const heredoc = `python3 <<'PY'\n${program}\nPY`;
+    assertEquals(
+      agentShellFindings(file, heredoc, inventory).filter((f) =>
+        f.rule === "custom-control"
+      ).length,
+      1,
+      heredoc,
+    );
+  }
+});
+
+Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['sleep','30']\nsubprocess.run(cmd)\ncmd=['echo','done']\n",
+      "import subprocess\nbase=['sleep','30']\ncmd=base\nbase=['echo','done']\nsubprocess.run(cmd)\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "custom-control"
+      ),
+      source,
+    );
+    assert(
+      agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory).some(
+        (f) => f.rule === "custom-control",
+      ),
+      source,
+    );
+  }
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute(cmd):\n    subprocess.run(cmd)\nexecute(['sleep','30'])\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nfor cmd in [['sleep','30']]:\n    pass\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ncmd,other=['sleep','30'],None\nexecute()\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "unknown-command"
+      ),
+      source,
+    );
+  }
+});
+
+Deno.test("Python cross-scope and walrus writes invalidate captured command provenance", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nif (cmd := ['sleep','30']):\n    execute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nsubprocess.run(cmd)\n",
+      "import subprocess\ndef outer():\n    cmd=['echo','safe']\n    def execute():\n        subprocess.run(cmd)\n    def change():\n        nonlocal cmd\n        cmd=['sleep','30']\n    change()\n    execute()\nouter()\n",
+    ]
+  ) {
+    for (
+      const findings of [
+        agentPythonFindings(file, source, inventory),
+        agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory),
+      ]
+    ) {
+      assert(
+        findings.some((finding) =>
+          finding.rule === "unknown-command" ||
+          finding.rule === "custom-control"
+        ),
+        source,
+      );
+    }
+  }
+});
+
+const moveFixture = JSON.parse(
+  Deno.readTextFileSync(
+    new URL(
+      "../tests/fixtures/shape/proxy-http-source-move.json",
+      import.meta.url,
+    ),
+  ),
+);
+const moveRow = (file: string, count = 1) => ({
+  file,
+  rule: "gateway-http",
+  count,
+  evidence: [] as string[],
+});
+const moveBaseline = (entries: ReturnType<typeof moveRow>[]) => ({
+  schema: SCHEMA,
+  entries,
+});
+function moveSource() {
+  const { from, to, caller } = PROXY_HTTP_MOVE;
+  const origin = new Map<string, string>([[from, moveFixture.from as string], [
+    caller,
+    moveFixture.caller as string,
+  ]]);
+  const head = new Map<string, string>([[
+    from,
+    "export const proxyLaunch = () => {};",
+  ], [
+    to,
+    moveFixture.target as string,
+  ], [
+    caller,
+    (moveFixture.caller as string).replace(
+      'import { proxyGatewayRequest, runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+      'import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";\nimport { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";',
+    ),
+  ]]);
+  const originBaseline = moveBaseline([moveRow(from)]);
+  const proof = (
+    candidate = head,
+    base = origin,
+    previous = originBaseline,
+    before = [moveRow(from)],
+    after = [moveRow(to)],
+  ) =>
+    proveProxyHttpMove(
+      origin,
+      base,
+      candidate,
+      originBaseline,
+      previous,
+      before,
+      after,
+    );
+  return { origin, head, originBaseline, proof };
+}
+Deno.test("the exact approved HTTP extraction conserves one cap while the physical ledger only shrinks", () => {
+  const { head, proof, originBaseline } = moveSource();
+  assertEquals(moveFixture.origin, PROXY_HTTP_MOVE.origin);
+  const move = proof();
+  assert(move);
+  const actual = [moveRow(PROXY_HTTP_MOVE.to)];
+  const raw = moveBaseline([]);
+  assert(ratchet(actual, raw, originBaseline).length > 0);
+  assertEquals(ratchet([], raw, originBaseline), []);
+  assertEquals(ratchet(actual, movedLimits(raw, [move])), []);
+  assertEquals(ratchet(actual, movedLimits(originBaseline, [move])), []);
+  assertEquals(
+    raw.entries,
+    [],
+    "Derived limits never mutate or write the checked-in baseline",
+  );
+  assert(
+    ratchet([], movedLimits(raw, [move]), originBaseline).length > 0,
+    "A physical new row is still forbidden",
+  );
+  assert(
+    proof(head, head, raw, actual, actual),
+    "A retained proved move remains accounted with no ledger row",
+  );
+});
+Deno.test("HTTP source relocation rejects changed definitions, imports, retained debt and new callers", () => {
+  const { head, proof, origin } = moveSource();
+  const { from, to, caller } = PROXY_HTTP_MOVE;
+  const mutate = (file: string, source: string) =>
+    new Map([...head, [file, source]]);
+  for (
+    const candidate of [
+      mutate(to, head.get(to)!.replace("timeoutMs + 1000", "timeoutMs + 2000")),
+      mutate(to, head.get(to)! + "\nexport const another = 1;"),
+      mutate(to, head.get(to)! + '\nimport { helper } from "./other.ts";'),
+      mutate(
+        to,
+        head.get(to)!.replace("commandOutput }", "commandOutput as output }"),
+      ),
+      mutate(from, origin.get(from)!),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'import {proxyGatewayRequest} from "./operations/_lib/node-proxy-http.ts"; proxyGatewayRequest();',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'import * as http from "./operations/_lib/node-proxy-http.ts"; http.proxyGatewayRequest();',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'export * from "./operations/_lib/node-proxy-http.ts";',
+      ),
+      mutate(
+        "extensions/behaviors/new.ts",
+        'const load=import("./operations/_lib/"+"node-proxy-http.ts");',
+      ),
+      mutate(caller, head.get(caller)! + "\nproxyGatewayRequest();"),
+      mutate(caller, head.get(caller)! + "\nconst alias=proxyGatewayRequest;"),
+      mutate(
+        caller,
+        head.get(caller)!.replace("        timeoutMs,", "        timeoutMs+1,"),
+      ),
+    ]
+  ) assertEquals(proof(candidate), undefined);
+  assertEquals(
+    proof(head, origin, moveBaseline([])),
+    undefined,
+    "A deleted old cap cannot be revived",
+  );
+  assertEquals(
+    proof(head, origin, undefined, []),
+    undefined,
+    "No historical cap without actual live debt",
+  );
+  assertEquals(
+    proof(head, origin, undefined, undefined, [moveRow(to, 2)]),
+    undefined,
+    "No count growth",
+  );
+  assertEquals(
+    proof(head, origin, undefined, undefined, [moveRow(from), moveRow(to)]),
+    undefined,
+    "No retained second site",
+  );
+  const changedBase = new Map(origin);
+  changedBase.set(
+    from,
+    origin.get(from)!.replace("timeoutMs + 1000", "timeoutMs + 2000"),
+  );
+  assertEquals(
+    proof(head, changedBase),
+    undefined,
+    "The actual base must preserve the immutable declarations",
+  );
+});
+
+Deno.test("HTTP move proof follows the unchanged caller body and distinguishes local assertions from module loaders", () => {
+  const { head, proof } = moveSource();
+  const { caller } = PROXY_HTTP_MOVE;
+  const added = "extensions/behaviors/assertions.ts";
+  for (
+    const source of [
+      'const require=(ok:unknown)=>{if(!ok)throw new Error("refused")}; require(condition);',
+      "function require(ok:unknown): asserts ok {if(!ok)failure();} require(condition);",
+    ]
+  ) assert(proof(new Map([...head, [added, source]])));
+  for (
+    const source of [
+      "const require=(path:string)=>import(path); require(name);",
+      'import {createRequire} from "node:module"; const load=createRequire(import.meta.url); load(name);',
+      'const load=await import("node:module");',
+      'require("./operations/_lib/"+"node-proxy-http.ts");',
+    ]
+  ) assertEquals(proof(new Map([...head, [added, source]])), undefined);
+  const changedCaller = head.get(caller)!.replace("if (proxy)", "if (true)");
+  assert(changedCaller !== head.get(caller));
+  assertEquals(proof(new Map([...head, [caller, changedCaller]])), undefined);
 });

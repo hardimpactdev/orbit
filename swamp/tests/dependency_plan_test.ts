@@ -20,17 +20,13 @@ const dep = (name: string, constraint = "^1.0", locked = "1.0.0") => ({
 const inventory = (ecosystem = "composer", direct = [dep("acme/one")]) => ({
   commit,
   branch: "main",
-  instanceId: 1,
   scannedAt: "2026-10-25T00:00:00Z",
-  gatewayError: null,
   subProjects: [{
     path: "packages/example",
     ecosystems: [{
       ecosystem,
       manager: ecosystem === "composer" ? "composer" : "npm",
       source: "checkout",
-      reason: "isolated fixture",
-      observedAt: null,
       direct,
     }],
   }],
@@ -312,7 +308,7 @@ Deno.test("existing package selection, aliases, ranges and caret major policy re
   // No approval or execution occurs here. Output is a proposal, including majors.
 });
 
-Deno.test("real legacy inventory reads exact committed manifest/lock inputs in disposable fixtures; its commit identity is insufficient for task worktrees", async () => {
+Deno.test("inventory reads only the selected commit and refuses malformed committed manifests", async () => {
   const dir = await Deno.makeTempDir({ prefix: "swamp-dependency-input-" });
   const git = async (...args: string[]) => {
     const r = await new Deno.Command("git", {
@@ -347,12 +343,7 @@ Deno.test("real legacy inventory reads exact committed manifest/lock inputs in d
       "inputs v1",
     );
     const first = await git("rev-parse", "HEAD");
-    const v1 = await buildInventory(
-      dir,
-      first,
-      null,
-      "controlled unavailable inventory",
-    );
+    const v1 = await buildInventory(dir, first);
     assertEquals(v1[0].ecosystems[0].direct, [dep("acme/one")]);
     await Deno.writeTextFile(
       manifest,
@@ -363,14 +354,8 @@ Deno.test("real legacy inventory reads exact committed manifest/lock inputs in d
       JSON.stringify({ packages: [{ name: "acme/one", version: "2.0.0" }] }),
     );
     assertEquals(
-      await buildInventory(dir, first, null, "controlled"),
-      v1.map((s) => ({
-        ...s,
-        ecosystems: s.ecosystems.map((e) => ({
-          ...e,
-          reason: "Gateway unavailable: controlled",
-        })),
-      })),
+      await buildInventory(dir, first),
+      v1,
     );
     await git("add", ".");
     await git(
@@ -385,7 +370,7 @@ Deno.test("real legacy inventory reads exact committed manifest/lock inputs in d
     const second = await git("rev-parse", "HEAD");
     assert(first !== second);
     assertEquals(
-      (await buildInventory(dir, second, null, "controlled"))[0].ecosystems[0]
+      (await buildInventory(dir, second))[0].ecosystems[0]
         .direct,
       [dep("acme/one", "^2.0", "2.0.0")],
     );
@@ -400,8 +385,103 @@ Deno.test("real legacy inventory reads exact committed manifest/lock inputs in d
       "-qm",
       "invalid input",
     );
-    await assertRejects(() => buildInventory(dir, "HEAD", null, "controlled"));
+    await assertRejects(() => buildInventory(dir, "HEAD"));
   } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("shared dependency scan needs only a checkout and branch and launches no Gateway client", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "lane25-inventory-scan-" });
+  const Original = Deno.Command;
+  const git = async (...args: string[]) => {
+    const result = await new Original("git", {
+      args: ["-C", dir, ...args],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assert(result.success, new TextDecoder().decode(result.stderr));
+    return new TextDecoder().decode(result.stdout).trim();
+  };
+  let changedCommand = false;
+  try {
+    await git("init", "-qb", "main");
+    await Deno.writeTextFile(
+      `${dir}/composer.json`,
+      JSON.stringify({ require: { "acme/one": "^1.0" } }),
+    );
+    await Deno.writeTextFile(
+      `${dir}/composer.lock`,
+      JSON.stringify({ packages: [{ name: "acme/one", version: "1.0.0" }] }),
+    );
+    await git("add", ".");
+    await git(
+      "-c",
+      "user.name=isolated-fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-qm",
+      "committed dependency inputs",
+    );
+    await git("remote", "add", "origin", dir);
+    const expectedCommit = await git("rev-parse", "HEAD");
+    const dirty = JSON.stringify({ require: { "acme/one": "^9.0" } });
+    await Deno.writeTextFile(`${dir}/composer.json`, dirty);
+
+    const commands: string[] = [];
+    class ObservedCommand extends Original {
+      constructor(command: string | URL, options?: Deno.CommandOptions) {
+        commands.push(String(command));
+        if (command !== "git") throw new Error("Unexpected network client");
+        super(command, options);
+      }
+    }
+    Object.defineProperty(Deno, "Command", {
+      value: ObservedCommand,
+      configurable: true,
+    });
+    changedCommand = true;
+    let saved: Record<string, unknown> | undefined;
+    await behavior.methods.scan.execute({}, {
+      globalArgs: behavior.globalArguments.parse({
+        checkoutDir: dir,
+        branch: "main",
+      }),
+      writeResource: (spec, name, value) => {
+        assertEquals([spec, name], ["inventory", "inventory"]);
+        saved = value;
+        return Promise.resolve({ name });
+      },
+      logger: { info() {} },
+    });
+    assert(saved);
+    assertEquals(saved.commit, expectedCommit);
+    assertEquals(Object.keys(saved).sort(), [
+      "branch",
+      "commit",
+      "scannedAt",
+      "subProjects",
+    ]);
+    assertEquals(saved.subProjects, [{
+      path: ".",
+      ecosystems: [{
+        ecosystem: "composer",
+        manager: "composer",
+        source: "checkout",
+        direct: [dep("acme/one")],
+      }],
+    }]);
+    assert(commands.length > 0);
+    assert(commands.every((command) => command === "git"));
+    assertEquals(await Deno.readTextFile(`${dir}/composer.json`), dirty);
+  } finally {
+    if (changedCommand) {
+      Object.defineProperty(Deno, "Command", {
+        value: Original,
+        configurable: true,
+      });
+    }
     await Deno.remove(dir, { recursive: true });
   }
 });

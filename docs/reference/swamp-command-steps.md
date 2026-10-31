@@ -2,7 +2,8 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{SwampCommandStep,SwampVaultExecutionCopy}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy,SwampRunSubscriber}.php
+  - apps/gateway/app/Jobs/Operations/ProjectSwampTerminal.php
 ---
 
 # Swamp command steps
@@ -11,7 +12,7 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 ## Secret inputs
 
-Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper delegates to the native vault push primitive, which sends the value on stdin and retains only a synchronization digest. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
+Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -24,7 +25,9 @@ inputs:
 
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 
-The primitive requires native remote stdin support and the exact approved vault permission. Official e459 does not accept remote vault-put stdin. That upstream gap remains blocked; the helper adds no access or runtime workaround. Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
+Official e459 accepts this server protocol even though its remote CLI refuses stdin. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`; no refresh hook is supplied. The primitive still requires approved vault authority; it adds no permission. Official e459 authorizes `write` on `vault:<name>` with the key in request context. That action also admits delete and annotate; a `methods: [put]` restriction does not narrow it because the handler supplies no method name. A put-only request does not authorize a broader write grant.
+
+Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ## Terminal outputs
 
@@ -35,6 +38,18 @@ The shared subscriber calls `projectTerminal(Operation $operation, array $termin
 A `completed` event can carry a failed run status. Native `interrupted` maps to failed. A failed or cancelled run can have no selected output because the step was skipped. A successful run requires its public JSON object. Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
 
 ### Event connection
+
+The existing `orbit:agent-view` Gateway observer also keeps the shared native run connection. It joins the private `orbit` record channel; a committed native binding publishes an Operation notice there. After subscription acknowledgement and on observer startup, it reads the active bound Operations once to cover notices missed while disconnected. Only kinds with `terminal_result` are followed. It multiplexes `run.attach` requests on one native socket; receiving events never waits for a workflow to finish. Terminal delivery synchronously reads its history through the existing shared helper, independently of Horizon.
+
+The native event connection and shared history reader accept messages and frames up to 8 MiB. Full run metadata and intent can exceed the Reverb client's 64 KiB message limit; Reverb keeps its existing limit. A run beyond the native bound cannot be projected through this connection and must not be treated as successful delivery.
+
+A matching terminal frame is reduced to the Operation ID, bound run ID and actual native status. Laravel synchronously dispatches `ProjectSwampTerminal` in the existing Gateway observer process. It reloads the Operation and its declaration and calls the same `SwampCommandStep` helper. Terminal projection therefore remains available when Horizon is stopped, including a failed Horizon installation or restart. There is one history request per delivery and no native execution command. An explicit attach `not_found` dispatches the same job without a claimed status for bounded late-result recovery.
+
+A failed delivery keeps the binding for reattachment; the observer drops it only after the handler returns. Authorization failures and `run.elsewhere` do not invent a terminal result. Duplicate frames are suppressed on the connection; the helper's row lock and terminal guard protect duplicate delivery after a process restart.
+
+Native socket reconnection reattaches the remembered active bindings. It does not start, resume, cancel or retry a workflow. Families add no subscriber, callback, timer or status poller. Native resume of an already terminal Operation remains a separate lifecycle contract; this observer does not reopen it.
+
+The start connection can receive `started` and a terminal event in the same message batch. After binding the confirmed root run, `StartSwampRun` announces the binding on the existing private record channel. The observer attaches, or uses its existing explicit late-attach recovery if the run has already finished. Admission never waits for a history request and never queues terminal projection to Horizon. An unavailable terminal result leaves the accepted run bound without changing the start outcome or resubmitting it.
 
 Official e459 supports `run.attach` with `{runId, afterSeq}` for an active run. It returns `run.attached` and streams events on that request id. Completed runs leave the active registry, so this is not a durable subscription after completion. The shared event-connection owner must preserve the terminal event; families must not invent a polling fallback.
 

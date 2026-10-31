@@ -13,6 +13,7 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\Shared\StoredValue;
+use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
 use App\Support\ValidatedData;
 use Closure;
@@ -138,6 +139,7 @@ final class AgentViewSubscriber
         private readonly int $reverbPort = 443,
         private readonly ?AgentViewPublisher $publisher = null,
         ?Closure $sockets = null,
+        private readonly ?SwampRunSubscriber $swamp = null,
     ) {
         $this->idleSockets = [$socket];
         $this->sockets = $sockets ?? static fn (): WebSocketClient => new StreamWebSocketClient;
@@ -173,6 +175,7 @@ final class AgentViewSubscriber
 
             return 'stopped';
         } finally {
+            $this->swamp?->close();
             $this->publisher?->stop();
             $this->closeAll();
 
@@ -187,6 +190,7 @@ final class AgentViewSubscriber
     /** One loop pass: keep a link to every serving Reverb, handle what arrived, and keep the view current. */
     public function pass(): void
     {
+        $this->swamp?->pass();
         // Runs started before a disconnect still meet their deadline, and queued work keeps retrying.
         $this->publisher?->poll();
 
@@ -393,6 +397,11 @@ final class AgentViewSubscriber
         $link->lastMessageAt = $this->now();
         $link->pingSentAt = null;
         $this->log->info('The agent view subscriber connected to Reverb.', ['address' => $link->address]);
+        if ($this->swamp !== null) {
+            $channel = 'private-orbit';
+            $auth = $connection->key.':'.hash_hmac('sha256', "{$socketId}:{$channel}", $connection->secret);
+            $this->send($link, ['event' => 'pusher:subscribe', 'data' => ['channel' => $channel, 'auth' => $auth]]);
+        }
         $this->refresh();
         // Streams may have opened, or lost their viewer's access, while no subscriber watched.
         $this->publisher?->logStreamsChanged();
@@ -548,6 +557,18 @@ final class AgentViewSubscriber
         }
 
         $channel = $message['channel'] ?? null;
+        if ($this->swamp !== null && $channel === 'private-orbit') {
+            if ($event === 'pusher_internal:subscription_succeeded') {
+                $this->swamp->recover();
+            } elseif (in_array($event, ['operation.created', 'operation.updated'], true)) {
+                $id = $this->data($message)['id'] ?? null;
+                if (is_int($id) && $id > 0) {
+                    $this->swamp->follow($id);
+                }
+            }
+
+            return;
+        }
 
         if (is_string($event) && is_string($channel) && preg_match(self::LOG_CHANNEL, $channel, $matches) === 1) {
             $this->handleLogChannel($link, (int) $matches[1], $event, $message);

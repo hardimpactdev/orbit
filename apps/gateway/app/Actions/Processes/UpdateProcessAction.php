@@ -38,35 +38,51 @@ final readonly class UpdateProcessAction
     public function admit(Process $process, UpdateProcessData $update, ?Node $caller = null, ?string $requestId = null): Operation
     {
         return $this->lease->run($process, fn (Process $fresh): Operation => DB::transaction(function () use ($fresh, $update, $caller, $requestId): Operation {
-            $this->databaseServers->assertUpdatable($fresh);
-            if (isset($fresh->runtime_config['preset'])) {
-                throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
-            }
-            $data = $update->forProcess($fresh);
-            $target = $this->targets->forInstallation($fresh);
-            if ($data->user !== null && $data->runtime === ProcessRuntime::Systemd) {
-                $home = $this->users->home($target->node, $data->user);
-                $data = new AddProcessData(
-                    $data->targetType, $data->targetId, $data->name, $data->runtime,
-                    $data->command, $data->image, $data->workingDirectory ?? $home,
-                    $data->environment, $data->ports, $data->volumes, $data->restartPolicy,
-                    false, $data->keepAlive, user: $data->user, restartOnDeploy: $data->restartOnDeploy,
-                );
-            }
-            $attributes = $this->specifications->attributes($data, $target);
-            $update->assertPreservesOmittedFields($fresh, $attributes['runtime_config']);
-            $candidate = clone $fresh;
-            $candidate->fill($attributes);
-            $this->listeners->assertPreservesRoutes($candidate);
-            $retiredRuntime = $fresh->runtime !== $attributes['runtime'] ? $fresh->runtime : $fresh->retired_runtime;
-            $fresh->fill($attributes);
-            if ($fresh->desired_state === DesiredProcessState::Running) {
-                $this->runtime->assertCanStart($fresh);
-            }
-            $fresh->retired_runtime = $retiredRuntime;
-            $fresh->fill(['status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null])->save();
+            $this->record($fresh, $update);
 
             return app(ProcessOperationAdmission::class)->execute($fresh, 'update', caller: $caller, requestId: $requestId);
         }));
+    }
+
+    /** Record validated desired intent only; the owning parent performs and projects the effects. */
+    public function recordIntent(Process $process, UpdateProcessData $update): Process
+    {
+        return $this->lease->run($process, fn (Process $fresh): Process => DB::transaction(
+            fn (): Process => $this->record($fresh, $update),
+        ));
+    }
+
+    private function record(Process $fresh, UpdateProcessData $update): Process
+    {
+        $this->databaseServers->assertUpdatable($fresh);
+        if (isset($fresh->runtime_config['preset'])) {
+            throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
+        }
+        $data = $update->forProcess($fresh);
+        $target = $this->targets->forInstallation($fresh);
+        if ($data->user !== null && $data->runtime === ProcessRuntime::Systemd) {
+            $home = $this->users->home($target->node, $data->user);
+            $data = new AddProcessData(
+                $data->targetType, $data->targetId, $data->name, $data->runtime,
+                $data->command, $data->image, $data->workingDirectory ?? $home,
+                $data->environment, $data->ports, $data->volumes, $data->restartPolicy,
+                false, $data->keepAlive, user: $data->user, restartOnDeploy: $data->restartOnDeploy, requiredMountPaths: $data->requiredMountPaths,
+            );
+        }
+        $this->specifications->assertOptions($data);
+        $attributes = $this->specifications->attributes($data, $target);
+        $update->assertPreservesOmittedFields($fresh, $attributes['runtime_config']);
+        $candidate = clone $fresh;
+        $candidate->fill($attributes);
+        $this->listeners->assertPreservesRoutes($candidate);
+        $retiredRuntime = $fresh->runtime !== $attributes['runtime'] ? $fresh->runtime : $fresh->retired_runtime;
+        $fresh->fill($attributes);
+        if ($fresh->desired_state === DesiredProcessState::Running) {
+            $this->runtime->assertCanStart($fresh);
+        }
+        $fresh->retired_runtime = $retiredRuntime;
+        $fresh->fill(['status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null])->save();
+
+        return $fresh;
     }
 }

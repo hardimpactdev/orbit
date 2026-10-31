@@ -6,6 +6,9 @@ use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\Logs\LogStreamBroadcast;
+use App\Domain\Nodes\NodeBootstrapProjection;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
@@ -17,12 +20,17 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
+use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
+use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Bus;
 use Psr\Log\NullLogger;
+use Tests\Support\FakeSwampEventSocket;
 
 final class FakeAgentViewSocket implements WebSocketClient
 {
@@ -109,7 +117,7 @@ function subscriber_managed_node(string $name, string $address): Node
  * @param  list<FakeAgentViewSocket>  $extra  Receives each socket the subscriber makes for a second link.
  * @return array{AgentViewSubscriber, FakeAgentViewSocket, object{now: float, commit: string}}
  */
-function agent_view_subscriber(array &$extra = [], ?AgentViewPublisher $publisher = null): array
+function agent_view_subscriber(array &$extra = [], ?AgentViewPublisher $publisher = null, ?SwampRunSubscriber $swamp = null): array
 {
     $socket = new FakeAgentViewSocket;
     $state = new class
@@ -136,6 +144,7 @@ function agent_view_subscriber(array &$extra = [], ?AgentViewPublisher $publishe
         sockets: static function () use (&$extra): FakeAgentViewSocket {
             return $extra[] = new FakeAgentViewSocket;
         },
+        swamp: $swamp,
     );
 
     return [$subscriber, $socket, $state];
@@ -959,5 +968,102 @@ describe('the live log channels', function (): void {
         $this->subscriber->pass();
 
         expect($this->publisher->streamsChanged)->toBe(2);
+    });
+});
+
+function registerSubscriberNativeKind(): void
+{
+    app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.observer_record' => ['workflow' => 'operation-observer-record', 'projection' => NodeBootstrapProjection::class,
+                'terminal_result' => ['job' => 'completion', 'step' => 'result']]];
+        }
+    }]));
+}
+
+function subscriberNativeOperation(): Operation
+{
+    $node = subscriber_managed_node('native-observer-root', '10.44.0.14');
+
+    return Operation::query()->create(['kind' => 'test.observer_record', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'running', 'sequence' => 3, 'input' => [],
+        'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+}
+
+describe('the shared native observer on the existing Gateway observer process', function (): void {
+    afterEach(fn () => Carbon::setTestNow());
+
+    it('signs the existing private record channel and discovers a binding from its committed record notice', function (): void {
+        Bus::fake([ProjectSwampTerminal::class]);
+        [, $credentials] = activate_websocket_role();
+        registerSubscriberNativeKind();
+        config(['swamp.run_token' => 'private-native-token']);
+        $native = new FakeSwampEventSocket;
+        $swamp = new SwampRunSubscriber($native, new NullLogger);
+        $extra = [];
+        [$subscriber, $reverb] = agent_view_subscriber($extra, swamp: $swamp);
+        $subscriber->pass();
+        $subscription = collect($reverb->sent)->firstWhere('data.channel', 'private-orbit');
+        expect($subscription['data']['auth'])->toBe($credentials->appKey.':'.hash_hmac('sha256', '1234.5678:private-orbit', $credentials->appSecret));
+        $reverb->push(['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-orbit', 'data' => '{}']);
+        $subscriber->pass();
+        $operation = subscriberNativeOperation();
+        $reverb->push(['event' => 'operation.updated', 'channel' => 'private-orbit', 'data' => json_encode(['id' => $operation->id])]);
+
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect(array_column($native->sent, 'type'))->toBe(['run.attach']);
+        expect($native->sent[0]['payload'])->toBe(['runId' => $operation->state['swamp_run_id'], 'afterSeq' => 0]);
+        $id = $native->sent[0]['id'];
+        $native->push(['type' => 'run.attached', 'id' => $id, 'payload' => ['runId' => $operation->state['swamp_run_id'], 'kind' => 'workflow-run']],
+            ['type' => 'event', 'id' => $id, 'event' => ['kind' => 'completed', 'seq' => 8,
+                'run' => ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-observer-record', 'status' => 'succeeded']]]);
+        $subscriber->pass();
+        Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+    });
+
+    it('covers a binding that was committed after startup but before the record subscription acknowledgement', function (): void {
+        Bus::fake([ProjectSwampTerminal::class]);
+        activate_websocket_role();
+        registerSubscriberNativeKind();
+        config(['swamp.run_token' => 'private-native-token']);
+        $native = new FakeSwampEventSocket;
+        $extra = [];
+        [$subscriber, $reverb] = agent_view_subscriber($extra, swamp: new SwampRunSubscriber($native, new NullLogger));
+        $subscriber->pass();
+        $operation = subscriberNativeOperation();
+        expect($native->sent)->toBeEmpty();
+        $reverb->push(['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-orbit', 'data' => '{}']);
+
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect(array_column($native->sent, 'type'))->toBe(['run.attach']);
+        expect($native->sent[0]['payload']['runId'])->toBe($operation->state['swamp_run_id']);
+    });
+
+    it('does not accept an Operation notice from an unsigned public or presence channel', function (): void {
+        Bus::fake([ProjectSwampTerminal::class]);
+        activate_websocket_role();
+        registerSubscriberNativeKind();
+        config(['swamp.run_token' => 'private-native-token']);
+        $native = new FakeSwampEventSocket;
+        $extra = [];
+        [$subscriber, $reverb] = agent_view_subscriber($extra, swamp: new SwampRunSubscriber($native, new NullLogger));
+        $subscriber->pass();
+        $reverb->push(['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-orbit', 'data' => '{}']);
+        $subscriber->pass();
+        $operation = subscriberNativeOperation();
+        $reverb->push(['event' => 'operation.updated', 'channel' => 'orbit', 'data' => json_encode(['id' => $operation->id])],
+            ['event' => 'operation.updated', 'channel' => 'presence-node.'.$operation->node_id, 'data' => json_encode(['id' => $operation->id])]);
+
+        $subscriber->pass();
+        $subscriber->pass();
+
+        expect($native->sent)->toBeEmpty();
+        Bus::assertNothingDispatched();
     });
 });

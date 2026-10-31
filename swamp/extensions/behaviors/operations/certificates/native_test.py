@@ -72,6 +72,7 @@ class CertificateNative(NativeTestCase):
         steps=[]
         for name,method in [('request','roleRequest'),('sign','sign'),('publish','rolePublish')]:
             inputs=dict(operation_id=19,node_id=2,target_node_id=9,kind='node.role_add',run_id='${{ run.id }}',leaf=leaf)
+            if name=='sign': inputs['native_stdout']='{"certificates":[]}'
             if name in ('sign','publish'): inputs['request']='${{ steps.request.outputs.request }}'
             if name=='publish': inputs['signed']='${{ steps.sign.outputs.signed }}'
             step=dict(name=name,task=dict(type='behavior',behaviorType='@nckrtl/certificates',behaviorName='orbit-certificate-signing' if name=='sign' else 'role-node-9',methodName=method,inputs=inputs))
@@ -89,6 +90,6 @@ class CertificateNative(NativeTestCase):
         for node in (2,209):
             result=self.cli('workflow','evaluate','operation-certificate-converge','--input',json.dumps({'operation_id':19,'node_id':node,'kind':'certificate.converge'}))
             workflow=json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
-            self.assertTrue(all(step['target']==('orbit-node-209' if step['name']=='sign' else 'orbit-node-'+str(node)) for step in workflow['jobs'][0]['steps']))
+            self.assertTrue(all(step['target']==('orbit-node-209' if step['name'] in ('sign','sign-http','sign-http-input') else 'orbit-node-'+str(node)) for step in workflow['jobs'][0]['steps']))
 
 if __name__=='__main__':unittest.main()

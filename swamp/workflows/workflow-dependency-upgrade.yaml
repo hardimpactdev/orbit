@@ -19,7 +19,7 @@ jobs:
     description: scan → plan → assert
     steps:
       - name: scan
-        description: Gateway inventory, with the scratch checkout where it is stale
+        description: Exact-commit manifests and lockfiles from the scratch checkout
         task:
           type: model_method
           modelType: "@nckrtl/native-host-method"

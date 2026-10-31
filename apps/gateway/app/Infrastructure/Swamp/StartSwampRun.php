@@ -6,6 +6,7 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -47,6 +48,9 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
+            if (isset($declaration['terminal_result'])) {
+                app(OperationBroadcaster::class)->changed($operation, true);
+            }
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException
                 ? $exception : ($accepted ? $this->uncertain()
@@ -138,6 +142,7 @@ final readonly class StartSwampRun
             $stage = 'receive';
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                $confirmed = null;
                 foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;
@@ -147,9 +152,9 @@ final readonly class StartSwampRun
                         && ($event['workflowName'] ?? null) === $payload['workflowIdOrName']
                         && is_string($event['runId'] ?? null) && Str::isUuid($event['runId'])
                         && in_array($event['kind'] ?? null, ['started', 'failed', 'cancelled'], true)) {
-                        return ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
+                        $confirmed ??= ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
                     }
-                    if (($message['type'] ?? null) === 'error') {
+                    if (($message['type'] ?? null) === 'error' && $confirmed === null) {
                         $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
                         $redact = static function (mixed $value, int $limit) use ($endpoint): string {
                             if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
@@ -167,6 +172,9 @@ final readonly class StartSwampRun
                         ]);
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }
+                }
+                if ($confirmed !== null) {
+                    return $confirmed;
                 }
             }
             throw $this->uncertain();

@@ -128,7 +128,7 @@ function handshake($client, string $mode): bool
     return $mode !== 'bad-accept';
 }
 
-$connections = $mode === 'pusher' ? 2 : 1;
+$connections = in_array($mode, ['pusher', 'native-terminal'], true) ? 2 : 1;
 
 for ($connection = 1; $connection <= $connections; $connection++) {
     $client = @stream_socket_accept($server, 30);
@@ -158,6 +158,27 @@ for ($connection = 1; $connection <= $connections; $connection++) {
     }
 
     if (! handshake($client, $mode)) {
+        fclose($client);
+
+        continue;
+    }
+
+    if ($mode === 'native-terminal') {
+        $run = json_decode(file_get_contents($secret), true, flags: JSON_THROW_ON_ERROR);
+        $request = json_decode((readFrame($client) ?? [0, '{}'])[1], true, flags: JSON_THROW_ON_ERROR);
+        say('native-request='.$request['type']);
+        if ($request['type'] === 'run.attach') {
+            fwrite($client, text(['type' => 'run.attached', 'id' => $request['id'], 'payload' => [
+                'runId' => $run['id'], 'kind' => 'workflow-run', 'startedAt' => $run['startedAt'],
+            ]]));
+            $eventRun = $run;
+            unset($eventRun['jobs']);
+            fwrite($client, text(['type' => 'event', 'id' => $request['id'], 'event' => [
+                'seq' => 29, 'kind' => $run['status'] === 'cancelled' ? 'cancelled' : 'completed', 'run' => $eventRun,
+            ]]));
+        } elseif ($request['type'] === 'workflow.history.get') {
+            fwrite($client, text(['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $run]]));
+        }
         fclose($client);
 
         continue;
@@ -200,9 +221,10 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         continue;
     }
 
-    if ($mode === 'huge') {
+    if (in_array($mode, ['huge', 'huge-native'], true)) {
         // A frame header that claims 2 MiB: the client must close instead of buffering it.
-        fwrite($client, chr(0x81).chr(127).pack('J', 2 * 1024 * 1024).str_repeat('x', 1000));
+        $claimedBytes = $mode === 'huge-native' ? 9 * 1024 * 1024 : 2 * 1024 * 1024;
+        fwrite($client, chr(0x81).chr(127).pack('J', $claimedBytes).str_repeat('x', 1000));
         say('closed='.(fread($client, 1) === '' ? 'yes' : 'no'));
         fclose($client);
 

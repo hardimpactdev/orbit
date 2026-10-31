@@ -130,21 +130,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/_lib/inventory.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "curl",
-        "git"
-      ]
-    },
-    {
       "file": "extensions/behaviors/_lib/maintenance_worker.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -163,16 +148,10 @@
     {
       "file": "extensions/behaviors/_lib/package_sandbox.ts",
       "rule": "agent-action",
-      "count": 12,
+      "count": 1,
       "evidence": [
         "package.session"
       ]
-    },
-    {
-      "file": "extensions/behaviors/_lib/package_sandbox.ts",
-      "rule": "agent-dynamic",
-      "count": 7,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/_lib/package_target.ts",
@@ -310,19 +289,12 @@
     },
     {
       "file": "extensions/behaviors/node-worker/canary.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/node-worker/canary.ts",
       "rule": "multi-action",
-      "count": 8,
+      "count": 7,
       "evidence": [
         "/usr/bin/cat",
         "/usr/bin/hostname",
         "/usr/bin/id",
-        "/usr/bin/python3",
         "/usr/bin/stat",
         "/usr/bin/sudo",
         "/usr/bin/systemctl",
@@ -427,12 +399,6 @@
     },
     {
       "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
-      "rule": "agent-dynamic",
-      "count": 5,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
       "rule": "custom-control",
       "count": 1,
       "evidence": [
@@ -520,14 +486,6 @@
     },
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "gateway-http",
       "count": 3,
       "evidence": [
@@ -562,12 +520,6 @@
     {
       "file": "extensions/behaviors/operations/_lib/node-agent.ts",
       "rule": "agent-dynamic",
-      "count": 5,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/node-proxy.ts",
-      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -596,12 +548,6 @@
     {
       "file": "extensions/behaviors/operations/ai-router/accounts.ts",
       "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/ai-router/source.ts",
-      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -670,7 +616,7 @@
     {
       "file": "extensions/behaviors/operations/certificates/mod.ts",
       "rule": "gateway-http",
-      "count": 3,
+      "count": 2,
       "evidence": [
         "<unknown> <unknown>"
       ]
@@ -703,12 +649,6 @@
       "file": "extensions/behaviors/operations/certificates/role-publication.ts",
       "rule": "inline-script",
       "count": 89,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/certificates/signing.ts",
-      "rule": "inline-script",
-      "count": 57,
       "evidence": []
     },
     {
@@ -1026,12 +966,6 @@
       "file": "extensions/behaviors/operations/documents/cleanup_program.ts",
       "rule": "inline-script",
       "count": 72,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/documents/cleanup.ts",
-      "rule": "gateway-http",
-      "count": 1,
       "evidence": []
     },
     {
@@ -1848,12 +1782,6 @@
     },
     {
       "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_local.ts",
-      "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node-bootstrap/bootstrap_local.ts",
       "rule": "inline-script",
       "count": 32,
       "evidence": []
@@ -2460,26 +2388,8 @@
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/agent.ts",
-      "rule": "agent-action",
-      "count": 1,
-      "evidence": [
-        "process.activate-unit",
-        "process.check-release",
-        "process.control",
-        "process.converge-container",
-        "process.remove",
-        "process.stage-unit",
-        "schedule.activate",
-        "schedule.remove",
-        "schedule.run",
-        "vite.check-listener",
-        "vite.set-traffic"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/agent.ts",
       "rule": "agent-dynamic",
-      "count": 6,
+      "count": 1,
       "evidence": []
     },
     {
@@ -3040,7 +2950,7 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
       "rule": "agent-action",
-      "count": 9,
+      "count": 1,
       "evidence": [
         "agent.install",
         "image.restart-phase",
@@ -3051,7 +2961,7 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_guest.ts",
       "rule": "agent-dynamic",
-      "count": 5,
+      "count": 1,
       "evidence": []
     },
     {
@@ -3102,19 +3012,10 @@
     {
       "file": "extensions/behaviors/operations/task-vms/image_ssh.ts",
       "rule": "agent-action",
-      "count": 10,
-      "evidence": [
-        "agent.install",
-        "image.owner",
-        "image.start-phase",
-        "pi.receive-artifact"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/image_ssh.ts",
-      "rule": "agent-dynamic",
       "count": 1,
-      "evidence": []
+      "evidence": [
+        "image.owner"
+      ]
     },
     {
       "file": "extensions/behaviors/operations/task-vms/image_ssh.ts",
@@ -3681,15 +3582,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/orbit_deps.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/orbit_driver.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3793,38 +3685,14 @@
       "evidence": []
     },
     {
-      "file": "models/@nckrtl/certificates/orbit-certificate-signing.yaml",
-      "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-dependency-package.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-dependency-results-prune.yaml",
       "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
     },
     {
-      "file": "workflows/workflow-dependency-routine.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-group-fanout.yaml",
       "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "unknown-nested-workflow",
       "count": 1,
       "evidence": []
     },
@@ -3847,12 +3715,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-groups-driver.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-horizon-new-dawn-detect.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -3861,18 +3723,6 @@
     {
       "file": "workflows/workflow-maintenance-workers.yaml",
       "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-node-worker-enroll.yaml",
-      "rule": "unknown-nested-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-node-worker-rotation.yaml",
-      "rule": "unknown-nested-workflow",
       "count": 1,
       "evidence": []
     },

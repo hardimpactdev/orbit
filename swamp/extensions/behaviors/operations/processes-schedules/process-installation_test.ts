@@ -77,6 +77,7 @@ Deno.test("Process install stages and activates an owned stopped unit, returning
     unit: base.name,
     content,
     environment: "# Orbit Process 7\nTOKEN=private-value\n",
+    required_mount_paths: [],
   });
   assertEquals(f.calls[1].input, {
     process_id: 7,
@@ -84,6 +85,7 @@ Deno.test("Process install stages and activates an owned stopped unit, returning
     desired: "stopped",
     on_demand: false,
     change: "create",
+    required_mount_paths: [],
   });
   assertEquals(f.calls.every((c) => c.pin === base.agent_sha256), true);
   assertEquals(JSON.stringify(f.calls.slice(1)).includes(content), false);
@@ -326,4 +328,17 @@ Deno.test("native parent Process installation needs no agent digest", async () =
   );
   assertEquals(f.calls.length, 3);
   assertEquals(f.calls.every((call) => call.pin === undefined), true);
+});
+
+Deno.test("Process installation carries the same admitted dependencies to stage and activation", async () => {
+  const f = fixture();
+  const paths = ["/srv/state", "/srv/source"];
+  await installProcess(
+    { ...base, required_mount_paths: paths },
+    f.material,
+    undefined,
+    f.invoke,
+  );
+  assertEquals(f.calls[0].input.required_mount_paths, paths);
+  assertEquals(f.calls[1].input.required_mount_paths, paths);
 });

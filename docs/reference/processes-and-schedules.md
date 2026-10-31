@@ -30,6 +30,12 @@ The SDK exposes the mutation's Process or Operation result through `ProcessMutat
 
 Parent workflow admission uses `RecordProcessIntentAction::execute(AddProcessData, ProcessTarget)` inside its existing intent transaction, before immutable capture. The target comes from `ProcessTargetResolver` for the stored owner. This action creates or reuses the owned definition with the normal name/specification refusals. It preserves an existing desired state and records a new definition as provisioning. It creates no Operation and runs no runtime or agent call. The parent owns execution and final status projection. Capture itself only reads the admitted record.
 
+### Transfer installation capture
+
+A transfer captures both Process placements before it starts native execution. `ProcessInstallationBatch::materialForCapture(Instance, ProcessTarget, capture)` renders the existing installation material at either captured target while database ownership remains on the captured origin. It uses the same Process renderers and account placeholders as installation admission. It performs no account discovery or host action. A changed origin Node, checkout, member set or Process specification refuses the snapshot before publication.
+
+The owning parent passes that protected material through the shared [command-step execution copy](/reference/swamp-command-steps) and keeps only vault/key descriptors outside public intent. Public Process descriptors come from `ProcessInstallationBatch::input`. Swamp executes from these captured inputs without an intermediate Gateway placement projection. The transfer parent owns placement changes, fixed vault fields and final projection.
+
 ## Owners
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
@@ -156,9 +162,17 @@ Process removal runs the tagged [Process removal guards](/reference/extensions#p
 
 ### Update in place
 
-[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
+JSON requests for ordinary systemd Processes accept `required_mount_paths`, a public list of up to 64 unique absolute paths. Each path is at most 4096 UTF-8 bytes and must have no control characters, `.` or `..` components, repeated slashes or trailing slash except `/`. Orbit renders these literal paths in one `RequiresMountsFor` directive, which gives systemd mount dependencies and ordering. Native installation checks that the captured directive matches the admitted list and that each path exists before running activation.
+
+Create defaults to an empty list; update omission preserves the stored list, and explicit `[]` clears it. Null is invalid. Docker accepts only an empty list; presets own their configuration and reject this explicit field. The list does not create mounts or prove that a mounted directory contains the intended state. State migration needs a separate admitted mount definition, identity check and ordered handoff; this option does not authorize a Serve self-update.
+
+[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, `user`, and `required_mount_paths` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
 
 The resulting specification must satisfy the runtime rules. The Process ID, name, owner, and desired state stay the same; identity, preset, and initial-start fields cannot be changed. A supplied environment map or list replaces that whole field. An empty map or list clears it. Explicit `working_directory: null` restores the Docker image default or the systemd owner default; omission keeps the current directory. Create defaults do not apply to updates. The CLI, PHP SDK, and MCP use the same partial-update contract.
+
+An owning maintenance parent can call `UpdateProcessAction::recordIntent(Process, UpdateProcessData)` to save that same validated intent without admitting a native run. It uses the same Process lease and transaction as ordinary update, preserves desired state and omitted fields, and leaves the Process provisioning. The normal API still calls `admit()` and starts Swamp. Record-only capture adds no execution endpoint or alternate runtime.
+
+The parent captures the saved definition through `ProcessOperationAdmission::inputForTarget` and the existing `ProcessOperationSecrets::materialFor`. Its existing foreground execution can compose the shared one-action Process command files. After verifying its terminal outcome, it calls `ProcessOperationCompletion::completeRecordedUpdate(Process, capturedInput, OperationOutcome)`. This reuses the normal Process lifecycle, activation hash and status projection without inventing a native run or child Operation. Failure retains the staged definition and prior activation metadata. The parent owns its real Operation and records its terminal outcome separately; an outer transaction rolls back the saved intent when Operation creation fails.
 
 A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard an omitted field. For example, switching Docker to systemd requires explicit `image: null`, `ports: []`, and `volumes: []` for populated Docker fields. The SDK uses `clearImage: true` for an explicit null image and `clearWorkingDirectory: true` for an explicit null directory.
 
@@ -373,3 +387,13 @@ Four internal callers still require synchronous bootstrap completion: AI Router 
 Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Rollback is a revert PR.
 
 Process updates run in `operation-process-update` on the admitted Node. The Gateway records the requested specification and projects the native outcome. It does not execute an update or record executor steps.
+
+### Placed Process command components
+
+The `@nckrtl/process-command-assets` metadata method resolves shipped Python scripts and serializes the public `control` and optional `installation` descriptors. It performs no host action and reads no private material. Parents run each script in a separate placed `command/shell` step on the same worker.
+
+The control script performs one start, stop or restart. The enable script changes only systemd boot policy. Hibernation stop therefore preserves boot policy and recorded desired state. Inspect returns bounded owned state; verify asserts the requested state once. Native dependency conditions, guards and resume control execution. A parent never hides these actions in a TypeScript installer.
+
+Each command checks the exact Process identity. Systemd files must be regular, root-owned, in the root group, singly linked and not writable by other users; their owner marker must match. Docker commands use the local Unix socket and verify the canonical managed Process labels before acting. Refusals return fixed error codes without command output.
+
+Parents can also compose the shipped Process installation and retirement scripts. Each file performs one action: protected environment publication, unit staging, validation, backup, publication, reload, control, verification, restoration or cleanup. Docker creation, rename, control and removal remain distinct native steps. Existing installation material arrives through a vault environment value; public Process descriptors stay in workflow history. The parent owns all ordering, guards, recovery and final projection.

@@ -62,9 +62,7 @@ export async function fixtureApply(
   };
   return {
     [
-      kind === "node.bootstrap_probe"
-        ? "probed"
-        : kind === "node.bootstrap_install"
+      kind === "node.bootstrap_install"
         ? "installed"
         : kind === "node.bootstrap_host"
         ? "bootstrapped"
