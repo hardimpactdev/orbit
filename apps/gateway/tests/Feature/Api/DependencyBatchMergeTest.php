@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
@@ -190,12 +191,15 @@ it('keeps one committed intent when the native start is refused', function (): v
         ->assertServiceUnavailable()->assertJsonPath('error.code', 'swamp.start_refused');
     $operation = Operation::query()->where('kind', 'tasks.dependency_merge')->sole();
     expect($operation->status->value)->toBe('queued')->and($operation->state['swamp_run_id'] ?? null)->toBeNull();
+    $this->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.id', $operation->id);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run']);
     $this->socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
         'runId' => $this->run, 'workflowName' => 'operation-dependency-merge', 'status' => 'running',
         'inputs' => ['operation_id' => $operation->id, 'kind' => 'tasks.dependency_merge', 'node_id' => 209],
         'tags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]]]]];
-    $this->postJson($this->url, $this->body)->assertAccepted()->assertJsonPath('data.id', $operation->id);
+    app(StartSwampRun::class)->recover($operation);
+    expect($operation->refresh()->state['swamp_run_id'])->toBe($this->run);
     expect(Operation::query()->where('kind', 'tasks.dependency_merge')->count())->toBe(1)
         ->and(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
     Http::assertNotSent(fn ($request) => $request->method() === 'PUT');
