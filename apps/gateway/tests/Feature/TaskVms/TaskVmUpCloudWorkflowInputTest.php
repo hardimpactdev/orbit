@@ -75,6 +75,7 @@ it('records one encrypted bootstrap pair and reuses the exact shared descriptors
 
     expect($second)->toBe($first);
     expect($first['intent']['provider_host_public_key'])->toBe($pair['public']);
+    expect($vm->ssh_host_key)->toBe($pair['public']);
     expect($fresh->ssh_host_key)->toBe($pair['public']);
     expect(json_encode($first, JSON_THROW_ON_ERROR))->not->toContain($pair['private'], 'ucat_synthetic');
     expect(DB::table('task_vms')->where('id', $vm->id)->value('provider_bootstrap'))->not->toContain($pair['private']);

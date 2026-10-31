@@ -54,6 +54,7 @@ final readonly class TaskVmUpCloudWorkflowInput
 
             return $pair;
         });
+        $vm->refresh();
 
         return ['intent' => [...Arr::only($allocation, ['task_vm_id', 'node_id', 'gateway_node_id', 'provider', 'provider_id', 'name', 'image_fingerprint', 'recipe_identity']),
             'upcloud' => Arr::only($allocation['upcloud'], ['zone', 'plan', 'disk_gb', 'max_vms', 'source_template', 'gateway_public_key']),
