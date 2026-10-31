@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Operations\DirectOperationResultHook;
+use App\Domain\Operations\DirectOperationResultProjection;
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -70,19 +75,71 @@ it('leaves the accepted run bound when the read credential is missing', function
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
-it('projects native failure cancellation and interruption when the selected step was skipped', function (string $native, OperationStatus $expected, ?string $code): void {
+it('projects native failure cancellation and interruption when the selected step was skipped', function (string $native, OperationStatus $expected, ?string $code, array $public): void {
     $this->history['status'] = $native;
     $this->history['jobs'][0]['steps'][1] = ['name' => 'probe-host', 'status' => 'skipped'];
     $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $native], $this->selector);
 
-    expect($result->status)->toBe($expected)->and($result->error_code)->toBe($code)->and($result->result)->toBe([]);
+    expect($result->status)->toBe($expected)->and($result->error_code)->toBe($code)->and($result->result)->toBe($public);
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->node->fresh()->ssh_host_key)->toBeNull();
 })->with([
-    ['failed', OperationStatus::Failed, 'operation.native_failed'],
-    ['cancelled', OperationStatus::Cancelled, null],
-    ['interrupted', OperationStatus::Failed, 'operation.native_failed'],
+    ['failed', OperationStatus::Failed, 'operation.native_failed', ['error_code' => 'operation.native_failed']],
+    ['cancelled', OperationStatus::Cancelled, null, []],
+    ['interrupted', OperationStatus::Failed, 'operation.native_failed', ['error_code' => 'operation.native_failed']],
 ]);
+
+it('settles an empty failed native result through the generic projector without losing its failure code', function (string $status): void {
+    $hook = new class implements DirectOperationResultHook
+    {
+        public array $completions = [];
+
+        public function input(Operation $operation): array
+        {
+            return [];
+        }
+
+        public function validate(Operation $operation, array $result, OperationStatus $status): array
+        {
+            return array_intersect_key($result, array_flip(['error_code']));
+        }
+
+        public function complete(Operation $operation, OperationOutcome $outcome): void
+        {
+            $this->completions[] = $outcome;
+        }
+    };
+    app()->instance($hook::class, $hook);
+    app()->instance(DirectOperation::class, new DirectOperation([new class($hook::class) implements DirectOperationContribution
+    {
+        public function __construct(private readonly string $hook) {}
+
+        public function definitions(): array
+        {
+            return ['test.native_failure' => ['workflow' => 'operation-test-native-failure',
+                'projection' => DirectOperationResultProjection::class, 'result_hook' => $this->hook,
+                'terminal_result' => ['job' => 'bootstrap', 'step' => 'probe-host']]];
+        }
+    }]));
+    $this->operation->update(['kind' => 'test.native_failure', 'lock_key' => 'test-native-failure-'.$this->operation->id]);
+    $this->history['workflowName'] = 'operation-test-native-failure';
+    $this->history['inputs']['kind'] = 'test.native_failure';
+    $this->history['status'] = $status;
+    $this->history['jobs'][0]['steps'][1] = ['name' => 'probe-host', 'status' => 'failed'];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => $status], $this->selector);
+
+    expect($result->status)->toBe(OperationStatus::Failed);
+    expect($result->error_code)->toBe('operation.native_failed');
+    expect($result->result)->toBe(['error_code' => 'operation.native_failed']);
+    expect($result->lock_key)->toBeNull();
+    expect($result->state['swamp_run_id'])->toBe($this->runId);
+    expect($hook->completions)->toHaveCount(1);
+    expect($hook->completions[0]->errorCode)->toBe('operation.native_failed');
+    $this->step->projectTerminal($result, ['id' => $this->runId, 'status' => $status], $this->selector);
+    expect($hook->completions)->toHaveCount(1);
+    expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get']);
+})->with(['failed', 'interrupted']);
 
 it('preserves a failed script public error from its stdout', function (): void {
     $this->history['status'] = 'failed';
