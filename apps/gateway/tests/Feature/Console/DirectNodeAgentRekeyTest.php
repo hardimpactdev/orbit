@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildIntent;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -90,6 +91,30 @@ it('refuses a still-active legacy configure section without acquiring a Gateway 
     }
 });
 
+it('refuses a still-running source attempt even when its legacy agent lock is free', function (): void {
+    [$node, $source, $socket] = directRekeySource();
+    expect(app(NodeLocks::class)->lock('node-agent:id:'.$node->id, 420)->isLocked())->toBeFalse();
+    $held = app(OperationAttemptLease::class)->hold($source->id, function () use ($node, $source, $socket): void {
+        $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertFailed();
+        expect(Operation::query()->where('kind', 'node.agent_rekey')->exists())->toBeFalse()->and($socket->sent)->toBe([]);
+    });
+    expect($held)->toBeTrue();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertSuccessful();
+});
+
+it('rechecks the source attempt exclusion before accepting a recovered private hash', function (): void {
+    [$node, $source, , $runId] = directRekeySource();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertSuccessful();
+    $op = Operation::query()->where('kind', 'node.agent_rekey')->sole();
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $before = $node->agent_secret_hash;
+    app(OperationAttemptLease::class)->hold($source->id, function () use ($op, $runId): void {
+        $this->postJson('/api/v1/direct-operations/'.$op->id.'/secret-output',
+            ['run_id' => $runId, 'outputs' => ['secret_hash' => str_repeat('d', 64)]])->assertConflict();
+    });
+    expect($node->fresh()->agent_secret_hash)->toBe($before);
+});
+
 it('allows an explicit new request after a terminal refusal without PHP retry sequencing', function (): void {
     [$node, $source] = directRekeySource();
     $input = ['node' => $node->id, 'operation' => $source->id];
@@ -166,6 +191,11 @@ it('preserves read-only legacy parent ownership without creating recovery childr
         'child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
     if ($tamper) {
         $source->forceFill(['child_key' => 'foreign-footprint'])->save();
+    } else {
+        app(OperationAttemptLease::class)->hold($parent->id, function () use ($node, $source): void {
+            $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertFailed();
+            expect(Operation::query()->where('kind', 'node.agent_rekey')->exists())->toBeFalse();
+        });
     }
     $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertExitCode($tamper ? 1 : 0);
     $recovery = Operation::query()->where('kind', 'node.agent_rekey')->first();
@@ -175,3 +205,15 @@ it('preserves read-only legacy parent ownership without creating recovery childr
         expect($recovery->parent_operation_id)->toBeNull()->and($recovery->lock_key)->toBeNull();
     }
 })->with([false, true]);
+
+it('accepts a bounded pre-invoke refusal without storing a private hash', function (): void {
+    [$node, $source, , $runId] = directRekeySource();
+    $this->artisan('orbit:node-agent-rekey', ['node' => $node->id, 'operation' => $source->id])->assertSuccessful();
+    $op = Operation::query()->where('kind', 'node.agent_rekey')->sole();
+    $before = $node->agent_secret_hash;
+    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', ['run_id' => $runId, 'status' => 'failed',
+        'started_at' => '2026-10-31T03:00:00.000Z', 'finished_at' => '2026-10-31T03:00:01.000Z',
+        'result' => ['rekeyed' => false, 'error_code' => 'node.agent_rekey_unavailable'], 'error_code' => 'node.agent_rekey_unavailable'])->assertOk();
+    expect($op->fresh()->status->value)->toBe('failed')->and($node->fresh()->agent_secret_hash)->toBe($before);
+});

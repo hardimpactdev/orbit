@@ -33,7 +33,7 @@ final readonly class NodeAgentRekeyProjection implements DirectOperationProjecti
         };
         $raw = ValidatedData::object($data['result'] ?? []);
         if (count($raw) !== count($result) || array_any($result, static fn ($value, $key) => ($raw[$key] ?? null) !== $value)
-            || ($data['status'] === 'failed' ? ! in_array($code, ['agent.version_mismatch', 'agent.update_busy'], true) : $code !== null)) {
+            || ($data['status'] === 'failed' ? ! in_array($code, ['agent.version_mismatch', 'agent.update_busy', 'node.agent_rekey_unavailable'], true) : $code !== null)) {
             throw new ResourceOperationException('operation.result_invalid', 'Only a bounded native recovery outcome is accepted.', 422);
         }
 

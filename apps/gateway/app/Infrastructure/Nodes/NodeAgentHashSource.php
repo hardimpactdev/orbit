@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
@@ -54,6 +55,7 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
             || $source->node_id !== $node->id || $source->target_type !== 'node' || $source->target_id !== $node->id
             || app(OperationChildren::class)->nodeId($source) !== $node->id || $owner === null || $owner->status->terminal()
             || $owner->id !== app(OperationChildren::class)->executionLeaseId($source)
+            || ! app(OperationAttemptLease::class)->hold($owner->id, static function (): void {})
             || ! is_array($run) || ($run['name'] ?? null) !== 'agent.configure' || ($run['transport'] ?? null) !== 'agent'
             || ($run['started'] ?? null) !== true || ! array_key_exists('result', $run) || $run['result'] !== null
             || app(NodeLocks::class)->lock('node-agent:id:'.$node->id, 420)->isLocked()) {
