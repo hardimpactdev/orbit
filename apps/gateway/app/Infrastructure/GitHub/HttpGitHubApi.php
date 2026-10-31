@@ -14,7 +14,6 @@ use App\Domain\GitHub\GitHubCheckSuite;
 use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
-use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubListedPullRequest;
 use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
@@ -48,90 +47,6 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const int OPEN_PULL_REQUEST_PAGES = 3;
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
-
-    /**
-     * Laravel's `post($url)` JSON-encodes an omitted payload as `[]`. GitHub's
-     * convert schema rejects that array (`[] is not a null or object`).
-     */
-    public function convertManifest(#[SensitiveParameter] string $code): GitHubAppCredentials
-    {
-        $response = $this->send(
-            fn (): Response => $this->request()
-                ->withBody('', 'application/json')
-                ->post('/app-manifests/'.rawurlencode($code).'/conversions'),
-        );
-
-        if (! $response->successful()) {
-            throw GitHubApiException::refused();
-        }
-
-        $appId = $response->json('id');
-        $slug = $response->json('slug');
-        $name = $response->json('name');
-        $owner = $response->json('owner.login');
-        $ownerType = $response->json('owner.type');
-        $url = $response->json('html_url');
-        $privateKey = $response->json('pem');
-
-        if (
-            ! is_int($appId)
-            || ! is_string($slug)
-            || ! is_string($name)
-            || ! is_string($owner)
-            || ! is_string($ownerType)
-            || ! is_string($url)
-            || ! is_string($privateKey)
-            || $privateKey === ''
-        ) {
-            throw GitHubApiException::refused();
-        }
-
-        return new GitHubAppCredentials(
-            appId: $appId,
-            slug: $slug,
-            name: $name,
-            owner: $owner,
-            ownerType: strtolower($ownerType) === 'organization' ? 'organization' : 'user',
-            url: $url,
-            privateKey: $privateKey,
-        );
-    }
-
-    public function installations(GitHubAppCredentials $credentials): array
-    {
-        $installations = [];
-
-        for ($page = 1; $page <= 10; $page++) {
-            $response = $this->send(fn (): Response => $this->asApp($credentials)->get('/app/installations', [
-                'per_page' => 100,
-                'page' => $page,
-            ]));
-
-            if (! $response->successful()) {
-                throw GitHubApiException::unavailable();
-            }
-
-            $rows = $response->json();
-
-            if (! is_array($rows)) {
-                throw GitHubApiException::unavailable();
-            }
-
-            foreach ($rows as $row) {
-                $installation = $this->installation($row);
-
-                if ($installation instanceof GitHubInstallation) {
-                    $installations[] = $installation;
-                }
-            }
-
-            if (count($rows) < 100) {
-                break;
-            }
-        }
-
-        return $installations;
-    }
 
     public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int
     {
@@ -866,30 +781,6 @@ final readonly class HttpGitHubApi implements GitHubApi
     private function text(mixed $value): ?string
     {
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    private function installation(mixed $row): ?GitHubInstallation
-    {
-        if (! is_array($row)) {
-            return null;
-        }
-
-        $id = $row['id'] ?? null;
-        $account = is_array($row['account'] ?? null) ? ($row['account']['login'] ?? null) : null;
-        $type = $row['target_type'] ?? null;
-        $repositories = $row['repository_selection'] ?? null;
-
-        if (! is_int($id) || ! is_string($account) || ! is_string($type) || ! is_string($repositories)) {
-            return null;
-        }
-
-        return new GitHubInstallation(
-            id: $id,
-            account: $account,
-            type: strtolower($type) === 'organization' ? 'organization' : 'user',
-            repositories: $repositories === 'all' ? 'all' : 'selected',
-            suspended: ($row['suspended_at'] ?? null) !== null,
-        );
     }
 
     /** @param callable(): Response $request */

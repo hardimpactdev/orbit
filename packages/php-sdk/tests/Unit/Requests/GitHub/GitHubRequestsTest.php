@@ -5,14 +5,16 @@ declare(strict_types=1);
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
+use Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest;
 use Saloon\Enums\Method;
 
-it('exposes the three GitHub App routes', function (string $class, Method $method, string $path): void {
+it('exposes the GitHub App state and refresh routes', function (string $class, Method $method, string $path): void {
     $request = new $class;
 
     expect($request->getMethod())->toBe($method)->and($request->resolveEndpoint())->toBe($path);
 })->with([
     [InstallGitHubAppRequest::class, Method::POST,   '/api/v1/github/app/install'],
+    [SyncGitHubAppRequest::class, Method::POST, '/api/v1/github/app/sync'],
     [ShowGitHubAppRequest::class,    Method::GET,    '/api/v1/github/app'],
     [DestroyGitHubAppRequest::class, Method::DELETE, '/api/v1/github/app'],
 ]);
@@ -33,4 +35,9 @@ it('sends an empty JSON object when no install field is supplied', function (): 
         ->toBe('{}')
         ->and($request->headers()->get('Content-Type'))
         ->toBe('application/json');
+});
+
+it('preserves the refresh identity without adding execution input', function (): void {
+    $request = new SyncGitHubAppRequest('app-refresh-one');
+    expect($request->headers()->get('Idempotency-Key'))->toBe('app-refresh-one');
 });
