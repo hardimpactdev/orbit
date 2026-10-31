@@ -35,7 +35,20 @@ final readonly class MetricsFleetCapture
         if ($assignments->count() !== 1) {
             throw new ResourceOperationException('metrics.assignment_missing', 'Reconciliation needs one active Metrics assignment.', 409);
         }
-        $assignment = $assignments->sole();
+
+        return $this->captureFor($assignments->sole());
+    }
+
+    /** Public desired state for an admission-owned Metrics role transition. No assignment or host writes.
+     * @return array<string,mixed>
+     */
+    public function captureFor(NodeRole $assignment, bool $enabled = true): array
+    {
+        if (! $assignment->exists || $assignment->role !== RoleName::Metrics
+            || ! in_array($assignment->status, [LifecycleStatus::Provisioning, LifecycleStatus::Active, LifecycleStatus::Removing], true)
+            || $assignment->node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('metrics.assignment_missing', 'A fleet capture requires its owned Metrics role assignment.', 409);
+        }
         $metrics = $assignment->node;
         $members = [];
         $targets = [];
@@ -45,14 +58,14 @@ final readonly class MetricsFleetCapture
             if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
                 throw new ResourceOperationException('metrics.exporter_address_invalid', 'An exporter needs its recorded WireGuard IPv4.', 409);
             }
-            $service = $this->services->forNode($metrics, $node);
+            $service = $this->services->forNode($metrics, $node, $enabled);
             $members[] = ['node_id' => $node->id, 'name' => $node->name, 'address' => $node->wireguard_ip,
                 'agent_sha256' => $this->agents->pin($node), 'worker' => $this->workers->allows($node),
-                'selected' => $item->selection->selected, 'selection_reason' => $item->selection->reason->value,
-                'caddy' => $service->caddy, 'caddy_managed' => CaddySiteRoles::nodeServes($node->id, RoleName::Ingress), 'fpm' => $service->fpm, 'hosts' => $service->hosts,
+                'selected' => $enabled && $item->selection->selected, 'selection_reason' => $item->selection->reason->value,
+                'caddy' => $service->caddy, 'caddy_managed' => CaddySiteRoles::nodeExpectsCaddy($node->id), 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                 'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances),
                 'service' => $this->service($service, (string) $metrics->wireguard_ip), 'pools' => $this->pools($service)];
-            if ($item->selection->selected) {
+            if ($enabled && $item->selection->selected) {
                 $targets[] = ['name' => $node->name, 'address' => $node->wireguard_ip];
             }
             $services[] = $service;

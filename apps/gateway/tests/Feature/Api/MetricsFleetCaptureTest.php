@@ -113,3 +113,19 @@ it('retains managed Ingress publication when desired Caddy monitoring is disable
     expect($members[13]['caddy'])->toBeFalse()->and($members[13]['caddy_managed'])->toBeTrue()
         ->and($members[18]['caddy_managed'])->toBeFalse();
 });
+
+it('captures provisioning and removing Metrics assignments for one native role root without effects', function (): void {
+    $assignment = $this->nodes[9]->roles()->where('role', 'metrics')->firstOrFail();
+    $capture = app(MetricsFleetCapture::class);
+    $assignment->update(['status' => 'provisioning']);
+    $adding = $capture->captureFor($assignment);
+    expect(array_column($adding['fleet'], 'node_id'))->toBe([1, 9, 13, 18]);
+    MetricsFleetCapture::assertDigest($adding);
+    $assignment->update(['status' => 'removing']);
+    $removing = $capture->captureFor($assignment, false);
+    expect(array_column($removing['fleet'], 'node_id'))->toBe([1, 9, 13, 18]);
+    expect(array_column($removing['fleet'], 'selected'))->each->toBeFalse();
+    expect(array_column($removing['fleet'], 'fpm'))->each->toBeFalse();
+    MetricsFleetCapture::assertDigest($removing);
+    expect(Operation::query()->count())->toBe(0);
+});
