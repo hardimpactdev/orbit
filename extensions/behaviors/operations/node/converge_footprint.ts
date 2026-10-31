@@ -11,6 +11,9 @@ import {
   Stage,
 } from "./converge_direct_contract.ts";
 
+import { caddyProgram } from "../routes/caddy-program.ts";
+import { runLocalProgram } from "../routes/local-program.ts";
+
 const ObjectInput = z.record(z.string(), z.unknown());
 const Changed = z.object({ changed: z.boolean() });
 const Caddy = z.object({
@@ -42,6 +45,7 @@ const Configured = z.object({
 });
 export type LocalDependencies = {
   agent: typeof runNodeAgent;
+  program?: typeof runLocalProgram;
   install: (
     snapshot: Snapshot,
     signal?: AbortSignal,
@@ -175,7 +179,11 @@ export function footprintActions(deps: LocalDependencies) {
           },
         };
       }
-      const result = await call("caddy.publish", Caddy.parse(payload));
+      const result = await (deps.program ?? runLocalProgram)(
+        caddyProgram,
+        Caddy.parse(payload),
+        signal,
+      );
       if (
         result.error_code === "caddy.publication_failed" &&
         result.stage === "validate"

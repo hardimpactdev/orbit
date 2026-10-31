@@ -1,5 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { agentReply, type NodeCall } from "../_lib/node-agent.ts";
+import { agentReply } from "../_lib/node-agent.ts";
+import { caddyProgram } from "./caddy-program.ts";
 import { publishCaddy } from "./caddy.ts";
 
 const input = {
@@ -14,10 +15,10 @@ const input = {
   },
 };
 
-Deno.test("Caddy uses the complete fresh payload, pinned local sudo and bounded supervision", async () => {
-  const calls: NodeCall[] = [];
-  const result = await publishCaddy(input, (call) => {
-    calls.push(call);
+Deno.test("Caddy uses the native Swamp program and the complete fresh payload", async () => {
+  const calls: unknown[] = [];
+  const result = await publishCaddy(input, (program, payload) => {
+    calls.push({ program, payload });
     return Promise.resolve({ result: "unchanged" });
   });
   assertEquals(result, {
@@ -25,15 +26,7 @@ Deno.test("Caddy uses the complete fresh payload, pinned local sudo and bounded 
     result: "unchanged",
     version: input.caddy.version,
   });
-  assertEquals(calls, [{
-    name: "caddy.publish",
-    input: input.caddy,
-    pin: input.agent_sha256,
-    sudo: true,
-    mutates: true,
-    deadlineMs: 120000,
-    maxOutputBytes: 4096,
-  }]);
+  assertEquals(calls, [{ program: caddyProgram, payload: input.caddy }]);
 });
 
 Deno.test("render refusal is proven without a local Caddy effect", async () => {

@@ -321,9 +321,9 @@ Deno.test("each same-root method invocation fetches again rather than caching th
   const seen: unknown[] = [];
   const model = publication(
     () => f.http,
-    (call) =>
+    (_program, input) =>
       Promise.resolve().then(() => {
-        seen.push(call.input);
+        seen.push(input);
         return { result: "unchanged" };
       }),
   );
