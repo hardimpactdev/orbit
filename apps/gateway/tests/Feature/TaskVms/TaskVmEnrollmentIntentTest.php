@@ -169,5 +169,49 @@ it('keeps private references and credentials out of the worker input', function 
 
     $input = app(TaskVmEnrollmentProjection::class)->input($operation);
 
-    expect($input)->toBe($intent);
+    expect($input)->toBe([...$intent, 'wireguard_public_key' => null]);
+});
+
+it('records the native public network observation without marking the guest or VM ready', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
+    app(TaskVmEnrollmentProjection::class)->recordPublic($vm, $intent, ['node' => [
+        'wireguard_public_key' => 'PUBLIC PEER KEY', 'agent_secret_hash' => str_repeat('c', 64),
+    ]]);
+    expect($vm->fresh()->node->wireguard_public_key)->toBe('PUBLIC PEER KEY');
+    expect($vm->fresh()->node->agent_secret_hash)->toBeNull();
+    expect($vm->fresh()->node->status)->toBe(LifecycleStatus::Provisioning);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Provisioning);
+    expect(Process::query()->sole()->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('admits immutable field custody without exporting private material or invoking a worker', function (): void {
+    $vm = nativeEnrollmentVm();
+    $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
+    $issuer = Node::query()->create(['name' => 'native-issuer', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $router = Node::query()->create(['name' => 'model-router', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $hub = Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
+    config()->set('dependency_detection.services_node_id', $issuer->id);
+    app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->once()->andReturn($router->id);
+    $home = sys_get_temp_dir().'/native-enrollment-'.bin2hex(random_bytes(8));
+    mkdir($home.'/wireguard', 0o700, true);
+    file_put_contents($home.'/wireguard/private.key', 'PRIVATE-HUB');
+    file_put_contents($home.'/wireguard/public.key', 'PUBLIC-HUB');
+    app()->instance(App\Infrastructure\WireGuard\VpnConfigurationRepository::class,
+        new App\Infrastructure\WireGuard\VpnConfigurationRepository(app(App\Domain\WireGuard\VpnSettings::class), $home));
+    try {
+        $private = app(TaskVmEnrollmentIntent::class)->privateInput($vm, $vm->host_node_id);
+        expect($private['participant_node_ids'])->toContain($vm->host_node_id, $issuer->id, $router->id, $vm->node_id, $hub->id);
+        expect($private['private_bindings']['worker_credentials'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->host_node_id], 'write_node_ids' => [$issuer->id]]);
+        expect($private['private_bindings']['installation'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->node_id], 'write_node_ids' => []]);
+        expect($private['private_bindings']['model_router']['owner_node_id'])->toBe($router->id);
+        $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id, 'input' => [...$intent, ...$private]]);
+        $public = app(TaskVmEnrollmentProjection::class)->input($operation);
+        expect(json_encode($public))->not->toContain('$secret')->not->toContain('PRIVATE-HUB')->not->toContain($vm->fresh()->model_key);
+        expect(app(TaskVmEnrollmentIntent::class)->installation($vm)['environment'])->toContain('#');
+        $this->assertDatabaseCount('operations', 0);
+    } finally {
+        new Illuminate\Filesystem\Filesystem()->deleteDirectory($home);
+    }
 });

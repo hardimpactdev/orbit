@@ -20,6 +20,7 @@ use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\TaskVms\TaskVmRuntime;
+use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
@@ -72,6 +73,53 @@ final readonly class TaskVmEnrollmentIntent
                     'process' => [...$installation, 'agent_sha256' => $pin, 'retired' => null]],
             ];
         });
+    }
+
+    /** Admitted placement, references and private-field custody for this same native root.
+     * @return array<string,mixed>
+     */
+    public function privateInput(TaskVm $vm, int $rootNodeId): array
+    {
+        $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'Enrollment requires its reserved guest Node.');
+        $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($query) => $query
+            ->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $issuerId = filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
+        $issuer = is_int($issuerId) ? Node::query()->find($issuerId) : null;
+        if ($issuer === null || $issuer->status !== LifecycleStatus::Active) {
+            throw new TaskVmException('operation.kind_unavailable', 'The native worker issuer is unavailable.', 503);
+        }
+        $network = app(VpnConfigurationRepository::class)->forPeer($node);
+        $routerNodeId = $this->keys->ownerNodeId();
+        $host = $this->executionNode($vm);
+        $bindings = [];
+        foreach ([
+            'installation' => [$node->id, [$node->id], []],
+            'model_key' => [$node->id, [$gateway->id, $node->id], []],
+            'pi_token' => [$node->id, [$node->id], []],
+            'model_router' => [$routerNodeId, [$gateway->id], []],
+            'secret_hash' => [$node->id, [$host->id], [$host->id]],
+            'worker_credentials' => [$node->id, [$host->id], [$issuer->id]],
+            'pi_artifact_file' => [$node->id, [$node->id], []],
+            'enrollment_network' => [$network->server->id, [$gateway->id], []],
+            'first_visit' => [$node->id, [$host->id], []],
+        ] as $field => [$owner, $readers, $writers]) {
+            $bindings[$field] = ['owner_node_id' => $owner, 'read_node_ids' => array_values(array_unique($readers)), 'write_node_ids' => $writers];
+        }
+        $references = [];
+        foreach (['installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token',
+            'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact',
+            'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit'] as $field => $source) {
+            $references[$field] = ['$secret' => $source, 'id' => $vm->id];
+        }
+        $references['secret_hash'] = ['$secret' => 'node.agent_secret_hash', 'id' => $node->id];
+        $references['worker_credentials'] = ['$secret' => 'node.worker_credentials', 'id' => $node->id];
+
+        return [...$references, 'participant_node_ids' => array_values(array_unique([$rootNodeId, $host->id, $gateway->id, $issuer->id, $node->id, $network->server->id, $routerNodeId])),
+            'private_bindings' => $bindings, 'gateway_node_id' => $gateway->id, 'issuer_node_id' => $issuer->id,
+            'network' => ['server_public_key' => $network->serverPublicKey, 'endpoint' => $network->endpoint,
+                'address' => $network->peerAddress, 'subnet' => $network->subnet, 'dns_server' => $network->dnsServer, 'domains' => [$network->domain]],
+            'pi_artifact' => ['path' => $this->settings->piArtifactPath, 'sha256' => $this->settings->piArtifactSha256],
+        ];
     }
 
     private function reserveNode(TaskVm $vm): Node
@@ -134,12 +182,13 @@ final readonly class TaskVmEnrollmentIntent
         return new ProcessTarget(node: $node, user: 'orbit', checkoutPath: '/home/orbit');
     }
 
-    /** @return array{runtime:string,content:string} Private material for the shared Process lower action. */
+    /** @return array{runtime:string,content:string,environment:string} Private material for the shared Process lower action. */
     public function installation(TaskVm $vm): array
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', 'The runtime has no admitted Node.');
         $process = Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)->where('name', 'pi-server')->sole();
 
-        return ['runtime' => 'systemd', 'content' => $this->systemd->render($process, $this->processTarget($node))];
+        return ['runtime' => 'systemd', 'content' => $this->systemd->render($process, $this->processTarget($node)),
+            'environment' => $this->systemd->environmentContent($process, $this->processTarget($node))];
     }
 }
