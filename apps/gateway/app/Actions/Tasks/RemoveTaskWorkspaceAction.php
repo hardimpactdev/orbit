@@ -114,8 +114,7 @@ final readonly class RemoveTaskWorkspaceAction
             }
             $commit = TaskFinalReview::reconcileRemovalPush($group);
             if ($commit !== null) {
-                $this->publisher->push($group, $commit);
-                TaskFinalReview::recordRemovalPush($group, $commit);
+                throw TaskPullRequestException::pending('Approved work must finish native publication before workspace removal.');
             }
             $lease = $leases->remoteStarted($instance);
             try {
