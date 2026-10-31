@@ -1,0 +1,83 @@
+id: a103d82f-5b5e-43b2-90ba-0d5315689962
+name: task-vm-pi-install
+description: Inspect, atomically install and verify the admitted Pi artifact on its guest.
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind:
+      type: string
+      enum: [task_vm.provision, tasks.provision, task_vm.enroll, task_vm.prepare_runtime]
+    intent: {type: object}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: pi-install
+  target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+  labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+  steps:
+  - name: assets
+    target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+    labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-pi-assets'
+      behaviorName: '${{ "task-vm-pi-inputs-" + run.id }}'
+      methodName: read
+      inputs:
+        intent: '${{ inputs.intent }}'
+  - name: inspect
+    target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+    labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
+      methodName: execute
+      inputs:
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.inspect_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
+  - name: observation
+    target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+    labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+    dependsOn: [{step: inspect, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-pi-assets'
+      behaviorName: '${{ "task-vm-pi-observation-" + run.id }}'
+      methodName: inspection
+      inputs:
+        task_vm_id: '${{ steps.assets.outputs.task_vm_id }}'
+        sha256: '${{ steps.assets.outputs.sha256 }}'
+        stdout: '${{ steps.inspect.outputs.stdout }}'
+  - name: install
+    target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+    labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+    writes: true
+    guard: '${{ steps.observation.outputs.current }}'
+    dependsOn: [{step: observation, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
+      methodName: execute
+      inputs:
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.install_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
+  - name: result
+    target: '${{ "orbit-node-" + string(inputs.intent.guest_node_id) }}'
+    labels: {node: '${{ string(inputs.intent.guest_node_id) }}'}
+    dependsOn:
+    - step: observation
+      condition: {type: succeeded}
+    - step: install
+      condition:
+        type: or
+        conditions: [{type: succeeded}, {type: skipped}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ "task-vm-pi-guest-" + string(inputs.intent.guest_node_id) }}'
+      methodName: execute
+      inputs:
+        run: '/usr/bin/sudo -n -- /usr/bin/python3 "${{ steps.assets.outputs.verify_script }}" "${{ string(steps.assets.outputs.task_vm_id) }}" "${{ steps.assets.outputs.sha256 }}"'
