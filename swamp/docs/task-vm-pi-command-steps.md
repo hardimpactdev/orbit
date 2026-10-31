@@ -1,0 +1,9 @@
+# Task VM Pi installation
+
+`task-vm-pi-install` installs the admitted Pi digest on the guest as visible native steps. The parent passes its full public intent, including the VM, guest, `orbit` account and `runtime.pi_sha256`. The root Operation identity stays unchanged. This fragment needs no credential, Gateway read or service activation.
+
+Native `additionalFiles` ships the Python scripts. A metadata-only step resolves their worker paths and validates public inputs. Inspection checks the canonical installed file. Native `guard` skips installation when it is current; verification still checks the installed digest and emits `{task_vm_id, sha256, installed: true}`. Installation reads `/var/cache/orbit/pi/<sha256>.bin`, checks its owner and digest, and atomically publishes `/home/orbit/.local/bin/pi-server` with the admitted account's ownership and mode 0755. Foreign owners, symlinks, unsafe modes, oversized files and corrupt data fail with `task_vm.pi_artifact_failed`.
+
+The metadata resource declarations use `lifetime: infinite` and `garbageCollection: 10`, matching the official `command/shell` output defaults and native pilot. e459 requires these fields in extension resource schemas; omitting them prevents the type from loading. There is no shorter family retention override.
+
+The parent runs this after native artifact delivery and before separate configuration and Process activation. Neither upload nor installation marks the VM Ready or changes Gateway state. The parent consumes the public result through the shared terminal projection contract. Source remains draft until the parent switches, old operational helpers and their allowances are removed, and the actual Operation is verified. Artifact publication and remote delivery must use the canonical native data plane; a serve-local path, Gateway callback or custom chunk transport is not an alternative.
