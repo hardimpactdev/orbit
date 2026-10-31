@@ -68,7 +68,7 @@ beforeEach(function (): void {
 
 it('keeps nullable initial material and protected outputs on the actual guest', function (string $kind): void {
     $this->operation->kind = $kind;
-    if ($kind === 'task_vm.provision') {
+    if (in_array($kind, ['task_vm.provision', 'tasks.provision'], true)) {
         $vm = $this->vm;
         $this->operation->input = [...$this->operation->input,
             'node_id' => $this->host->id, 'host_node_id' => $this->host->id,
