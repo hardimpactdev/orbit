@@ -80,20 +80,26 @@ final readonly class HttpGitHubApi implements GitHubApi
         $requestedPermissions = $grant->permissions;
         $deadline = microtime(true) + 5;
         $issued = null;
+        $phase = 'installation';
+        $httpStatus = null;
         try {
             $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
                 ->get($this->repositoryPath($repository).'/installation');
+            $httpStatus = $installation->status();
             $id = $installation->json('id');
             $this->assertDependencyTokenResponse($installation);
             if (! $installation->successful() || ! is_int($id) || $id <= 0 || microtime(true) >= $deadline) {
                 throw new \UnexpectedValueException;
             }
             $remaining = max(0.001, $deadline - microtime(true));
+            $phase = 'mint';
+            $httpStatus = null;
             $response = $this->asApp($credentials)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
                 ->post("/app/installations/{$id}/access_tokens", [
                     'repositories' => [$repository->name],
                     'permissions' => $requestedPermissions,
                 ]);
+            $httpStatus = $response->status();
             $this->assertDependencyTokenResponse($response);
             $token = $response->json('token');
             $expires = $response->json('expires_at');
@@ -101,24 +107,36 @@ final readonly class HttpGitHubApi implements GitHubApi
             if (is_string($token) && $token !== '' && strlen($token) <= 2048 && preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) === 1) {
                 $issued = new GitHubAccessToken($token, is_string($expires) ? $expires : '');
             }
-            if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1 || ! is_string($expires)
-                || ! is_array($permissions) || array_any($requestedPermissions, static fn (string $level, string $name): bool => ($permissions[$name] ?? null) !== $level)
-                || array_diff_key($permissions, $requestedPermissions + ['metadata' => 'read']) !== []
-                || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')
-                || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z/D', $expires) !== 1) {
+            $phase = 'token_format';
+            if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1) {
                 throw new \UnexpectedValueException;
             }
+            $phase = 'permission_scope';
+            if (! is_array($permissions) || array_any($requestedPermissions, static fn (string $level, string $name): bool => ($permissions[$name] ?? null) !== $level)
+                || array_diff_key($permissions, $requestedPermissions + ['metadata' => 'read']) !== []
+                || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')) {
+                throw new \UnexpectedValueException;
+            }
+            $phase = 'expiry_format';
+            if (! is_string($expires) || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z/D', $expires) !== 1) {
+                throw new \UnexpectedValueException;
+            }
+            $phase = 'expiry_lifetime';
             $expiry = new DateTimeImmutable($expires);
             if ($expiry->getTimestamp() <= now()->getTimestamp() || $expiry->getTimestamp() > now()->getTimestamp() + 3605) {
                 throw new \UnexpectedValueException;
             }
 
+            $phase = 'scope_deadline';
             $remaining = $deadline - microtime(true);
             if ($remaining <= 0) {
                 throw new \UnexpectedValueException;
             }
+            $phase = 'repository_scope';
+            $httpStatus = null;
             $scope = $this->request()->withToken($token)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
                 ->get('/installation/repositories', ['per_page' => 2]);
+            $httpStatus = $scope->status();
             $this->assertDependencyTokenResponse($scope);
             $repos = $scope->json('repositories');
             if (! $scope->successful() || $scope->json('total_count') !== 1 || ! is_array($repos) || count($repos) !== 1
@@ -129,6 +147,7 @@ final readonly class HttpGitHubApi implements GitHubApi
 
             return new GitHubAccessToken($token, $expires);
         } catch (Throwable $exception) {
+            Log::warning('github.scoped_token_refused', ['phase' => $phase, 'http_status' => $httpStatus]);
             if ($issued !== null && ! $this->revokeInstallationToken($issued)) {
                 Log::warning('github.scoped_token_revoke_failed');
             }
