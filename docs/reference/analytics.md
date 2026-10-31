@@ -200,8 +200,14 @@ Only the Router receives an Orbit certificate; public Ingress uses automatic pub
 
 The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
 
-Enable and disable return an accepted Operation. Every effect step requires its admitted Node worker. A workerless DNS owner is unsupported; these workflows do not skip DNS or use an SSH fallback. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
+Enable and disable return an accepted Operation. Every effect step requires its admitted Node worker. Light-box DNS steps keep the admitted owner and use its configured Node 209 proxy worker; the workflow does not choose a different Node or skip DNS. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
 
 ### Stats read on the Gateway
 
 The browser never holds the Stats API key, and it cannot ask for another Instance's site. One Gateway-scoped key serves every Instance, because Plausible scopes each read by site domain. A failed read never shows zeros, because a missing key must not look like an empty site.
+
+### Compose Analytics tracking into Route changes
+
+Target-only Route changes keep the hostname catalog and require no Analytics lifecycle effect. A Route parent that changes tracking placement or publication uses `AnalyticsRoutePlan::capture()` to admit the current and retiring host Nodes, Router leaves, private DNS owners and Ingress TLS probes. Capture reads stored state; it neither executes work nor changes records.
+
+The parent composes `analyticsRouteActions()` as placed native steps: `hostPrepare` requests a public CSR; `publish` installs and checks the matching public certificate; `remove` and `hostWithdraw` remove an unused leaf and its Route LAN allowance. The same helpers serve enable and disable. The parent retains its kind and run, calls the canonical signer on Node 209, and uses fresh whole-Node Route publication for Caddy, DNS and firewall changes. It withdraws listeners before removing leaves and owns the DNS grace and domain callbacks. These four steps never start child Operations.
