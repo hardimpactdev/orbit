@@ -506,42 +506,16 @@ describe('analytics native participant boundary', function (): void {
             ->not->toContain('private-management-sentinel')->not->toContain('private-stats-sentinel');
     });
 
-    it('accepts only stable public requests for an admitted certificate', function (): void {
-        $leaf = $this->operation->input['tracking']['certificates'][0];
-        $request = static function (string $domain): string {
-            $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
-            $csr = openssl_csr_new(['commonName' => $domain], $key, ['digest_alg' => 'sha256']);
-            openssl_csr_export($csr, $pem);
-
-            return base64_encode($pem);
-        };
-        $encoded = $request($leaf['domain']);
-        $data = ['certificate_requests' => [
-            ['node_id' => $leaf['node_id'], 'scope' => $leaf['scope'], 'request_base64' => $encoded],
-        ]];
+    it('keeps certificate signing and public request storage in Swamp', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
-
-        $this->postJson($this->path.'/result', analytics_intent_result('running', $data))->assertOk();
-        $this->postJson($this->path.'/result', analytics_intent_result('running', $data))->assertOk();
-        $changed = ['certificate_requests' => [
-            ['node_id' => $leaf['node_id'], 'scope' => $leaf['scope'], 'request_base64' => $request($leaf['domain'])],
-        ]];
-        $this->postJson($this->path.'/result', analytics_intent_result('running', $changed))
-            ->assertConflict()->assertJsonPath('error.code', 'certificate.request_invalid');
-
-        expect($this->operation->fresh()->state['certificate_requests'])
-            ->toBe([$leaf['node_id'].':'.$leaf['scope'] => $encoded]);
-    });
-
-    it('rejects arbitrary signing scopes before calling the CA', function (): void {
-        $this->withServerVariables(['REMOTE_ADDR' => $this->analytics->wireguard_ip]);
-        $this->postJson($this->path.'/result', analytics_intent_result('running', ['certificate_requests' => [
-            ['node_id' => $this->workload->id, 'scope' => 'foreign', 'request_base64' => base64_encode('invalid')],
-        ]]))->assertUnprocessable()->assertJsonPath('error.code', 'certificate.request_invalid');
-        expect($this->operation->fresh()->state)->not->toHaveKey('certificate_requests');
         $this->postJson($this->path.'/primitive', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'])
-            ->assertOk()->assertJsonPath('data.certificate_bundle_base64', base64_encode('[]'));
+            ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
+        $this->postJson($this->path.'/result', analytics_intent_result('running', ['certificate_requests' => [
+            ['node_id' => $this->router->id, 'scope' => 'route-public', 'request_base64' => base64_encode('public-csr')],
+        ]]))->assertOk();
+        expect($this->operation->fresh()->state)->not->toHaveKey('certificate_requests');
     });
+
 });
 
 it('keeps the root lifecycle readable after its own publication ownership changes', function (): void {

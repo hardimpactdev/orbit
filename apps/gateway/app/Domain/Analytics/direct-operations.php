@@ -3,14 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Analytics\AnalyticsIntentProjection;
-use App\Domain\Analytics\AnalyticsSigningPrimitive;
 use App\Domain\Analytics\AnalyticsUpdateProjection;
 
 return [
     'analytics.enable' => [
         'workflow' => 'operation-analytics-enable-direct',
         'projection' => AnalyticsIntentProjection::class,
-        'primitive' => AnalyticsSigningPrimitive::class,
         'private_material' => ['plausible_credentials' => 'analytics.plausible_credentials'],
     ],
     'analytics.disable' => [

@@ -117,18 +117,14 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);
-        $requests = $result['certificate_requests'] ?? null;
         $published = ($result['certificates_ready'] ?? null) === true;
         $safeResult = $this->safeResult($result);
 
-        return DB::transaction(function () use ($operation, $data, $status, $safeResult, $requests, $published, $result): Operation {
+        return DB::transaction(function () use ($operation, $data, $status, $safeResult, $published, $result): Operation {
             $operation->refresh();
             $terminal = $operation->status->terminal();
             if (! $terminal && $status === OperationStatus::Succeeded) {
                 $this->tracking->complete($operation);
-            }
-            if (! $terminal && $requests !== null) {
-                $this->requests($operation, $requests);
             }
             if (! $terminal && $published) {
                 $this->tracking->publish($operation);
@@ -163,32 +159,5 @@ final readonly class AnalyticsIntentProjection implements DirectOperationProject
         }
 
         return $safe;
-    }
-
-    private function requests(Operation $operation, mixed $requests): void
-    {
-        if (! is_array($requests) || ! array_is_list($requests) || count($requests) > 20) {
-            throw new ResourceOperationException('certificate.request_invalid', 'Only admitted tracking signing requests are accepted.', 422);
-        }
-        $stored = [];
-        $prior = ValidatedData::object($operation->state['certificate_requests'] ?? []);
-        foreach ($requests as $request) {
-            if (! is_array($request) || array_diff(array_keys($request), ['node_id', 'scope', 'request_base64']) !== []) {
-                throw new ResourceOperationException('certificate.request_invalid', 'The tracking signing request is invalid.', 422);
-            }
-            $leaf = collect($this->tracking->plan($operation)['certificates'])->first(static fn (array $leaf): bool => $leaf['node_id'] === ($request['node_id'] ?? null) && $leaf['scope'] === ($request['scope'] ?? null));
-            $encoded = $request['request_base64'] ?? null;
-            $pem = is_string($encoded) ? base64_decode($encoded, true) : false;
-            if (! is_array($leaf) || ! is_string($encoded) || ! is_string($pem) || strlen($encoded) > 32768
-                || ! str_starts_with($pem, '-----BEGIN CERTIFICATE REQUEST-----') || @openssl_csr_get_public_key($pem) === false) {
-                throw new ResourceOperationException('certificate.request_invalid', 'The public request does not match an admitted tracking hostname.', 422);
-            }
-            $key = $leaf['node_id'].':'.$leaf['scope'];
-            if (isset($stored[$key]) || (isset($prior[$key]) && $prior[$key] !== $encoded)) {
-                throw new ResourceOperationException('certificate.request_invalid', 'An admitted tracking signing request changed.', 409);
-            }
-            $stored[$key] = $encoded;
-        }
-        $operation->update(['state' => [...($operation->state ?? []), 'certificate_requests' => $stored]]);
     }
 }
