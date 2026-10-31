@@ -118,7 +118,8 @@ final readonly class GatewayRuntimeHandoff
         $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): string => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? 'none');
 
         return [
-            'caddy' => $caddy,
+            'caddy' => $caddy['outcome'],
+            'caddy_operation_id' => $caddy['operation_id'],
             'fpm' => $fpm,
             'agent_view' => 'restarted',
             'horizon' => $horizon,

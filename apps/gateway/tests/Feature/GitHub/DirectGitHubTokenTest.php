@@ -350,3 +350,29 @@ it('refuses and revokes an issued credential when authenticated repository scope
     Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE' && $request->url() === 'https://api.github.com/installation/token');
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
 })->with(['foreign', 'multiple', 'empty', 'count', 'unreadable', 'redirect']);
+
+it('logs only a fixed refusal phase and HTTP status without changing mint requests', function (string $phase): void {
+    $reply = $this->reply;
+    match ($phase) {
+        'token_format' => $reply['token'] = '',
+        'permission_scope' => $reply['permissions']['contents'] = 'read',
+        'expiry_format' => $reply['expires_at'] = 'private-upstream-sentinel',
+        'expiry_lifetime' => $reply['expires_at'] = now()->subSecond()->format('Y-m-d\TH:i:s\Z'),
+        default => null,
+    };
+    Http::fake([
+        '*/installation' => Http::response(['id' => 7], $phase === 'installation' ? 500 : 200),
+        '*/access_tokens' => Http::response($reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 0, 'repositories' => []]),
+        '*/installation/token' => Http::response(null, 204),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertServiceUnavailable()
+        ->assertJsonPath('error.code', 'operation.github_token_unavailable');
+    $diagnostics = array_map(static fn (array $row): array => [$row[0], array_intersect_key($row[1], ['phase' => true, 'http_status' => true])], $this->logs);
+    expect($diagnostics)->toContain(['github.scoped_token_refused', [
+        'phase' => $phase, 'http_status' => $phase === 'installation' ? 500 : ($phase === 'repository_scope' ? 200 : 201),
+    ]]);
+    Http::assertSentCount(match ($phase) {
+        'installation' => 1, 'token_format' => 2, 'repository_scope' => 4, default => 3,
+    });
+})->with(['installation', 'token_format', 'permission_scope', 'expiry_format', 'expiry_lifetime', 'repository_scope']);

@@ -4,14 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
-use App\Domain\Analytics\AnalyticsPublicationManager;
-use App\Domain\Analytics\AnalyticsRoleSettings;
-use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
-use App\Domain\Analytics\AnalyticsSecretManager;
-use App\Domain\Analytics\AnalyticsStorageConnection;
-use App\Domain\Analytics\AnalyticsStorageProcessGuard;
-use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -58,7 +50,6 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\AgentCaddyPackage;
 use App\Infrastructure\Nodes\CiRunnerHostProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
-use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\CiRunnerRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
@@ -90,6 +81,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\PhpBuildAnswers;
 
 beforeEach(function (): void {
@@ -804,7 +796,6 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
-        analytics: analytics_role_baseline(),
         ciRunner: ci_role_baseline($events),
     );
     foreach (role_baseline_roles() as $role) {
@@ -1004,7 +995,6 @@ it('checks the remote operating system before every role convergence', function 
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
-        analytics: analytics_role_baseline(),
         ciRunner: ci_role_baseline($events),
     );
     foreach (role_baseline_roles() as $role) {
@@ -1043,7 +1033,6 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:caddy-source',
         'ssh:websocket',
         'agent:websocket-runtime',
-        'guard:unknown',
         'guard:unknown',
         'ssh:ci-runner',
         'program:ci-runner.host',
@@ -1140,7 +1129,7 @@ function baseline_guard_agents(array &$events): FakeAgentCommandRunner
 function role_baseline_models(RoleName $role, string $name = 'role-node'): array
 {
     $address = '10.44.0.'.(Node::query()->count() + 2);
-    $cluster = in_array($role, [RoleName::Router, RoleName::Ingress], strict: true)
+    $cluster = in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics], strict: true)
         ? Cluster::query()->create(['name' => "{$name}-cluster"])
         : null;
     $node = Node::query()->create([
@@ -1168,7 +1157,7 @@ function role_baseline_roles(): array
 {
     return array_values(array_filter(
         RoleName::cases(),
-        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress], strict: true),
+        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress, RoleName::Analytics], strict: true),
     ));
 }
 
@@ -1265,60 +1254,6 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
         // convergence, which this dispatch-only suite does not exercise.
         publication: Mockery::mock(WebSocketPublicationManager::class)->shouldIgnoreMissing(),
         credentials: $credentials,
-    );
-}
-
-/**
- * The analytics baseline adds no dispatch events here. Its storage is created on first use, after every other role's Node has claimed its address.
- */
-function analytics_role_baseline(): AnalyticsRoleBaseline
-{
-    $settings = new class implements AnalyticsRoleSettingsRepository
-    {
-        private ?AnalyticsRoleSettings $settings = null;
-
-        public function find(Node $node): AnalyticsRoleSettings
-        {
-            if ($this->settings === null) {
-                $storage = analytics_storage_processes();
-                $this->settings = new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id);
-            }
-
-            return $this->settings;
-        }
-
-        public function store(Node $node, AnalyticsRoleSettings $settings): void {}
-
-        public function version(Node $node): string
-        {
-            return '3.2.1';
-        }
-
-        public function storeVersion(Node $node, string $version): void {}
-
-        public function purge(Node $node, bool $runtimeStopped = false): void {}
-    };
-
-    // The ClickHouse configuration, the Process runtime, and the publication reach a real node, which this dispatch-only
-    // suite does not exercise; AnalyticsRoleBaselineTest covers what the baseline asks of them.
-    return new AnalyticsRoleBaseline(
-        $settings,
-        new AnalyticsStorageProcessGuard,
-        Mockery::mock(AnalyticsClickhouseConfigurationManager::class)->shouldIgnoreMissing(),
-        Mockery::mock(AnalyticsSecretManager::class)->shouldReceive('secretKeyBase')->andReturn(str_repeat('k', 64))->getMock()->shouldIgnoreMissing(),
-        new class implements PlausibleRuntimeLifecycle
-        {
-            public function converge(Node $node, string $version, AnalyticsStorageConnection $storage, string $secretKeyBase): Process
-            {
-                return new Process;
-            }
-
-            public function remove(Node $node): void {}
-
-            public function forget(Node $node): void {}
-        },
-        Mockery::mock(AnalyticsPublicationManager::class)->shouldIgnoreMissing(),
-        Mockery::mock(NodeRoleFirewallManager::class)->shouldIgnoreMissing(),
     );
 }
 
@@ -1690,3 +1625,18 @@ function baseline_ordering_agents(array &$events): FakeAgentCommandRunner
         return ['changed' => false];
     });
 }
+
+it('refuses Analytics baseline removal without invoking its retired PHP effects', function (): void {
+    $node = FleetFixtures::node('retired-analytics', [RoleName::Analytics]);
+    $assignment = $node->roles->sole();
+    $before = $assignment->getAttributes();
+
+    try {
+        app(NativeRoleBaselineConverger::class)->removeUnreachable($node, $assignment);
+        test()->fail('The retired Analytics baseline must refuse.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('operation.kind_unavailable');
+    }
+
+    expect($assignment->fresh()->getAttributes())->toBe($before);
+});

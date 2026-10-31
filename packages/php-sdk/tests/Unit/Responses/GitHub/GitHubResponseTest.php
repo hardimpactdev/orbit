@@ -9,6 +9,9 @@ use Orbit\Sdk\Responses\GitHub\GitHubAppResponse;
 function github_app_payload(array $overrides = []): array
 {
     return [
+        'status' => 'registered',
+        'installations_status' => 'current',
+        'observed_at' => '2026-10-31T08:00:00.000Z',
         'name' => 'orbit-acme',
         'slug' => 'orbit-acme',
         'app_id' => 4242,
@@ -106,3 +109,16 @@ it('rejects a malformed install step', function (array $data): void {
     'keyed accounts' => [['step' => 'install', 'url' => 'https://github.com/apps/orbit', 'accounts' => ['a' => 'acme']]],
     'non-string account' => [['step' => 'install', 'url' => 'https://github.com/apps/orbit', 'accounts' => [7]]],
 ]);
+
+it('reads explicit pending identity and unknown installations without inventing an App', function (): void {
+    $response = GitHubAppResponse::fromGatewayData([
+        'status' => 'pending', 'installations_status' => 'unknown', 'observed_at' => null,
+        'name' => null, 'slug' => null, 'app_id' => null, 'owner' => null, 'url' => null, 'settings_url' => null, 'installations' => [],
+    ], 'req');
+    expect($response->status)->toBe('pending')->and($response->name)->toBeNull()->and($response->appId)->toBeNull()
+        ->and($response->installationsStatus)->toBe('unknown');
+});
+
+it('rejects certainty without an observation timestamp', function (): void {
+    expect(fn () => GitHubAppResponse::fromGatewayData(github_app_payload(['observed_at' => null]), 'req'))->toThrow(GatewayApiException::class);
+});

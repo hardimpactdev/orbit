@@ -12,6 +12,7 @@ The `github` family manages the Gateway's own GitHub App. Orbit uses the App to 
 | Command | Result |
 | --- | --- |
 | [`github:app:install`](#orbit-githubappinstall) | Register the App when the Gateway has none, then install it on a GitHub account or organization. |
+| [`github:app:sync`](#orbit-githubappsync) | Admit a native refresh of App installation observations. |
 | [`github:app:show`](#orbit-githubappshow) | Show the App and the accounts that installed it. |
 | [`github:app:destroy`](#orbit-githubappdestroy) | Delete the App's stored credentials from the Gateway. |
 
@@ -37,27 +38,18 @@ orbit github:app:install --name=orbit-acme --owner=acme
 
 The CLI prints each URL and opens it in a browser when it can. The browser must reach the Gateway's private HTTPS address, because GitHub redirects to it after registration. On a machine without a browser, open the printed URL on a machine that is on the Orbit VPN.
 
-On a Gateway without an App, the command first registers the App. You confirm once on GitHub. The command then opens the App's install page, where you choose the account or organization and its repositories. The command waits until the Gateway sees the new installation and reports the account.
+On a Gateway without an App, confirm registration on GitHub. The callback returns the native registration Operation with HTTP 202. After that Operation succeeds, run `github:app:install` again to open the installation page. Choose the account and repositories in the browser. The CLI returns `pending` without polling or claiming that installation has completed.
 
-On a Gateway that has an App, the command opens the install page only. Run it once for each account or organization.
+## orbit github:app:sync
 
-The install page needs a signed-in GitHub session. GitHub answers it with a 404 for a signed-out browser.
+Refresh installation observations in one native Swamp workflow. The command returns its queued Operation without waiting.
 
-The command waits up to ten minutes and asks the Gateway every three seconds. With `--json` or `-n`, it prints the URL, does not wait, and reports a `status` of `pending`.
+```bash
+orbit github:app:sync [--idempotency-key=KEY] [--json]
+orbit operation:show OPERATION_ID
+```
 
-| Status | Meaning |
-| --- | --- |
-| `installed` | The Gateway sees the new installation. The result names the account. |
-| `pending` | The URL was printed, and the command did not wait. |
-
-| Error code | Meaning |
-| --- | --- |
-| `github.name_invalid` | The App name is not a GitHub App name. |
-| `github.owner_invalid` | The owner is not a GitHub account name. |
-| `github.registration_invalid` | The redirect does not match a registration that this Gateway started, or the one-time code has expired. |
-| `github.registration_failed` | GitHub refused to exchange the one-time code. |
-| `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. |
-| `github.unavailable` | The Gateway could not reach `api.github.com`. |
+Reuse the same key after an uncertain admission. Swamp reads installations using a short-lived App JWT minted by the Gateway; the private signing key stays on the Gateway.
 
 ## orbit github:app:show
 
@@ -74,7 +66,7 @@ orbit github:app:show [--json]
 | `repositories` | `all` or `selected`. |
 | `suspended` | Whether the account suspended the installation. |
 
-The Gateway lists installations on GitHub for each call, so the result reflects changes made on GitHub. The result never contains the private key.
+The Gateway returns stored public state. `status` distinguishes registered, pending, failed and cancelled registration. `installations_status` is unknown, current, or stale, and `observed_at` preserves the native observation time. Run `github:app:sync` to refresh it. The result never contains the private key or a token.
 
 | Error code | Meaning |
 | --- | --- |
