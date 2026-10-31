@@ -17,6 +17,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\DatabaseConnection;
@@ -198,7 +199,7 @@ describe('Horizon', function (): void {
 describe(GatewayHorizon::class, function (): void {
     beforeEach(function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
-        $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-host-key']));
         $this->scheduler = Process::query()->create([
             'owner_type' => Node::class,
             'owner_id' => $this->gateway->id,
@@ -233,7 +234,7 @@ describe(GatewayHorizon::class, function (): void {
             ->and($operation->input['command'])->toBe(['/usr/bin/php8.5', 'artisan', 'horizon'])
             ->and($operation->input['content'])->not->toContain('EnvironmentFile=')
             ->and($this->socket->sent[0]['payload']['inputs'])->toEqual([
-                'intent' => $operation->input, 'execution_secrets' => (object) [],
+                'intent' => [...$operation->input, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($this->gateway)], 'execution_secrets' => (object) [],
                 'operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
             ])
             ->and($horizon->working_directory)->toBe('/home/orbit/orbit/apps/gateway')
