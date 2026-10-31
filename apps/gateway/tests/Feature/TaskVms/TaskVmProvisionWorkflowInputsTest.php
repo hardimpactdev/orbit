@@ -29,7 +29,7 @@ function commandProvisionEnrollment(): array
 }
 
 it('composes full public provider and enrollment intent without copying the private-material protocol', function (): void {
-    $result = new TaskVmProvisionWorkflowInputs()->compose(commandProvisionAllocation(), commandProvisionEnrollment());
+    $result = app(TaskVmProvisionWorkflowInputs::class)->compose(commandProvisionAllocation(), commandProvisionEnrollment());
 
     expect($result['intent'])->toMatchArray(['task_vm_id' => 12, 'node_id' => 9, 'guest_node_id' => 210,
         'image_fingerprint' => str_repeat('a', 64), 'runtime' => ['pi_sha256' => str_repeat('c', 64)]]);
@@ -43,6 +43,6 @@ it('refuses a fragment for a different provider or participant before a native s
     $enrollment = commandProvisionEnrollment();
     $enrollment['intent'][$field] = in_array($field, ['provider', 'name'], true) ? 'foreign' : 999;
 
-    expect(fn () => new TaskVmProvisionWorkflowInputs()->compose(commandProvisionAllocation(), $enrollment))
+    expect(fn () => app(TaskVmProvisionWorkflowInputs::class)->compose(commandProvisionAllocation(), $enrollment))
         ->toThrow(ResourceOperationException::class);
 })->with(['task_vm_id', 'execution_node_id', 'guest_node_id', 'gateway_node_id', 'issuer_node_id', 'model_router_node_id', 'provider', 'name']);

@@ -5,12 +5,28 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
 /** Compose admitted public provider data with the enrollment owner's command-step envelope. */
 final readonly class TaskVmProvisionWorkflowInputs
 {
+    public function __construct(private TaskVmEnrollmentWorkflowInput $enrollment) {}
+
+    /** Prepare the native envelope from an existing allocation; admit no child Operation.
+     * @param  array<string,mixed>  $allocation
+     * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
+     */
+    public function capture(TaskVm $vm, array $allocation): array
+    {
+        $public = $this->enrollment->fromCaptured(ValidatedData::object($allocation['enrollment'] ?? []), $allocation,
+            ['address' => $vm->address, 'public_key' => $vm->ssh_host_key]);
+        $envelope = $this->compose($allocation, $this->enrollment->envelope($public));
+
+        return $this->enrollment->envelope($this->enrollment->withExecutionCopies($vm, $envelope['intent']));
+    }
+
     /** @param array<string,mixed> $allocation
      * @param  array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}  $enrollment
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}

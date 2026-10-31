@@ -11,6 +11,8 @@ The outer workflow inputs are `{operation_id, kind, node_id, intent, execution_s
 
 `TaskVmProvisionWorkflowInputs::compose` combines the public provider allocation with the enrollment owner's envelope. Both parts must name the same VM, provider, host executor, guest, Gateway, issuer and model router. The composer copies only the named provider fields. It does not carry old private references or bindings into native inputs. Secret values use the shared `SwampCommandStep::executionCopy` helper; inputs contain only names of vaults and keys.
 
+`TaskVmProvisionWorkflowInputs::capture(vm, allocation)` prepares that envelope from an already captured allocation. It uses the canonical enrollment supplier to capture public data and synchronize model and Pi execution copies. It checks the public identities before requesting copies. A shared vault refusal propagates before any envelope is returned; the parent must not start a run after that refusal. This method does not allocate again, start an Operation, or supply the still-missing worker and hub actions.
+
 ## Provider commands
 
 `task-vm-provider-incus` is a reusable native fragment. It receives public intent and root identity; it needs no secrets. Each command runs on the exact host with both its target and string Node label. It observes the exact VM, checks the admitted image, clones an immutable topology seed when required, initializes the VM, removes seed templates from public metadata, starts the VM, and observes the running guest address.
