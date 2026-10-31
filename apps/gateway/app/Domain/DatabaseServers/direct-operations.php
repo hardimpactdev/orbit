@@ -3,22 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseCleanupProjection;
-use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
+use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
-return ['database.mysql_clone' => [
-    'workflow' => 'operation-database-mysql-clone',
+return ['database.write' => [
+    'workflow' => 'operation-database-write',
     'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'database_mysql_clone_writer',
-    'projection' => DatabaseCreateProjection::class,
-    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
-], 'database.create' => [
-    'workflow' => 'operation-database-create',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'database_create_writer',
-    'projection' => DatabaseCreateProjection::class,
-    'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],
+    'writer_state' => 'database_write_writer',
+    'projection' => DatabaseWriteProjection::class,
+    'private_material' => ['password' => 'database.intent', 'sql' => 'database.intent', 'dsn' => 'database.intent', 'username' => 'database.intent'],
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'writer_config' => 'swamp.direct_writers',

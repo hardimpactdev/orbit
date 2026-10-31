@@ -205,6 +205,16 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
     }
 
+    public function revokeInstallationToken(#[SensitiveParameter] GitHubAccessToken $credential): bool
+    {
+        try {
+            return $this->request()->withToken($credential->reveal())->withoutRedirecting()->timeout(5)->connectTimeout(5)
+                ->delete('/installation/token')->status() === 204;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
     private function assertDependencyTokenResponse(Response $response): void
     {
         $message = $response->json('message');

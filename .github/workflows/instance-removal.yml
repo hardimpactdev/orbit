@@ -44,3 +44,5 @@ jobs:
           tests/Feature/Api/SwampInstanceDestroyAdmissionTest.php
           tests/Feature/Domain/InstanceLifecycleChildrenTest.php
           tests/Feature/Domain/ProductionInstanceRemovalTest.php
+          tests/Feature/Domain/InstanceRuntimeRemovalChildrenTest.php
+          tests/Feature/Domain/InstanceRemovalRecoveryTest.php

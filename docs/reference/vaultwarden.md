@@ -76,13 +76,14 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 | Found in the collection | Action |
 | --- | --- |
-| A published item that is gone or in the trash | Forget it, so the run creates the item again. |
+| A published cipher that is gone or in the trash | Create the item with a new ID. Do not adopt another cipher for that recorded source. |
 | A published item that someone changed | Rewrite it. |
-| An Orbit item for a wanted source, with no record of publishing it | Adopt it and rewrite it. This covers a create that timed out after Vaultwarden stored the item, and items left by `vault:teardown --keep-items`. |
-| A second Orbit item for the same source, a trashed copy, or an item whose source is gone from Orbit | Delete it permanently. |
+| An item for a wanted source for which the ledger has no entry | Adopt it and rewrite it. This covers a create that timed out before its first ledger record, and wanted items left by `vault:teardown --keep-items`. |
+| A recorded item in the trash or whose source is gone from Orbit, with an ID and decrypted source that match the publishing ledger | Delete it permanently, unless it belongs to another visible collection. |
+| A copy of a recorded source with a different cipher ID, or an unrecorded item for an unwanted source | Leave it, even if the recorded cipher is missing or trashed. A marker alone does not authorize adoption, rewriting, or deletion. |
 | An item without `orbit.source` | Leave it. |
 
-The collection belongs to Orbit. Do not add items with an `orbit.source` field by hand.
+The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
 
 One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
@@ -108,7 +109,9 @@ One failed change does not stop the others. The run records its error, keeps tha
 
 [`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
-Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+
+Vaultwarden's `collectionIds` response lists only collections visible to the account. The sharing check detects those memberships; an absent ID does not prove that the item has no membership in a collection hidden from the account. Sync uses the same check before deleting a recorded item.
 
 ## API
 
@@ -127,7 +130,7 @@ All operations need access to the Gateway.
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
-| `vault.item_shared` | 409 | A published teardown item also belongs to another collection. No item is deleted. |
+| `vault.item_shared` | 409 | A published item selected for deletion also belongs to another visible collection. No item is deleted. |
 | `validation.failed` | 422 | The `url` is not an HTTPS origin on a `.orbit` host. |
 | `vault.sync_failed` | 502 | `vault:sync` could not make at least one change. `details` holds `failed` and `first_error`. |
 | `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |

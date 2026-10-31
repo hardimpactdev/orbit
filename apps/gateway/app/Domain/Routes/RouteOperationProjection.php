@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 
@@ -25,6 +26,15 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'route.target_unset') {
+            $route = Route::query()->find($operation->target_id);
+            if ($operation->target_type !== 'route' || $operation->node_id === null || $route === null || ! $route->isApp()
+                || $route->id !== ($operation->input['route_id'] ?? null) || $route->targets()->exists()) {
+                throw new ResourceOperationException('route.target_conflict', 'The admitted Route target set is no longer empty.', 409);
+            }
+
+            return ['route_id' => $route->id, 'target_ids' => []];
+        }
         if (DirectRoutePublication::handles($operation->kind)) {
             app(DirectRoutePublication::class)->assertOperation($operation);
 
@@ -84,7 +94,7 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 
         return $this->direct->project($operation, $data, $result, match ($operation->kind) {
             'route.caddy_converge' => 'caddy-publish', 'route.private_dns_publish' => 'private-dns-publish',
-            'route.lan_remove' => 'route-lan-removed', default => 'route-verified',
+            'route.lan_remove' => 'route-lan-removed', 'route.target_unset' => 'route-targets-unset', default => 'route-verified',
         });
     }
 }

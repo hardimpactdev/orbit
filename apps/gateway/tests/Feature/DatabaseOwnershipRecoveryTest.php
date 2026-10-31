@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
+use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
@@ -81,16 +82,15 @@ it('requires explicit attribution and refuses recovery while a lifecycle operati
     expect($this->admin->statements)->toBe([]);
 })->with([['adopt', true], ['forget', true], ['adopt', false], ['forget', false]]);
 
-it('retains historical prefix ownership only with its successful durable receipt', function (): void {
+it('covers future prefix test databases only after the grant has a successful durable receipt', function (): void {
     $operation = Operation::query()->create(['kind' => 'database.create', 'target_type' => 'database_server', 'target_id' => $this->server->id,
         'node_id' => $this->dbNode->id, 'status' => 'running', 'input' => ['connection_id' => $this->connection->id]]);
     $intent = DatabaseExecutionIntent::query()->create(['target_type' => 'database_server', 'target_id' => $this->server->id, 'node_id' => $this->dbNode->id,
         'payload' => ['commands' => ['grant-tests' => ['name' => 'database.server-admin', 'input' => [], 'grant_prefix' => 'legacy_app_test']], 'projection' => []]]);
     $operation->update(['input' => [...$operation->input, 'intent_id' => $intent->id]]);
     $run = ['key' => 'grant-tests', 'name' => 'database.server-admin', 'transport' => 'agent'];
-    $this->connection->forceFill(['creation_receipts' => [['database' => 'legacy_app_test', 'username' => 'legacy_owner',
-        'server_id' => $this->server->id, 'scope' => 'prefix', 'operation_id' => $operation->id, 'step' => 'grant-tests']]])->save();
-    $result = ['backend' => 'active'];
+    $execution = app(DatabaseOperationExecution::class);
+    $result = $execution->received($operation, $run, ['output' => '']);
     $ownership = app(DatabaseOwnership::class);
     expect($ownership->mysqlNames($this->connection->fresh(), ['legacy_app_test_8']))->toBe([]);
     $operation->update(['state' => ['executor_runs' => ['grant-tests' => [...$run, 'result' => $result]]]]);
