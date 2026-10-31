@@ -26,6 +26,7 @@ $effect = static fn (string $command, array $secrets = []): array => [
 ];
 
 $definitions = [
+    'route.target_unset' => ['executor' => 'swamp', 'result_fields' => ['ready', 'error_code']],
     'route.router_lan_retire' => $effect('firewall.rules'),
     'route.workload_firewall' => $effect('firewall.rules'),
     'route.lan_converge' => $effect('firewall.route-lan'),

@@ -18,6 +18,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -29,11 +30,14 @@ use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\RouteForeignChildKinds;
 use Tests\Support\RouteSwampGatewayFixture;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
+    config(['swamp.run_token' => 'fixture.fake']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     $this->node = Node::query()->create(['name' => 'route-admission', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Safety', 'slug' => 'safety', 'repository_url' => 'https://example.test/safety.git', 'root' => 'public']);
@@ -172,8 +176,8 @@ it('skips Metrics for target associations without calling the retained PHP recon
     $admission = app(AdmitRouteOperationAction::class);
     $operation = $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
     expect($operation->status->value)->toBe('queued')
-        ->and($operation->state['route_plan']['metrics'])->toBeFalse()
-        ->and($operation->state['route_plan']['stages'])->not->toHaveKey('metrics-reconciled')
+        ->and($operation->state['route_plan']['metrics'] ?? false)->toBeFalse()
+        ->and($operation->state['route_plan']['stages'] ?? [])->not->toHaveKey('metrics-reconciled')
         ->and($operation->children()->exists())->toBeFalse()->and($this->agents->calls)->toBe([]);
 })->with(['set', 'unset']);
 

@@ -288,9 +288,9 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 [Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, with the snapshot pull request. One `nightly/artifacts-<digest>` pull request holds all authenticated Sury and Incus pin changes. The digest names those pins; later nights reuse the PR, and a closed PR is never reopened.
 
-The Gateway App verifies its signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. That proof is cached for one hour per head; failed index fetches retry at most hourly. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
+Swamp verifies the App’s signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. Native workflow history and recovery own execution; the Gateway keeps no execution proof or retry cache. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
 
-The Gateway needs `python3`, `gpg`, and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
+The Swamp control worker needs `gpg` and `gpgv`; the standalone recipe CLI also uses `python3`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 2. Each task VM host [builds a new base image](#build-the-base-image).
@@ -386,7 +386,9 @@ The host's image, instance-name, and host-wide resource inventories use the type
 
 `incus.volume` clones a base image's topology seed for a VM, gives a completed seed its final name, or removes an explicitly selected volume. The agent derives seed names from the image fingerprint and clone names from the VM name. It preserves existing clones, refuses a missing source seed, and treats an absent removal target as removed. Volume changes share a host lock; the Gateway keeps the decision about which records and images still own each volume.
 
-`incus.vm-state` returns one VM's running state, guest bridge address, and original image fingerprint. `incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
+`incus.vm-state` returns one VM's running state, explicit `settled: true`, guest bridge address, and original image fingerprint. It refuses a VM unless Incus reports `Running` or `Stopped`.
+
+`incus.vm` creates, starts, stops, or deletes that VM under one target lock. The agent owns exact-name matching, Incus output validation, clean shutdown followed by forced stop, and the observation after a failed mutation. Create intent supplies the Gateway public key, image claim, resource limits, and topology requirement. The agent renders the fixed cloud-init account and QEMU configuration, clones a required seed before launch, and refuses an existing VM with a different claimed image. Delete removes the VM before releasing its seed clone. The Gateway keeps placement and resource-size policy.
 
 Image builders and smoke VMs use the same `incus.vm` boundary. Their `create_image` intent selects the source image, account key, resource limits, and builder account mode. Rust renders cloud-init, attaches an Incus cloud-init configuration disk, and initializes the VM with NIC isolation. Before its first start, Rust removes the source image’s NoCloud seed templates. The disk supplies the account configuration at power-on, so cloud-init cannot run with an empty datasource while the Incus agent copies seed files and requests a reboot. This applies to stock builders, smoke VMs, and task VMs.
 
@@ -683,9 +685,11 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Park and resume
 
-Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner, stops the VM through its provider and records `waiting_for_review` only after stopped power is confirmed. It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting.
+Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner and records an immutable park intent. One native Swamp root stops and observes the admitted VM on its exact Incus host or Gateway Node for UpCloud. The result projection records `waiting_for_review` only after stopped power is confirmed.
 
-The row enters `parked` before the provider stop. Its `vm_power` stays unknown until `stop_confirmed_at` records a confirmed stop. A failed stop clears that proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
+It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting. Parking has one dispatch path: the native `tasks.park` root replaces its PHP stop executor and the unused internal `task_vm.park` parent and `task_vm.confirm_stopped` child. The same root owns soft-stop, hard-stop and observation; it starts no child Operations.
+
+The row enters `parked` with `stop_confirmed_at` only after the native root confirms settled, stopped power. Admission and cancellation leave a running VM `ready`. A failed stop clears the proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
 A requested workspace operation queues the retained `ResumeTaskVm` job. It clears stop proof, starts the VM and waits for the Node agent and Pi within a fixed nine-minute deadline. Confirmed runtime readiness records `ready`; a failed wake retains its error evidence.
 
@@ -1049,7 +1053,7 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 The Gateway compiles image input from the stored machine recipe and the pinned agent delivery. This compilation selects architecture-specific tools, separates PHP and Rust inputs, and keeps empty tool maps as JSON objects. A mismatched agent pin refuses the build before a guest phase starts.
 
-Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; resume a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
+Run `php artisan task-vms:build-recipe` on the Gateway to queue the current recipe on every active host in `settings.task_vms`. It returns build IDs without waiting for remote work. Repeating it for an unchanged recipe reuses the same rows, including failed rows; start another stock attempt for a failure with `task-vms:build-image NODE --resume=ID`, or restart failed builds with `task-vms:build-recipe --retry` after cleanup. `--retry` applies to both Incus builds and UpCloud template attempts.
 
 Use `php artisan task-vms:build-recipe --rebuild` after an image-builder fix, or whenever the current recipe needs a fresh image. It rebuilds the unchanged recipe from stock on every configured Incus host and UpCloud. It cannot be combined with `--retry`. It refuses while a build for the same recipe is running or its UpCloud rebuild request is pending, or while a configured Incus host is building another recipe.
 
@@ -1057,35 +1061,33 @@ Each candidate runs the normal build, verify, smoke, topology-seed (Incus), and 
 
 A failed candidate leaves the promoted image in service. A newer promoted build for the same host and recipe resolves the failed candidate's image-build incident. Promotion swaps the image only after the candidate passes. Build records and candidate aliases distinguish rebuilds of the same recipe; the recipe identity used by Nodes does not change.
 
-A recipe revert reuses a retained verified base. If pruning removed it, the chain rebuilds that identity from stock. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
+A recipe revert builds the selected identity from stock. Swamp retains completed steps within each native run; an explicit Gateway retry records a new stock attempt. `task-vms:image-builds` (also `task-vms:list-image-builds`) shows Incus recipe identities, hosts, steps, fingerprints, and immutable aliases, plus recent UpCloud attempt IDs, identities, states, times, and template UUIDs. `task-vms:build-recipe` prints the current UpCloud attempt and whether a refresh was requested or a verified template already exists. `task-vms:build-image NODE` builds the current recipe on that host; every recipe starts from stock.
 
 Release handoff queues builds immediately when the deployed recipe identity changes. The scheduler checks each minute to recover missed submissions and pick up new hosts. There is no fixed nightly Incus rebuild. The [nightly snapshot and Ubuntu pin PR](#nightly-recipe-maintenance) supplies the daily recipe change. Unchanged releases do not build images. A host added later builds the current recipe on its next check. The same reconcile path refreshes configured UpCloud templates when their recipe identity differs.
 
+Each Incus image attempt starts one native Swamp workflow on the exact build-host worker. Native steps own builder launch, guest recipe phases, publication, smoke checks, topology seed, promotion and pruning. The Gateway records immutable input and projects progress; it starts no child Operations. The build worker uses its admitted, pinned agent and passwordless sudo for fixed Incus commands. A failed candidate retains its builder for inspection and leaves the promoted image serving. Revert the cutover PR to roll back the writer.
+
+The build worker reads a bounded Pi artifact reference through the shared direct-operation private-material API, downloads it through that same private boundary and verifies the admitted SHA-256 before use. No public artifact URL, inline binary JSON or Gateway-worker transfer is required.
+
+The worker runs the read-only `image.owner` check as the image's pinned `orbit` UID and GID 1000. Root commands and mutation supervision start as root. Each command keeps the identity its agent contract declares.
+
 Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
-Each effect is a keyed child Operation; the parent yields while that child runs. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
+Incus effects run in the native parent, without child Operations. UpCloud retains its child path until its own cutover. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
 
 The agent implements the image phases in Rust and reuses the Node recipe's package, archive, JavaScript, and PHP installers. Image APT uses only its recorded snapshot configuration. The agent installed before the first phase remains the Gateway delivery pin.
 
 Rust toolchain installation reads the verified archive's component manifests and copies their declared files; it executes no installer script from the archive. It assembles the complete toolchain in a temporary directory beside the installed prefix, then replaces that prefix. This removes obsolete files on an upgrade. It records the artifact pins only after publishing the binary links, and repairs those links on repeated execution.
 
-The Gateway records the image recipe identity with `image.recipe-marker`. It appends sanitized observations through `image.recipe-log`, which owns the fixed root-only log directory and validates the profile and phase before writing. Both commands use native file operations; no guest path or executable is supplied by the caller.
+The Incus worker records image identity with `image.recipe-marker`. Guest services retain bounded local diagnostics. The Gateway stores phase progress and safe error codes; it does not read guest logs or run recipe commands.
 
 Incus and UpCloud use one ordered list of recipe installer phases: `apt-source`, `packages`, `javascript`, `rust`, `agent`, and `pi`. Before any package install, `apt-source` prepares the recipe's Ubuntu snapshot source and refreshes only its indexes. The `packages` phase fails with an `apt-source` diagnostic if that configuration is missing or does not match the recipe. To restart a failed build after a phase is added, use `task-vms:build-recipe --retry`; it clears failed Incus step history and starts a new builder attempt from stock.
 
-Each installer phase runs in a transient systemd service on the builder. Its stable name identifies the recipe, profile, phase, and Incus build. UpCloud uses `upcloud-<build id>` as its execution key; each build gets a fresh server. On the first read after a resume, success advances the chain and an already failed unit restarts. A running unit belongs to the resumed attempt, so a later failure is reported without restarting it. The Gateway sends typed recipe input and observes the result through the agent.
-
-Swamp reconnects to the same service after a lost SSH reply or process restart without starting another installer. Both backends retain their child Operations and native phase identities. No new Node program or inline script implements this supervision.
-
-Before issuing a start, the Gateway records the builder boot ID in the phase state. A missing unit on that boot can start; a changed boot ID fails with a builder-reboot diagnostic naming `task-vms:build-recipe --retry`. Completed services remain loaded. Unreadable status replies have an unknown outcome and share the SSH-loss observation bound.
-
-The native `image.inspect-phase`, `image.start-phase`, and `image.restart-phase` commands own the boot check, systemd state parsing, immutable phase input, and private log tail. The Gateway sends the recipe identity, profile, phase, and execution ID; Rust derives the unit and file names. A restart names the failed invocation already recorded by the build attempt. If another invocation has started, repeating that request only observes it. The service runs compiled agent code with typed recipe data and reports failures with a nonzero process exit.
+Each installer phase runs in the guest's existing bounded systemd service. The Incus worker sends typed input and observes that service locally within its native workflow step. Its key includes recipe identity, profile, phase and build attempt. A changed builder boot ID stops the build. Swamp resumes failed native steps; completed steps remain checkpoints in the same root. The retained UpCloud path uses its existing child and service identities until its separate cutover.
 
 Pi delivery uses `pi.receive-artifact` to send bounded chunks of the pinned binary. The command stores them in its fixed private cache, accepts a repeated matching chunk, and verifies the complete SHA-256 before making the artifact available. It accepts no destination path. `pi.install-artifact` publishes the verified binary at the managed account's fixed Pi path; the image Pi phase uses that same implementation. A failed transfer leaves the installed binary unchanged. Image cleanup removes complete and partial transfer artifacts under the same Pi resource lock before publication.
 
-Each control delivery shares a 1,440-second budget, including staging and transfers. The Operation retains a fixed admission deadline while the native service keeps its own execution budget. Pi uploads use a 900-second transfer limit within that budget. The receiver retains partial bytes for a resumed transfer and rejects conflicting repeated chunks. It discards a complete artifact whose digest is wrong. Digest verification and atomic rename publish only complete input.
-
-The guest service bounds the whole process group to 1,440 seconds, with 30 seconds to stop its children. This covers the observed eight-minute cold package install with margin. One guest lock prevents two phases from changing the builder at once. The Gateway reports a lost SSH channel with its stderr and an unknown phase outcome, then reconnects. A confirmed systemd timeout is reported as a timeout. Strict package checks remain unchanged.
+The guest phase service keeps its existing 1,440-second execution bound and 30-second stop bound. Local guest commands keep their typed command deadlines. Native workflow placement, queueing, cancellation and recovery use Swamp defaults. No Gateway observation loop or keyed receipt controls Incus image execution.
 
 Image APT installs and full upgrades use the phase's remaining execution budget. Every package command shares that deadline, including exact Debian artifacts and the PHP build. A cold install can keep downloading beyond the generic command limit without gaining a fresh phase budget. Inventory and fetch commands retain their own shorter limits.
 
@@ -1103,7 +1105,7 @@ Images live in each host's configured Incus project. The base is a VM image. Its
 
 The `smoke` phase keeps its VM `<builder>-smoke`, which booted the published base. The next phase, `topology-seed`, builds the host's topology seed of that base in it. A medium or large task VM [boots with a clone](#incus-provider) of the seed, and its [topology preparation](#prepare-the-topology) adopts the clone.
 
-The Gateway calls `incus.build-topology-seed` through the agent runner as root on the host. Its typed input names the host project and pool, the smoke VM, the volume size, and the base fingerprint. Rust derives the temporary volume name from the fingerprint and owns the fixed disk device, pool, and template names. The command holds the Incus volume lock and runs these steps:
+The Incus worker calls `incus.build-topology-seed` through the pinned local agent with sudo. Its typed input names the host project and pool, the smoke VM, the volume size, and the base fingerprint. Rust derives the temporary volume name from the fingerprint and owns the fixed disk device, pool, and template names. The command holds the Incus volume lock and runs these steps:
 
 1. It deletes the volume of an earlier run.
 2. It creates the block volume `orbit-topology-seed-<12 hex of the base fingerprint>-new`, 45 GiB, in the host's project and pool. ZFS volumes are thin, so the size costs nothing until Nodes write.
@@ -1136,39 +1138,41 @@ Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases
 
 #### Nightly Ubuntu rollout policy
 
-Nick's decision of 2026-10-19 is that every Ubuntu pin follows the named snapshot, including `resolute-updates`. The Gateway auto-merges these PRs on green Required checks and converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
+Every Ubuntu pin follows the named snapshot, including `resolute-updates`. Swamp auto-merges these PRs on green Required checks. The fleet rollout converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
 
 Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin, and the merge accepts only the regenerated bump on the checked head. Verified images gate rollout. Ordered Node inventory, health, and Doctor checks stop a faulty rollout. These checks make automation safe without promising that an upstream package cannot regress.
 
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. Its named `github.recipe-pr` command runs inside the Gateway against `hardimpactdev/orbit` through the existing GitHub App. The App credential stays inside the Gateway; the Operation and Swamp hold only a secret reference.
+At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. The Gateway records intent and starts `operation-fleet-recipe-pr` directly on its own Node worker. Swamp calls GitHub for the fixed `hardimpactdev/orbit` repository. App signing stays in the Gateway; the shared private reader issues a short-lived scoped token to the bound run on the admitted Node. The step attempts to revoke it before returning a bounded result. No credential enters Operation input, output or Swamp data.
 
-The Gateway reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
+Swamp reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
 
-The Swamp maintenance workflow checks every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR Operations succeed. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same workflow opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
+The Swamp maintenance workflow checks every five minutes from 03:00 through the end of the Amsterdam date. Each date, variant and serving recipe revision admits one open Operation; repeated requests reuse that intent. If main has recipe definitions other than the snapshot date that the serving release does not carry, the Operation fails with `fleet.recipe_pending_deployment` before any GitHub write. A new serving recipe revision permits a new intent. A date branch makes repeated submissions reuse the same PR. The same workflow opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
+
+Before its first GitHub write, the action saves the authenticated candidate in a native Swamp resource. Native retry keeps that candidate even if package indexes change. It reads the branch content and existing PR before repeating a write, so a lost reply after a committed write creates no duplicate branch update or PR. Refresh uses the expected old head; a retry after its committed push cannot push again from the old admitted head.
 
 Refresh and merge use one rule to end a nightly PR: close an App `nightly/recipe-*` PR once main’s snapshot has reached its date or a newer-date App PR is open. This runs before Required checks, evidence resolution, or merge attempts, whatever kept the PR open. It covers failed checks, rejected evidence, and refused merges.
 
-The Gateway closes first, then posts a best-effort comment with the reason. A failed close retries after 300 seconds; other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
+Swamp closes first, then posts a best-effort comment with the reason. An uncertain GitHub write fails the native run for inspection before recovery; the Gateway adds no retry timer. Other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
 
 For today’s date, Refresh rebuilds a remaining failed PR only if main advanced beyond its commit’s parent. It creates one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
 
 Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. Refresh leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. The shared closing rule still applies to superseded App PRs. Other bots' reviews and edits also block recovery; only cross-references are ignored.
 
-A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or artifact PR.
+A short recovery comment is best-effort. An uncertain GitHub recovery write fails the native run for inspection. Other admitted Operations can proceed.
 
 A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
-Swamp requests retire, refresh and merge Operations for each candidate.
+Swamp requests retire, refresh and merge Operations for each candidate on rotating five-minute ticks. Each action runs at most every fifteen minutes.
 
-The Gateway checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
+Unchanged evidence reuses the same Gateway intent and starts no new native run. Retirement wakes when the recipe or candidate set changes; refresh wakes when main or the required-check observation changes; merge wakes when its required-check observation changes, plus the recipe revision for artifact candidates. These actions also wake when a candidate leaves draft, changes its base, or changes its source repository. Ordinary main commits do not wake retirement. Daily opens use the serving recipe revision separately.
 
-Successful evidence verification records the head SHA. Retries reuse that result until the head changes, avoiding repeated index downloads after a refused merge. Required checks and the live PR target, author, head, and draft state are still checked before each merge attempt.
+The Gateway exposes these read-only revisions without a retry cache, timer or execution receipt. The native action rechecks all write policy before an effect.
 
-Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
+Swamp checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author stops the native run; the merge uses the expected head SHA.
 
-GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, merge-refused, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason. When GitHub refuses a merge, the alert includes its HTTP status and message.
+Each admitted merge regenerates its evidence and checks the live PR target, author, head, and draft state. There is no Gateway evidence cache, blocked-head record, retry timer or per-PR execution receipt. GitHub, network, snapshot download and uncertain write failures remain native failures for inspection and recovery. A terminal Gateway projection lets native resume return without repeating an effect whose result was already committed.
 
 The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
@@ -1393,11 +1397,11 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build prints each stage with its time:
+`php artisan task-vms:build-upcloud-image` records one image intent and starts `operation-task-vm-upcloud-image-build` directly. One native Swamp workflow runs its API and guest steps on the admitted Gateway Node's worker. It creates billed servers. The Gateway projects progress, owned server UUIDs and the final template; it creates no child Operations and performs no image actions.
 
 | Stage | What it does |
 | --- | --- |
@@ -1426,7 +1430,9 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
+The build takes about 20 minutes. Swamp owns dispatch, placed steps, cancellation and recovery. API credentials and generated guest host keys use the shared private-material and encrypted output boundaries. Private bytes stay out of native arguments, resources, reports and command arguments. The worker pins each guest's generated host key before its first SSH connection. It uses the official Swamp SSH library, pinned at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`, with the Gateway's existing managed identity. Pi uses the shared bounded private artifact reference and its admitted SHA-256 pin.
+
+Recipe observation uses the same native evaluator as Incus, including the 1440-second phase budget and 60-second consecutive read outage limit. A failed smoke check prevents promotion. Native recovery resumes the same root; an explicit retry records a new attempt.
 
 ### Sweep UpCloud
 

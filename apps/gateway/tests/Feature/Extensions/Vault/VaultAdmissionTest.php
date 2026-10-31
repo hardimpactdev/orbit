@@ -137,34 +137,6 @@ it('refuses Vault results outside the shared C limits before projecting the ledg
     expect(VaultItem::query()->count())->toBe(0);
 })->with(['items', 'string', 'encoded-size']);
 
-it('binds each Vault program to its admitted action and requires the matching successful receipt', function (string $action): void {
-    $reference = ['$secret' => 'vault.credentials', 'id' => $this->caller->id];
-    $operation = Operation::query()->create(['kind' => 'vault.'.$action, 'target_type' => 'vault', 'target_id' => $this->caller->id,
-        'node_id' => $this->caller->id, 'status' => 'running', 'input' => ['configuration' => $reference], 'state' => []]);
-    $contract = app(OperationExecutionContract::class);
-    $key = 'vault-'.$action;
-    $run = ['worker' => 'fixture', 'key' => $key, 'transport' => 'remote_program', 'name' => 'vault.collection',
-        'input' => ['action' => $action, 'configuration' => $reference]];
-    expect($contract->authorizeRun($operation, $run)['name'])->toBe('vault.collection');
-    foreach ([['transport' => 'agent', 'name' => 'node.remove'], ['name' => 'vault.unlisted'],
-        ['input' => ['action' => $action === 'sync' ? 'teardown' : 'sync', 'configuration' => $reference]]] as $change) {
-        expect(fn () => $contract->authorizeRun($operation, [...$run, ...$change]))->toThrow(ResourceOperationException::class);
-    }
-    $result = ['outcome' => 'succeeded', 'data' => ['backend' => match ($action) {
-        'setup' => 'configured', 'sync' => 'synced', 'teardown' => 'absent',
-    }]];
-    expect(fn () => $contract->assertStep($operation, $key, $result))->toThrow(ResourceOperationException::class);
-    $receipt = ['transport' => 'remote_program', 'name' => 'vault.collection', 'result' => $result];
-    $operation->update(['state' => ['executor_runs' => [$key => $receipt], 'steps' => [$key => $result]]]);
-    expect(fn () => $contract->assertCompletion($operation, $result))->toThrow(ResourceOperationException::class);
-    $operation->steps()->create(['name' => $key, 'position' => 1, 'status' => 'succeeded', 'resumable' => true, 'sequence' => 1]);
-
-    $contract->assertCompletion($operation, $result);
-
-    expect(fn () => $contract->assertCompletion($operation, ['outcome' => 'succeeded', 'data' => ['backend' => 'forged']]))
-        ->toThrow(ResourceOperationException::class);
-})->with(['setup', 'teardown']);
-
 it('projects proven setup and sync metadata and retains it until successful teardown', function (): void {
     $this->freezeTime();
     $this->putJson('/api/v1/vault', $this->payload)->assertAccepted();

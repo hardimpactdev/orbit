@@ -38,20 +38,19 @@ final readonly class QueryDatabaseConnectionAction
         if ($connection->driver === DatabaseDriver::Sqlite) {
             $input = app(SqliteNodeDatabaseInspector::class)->writeInput($connection, $sql);
             $nodeId = $connection->node_id;
-            $command = ['name' => 'database.write-sqlite', 'input' => $input, 'protected' => ['sql']];
+            $command = ['name' => 'database.write-sqlite', 'input' => [...$input, 'password' => '', 'dsn' => '', 'username' => null], 'protected' => ['password', 'sql', 'dsn', 'username']];
         } else {
             $nodeId = app(NodeAccessAuthorizer::class)->activeGatewayId();
-            $command = ['transport' => 'remote_program', 'name' => 'database.write', 'input' => [
+            $command = ['name' => 'database.write', 'input' => [
                 'dsn' => app(PdoDatabaseInspector::class)->dsn($connection), 'username' => $connection->username,
                 'password' => $connection->password ?? '', 'sql' => $sql,
-            ], 'protected' => ['password', 'sql']];
+            ], 'protected' => ['password', 'sql', 'dsn', 'username']];
         }
         if ($nodeId === null) {
             throw new ResourceOperationException('database.node_missing', 'The database execution Node is missing.', 422);
         }
-        $command['resumable'] = false;
 
         return $this->operations->execute('database.write', 'database_connection', $connection->id, $nodeId,
-            ['connection_id' => $connection->id, 'driver' => $connection->driver->value], ['database-apply' => $command]);
+            ['connection_id' => $connection->id, 'driver' => $connection->driver->value, 'connection_node_id' => $connection->node_id], ['database-apply' => $command]);
     }
 }
