@@ -3,10 +3,14 @@ on:
   workflow_call:
     secrets:
       SWAMP_API_KEY:
-        required: true
+        required: false
       SWAMP_SIGNIN_TOKEN:
-        required: true
+        required: false
     inputs:
+      allow-initial-import-auth-unavailable:
+        description: "Only public Orbit PR 2002 may report unavailable auth without validating workflows"
+        type: boolean
+        default: false
       working-directory:
         type: string
         default: "."
@@ -86,8 +90,24 @@ jobs:
         env:
           SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
           SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
-        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
+          SHAPE_IMPORT_AUTH_EXCEPTION: ${{ inputs.allow-initial-import-auth-unavailable }}
+          SHAPE_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+        run: |
+          if [[ -z "${SWAMP_API_KEY:-}" ]]; then
+            message='auth unavailable; workflow validation NOT RUN'
+            echo "::warning::$message"
+            echo "### $message" >> "$GITHUB_STEP_SUMMARY"
+            echo 'WORKFLOW-VALIDATE status=auth_unavailable workflows_validated=0'
+            python3 -c 'import json,os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"],"workflow-validation.json").write_text(json.dumps({"schema_version":1,"status":"auth_unavailable","workflows_validated":0,"validation_ran":False})+"\n")'
+            if [[ "$SHAPE_IMPORT_AUTH_EXCEPTION" != 'true' || "$GITHUB_REPOSITORY" != 'hardimpactdev/orbit' || "$GITHUB_EVENT_NAME" != 'pull_request' || "$SHAPE_PR_NUMBER" != '2002' ]]; then
+              echo '::error::Workflow validation requires Swamp account authentication outside initial import PR 2002.'
+              exit 1
+            fi
+          else
+            python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
+          fi
       - name: Check placement on every step
+        if: always()
         run: deno run --allow-read bin/lint-workflow-placement.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
