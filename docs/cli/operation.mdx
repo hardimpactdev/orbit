@@ -1,25 +1,24 @@
 ---
 title: "operation"
-description: "List, show, resume, and cancel the long operations that the Gateway runs on its queue, such as an Instance deploy or rollback."
+description: "List, show, and cancel native Swamp Operations recorded by the Gateway."
 covers:
   - apps/cli/app/Commands/Operations/**
   - apps/cli/app/Support/Operations/**
 ---
 
-An [operation](/reference/operations) is a long piece of work, such as an Instance deploy or rollback, that the Gateway runs on its queue. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy) or [`instance:rollback`](/cli/instance#orbit-instancerollback), returns or stops following without stopping the operation. These commands find it again.
+An [operation](/reference/operations) is a long piece of work, such as an Instance deploy or rollback, that Swamp runs as a native workflow. The Gateway records its intent, status and result. The command that starts it, such as [`instance:deploy`](/cli/instance#orbit-instancedeploy) or [`instance:rollback`](/cli/instance#orbit-instancerollback), returns or stops following without stopping the operation. These commands find it again.
 
-When a deploy command follows an operation, it shows live output from the Node agent on the operation’s Reverb channel. A step that printed live does not print its stored output tail again. `operation:show` reads the retained tails; it does not subscribe to live output. See [following operations](/reference/operations#follow-an-operation-over-reverb).
+Starting commands follow the parent Operation until its result arrives. Ctrl-C stops following and leaves the Operation running. Read it again with `operation:show`.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`operation:list`](#orbit-operationlist) | List the newest operations. |
-| [`operation:show`](#orbit-operationshow) | Show one operation with its steps and their output. |
+| [`operation:show`](#orbit-operationshow) | Show one Operation and its native result. |
 | [`operation:cancel`](#orbit-operationcancel) | Ask one operation to stop. |
-| [`operation:resume`](#orbit-operationresume) | Resume an Operation stopped at its reclaim limit. |
 
-Every command accepts `--json`. A production deploy and a rollback include a `process_restart` step. The progress tree labels it `Restart Processes`, `Restarting Processes`, or `Restarted Processes` as its state changes. A rollback's `rollback` step reads `Find retained release`, `Finding retained release`, or `Found retained release`.
+Every command accepts `--json`.
 
 ## orbit operation:list
 
@@ -35,7 +34,7 @@ orbit operation:list [--status=STATUS] [--kind=KIND] [--instance=ID] [--json]
 | `--kind=KIND` | An operation kind, such as `instance.deploy`. |
 | `--instance=ID` | Only operations on this Instance. |
 
-The table shows ID, Kind, Target, Status, Step, By, and Started. JSON returns the list of records without steps.
+The table shows ID, Kind, Target, Status, By, and Started. JSON returns the list of parent records.
 
 ```bash
 orbit operation:list --status=running
@@ -43,7 +42,7 @@ orbit operation:list --status=running
 
 ## orbit operation:show
 
-Show one operation: a detail tree of its kind, target, status, current step, failed step, error code, result, and times, then its steps as a table with each step's status and duration, then the output tail of each step that has output.
+Show the parent Operation, including its kind, target, status, error code, result and times.
 
 ```bash
 orbit operation:show <operation> [--json]
@@ -53,9 +52,9 @@ orbit operation:show <operation> [--json]
 | --- | --- | --- |
 | `operation` | yes | Numeric operation ID. |
 
-JSON returns the record with every step, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome.
+JSON returns the parent record, as `GET /api/v1/operations/{operation}` does. The command exits `0` for any status; read `status` for the outcome.
 
-For [`tasks.analyze`](/cli/tasks#orbit-tasksanalyze), inspect `result.outcome`, not just operation status. A successful operation can report `blocked` or a changed checkout. `result.artifact` retains the complete bounded report with its digest and byte length; step output tails are not a substitute. Use `operation:show <operation> --json` to recover that complete evidence after the starting command stops following.
+For [`tasks.analyze`](/cli/tasks#orbit-tasksanalyze), inspect `result.outcome`, not just operation status. A successful operation can report `blocked` or a changed checkout. `result.artifact` retains the complete bounded report with its digest and byte length. Use `operation:show <operation> --json` to recover that complete evidence after the starting command stops following.
 
 ```bash
 orbit operation:show 42
@@ -63,7 +62,7 @@ orbit operation:show 42
 
 ## orbit operation:cancel
 
-Ask an operation to stop. A queued operation ends `cancelled` at once. A waiting one stops its current step through its stop hook before ending `cancelled`; an unconfirmed stop keeps it waiting and returns the step’s error. See [Cancel an operation](/reference/operations#cancel-an-operation). A running one finishes its running step and ends `cancelled`. A deploy or rollback whose release is already active finishes instead. Orbit never undoes the steps that ran.
+Record a cancellation request for the native workflow. Swamp applies the kind's cancellation boundary and records the final outcome. A cancellation request does not prove that execution has stopped.
 
 ```bash
 orbit operation:cancel <operation> [--json]
@@ -77,24 +76,5 @@ The command returns the record at once and does not wait for the operation to st
 
 ```bash
 orbit operation:cancel 42
-orbit operation:show 42
-```
-
-## orbit operation:resume
-
-Resume a Swamp Operation parked with `operation.reclaim_limit`. This resets attempts to zero once for that stop, clears the reclaim-limit flag and queues the same Operation. It preserves intent, steps, receipts and the target hold. Activity records the caller, Operation and outcome. The command returns at once; follow execution with `operation:show`.
-
-```bash
-orbit operation:resume <operation> [--json]
-```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `operation` | yes | Numeric operation ID. |
-
-The command prints the returned Operation; JSON returns that same record with its steps. A repeated request after reset, an Operation without reclaim-limit assistance, terminal work, a non-Swamp kind or a pending cancellation fails with `operation.not_resumable` and changes nothing. The command uses the same serving-Node access rule as `operation:cancel`.
-
-```bash
-orbit operation:resume 42
 orbit operation:show 42
 ```

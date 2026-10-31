@@ -8,10 +8,7 @@ use InvalidArgumentException;
 use SensitiveParameter;
 use stdClass;
 
-/**
- * One operation that the Gateway runs on its queue, such as an Instance deploy. `steps` holds the steps that the read
- * returned: every step, only those after `after_sequence`, or none for a list or a queued operation.
- */
+/** One parent Operation with its admitted input and native result. */
 final readonly class OperationResponse
 {
     public const array TerminalStatuses = ['succeeded', 'failed', 'cancelled'];
@@ -19,7 +16,6 @@ final readonly class OperationResponse
     /**
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>|null  $result
-     * @param  list<OperationStepResponse>  $steps
      */
     public function __construct(
         public int $id,
@@ -40,7 +36,6 @@ final readonly class OperationResponse
         public ?string $startedAt,
         public ?string $finishedAt,
         public ?int $pollAfterSeconds,
-        public array $steps,
         public string $requestId,
         public ?int $callerNodeId = null,
         public ?string $callerNodeName = null,
@@ -59,16 +54,6 @@ final readonly class OperationResponse
         if (! is_int($id) || $id < 1 || ! is_string($kind) || ! is_string($targetType) || ! is_int($targetId)
             || ! is_string($status) || ! is_int($sequence)) {
             throw new InvalidArgumentException('Gateway response contains an invalid operation.');
-        }
-
-        $steps = [];
-
-        foreach (is_array($data['steps'] ?? null) ? $data['steps'] : [] as $step) {
-            if (! is_array($step)) {
-                throw new InvalidArgumentException('Gateway response contains an invalid operation step.');
-            }
-
-            $steps[] = OperationStepResponse::fromGatewayData(self::map($step) ?? []);
         }
 
         return new self(
@@ -90,7 +75,6 @@ final readonly class OperationResponse
             startedAt: self::text($data, 'started_at'),
             finishedAt: self::text($data, 'finished_at'),
             pollAfterSeconds: is_int($data['poll_after_seconds'] ?? null) ? $data['poll_after_seconds'] : null,
-            steps: $steps,
             requestId: $requestId,
             callerNodeId: is_int($data['caller_node_id'] ?? null) ? $data['caller_node_id'] : null,
             callerNodeName: is_string($data['caller_node_name'] ?? null) ? $data['caller_node_name'] : null,
@@ -108,7 +92,7 @@ final readonly class OperationResponse
     }
 
     /** @return array<string, mixed> */
-    public function toArray(bool $withSteps = true): array
+    public function toArray(): array
     {
         $data = [
             'id' => $this->id,
@@ -132,10 +116,6 @@ final readonly class OperationResponse
             'finished_at' => $this->finishedAt,
             'poll_after_seconds' => $this->pollAfterSeconds,
         ];
-
-        if ($withSteps) {
-            $data['steps'] = array_map(static fn (OperationStepResponse $step): array => $step->toArray(), $this->steps);
-        }
 
         return [...$data, 'request_id' => $this->requestId];
     }

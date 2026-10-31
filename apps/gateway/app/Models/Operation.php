@@ -6,10 +6,7 @@ namespace App\Models;
 
 use App\Domain\Operations\OperationStatus;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -19,11 +16,6 @@ use Illuminate\Support\Carbon;
  * Gateway.
  *
  * @property int $id
- * @property int|null $parent_operation_id
- * @property string|null $child_key
- * @property array<string,mixed>|null $child_admission
- * @property string|null $child_fingerprint
- * @property array<string,array<string,mixed>>|null $run_constraints
  * @property string $kind
  * @property string|null $idempotency_key Never prune a keyed operation when ADR 0218 adds retention.
  * @property string|null $idempotency_fingerprint
@@ -44,14 +36,11 @@ use Illuminate\Support\Carbon;
  * @property string|null $triggered_by
  * @property string|null $request_id
  * @property Carbon|null $cancel_requested_at
- * @property int|null $wait_delay_seconds
- * @property Carbon|null $next_read_at
  * @property Carbon|null $dispatched_at
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Collection<int, OperationStep> $steps
  * @property-read string|null $caller_node_name
  */
 final class Operation extends Model
@@ -79,30 +68,10 @@ final class Operation extends Model
         'triggered_by',
         'request_id',
         'cancel_requested_at',
-        'wait_delay_seconds',
-        'next_read_at',
         'dispatched_at',
         'started_at',
         'finished_at',
     ];
-
-    /** @return HasMany<OperationStep, $this> */
-    public function steps(): HasMany
-    {
-        return $this->hasMany(OperationStep::class)->orderBy('position');
-    }
-
-    /** @return HasMany<Operation,$this> */
-    public function children(): HasMany
-    {
-        return $this->hasMany(self::class, 'parent_operation_id')->orderBy('id');
-    }
-
-    /** @return BelongsTo<Operation,$this> */
-    public function parent(): BelongsTo
-    {
-        return $this->belongsTo(self::class, 'parent_operation_id');
-    }
 
     public function callerNodeId(): ?int
     {
@@ -128,9 +97,6 @@ final class Operation extends Model
     {
         return [
             'target_id' => 'integer',
-            'parent_operation_id' => 'integer',
-            'child_admission' => 'array',
-            'run_constraints' => 'array',
             'node_id' => 'integer',
             'input' => 'array',
             'state' => 'array',
@@ -139,8 +105,6 @@ final class Operation extends Model
             'sequence' => 'integer',
             'attempts' => 'integer',
             'cancel_requested_at' => 'datetime',
-            'wait_delay_seconds' => 'integer',
-            'next_read_at' => 'datetime',
             'dispatched_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

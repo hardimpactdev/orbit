@@ -14,6 +14,7 @@ Route::middleware([
 ])->group(function (): void {
     Route::get('direct-operations/{operation}', [DirectOperationsController::class, 'show'])->whereNumber('operation')->name('operation:direct:show');
     Route::post('direct-operations/{operation}/result', [DirectOperationsController::class, 'result'])->whereNumber('operation')->name('operation:direct:result');
+    Route::post('direct-operations/{operation}/failure', [DirectOperationsController::class, 'failure'])->whereNumber('operation')->name('operation:direct:failure');
     Route::post('direct-operations/{operation}/primitive', [DirectOperationsController::class, 'primitive'])->whereNumber('operation')->name('operation:direct:primitive');
     Route::get('direct-operations/{operation}/private-material', [DirectOperationsController::class, 'privateMaterial'])->whereNumber('operation')->name('operation:direct:private-material');
     Route::post('direct-operations/{operation}/secret-output', [DirectOperationsController::class, 'secretOutput'])->whereNumber('operation')->name('operation:direct:secret-output');
