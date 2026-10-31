@@ -1,0 +1,281 @@
+id: b90c596c-fe40-4a97-9b74-06a2384b2242
+name: operation-task-vm-prepare-runtime
+description: One native TaskVM prepare-runtime root; first visit precedes its exact
+  trusted guest worker.
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.prepare_runtime
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: intent
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: admit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: worker-ready
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(data.latest("task-vm-enrollment-" + run.id, "placement-"
+    + run.id).attributes.guest_node_id) }}
+  labels:
+    node: ${{ string(data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes.guest_node_id)
+      }}
+  steps:
+  - name: worker-ready
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        stage: worker-ready
+- name: issue-model
+  dependsOn:
+  - job: worker-ready
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(data.latest("task-vm-enrollment-" + run.id, "placement-"
+    + run.id).attributes.gateway_node_id) }}
+  labels:
+    node: ${{ string(data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes.gateway_node_id)
+      }}
+  steps:
+  - name: issue-model
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-model-keys'
+      behaviorName: ${{ "task-vm-model-router-" + string(data.latest("task-vm-enrollment-"
+        + run.id, "placement-" + run.id).attributes.model_router_node_id) }}
+      methodName: issue
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: prepare-runtime
+  dependsOn:
+  - job: issue-model
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(data.latest("task-vm-enrollment-" + run.id, "placement-"
+    + run.id).attributes.guest_node_id) }}
+  labels:
+    node: ${{ string(data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes.guest_node_id)
+      }}
+  steps:
+  - name: prepare-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        stage: prepare-runtime
+- name: confirm-runtime
+  dependsOn:
+  - job: prepare-runtime
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(data.latest("task-vm-enrollment-" + run.id, "placement-"
+    + run.id).attributes.guest_node_id) }}
+  labels:
+    node: ${{ string(data.latest("task-vm-enrollment-" + run.id, "placement-" + run.id).attributes.guest_node_id)
+      }}
+  steps:
+  - name: confirm-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        stage: confirm-runtime
+- name: complete
+  dependsOn:
+  - job: confirm-runtime
+    condition:
+      type: succeeded
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: complete
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: complete
+- name: failed-admission
+  dependsOn:
+  - job: admission
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-admission
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure
+- name: failed-worker-ready
+  dependsOn:
+  - job: worker-ready
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-worker-ready
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure
+- name: failed-issue-model
+  dependsOn:
+  - job: issue-model
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-issue-model
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure
+- name: failed-prepare-runtime
+  dependsOn:
+  - job: prepare-runtime
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-prepare-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure
+- name: failed-confirm-runtime
+  dependsOn:
+  - job: confirm-runtime
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-confirm-runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure
+- name: failed-complete
+  dependsOn:
+  - job: complete
+    condition:
+      type: failed
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failed-complete
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-enrollment'
+      behaviorName: ${{ "task-vm-enrollment-" + run.id }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+        projection: failure

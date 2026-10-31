@@ -15,7 +15,7 @@ export type SystemTransport = (
   signal?: AbortSignal,
 ) => Promise<SystemOutput>;
 
-/** The shared runner verifies local placement before executing system commands. */
+/** The placement-aware shared runner selects local or pinned SSH execution. */
 export const localSystemCommand: SystemTransport = async (input, signal) => {
   signal?.throwIfAborted();
   const maxOutputBytes = input.maxOutputBytes ?? 65536;
