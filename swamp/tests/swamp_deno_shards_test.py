@@ -27,30 +27,39 @@ class DenoShards(unittest.TestCase):
         self.assertNotIn("continue-on-error", job)
         command = next(step for step in job["steps"] if step.get("name") == "Run Operations test shard")
         self.assertEqual(command["env"]["DENO_SHARD"], "${{ matrix.shard }}")
+        self.assertEqual(command["env"]["DENO_TEST_PATH"], "${{ matrix.path }}")
+        self.assertEqual(command["env"]["DENO_IGNORE"], "${{ matrix.ignore }}")
         with tempfile.TemporaryDirectory(prefix="deno-shards-") as scratch:
             root = Path(scratch)
             files = root / "extensions/behaviors/operations"
             files.mkdir(parents=True)
-            for index in range(9):
-                (files / f"{index:02}_test.ts").write_text(
-                    f'Deno.test("module {index}", () => console.log("COVERED_FILE_{index}"));\n')
+            for group, directory in enumerate((files, files / "database", files / "process-commands")):
+                directory.mkdir(exist_ok=True)
+                for index in range(9):
+                    identifier = group * 9 + index
+                    name = f"{index:02}_test.ts"
+                    if group == 1 and index < 3:
+                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server_create_effect_test.ts")[index]
+                    (directory / name).write_text(
+                        f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
             binary = root / "bin"
             binary.mkdir()
             (binary / "deno").symlink_to(shutil.which(DENO))
 
             def run(shard):
                 env = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ["PATH"],
-                           DENO_SHARD=shard, DENO_JOBS=str(command["env"]["DENO_JOBS"]))
+                           DENO_SHARD=shard["shard"], DENO_TEST_PATH=shard["path"],
+                           DENO_IGNORE=shard.get("ignore", ""), DENO_JOBS=str(command["env"]["DENO_JOBS"]))
                 return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command["run"]],
                                       cwd=root, env=env, capture_output=True, text=True)
 
             covered = []
-            shards = job["strategy"]["matrix"]["shard"]
+            shards = job["strategy"]["matrix"]["include"]
             for shard in shards:
                 result = run(shard)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 covered.extend(int(value) for value in re.findall(r"COVERED_FILE_(\d+)", result.stdout))
-            self.assertCountEqual(covered, range(9))
+            self.assertCountEqual(covered, range(27))
             (files / "00_test.ts").write_text('Deno.test("real failure", () => { throw new Error("expected"); });\n')
             self.assertNotEqual(run(shards[0]).returncode, 0)
 

@@ -110,12 +110,40 @@ jobs:
           fi
 
   test-shards:
-    name: Swamp Deno shard ${{ matrix.shard }}
+    name: Swamp Deno shard ${{ matrix.name }}
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/4, 2/4, 3/4, 4/4]
+        include:
+          - name: general 1/4
+            path: extensions/behaviors/operations
+            shard: 1/4
+            ignore: &separate-tests extensions/behaviors/operations/database/local_sql_effect_test.ts,extensions/behaviors/operations/database/read_effect_test.ts,extensions/behaviors/operations/database/server_create_effect_test.ts,extensions/behaviors/operations/process-commands
+          - name: general 2/4
+            path: extensions/behaviors/operations
+            shard: 2/4
+            ignore: *separate-tests
+          - name: general 3/4
+            path: extensions/behaviors/operations
+            shard: 3/4
+            ignore: *separate-tests
+          - name: general 4/4
+            path: extensions/behaviors/operations
+            shard: 4/4
+            ignore: *separate-tests
+          - name: database local SQL
+            path: extensions/behaviors/operations/database/local_sql_effect_test.ts
+            shard: 1/1
+          - name: database read
+            path: extensions/behaviors/operations/database/read_effect_test.ts
+            shard: 1/1
+          - name: database server create
+            path: extensions/behaviors/operations/database/server_create_effect_test.ts
+            shard: 1/1
+          - name: process commands
+            path: extensions/behaviors/operations/process-commands
+            shard: 1/1
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -141,4 +169,9 @@ jobs:
         env:
           DENO_JOBS: "4"
           DENO_SHARD: ${{ matrix.shard }}
-        run: deno test --parallel -A --shard="$DENO_SHARD" extensions/behaviors/operations
+          DENO_TEST_PATH: ${{ matrix.path }}
+          DENO_IGNORE: ${{ matrix.ignore }}
+        run: |
+          args=(--parallel -A --shard="$DENO_SHARD")
+          if [[ -n "$DENO_IGNORE" ]]; then args+=(--ignore="$DENO_IGNORE"); fi
+          deno test "${args[@]}" "$DENO_TEST_PATH"
