@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
@@ -16,6 +17,18 @@ use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
     FleetFixtures::bind();
+    app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+    {
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            throw new RuntimeException('Admission must never sign a certificate.');
+        }
+
+        public function rootCertificate(): string
+        {
+            return 'role-public-root';
+        }
+    });
     FleetFixtures::node('relocation-gateway', [RoleName::Gateway]);
     $this->source = FleetFixtures::node('relocation-source', [RoleName::WebSocket]);
     $this->target = FleetFixtures::node('relocation-target');

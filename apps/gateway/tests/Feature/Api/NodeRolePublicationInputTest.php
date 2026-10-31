@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Route;
 use Tests\Support\Fleet\FleetFixtures;
@@ -59,15 +58,16 @@ it('returns only the authenticated DNS participant public artifacts', function (
         ->and(json_encode($input))->not->toContain('runtime_material', '$secret');
 });
 
-it('refuses an admitted runtime participant that has no publication responsibility', function (): void {
+it('gives an admitted runtime participant only its public cleanup plan without publication artifacts', function (): void {
     $root = FleetFixtures::node('publication-runtime', [RoleName::Metrics]);
     $foreign = FleetFixtures::node('publication-no-duty', [RoleName::Database]);
     $plan = app(NodeRolePublicationInput::class)->capture($root, RoleName::Metrics);
     $operation = new Operation(['kind' => 'node.role_remove', 'node_id' => $root->id,
         'target_type' => 'node', 'target_id' => $root->id, 'status' => 'running',
         'input' => ['participant_node_ids' => [$root->id, $foreign->id], '_role_remove' => ['publication' => $plan]]]);
-    expect(fn () => app(NodeRolePublicationInput::class)->publicInput($operation, $foreign->id))
-        ->toThrow(ResourceOperationException::class, 'not an admitted role publication');
+    $input = app(NodeRolePublicationInput::class)->publicInput($operation, $foreign->id);
+    expect($input)->toBe(['node_id' => $foreign->id, 'role_removal' => ['publication' => $plan]]);
+    expect($input)->not->toHaveKeys(['caddy_publication', 'php_publication', 'private_dns_publication', 'runtime_material']);
 });
 
 it('refuses a role root with no immutable publication plan instead of treating it as empty', function (): void {
