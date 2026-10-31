@@ -89,6 +89,13 @@ it('binds private material to current placement while the parent remains on the 
     expect($operation->node_id)->toBe($this->source->id)
         ->and($destination[$this->process->id]['installation']['content'])->toContain('/srv/destination/app', '/srv/destination/.env');
     expect(fn () => $this->batch->material($operation, 'source_installations'))->toThrow(ResourceOperationException::class);
+    DB::transaction(function (): void {
+        $restored = $this->batch->placedProcess($this->process->fresh(), '/srv/destination', '/srv/source');
+        $this->instance->update(['node_id' => $this->source->id, 'checkout_path' => '/srv/source']);
+        $this->process->update(['working_directory' => $restored->working_directory, 'runtime_config' => $restored->runtime_config]);
+    });
+    expect($this->batch->material($operation, 'source_installations')->value)->toBe($source);
+    expect(fn () => $this->batch->material($operation, 'destination_installations'))->toThrow(ResourceOperationException::class);
 });
 
 it('refuses destination material when Instance placement moved without the Process records', function (): void {
