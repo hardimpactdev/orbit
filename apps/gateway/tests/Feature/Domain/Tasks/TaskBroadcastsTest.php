@@ -256,18 +256,6 @@ describe('task broadcasts', function (): void {
         expect(live_broadcasts(RecordEventType::TaskGroupUpdated))->toHaveCount(1);
     });
 
-    it('broadcasts the changes of a scheduler tick when the tick ends', function (): void {
-        app(TaskExtensionState::class)->enable();
-        $group = live_group();
-        app(TaskBroadcasts::class)->flush();
-        Event::fake([RecordBroadcast::class]);
-        test_update_task($group, ['assistance_requested' => true, 'assistance_reason' => 'Waiting']);
-
-        $this->artisan('tasks:tick')->assertSuccessful();
-
-        expect(live_broadcasts(RecordEventType::TaskGroupUpdated))->toHaveCount(1);
-    });
-
     it('broadcasts the group when a task check changes', function (): void {
         $group = live_group();
         $subtask = $group->tasks[0];

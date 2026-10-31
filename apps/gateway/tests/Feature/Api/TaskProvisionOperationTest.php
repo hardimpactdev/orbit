@@ -56,7 +56,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Requests\Tasks\ProvisionTaskGroupRequest;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeTaskAnalysisRunner;
@@ -140,15 +139,6 @@ function provision_operation_start(Task $group, ?string $key = null): Operation
 }
 
 describe('tasks.provision', function (): void {
-    it('records the refusal contract for a tick group', function (): void {
-        $this->travelTo('2026-10-22 12:00:00');
-        $group = provision_operation_group(orchestration: TaskOrchestration::External);
-
-        record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/provision')->assertConflict(),
-            'tasks/tasks-provision/not-orchestrated',
-            ProvisionTaskGroupRequest::class,
-            'POST /api/v1/task-groups/{group}/provision');
-    });
 
     it('refuses an unsuitable group with 409 before creating an operation', function (TaskGroupStatus $status, TaskOrchestration $mode, string $code): void {
         $group = provision_operation_group($status, $mode);
@@ -158,7 +148,6 @@ describe('tasks.provision', function (): void {
         expect(Operation::query()->count())->toBe(0);
         expect($group->fresh()->status)->toBe($status);
     })->with([
-        [TaskGroupStatus::Todo, TaskOrchestration::External, 'tasks.not_orchestrated'],
         [TaskGroupStatus::Backlog, TaskOrchestration::External, 'tasks.not_todo'],
         [TaskGroupStatus::Reserved, TaskOrchestration::External, 'tasks.already_claimed'],
         [TaskGroupStatus::Running, TaskOrchestration::External, 'tasks.already_claimed'],
@@ -808,9 +797,6 @@ it('requires worker enrollment, a key, an open external group and an existing VM
     $vm->delete();
     $payload = ['worker' => ['orchestrator_url' => 'wss://swamp.orbit', 'enrollment_token' => 'group.'.str_repeat('a', 64)]];
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.no-vm'])->assertConflict()->assertJsonPath('error.code', 'tasks.no_workspace');
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External]);
-    $group->refresh();
-    $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.tick'])->assertConflict()->assertJsonPath('error.code', 'tasks.not_orchestrated');
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External, 'status' => TaskGroupStatus::Cancelled]);
     $group->refresh();
     $this->postJson($url, $payload, ['Idempotency-Key' => 'worker.closed'])->assertConflict()->assertJsonPath('error.code', 'tasks.group_closed');

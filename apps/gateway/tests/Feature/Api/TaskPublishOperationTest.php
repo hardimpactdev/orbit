@@ -28,16 +28,16 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\GitRemoteRedirect;
 use Tests\Support\StreamingLocalShellSshExecutor;
+use Tests\Support\TaskOperationFixture;
 use Tests\Support\TestOrbitHome;
 
 beforeEach(function (): void {
     enable_operation_queue();
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     app(TaskExtensionState::class)->enable();
     $this->travelTo(now()->startOfSecond());
 });
@@ -45,7 +45,7 @@ beforeEach(function (): void {
 /** @return array{Task, TaskCheck} */
 function publish_operation_group(): array
 {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
     $group->refresh();
     $group->tasks()->update(['implementer_agent_thread_id' => null]);
@@ -311,14 +311,14 @@ it('uses an already published commit without another job', function (): void {
     Queue::assertNotPushed(PublishTaskVmCommit::class);
 });
 
-it('refuses tick and ended groups', function (string $mode, string $status, string $code): void {
+it('refuses ended groups', function (string $mode, string $status, string $code): void {
     [$group, $check] = publish_operation_group();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => $mode, 'status' => $status]);
 
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', $code);
 
     $this->assertDatabaseCount('operations', 1); // only the completed check owner
-})->with([['tick', 'running', 'tasks.not_orchestrated'], ['external', 'completed', 'tasks.group_closed'], ['external', 'cancelled', 'tasks.group_closed'], ['external', 'failed', 'tasks.group_closed']]);
+})->with([['external', 'completed', 'tasks.group_closed'], ['external', 'cancelled', 'tasks.group_closed'], ['external', 'failed', 'tasks.group_closed']]);
 
 it('refuses a missing workspace', function (): void {
     [$group, $check] = publish_operation_group();
@@ -453,12 +453,4 @@ it('holds the group across operation kinds', function (): void {
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy')->assertJsonPath('error.details.operation_id', $holder->id);
 
     $this->assertDatabaseCount('operations', 2); // completed check owner plus the new operation
-});
-
-it('records the publish refusal contract for a tick group', function (): void {
-    $this->travelTo('2026-10-22 12:00:00');
-    [$group, $check] = publish_operation_group();
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'tick']);
-
-    record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertConflict(), 'tasks/tasks-publish/not-orchestrated', PublishTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/publish');
 });

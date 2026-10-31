@@ -33,7 +33,6 @@ use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\Queue;
-use Orbit\Sdk\Requests\Tasks\TurnTaskGroupRequest;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
@@ -101,12 +100,6 @@ function turn_operation_check(Task $task): TaskCheck
 }
 
 describe('tasks.turn', function (): void {
-    it('records the tick group refusal contract', function (): void {
-        [$group, $task] = turn_operation_group('tick');
-
-        record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/turn', turn_operation_input($task))->assertConflict(),
-            'tasks/tasks-turn/not-orchestrated', TurnTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/turn');
-    });
 
     it('refuses an ended group with 409', function (): void {
         [$group, $task] = turn_operation_group();

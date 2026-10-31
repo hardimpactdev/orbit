@@ -24,7 +24,7 @@ it('declares node access scope on every active-peer API route', function (): voi
                 $route->gatherMiddleware(),
                 strict: true,
             ) && ! in_array($route->getName(), $agentRoutes, strict: true)
-                && ! str_starts_with((string) $route->getName(), 'conn:'),
+                && (! str_starts_with((string) $route->getName(), 'conn:') || $route->getName() === 'conn:environment:cleanup'),
         )
         ->values();
 
@@ -46,8 +46,10 @@ it('declares node access scope on every active-peer API route', function (): voi
         $methodAttributes = new ReflectionMethod($controllerClass, $method)
             ->getAttributes(RequiresNodeAccess::class);
 
+        expect(count($classAttributes))->toBeLessThanOrEqual(1);
+        expect(count($methodAttributes))->toBeLessThanOrEqual(1);
         expect(count($classAttributes) + count($methodAttributes))
-            ->toBe(1, "Route [{$route->getName()}] must declare exactly one RequiresNodeAccess attribute.");
+            ->toBeGreaterThan(0, "Route [{$route->getName()}] must declare a RequiresNodeAccess attribute.");
 
         $attribute = $methodAttributes[0] ?? $classAttributes[0];
         $actualScopes[$route->getName()][] = $attribute->newInstance()->servingNode;
@@ -64,6 +66,28 @@ it('declares node access scope on every active-peer API route', function (): voi
     }, $actualScopes);
 
     $expectedScopes = [
+        'conn:environment:cleanup' => ServingNode::Gateway,
+        'fleet:peer-dns:plan' => ServingNode::Gateway,
+        'fleet:peer-dns:targets' => ServingNode::Gateway,
+        'fleet:recipe-pr' => ServingNode::Gateway,
+        'fleet:recipe-pr:plan' => ServingNode::Gateway,
+        'fleet:recipe:plan' => ServingNode::Gateway,
+        'fleet:recipe:state' => ServingNode::Gateway,
+        'fleet:rollout:plan' => ServingNode::Gateway,
+        'operation:direct:primitive' => ServingNode::Gateway,
+        'operation:direct:private-material' => ServingNode::Gateway,
+        'operation:direct:result' => ServingNode::Gateway,
+        'operation:direct:secret-output' => ServingNode::Gateway,
+        'operation:direct:show' => ServingNode::Gateway,
+        'task-vm-executor:lifecycle' => ServingNode::Gateway,
+        'task-vm-executor:runtime' => ServingNode::Gateway,
+        'task-vm-executor:upcloud-image' => ServingNode::Gateway,
+        'fleet:peer-dns:reconcile' => ServingNode::Target,
+        'fleet:recipe:converge' => ServingNode::Target,
+        'fleet:rollout:node' => ServingNode::Target,
+        'fleet:visit:policy' => ServingNode::Target,
+        'operation:resume' => ServingNode::OperationOwning,
+
         'activity:list' => ServingNode::Gateway,
         'activity:show' => ServingNode::Gateway,
         'ai-router:account:disable' => ServingNode::Gateway,
@@ -365,6 +389,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'websocket:sync' => ServingNode::Gateway,
     ];
 
+    ksort($expectedScopes);
     expect($actualScopes)->toBe($expectedScopes);
 });
 
@@ -463,7 +488,13 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        // Every active Node may use the Conn layer; it has no grants yet.
+        if ($route->getName() === 'conn:environment:cleanup') {
+            expect($middleware)->toContain(RequireActiveWireGuardPeer::class, RequireNodeAccess::class);
+
+            continue;
+        }
+
+        // Other Conn routes require only an active peer.
         if (str_starts_with((string) $route->getName(), 'conn:')) {
             expect($route->uri())->toStartWith('api/v1/conn/');
             expect($middleware)

@@ -28,7 +28,8 @@
                     "app-dev"
                 ],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "swamp_worker_selected": false
             },
             {
                 "id": 1,
@@ -53,7 +54,8 @@
                     "gateway"
                 ],
                 "settings": null,
-                "updating": null
+                "updating": null,
+                "swamp_worker_selected": false
             }
         ],
         "meta": {

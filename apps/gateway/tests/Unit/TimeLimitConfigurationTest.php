@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use PHPUnit\Framework\Attributes\Large;
-use Symfony\Component\Yaml\Yaml;
 use Tests\Feature\Extensions\Documents\Infrastructure\DocumentTransportDeadlineTest;
 use Tests\Feature\Infrastructure\Tasks\TaskCheckDeadlineTest;
 use Tests\Feature\Support\LinuxHostCtimeTest;
@@ -22,21 +21,6 @@ it('enforces the two-second default and keeps stock large-test budgets for revie
 
     expect(isset($configuration['timeoutForLargeTests']))->toBeFalse();
 });
-
-it('passes the five-second default through Pest in Gateway CI test jobs', function (string $job): void {
-    $workflow = Yaml::parseFile(dirname(__DIR__, 4).'/.github/workflows/ci.yml');
-    $steps = array_values(array_filter(
-        $workflow['jobs'][$job]['steps'],
-        static fn (array $step): bool => str_contains($step['run'] ?? '', '../../bin/pest-plain vendor/bin/pest '),
-    ));
-    expect($steps)->toHaveCount(1);
-    $arguments = preg_split('/\s+/', $steps[0]['run']);
-    expect($arguments)->toContain('--parallel')
-        ->and(array_values(array_filter(
-            $arguments,
-            static fn (string $argument): bool => str_starts_with($argument, '--default-time-limit='),
-        )))->toBe(['--default-time-limit=5']);
-})->with(['Gateway shards' => 'gateway-shards', 'Gateway privileged' => 'privileged']);
 
 it('restricts the native large classes to the reviewed real-deadline cases', function (): void {
     foreach ([

@@ -33,12 +33,12 @@ function keyed_operation_start(object $test, string $kind = 'deploy', string $in
 }
 
 describe('operation start keys', function (): void {
-    it('stores the key on the first start and queues one job', function (): void {
+    it('stores the key on the first start without a Gateway execution job', function (): void {
         $response = keyed_operation_start($this)->assertAccepted()->assertJsonPath('data.status', 'queued');
 
         $this->assertDatabaseHas('operations', ['id' => $response->json('data.id'), 'kind' => 'instance.deploy', 'idempotency_key' => 'work.handoff:c2-1_A']);
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('replays one operation with status 202 before domain validation or queue availability', function (): void {
@@ -49,7 +49,7 @@ describe('operation start keys', function (): void {
         keyed_operation_start($this)->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', 'queued');
 
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('replays a finished operation without starting another', function (string $status): void {
@@ -59,7 +59,7 @@ describe('operation start keys', function (): void {
         keyed_operation_start($this)->assertAccepted()->assertJsonPath('data.id', $id)->assertJsonPath('data.status', $status);
 
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     })->with(['succeeded', 'failed', 'cancelled']);
 
     it('returns 409 for different input before further validation', function (string $input): void {
@@ -68,7 +68,7 @@ describe('operation start keys', function (): void {
         keyed_operation_start($this, 'rollback', $input)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
 
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     })->with(['another release' => '{"release":"fresh"}', 'invalid release' => '{"release":false}', 'unknown field' => '{"release":"initial","extra":1}', 'malformed JSON' => '{', 'non-finite number' => '{"release":1e400}', 'duplicate member' => '{"release":"fresh","release":"initial"}']);
 
     it('returns 422 for non-finite input on a new key', function (): void {
@@ -89,7 +89,7 @@ describe('operation start keys', function (): void {
         keyed_operation_start($this, target: $other->id)->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
 
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('allows the same key on another kind', function (): void {
@@ -100,7 +100,7 @@ describe('operation start keys', function (): void {
         expect($rollback)->not->toBe($deploy);
         $this->assertDatabaseCount('operations', 2);
         $this->assertDatabaseHas('operations', ['id' => $rollback, 'idempotency_key' => 'work.handoff:c2-1_A']);
-        $this->assertDatabaseCount('jobs', 2);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('ignores JSON whitespace when replaying input', function (): void {
@@ -108,7 +108,7 @@ describe('operation start keys', function (): void {
 
         keyed_operation_start($this, 'rollback', "{ \n \"release\" : \"initial\" }")->assertAccepted()->assertJsonPath('data.id', $id);
 
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('returns 422 for a malformed key before body validation', function (string $key): void {
@@ -136,14 +136,14 @@ describe('operation start keys', function (): void {
 
         keyed_operation_start($this)->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
 
         $caller->accessibleNodes()->attach($this->fixture->owner->id);
 
         keyed_operation_start($this)->assertAccepted()->assertJsonPath('data.id', $id);
 
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     });
 
     it('refuses to record an operation when the start marker names another kind', function (): void {
@@ -159,7 +159,7 @@ describe('operation start keys', function (): void {
         $this->assertDatabaseCount('jobs', 0);
     });
 
-    it('settles the concurrent insert race with one operation and one dispatch', function (bool $conflict): void {
+    it('settles the concurrent insert race with one operation and no Gateway execution job', function (bool $conflict): void {
         $reads = 0;
         $winner = null;
         // Insert the competing winner after the last preflight read returned no row. The losing INSERT must
@@ -188,6 +188,6 @@ describe('operation start keys', function (): void {
             $response->assertAccepted()->assertJsonPath('data.id', $winner->id);
         }
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     })->with(['matching winner' => false, 'conflicting winner' => true]);
 });

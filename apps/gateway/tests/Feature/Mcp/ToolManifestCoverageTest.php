@@ -14,6 +14,8 @@ describe('MCP tool manifest', function (): void {
     // Machine callbacks that bin/mcp-tools leaves out on purpose; keep the two lists identical.
     $excluded = [
         'project:dependency-read-token',
+        'operation:direct:private-material',
+        'operation:direct:secret-output',
         'tasks:agent-stream',
         'realtime:auth',
         'agent:realtime',
@@ -100,12 +102,12 @@ describe('MCP tool manifest', function (): void {
     });
 });
 
-it('accepts a UUID for WebSocket operation status and documents pending application', function (): void {
+it('accepts a UUID for WebSocket operation status and documents native Operation admission', function (): void {
     $tool = collect(ToolManifest::default()->definitions())->first(static fn ($definition): bool => $definition->name === 'websocket-operation-show');
     expect($tool?->inputSchema['properties']['operation']['type'] ?? null)->toBe('string')
         ->and($tool?->inputSchema['properties']['operation']['format'] ?? null)->toBe('uuid');
     $api = json_decode(file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
     $response = $api['paths']['/api/v1/websocket-apps']['post']['responses']['202']['content']['application/json']['schema'];
-    expect($response['required'])->toContain('operation')
-        ->and($response['properties']['operation']['properties']['state']['enum'])->toBe(['pending', 'applied', 'superseded']);
+    expect($response['required'])->toContain('data')
+        ->and($response['properties']['data']['$ref'])->toBe('#/components/schemas/Operation');
 });

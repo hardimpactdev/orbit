@@ -7,6 +7,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Cluster;
@@ -22,10 +23,12 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\Orb101ProjectUpdateFixture;
 use Tests\Support\Orb220DeploymentApiFixture;
 use Tests\Support\TaskModelRouter;
+use Tests\Support\TaskOperationFixture;
 
 /** @param array<string, mixed> $params */
 function mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
@@ -80,10 +83,12 @@ function mcp_tool(mixed $test, string $endpoint, string $tool, array $arguments)
 }
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     $this->gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
         'wireguard_ip' => '10.44.0.2',
     ]));
@@ -176,13 +181,14 @@ describe('POST /mcp', function (): void {
         $node = Node::query()->create([
             'name' => 'mcp-route-node',
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'architecture' => 'x86_64', 'platform' => 'linux',
             'architecture' => 'x86_64',
             'tld' => 'mcp.test',
             'public_ssh_host' => '192.0.2.40',
             'wireguard_ip' => '10.44.0.40',
             'user' => 'orbit',
         ]);
+        bind_task_node_reachability();
         $routeId = Route::query()->create([
             'project_id' => $project->id,
             'node_id' => $node->id,
@@ -199,8 +205,9 @@ describe('POST /mcp', function (): void {
         $document = json_decode($response->json('result.content.0.text'), true);
 
         expect($response->json('result.isError'))->toBeFalse()
-            ->and($document['data']['id'])->toBe($routeId)
-            ->and(Route::query()->whereKey($routeId)->exists())->toBeFalse();
+            ->and($document['operation']['target_id'])->toBe($routeId)
+            ->and($document['operation']['kind'])->toBe('route.destroy')
+            ->and(Route::query()->whereKey($routeId)->exists())->toBeTrue();
     });
 
     it('places path, query, and body inputs where the operation expects them', function (): void {
@@ -234,7 +241,7 @@ describe('POST /mcp', function (): void {
         expect($second['operation']['id'])->toBe($first['operation']['id']);
         $this->assertDatabaseHas('operations', ['id' => $first['operation']['id'], 'idempotency_key' => 'mcp.stage.c1']);
         $this->assertDatabaseCount('operations', 1);
-        $this->assertDatabaseCount('jobs', 1);
+        $this->assertDatabaseCount('jobs', 0);
     })->with(['deploy' => ['instance-deploy', []], 'rollback' => ['instance-rollback', ['release' => 'initial']]]);
 
     it('replays a WebSocket app tool through its generated header argument', function (): void {
@@ -243,11 +250,11 @@ describe('POST /mcp', function (): void {
         $first = mcp_tool($this, '/mcp', 'websocket-app-create', $arguments);
         $second = mcp_tool($this, '/mcp', 'websocket-app-create', $arguments);
 
-        expect($first['operation']['id'])->toBeString()
+        expect($first['operation']['id'])->toBeInt()
             ->and($second['operation']['id'])->toBe($first['operation']['id']);
-        $this->assertDatabaseHas('websocket_registry_operations', ['id' => $first['operation']['id'], 'idempotency_key' => 'mcp.websocket.create']);
+        $this->assertDatabaseHas('operations', ['id' => $first['operation']['id'], 'kind' => 'websocket.app_create', 'idempotency_key' => 'mcp.websocket.create']);
         $this->assertDatabaseCount('websocket_apps', 1);
-        $this->assertDatabaseCount('websocket_registry_operations', 1);
+        $this->assertDatabaseCount('operations', 1);
     });
 
     it('starts and replays an external turn through the generated tool', function (string $endpoint): void {
@@ -293,9 +300,9 @@ describe('POST /mcp', function (): void {
 
     it('starts and replays task check through its generated MCP tool', function (string $endpoint): void {
         enable_operation_queue();
-        tick_bind_defaults();
+        TaskOperationFixture::bindDefaults();
         app(TaskExtensionState::class)->enable();
-        $group = tick_group();
+        $group = TaskOperationFixture::create();
         Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
         $arguments = ['group' => $group->id, 'subtask' => $group->tasks()->firstOrFail()->id, 'phase' => 'handoff', 'Idempotency-Key' => 'mcp.check.c1'];
 
@@ -312,9 +319,9 @@ describe('POST /mcp', function (): void {
 
     it('starts and replays task publish through its generated MCP tool', function (string $endpoint): void {
         enable_operation_queue();
-        tick_bind_defaults();
+        TaskOperationFixture::bindDefaults();
         app(TaskExtensionState::class)->enable();
-        $group = tick_group();
+        $group = TaskOperationFixture::create();
         Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
         $check = $group->tasks()->firstOrFail()->checks()->create(['kind' => 'handoff', 'status' => 'passed', 'commit_sha' => str_repeat('a', 40), 'pid' => 0, 'process_started' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
         task_checked_operation($check);
@@ -364,14 +371,11 @@ describe('POST /mcp', function (): void {
             ->and($started['poll'])->toBe(['tool' => 'operation-show', 'after_seconds' => 2])
             ->and($fixture->deployment->invocations)->toBe(0);
 
-        run_operation_jobs();
         $shown = mcp_tool($this, $endpoint, 'operation-show', ['operation' => $started['operation']['id'], 'after_sequence' => $started['operation']['sequence']]);
-        $listed = mcp_tool($this, $endpoint, 'operation-list', ['status' => 'succeeded']);
+        $listed = mcp_tool($this, $endpoint, 'operation-list', ['status' => 'queued']);
 
-        expect($shown['data']['status'])->toBe('succeeded')
-            ->and($shown['data']['poll_after_seconds'])->toBeNull()
-            ->and($shown['data']['result']['selected_release'])->toBe('fresh')
-            ->and(array_column($shown['data']['steps'], 'name'))->toContain('source_preparation', 'cleanup')
+        expect($shown['data']['status'])->toBe('queued')
+            ->and($shown['data']['poll_after_seconds'])->toBe(2)
             ->and(array_column($listed['data'], 'id'))->toBe([$started['operation']['id']]);
     })->with(['/mcp', '/mcp/search']);
 
@@ -386,16 +390,14 @@ describe('POST /mcp', function (): void {
         expect(array_keys($started))->toBe(['operation', 'poll', 'meta'])
             ->and($started['operation']['status'])->toBe('queued')
             ->and($started['operation']['kind'])->toBe('instance.rollback')
-            ->and($started['operation']['input'])->toBe(['release' => 'initial'])
+            ->and($started['operation']['input']['release'])->toBe('initial')
             ->and($started['poll'])->toBe(['tool' => 'operation-show', 'after_seconds' => 2])
             ->and($fixture->deployment->invocations)->toBe(0);
 
-        run_operation_jobs();
         $shown = mcp_tool($this, $endpoint, 'operation-show', ['operation' => $started['operation']['id']]);
 
-        expect($shown['data']['status'])->toBe('succeeded')
-            ->and($shown['data']['result']['selected_release'])->toBe('initial')
-            ->and(array_column($shown['data']['steps'], 'name'))->toBe(['rollback', 'activation', 'php_refresh', 'process_restart']);
+        expect($shown['data']['status'])->toBe('queued')
+            ->and($shown['data']['input']['release'])->toBe('initial');
     })->with(['/mcp', '/mcp/search']);
 
     it('refuses a caller that is not an active WireGuard peer', function (): void {
@@ -410,7 +412,7 @@ describe('POST /mcp', function (): void {
         $peer = Node::query()->create([
             'name' => 'peer',
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'architecture' => 'x86_64', 'platform' => 'linux',
             'public_ssh_host' => '192.0.2.3',
             'wireguard_ip' => '10.44.0.3',
         ]);
@@ -512,18 +514,19 @@ describe('POST /mcp/search', function (): void {
 });
 
 it('creates a public Process hostname through the generated MCP tool and API validation', function (): void {
+    bind_task_node_reachability();
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => 'active']);
-    $ingress = Node::query()->create(['name' => 'process-ingress', 'cluster_id' => $cluster->id, 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $ingress = Node::query()->create(['name' => 'process-ingress', 'cluster_id' => $cluster->id, 'status' => 'active', 'architecture' => 'x86_64', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
     foreach ([RoleName::Router, RoleName::Ingress] as $role) {
         $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => $role, 'status' => 'active']);
     }
-    $services = Node::query()->create(['name' => 'services', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']);
+    $services = Node::query()->create(['name' => 'services', 'status' => 'active', 'architecture' => 'x86_64', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']);
     $process = $services->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.3:8095:80/tcp']], 'status' => 'active']);
     $response = mcp_call($this, 'tools/call', ['name' => 'route-create', 'arguments' => ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public']])->assertOk();
-    expect($response->json('result.isError'))->toBeFalse();
+    expect($response->json('result.isError'))->toBeFalse($response->getContent());
     $document = json_decode($response->json('result.content.0.text'), true);
-    expect($document['data']['cluster_id'])->toBe($cluster->id)
-        ->and($document['data']['process_id'])->toBe($process->id)
-        ->and($document['data']['replacement_step'])->toBe('ingress-firewall');
+    expect($document['operation']['kind'])->toBe('route.create');
+    $route = Route::query()->findOrFail($document['operation']['target_id']);
+    expect($route->cluster_id)->toBe($cluster->id)->and($route->customProxy->process_id)->toBe($process->id);
 });

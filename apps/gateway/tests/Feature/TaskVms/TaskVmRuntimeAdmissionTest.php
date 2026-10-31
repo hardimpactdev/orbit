@@ -13,15 +13,19 @@ use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     if (! OperationKinds::supports('children')) {
         $this->markTestSkipped('Requires the matching kit v2 children slice.');
     }

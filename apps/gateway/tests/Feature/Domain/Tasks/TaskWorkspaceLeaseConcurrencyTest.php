@@ -13,10 +13,11 @@ use App\Models\Task;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\TaskOperationFixture;
 
 it('serializes independent groups and preserves FIFO ownership across a process restart', function (): void {
-    tick_bind_defaults();
-    $first = tick_group();
+    TaskOperationFixture::bindDefaults();
+    $first = TaskOperationFixture::create();
     $second = $first->replicate(['taskable_id', 'taskable_type', ...TaskAssistance::Fields]);
     $second->title = 'Another group sharing the Instance';
     $second->save();
@@ -183,9 +184,9 @@ function lease_concurrency_read($socket): array
 }
 
 it('refuses a real cancellation request while another process records group completion', function (): void {
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     app(TaskExtensionState::class)->enable();
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     $directory = sys_get_temp_dir().'/orbit-action-contention-'.bin2hex(random_bytes(8));
     app()->instance(TaskExecutionLock::class, new NativeTaskExecutionLock($directory));
     [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);

@@ -24,7 +24,7 @@ beforeEach(function (): void {
     $project = Project::query()->create(['name' => 'Pool', 'slug' => 'pool', 'repository_url' => 'https://example.test/pool.git', 'root' => 'public']);
     $instances = [];
     foreach ([3, 4] as $i) {
-        $node = Node::query()->create(['name' => 'target-node-'.$i, 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.'.$i, 'status' => 'active', 'public_ssh_host' => '192.0.2.'.$i, 'platform' => 'linux']);
+        $node = Node::query()->create(['name' => 'target-node-'.$i, 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.'.$i, 'status' => 'active', 'public_ssh_host' => '192.0.2.'.$i, 'architecture' => 'x86_64', 'platform' => 'linux']);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
         $instances[] = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'prod-'.$i, 'environment' => 'production', 'branch' => 'main', 'checkout_path' => '/srv/pool/'.$i, 'production_home' => '/srv/pool/'.$i, 'production_user' => 'orbit-pool', 'source_is_laravel' => false, 'status' => 'active']);
     }

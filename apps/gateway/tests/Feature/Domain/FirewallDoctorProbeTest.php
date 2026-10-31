@@ -20,6 +20,7 @@ use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
+use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;

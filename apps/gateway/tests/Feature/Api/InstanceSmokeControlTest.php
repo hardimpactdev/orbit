@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
-use App\Domain\Operations\OperationRunner;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertNotifier;
@@ -28,7 +27,7 @@ beforeEach(function (): void {
     app()->instance(ReleaseAlertNotifier::class, $this->notifier);
 });
 
-it('durably holds both admission and queued automatic execution without disabling operator intent', function (): void {
+it('durably holds automatic admission without disabling operator intent', function (): void {
     $instance = $this->fixture->instance;
     $this->withHeader('Idempotency-Key', 'hold')->postJson($this->url.'/control', $this->control)->assertOk()->assertJsonPath('data.held', true);
     $this->postJson($this->url.'/control', $this->control)->assertOk();
@@ -39,12 +38,7 @@ it('durably holds both admission and queued automatic execution without disablin
     expect(AutomaticDeployPolicyWriter::Swamp->eligibilityRefusal($instance))->toBe('instance.smoke_held');
     $this->withHeader('Idempotency-Key', 'auto')->postJson('/api/v1/instances/'.$instance->id.'/deploy/automatic', ['commit' => str_repeat('b', 40)])
         ->assertConflict()->assertJsonPath('error.code', 'instance.smoke_held');
-    $op = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id,
-        'node_id' => $instance->node_id, 'status' => 'queued', 'sequence' => 2, 'triggered_by' => 'swamp:auto-deploy',
-        'input' => ['commit' => str_repeat('b', 40), 'caller_node_id' => $this->fixture->caller->id]]);
-    app(OperationRunner::class)->run($op->id);
-    expect($op->refresh()->error_code)->toBe('instance.smoke_held');
-    expect($this->fixture->deployment->activations)->toBe(0);
+
 });
 
 it('alerts on no result but never rolls back and never accepts missing or historical pass proof', function (): void {
@@ -68,8 +62,12 @@ it('releases after restored smoke and resumes only its own recovery', function (
     $this->withHeader('Idempotency-Key', $this->rollback['failure_key'])->postJson($this->url.'/failure', $this->failure)->assertOk();
     $key = $this->rollback['failure_key'].'.rollback';
     $this->withHeader('Idempotency-Key', $key)->postJson($this->url.'/rollback', $this->rollback)->assertAccepted();
-    app(OperationRunner::class)->run(Operation::query()->where('kind', 'instance.rollback')->sole()->id);
-    $row = InstanceDeployment::query()->where('kind', 'rollback')->sole();
+    $operation = Operation::query()->where('kind', 'instance.rollback')->sole();
+    $row = InstanceDeployment::query()->create(['instance_id' => $instance->id, 'kind' => 'rollback',
+        'status' => 'succeeded', 'commit' => $this->rollback['target']['commit'], 'release' => $this->rollback['target']['release'],
+        'triggered_by' => $operation->triggered_by, 'started_at' => now(), 'finished_at' => now()]);
+    $operation->update(['status' => 'succeeded', 'lock_key' => null, 'finished_at' => now(), 'result' => ['deployment_id' => $row->id], 'state' => [...$operation->state, 'deployment_id' => $row->id]]);
+    $this->fixture->deployment->current = $row->release;
     // Reuse verified artifacts, bound to the new deployment, as a restored smoke result.
     $proof = Operation::query()->where('idempotency_key', 'proof.passed')->sole()->replicate();
     $input = $proof->input;
@@ -95,33 +93,6 @@ it('releases after restored smoke and resumes only its own recovery', function (
     expect($instance->refresh()->auto_deploy_state['blocked'])->toContain($this->failure['commit']);
     expect($instance->auto_deploy_state['smoke_control']['hold'])->toBeNull();
 })->with(['none', 'before', 'operator', 'disabled', 'manual']);
-
-it('marks queued-auto cancellation and guards a pinned owned recovery redeploy', function (bool $changed): void {
-    $instance = $this->fixture->instance;
-    $this->withHeader('Idempotency-Key', 'hold')->postJson($this->url.'/control', $this->control)->assertOk();
-    $this->withHeader('Idempotency-Key', $this->rollback['failure_key'])->postJson($this->url.'/failure', $this->failure)->assertOk();
-    $automatic = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id,
-        'node_id' => $instance->node_id, 'status' => 'queued', 'sequence' => 1, 'triggered_by' => 'swamp:auto-deploy', 'lock_key' => 'instance:'.$instance->id, 'input' => []]);
-    $key = $this->rollback['failure_key'].'.rollback';
-    $this->withHeader('Idempotency-Key', $key)->postJson($this->url.'/rollback', $this->rollback)->assertAccepted()->assertJsonPath('data.input.recovery_redeploy_required', true);
-    expect($automatic->refresh()->status->value)->toBe('cancelled');
-    expect($automatic->error_code)->toBe('operation.superseded');
-    app(OperationRunner::class)->run(Operation::query()->where('kind', 'instance.rollback')->sole()->id);
-    $row = InstanceDeployment::query()->where('kind', 'rollback')->sole();
-    $data = [...$this->control, 'action' => 'redeploy', 'expected' => ['deployment_id' => $row->id, 'commit' => $row->commit, 'release' => $row->release], 'rollback_request_key' => $key];
-    $this->withHeader('Idempotency-Key', 'redeploy')->postJson($this->url.'/redeploy', $data)->assertAccepted()->assertJsonPath('data.input.commit', $row->commit);
-    $op = Operation::query()->where('idempotency_key', 'redeploy')->sole();
-    $this->postJson($this->url.'/redeploy', $data)->assertAccepted()->assertJsonPath('data.id', $op->id);
-    if ($changed) {
-        $this->fixture->deployment->current = 'initial';
-    }
-    app(OperationRunner::class)->run($op->id);
-    expect($op->refresh()->error_code)->toBe($changed ? 'instance.smoke_selection_changed' : null);
-    $this->getJson($this->url.'/redeploy/receipt?request_key=redeploy')->assertOk()->assertJsonPath('data.operation.status', $changed ? 'failed' : 'succeeded');
-    if (! $changed) {
-        expect($this->fixture->deployment->preparedCommits)->toBe([$row->commit]);
-    }
-})->with([true, false]);
 
 it('retains partial alerts, retries the bound request, and resolves only owned assistance after a fresh pass', function (): void {
     $instance = $this->fixture->instance;

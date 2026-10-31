@@ -106,7 +106,7 @@ describe('Node record events', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         $this->patchJson("/api/v1/nodes/{$node->id}/settings", [
-            'apps' => ['path' => '/srv/apps'],
+            'task_vms' => ['cidr' => '10.251.77.0/24', 'max_vms' => 2],
         ])->assertOk();
 
         Event::assertDispatched(

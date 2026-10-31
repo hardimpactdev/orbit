@@ -15,14 +15,15 @@ use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     app(TaskExtensionState::class)->enable();
 });
 
 it('keeps cancellation under the execution lock and retains running ownership until remote termination', function (): void {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     $task = $group->tasks()->firstOrFail();
     $check = cancel_lease_check($task);
     $leases = app(TaskWorkspaceLease::class);
@@ -65,7 +66,7 @@ it('keeps cancellation under the execution lock and retains running ownership un
 });
 
 it('keeps the check running when remote cancellation cannot prove termination', function (string $failure): void {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     $task = $group->tasks()->firstOrFail();
     $check = cancel_lease_check($task);
     $leases = app(TaskWorkspaceLease::class);

@@ -165,26 +165,26 @@ describe('create and send', function (): void {
             && $request['text'] === 'Do the work' && is_string($request['key']));
     });
 
-    it('retries a refused send once with the same key', function (): void {
+    it('propagates a refused external send without retrying', function (): void {
         Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.unhandled', 'message' => 'x', 'details' => (object) []]], 500)->push(['duplicate' => false], 202)]);
         $node = pi_node();
 
-        pi_driver()->send(pi_thread($node), 'Continue');
+        expect(fn () => pi_driver()->send(pi_thread($node), 'Continue'))->toThrow(AgentDriverException::class, 'server.unhandled');
 
         $keys = collect(Http::recorded())->map(fn (array $pair): mixed => $pair[0]['key'])->all();
-        expect($keys)->toHaveCount(2)->and($keys[0])->toBe($keys[1]);
+        expect($keys)->toHaveCount(1)->and($keys[0])->toBeString()->not->toBeEmpty();
     });
 
-    it('posts a supplied key on the first send and on the retry', function (): void {
+    it('preserves a supplied external send key without retrying', function (): void {
         Http::fake([PI_BASE.'/sessions/*/messages' => Http::sequence()->push(['error' => ['code' => 'server.unhandled', 'message' => 'x', 'details' => (object) []]], 500)->push(['duplicate' => false], 202)]);
 
-        pi_driver()->send(pi_thread(pi_node()), 'Continue', 'resume-key-1');
+        expect(fn () => pi_driver()->send(pi_thread(pi_node()), 'Continue', 'resume-key-1'))->toThrow(AgentDriverException::class, 'server.unhandled');
 
         $keys = collect(Http::recorded())->map(fn (array $pair): mixed => $pair[0]['key'])->all();
-        expect($keys)->toBe(['resume-key-1', 'resume-key-1']);
+        expect($keys)->toBe(['resume-key-1']);
     });
 
-    it('names the server error when both attempts fail', function (): void {
+    it('names the server error when an external send fails', function (): void {
         Http::fake([PI_BASE.'/sessions/*/messages' => Http::response(['error' => ['code' => 'session.turn_active', 'message' => 'Session is already working on a turn.', 'details' => (object) []]], 409)]);
 
         expect(fn () => pi_driver()->send(pi_thread(pi_node()), 'Continue'))

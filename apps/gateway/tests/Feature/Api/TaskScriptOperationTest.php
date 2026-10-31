@@ -15,10 +15,11 @@ use App\Models\TaskWorkspaceLeaseRecord;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Tasks\ScriptTaskGroupRequest;
 use Tests\Support\FakeTaskScriptRunner;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
     enable_operation_queue();
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     app(TaskExtensionState::class)->enable();
     app()->instance(TaskScriptRunner::class, new FakeTaskScriptRunner);
     $this->travelTo('2026-10-25 12:00:00');
@@ -26,7 +27,7 @@ beforeEach(function (): void {
 
 function script_operation_group(): Task
 {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
     $group->refresh();
     $group->tasks()->update(['implementer_agent_thread_id' => null]);
@@ -132,14 +133,9 @@ it('requires a key and rejects caller commands, unsafe paths and nonliteral argu
     [['script' => 'scripts/../dependencies']], [['args' => ['mode' => 'routine']]], [['args' => [12]]], [['args' => ["a\0b"]]],
 ]);
 
-it('refuses a tick group and a noncurrent child without dispatch', function (): void {
+it('refuses a noncurrent child without dispatch', function (): void {
     $group = script_operation_group();
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'tick']);
-    $group->refresh();
     $input = ['subtask' => $group->tasks()->firstOrFail()->id, 'script' => 'scripts/dependencies', 'args' => []];
-    $this->postJson('/api/v1/task-groups/'.$group->id.'/script', $input, ['Idempotency-Key' => 'tick'])->assertConflict()->assertJsonPath('error.code', 'tasks.not_orchestrated');
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'external']);
-    $group->refresh();
     $this->postJson('/api/v1/task-groups/'.$group->id.'/script', [...$input, 'subtask' => 999999], ['Idempotency-Key' => 'foreign'])->assertNotFound();
     expect(app(TaskScriptRunner::class)->starts)->toBe(0);
 });

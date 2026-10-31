@@ -192,57 +192,6 @@ describe('activity record events', function (): void {
             ->and(activity_notice_events())->toBe([]);
     });
 
-    it('broadcasts activity.updated when the interrupted activity sweep ends a running row', function (): void {
-        $caller = Node::query()->create([
-            'name' => 'activity-sweep-caller',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'public_ssh_host' => '192.0.2.181',
-            'wireguard_ip' => '10.44.0.181',
-        ]);
-        $target = Node::query()->create([
-            'name' => 'activity-sweep-target',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'public_ssh_host' => '192.0.2.182',
-            'wireguard_ip' => '10.44.0.182',
-        ]);
-        $marker = 'orbit-activity-properties-must-stay-off-the-notice';
-        $properties = json_encode(['input' => $marker.str_repeat('y', 12_000)], JSON_THROW_ON_ERROR);
-        $id = activity_notice_running('instance:deploy', callerNodeId: $caller->id, targetNodeId: $target->id, properties: $properties);
-        $omitted = activity_notice_running('activity:list');
-
-        Event::fake([RecordBroadcast::class]);
-
-        $this->artisan('orbit:activity-finalize-interrupted')->assertSuccessful();
-
-        $activity = Activity::query()->findOrFail($id);
-        $events = activity_notice_events();
-        $stored = DB::table('activity_log')->where('id', $id)->value('properties');
-
-        expect($events)->toHaveCount(1);
-
-        $payload = json_encode($events[0]->broadcastWith(), JSON_THROW_ON_ERROR);
-
-        expect(is_string($stored) ? $stored : json_encode($stored))->toContain($marker)
-            ->and(Activity::query()->findOrFail($omitted)->status)->toBe('failed')
-            ->and($events[0]->type)->toBe(RecordEventType::ActivityUpdated)
-            ->and($events[0]->id)->toBe($id)
-            ->and($events[0]->data)->toBe([
-                'id' => $id,
-                'request_id' => $activity->request_id,
-                'command' => 'instance:deploy',
-                'status' => 'failed',
-                'caller_node_id' => $caller->id,
-                'target_node_id' => $target->id,
-                'error_code' => 'activity.interrupted',
-                'duration_ms' => null,
-                'occurred_at' => ActivityData::fromModel($activity)->occurredAt,
-            ])
-            ->and($payload)->not->toContain($marker)
-            ->and(strlen($payload))->toBeLessThan(2_000);
-    });
-
     it('broadcasts activity.updated when the shutdown finalizer ends a running activity', function (): void {
         $id = activity_notice_running('instance:register', ageSeconds: 1);
         $activity = Activity::query()->findOrFail($id);
@@ -308,17 +257,4 @@ describe('activity record events', function (): void {
             ->twice();
     });
 
-    it('keeps the interrupted activity outcome when broadcasting the sweep notice fails', function (): void {
-        $id = activity_notice_running('instance:deploy');
-        activity_notice_reverb_fails();
-        Log::spy();
-
-        $this->artisan('orbit:activity-finalize-interrupted')->assertSuccessful();
-
-        expect(Activity::query()->findOrFail($id)->status)->toBe('failed')
-            ->and(Activity::query()->findOrFail($id)->error_code)->toBe('activity.interrupted');
-        Log::shouldHaveReceived('warning')
-            ->with('Failed to broadcast a record event.', Mockery::type('array'))
-            ->once();
-    });
 });

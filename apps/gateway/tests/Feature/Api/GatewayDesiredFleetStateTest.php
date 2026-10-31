@@ -154,7 +154,7 @@ describe('X-Orbit-Cli-Version', function (): void {
 });
 
 describe('orbit:desired-fleet-state', function (): void {
-    it('resolves the state, prints it, and runs every five minutes', function (): void {
+    it('resolves and prints the state without scheduling PHP execution', function (): void {
         config()->set('app.version', CLI_RELEASE_FIXTURE_COMMIT);
         fake_release_history();
         fake_cli_release_github();
@@ -166,6 +166,6 @@ describe('orbit:desired-fleet-state', function (): void {
         $event = collect(app(Schedule::class)->events())
             ->first(static fn ($event): bool => str_contains((string) $event->command, 'orbit:desired-fleet-state'));
 
-        expect($event?->expression)->toBe('*/5 * * * *');
+        expect($event)->toBeNull();
     });
 });

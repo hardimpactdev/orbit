@@ -41,10 +41,11 @@ use Tests\Support\FakeTaskAnalysisRunner;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\TaskAnalysisAdapterFixture;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
     enable_operation_queue();
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     app(TaskExtensionState::class)->enable();
     app()->instance(TaskAnalysisRunner::class, new FakeTaskAnalysisRunner);
     $this->travelTo('2026-10-22 12:00:00');
@@ -57,7 +58,7 @@ afterEach(function (): void {
 
 function analysis_operation_group(): Task
 {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => TaskOrchestration::External->value]);
     $group->refresh();
     $group->tasks()->update(['implementer_agent_thread_id' => null]);
@@ -278,14 +279,11 @@ it('retains the complete exact report and native provenance without a check, age
         ->and(TaskWorkspaceLeaseRecord::query()->where('kind', 'analysis')->sole()->status)->toBe('released');
 })->with(['ready', 'action_required', 'blocked']);
 
-it('records native queued analysis and refusal fixtures', function (): void {
+it('records the native queued analysis fixture', function (): void {
     $group = analysis_operation_group();
     $response = $this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', analysis_operation_input($group), ['Idempotency-Key' => 'analysis.c1'])->assertAccepted();
     record_fixture($response, 'tasks/tasks-analyze/queued', AnalyzeTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/analyze');
-    // Replay has its own permanent key; a refused native request does not execute anything.
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'tick']);
-    record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/analyze', analysis_operation_input($group), ['Idempotency-Key' => 'analysis.refusal'])->assertConflict(),
-        'tasks/tasks-analyze/not-orchestrated', AnalyzeTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/analyze');
+
 });
 
 it('records complete native terminal analysis evidence', function (string $outcome): void {

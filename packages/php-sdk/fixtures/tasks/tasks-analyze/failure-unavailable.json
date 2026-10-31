@@ -53,6 +53,7 @@
             "started_at": "2026-10-22T12:00:00+00:00",
             "finished_at": "2026-10-22T12:00:10+00:00",
             "poll_after_seconds": null,
+            "assistance": null,
             "steps": [
                 {
                     "name": "workspace_ready",

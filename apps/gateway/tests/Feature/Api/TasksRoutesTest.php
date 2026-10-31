@@ -43,8 +43,6 @@ use App\Models\TaskQuestion;
 use App\Rules\CommandPaths;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Routing\Route;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Symfony\Component\Process\Process;
@@ -116,6 +114,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:park' => ['api/v1/task-groups/{group}/park', ['POST']],
+        'tasks:dependency-merge' => ['api/v1/task-groups/{group}/dependency-merge', ['POST']],
         'tasks:publish' => ['api/v1/task-groups/{group}/publish', ['POST']],
         'tasks:analyze' => ['api/v1/task-groups/{group}/analyze', ['POST']],
         'tasks:script' => ['api/v1/task-groups/{group}/script', ['POST']],
@@ -222,41 +221,6 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertJsonPath('data.enabled', false);
 
     expect(app(TaskExtensionState::class)->enabled())->toBeFalse();
-});
-
-it('reports when the last tasks tick started its work on tasks status', function (): void {
-    tasks_gateway();
-    $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
-
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', null);
-
-    enable_tasks();
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
-
-    $this->travelTo(Carbon::parse('2026-10-07T06:00:10Z'));
-    $held = Cache::lock('orbit:tasks:tick', 300);
-    expect($held->get())->toBeTrue();
-    $this->artisan('tasks:tick')
-        ->expectsOutput('Another tasks tick is already running.')
-        ->assertSuccessful();
-    $held->release();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
-
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->postJson('/api/v1/extensions/tasks/disable')
-        ->assertOk()
-        ->assertJsonMissingPath('data.last_tick_at');
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
 });
 
 it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
@@ -1171,7 +1135,7 @@ it('validates a deliverable correction without consuming it on refused requests'
     $this->patchJson($url, ['deliverables' => [deliverable_path_file('tests/MissingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     $this->patchJson($url, ['deliverables' => []])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
     $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
-    $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.orchestration_unsupported');
     expect($task->fresh()?->deliverables)->toBe($before)
         ->and($task->fresh()?->topology->isEmpty())->toBeTrue();
     expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);

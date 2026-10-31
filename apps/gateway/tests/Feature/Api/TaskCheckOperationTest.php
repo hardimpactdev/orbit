@@ -55,7 +55,6 @@ use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Orbit\Sdk\Requests\Tasks\CheckTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -177,7 +176,7 @@ it('runs a baseline once and records a passed result on the waiting read', funct
     expect(app(TaskCheckRunner::class)->starts)->toBe(1);
 });
 
-it('returns 409 for a tick or ended group without starting a check', function (string $mode, string $status, string $code): void {
+it('returns 409 for an ended group without starting a check', function (string $mode, string $status, string $code): void {
     $group = check_operation_group();
     Task::topLevel()->whereKey($group->id)->update(['orchestration' => $mode, 'status' => $status]);
 
@@ -187,7 +186,6 @@ it('returns 409 for a tick or ended group without starting a check', function (s
     expect(Operation::query()->count())->toBe(0);
     expect(app(TaskCheckRunner::class)->starts)->toBe(0);
 })->with([
-    ['tick', 'running', 'tasks.not_orchestrated'],
     ['external', 'completed', 'tasks.group_closed'],
     ['external', 'cancelled', 'tasks.group_closed'],
     ['external', 'failed', 'tasks.group_closed'],
@@ -715,17 +713,6 @@ it('replays a finished keyed check before later baseline validation and refuses 
         ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict');
     expect(Operation::query()->count())->toBe(1);
     expect(app(TaskCheckRunner::class)->starts)->toBe(1);
-});
-
-it('records the check refusal contract for a tick group', function (): void {
-    $this->travelTo('2026-10-22 12:00:00');
-    $group = check_operation_group();
-    Task::topLevel()->whereKey($group->id)->update(['orchestration' => 'tick']);
-
-    record_fixture($this->postJson('/api/v1/task-groups/'.$group->id.'/check', ['subtask' => $group->tasks()->firstOrFail()->id, 'phase' => 'baseline'])->assertConflict(),
-        'tasks/tasks-check/not-orchestrated',
-        CheckTaskGroupRequest::class,
-        'POST /api/v1/task-groups/{group}/check');
 });
 
 it('keeps an external check waiting on a failed read without raising or changing assistance', function (): void {

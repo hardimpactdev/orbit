@@ -27,7 +27,7 @@ function orbit_https_ca(string $directory, string $name): string
 function orbit_https_server(array &$servers, string $directory, string $name, string $mode = 'reject'): int
 {
     $process = proc_open(
-        [PHP_BINARY, base_path('tests/Fixtures/Vault/https-server.php'), "{$directory}/{$name}.pem", "{$directory}/{$name}.key", $mode],
+        [PHP_BINARY, base_path('tests/Fixtures/https-server.php'), "{$directory}/{$name}.pem", "{$directory}/{$name}.key", $mode],
         [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
     );

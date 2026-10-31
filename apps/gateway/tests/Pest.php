@@ -130,7 +130,7 @@ function deployment_api_fixture(): array
     $caller = Node::query()->create([
         'name' => 'deployment-gateway-peer',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.140',
         'wireguard_ip' => '10.44.0.140',
         'user' => 'orbit',
@@ -139,7 +139,7 @@ function deployment_api_fixture(): array
     $owner = Node::query()->create([
         'name' => 'deployment-owner',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.141',
         'wireguard_ip' => '10.44.0.141',
         'user' => 'orbit',

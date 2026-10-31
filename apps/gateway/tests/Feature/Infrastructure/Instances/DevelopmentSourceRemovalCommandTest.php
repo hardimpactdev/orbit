@@ -2,14 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Instances\DestroyInstanceAction;
-use App\Data\Instances\CreateInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\DevelopmentInstanceProvisioner;
-use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
@@ -34,12 +30,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
-use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\TaskVms\TaskVmGit;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -342,64 +335,6 @@ describe('failed creation source removal', function (): void {
         $this->assertModelMissing($instance);
         expect($attempt)->toBe(2);
     });
-
-    it('retains unowned source after a failed prepare and cleans only a receipt-owned lost response', function (string $failure): void {
-        [$removal, $agents, $instance, $lock] = sourceRemovalFixture();
-        $node = $instance->node;
-        $project = $instance->project;
-        $instance->delete();
-        $accounts = Mockery::mock(ManagedUserAccountResolver::class);
-        $accounts->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
-        app()->instance(ManagedUserAccountResolver::class, $accounts);
-        app()->instance(DevelopmentInstanceSourceLifecycle::class, new RemoteDevelopmentInstanceSourceLifecycle(
-            app(DevelopmentSshExecutor::class), $agents, $accounts, new CheckoutRemovalBoundary(new ProtectedPathCatalog),
-            app(RepositoryReadAccess::class), app(TaskVmGit::class),
-        ));
-        sourceRemovalAction($removal, $lock);
-        $provisioner = Mockery::mock(DevelopmentInstanceProvisioner::class);
-        $provisioner->shouldReceive('reserve')->andReturnNull();
-        $provisioner->shouldNotReceive('complete');
-        app()->instance(DevelopmentInstanceProvisioner::class, $provisioner);
-        if ($failure === 'existing source') {
-            $agents->refuse('instance.prepare-development-source', 'instance.source_invalid');
-        } else {
-            $agents->answer('instance.prepare-development-source', static function (): never {
-                throw new AgentRunnerFailure('instance.prepare-development-source', AgentRunnerFailure::Transport, 'Connection closed.');
-            });
-        }
-        if ($failure === 'lost receipt-owned response') {
-            $agents->answer('instance.inspect-source', static function (array $input): array {
-                expect($input['prepare_id'])->not->toBe('');
-                $row = sourceRemovalEvidence($input['checkout'], false);
-                $row['branch'] = '';
-
-                return $row;
-            })->answer('instance.read-source-removal-state', ['state' => 'present'])
-                ->answer('instance.finalize-source-removal', static fn (array $input): array => ['state' => 'finalized', 'receipt' => $input['receipt']]);
-        } else {
-            $agents->refuse('instance.inspect-source', 'instance.ownership_mismatch');
-        }
-        $data = new CreateInstanceData($project->id, $node->id, 'interrupted', null, null, 't3code/new');
-
-        try {
-            app(CreateInstanceAction::class)->execute($data);
-            $this->fail('Expected preparation to fail.');
-        } catch (ResourceOperationException|RuntimeConvergenceException $error) {
-            expect($error->errorCode)->toBe('instance.clone_failed');
-        }
-
-        if ($failure === 'lost receipt-owned response') {
-            $this->assertDatabaseMissing('instances', ['name' => 'interrupted']);
-            expect(InstanceRemoval::query()->sole()->status)->toBe(InstanceRemovalStatus::Completed);
-        } else {
-            $retained = Instance::query()->where('name', 'interrupted')->sole();
-            expect($retained->source_prepare_id)->not->toBeNull();
-            expect($retained->status)->toBe(InstanceState::Reserved);
-            expect($agents->commands())->not->toContain('instance.finalize-source-removal');
-            expect(fn () => app(CreateInstanceAction::class)->execute($data))->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
-            $this->assertModelExists($retained);
-        }
-    })->with(['existing source', 'interrupted before receipt', 'lost receipt-owned response']);
 
     it('refuses removal while the create lifecycle owns the environment lock', function (bool $failureRecord): void {
         [$removal, $agents, $instance, $lock] = sourceRemovalFixture();

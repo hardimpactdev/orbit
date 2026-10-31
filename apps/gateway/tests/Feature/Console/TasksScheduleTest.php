@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskSchedule;
 use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Artisan;
 
 function task_schedule(bool $enabled): Schedule
 {
@@ -18,7 +17,7 @@ function task_schedule(bool $enabled): Schedule
     return $schedule;
 }
 
-it('registers the task tick on the schedule when tasks are enabled', function (): void {
+it('schedules Task observation and problem filing without the retired tick', function (): void {
     config(['swamp.read_token' => 'reader.fixture-token']);
     $schedule = task_schedule(enabled: true);
 
@@ -27,7 +26,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
         static fn ($event): bool => str_contains((string) $event->command, 'problems:file'),
     );
     expect($schedule->events())->toHaveCount(3)
-        ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeTrue()
+        ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:tick')))->toBeFalse()
         ->and(array_any($commands, static fn (string $command): bool => str_contains($command, 'tasks:collect-t3-metrics')))->toBeFalse()
         ->and($file)->not->toBeNull()
         ->and($file->expression)->toBe('0 * * * *')
@@ -36,7 +35,7 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
         ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeTrue();
 });
 
-it('skips the task tick schedule when tasks are disabled', function (): void {
+it('disables Task schedules while retaining the configured Swamp reader check', function (): void {
     config(['swamp.read_token' => 'reader.fixture-token']);
     $schedule = task_schedule(enabled: false);
     $reader = collect($schedule->events())->first(
@@ -48,10 +47,4 @@ it('skips the task tick schedule when tasks are disabled', function (): void {
         ->and(array_all($schedule->events(), static fn ($event): bool => $event->filtersPass(app())))->toBeFalse()
         ->and($reader)->not->toBeNull()
         ->and($reader->filtersPass(app()))->toBeTrue();
-});
-
-it('safely no-ops when the task tick command runs while tasks are disabled', function (): void {
-    Artisan::call('tasks:tick');
-
-    expect(Artisan::output())->toContain('Tasks extension is disabled.');
 });

@@ -1,0 +1,155 @@
+# Gateway suite audit — 2026-10-31
+
+This audit separates stale migration-era tests from failures in current behavior. The cleanup changes tests, test support and recorded responses only. It changes no production writer, authorization rule, test exclusion, skip or time limit.
+
+## Method and timing
+
+- Unchanged main `086fbe332afe2f6b61cbc6ca3b8434b122b1736f`: 18,080 cases, 252 failures and 599 errors in 94 files; 21 skipped. Wall time 155.355 seconds with four workers (PHP 8.5.12). The earlier 34-failure/48-error report covered only 5,599 cases.
+- Cleanup base advanced to main `c0b368bca2954528bd9ee357482819ad101fc120`, including database safety and Route target-unset merges. Test-count changes therefore include both main and retired-test removals.
+- Run the configured Unit and Feature suites with the existing `privileged` exclusion. This does not claim privileged or fleet execution coverage.
+- The complete inventory uses a temporary copy of phpunit.xml with only stopOnRisky=false, so one risky case cannot hide the remaining inventory. failOnRisky=true and the local two-second per-test limit remain enabled. The committed phpunit.xml is unchanged.
+- Route integration uses Deno and an explicit paired orbit-swamp checkout at `f5d97016` (shared parser318 and mint183). It runs real native parent code against a fake Gateway/agent boundary; it is not installed-worker or fleet effect proof.
+
+Final cleanup audit: 17,988 cases; 40 failures, 5 errors, 21 skipped and 0 risky; wall 206.884 seconds with 4 workers. Pest reports 17,922 passed (its passed count includes risky cases).
+
+## Required CI proposal
+
+Add one stable `Gateway suite` job to the required aggregate after current defects are repaired and the exact final head passes. Start it alongside builds/static checks, use stock Pest parallel CPU detection, and run the configured Unit/Feature suite on every PR and main push. Do not use TIA or a changed-files filter. Keep privileged infrastructure coverage in its own correctly provisioned job.
+
+The observed local suite duration is compatible with a short release gate, but checkout/install and GitHub runner time have not been measured. First run the job informationally on the provisioned CI runner, record total job time and the slowest cases, then decide whether one job or the existing stock shard support fits the release budget. Do not make a known-red check required or hide failures behind an allowlist.
+
+Prerequisites: PHP 8.5 and the existing PHP extensions, Gateway/SDK Composer dependencies, Git/OpenSSL/SSH tools used by the configured tests, Deno, and an authenticated checkout of a reviewed orbit-swamp commit supplied through ORBIT_SWAMP_CHECKOUT. Supply DENO_BIN when Deno is not on PATH. Do not use a moving sibling checkout. CI retains the approved five-second per-test budget; no suite/step time cap is proposed. Local validation retains two seconds and at most four workers.
+
+This PR proposes the gate; it does not change CI jobs or branch protection. The migration-era build/static Required checks remain unchanged.
+
+## Every file failing on the original main baseline
+
+Counts are failed/error cases from the complete unchanged-main run. “Retained” means a failure still needs a current-code fix or a separately reviewed fixture diagnosis. A clean row can include both corrected fixtures and retired declarations; it is not a claim that the whole original file was obsolete.
+
+| Test file (under tests/) | Baseline cases | Final remaining | Cause and treatment |
+| --- | ---: | ---: | --- |
+| [Feature/Api/InstanceRollbackOperationTest.php](Feature/Api/InstanceRollbackOperationTest.php) | 20 | 0 | Correct production identity/admitted input; remove retired PHP execution assertions while keeping cross-operation admission safeguards. |
+| [Feature/Api/InstanceSmokeRecoveryTest.php](Feature/Api/InstanceSmokeRecoveryTest.php) | 10 | 1 | Retire PHP rollback execution cases; keep admission and recovery reader safeguards, including current completion-proof failure. |
+| [Feature/Api/TaskGroupBacklogTest.php](Feature/Api/TaskGroupBacklogTest.php) | 12 | 3 | External orchestration no longer auto-claims work; status moves use typed 422 refusals. Retain cancellation HTTP failures. |
+| [Feature/Domain/InstanceRouteChildIntentTest.php](Feature/Domain/InstanceRouteChildIntentTest.php) | 2 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Domain/Operations/OperationWaitingTest.php](Feature/Domain/Operations/OperationWaitingTest.php) | 1 | 0 | Correct shared deployment runtime identity/Node architecture and current native admission expectations; retire deleted PHP execution assumptions. |
+| [Feature/Api/InstanceSmokeRepairTest.php](Feature/Api/InstanceSmokeRepairTest.php) | 1 | 0 | Correct shared deployment runtime identity/Node architecture and current native admission expectations; retire deleted PHP execution assumptions. |
+| [Feature/Api/NodeAgentConfigureLockTest.php](Feature/Api/NodeAgentConfigureLockTest.php) | 3 | 0 | Update protected configure input with the declared worker_credentials reference; no enrollment or token mint is performed. |
+| [Feature/Api/TaskResponseFixturesTest.php](Feature/Api/TaskResponseFixturesTest.php) | 4 | 1 | Replace scheduler fixture and record current assistance field/refusal wording; retain current cancellation failure. |
+| [Feature/Api/TasksRoutesTest.php](Feature/Api/TasksRoutesTest.php) | 3 | 0 | Include dependency-merge command and current typed topology refusal. |
+| [Feature/Domain/Tasks/CancelTaskGroupActionTest.php](Feature/Domain/Tasks/CancelTaskGroupActionTest.php) | 3 | 3 | Retain current handoff-branch removal assistance/retry failures. |
+| [Feature/Infrastructure/Caddy/IngressCaddyFailureLabelsTest.php](Feature/Infrastructure/Caddy/IngressCaddyFailureLabelsTest.php) | 2 | 0 | Cluster Router set/unset now admit Operations; retain synchronous ingress/app-dev role failure labels. |
+| [Feature/Mcp/ToolInputSchemaTest.php](Feature/Mcp/ToolInputSchemaTest.php) | 2 | 0 | Supply exact managed account and managed checkout layout; preserve dirty/unpublished refusal and assert forced native admission, not immediate source deletion. |
+| [Feature/TaskExternalStateTest.php](Feature/TaskExternalStateTest.php) | 17 | 16 | Retain subtask cancellation failures. The action returns the group but the HTTP controller serializes it as a subtask. |
+| [Feature/Tasks/EndedPullRequestTest.php](Feature/Tasks/EndedPullRequestTest.php) | 2 | 2 | Retain current assistance-resolution hold failures for missing reviewer. |
+| [Feature/Api/InstanceDeploymentHistoryTest.php](Feature/Api/InstanceDeploymentHistoryTest.php) | 3 | 0 | Seed current recorded deployment rows and retain history list/detail ordering, bounded events, failure rendering and 404 coverage. |
+| [Feature/Api/InstanceDeploymentsTest.php](Feature/Api/InstanceDeploymentsTest.php) | 2 | 0 | Correct shared deployment runtime identity/Node architecture and current native admission expectations; retire deleted PHP execution assumptions. |
+| [Feature/Api/Routes/RouteAdmissionSafetyTest.php](Feature/Api/Routes/RouteAdmissionSafetyTest.php) | 6 | 1 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Api/SetNodePlatformTest.php](Feature/Api/SetNodePlatformTest.php) | 1 | 0 | Refresh Node response fixture with the current swamp_worker_selected field. |
+| [Feature/Api/TaskCheckOperationTest.php](Feature/Api/TaskCheckOperationTest.php) | 2 | 0 | Remove obsolete tick refusal row; retain ended-group/ownership checks. |
+| [Feature/Mcp/ToolManifestCoverageTest.php](Feature/Mcp/ToolManifestCoverageTest.php) | 2 | 0 | Exclude intentional private machine callbacks and assert current Operation schema for WebSocket creation. |
+| [Feature/Support/FeatureTestCaseIsolationTest.php](Feature/Support/FeatureTestCaseIsolationTest.php) | 1 | 0 | Parse current Pest JSON output; retain isolation/cleanup assertions. |
+| [Feature/TaskExternalOrchestrationTest.php](Feature/TaskExternalOrchestrationTest.php) | 3 | 0 | Remove retired tick/backfill paths; preserve External-mode and active-work guards. |
+| [Feature/TaskVms/TaskVmModelTest.php](Feature/TaskVms/TaskVmModelTest.php) | 1 | 1 | Match actual TaskVM error literals, rather than public operation/source names; retain five undeclared error-code failures. |
+| [Unit/Architecture/DoctorModelCoverageTest.php](Unit/Architecture/DoctorModelCoverageTest.php) | 1 | 0 | DatabaseExecutionIntent is an execution ledger, not a managed Doctor resource. |
+| [Unit/Domain/DoctorReportContractTest.php](Unit/Domain/DoctorReportContractTest.php) | 1 | 0 | Include current node.worker_failed problem code. |
+| [Unit/Domain/Tasks/TaskReviewPacketTest.php](Unit/Domain/Tasks/TaskReviewPacketTest.php) | 9 | 0 | Remove deleted scheduler fixup packet assertions. |
+| [Feature/Api/ClusterRouterTest.php](Feature/Api/ClusterRouterTest.php) | 24 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Api/InstanceSmokeControlTest.php](Feature/Api/InstanceSmokeControlTest.php) | 8 | 0 | Retire PHP deployment execution; seed successful native/history receipts to retain the five-case auto-resume ownership/pause matrix. |
+| [Feature/Api/OperationIdempotencyTest.php](Feature/Api/OperationIdempotencyTest.php) | 19 | 0 | Correct shared deployment runtime identity/Node architecture and current native admission expectations; retire deleted PHP execution assumptions. |
+| [Feature/Api/OperationsTest.php](Feature/Api/OperationsTest.php) | 17 | 1 | Retire Gateway execution assertions; retain admission, access, listing, empty-object cancellation and the current cancellation refusal. |
+| [Feature/Api/ProcessUpdatesTest.php](Feature/Api/ProcessUpdatesTest.php) | 22 | 0 | Creation returns an Operation; retain executor-Node synchronous update/error tests and persisted restart-on-deploy opt-out assertions. |
+| [Feature/Api/TaskTopologyTest.php](Feature/Api/TaskTopologyTest.php) | 2 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Api/ValkeyAclDeletionLockTest.php](Feature/Api/ValkeyAclDeletionLockTest.php) | 3 | 0 | Public deletion records an intent without PHP effects; retain synchronous Instance-removal locking/failure coverage. |
+| [Feature/Configuration/NodeAccessRouteScopeTest.php](Feature/Configuration/NodeAccessRouteScopeTest.php) | 2 | 0 | Refresh explicit route inventory; method attributes override class attributes; Conn cleanup requires Gateway scope. |
+| [Feature/Api/AutomaticDeployPolicyContractsTest.php](Feature/Api/AutomaticDeployPolicyContractsTest.php) | 17 | 0 | Correct deployment fixture and terminal result linkage; remove retired local execution and refresh assistance response field. |
+| [Feature/Api/PinnedInstanceDeployTest.php](Feature/Api/PinnedInstanceDeployTest.php) | 7 | 1 | Correct shared deployment runtime identity; retain queued cancellation completion-proof refusal. |
+| [Feature/Api/RoutesTest.php](Feature/Api/RoutesTest.php) | 24 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Domain/Broadcasting/NodeRecordEventsTest.php](Feature/Domain/Broadcasting/NodeRecordEventsTest.php) | 1 | 0 | Use state-only settings patch to test broadcasting without invoking native storage effects. |
+| [Feature/Gateway/GatewayQueueTest.php](Feature/Gateway/GatewayQueueTest.php) | 3 | 0 | Remove retired PHP scheduler/tick queue assertions. |
+| [Feature/Infrastructure/Instances/ProductionDeploymentTest.php](Feature/Infrastructure/Instances/ProductionDeploymentTest.php) | 2 | 0 | Delete tests for retired PHP prepare/activate/prune methods. Current intent/execution/guard/history suites remain. |
+| [Feature/Api/TaskGroupCommentsTest.php](Feature/Api/TaskGroupCommentsTest.php) | 2 | 0 | Remove obsolete tick branches; retain terminal/open-child/persisted guards. |
+| [Feature/Api/TaskProvisionOperationTest.php](Feature/Api/TaskProvisionOperationTest.php) | 5 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Console/TasksScheduleTest.php](Feature/Console/TasksScheduleTest.php) | 2 | 0 | Remove deleted tasks:tick scheduling assertions. |
+| [Feature/Database/SchemaBaselineTest.php](Feature/Database/SchemaBaselineTest.php) | 1 | 0 | Backdated database migration changes order/index assumptions; retain migration identity, uniqueness and idempotence. |
+| [Feature/Support/LinuxHostSelectionTest.php](Feature/Support/LinuxHostSelectionTest.php) | 2 | 0 | Parse current Pest JSON output; retain host-selection assertions. |
+| [Feature/TaskVms/TaskVmCredentialGuardTest.php](Feature/TaskVms/TaskVmCredentialGuardTest.php) | 1 | 0 | Review current shared OperationSecretValue/GitHub-token redaction and protected variable-fingerprint use sites. |
+| [Feature/TaskVms/TaskVmGlueTest.php](Feature/TaskVms/TaskVmGlueTest.php) | 2 | 1 | Parked power requires stop_confirmed_at. Retain failed-push result reporting failure. |
+| [Feature/Api/CommandActivityTest.php](Feature/Api/CommandActivityTest.php) | 2 | 0 | Update stale fixtures to the current source contract; retain observable boundary assertions. |
+| [Feature/Api/EnrollMacOsNodeTest.php](Feature/Api/EnrollMacOsNodeTest.php) | 1 | 0 | Refresh Node response fixture with the current swamp_worker_selected field. |
+| [Feature/Api/GatewayDesiredFleetStateTest.php](Feature/Api/GatewayDesiredFleetStateTest.php) | 1 | 0 | Desired-state reader remains; its removed PHP schedule is not expected. |
+| [Feature/Api/InstanceEnvironmentTest.php](Feature/Api/InstanceEnvironmentTest.php) | 1 | 1 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Api/NodeAgentSecretOutputTest.php](Feature/Api/NodeAgentSecretOutputTest.php) | 2 | 0 | Update protected configure input with the declared worker_credentials reference; no enrollment or token mint is performed. |
+| [Feature/Api/NodeConvergeOptionalChildrenTest.php](Feature/Api/NodeConvergeOptionalChildrenTest.php) | 2 | 0 | Update protected configure input with the declared worker_credentials reference; no enrollment or token mint is performed. |
+| [Feature/Api/NodeResponseFixturesTest.php](Feature/Api/NodeResponseFixturesTest.php) | 2 | 0 | Refresh Node response fixture with the current swamp_worker_selected field. |
+| [Feature/Api/OperationClaimableTest.php](Feature/Api/OperationClaimableTest.php) | 2 | 0 | Update stale fixtures to the current source contract; retain observable boundary assertions. |
+| [Feature/Api/OperationEffectReceiptsTest.php](Feature/Api/OperationEffectReceiptsTest.php) | 1 | 1 | Retain current terminal replay failure after target deletion (foreign-key constraint). |
+| [Feature/Api/SetNodeWireguardKeyTest.php](Feature/Api/SetNodeWireguardKeyTest.php) | 1 | 0 | Refresh Node response fixture with the current swamp_worker_selected field. |
+| [Feature/Api/TaskTurnOperationTest.php](Feature/Api/TaskTurnOperationTest.php) | 2 | 1 | Replace deleted scheduler fixture; retain subtask cancellation HTTP failure. |
+| [Feature/Console/RekeyNodeAgentCommandTest.php](Feature/Console/RekeyNodeAgentCommandTest.php) | 20 | 6 | Protected worker-credential references now enter agent.configure; legacy recovery validates that unresolved input against the wire schema. Retain recovery failures; owning native rekey work is separate. |
+| [Feature/GatewayReleases/AutomaticGatewayReleaseTest.php](Feature/GatewayReleases/AutomaticGatewayReleaseTest.php) | 1 | 0 | Remove retired tick phase from release expectations. |
+| [Feature/Infrastructure/Instances/ProductionReleaseCommandsTest.php](Feature/Infrastructure/Instances/ProductionReleaseCommandsTest.php) | 12 | 0 | Remove assumptions about retired PHP deployment execution methods. |
+| [Feature/Infrastructure/Tasks/GitHubTaskPullRequestPublisherTest.php](Feature/Infrastructure/Tasks/GitHubTaskPullRequestPublisherTest.php) | 1 | 1 | Retain current failed VM-push result regression: Failed is omitted from the saved-result branch and work is requeued. |
+| [Feature/Mcp/McpServerTest.php](Feature/Mcp/McpServerTest.php) | 13 | 0 | Use current Task/native admission fixtures and Operation response envelopes; preserve validation, ownership and polling contracts. |
+| [Feature/Api/Routes/RouteProjectionPlansTest.php](Feature/Api/Routes/RouteProjectionPlansTest.php) | 1 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Domain/DatabaseServerDoctorProbeTest.php](Feature/Domain/DatabaseServerDoctorProbeTest.php) | 2 | 0 | Use supported fake ACL state instead of deleted waitUntilReady helper. |
+| [Feature/Domain/Tasks/TaskWorkspaceLeasePublicationTest.php](Feature/Domain/Tasks/TaskWorkspaceLeasePublicationTest.php) | 1 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/Tasks/TaskWorkspaceLeaseTest.php](Feature/Domain/Tasks/TaskWorkspaceLeaseTest.php) | 108 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Extensions/AiRouter/Actions/AiRouterCutoverTest.php](Feature/Extensions/AiRouter/Actions/AiRouterCutoverTest.php) | 4 | 0 | Delete empty file after removing obsolete NodeFootprint.converge execution declarations; current direct and owning family tests remain. |
+| [Feature/Api/RouteWebRootsTest.php](Feature/Api/RouteWebRootsTest.php) | 8 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Infrastructure/Certificates/OrbitCaTrustTest.php](Feature/Infrastructure/Certificates/OrbitCaTrustTest.php) | 6 | 0 | Restore a generic HTTPS test server after the Vault-owned fixture was deleted; retain real TLS trust assertions. |
+| [Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php](Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php) | 3 | 0 | Delete only the declaration invoking retired CreateInstanceAction. Restore all still-live DestroyInstanceAction ownership/lock/recovery safeguards. |
+| [Feature/Tasks/CancelTaskCheckLeaseTest.php](Feature/Tasks/CancelTaskCheckLeaseTest.php) | 5 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Infrastructure/Tasks/Pi/PiDriverTest.php](Feature/Infrastructure/Tasks/Pi/PiDriverTest.php) | 2 | 0 | External send occurs once; preserve caller-supplied idempotency key and propagate failure. |
+| [Unit/Configuration/RecipeSnapshotWorkflowTest.php](Unit/Configuration/RecipeSnapshotWorkflowTest.php) | 2 | 0 | Delete assumptions about retired project/privileged CI jobs. |
+| [Unit/Domain/Tasks/TaskPullRequestDescriptionTest.php](Unit/Domain/Tasks/TaskPullRequestDescriptionTest.php) | 3 | 0 | Remove deleted PHP renderer assertions. |
+| [Feature/Api/NodePhpPackagesRetainedCallersTest.php](Feature/Api/NodePhpPackagesRetainedCallersTest.php) | 2 | 0 | Use an explicit synthetic held Operation to test retained caller behavior; direct firewall admission is not a generic hold fixture. |
+| [Feature/Api/TaskScriptOperationTest.php](Feature/Api/TaskScriptOperationTest.php) | 16 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/FirewallDoctorProbeTest.php](Feature/Domain/FirewallDoctorProbeTest.php) | 3 | 0 | Remove deleted NodeFootprint.converge execution assertions; retain Doctor observation/intent checks. |
+| [Feature/Domain/Tasks/TaskCancellationLeaseTest.php](Feature/Domain/Tasks/TaskCancellationLeaseTest.php) | 7 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/Tasks/TaskWorkspaceLeaseConcurrencyTest.php](Feature/Domain/Tasks/TaskWorkspaceLeaseConcurrencyTest.php) | 2 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/Tasks/TaskWorkspaceLeaseOperatorRecoveryTest.php](Feature/Domain/Tasks/TaskWorkspaceLeaseOperatorRecoveryTest.php) | 35 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/InstanceRouteRemovalAdmissionTest.php](Feature/Domain/InstanceRouteRemovalAdmissionTest.php) | 1 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Domain/InstanceVpEnvironmentMaterialTest.php](Feature/Domain/InstanceVpEnvironmentMaterialTest.php) | 3 | 3 | Retain composition failure: tool.manager_converge has no owning child admission after its cutover. |
+| [Feature/Domain/ProductionInstanceRemovalTest.php](Feature/Domain/ProductionInstanceRemovalTest.php) | 1 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Domain/Tasks/TaskBroadcastsTest.php](Feature/Domain/Tasks/TaskBroadcastsTest.php) | 1 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/Tasks/TaskWorkspaceLeaseRecoveryTest.php](Feature/Domain/Tasks/TaskWorkspaceLeaseRecoveryTest.php) | 18 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Unit/TimeLimitConfigurationTest.php](Unit/TimeLimitConfigurationTest.php) | 2 | 0 | Remove retired CI job matrix assumptions; retain local two-second and reviewed Large-class limits. |
+| [Feature/Api/CustomProxyRoutesTest.php](Feature/Api/CustomProxyRoutesTest.php) | 89 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Api/TaskAnalysisOperationTest.php](Feature/Api/TaskAnalysisOperationTest.php) | 114 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Infrastructure/Routes/RouteRemovalCertificateOrderTest.php](Feature/Infrastructure/Routes/RouteRemovalCertificateOrderTest.php) | 19 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/TaskVms/TaskVmRuntimeAdmissionTest.php](Feature/TaskVms/TaskVmRuntimeAdmissionTest.php) | 2 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Api/Routes/RouteTargetSetOperationsTest.php](Feature/Api/Routes/RouteTargetSetOperationsTest.php) | 5 | 0 | Update the shared Route parent fixture for current direct children, exact Node pins and fake transport boundaries; preserve current family safeguards. |
+| [Feature/Api/TaskPublishOperationTest.php](Feature/Api/TaskPublishOperationTest.php) | 40 | 0 | Replace deleted tick helpers with a current external Task operation/workspace fixture; remove only obsolete tick-mode branches. |
+| [Feature/Domain/Broadcasting/ActivityRecordEventsTest.php](Feature/Domain/Broadcasting/ActivityRecordEventsTest.php) | 2 | 0 | Remove assertions for deleted interrupted-Activity console command; keep broadcasting behavior. |
+
+## Retained current failures
+
+These tests stay enabled. No skip, assertion relaxation or production change hides them. The exact failing case names and bounded exception details remain in the owning evidence JSON. “Current” does not imply that every candidate is already a proven production regression.
+
+| Test file | Cases | Observed cause |
+| --- | ---: | --- |
+| [Feature/Api/InstanceEnvironmentTest.php](Feature/Api/InstanceEnvironmentTest.php) | 1 | Expected response status code [200] but received 422. |
+| [Feature/TaskExternalStateTest.php](Feature/TaskExternalStateTest.php) | 16 | Expected response status code [200] but received 500. |
+| [Feature/Api/OperationEffectReceiptsTest.php](Feature/Api/OperationEffectReceiptsTest.php) | 1 | Expected response status code [200] but received 500. |
+| [Feature/Api/OperationsTest.php](Feature/Api/OperationsTest.php) | 1 | Expected response status code [200] but received 409. |
+| [Feature/Api/PinnedInstanceDeployTest.php](Feature/Api/PinnedInstanceDeployTest.php) | 1 | Expected response status code [200] but received 409. |
+| [Feature/Api/Routes/RouteAdmissionSafetyTest.php](Feature/Api/Routes/RouteAdmissionSafetyTest.php) | 1 | Failed asserting that an array has the key [ai_router.collector_converge] |
+| [Feature/Console/RekeyNodeAgentCommandTest.php](Feature/Console/RekeyNodeAgentCommandTest.php) | 6 | Expected status code 0 but received 1. |
+| [Feature/Infrastructure/Tasks/GitHubTaskPullRequestPublisherTest.php](Feature/Infrastructure/Tasks/GitHubTaskPullRequestPublisherTest.php) | 1 | Failed asserting that 'Orbit is pushing commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to task-1.' [ASCII](length: 75) contains "The task branch could not be pushed. rej |
+| [Feature/TaskVms/TaskVmGlueTest.php](Feature/TaskVms/TaskVmGlueTest.php) | 1 | Failed asserting that 'Orbit is pushing commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to task-1.' [ASCII](length: 75) contains "The task branch could not be pushed. rej |
+| [Feature/TaskVms/TaskVmModelTest.php](Feature/TaskVms/TaskVmModelTest.php) | 1 | Failed asserting that two arrays are identical. |
+| [Feature/Tasks/EndedPullRequestTest.php](Feature/Tasks/EndedPullRequestTest.php) | 2 | Failed asserting that false is true. |
+| [Feature/Api/TaskGroupBacklogTest.php](Feature/Api/TaskGroupBacklogTest.php) | 3 | Expected response status code [200] but received 500. |
+| [Feature/Api/TaskTurnOperationTest.php](Feature/Api/TaskTurnOperationTest.php) | 1 | Expected response status code [200] but received 500. |
+| [Feature/Api/TaskResponseFixturesTest.php](Feature/Api/TaskResponseFixturesTest.php) | 1 | Expected response status code [200] but received 500. |
+| [Feature/Domain/Tasks/CancelTaskGroupActionTest.php](Feature/Domain/Tasks/CancelTaskGroupActionTest.php) | 3 | Failed asserting that null is identical to an object of class "App\Domain\Tasks\AssistanceKind".; Failed asserting that two strings are identical.; Failed asserting that null is identical to 'Handoff branch not deleted: The handoff branch could not be deleted: GitHub refused the request. Delete task-1-handoff on GitH |
+| [Feature/DatabaseOwnershipSafetyTest.php](Feature/DatabaseOwnershipSafetyTest.php) | 1 | The effect has no proven saved result. |
+| [Feature/Domain/InstanceVpEnvironmentMaterialTest.php](Feature/Domain/InstanceVpEnvironmentMaterialTest.php) | 3 | The owning child admission is unavailable. |
+| [Feature/Api/InstanceSmokeRecoveryTest.php](Feature/Api/InstanceSmokeRecoveryTest.php) | 1 | Every required deployment step needs a bound successful receipt. |
+
+## Review and evidence
+
+One fresh independent review covered the test diff and new fixtures against c0b368bc. The extension plug-in checklist found no changed production extension wiring or interfaces. Its three findings were corrected: restore retained Instance-removal safeguards, restore the five-case smoke auto-resume pause matrix with seeded native/history receipts, and assert persisted Process creation opt-out. Review was static; no Incus/fleet review or live effect claim is made.
+
+Evidence is retained at `/home/nckrtl/swamp-execution/evidence/gateway-pest-main-20261031/`: `main-complete-summary.json`, `main-complete-failures-by-file.json`, `main-complete-run.json`, `final-complete-summary.json`, `final-complete-run.json`, focused logs and quality-check logs. All callbacks/tokens in test fixtures are synthetic.

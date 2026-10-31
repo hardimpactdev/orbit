@@ -22,7 +22,7 @@ function nodeSecretOutput($test): array
     $node->forceFill(['agent_secret_hash' => str_repeat('a', 64)])->save();
     $pin = app(AgentDelivery::class)->pin($node);
     $agent = ['secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $node->id],
-        'configuration' => 'gateway_url = "https://gateway.orbit"', 'certificate' => 'public certificate', 'unit' => 'public unit', 'checkouts' => []];
+        'configuration' => 'gateway_url = "https://gateway.orbit"', 'certificate' => 'public certificate', 'unit' => 'public unit', 'checkouts' => [], 'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $node->id]];
     $operation = app(StartOperationAction::class)->execute('node.converge', 'node', $node->id, $node->id,
         ['force_artifacts' => false, 'first_visit' => false, '_footprint' => ['node_id' => $node->id, 'agent_pin' => $pin,
             'artifacts' => [['name' => 'agent', 'digest' => 'agent-digest', 'required' => true, 'repair' => false]],

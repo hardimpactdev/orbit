@@ -14,5 +14,6 @@ it('gives native PHPUnit cases the same Feature isolation and cleanup as Pest', 
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
-    $this->assertMatchesRegularExpression('/Tests:\s+1 passed/', $process->getOutput());
+    $summary = json_decode(trim($process->getOutput()), true, flags: JSON_THROW_ON_ERROR);
+    expect($summary)->toMatchArray(['tool' => 'pest', 'result' => 'passed', 'tests' => 1, 'passed' => 1]);
 });

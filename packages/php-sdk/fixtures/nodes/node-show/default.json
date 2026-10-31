@@ -28,6 +28,7 @@
             ],
             "settings": null,
             "updating": null,
+            "swamp_worker_selected": false,
             "access": {
                 "can_access": [],
                 "accessible_by": []

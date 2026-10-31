@@ -90,7 +90,7 @@ beforeEach(function (): void {
     $cluster = Cluster::query()->create(['name' => 'production-removal', 'state' => 'active']);
     $this->nodes = collect(['app-prod', 'app-prod', 'router', 'ingress'])->map(function (string $role, int $index) use ($cluster): Node {
         $node = Node::query()->create(['cluster_id' => $cluster->id, 'name' => 'proof-'.$index, 'status' => 'active',
-            'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.'.($index + 20), 'wireguard_ip' => '10.44.0.'.($index + 20)]);
+            'architecture' => 'x86_64', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.'.($index + 20), 'wireguard_ip' => '10.44.0.'.($index + 20)]);
         $node->roles()->create(['role' => $role, 'status' => 'active', 'cluster_id' => in_array($role, ['router', 'ingress'], true) ? $cluster->id : null]);
 
         return $node;
@@ -224,7 +224,7 @@ it('detaches only the admitted target and cannot clear its checkpoint before exa
 it('refuses changed targets and placement before detaching', function (string $change): void {
     $operation = ($this->admit)();
     if ($change === 'placement') {
-        $node = Node::query()->create(['name' => 'moved', 'cluster_id' => $this->nodes[0]->cluster_id, 'status' => 'active', 'platform' => 'linux',
+        $node = Node::query()->create(['name' => 'moved', 'cluster_id' => $this->nodes[0]->cluster_id, 'status' => 'active', 'architecture' => 'x86_64', 'platform' => 'linux',
             'public_ssh_host' => '192.0.2.55', 'wireguard_ip' => '10.44.0.55']);
         $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
         $this->survivor->update(['node_id' => $node->id]);
@@ -386,7 +386,7 @@ it('refuses a new production co-target before prepare or before withdrawal child
 
 it('finishes single-target production removal through the real withdrawal workflow', function (): void {
     $this->route->targets()->where('instance_id', $this->survivor->id)->delete();
-    $gateway = Node::query()->create(['name' => 'removal-gateway', 'platform' => 'linux', 'status' => 'active', 'public_ssh_host' => '192.0.2.250', 'wireguard_ip' => '10.254.254.250']);
+    $gateway = Node::query()->create(['name' => 'removal-gateway', 'architecture' => 'x86_64', 'platform' => 'linux', 'status' => 'active', 'public_ssh_host' => '192.0.2.250', 'wireguard_ip' => '10.254.254.250']);
     $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $definition = app(OperationKinds::class)->definition('instance.destroy');
     $fixture = new RouteSwampGatewayFixture($this);

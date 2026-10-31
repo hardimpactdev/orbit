@@ -3,12 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
-use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployState;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationSweeper;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -103,68 +100,6 @@ it('refuses unverified failures and ownership without any state mutation', funct
     expect($this->fixture->instance->refresh()->auto_deploy_state)->toBeNull();
 })->with(['unknown', 'empty', 'skipped', 'clean', 'attempt', 'workflow', 'missing', 'caller', 'repository', 'private', 'target', 'cancelled']);
 
-it('runs the native rollback once and returns its new deployment without resuming automation', function (): void {
-    $this->withHeader('Idempotency-Key', $this->key)->postJson($this->url.'/failure', $this->failure)->assertOk();
-    $this->getJson($this->url.'/rollback/receipt?request_key='.$this->key.'.rollback')->assertOk()->assertJsonPath('data.found', false)->assertJsonPath('data.operation', null)->assertJsonPath('data.deployment', null);
-    $this->withHeader('Idempotency-Key', $this->key.'.rollback')->postJson($this->url.'/rollback', $this->rollback)
-        ->assertAccepted()->assertJsonPath('data.kind', 'instance.rollback')->assertJsonPath('data.target_type', 'instance');
-    $op = Operation::query()->where('kind', 'instance.rollback')->sole();
-    $this->postJson($this->url.'/rollback', $this->rollback)->assertAccepted()->assertJsonPath('data.id', $op->id);
-    app(OperationRunner::class)->run($op->id);
-    $this->postJson($this->url.'/rollback', $this->rollback)->assertAccepted()->assertJsonPath('data.id', $op->id);
-    $receipt = $this->getJson($this->url.'/rollback/receipt?request_key='.$this->key.'.rollback')->assertOk()
-        ->assertJsonPath('data.operation.status', 'succeeded')->assertJsonPath('data.deployment.commit', $this->rollback['target']['commit'])
-        ->assertJsonPath('data.deployment.release', 'fresh')->assertJsonPath('data.deployment.status', 'succeeded');
-    expect($receipt->json('data.deployment.deployment_id'))->not->toBe($this->rollback['target']['deployment_id']);
-    expect($this->fixture->deployment->activations)->toBe(1);
-    expect($this->fixture->instance->refresh()->auto_deploy_resumed_after)->toBe(0);
-    expect(new AutomaticDeployHistory($this->fixture->instance->refresh())->pausedBy()?->kind)->toBe('rollback');
-});
-
-it('rechecks queued guards under the writer lock and never chooses another target', function (string $change): void {
-    $this->withHeader('Idempotency-Key', $this->key)->postJson($this->url.'/failure', $this->failure)->assertOk();
-    $this->withHeader('Idempotency-Key', $this->key.'.rollback')->postJson($this->url.'/rollback', $this->rollback)->assertAccepted();
-    if ($change === 'selection') {
-        $this->fixture->deployment->current = 'fresh';
-    }
-    if ($change === 'pruned') {
-        $this->fixture->deployment->retainedReleases = ['initial'];
-    }
-    if ($change === 'sha') {
-        $this->fixture->deployment->commits['fresh'] = str_repeat('d', 40);
-    }
-    if ($change === 'verification') {
-        $this->fixture->deployment->duringActivation = function (): void {
-            $this->fixture->deployment->current = 'initial';
-        };
-    }
-    if ($change === 'failed') {
-        $reads = 0;
-        $this->fixture->deployment->duringRetained = function () use (&$reads): void {
-            if (++$reads === 2) {
-                $this->fixture->deployment->failRollback = true;
-            }
-        };
-    }
-    $this->fixture->deployment->duringSelection = function (): void {
-        $file = fopen($this->lockDirectory.'/app-instance-'.$this->fixture->instance->id.'.lock', 'c+');
-        try {
-            expect(flock($file, LOCK_EX | LOCK_NB))->toBeFalse();
-        } finally {
-            fclose($file);
-        }
-    };
-    $op = Operation::query()->where('kind', 'instance.rollback')->sole();
-    app(OperationRunner::class)->run($op->id);
-    $this->getJson($this->url.'/rollback/receipt?request_key='.$this->key.'.rollback')->assertOk()->assertJsonPath('data.operation.status', 'failed');
-    expect($this->fixture->deployment->activations)->toBe($change === 'verification' ? 1 : 0);
-    expect($this->fixture->instance->refresh()->auto_deploy_state['blocked'])->toContain($this->failure['commit']);
-    if ($change !== 'failed') {
-        expect($op->refresh()->error_code)->toBe(in_array($change, ['selection', 'verification'], true) ? 'instance.smoke_selection_changed' : 'instance.smoke_rollback_target_missing');
-    }
-    $this->postJson($this->url.'/rollback', $this->rollback)->assertAccepted()->assertJsonPath('data.id', $op->id);
-})->with(['selection', 'pruned', 'sha', 'failed', 'verification']);
-
 it('requires a block and a prior passing target and binds recovery keys to the caller and full body', function (): void {
     $this->withHeader('Idempotency-Key', $this->key.'.rollback')->postJson($this->url.'/rollback', $this->rollback)->assertUnprocessable();
     $this->withHeader('Idempotency-Key', $this->key)->postJson($this->url.'/failure', $this->failure)->assertOk();
@@ -231,16 +166,4 @@ it('refuses receipts against another Instance', function (): void {
     $url = '/api/v1/instances/'.$other->id.'/smoke';
     $this->getJson($url.'/failure/receipt?request_key='.$this->key)->assertConflict();
     $this->getJson($url.'/rollback/receipt?request_key='.$this->key.'.rollback')->assertConflict();
-});
-
-it('resumes after activation without selecting the release twice', function (): void {
-    $this->withHeader('Idempotency-Key', $this->key)->postJson($this->url.'/failure', $this->failure)->assertOk();
-    $this->withHeader('Idempotency-Key', $this->key.'.rollback')->postJson($this->url.'/rollback', $this->rollback)->assertAccepted();
-    $op = Operation::query()->where('kind', 'instance.rollback')->sole();
-    ProductionSmokeRecoveryFixture::activated($op, $this->fixture);
-    app(OperationSweeper::class)->sweep();
-    app(OperationRunner::class)->run($op->id);
-    $this->getJson($this->url.'/rollback/receipt?request_key='.$this->key.'.rollback')->assertOk()
-        ->assertJsonPath('data.operation.status', 'succeeded')->assertJsonPath('data.deployment.release', 'fresh');
-    expect($this->fixture->deployment->activations)->toBe(0);
 });

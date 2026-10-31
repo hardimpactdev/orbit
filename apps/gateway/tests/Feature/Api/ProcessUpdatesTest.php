@@ -7,18 +7,27 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => (string) Str::uuid(),
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'process-updates', 'status' => 'active', 'platform' => 'linux',
-        'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
+        'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
@@ -29,7 +38,7 @@ beforeEach(function (): void {
 });
 
 it('uses the Docker image working directory without rewriting existing overrides', function (): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated()->assertJsonPath('data.working_directory', null);
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     $process = Process::query()->sole();
     $target = app(ProcessTargetResolver::class)->forProcess($process);
     expect($process->working_directory)->toBeNull()
@@ -40,7 +49,7 @@ it('uses the Docker image working directory without rewriting existing overrides
 });
 
 it('updates a stopped Process in place and preserves omitted Docker fields', function (): void {
-    $this->postJson('/api/v1/processes', [...$this->payload, 'working_directory' => '/app', 'environment' => ['OLD' => 'secret']])->assertCreated();
+    $this->postJson('/api/v1/processes', [...$this->payload, 'working_directory' => '/app', 'environment' => ['OLD' => 'secret']])->assertAccepted();
     $process = Process::query()->sole();
     $this->patchJson('/api/v1/processes/'.$process->id, [
         'runtime' => 'docker', 'image' => 'valkey/valkey:9', 'command' => ['valkey-server'], 'working_directory' => null,
@@ -51,7 +60,7 @@ it('updates a stopped Process in place and preserves omitted Docker fields', fun
 });
 
 it('persists failed update intent and reconverges an identical retry', function (): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $process = Process::query()->sole();
     $replacement = ['runtime' => 'docker', 'image' => 'valkey/valkey:9', 'command' => ['valkey-server']];
     $this->runtime->failConverge = true;
@@ -80,7 +89,7 @@ it('recovers a runtime switch cleanup recorded before a crash', function (): voi
 });
 
 it('refuses identity fields and invalid specifications before mutation', function (): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $process = Process::query()->sole();
     foreach ([['name' => 'other'], ['target_id' => 99], ['preset' => 'annotator'], ['start' => true], ['command' => []]] as $invalid) {
         $this->patchJson('/api/v1/processes/'.$process->id, [
@@ -114,8 +123,9 @@ it('accepts the documented environment map through MCP and preserves literal str
 });
 
 it('defaults Process restarts on deploy and accepts an explicit opt-out in create and replacement', function (): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated()->assertJsonPath('data.restart_on_deploy', true);
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     $process = Process::query()->sole();
+    expect($process->restart_on_deploy)->toBeTrue();
     $specification = ['runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server']];
     $this->patchJson('/api/v1/processes/'.$process->id, [...$specification, 'restart_on_deploy' => false])
         ->assertOk()->assertJsonPath('data.restart_on_deploy', false);
@@ -126,13 +136,14 @@ it('defaults Process restarts on deploy and accepts an explicit opt-out in creat
     $this->patchJson('/api/v1/processes/'.$process->id, ['restart_on_deploy' => true])
         ->assertOk()->assertJsonPath('data.restart_on_deploy', true);
     $this->postJson('/api/v1/processes', [...$this->payload, 'name' => 'opt-out', 'restart_on_deploy' => false])
-        ->assertCreated()->assertJsonPath('data.restart_on_deploy', false);
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    expect(Process::query()->where('name', 'opt-out')->sole()->restart_on_deploy)->toBeFalse();
 });
 
 it('rejects invalid restart-on-deploy input before changing a Process', function (): void {
     $this->postJson('/api/v1/processes', [...$this->payload, 'restart_on_deploy' => 'sometimes'])->assertUnprocessable();
     expect(Process::query()->count())->toBe(0);
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $process = Process::query()->sole();
     $this->patchJson('/api/v1/processes/'.$process->id, [
         'runtime' => 'docker', 'image' => 'valkey/valkey:8', 'command' => ['valkey-server'], 'restart_on_deploy' => null,
@@ -146,7 +157,7 @@ it('keeps every omitted field when only ports change', function (string $transpo
         'keep_alive' => true, 'restart_on_deploy' => false,
         'environment' => ['LABEL' => 'retained'], 'ports' => ['6379:6379'],
         'volumes' => [['source' => 'cache-data', 'target' => '/data', 'read_only' => false]],
-    ])->assertCreated();
+    ])->assertAccepted();
     $process = Process::query()->sole();
     $before = $process->only(['runtime', 'working_directory', 'restart_policy', 'keep_alive', 'restart_on_deploy']);
     $config = $process->runtime_config;
@@ -195,7 +206,7 @@ it('applies explicit empty lists false values and a null working directory', fun
         'working_directory' => '/data', 'restart_policy' => 'unless-stopped', 'keep_alive' => true,
         'environment' => ['LABEL' => 'retained'], 'ports' => ['6379:6379'],
         'volumes' => [['source' => 'cache-data', 'target' => '/data']],
-    ])->assertCreated();
+    ])->assertAccepted();
     $process = Process::query()->sole();
 
     $this->patchJson('/api/v1/processes/'.$process->id, [
@@ -209,7 +220,7 @@ it('applies explicit empty lists false values and a null working directory', fun
 });
 
 it('validates partial fields against the stored runtime before mutation', function (array $invalid): void {
-    $this->postJson('/api/v1/processes', $this->payload)->assertCreated();
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $process = Process::query()->sole();
     $before = count($this->runtime->convergedProcessIds);
 
@@ -238,7 +249,7 @@ it('publishes optional Process update fields without create defaults in OpenAPI 
 it('refuses runtime switches that would discard omitted Docker settings', function (array $patch, string $field): void {
     $this->postJson('/api/v1/processes', [...$this->payload, 'command' => ['/bin/sleep', '60'],
         'ports' => ['6379:6379'], 'volumes' => [['source' => 'cache-data', 'target' => '/data']],
-    ])->assertCreated();
+    ])->assertAccepted();
     $process = Process::query()->sole();
     $before = $process->runtime_config;
     $converged = count($this->runtime->convergedProcessIds);
@@ -260,7 +271,7 @@ it('switches runtime when incompatible Docker fields are explicitly cleared', fu
         'restart_policy' => 'unless-stopped', 'keep_alive' => true, 'restart_on_deploy' => false,
         'working_directory' => '/data', 'ports' => ['6379:6379'],
         'volumes' => [['source' => 'cache-data', 'target' => '/data']],
-    ])->assertCreated();
+    ])->assertAccepted();
     $process = Process::query()->sole();
 
     $this->patchJson('/api/v1/processes/'.$process->id, [

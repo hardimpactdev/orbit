@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\CaddyOperationCompletion;
 use App\Domain\Routes\RouteParentExecution;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -16,9 +17,12 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit',
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    $node = Node::query()->create(['name' => 'dev', 'status' => 'active', 'architecture' => 'x86_64', 'platform' => 'linux', 'user' => 'orbit',
         'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     NodeRole::query()->create(['node_id' => $node->id, 'role' => RoleName::AppDev, 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Removal proof', 'slug' => 'removal-proof',

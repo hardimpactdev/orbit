@@ -5,10 +5,17 @@ declare(strict_types=1);
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 require_once __DIR__.'/../../Support/Fleet/NodeSecretOutput.php';
+
+beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+});
 
 it('completes an agent-only footprint without inventing optional child Operations', function (): void {
     [, , $path, $run] = nodeSecretOutput($this);
@@ -44,7 +51,7 @@ it('completes a footprint with a proven skipped Caddy child through the real com
         'error_code' => 'caddy.publication_failed', 'finished_at' => now(), 'lock_key' => null]);
     $final = $this->postJson($path.'/run', ['worker' => 'hash-worker', 'key' => 'footprint-result',
         'transport' => 'gateway', 'name' => 'node.footprint-result', 'input' => (object) []])->assertOk()->json('data');
-    expect($final['skipped'][0]['key'])->toBe('[REDACTED]');
+    expect($final['skipped'][0]['key'])->toBe('footprint-caddy');
     $this->postJson($path.'/step', ['worker' => 'hash-worker', 'key' => 'proven', 'name' => 'footprint-result',
         'status' => 'succeeded', 'result' => $final])->assertOk();
     $contract = app(OperationExecutionContract::class);

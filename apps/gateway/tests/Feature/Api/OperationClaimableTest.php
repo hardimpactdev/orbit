@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
@@ -11,8 +12,15 @@ use App\Models\Operation;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\PolledOperationFixture;
 
 beforeEach(function (): void {
+    // Shared claim behavior uses fixed test contracts, independent of product writer cutovers.
+    $definitions = OperationKinds::definitions();
+    foreach (['firewall.allow', 'firewall.deny', 'firewall.remove'] as $kind) {
+        $definitions[$kind] = PolledOperationFixture::definition();
+    }
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
     $this->travelTo(Carbon::parse('2026-10-29 14:00:00', 'UTC'));
     $this->gateway = Node::query()->create(['name' => 'gateway', 'wireguard_ip' => '10.44.0.1', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
     NodeRole::query()->create(['node_id' => $this->gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);

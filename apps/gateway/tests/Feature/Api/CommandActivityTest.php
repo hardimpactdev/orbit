@@ -31,6 +31,7 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Models\Activity;
@@ -47,10 +48,16 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\FakesEnvironmentSyncInspection;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
+
+beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+});
 
 it('records environment commands without submitted imported or rejected values', function (): void {
     $submitted = 'arbitrary-submitted-value';
@@ -407,6 +414,7 @@ it('records a metrics disable request as metrics:disable', function (): void {
 });
 
 it('records project update activity for project create and update targets', function (): void {
+    bind_task_node_reachability();
     $this->fakeRepositoryBranches();
     $operator = Node::query()->create([
         'name' => 'project-activity-operator',
@@ -482,6 +490,7 @@ it('records project_id in register activity input', function (): void {
 });
 
 it('records renamed App Cluster and Route lifecycle command names', function (): void {
+    bind_task_node_reachability();
     $this->fakeRepositoryBranches();
     app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
     $operator = Node::query()->create([
@@ -1248,8 +1257,11 @@ it('records definition commands against the Project instead of a Process or Sche
 });
 
 it('records pre-persistence firewall allow and deny failures against the path-bound node', function (): void {
-    $node = Node::query()->create([
+    config(['swamp.direct_writers' => ['firewall.allow' => 'direct', 'firewall.deny' => 'direct']]);
+    $node = Node::query()->forceCreate([
+        'id' => 209,
         'name' => 'firewall-activity-target',
+        'architecture' => 'x86_64',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.80',

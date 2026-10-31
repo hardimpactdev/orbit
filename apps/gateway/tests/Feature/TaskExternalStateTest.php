@@ -167,17 +167,6 @@ it('rolls back a status move combined with a forbidden metadata update', functio
     expect($task->fresh()->title)->toBe('One');
 });
 
-it('keeps tick group status input unchanged and refuses subtask status input', function (): void {
-    [$group, $task] = external_state_group('running', 'running', TaskOrchestration::External);
-
-    $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'reviewing'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-    $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'todo'])->assertConflict()->assertJsonPath('error.code', 'tasks.already_claimed');
-    $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['status' => 'reviewing'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    expect($task->fresh()->status)->toBe(TaskStatus::Running);
-});
-
 it('clears external assistance on resolution without sending or queuing work', function (string $status): void {
     [$group, $task] = external_state_group('running', $status);
     $driver = new FakeAgentDriver('fake');

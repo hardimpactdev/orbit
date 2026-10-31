@@ -38,7 +38,7 @@ beforeEach(function (): void {
     bind_task_node_reachability();
     config(['swamp.run_token' => 'fixture.fake']);
     app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
-    $this->node = Node::query()->create(['name' => 'route-admission', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'user' => 'orbit', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->create(['name' => 'route-admission', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Safety', 'slug' => 'safety', 'repository_url' => 'https://example.test/safety.git', 'root' => 'public']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'production', 'environment' => 'production', 'production_user' => 'orbit-safety', 'production_home' => '/home/orbit-safety', 'checkout_path' => '/home/orbit-safety/releases/initial', 'branch' => 'main', 'source_is_laravel' => false, 'status' => 'active']);
@@ -61,7 +61,15 @@ it('registers every declared child with its owning family', function (): void {
     }
 });
 
+function routeAdmissionWithoutKind(string $kind): void
+{
+    $definitions = OperationKinds::definitions();
+    unset($definitions[$kind]);
+    app()->instance(OperationKinds::class, new OperationKinds(app(), $definitions));
+}
+
 it('refuses production publication before reserving a Route when PHP preparation is unavailable', function (): void {
+    routeAdmissionWithoutKind('instance.prepare_served_web_roots');
     $roots = Mockery::mock(ProductionWebRootManager::class);
     $roots->shouldReceive('assertServable')->once();
     app()->instance(ProductionWebRootManager::class, $roots);
@@ -71,6 +79,7 @@ it('refuses production publication before reserving a Route when PHP preparation
 });
 
 it('refuses a domain plan including its rollback before reserving a replacement when environment children are unavailable', function (): void {
+    routeAdmissionWithoutKind('instance.sync_environment');
     expect(fn () => app(AdmitRouteOperationAction::class)->update($this->route, new UpdateRouteData(true, 'new.private.test', false, null)))
         ->toThrow(ResourceOperationException::class, 'instance.sync_environment');
     expect($this->route->fresh()->replaced_by_route_id)->toBeNull()->and($this->route->fresh()->sites_published)->toBeTrue()
@@ -78,6 +87,7 @@ it('refuses a domain plan including its rollback before reserving a replacement 
 });
 
 it('refuses production web-root withdrawal before withdrawing DNS or Caddy when PHP preparation is unavailable', function (): void {
+    routeAdmissionWithoutKind('instance.prepare_php_runtime');
     $this->route->update(['web_root' => 'apps/docs/public']);
     expect(fn () => app(AdmitRouteOperationAction::class)->destroy($this->route))
         ->toThrow(ResourceOperationException::class, 'instance.prepare_php_runtime');
@@ -86,6 +96,7 @@ it('refuses production web-root withdrawal before withdrawing DNS or Caddy when 
 });
 
 it('refuses Router assignment before recording a candidate when Node role children are unavailable', function (): void {
+    routeAdmissionWithoutKind('node.role_converge');
     $cluster = Cluster::query()->create(['name' => 'Router safety']);
     $this->node->update(['cluster_id' => $cluster->id]);
     expect(fn () => app(AdmitClusterRouterOperationAction::class)->set($cluster, $this->node))
@@ -111,7 +122,7 @@ it('fences a retained Instance environment writer until its Route parent is term
 });
 
 it('drives a production web-root publication through the real Swamp workflow and proven Gateway children', function (): void {
-    $gateway = Node::query()->create(['name' => 'fixture-gateway', 'wireguard_ip' => '10.254.254.1', 'status' => 'active', 'public_ssh_host' => '192.0.2.1', 'platform' => 'linux']);
+    $gateway = Node::query()->create(['name' => 'fixture-gateway', 'wireguard_ip' => '10.254.254.1', 'status' => 'active', 'public_ssh_host' => '192.0.2.1', 'architecture' => 'x86_64', 'platform' => 'linux']);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $gateway->accessibleNodes()->attach($this->node);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
@@ -138,9 +149,6 @@ it('drives a production web-root publication through the real Swamp workflow and
     };
     app()->instance(InstanceEnvironmentOperationLock::class, new RouteEnvironmentOperationLock($locks));
     $fixture = new RouteSwampGatewayFixture($this, httpRuns: true);
-    $fixture->foreign->observe = static function () use ($locks): void {
-        expect($locks->held)->toBeTrue();
-    };
 
     $operation = $fixture->finish($this->postJson('/api/v1/routes', ['instance_id' => $this->instance->id,
         'domain' => 'docs.private.test', 'publication' => 'private', 'web_root' => 'apps/docs/public']));

@@ -100,11 +100,11 @@ it('stores a new group in backlog and does not claim it', function (): void {
         ->and($this->provisioning->calls)->toBe(0);
 });
 
-it('claims a group created in todo', function (): void {
+it('leaves a group created in todo for its external owner', function (): void {
     $group = backlog_group($this, extra: ['status' => 'todo']);
 
     expect($group['status'])->toBe('todo')
-        ->and($this->provisioning->calls)->toBe(1);
+        ->and($this->provisioning->calls)->toBe(0);
 });
 
 it('refuses todo for a group without subtasks', function (): void {
@@ -127,20 +127,20 @@ it('refuses todo for a group without subtasks', function (): void {
         ->and($this->provisioning->calls)->toBe(0);
 });
 
-it('moves a group between backlog and todo and claims it on todo', function (): void {
+it('moves an external group between backlog and todo without claiming it', function (): void {
     $group = backlog_group($this);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])
         ->assertOk()
         ->assertJsonPath('data.status', 'todo');
 
-    expect($this->provisioning->calls)->toBe(1);
+    expect($this->provisioning->calls)->toBe(0);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'backlog'])
         ->assertOk()
         ->assertJsonPath('data.status', 'backlog');
 
-    expect($this->provisioning->calls)->toBe(1);
+    expect($this->provisioning->calls)->toBe(0);
 });
 
 it('changes the title and brief only in backlog', function (): void {
@@ -160,13 +160,13 @@ it('changes the title and brief only in backlog', function (): void {
     expect(Task::topLevel()->findOrFail($group['id'])->title)->toBe('Renamed');
 });
 
-it('refuses to move a group the scheduler has claimed', function (TaskGroupStatus $claimed): void {
+it('refuses external group moves across lifecycle boundaries', function (TaskGroupStatus $claimed): void {
     $group = backlog_group($this);
     Task::topLevel()->whereKey($group['id'])->update(['status' => $claimed]);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'backlog'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'tasks.already_claimed');
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'tasks.status_move_refused');
 
     expect(Task::topLevel()->findOrFail($group['id'])->status)->toBe($claimed);
 })->with([
@@ -177,12 +177,12 @@ it('refuses to move a group the scheduler has claimed', function (TaskGroupStatu
     'failed' => TaskGroupStatus::Failed,
 ]);
 
-it('accepts only backlog and todo as a status', function (string $status): void {
+it('rejects unknown statuses and a direct backlog to running move', function (string $status): void {
     $group = backlog_group($this);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => $status])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed');
+        ->assertJsonPath('error.code', $status === 'running' ? 'tasks.status_move_refused' : 'validation.failed');
 })->with(['queued', 'running', 'pending']);
 
 it('reorders a subtask and keeps positions gapless', function (): void {
@@ -306,7 +306,7 @@ it('cancels a todo subtask of a running group without starting anything', functi
         ->and(Task::topLevel()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Running);
 });
 
-it('settles after cancelling the only todo subtask of a running group without assistance', function (): void {
+it('keeps external group state after cancelling its only todo subtask', function (): void {
 
     $group = backlog_group($this, ['Todo']);
     Task::topLevel()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
@@ -321,7 +321,7 @@ it('settles after cancelling the only todo subtask of a running group without as
         ->and($cancelled->started_at)->toBeNull()
         ->and($cancelled->assistance_requested)->toBeFalse()
         ->and($cancelled->assistance_reason)->toBeNull()
-        ->and($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->status)->toBe(TaskGroupStatus::Running)
         ->and($settled->assistance_requested)->toBeFalse()
         ->and($settled->assistance_reason)->toBeNull();
 });
@@ -769,7 +769,8 @@ it('returns VM power separately from task status in show and list responses', fu
     $data = backlog_group($this);
     TaskVm::query()->create([
         'group_id' => $data['id'], 'host_node_id' => Node::query()->firstOrFail()->id,
-        'provider' => 'incus', 'name' => 'power-test-vm', 'state' => $state, 'wireguard_ip' => '10.44.0.130',
+        'provider' => 'incus', 'name' => 'power-test-vm', 'state' => $state,
+        'stop_confirmed_at' => $state === TaskVmState::Parked ? now() : null, 'wireguard_ip' => '10.44.0.130',
     ]);
 
     $this->getJson('/api/v1/task-groups/'.$data['id'])->assertOk()

@@ -13,14 +13,8 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskMergeStatus;
-use App\Domain\Tasks\TaskReviewedCommitSource;
-use App\Domain\Tasks\TaskReviewFindingsPacket;
-use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskType;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -28,7 +22,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
-use App\Models\TaskReviewedCommit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -52,7 +45,6 @@ use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeAgentDriver;
-use Tests\Support\ReviewFindings;
 
 /**
  * Records the tasks family responses that the SDK and the CLI replay. Data is deterministic:
@@ -87,13 +79,6 @@ describe('task response fixtures', function (): void {
             'repository_url' => 'git@github.com:hardimpactdev/orbit.git',
             'default_branch' => 'main',
         ]);
-    });
-
-    it('records a subtask with declared workload nodes', function (): void {
-        $group = task_fixture_group($this->project);
-        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
-            'title' => 'Use a workload node', 'brief' => 'Verify the private app-dev node.', 'topology' => ['app-dev'],
-        ])->assertCreated(), 'tasks/tasks-subtask-create/topology', CreateSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks');
     });
 
     it('records groups asking for assistance', function (): void {
@@ -170,63 +155,6 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/default', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
-    });
-
-    it('records a review fixup without extending the public response schema', function (): void {
-        $this->project->update(['repository_url' => 'https://github.com/acme/widgets.git']);
-        $group = task_fixture_group($this->project);
-        $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/widgets/pull/7']);
-        $group->tasks()->update(['status' => TaskStatus::Completed]);
-        $plan = TaskSettlingFixup::reviewPlan(TaskReviewFindingsPacket::fromCandidate(
-            ReviewFindings::candidate(comments: [ReviewFindings::comment()]),
-        ));
-        $fixup = Task::query()->create([
-            'parent_id' => $group->id,
-            'position' => 3,
-            'title' => $plan->title,
-            'brief' => $plan->brief,
-            'deliverables' => $plan->deliverables,
-            'status' => TaskStatus::Todo,
-            'fixup_problem' => $plan->identity,
-        ]);
-
-        $response = $this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
-            ->assertJsonPath('data.tasks.2.fixup_problem', $plan->identity)
-            ->assertJsonPath('data.tasks.2.brief', $plan->brief)
-            ->assertJsonPath('data.tasks.2.deliverables', $plan->deliverables);
-        record_fixture($response, 'tasks/tasks-show/review-fixup', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
-
-        $this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$fixup->id}")
-            ->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
-        $fixup->update(['status' => TaskStatus::Cancelled]);
-        $this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$fixup->id}")
-            ->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
-        expect($fixup->fresh())->not->toBeNull();
-    });
-
-    it('records an incoming pull request under review and merge', function (): void {
-        $this->project->update(['repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
-        $group = Task::topLevel()->create([
-            'project_id' => $this->project->id, 'title' => 'Review #460: Throttle logins', 'brief' => 'Orbit reviews pull request https://github.com/hardimpactdev/orbit/pull/460.',
-            'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/460', 'pr_branch' => 'cursor/login-throttle',
-            'merge_status' => TaskMergeStatus::Waiting, 'merge_reason' => 'Check Required checks is still running on '.str_repeat('a', 40).'.',
-        ]);
-        $final = Task::query()->create([
-            'parent_id' => $group->id, 'position' => 1, 'type' => TaskType::FinalReview, 'title' => TaskFinalReview::Title,
-            'brief' => TaskFinalReview::brief($group), 'deliverables' => TaskFinalReview::deliverables(), 'status' => TaskStatus::Completed,
-            'fixup_head_sha' => str_repeat('a', 40),
-        ]);
-        TaskReviewedCommit::query()->create([
-            'task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => TaskReviewedCommitSource::PullRequestReview,
-            'review_task_id' => $final->id, 'github_review_id' => 3311,
-        ]);
-
-        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
-            ->assertJsonPath('data.review_and_merge.pr_branch', 'cursor/login-throttle'),
-            'tasks/tasks-show/review-and-merge', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
-        record_fixture($this->getJson('/api/v1/tasks/status')->assertOk()
-            ->assertJsonPath('data.merges.0.id', $group->id),
-            'tasks/tasks-status/merges', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
     it('records group updates, a refused update, cancel, and complete', function (): void {

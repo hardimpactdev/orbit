@@ -34,13 +34,13 @@ beforeEach(function (): void {
     app()->instance(ValkeyServerAdmin::class, $this->admin);
 });
 
-it('refuses deleting while another ACL change owns the lock without touching the user or record', function (): void {
+it('admits deletion without running ACL effects while another ACL change owns the lock', function (): void {
     $lock = Cache::lock($this->lockName, 120);
     expect($lock->get())->toBeTrue();
 
     try {
-        $this->deleteJson('/api/v1/database-connections/acl-lock-client')->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_in_use');
+        $this->deleteJson('/api/v1/database-connections/acl-lock-client')->assertAccepted()
+            ->assertJsonPath('data.kind', 'database.destroy');
     } finally {
         $lock->release();
     }
@@ -50,7 +50,7 @@ it('refuses deleting while another ACL change owns the lock without touching the
     expect($this->admin->users)->toHaveKey('acl-lock-client');
 });
 
-it('holds the ACL lock through the remote deletion and the connection deletion', function (string $caller): void {
+it('holds the ACL lock through retained Instance removal and connection deletion', function (): void {
     $lockName = $this->lockName;
     $this->mock(ValkeyServerAdmin::class, function ($mock) use ($lockName): void {
         $mock->shouldReceive('deleteUser')->once()->andReturnUsing(function () use ($lockName): void {
@@ -63,18 +63,14 @@ it('holds the ACL lock through the remote deletion and the connection deletion',
         $recordDeletionChecked = true;
     });
 
-    if ($caller === 'API') {
-        $this->deleteJson('/api/v1/database-connections/acl-lock-client')->assertOk();
-    } else {
-        app(DropOwnedDatabasesAction::class)->drop($this->connection);
-    }
+    app(DropOwnedDatabasesAction::class)->drop($this->connection);
 
     $this->assertModelMissing($this->connection);
     expect($recordDeletionChecked)->toBeTrue();
     $lock = Cache::lock($lockName, 120);
     expect($lock->get())->toBeTrue();
     $lock->release();
-})->with(['API', 'Instance removal']);
+});
 
 it('keeps the connection record and releases the lock when ACL persistence fails', function (): void {
     $this->mock(ValkeyServerAdmin::class, function ($mock): void {
@@ -83,8 +79,8 @@ it('keeps the connection record and releases the lock when ACL persistence fails
         ));
     });
 
-    $this->deleteJson('/api/v1/database-connections/acl-lock-client')->assertStatus(502)
-        ->assertJsonPath('error.code', 'database.server_command_failed');
+    expect(fn () => app(DropOwnedDatabasesAction::class)->drop($this->connection))
+        ->toThrow(ResourceOperationException::class, 'The ACL file could not be saved.');
 
     $this->assertModelExists($this->connection);
     $lock = Cache::lock($this->lockName, 120);

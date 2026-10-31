@@ -17,6 +17,7 @@ use App\Domain\Doctor\CustomProxyRouteObservation;
 use App\Domain\Doctor\DoctorInspectionScope;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
@@ -35,12 +36,17 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Models\Cluster;
+use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -95,6 +101,19 @@ beforeEach(function (): void {
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
     $this->routeSwamp = new RouteSwampGatewayFixture($this);
+    $this->routeSwamp->agents->answer('firewall.inspect', static fn (array $input, Node $node): array => [
+        'backend' => 'active', 'ownerships' => [], 'matches' => true,
+        'live' => [['comment' => 'orbit:wireguard-members', 'action' => 'allow', 'direction' => 'in',
+            'source' => 'any', 'destination' => $node->wireguard_ip, 'port' => 'any', 'protocol' => 'any',
+            'in_interface' => 'orbit', 'out_interface' => null, 'family' => 'v4'],
+            ...$node->firewallRules()->get()->map(static fn ($rule): array => (function () use ($rule): array {
+                $shape = FirewallInspectionTarget::fromRule($rule)->shape;
+
+                return new UfwRuleShape(...get_object_vars($shape))->toAgentInput();
+            })())->all()],
+    ]);
+    app()->instance(NativeLiveUfwReader::class,
+        new NativeLiveUfwReader($this->routeSwamp->agents, app(AgentContract::class)));
 
     $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
@@ -695,6 +714,7 @@ it('defaults to the Process Cluster Ingress without moving the Process Node or r
 });
 
 it('defaults an unclustered Process to the single Ingress serving public app Routes', function (): void {
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
     $ingress = Node::query()->findOrFail($body['ingress_node_id']);
@@ -706,6 +726,7 @@ it('defaults an unclustered Process to the single Ingress serving public app Rou
 });
 
 it('refuses missing and ambiguous default public app Ingresses and permits explicit selection', function (): void {
+    app()->instance(NodeCaddyfileRenderer::class, new NodeCaddyfileRenderer([]));
     app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
     $body = public_process_body($this->node);
     $ingress = Node::query()->findOrFail($body['ingress_node_id']);
@@ -741,6 +762,7 @@ it('refuses a missing LAN listener before storing intent and leaves private serv
     $before = new DevelopmentSiteRepository()->forNode($this->node);
     $this->postJson('/api/v1/routes', $body)->assertConflict()->assertJsonPath('error.code', 'route.upstream_unresolved');
     Process::query()->findOrFail($body['process_id'])->update(['runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp', '10.0.0.6:8095:8080/tcp']]]);
+    FirewallRule::query()->create(['node_id' => $this->node->id, 'name' => 'listener-fixture', 'action' => 'allow', 'source' => '10.0.0.4', 'port' => '8095', 'protocol' => 'tcp', 'status' => 'active']);
     $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk();
     expect(new DevelopmentSiteRepository()->forNode($ingress)->sole()->localHttpUpstream)->toBe('10.0.0.6:8095')
         ->and(new DevelopmentSiteRepository()->forNode($this->node))->toEqual($before)
@@ -922,11 +944,11 @@ describe('Process updates with targeting Routes', function (): void {
         $siteNode = $scope === 'private' ? $this->node : Node::query()->where('name', 'public-ingress')->sole();
         $sites = new DevelopmentSiteRepository()->forNode($siteNode);
 
-        $this->patchJson('/api/v1/processes/'.$process->id, $patch)->completeRoute()->assertOk()
-            ->assertJsonPath('data.id', $process->id)->assertJsonPath('data.status', 'active');
+        $this->patchJson('/api/v1/processes/'.$process->id, $patch)->assertAccepted()
+            ->assertJsonPath('data.kind', 'process.update')->assertJsonPath('data.status', 'queued');
 
         expect($process->refresh()->runtime_config)->toBe($config)
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id])
+            ->and($this->runtime->convergedProcessIds)->toBe([])
             ->and($route->refresh()->getAttributes())->toBe($before)
             ->and($route->customProxy->getAttributes())->toBe($proxy)
             ->and($this->edge->calls)->toBe($edgeCalls)
@@ -949,12 +971,12 @@ describe('Process updates with targeting Routes', function (): void {
         expect($error['error']['code'])->toBe('process.route_upstream_changed')
             ->and($error['error']['details']['route_id'])->toBe($route->id)
             ->and($route->refresh()->status->value)->toBe('active')
-            ->and($this->runtime->convergedProcessIds)->toBe([$process->id]);
+            ->and($this->runtime->convergedProcessIds)->toBe([]);
     })->with(['private', 'wireguard']);
 
     it('keeps listener reachability visible to Doctor after an update', function (string $scope, bool $reachable): void {
         [$process, $route] = process_update_route_fixture($this, $scope);
-        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'powersync:new'])->completeRoute()->assertOk();
+        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'powersync:new'])->assertAccepted();
         $inspector = Mockery::mock(CustomProxyRouteInspector::class);
         $inspector->shouldReceive('inspect')->once()->withArgs(fn (RouteCustomProxy $proxy): bool => $proxy->route_id === $route->id)
             ->andReturn(new CustomProxyRouteObservation(true, true, true, $reachable, true));
@@ -1014,6 +1036,8 @@ function process_update_route_fixture(TestCase $test, string $scope): array
             $node->update(['lan_ip' => '10.0.0.6']);
             Node::query()->findOrFail($body['ingress_node_id'])->update(['lan_ip' => '10.0.0.4']);
             $address = '10.0.0.6';
+            FirewallRule::query()->create(['node_id' => $node->id, 'name' => 'process-lan-fixture',
+                'action' => 'allow', 'source' => '10.0.0.4', 'destination' => $address, 'port' => '8095', 'protocol' => 'tcp', 'status' => 'active']);
             $process->update(['runtime_config' => [...$process->runtime_config, 'ports' => [$address.':8095:8080/tcp']]]);
         }
     }

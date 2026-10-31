@@ -120,13 +120,14 @@ it('keeps source Git credentials and Composer setup on reviewed remote paths', f
         // Remote programs carry their existing configuration; native commands carry only the token, on protected input.
         ->and($only('/ProtectedInput::gitCredential\(/'))->toBe(['app/Infrastructure/AgentCommands/NativeAgentCommandRunner.php', 'app/Infrastructure/GitHub/GitReadScript.php', 'app/Infrastructure/RemotePrograms/SshProgramRunner.php'])
         ->and($only('/extraheader/i'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
-        // The publisher removes the token from Git's error output; the others only unset or filter the variables.
-        ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
+        // The shared secret redactor and publisher remove tokens from diagnostic output.
+        ->and($only('/x-access-token/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php', 'app/Domain/Operations/OperationSecretValue.php', 'app/Infrastructure/Tasks/GitHubTaskPullRequestPublisher.php'])
         ->and($only('/GIT_CONFIG_VALUE_/'))->toBe(['app/Domain/GitHub/GitReadEnvironment.php'])
-        ->and($only('/->githubToken\(/'))->toBe(['app/Infrastructure/AgentCommands/AgentInvocation.php'])
+        ->and($only('/->githubToken\(/'))->toBe(['app/Domain/Operations/OperationSecretValue.php', 'app/Infrastructure/AgentCommands/AgentInvocation.php'])
         // GitHub access in the environment of a process on the Gateway, never in a remote command.
         ->and($only('/->variables\b/'))->toBe([
             'app/Domain/GitHub/GitReadEnvironment.php',
+            'app/Infrastructure/RemotePrograms/KeyedRemoteProgramRunner.php',
             'app/Infrastructure/RemotePrograms/SshProgramRunner.php',
             'app/Infrastructure/SourceControl/GitRemoteBranchHeads.php',
             'app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php',

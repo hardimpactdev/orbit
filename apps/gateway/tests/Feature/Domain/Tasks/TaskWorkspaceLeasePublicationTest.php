@@ -13,9 +13,10 @@ use App\Domain\Tasks\TaskWorkspaceLease;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'stopped');
     $registry = new AgentDriverRegistry([$driver]);
@@ -25,13 +26,13 @@ beforeEach(function (): void {
 });
 
 it('admits later checks and receipts after a review fix returns the group to running', function (): void {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     $leases = app(TaskWorkspaceLease::class);
     $holder = $leases->acquire($group, 'check', 'prior-check');
 
-    $fixup = tick_appended_subtask($group);
+    $fixup = $group->tasks()->create(['position' => 2, 'title' => 'Address the finding', 'brief' => 'Fix the review.', 'status' => TaskStatus::Todo]);
     $fixup->update(['status' => TaskStatus::Running]);
     $group->update(['status' => TaskGroupStatus::Running]);
     $leases->release($holder);

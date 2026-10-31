@@ -52,7 +52,7 @@ use Tests\Support\RouteSwampGatewayFixture;
 beforeEach(function (): void {
     bind_task_node_reachability();
     RouteForeignChildKinds::register();
-    $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $this->node = Node::query()->create(['name' => 'dev', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'architecture' => 'x86_64', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Proof', 'slug' => 'proof', 'repository_url' => 'https://example.test/proof.git', 'root' => 'public']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'private', 'checkout_path' => '/srv/proof/private', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'source_is_laravel' => false, 'status' => InstanceState::SourceResolved]);
@@ -265,7 +265,7 @@ it('omits Metrics without an active assignment and captures only its Node and em
 it('binds Router baselines to owned Node children and forbids premature cutover', function (): void {
     $cluster = Cluster::query()->create(['name' => 'Router proof']);
     $this->node->update(['cluster_id' => $cluster->id]);
-    $old = Node::query()->create(['name' => 'old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
+    $old = Node::query()->create(['name' => 'old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
     $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
     $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id, 'node_id' => $this->node->id,
@@ -287,7 +287,7 @@ it('binds Router baselines to owned Node children and forbids premature cutover'
 
 it('renders a prospective workload only from a proven prepared parent and withdraws it on rollback', function (): void {
     $cluster = Cluster::query()->create(['name' => 'Pool preparation']);
-    $router = Node::query()->create(['name' => 'pool-router', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux',
+    $router = Node::query()->create(['name' => 'pool-router', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux',
         'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $router->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $this->node->update(['cluster_id' => $cluster->id]);
@@ -422,10 +422,10 @@ it('retires only the old Router LAN rule and keeps the new Router allowance outs
     $cluster = Cluster::query()->create(['name' => 'Retire LAN']);
     $this->node->update(['cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.3']);
     $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
-    $old = Node::query()->create(['name' => 'retiring-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux',
+    $old = Node::query()->create(['name' => 'retiring-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux',
         'cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.5', 'status' => LifecycleStatus::Active]);
     $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Removing]);
-    $current = Node::query()->create(['name' => 'serving-router', 'public_ssh_host' => '192.0.2.6', 'user' => 'orbit', 'platform' => 'linux',
+    $current = Node::query()->create(['name' => 'serving-router', 'public_ssh_host' => '192.0.2.6', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux',
         'cluster_id' => $cluster->id, 'lan_ip' => '192.0.2.6', 'status' => LifecycleStatus::Active]);
     $current->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $operation = Operation::query()->create(['kind' => 'route.router_lan_retire', 'target_type' => 'route_effect', 'target_id' => $this->route->id,
@@ -445,7 +445,7 @@ it('keeps removed Instance Node and checkout snapshots after detachment and refu
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->instance->update(['environment' => 'production']);
     $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
-    $detachedNode = Node::query()->create(['name' => 'detached-proof', 'public_ssh_host' => '192.0.2.8', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
+    $detachedNode = Node::query()->create(['name' => 'detached-proof', 'public_ssh_host' => '192.0.2.8', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.8', 'architecture' => 'x86_64', 'platform' => 'linux', 'status' => LifecycleStatus::Active]);
     $detachedNode->update(['cluster_id' => $cluster->id]);
     $detachedNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $removed = $this->instance->replicate();
@@ -539,7 +539,7 @@ it('commits Router selection before publishing private DNS and refuses rollback 
     $cluster = Cluster::query()->create(['name' => 'Committed DNS', 'tld' => 'proof']);
     $this->node->update(['cluster_id' => $cluster->id]);
     $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    $old = Node::query()->create(['name' => 'dns-old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
+    $old = Node::query()->create(['name' => 'dns-old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'architecture' => 'x86_64', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
     $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
     $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
     $this->route->update(['cluster_id' => $cluster->id, 'node_id' => null, 'status' => RouteStatus::Active]);

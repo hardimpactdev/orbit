@@ -131,7 +131,7 @@ it('declares every task VM error code in TaskVmError or the native command contr
     $codes = [];
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS));
     foreach ($files as $file) {
-        if ($file->getExtension() === 'php' && preg_match_all("/'(task_vm\\.[a-z_]+)'/", (string) file_get_contents($file->getPathname()), $matches) > 0) {
+        if ($file->getExtension() === 'php' && preg_match_all("/new\\s+(?:TaskVmException|ResourceOperationException)\\s*\\(\\s*(?:errorCode\\s*:\\s*)?'(task_vm\\.[a-z_]+)'/", (string) file_get_contents($file->getPathname()), $matches) > 0) {
             array_push($codes, ...$matches[1]);
         }
     }

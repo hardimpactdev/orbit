@@ -17,7 +17,8 @@ it('preserves the selected case groups', function (array $selection): void {
     $arguments = ['tests/Fixtures/linux-host-selection.php', '--no-tia', '--colors=never', ...$selection];
     $process = linux_host_run([PHP_BINARY, 'vendor/bin/pest', ...$arguments], base_path());
     expect($process->getExitCode())->toBe(0, $process->getCommandLine()."\n".$process->getOutput().$process->getErrorOutput());
-    $this->assertMatchesRegularExpression('/Tests:\s+1 passed/', $process->getOutput());
+    $summary = json_decode(trim($process->getOutput()), true, flags: JSON_THROW_ON_ERROR);
+    expect($summary)->toMatchArray(['tool' => 'pest', 'result' => 'passed', 'tests' => 1, 'passed' => 1]);
 })->with([
     'ordinary exclusion' => [[]],
     'explicit privileged selection' => [['--group=privileged']],

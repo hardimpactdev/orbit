@@ -9,6 +9,7 @@ use App\Models\AgentThreadSendLease;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\FirewallRule;
@@ -130,6 +131,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceDeployment::class,
         Operation::class, // Execution record of a long operation, not a converged fleet resource.
         OperationStep::class,
+        DatabaseExecutionIntent::class, // Execution intent ledger; database resources retain their own Doctor family.
         InstanceDeployStep::class,
         ProjectLifecycleStep::class,
         ProjectDevelopmentDeployStep::class,

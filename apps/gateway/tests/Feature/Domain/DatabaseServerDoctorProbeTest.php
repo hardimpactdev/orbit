@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\DatabaseServerDoctorProbe;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\DoctorResourceKind;
 use App\Domain\Doctor\NodeInspectionData;
@@ -54,7 +55,7 @@ it('keeps endpoint rollout checks off existing servers until explicitly enabled'
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'existing-server', 'runtime' => ProcessRuntime::Docker, 'runtime_config' => ['ports' => ["10.44.0.3:{$port}:{$port}"]], 'desired_state' => 'running', 'status' => 'active']);
     $server = DatabaseServer::query()->create(['slug' => 'existing-server', 'driver' => $driver, 'node_id' => $node->id, 'process_id' => $process->id, 'tag' => '8', 'port' => $port, 'root_password' => 'fixture-secret', 'status' => 'active']);
     $valkey = new FakeValkeyServerAdmin;
-    $valkey->waitUntilReady($server, 1);
+    $valkey->users['default'] = ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, 'fixture-secret');
     $sql = new FakeDatabaseServerAdmin;
     $probe = new DatabaseServerDoctorProbe($valkey, $sql);
 

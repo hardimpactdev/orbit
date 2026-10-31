@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\StartNodePhpPackagesAction;
-use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
@@ -19,7 +18,8 @@ use Tests\Support\PhpBuildAnswers;
 
 it('keeps retained production callers synchronous even when the Node has a queued hold', function (LifecycleStatus $status): void {
     $node = FleetFixtures::node('retained-packages', [RoleName::AppProd], status: $status);
-    $held = app(StartOperationAction::class)->execute('firewall.allow', 'node', $node->id, $node->id, [], 'test', null);
+    $held = Operation::query()->create(['kind' => 'test.hold', 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => 'queued', 'lock_key' => 'node:'.$node->id, 'input' => []]);
     $agents = new FakeAgentCommandRunner;
     (new PhpBuildAnswers)->register($agents);
     app()->instance(AgentCommandRunner::class, $agents);

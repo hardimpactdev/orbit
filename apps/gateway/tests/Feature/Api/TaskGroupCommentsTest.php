@@ -99,10 +99,8 @@ it('records and resolves group direction with readable isolated history and no e
     Http::assertNothingSent();
 });
 
-it('refuses writes to tick, terminal or open-child groups without inserting a comment', function (string $case, string $code): void {
-    if ($case === 'tick') {
-        Task::topLevel()->whereKey($this->group->id)->update(['orchestration' => 'tick']);
-    } elseif ($case === 'open') {
+it('refuses writes to terminal or open-child groups without inserting a comment', function (string $case, string $code): void {
+    if ($case === 'open') {
         $this->group->tasks()->create(['title' => 'New child', 'brief' => 'Appended.', 'position' => 4]);
     } else {
         $this->group->update(['status' => $case]);
@@ -114,7 +112,7 @@ it('refuses writes to tick, terminal or open-child groups without inserting a co
     }
     expect(TaskComment::query()->count())->toBe(0)->and($this->group->refresh()->getAttributes())->toBe($before);
 })->with([
-    ['tick', 'tasks.not_orchestrated'], ['open', 'tasks.assistance_subtask_open'],
+    ['open', 'tasks.assistance_subtask_open'],
     ['completed', 'tasks.group_closed'], ['cancelled', 'tasks.group_closed'], ['failed', 'tasks.group_closed'],
 ]);
 
@@ -177,8 +175,7 @@ it('rechecks persisted guards rather than a previously bound group or loaded chi
     $bound = Task::topLevel()->with('tasks')->findOrFail($this->group->id);
     if ($case === 'closed') {
         $this->group->update(['status' => TaskGroupStatus::Completed]);
-    } elseif ($case === 'tick') {
-        Task::topLevel()->whereKey($this->group->id)->update(['orchestration' => 'tick']);
+
     } else {
         $this->group->tasks()->create(['title' => 'New work', 'brief' => 'Appended since binding.', 'position' => 4, 'status' => $case]);
     }
@@ -190,7 +187,7 @@ it('rechecks persisted guards rather than a previously bound group or loaded chi
     }
     expect(TaskComment::query()->count())->toBe(0)->and($this->group->fresh()->assistance_requested)->toBeFalse();
 })->with([
-    ['closed', 'tasks.group_closed'], ['tick', 'tasks.not_orchestrated'],
+    ['closed', 'tasks.group_closed'],
     ['todo', 'tasks.assistance_subtask_open'], ['running', 'tasks.assistance_subtask_open'], ['reviewing', 'tasks.assistance_subtask_open'],
 ]);
 

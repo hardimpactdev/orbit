@@ -28,7 +28,7 @@ final class RouteForeignChildKinds
         $names = self::Names;
         if ($simulateNodeChildren) {
             foreach ($definitions as $kind => $definition) {
-                if (is_array($definition) && isset($definition['admission']) && ! in_array($kind, [...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds], true) && ! str_starts_with($kind, 'route.analytics_')) {
+                if (is_array($definition) && isset($definition['runs'], $definition['admission']) && ! in_array($kind, [...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds], true) && ! str_starts_with($kind, 'route.analytics_')) {
                     $names[] = $kind;
                 }
             }

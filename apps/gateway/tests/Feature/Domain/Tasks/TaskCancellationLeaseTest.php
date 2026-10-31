@@ -25,9 +25,10 @@ use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
+    TaskOperationFixture::bindDefaults();
     bind_task_node_reachability();
     app(TaskExtensionState::class)->enable();
 });
@@ -143,7 +144,6 @@ it('preserves approved commits on a direct retry after offline cancellation and 
     $leases->release($holder);
     app(CancelTaskGroupAction::class)->execute($group);
     app(CancelTaskGroupAction::class)->execute($group);
-    $this->artisan('tasks:tick')->assertSuccessful();
 
     expect($removed->ids)->toBe([$holder->instance_id]);
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Cancelled);
@@ -180,7 +180,7 @@ it('retains approved work when publication fails on a direct offline cancellatio
 /** A leftover checkout whose VM is already gone uses the real generic removal path. */
 function cancellation_lease_group(): Task
 {
-    $group = tick_group();
+    $group = TaskOperationFixture::create();
     $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Done, turnId: 'completed');
     $registry = new AgentDriverRegistry([$driver]);

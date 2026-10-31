@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
@@ -12,9 +11,7 @@ use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Models\Cluster;
 use App\Models\Node;
-use App\Models\NodeRole;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeNodeConverger;
 
@@ -103,47 +100,20 @@ it('returns details.error_code ingress.caddy_config_failed when ingress removal 
         ->and($assignment->error_code)->toBe('ingress.caddy_config_failed');
 });
 
-it('names the router and router.caddy_config_failed when router convergence cannot order Caddy', function (): void {
+it('admits Router intent without executing Caddy in the request', function (bool $remove): void {
+    $cluster = Cluster::query()->create(['name' => 'router-admission']);
+    $node = caddy_failure_node('router-a', '10.44.0.4', $cluster);
+    if ($remove) {
+        $node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    }
     caddy_failure_bind('ordering');
-    $cluster = Cluster::query()->create(['name' => 'router-ordering']);
-    $node = caddy_failure_node('router-a', '10.44.0.4', $cluster);
-
-    $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$node->id}")
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'router.caddy_config_failed')
-        ->assertJsonPath('error.message', 'Router step [caddy-service-ordering] failed on node [router-a].')
-        ->assertJsonPath('error.details.step', 'caddy-service-ordering');
-
-    expect($node->roles()->where('role', RoleName::Router)->exists())->toBeFalse();
-});
-
-it('returns details.error_code router.caddy_config_failed when router removal stops at remove:caddy-config', function (): void {
-    app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
-    $cluster = Cluster::query()->create(['name' => 'router-removal']);
-    $node = caddy_failure_node('router-a', '10.44.0.4', $cluster);
-    $node->roles()->create([
-        'role' => RoleName::Router,
-        'cluster_id' => $cluster->id,
-        'status' => LifecycleStatus::Active,
-    ]);
-    caddy_failure_builds()->failNext($node->name, 'reload', 'Error: loading certificates');
-
-    $this->deleteJson("/api/v1/clusters/{$cluster->id}/router", ['force' => true])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'node_role.remove_failed')
-        ->assertJsonPath('error.message', 'The Caddy build for Node [router-a] failed at stage [reload]: Error: loading certificates')
-        ->assertJsonPath('error.details.step', 'remove:caddy-config')
-        ->assertJsonPath('error.details.error_code', 'router.caddy_config_failed')
-        ->assertJsonPath('error.details.node', 'router-a')
-        ->assertJsonPath('error.details.stage', 'reload')
-        ->assertJsonPath('error.details.message', 'Error: loading certificates');
-
-    $assignment = NodeRole::query()->where('node_id', $node->id)->where('role', RoleName::Router)->sole();
-
-    expect($assignment->status)->toBe(LifecycleStatus::Failed)
-        ->and($assignment->failed_step)->toBe('remove:caddy-config')
-        ->and($assignment->error_code)->toBe('router.caddy_config_failed');
-});
+    $response = $remove
+        ? $this->deleteJson("/api/v1/clusters/{$cluster->id}/router", ['force' => true])
+        : $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$node->id}");
+    $response->assertAccepted()->assertJsonPath('data.kind', $remove ? 'cluster.router_unset' : 'cluster.router_set')
+        ->assertJsonPath('data.status', 'queued')->assertJsonPath('data.error_code', null);
+    expect(app(AgentCommandRunner::class)->commands())->not->toContain('caddy.order-after-vpn');
+})->with([false, true]);
 
 it('keeps an app-dev removal that stops in the Caddy build on app-dev.caddy_config_failed', function (): void {
     $node = caddy_failure_node('app-host', '10.44.0.5');

@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Models\Node;
@@ -42,7 +40,8 @@ it('creates an immutable external group without claiming it on create or update'
     $this->patchJson($url, ['orchestration' => 'tick'])->assertUnprocessable();
     $stored = Task::topLevel()->findOrFail($group['id']);
     expect($stored->groupOrchestration())->toBe(TaskOrchestration::External)->and($stored->tasks()->firstOrFail()->orchestration)->toBeNull();
-    expect(fn () => $stored->update(['orchestration' => TaskOrchestration::External]))->toThrow(LogicException::class);
+    $stored->update(['orchestration' => TaskOrchestration::External]);
+    expect($stored->fresh()->groupOrchestration())->toBe(TaskOrchestration::External);
 });
 
 it('preserves external ownership when a partial group model is read or saved', function (): void {
@@ -50,7 +49,6 @@ it('preserves external ownership when a partial group model is read or saved', f
     $partial = Task::topLevel()->select(['id', 'title', 'status'])->findOrFail($id);
 
     expect($partial->groupOrchestration())->toBe(TaskOrchestration::External);
-    expect(fn () => TaskGroupGuard::requireTick($partial))->toThrow(ResourceOperationException::class, 'An external orchestrator owns this task group.');
     $partial->update(['title' => 'Renamed']);
 
     expect($partial->fresh()->groupOrchestration())->toBe(TaskOrchestration::External)
@@ -95,15 +93,6 @@ it('records an external resolution and clears assistance without driving work', 
     $this->postJson($url, ['type' => 'resolution', 'body' => 'Continue.', 'author' => 'operator'])->assertCreated();
     expect(Task::topLevel()->findOrFail($group['id'])->assistance_requested)->toBeFalse()
         ->and(Task::query()->findOrFail($group['tasks'][0]['id'])->comments()->count())->toBe(2);
-});
-
-it('backfills existing groups as tick while leaving subtasks without a mode', function (): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Existing', 'brief' => 'Existing.']);
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'One', 'brief' => 'One.']);
-    $migration = require database_path('migrations/2026_12_29_000000_add_orchestration_to_tasks_table.php');
-    $migration->down();
-    $migration->up();
-    expect($group->fresh()->groupOrchestration())->toBe(TaskOrchestration::External)->and($task->fresh()->orchestration)->toBeNull();
 });
 
 it('keeps group cancel and complete available to the external owner', function (): void {

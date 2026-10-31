@@ -15,7 +15,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteProvenance;
@@ -25,6 +24,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -43,6 +43,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakesEnvironmentSyncInspection;
 
 function environment_api_production(Instance $instance): void
@@ -53,6 +54,9 @@ function environment_api_production(Instance $instance): void
 }
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+
     [$this->caller, $this->instance, $this->route] = environment_api_fixture();
     $this->access = new EnvironmentApiAccess;
     app()->instance(InstanceOperationPreflight::class, $this->access);
@@ -289,7 +293,7 @@ it('enforces peer and owning-Node access before reading configuration or using S
     $denied = Node::query()->create([
         'name' => 'denied-peer',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.202',
         'wireguard_ip' => '10.44.0.202',
         'user' => 'orbit',
@@ -789,16 +793,12 @@ it('requires explicit Process recovery after a real restart failure even if the 
         ->assertAccepted()->assertJsonPath('data.kind', 'process.restart')->json('data.id');
     $this->assertDatabaseHas('processes', ['id' => $process->id, 'status' => 'provisioning']);
     config(['dependency_detection.services_node_id' => $this->caller->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.restart', 'operation_id' => $id, 'worker' => 'explicit-recovery'])->assertOk();
     $operation = Operation::query()->findOrFail($id);
-    $path = '/api/v1/operation-executor/'.$id;
-    foreach (app(OperationExecutionContract::class)->context($operation)['descriptors'] as $descriptor) {
-        $result = $this->postJson($path.'/run', ['worker' => 'explicit-recovery', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'],
-            'name' => $descriptor['name'], 'input' => $descriptor['input']])->assertOk()->json('data');
-        $this->postJson($path.'/step', ['worker' => 'explicit-recovery', 'key' => $descriptor['key'].'-done', 'name' => $descriptor['step'],
-            'status' => 'succeeded', 'result' => $result])->assertOk();
-    }
-    $this->postJson($path.'/complete', ['worker' => 'explicit-recovery', 'status' => 'succeeded', 'result' => $result])->assertOk();
+    $this->postJson('/api/v1/direct-operations/'.$id.'/result', [
+        'run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded',
+        'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'),
+        'result' => ['ready' => true, 'state' => 'active'],
+    ])->assertOk();
     $this->assertDatabaseHas('processes', ['id' => $process->id, 'status' => 'active', 'error_code' => null]);
     $this->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
         ->assertOk()->assertJsonPath('data.runtime_refresh', 'skipped_unchanged')
@@ -1042,7 +1042,7 @@ function environment_api_make_public(Route $route): void
             'cluster_id' => $cluster->id,
             'name' => "environment-{$role->value}",
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'architecture' => 'x86_64', 'platform' => 'linux',
             'public_ssh_host' => $role === RoleName::Router ? '192.0.2.210' : '192.0.2.211',
             'wireguard_ip' => $role === RoleName::Router ? '10.44.0.210' : '10.44.0.211',
             'user' => 'orbit',
@@ -1068,7 +1068,7 @@ function environment_api_fixture(): array
     $caller = Node::query()->create([
         'name' => 'gateway-peer',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.200',
         'wireguard_ip' => '10.44.0.200',
         'user' => 'orbit',
@@ -1077,7 +1077,7 @@ function environment_api_fixture(): array
     $node = Node::query()->create([
         'name' => 'environment-owner',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'architecture' => 'x86_64', 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.201',
         'wireguard_ip' => '10.44.0.201',
         'user' => 'orbit',
@@ -1139,7 +1139,7 @@ function ambiguous_environment_target(Node $caller): array
             'name' => "production-{$suffix}",
             'cluster_id' => $cluster->id,
             'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
+            'architecture' => 'x86_64', 'platform' => 'linux',
             'public_ssh_host' => "192.0.2.{$suffix}",
             'wireguard_ip' => "10.44.0.{$suffix}",
             'user' => 'orbit',

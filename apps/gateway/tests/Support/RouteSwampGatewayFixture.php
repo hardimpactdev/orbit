@@ -21,8 +21,10 @@ use App\Domain\Operations\OperationTransports;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Routes\RoutePublicationPrimitive;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Event;
@@ -31,7 +33,7 @@ use Illuminate\Testing\TestResponse;
 use RuntimeException;
 use Tests\TestCase;
 
-/** The real Swamp Route workflows call this test's Gateway kernel. Only Node transports are fake. */
+/** The real Swamp Route parent workflows call this Gateway kernel; native child effects are fake. */
 final class RouteSwampGatewayFixture
 {
     public readonly FakeAgentCommandRunner $agents;
@@ -64,7 +66,7 @@ final class RouteSwampGatewayFixture
 
     private Node $worker;
 
-    public function __construct(private TestCase $test, bool $nativeChildren = false, private bool $httpRuns = false)
+    public function __construct(private TestCase $test, private bool $nativeChildren = false, private bool $httpRuns = false)
     {
         Event::fake([RecordBroadcast::class]);
         config(['swamp.direct_writers' => [], 'swamp.run_token' => 'fixture.fake']);
@@ -173,6 +175,40 @@ final class RouteSwampGatewayFixture
 
     private function dispatch(Operation $operation): void
     {
+        if (DirectOperation::owns($operation)) {
+            $direct = app(DirectOperation::class);
+            $input = $direct->projection($operation)->input($operation);
+            $result = $this->foreign->run($operation, ['proof' => 'ready']);
+            if ($this->nativeChildren && ($result['ready'] ?? false)) {
+                $node = Node::query()->findOrFail($operation->node_id);
+                try {
+                    if ($operation->kind === 'route.caddy_converge') {
+                        RouteProjectionAgentAnswers::builds($this->agents)->build($node);
+                    } elseif ($operation->kind === 'route.private_dns_publish') {
+                        $result = $direct->primitive($operation)->execute($operation);
+                    } elseif ($operation->kind === 'route.lan_remove') {
+                        $this->agents->run($node, 'firewall.route-lan', ['operation' => 'remove', 'route_id' => $input['route_id']]);
+                    } elseif (in_array($operation->kind, ['route.public_verify', 'route.workload_verify'], true)) {
+                        $this->agents->run($node, $input['protocol'] === 'http' ? 'route.verify-http' : 'route.verify-certificate', $input['probe']);
+                    }
+                } catch (AgentCommandRefused $error) {
+                    $result = ['error_code' => $error->errorCode];
+                } catch (NodeCaddyBuildException) {
+                    $result = ['error_code' => 'caddy.publication_failed'];
+                }
+            }
+            if ($operation->kind === 'route.caddy_converge' && ($result['ready'] ?? false)) {
+                $result = [...$result, 'version' => $input['caddy_publication']['caddy']['version'], 'result' => 'published'];
+            }
+            $direct->projection($operation)->apply($operation, [
+                'run_id' => $operation->state['swamp_run_id'],
+                'status' => isset($result['error_code']) ? 'failed' : 'succeeded',
+                'error_code' => $result['error_code'] ?? null, 'result' => $result,
+                'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            ]);
+
+            return;
+        }
         if ($this->process === null) {
             $swamp = getenv('ORBIT_SWAMP_CHECKOUT') ?: dirname(base_path(), 3).'/orbit-swamp';
             $deno = getenv('DENO_BIN') ?: (is_executable(dirname(base_path(), 3).'/bin/deno') ? dirname(base_path(), 3).'/bin/deno' : 'deno');
@@ -354,7 +390,7 @@ final readonly class RouteFixtureDnsTransport implements OperationTransport, Rou
             try {
                 ($this->publish)($operation, $input);
             } catch (ResourceOperationException $exception) {
-                return ['error_code' => $exception->errorCode];
+                return ['outcome' => 'refused', 'data' => ['error_code' => $exception->errorCode]];
             }
         }
 

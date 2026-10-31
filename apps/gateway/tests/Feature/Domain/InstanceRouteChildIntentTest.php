@@ -13,12 +13,14 @@ use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 function routeInstanceChild(string $kind = 'instance.prepare_php_runtime'): array
 {
@@ -43,6 +45,11 @@ function routeInstanceChild(string $kind = 'instance.prepare_php_runtime'): arra
 
     return [$child, $parent, $route, $instance];
 }
+
+beforeEach(function (): void {
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+});
 
 it('renders the activating web-root pool before the Route becomes active', function (): void {
     [$child, , , $instance] = routeInstanceChild();
@@ -220,7 +227,7 @@ it('admits Route PHP packages alongside peer DNS without sharing the Node hold',
         ->and($dns->status->value)->toBe('queued')->and($dns->attempts)->toBe(0);
     $this->withoutHeader('Idempotency-Key')->call('POST', '/api/v1/operations/'.$dnsId.'/cancel',
         server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
-        ->assertOk()->assertJsonPath('data.status', 'cancelled');
+        ->assertOk()->assertJsonPath('data.status', 'queued')->assertJsonPath('data.cancel_requested', true);
     expect(Operation::query()->where('lock_key', 'node:'.$instance->node_id)->value('id'))->toBe($id);
     $packages = Operation::query()->findOrFail($id);
     expect($packages->parent_operation_id)->toBe($child->id)->and($packages->input['versions'])->toBe(['8.5'])

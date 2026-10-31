@@ -293,7 +293,7 @@ it('lists, shows, updates, clears, and removes a pre-existing explicit Route', f
 });
 
 it('preserves a structured Metrics runtime failure through the Route update API', function (): void {
-    $route = route_api_active_development_route($this->orbitApp, $this->target);
+    [, , , , , $route] = route_public_topology($this->orbitApp, publication: RoutePublication::Private);
     $this->gateway->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $this->routeSwamp->foreign->failKind = 'metrics.reconcile';
     $op = $this->routeSwamp->finish($this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public']));

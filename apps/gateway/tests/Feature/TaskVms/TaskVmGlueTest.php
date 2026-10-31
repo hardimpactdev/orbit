@@ -421,6 +421,9 @@ describe('Pi', function (): void {
 describe('task group data', function (): void {
     it('reports the task VM state as VM power', function (TaskVmState $state, ?VmPower $power): void {
         $group = tvm_glue_group($state);
+        if ($state === TaskVmState::Parked) {
+            TaskVm::forGroup($group)->update(['stop_confirmed_at' => now()]);
+        }
         $data = TaskGroupData::fromModel($group->fresh());
 
         expect($data->vmPower)->toBe($power)

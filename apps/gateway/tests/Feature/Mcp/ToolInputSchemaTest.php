@@ -11,6 +11,8 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -113,10 +115,18 @@ describe('MCP tool input schemas', function (): void {
 });
 
 describe('instance-destroy', function (): void {
-    it('removes dirty or unpublished source when force is true', function (string $mutation): void {
+    it('admits forced removal after refusing dirty or unpublished source', function (string $mutation): void {
+        bind_task_node_reachability();
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+        {
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+            }
+        });
         $sandbox = sys_get_temp_dir().'/orbit-mcp-force-'.bin2hex(random_bytes(8));
         File::makeDirectory($sandbox);
-        $checkout = $sandbox.'/checkout';
+        $checkout = $sandbox.'/apps/mcp-force/dev';
         $origin = $sandbox.'/origin.git';
 
         try {
@@ -141,6 +151,7 @@ describe('instance-destroy', function (): void {
 
             $node = Node::query()->create([
                 'name' => 'mcp-force-app',
+                'settings' => ['apps' => ['path' => $sandbox.'/apps']],
                 'status' => LifecycleStatus::Active,
                 'platform' => 'linux',
                 'public_ssh_host' => '192.0.2.72',
@@ -193,7 +204,7 @@ describe('instance-destroy', function (): void {
 
             $refused->assertOk();
             expect($refused->json('result.isError'))->toBeTrue()
-                ->and($error['status'] ?? null)->toBe(409)
+                ->and($error['status'] ?? null)->toBe(409, json_encode($error, JSON_THROW_ON_ERROR))
                 ->and($error['error']['code'] ?? null)->toBe('instance.remove_refused')
                 ->and($error['error']['message'] ?? null)->toBe('Instance [dev] has dirty or unpublished source.')
                 ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
@@ -207,13 +218,14 @@ describe('instance-destroy', function (): void {
             $document = mcp781_tool_payload($removed);
 
             $removed->assertOk();
-            expect($removed->json('result.isError'))->toBeFalse()
-                ->and($document['data']['id'] ?? null)->toBe($instance->id)
-                ->and($document['data']['force'] ?? null)->toBeTrue()
-                ->and($document['data']['status'] ?? null)->toBe('completed')
-                ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse()
-                ->and(is_dir($checkout))->toBeFalse()
-                ->and(InstanceRemoval::query()->sole()->force)->toBeTrue();
+            expect($removed->json('result.isError'))->toBe(false, json_encode($document, JSON_THROW_ON_ERROR))
+                ->and($document['operation']['kind'] ?? null)->toBe('instance.destroy')
+                ->and($document['operation']['input']['force'] ?? null)->toBeTrue()
+                ->and($document['operation']['status'] ?? null)->toBe('queued')
+                ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+                ->and(is_dir($checkout))->toBeTrue()
+                ->and(InstanceRemoval::query()->count())->toBe(0);
+
         } finally {
             File::deleteDirectory($sandbox);
         }

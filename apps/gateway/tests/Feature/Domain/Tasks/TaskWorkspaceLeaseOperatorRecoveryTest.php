@@ -25,10 +25,11 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TaskOperationFixture;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
-    $this->group = tick_group();
+    TaskOperationFixture::bindDefaults();
+    $this->group = TaskOperationFixture::create();
     AgentThread::query()->delete();
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
     $this->receiptHome = sys_get_temp_dir().'/orbit-recovery-'.bin2hex(random_bytes(8));

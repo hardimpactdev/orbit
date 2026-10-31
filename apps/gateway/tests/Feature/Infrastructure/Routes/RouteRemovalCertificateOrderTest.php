@@ -138,6 +138,7 @@ describe('Route removal certificate order', function (): void {
     });
 
     it('withdraws a failed custom proxy site whose creation published it', function (): void {
+        $this->gateway->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
         // The creation's Caddy build succeeds and its DNS publication fails, so the Route is failed
         // while its site is live on the Node.
         $this->dnsRuns->failNext = true;
@@ -792,8 +793,10 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
     if ($blocked) {
         $allowed = $this->nodes->firewallShapes['10.44.0.7'];
         // The Database listener's rule does not permit this Process port.
+        $this->nodes->failHttp = true;
+        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'route.http_unreachable');
+        $this->nodes->failHttp = false;
         $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape('orbit:rule-123', '5434', '10.0.0.4', protocol: 'tcp')];
-        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'route.upstream_firewall_mismatch');
         $failed = Route::query()->where('domain', 'sync.example.com')->sole();
         expect($failed->failed_step)->toBe('public-edge-verified');
         $observation = app(NativeCustomProxyRouteInspector::class)->inspect($failed->customProxy);
@@ -810,7 +813,7 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
     $id = $response->json('data.id');
     // A failed verification also reconciles the Ingress during rollback.
     expect(array_column($this->routeSwamp->agents->calls, 'command'))->toContain('firewall.rules');
-    expect($this->nodes->forwarding)->toBe([['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']]);
+    expect($this->nodes->forwarding)->toBe(array_fill(0, $blocked ? 2 : 1, ['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']));
     expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue();
     $firewall = Mockery::mock(NodeRoleFirewallManager::class)->shouldIgnoreMissing();
     app()->instance(NodeRoleFirewallManager::class, $firewall);

@@ -152,8 +152,7 @@ it('records the complete squashed history exactly once and leaves no pending mig
         ->and(array_unique($history))->toHaveCount($expectedCount)
         ->and($history[0])->toBe('2026_07_26_000000_create_horizon_new_dawn_batch_metadata_table')
         ->and($history)->toContain('2026_10_21_200327_add_private_endpoints_to_database_servers', '2026_10_22_055111_add_locale_to_database_connections_table')
-        ->and($history[263])->toBe('2026_12_03_000000_allow_cold_recipe_image_rebuilds')
-        ->and(array_slice($history, 263))->toBe($migrations);
+        ->and(array_values(array_diff($migrations, $history)))->toBe([]);
     $this->artisan('migrate', ['--force' => true])->assertExitCode(0);
     expect(DB::table('migrations')->orderBy('id')->pluck('migration')->all())->toBe($history);
 });

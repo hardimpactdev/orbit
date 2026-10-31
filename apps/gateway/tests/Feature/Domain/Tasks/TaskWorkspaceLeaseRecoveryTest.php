@@ -23,11 +23,12 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TaskOperationFixture;
 use Tests\Support\UnreachableSshExecutor;
 
 beforeEach(function (): void {
-    tick_bind_defaults();
-    $this->leaseGroup = tick_group();
+    TaskOperationFixture::bindDefaults();
+    $this->leaseGroup = TaskOperationFixture::create();
     AgentThread::query()->delete();
     $this->leaseChecks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $this->leaseChecks);
