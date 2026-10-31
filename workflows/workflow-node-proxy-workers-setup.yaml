@@ -7,13 +7,22 @@ vaults: []
 jobs:
   - name: configure
     steps:
+      - name: preflight
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: preflight
       - name: prepare_key
         writes: true
+        dependsOn: [{step: preflight, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: '@nckrtl/node-proxy-workers'
           behaviorName: node-proxy-workers
           methodName: prepare_key
+          inputs:
+            runtime: '${{ steps.preflight.outputs.runtime }}'
       - name: authorize_vpn
         target: orbit-node-14
         labels: {node: "14"}
@@ -48,3 +57,5 @@ jobs:
           behaviorType: '@nckrtl/node-proxy-workers'
           behaviorName: node-proxy-workers
           methodName: activate
+          inputs:
+            runtime: '${{ steps.preflight.outputs.runtime }}'

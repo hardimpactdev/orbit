@@ -31,12 +31,18 @@ const credentialsRoot = "/etc/orbit/swamp-worker";
 const unit = "orbit-node-worker.service";
 const unitPath = `/etc/systemd/system/${unit}`;
 const checker = "/usr/local/libexec/orbit-node-worker-check";
-export function availableMemory(input: string): number {
+export function availableMemory(
+  input: string,
+  artifactBytes = Swamp.bytes,
+): number {
+  if (!Number.isSafeInteger(artifactBytes) || artifactBytes <= 0) {
+    throw new Error("swamp.node_worker_memory_low");
+  }
   const rows = input.split("\n").filter((s) => s.startsWith("MemAvailable:"));
   const match = rows.length === 1 &&
     /^MemAvailable:\s+([0-9]+)\s+kB\s*$/.exec(rows[0]);
   const bytes = match ? Number(match[1]) * 1024 : NaN;
-  if (!Number.isSafeInteger(bytes) || bytes < Swamp.bytes + Swamp.headroom) {
+  if (!Number.isSafeInteger(bytes) || bytes < artifactBytes + Swamp.headroom) {
     throw new Error("swamp.node_worker_memory_low");
   }
   return bytes;

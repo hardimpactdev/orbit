@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { type NodeCommand, run } from "../operations/_lib/node-commands.ts";
-import { availableMemory, Swamp, type WorkerCredentials } from "./install.ts";
+import type { WorkerCredentials } from "./install.ts";
+import { attestProxyRuntime, type ProxyRuntime } from "./proxy-runtime.ts";
 import {
   metadata,
   owned,
@@ -49,14 +50,9 @@ export async function assertProxyHost(invoke: NodeCommand) {
 /** Only public bytes leave this call. The dedicated private key is created on209. */
 export async function prepareProxyKey(
   invoke: NodeCommand = run,
+  expected?: ProxyRuntime,
 ): Promise<string> {
-  await assertProxyHost(invoke);
-  const memory = availableMemory(
-    text(await required(invoke, ["/usr/bin/cat", "/proc/meminfo"])),
-  );
-  if (memory < 2 * (Swamp.bytes + Swamp.headroom)) {
-    throw new Error("Insufficient RAM for two proxy workers");
-  }
+  await attestProxyRuntime(invoke, expected);
   for (const path of ["/etc", "/etc/orbit"]) {
     const m = await metadata(invoke, path);
     if (
@@ -119,7 +115,8 @@ export function proxyUnit(node: 1 | 18): string {
 export async function installProxyWorkers(
   targets: readonly ProxyTarget[],
   credentials: Readonly<Record<1 | 18, WorkerCredentials>>,
-  invoke: NodeCommand = run,
+  invoke: NodeCommand,
+  expected: ProxyRuntime,
 ) {
   const parsed = targets.map((v) => ProxyTarget.parse(v));
   if (parsed.length !== 2 || new Set(parsed.map((v) => v.node_id)).size !== 2) {
@@ -142,13 +139,7 @@ export async function installProxyWorkers(
       ) throw new Error("Proxy credential identity mismatch");
     }
   }
-  await prepareProxyKey(invoke);
-  if (
-    !owned(await metadata(invoke, "/usr/local/bin/swamp"), "file", 0o755) ||
-    text(
-        await required(invoke, ["/usr/bin/sha256sum", "/usr/local/bin/swamp"]),
-      ) !== `${Swamp.sha256}  /usr/local/bin/swamp\n`
-  ) throw new Error("Pinned existing Swamp binary required on209");
+  await prepareProxyKey(invoke, expected);
   const account = text(
     await required(invoke, ["/usr/bin/getent", "passwd", "orbit"]),
   ).trim().split(":");
@@ -181,6 +172,7 @@ export async function installProxyWorkers(
       uid,
       gid,
     );
+    await attestProxyRuntime(invoke, expected);
     await publishRootFile(
       invoke,
       `/etc/systemd/system/orbit-node-proxy-worker-${v.node_id}.service`,

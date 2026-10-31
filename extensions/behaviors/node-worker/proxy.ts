@@ -19,6 +19,7 @@ import {
 } from "./files.ts";
 import type { WorkerCredentials } from "./install.ts";
 import { due, type Native, native, Token } from "./rotation.ts";
+import { attestProxyRuntime, ProxyRuntime } from "./proxy-runtime.ts";
 import { ProxyIdentity } from "../operations/_lib/node-proxy-config.ts";
 
 // Orbit's recorded Ed25519 host keys, verified against their recorded fingerprints.
@@ -123,12 +124,14 @@ if not any(a.get('local')=='10.44.0.2' for d in addresses for a in d.get('addr_i
 
 /** Existing worker credential type and canonical issuer; plaintext stays callback-local. */
 export async function activate(
+  expected: ProxyRuntime,
   invoke: NodeCommand = run,
   issue = nodeEnrollmentIssuer(),
   signal?: AbortSignal,
   call: Native = native,
 ) {
-  await prepareProxyKey(invoke);
+  await attestProxyRuntime(invoke, expected);
+  await prepareProxyKey(invoke, expected);
   const credentials = {} as Record<1 | 18, WorkerCredentials>;
   const parent = "/etc/orbit/node-proxy/credentials";
   await privateDirectory(invoke, parent, 0, 0);
@@ -173,7 +176,7 @@ export async function activate(
     if (pair === null) throw new Error("Proxy issuer returned no credentials");
     credentials[node] = pair;
   }
-  return await installProxyWorkers(targets, credentials, invoke);
+  return await installProxyWorkers(targets, credentials, invoke, expected);
 }
 
 type Context = {
@@ -187,9 +190,16 @@ type Context = {
 const PublicKey = z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/);
 export const behavior = {
   type: "@nckrtl/node-proxy-workers",
-  version: "2026.10.31.2",
+  version: "2026.10.31.3",
   globalArguments: z.object({}).strict(),
   resources: {
+    runtime: {
+      description:
+        "Read-only attestation of the actual running209 worker artifact",
+      schema: z.object({ runtime: ProxyRuntime }).strict(),
+      lifetime: "infinite",
+      garbageCollection: 5,
+    },
     key: {
       description: "Dedicated proxy public key only",
       schema: z.object({ public_key: PublicKey }).strict(),
@@ -216,14 +226,34 @@ export const behavior = {
     },
   },
   methods: {
+    preflight: {
+      description:
+        "Read-only running209 artifact and two-worker memory attestation before all proxy effects",
+      arguments: z.object({
+        expected_sha256: z.string().regex(/^(?:[a-f0-9]{64})?$/).default(""),
+      }).strict(),
+      execute: async (args: { expected_sha256: string }, ctx: Context) => {
+        const runtime = await attestProxyRuntime();
+        if (args.expected_sha256 && args.expected_sha256 !== runtime.sha256) {
+          throw new Error(
+            "Proxy worker runtime digest differs from expected preflight",
+          );
+        }
+        return {
+          dataHandles: [
+            await ctx.writeResource("runtime", "runtime", { runtime }),
+          ],
+        };
+      },
+    },
     prepare_key: {
       description:
         "Generate or reuse the209-only private key and return its public key",
-      arguments: z.object({}).strict(),
-      execute: async (_args: unknown, ctx: Context) => ({
+      arguments: z.object({ runtime: ProxyRuntime }).strict(),
+      execute: async (args: { runtime: ProxyRuntime }, ctx: Context) => ({
         dataHandles: [
           await ctx.writeResource("key", "key", {
-            public_key: await prepareProxyKey(),
+            public_key: await prepareProxyKey(run, args.runtime),
           }),
         ],
       }),
@@ -251,13 +281,18 @@ export const behavior = {
     activate: {
       description:
         "Issue callback-local credentials and configure both proxy workers on209",
-      arguments: z.object({}).strict(),
-      execute: async (_args: unknown, ctx: Context) => ({
+      arguments: z.object({ runtime: ProxyRuntime }).strict(),
+      execute: async (args: { runtime: ProxyRuntime }, ctx: Context) => ({
         dataHandles: [
           await ctx.writeResource(
             "configured",
             "configured",
-            await activate(run, nodeEnrollmentIssuer(), ctx.signal),
+            await activate(
+              args.runtime,
+              run,
+              nodeEnrollmentIssuer(),
+              ctx.signal,
+            ),
           ),
         ],
       }),

@@ -64,8 +64,8 @@ Deno.test("insufficient209 memory refuses before key, file, credential or unit e
   const invoke: NodeCommand = (argv) => {
     (calls as string[][]).push([...argv]);
     const output = argv[0] === "/usr/bin/cat"
-      ? "MemAvailable: 800000 kB\n"
-      : "";
+      ? "MemAvailable: 500000 kB\n"
+      : JSON.stringify(runtimeFixture);
     return Promise.resolve({
       success: true,
       code: 0,
@@ -86,17 +86,24 @@ Deno.test("wrong credential target or incomplete proxy set refuses before effect
     server_token: "orbit-node-1-access." + "b".repeat(32),
   };
   await assertRejects(() =>
-    installProxyWorkers([vpn], { 1: pair, 18: pair }, invoke)
+    installProxyWorkers([vpn], { 1: pair, 18: pair }, invoke, runtimeFixture)
   );
   const error = await assertRejects(
-    () => installProxyWorkers([vpn, exit], { 1: pair, 18: pair }, invoke),
+    () =>
+      installProxyWorkers(
+        [vpn, exit],
+        { 1: pair, 18: pair },
+        invoke,
+        runtimeFixture,
+      ),
     Error,
   );
   assertEquals(error.message, "Proxy credential identity mismatch");
 });
 
 import { activate } from "./proxy.ts";
-import { Swamp } from "./install.ts";
+import { runtimeProgram } from "./proxy-runtime.ts";
+import { runtimeFixture } from "./proxy-runtime.fixture.ts";
 import { publishProgram } from "./files.ts";
 
 Deno.test("proxy activation composes canonical issuer and keeps both credential pairs on stdin", async () => {
@@ -125,7 +132,9 @@ Deno.test("proxy activation composes canonical issuer and keeps both credential 
     calls.push({ argv, stdin });
     let value = "";
     if (argv[0] === "/usr/bin/python3") {
-      if (argv[2] === publishProgram) {
+      if (argv[2] === runtimeProgram) {
+        value = JSON.stringify(runtimeFixture);
+      } else if (argv[2] === publishProgram) {
         const p = JSON.parse(new TextDecoder().decode(stdin));
         files.set(p.path, { uid: 0, gid: 0, mode: p.mode, kind: "file" });
         value = JSON.stringify({ changed: true });
@@ -136,8 +145,6 @@ Deno.test("proxy activation composes canonical issuer and keeps both credential 
     else if (argv[0] === "/usr/bin/ssh-keygen") value = vpn.host_key;
     else if (argv[0] === "/usr/bin/getent") {
       value = "orbit:x:1000:1000::/home/orbit:/bin/bash\n";
-    } else if (argv[0] === "/usr/bin/sha256sum") {
-      value = `${Swamp.sha256}  /usr/local/bin/swamp\n`;
     } else if (argv[0] === "/usr/bin/install") {
       const path = argv.at(-1)!;
       files.set(path, {
@@ -154,7 +161,7 @@ Deno.test("proxy activation composes canonical issuer and keeps both credential 
     });
   };
   const issued: number[] = [];
-  const issue: Parameters<typeof activate>[1] = async (
+  const issue: Parameters<typeof activate>[2] = async (
     raw,
     existing,
     store,
@@ -170,7 +177,7 @@ Deno.test("proxy activation composes canonical issuer and keeps both credential 
     });
     return { issued: true, node_id: n };
   };
-  assertEquals(await activate(invoke, issue), {
+  assertEquals(await activate(runtimeFixture, invoke, issue), {
     configured: true,
     node_ids: [1, 18],
   });
@@ -211,4 +218,68 @@ Deno.test("proxy activation composes canonical issuer and keeps both credential 
     units.every((c) => !c.argv.includes("orbit-node-worker.service")),
     true,
   );
+});
+
+Deno.test("runtime drift immediately before unit publication refuses without starting a proxy", async () => {
+  let attestations = 0;
+  const publications: string[] = [];
+  const units: readonly string[][] = [];
+  const invoke: NodeCommand = (argv, stdin) => {
+    let output = "";
+    if (argv[0] === "/usr/bin/python3") {
+      if (argv[2] === runtimeProgram) {
+        attestations++;
+        output = JSON.stringify({
+          ...runtimeFixture,
+          pid: attestations === 1 ? runtimeFixture.pid : 999,
+        });
+      } else if (argv[2] === publishProgram) {
+        publications.push(JSON.parse(new TextDecoder().decode(stdin)).path);
+        output = JSON.stringify({ changed: true });
+      } else if (argv.length === 4) {
+        const path = argv[3];
+        output = JSON.stringify(
+          path.endsWith(".token") || path.includes("credentials") ||
+            path.startsWith("/var/lib/")
+            ? null
+            : {
+              uid: 0,
+              gid: 0,
+              mode: path.endsWith("id_ed25519") ? 0o600 : 0o755,
+              kind: path.endsWith("id_ed25519") ? "file" : "directory",
+            },
+        );
+      }
+    } else if (argv[0] === "/usr/bin/cat") {
+      output = "MemAvailable: 4000000 kB\n";
+    } else if (argv[0] === "/usr/bin/ssh-keygen") output = vpn.host_key;
+    else if (argv[0] === "/usr/bin/getent") {
+      output = "orbit:x:1000:1000::/home/orbit:/bin/bash\n";
+    } else if (argv[0] === "/usr/bin/systemctl") {
+      (units as string[][]).push([...argv]);
+    }
+    return Promise.resolve({
+      success: true,
+      code: 0,
+      stdout: new TextEncoder().encode(output),
+    });
+  };
+  const pair = (node: number) => ({
+    enrollment_token: `orbit-node-${node}.` + "a".repeat(32),
+    server_token: `orbit-node-${node}-access.` + "b".repeat(32),
+  });
+  await assertRejects(
+    () =>
+      installProxyWorkers(
+        [vpn, exit],
+        { 1: pair(1), 18: pair(18) },
+        invoke,
+        runtimeFixture,
+      ),
+    Error,
+    "runtime changed",
+  );
+  assertEquals(attestations, 2);
+  assertEquals(publications.some((path) => path.endsWith(".service")), false);
+  assertEquals(units, []);
 });
