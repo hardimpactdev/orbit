@@ -1,15 +1,12 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "../../automatic-deploy/gateway.ts";
-import {
-  type Context as RunnerContext,
-  Globals,
-} from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 import {
   DirectArgs,
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { localAgent } from "./agent.ts";
+import { localProcessAction } from "./native-action.ts";
 import { Input } from "./process-input.ts";
 
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
@@ -97,13 +94,14 @@ const pause = (signal?: AbortSignal) =>
 
 /** Domain preparation/readiness runs locally; publication is a separate canonical native step. */
 export function startActions(
-  invoke: typeof localAgent = localAgent,
+  invoke: typeof localProcessAction = localProcessAction,
   wait = pause,
 ) {
-  const call =
-    (input: z.infer<typeof StartInput>, signal?: AbortSignal) =>
-    (name: Parameters<typeof localAgent>[0], data: Record<string, unknown>) =>
-      invoke(name, data, input.agent_sha256, signal);
+  const call = (input: z.infer<typeof StartInput>, signal?: AbortSignal) =>
+  (
+    name: Parameters<typeof localProcessAction>[0],
+    data: Record<string, unknown>,
+  ) => invoke(name, data, input.agent_sha256, signal);
   const refusal = (result: Record<string, unknown>) =>
     result.error_code === undefined
       ? null
@@ -240,7 +238,13 @@ export function startMethods(
       arguments: Args,
       execute: async (
         args: z.infer<typeof Args>,
-        ctx: Context & Pick<RunnerContext, "writeResource">,
+        ctx: Context & {
+          writeResource: (
+            type: string,
+            name: string,
+            value: z.infer<typeof Preparation>,
+          ) => Promise<unknown>;
+        },
       ) => {
         const gateway = new GatewayOperation(makeHttp(ctx), args);
         const current = Parent.parse(await gateway.read(ctx.signal));

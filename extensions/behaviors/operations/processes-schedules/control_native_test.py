@@ -11,6 +11,9 @@ class ScheduleNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules')
+        helper = self.repo/'extensions/behaviors/operations/node/system_command.ts'
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes((ROOT/'extensions/behaviors/operations/node/system_command.ts').read_bytes())
         module = self.repo/'extensions/behaviors/operations/processes-schedules/control.ts'
         module.write_text('import {http, action} from "./control_native_fixture.ts";\n'+module.read_text().replace('export const behavior = scheduleControl();', 'export const behavior = scheduleControl(() => http, action);'))
         source = ROOT/'workflows/workflow-operation-schedule-control.yaml'

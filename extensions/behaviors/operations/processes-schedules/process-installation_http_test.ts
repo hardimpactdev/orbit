@@ -55,7 +55,14 @@ Deno.test("real Gateway HTTP keeps Process private material out of native inputs
       if (url.pathname.endsWith("private-material")) {
         privateReads++;
         return Response.json({
-          data: { installation: { runtime: "systemd", content } },
+          data: {
+            installation: {
+              runtime: "systemd",
+              content,
+              environment:
+                "# Orbit Process 7\nPASSWORD=private-loopback-canary\n",
+            },
+          },
         }, { headers: { "Cache-Control": "no-store" } });
       }
       if (request.method === "GET" && reads++ === 0) {

@@ -1,6 +1,9 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
-import { installProcess } from "./process-installation.ts";
-import type { localAgent } from "./agent.ts";
+import {
+  installProcess,
+  installProcessLocal,
+  installProcessWithTransport,
+} from "./process-installation.ts";
 
 const content = "# Orbit Process 7\n[Service]\nExecStart=/usr/bin/true\n";
 const digest = async (value: string) =>
@@ -30,7 +33,11 @@ function fixture(override: Record<string, Record<string, unknown>> = {}) {
     "process.status": { state: "inactive", private: "must-not-escape" },
     "process.check-release": { available: true },
   };
-  const invoke: typeof localAgent = (name, input, pin) => {
+  const invoke: NonNullable<Parameters<typeof installProcess>[3]> = (
+    name,
+    input,
+    pin,
+  ) => {
     calls.push({ name, input, pin });
     return Promise.resolve(
       override[name] ?? defaults[name] ?? {},
@@ -39,7 +46,14 @@ function fixture(override: Record<string, Record<string, unknown>> = {}) {
   const material = {
     withPrivateMaterial: async (
       use: (value: Record<string, unknown>) => Promise<void>,
-    ) => await use({ installation: { runtime: "systemd", content } }),
+    ) =>
+      await use({
+        installation: {
+          runtime: "systemd",
+          content,
+          environment: "# Orbit Process 7\nTOKEN=private-value\n",
+        },
+      }),
   };
   return { calls, invoke, material };
 }
@@ -54,7 +68,12 @@ Deno.test("Process install stages and activates an owned stopped unit, returning
     "process.activate-unit",
     "process.status",
   ]);
-  assertEquals(f.calls[0].input, { process_id: 7, unit: base.name, content });
+  assertEquals(f.calls[0].input, {
+    process_id: 7,
+    unit: base.name,
+    content,
+    environment: "# Orbit Process 7\nTOKEN=private-value\n",
+  });
   assertEquals(f.calls[1].input, {
     process_id: 7,
     unit: base.name,
@@ -243,4 +262,53 @@ Deno.test("Docker installation keeps command/environment callback-local and bind
     installProcess(base, material, undefined, f.invoke)
   );
   assertEquals(f.calls, []);
+});
+
+Deno.test("same-root local installer uses the caller transport without Gateway or agent actions", async () => {
+  const calls: unknown[] = [];
+  const outcome = await installProcessLocal({
+    ...base,
+    directory: "/home/orbit/releases/current",
+  }, {
+    runtime: "systemd",
+    content,
+    environment: "# Orbit Process 7\nTOKEN=private-value\n",
+  }, (request) => {
+    calls.push(request);
+    return Promise.resolve({ success: false, stdout: "" });
+  });
+  assertEquals(outcome, { error_code: "process.release_unavailable" });
+  assertEquals(calls, [{
+    command: "/usr/bin/sudo",
+    args: ["-n", "--", "/usr/bin/test", "-d", "/home/orbit/releases/current"],
+    stdin: undefined,
+    timeoutMs: 300000,
+  }]);
+});
+
+Deno.test("parent callback installer accepts the canonical SystemTransport without a child or projection", async () => {
+  const f = fixture();
+  let reads = 0;
+  let commands = 0;
+  const privateMaterial = {
+    withPrivateMaterial: async (
+      use: (value: Record<string, unknown>) => Promise<void>,
+    ) => {
+      reads++;
+      await f.material.withPrivateMaterial(use);
+    },
+  };
+  assertEquals(
+    await installProcessWithTransport(
+      { ...base, directory: "/nonexistent-orbit-native-parent-proof" },
+      privateMaterial,
+      () => {
+        commands++;
+        return Promise.resolve({ success: false, stdout: "" });
+      },
+    ),
+    { error_code: "process.release_unavailable" },
+  );
+  assertEquals(reads, 1);
+  assertEquals(commands, 1);
 });

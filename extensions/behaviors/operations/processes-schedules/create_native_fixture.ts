@@ -13,6 +13,9 @@ export function http(method: string, url: string, body?: unknown) {
         data: {
           installation: {
             runtime: "systemd",
+            environment: `# Orbit Process 7\nPASSWORD=${
+              Deno.env.get("PROCESS_INSTALLATION_SECRET")
+            }\n`,
             content: `[Service]\nEnvironment=PASSWORD=${
               Deno.env.get("PROCESS_INSTALLATION_SECRET")
             }\n`,

@@ -14,6 +14,9 @@ class ProcessCreationNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules', 'operations/routes')
+        helper = self.repo/'extensions/behaviors/operations/node/system_command.ts'
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes((ROOT/'extensions/behaviors/operations/node/system_command.ts').read_bytes())
         self.secret = uuid.uuid4().hex
         self.secrets = (self.secret,)
         self.native_env = {'PROCESS_INSTALLATION_SECRET': self.secret}

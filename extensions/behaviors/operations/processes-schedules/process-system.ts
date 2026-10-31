@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { DockerEngine } from "../_lib/docker_engine.ts";
 import { type SystemCommand, systemCommand } from "./system.ts";
 
 const controls = (value: string) =>
@@ -165,13 +166,26 @@ function publishedPorts(values: string[]) {
 
 /** Fixed system actions only. The enclosing native model lock owns serialization. */
 class ProcessSystem {
+  private engine: DockerEngine;
+
   constructor(
     private command: SystemCommand,
     private signal?: AbortSignal,
     private sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms)),
     private beforeContainerReplacement?: BeforeContainerReplacement,
-  ) {}
+  ) {
+    this.engine = new DockerEngine(async (input, signal) => {
+      const reply = await this.command(
+        input.command,
+        input.args,
+        input.stdin,
+        signal,
+        input.timeoutMs,
+      );
+      return { success: reply.code === 0, stdout: reply.stdout };
+    });
+  }
 
   private run(
     program: string,
@@ -179,6 +193,12 @@ class ProcessSystem {
     stdin?: string,
     timeout = 300_000,
   ) {
+    if (program === "/usr/bin/docker") {
+      return this.engine.call(args, this.signal, timeout).then((reply) => ({
+        code: reply.success ? 0 : 1,
+        stdout: reply.stdout,
+      }));
+    }
     return this.command(
       "/usr/bin/sudo",
       ["-n", "--", program, ...args],
@@ -272,13 +292,46 @@ class ProcessSystem {
   private async write(path: string, content: string, mode: string) {
     const previous = await this.meta(path);
     if (previous) this.owned(previous, 0x8000);
-    await this.must(
-      "/usr/bin/install",
-      ["--mode", mode, "--owner", "0", "--group", "0", "/dev/stdin", path],
-      "process.converge_failed",
-      content,
-    );
-    await this.must("/usr/bin/sync", ["-f", path], "process.converge_failed");
+    const directory = path.slice(0, path.lastIndexOf("/"));
+    const temporary = (await this.must("/usr/bin/mktemp", [
+      "--tmpdir=" + directory,
+      ".orbit-process-XXXXXXXXXX",
+    ], "process.converge_failed")).trim();
+    if (
+      !temporary.startsWith(directory + "/.orbit-process-") ||
+      !/^[A-Za-z0-9]{10}$/.test(
+        temporary.slice((directory + "/.orbit-process-").length),
+      )
+    ) refuse();
+    try {
+      const staged = await this.meta(temporary);
+      if (!staged) refuse();
+      this.owned(staged, 0x8000, 0o600);
+      await this.must(
+        "/usr/bin/dd",
+        ["of=" + temporary, "status=none"],
+        "process.converge_failed",
+        content,
+      );
+      await this.must(
+        "/usr/bin/chmod",
+        [mode, "--", temporary],
+        "process.converge_failed",
+      );
+      await this.must(
+        "/usr/bin/sync",
+        ["-f", temporary],
+        "process.converge_failed",
+      );
+      await this.rename(temporary, path);
+      await this.must(
+        "/usr/bin/sync",
+        ["-f", directory],
+        "process.converge_failed",
+      );
+    } finally {
+      await this.run("/usr/bin/rm", ["--force", "--", temporary]);
+    }
   }
   private async rename(from: string, to: string) {
     await this.must("/usr/bin/mv", [
@@ -598,14 +651,16 @@ class ProcessSystem {
     ], "process.remove_failed");
     const paths: string[] = [];
     for (const entry of entries.split("\0").filter(Boolean)) {
+      const temporary = /^\.orbit-process-[A-Za-z0-9]{10}$/.test(entry);
       if (
-        entry !== ".environment.pending" && !/^[a-f0-9]{64}\.env$/.test(entry)
+        entry !== ".environment.pending" && !temporary &&
+        !/^[a-f0-9]{64}\.env$/.test(entry)
       ) refuse();
       const path = `${owner}/${entry}`;
       const file = await this.meta(path);
       if (!file) refuse();
       this.owned(file, 0x8000, 0o600);
-      if (entry !== ".environment.pending") {
+      if (entry !== ".environment.pending" && !temporary) {
         const content = await this.read(path);
         if (
           !content.startsWith(`# Orbit Process ${id}\n`) ||
@@ -790,30 +845,10 @@ class ProcessSystem {
       await this.docker(["image", "pull", "--quiet", input.image]);
     }
     // Docker's private command and environment are JSON on protected stdin.
-    const reply = await this.must(
-      "/usr/bin/curl",
-      [
-        "-q",
-        "--fail",
-        "--silent",
-        "--max-time",
-        "900",
-        "--unix-socket",
-        "/var/run/docker.sock",
-        "--request",
-        "POST",
-        "--header",
-        "Content-Type: application/json",
-        "--data-binary",
-        "@-",
-        `http://localhost/containers/create?name=${artifact}`,
-      ],
-      "process.converge_failed",
-      JSON.stringify(body),
-      900_000,
-    );
+    const reply = await this.engine.create(artifact, body, this.signal);
+    if (!reply.success) refuse("process.converge_failed");
     const created = z.object({ Id: z.string().regex(/^[a-f0-9]{64}$/) })
-      .safeParse(JSON.parse(reply));
+      .safeParse(JSON.parse(reply.stdout));
     if (!created.success) refuse("process.candidate_invalid");
   }
   private async restoreDocker(input: ContainerInput, rollback: string) {
@@ -862,6 +897,7 @@ class ProcessSystem {
     let candidate = await this.container(input.process_id, candidateName);
     if (running && stopped) refuse("process.recovery_required");
     const previous = running ?? stopped;
+    let readyVerified = false;
     if (
       input.expected_spec &&
       ((previous && previous.spec !== input.expected_spec) ||
@@ -899,6 +935,7 @@ class ProcessSystem {
             throw error;
           }
           await this.docker(["container", "rm", "--force", rollback]);
+          readyVerified = true;
           canonical = { ...canonical, running: input.desired === "running" };
         }
       }
@@ -907,7 +944,7 @@ class ProcessSystem {
     if (canonical?.spec === input.spec) {
       await this.cleanupCandidate(input);
       await this.desired(input, canonical);
-      await this.ready(input);
+      if (!readyVerified) await this.ready(input);
       return {};
     }
     if (!canonical && candidate?.spec === input.spec) {
@@ -918,7 +955,13 @@ class ProcessSystem {
     }
     await this.cleanupCandidate(input);
     const prepared = await this.beforeContainerReplacement?.();
-    if (prepared?.error_code !== undefined) return prepared;
+    if (prepared?.error_code !== undefined) {
+      return {
+        error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/).parse(
+          prepared.error_code,
+        ),
+      };
+    }
     await this.create(input, canonical ? candidateName : canonicalName);
     const created = await this.container(
       input.process_id,

@@ -1,6 +1,10 @@
 import { z } from "npm:zod@4.4.3";
 import type { GatewayOperation } from "../_lib/direct.ts";
-import { localAgent } from "./agent.ts";
+import { processSystem, type ProcessSystemCommand } from "./process-system.ts";
+import {
+  localSystemCommand,
+  type SystemTransport,
+} from "../node/system_command.ts";
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Runtime = z.enum(["systemd", "docker"]);
@@ -56,8 +60,12 @@ const Container = z.object({
   ).max(4096),
   environment: z.record(z.string(), z.string()),
 }).strict();
-const Material = z.discriminatedUnion("runtime", [
-  z.object({ runtime: z.literal("systemd"), content: z.string().min(1) })
+export const ProcessInstallationMaterial = z.discriminatedUnion("runtime", [
+  z.object({
+    runtime: z.literal("systemd"),
+    content: z.string().min(1),
+    environment: z.string().min(1),
+  })
     .strict(),
   z.object({
     runtime: z.literal("docker"),
@@ -65,18 +73,70 @@ const Material = z.discriminatedUnion("runtime", [
     definition: Container,
   }).strict(),
 ]);
-type Outcome = { ready: true; state: string } | { error_code: string };
+export type ProcessInstallationOutcome = { ready: true; state: string } | {
+  error_code: string;
+};
+
+type Invoke = (
+  name: ProcessSystemCommand,
+  input: Record<string, unknown>,
+  admittedDigest: string,
+  signal?: AbortSignal,
+) => Promise<Record<string, unknown>>;
+const localProcess: Invoke = (name, input, _digest, signal) =>
+  processSystem()(name, input, signal);
+
+/** Compose installation inside an existing native root, with no private fetch or projection. */
+export function installProcessLocal(
+  input: z.infer<typeof ProcessInstallation>,
+  material: z.infer<typeof ProcessInstallationMaterial>,
+  transport: SystemTransport = localSystemCommand,
+  signal?: AbortSignal,
+): Promise<ProcessInstallationOutcome> {
+  return installProcessWithTransport(
+    input,
+    {
+      withPrivateMaterial: async (use) => await use({ installation: material }),
+    },
+    transport,
+    signal,
+  );
+}
+
+/** Existing parent callback and canonical transport; no child root or projection. */
+export function installProcessWithTransport(
+  input: z.infer<typeof ProcessInstallation>,
+  privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
+  transport: SystemTransport,
+  signal?: AbortSignal,
+): Promise<ProcessInstallationOutcome> {
+  const action = processSystem(
+    async (command, args, stdin, abort, timeoutMs = 300_000) => {
+      const result = await transport(
+        { command, args, stdin, timeoutMs },
+        abort,
+      );
+      return { code: result.success ? 0 : 1, stdout: result.stdout };
+    },
+  );
+  return installProcess(
+    input,
+    privateMaterial,
+    signal,
+    (name, value, _digest, abort) => action(name, value, abort),
+  );
+}
 
 /** Reusable local DAG action. The parent owns traffic steps and final projection. */
 export async function installProcess(
   input: z.infer<typeof ProcessInstallation>,
   privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
   signal?: AbortSignal,
-  invoke: typeof localAgent = localAgent,
-): Promise<Outcome> {
+  invoke: Invoke = localProcess,
+): Promise<ProcessInstallationOutcome> {
   const admitted = ProcessInstallation.parse(input);
   const call = (
-    name: Parameters<typeof localAgent>[0],
+    name: ProcessSystemCommand,
     data: Record<string, unknown>,
   ) => invoke(name, data, admitted.agent_sha256, signal);
   const artifact = {
@@ -84,10 +144,12 @@ export async function installProcess(
     runtime: admitted.runtime,
     name: admitted.name,
   };
-  let outcome: Outcome | undefined;
+  let outcome: ProcessInstallationOutcome | undefined;
   try {
     await privateMaterial.withPrivateMaterial(async (material) => {
-      const installation = Material.parse(material.installation);
+      const installation = ProcessInstallationMaterial.parse(
+        material.installation,
+      );
       if (installation.runtime !== admitted.runtime) {
         throw new Error("Process runtime differs");
       }
@@ -143,6 +205,7 @@ export async function installProcess(
           process_id: admitted.process_id,
           unit: admitted.name,
           content: installation.content,
+          environment: installation.environment,
         });
         if (refused(staged)) return;
         const stage = z.object({

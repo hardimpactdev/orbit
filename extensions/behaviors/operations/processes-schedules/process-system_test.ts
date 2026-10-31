@@ -33,6 +33,7 @@ class Host {
   containers = new Map<string, Container>();
   calls: Call[] = [];
   active = new Set<string>();
+  temporaryCount = 0;
   fail?: (call: Call) => boolean;
   constructor() {
     for (const path of ["/etc", "/etc/orbit", units]) this.dir(path);
@@ -62,7 +63,11 @@ class Host {
     assertEquals(program, "/usr/bin/sudo");
     assertEquals(fullArgs.slice(0, 2), ["-n", "--"]);
     const actual = fullArgs[2];
-    const args = fullArgs.slice(3);
+    let args = fullArgs.slice(3);
+    if (actual === "/usr/bin/docker") {
+      assertEquals(args[0], "--host=unix:///var/run/docker.sock");
+      args = args.slice(1);
+    }
     const call = { program: actual, args, stdin };
     this.calls.push(call);
     if (this.fail?.(call)) return bad();
@@ -97,9 +102,18 @@ class Host {
       case "/usr/bin/chmod":
         this.files.get(args.at(-1)!)!.mode = parseInt(args[0], 8);
         return good();
-      case "/usr/bin/install":
-        this.file(args.at(-1)!, stdin!, parseInt(args[1], 8));
+      case "/usr/bin/mktemp": {
+        const directory = args[0].slice("--tmpdir=".length);
+        const path = `${directory}/.orbit-process-${
+          String(++this.temporaryCount).padStart(10, "0")
+        }`;
+        this.file(path, "", 0o600);
+        return { code: 0, stdout: path + "\n" };
+      }
+      case "/usr/bin/dd": {
+        this.files.get(args[0].slice(3))!.content = stdin!;
         return good();
+      }
       case "/usr/bin/mv": {
         const source = args.at(-2)!;
         const destination = args.at(-1)!;
@@ -207,7 +221,14 @@ class Host {
   invoke = processSystem(this.run, () => Promise.resolve());
   mutations() {
     return this.calls.filter((call) =>
-      ["/usr/bin/install", "/usr/bin/mv", "/usr/bin/rm", "/usr/bin/rmdir"]
+      [
+        "/usr/bin/mktemp",
+        "/usr/bin/dd",
+        "/usr/bin/chmod",
+        "/usr/bin/mv",
+        "/usr/bin/rm",
+        "/usr/bin/rmdir",
+      ]
         .includes(call.program) ||
       (call.program === "/usr/bin/systemctl" && call.args[0] !== "is-active") ||
       (call.program === "/usr/bin/docker" &&
@@ -373,10 +394,13 @@ Deno.test("failed replacement restores old unit and immutable environment genera
     host.files.has(`${environments}/7/${await digest(next.environment)}.env`),
   );
   const backup = host.calls.find((call) =>
-    call.program === "/usr/bin/install" &&
+    call.program === "/usr/bin/mv" &&
     call.args.at(-1) === `${candidates}/.${unit}.backup`
   )!;
-  assertEquals(backup.args[1], "0600");
+  const protectedWrite = host.calls.find((call) =>
+    call.program === "/usr/bin/chmod" && call.args.at(-1) === backup.args.at(-2)
+  )!;
+  assertEquals(protectedWrite.args[0], "0600");
 });
 
 Deno.test("on-demand activation restarts without enabling boot activation", async () => {
@@ -576,6 +600,50 @@ Deno.test("Docker stale expected spec or ambiguous rollback refuses before effec
   }
 });
 
+Deno.test("Docker recovered publication checks health once before removing rollback and checks afresh on the next call", async () => {
+  const host = new Host();
+  const input = {
+    ...dockerInput(),
+    health: {
+      url: "http://127.0.0.1:8787/ready",
+      attempts: 1,
+      interval_seconds: 0,
+    },
+  };
+  host.containers.set(container, {
+    owner: 7,
+    spec: input.spec,
+    running: true,
+  });
+  host.containers.set(container + "-rollback-running", {
+    owner: 7,
+    spec: "a".repeat(64),
+    running: false,
+  });
+  let probes = 0;
+  host.fail = (call) =>
+    call.program === "/usr/bin/curl" && !call.args.includes("--unix-socket") &&
+    ++probes > 1;
+  assertEquals(await host.invoke("process.converge-container", input), {});
+  assertEquals(probes, 1);
+  assertEquals([...host.containers.keys()], [container]);
+  const probeIndex = host.calls.findIndex((call) =>
+    call.program === "/usr/bin/curl"
+  );
+  const removalIndex = host.calls.findIndex((call) =>
+    call.program === "/usr/bin/docker" && call.args[1] === "rm"
+  );
+  assert(probeIndex >= 0 && probeIndex < removalIndex);
+
+  host.calls = [];
+  host.fail = undefined;
+  assertEquals(await host.invoke("process.converge-container", input), {});
+  assertEquals(
+    host.calls.filter((call) => call.program === "/usr/bin/curl").length,
+    1,
+  );
+});
+
 Deno.test("Docker interrupted publication restores rollback then safely converges in the same call", async () => {
   const host = new Host();
   host.containers.set(container + "-rollback-running", {
@@ -710,7 +778,11 @@ Deno.test("before-replacement refusal keeps the prior running server in place", 
         expected_running: true,
       },
       undefined,
-      () => Promise.resolve({ error_code: "analytics.initialization_failed" }),
+      () =>
+        Promise.resolve({
+          error_code: "analytics.initialization_failed",
+          diagnostic: "private-callback-value",
+        }),
     ),
     { error_code: "analytics.initialization_failed" },
   );
@@ -743,4 +815,56 @@ Deno.test("ephemeral container removal requests anonymous volume deletion only a
       call.program === "/usr/bin/docker" && call.args.includes("--volumes")
     ),
   );
+});
+
+Deno.test("failed piped write cleanup can be replayed and owned temporary removed with its Process", async () => {
+  const host = new Host();
+  const input = await stageInput();
+  host.fail = (call) =>
+    call.program === "/usr/bin/dd" || call.program === "/usr/bin/rm";
+  assertEquals(await host.invoke("process.stage-unit", input), {
+    error_code: "process.converge_failed",
+  });
+  assert(
+    [...host.files.keys()].some((path) => path.includes("/.orbit-process-")),
+  );
+  host.fail = undefined;
+  assertEquals(await host.invoke("process.stage-unit", input), {
+    staged: true,
+    previous: false,
+    state: null,
+  });
+  assertEquals(
+    await host.invoke("process.remove", {
+      process_id: 7,
+      runtime: "systemd",
+      name: unit,
+      vite: null,
+    }),
+    {},
+  );
+  assert(
+    ![...host.files.keys()].some((path) =>
+      path.startsWith(environments + "/7/")
+    ),
+  );
+});
+Deno.test("foreign temporary generation refuses removal before effects", async () => {
+  const host = new Host();
+  const input = await stageInput();
+  await host.invoke("process.stage-unit", input);
+  const orphan = environments + "/7/.orbit-process-1234567890";
+  host.file(orphan, "partial", 0o600);
+  host.files.get(orphan)!.uid = 1000;
+  host.calls = [];
+  assertEquals(
+    await host.invoke("process.remove", {
+      process_id: 7,
+      runtime: "systemd",
+      name: unit,
+      vite: null,
+    }),
+    { error_code: "process.invalid" },
+  );
+  assertEquals(host.mutations(), []);
 });

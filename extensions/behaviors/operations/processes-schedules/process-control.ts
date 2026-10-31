@@ -6,7 +6,7 @@ import {
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { localAgent, type LocalCommand } from "./agent.ts";
+import { type LocalCommand, localProcessAction } from "./native-action.ts";
 import { createMethods } from "./create.ts";
 import { Input } from "./process-input.ts";
 import { Preparation, startActions, startMethods } from "./start.ts";
@@ -35,7 +35,7 @@ type Invoke = (
 ) => Promise<Record<string, unknown>>;
 
 /** The native behavior lock covers this complete, local Process mutation. */
-export function processAction(invoke: Invoke = localAgent) {
+export function processAction(invoke: Invoke = localProcessAction) {
   return async (
     kind: z.infer<typeof Kind>,
     input: z.infer<typeof Input>,
@@ -84,7 +84,7 @@ export function processControl(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   action = processAction(),
   start = startActions(),
-  install = localAgent,
+  install = localProcessAction,
 ) {
   return {
     type: "@nckrtl/process-control",

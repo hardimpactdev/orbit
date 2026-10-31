@@ -6,7 +6,7 @@ import {
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { localAgent } from "./agent.ts";
+import { localProcessAction } from "./native-action.ts";
 import { installProcess, ProcessInstallation } from "./process-installation.ts";
 import { Preparation, startActions, StartInput } from "./start.ts";
 
@@ -52,7 +52,7 @@ type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 /** Same-root installation; only the final native step projects the parent. */
 export function createMethods(
   makeHttp: (ctx: Context) => Http,
-  invoke: typeof localAgent = localAgent,
+  invoke: typeof localProcessAction = localProcessAction,
   traffic = startActions(),
 ) {
   return {
