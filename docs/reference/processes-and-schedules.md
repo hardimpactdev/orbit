@@ -379,3 +379,13 @@ Four internal callers still require synchronous bootstrap completion: AI Router 
 Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Rollback is a revert PR.
 
 Process updates run in `operation-process-update` on the admitted Node. The Gateway records the requested specification and projects the native outcome. It does not execute an update or record executor steps.
+
+### Placed Process command components
+
+The `@nckrtl/process-command-assets` metadata method resolves shipped Python scripts and serializes the public `control` and optional `installation` descriptors. It performs no host action and reads no private material. Parents run each script in a separate placed `command/shell` step on the same worker.
+
+The control script performs one start, stop or restart. The enable script changes only systemd boot policy. Hibernation stop therefore preserves boot policy and recorded desired state. Inspect returns bounded owned state; verify asserts the requested state once. Native dependency conditions, guards and resume control execution. A parent never hides these actions in a TypeScript installer.
+
+Each command checks the exact Process identity. Systemd files must be regular, root-owned, in the root group, singly linked and not writable by other users; their owner marker must match. Docker commands use the local Unix socket and verify the canonical managed Process labels before acting. Refusals return fixed error codes without command output.
+
+Parents can also compose the shipped Process installation and retirement scripts. Each file performs one action: protected environment publication, unit staging, validation, backup, publication, reload, control, verification, restoration or cleanup. Docker creation, rename, control and removal remain distinct native steps. Existing installation material arrives through a vault environment value; public Process descriptors stay in workflow history. The parent owns all ordering, guards, recovery and final projection.
