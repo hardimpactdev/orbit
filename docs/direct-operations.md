@@ -129,6 +129,44 @@ Sources:
 [failure semantics](https://swamp-club.com/manual/reference/remote-execution/failure-semantics),
 [idempotency](https://swamp-club.com/manual/how-to/make-workflows-idempotent).
 
+## Node agent recovery
+
+`operation-node-agent-rekey` executes the admitted `node.agent_rekey` intent on
+`orbit-node-N` with the matching `node=N` label. A native observation
+checkpoints cancellation before the write. Resume reuses that observation and
+reconciles an uncertain rotation before settlement. Any Gateway cancellation
+requested after observe is ignored by this attempt, including on resume. A native
+abort before invoke still cancels without a Node effect.
+The stable per-Node method lock covers local `agent.configure`, private hash
+storage and bounded projection.
+
+Swamp strictly validates the safe input, binary pin and exact Node worker
+configuration before dispatch. The configuration stays unchanged. Recovery
+permits explicit secret rotation and passes null worker credentials to preserve
+existing files. Only the effect callback sees the returned hash. The shared
+private-output client writes it to the owning Node; no native argument, resource
+or result contains it.
+
+Only an open, uncertain retained configure Operation can authorize recovery. A
+successful configure is not a recovery source. An existing parent-owned receipt
+keeps its original ownership checks; recovery creates no child. The Gateway
+records the operator's explicit attempt identity and checks ownership. It probes
+the original attempt's kernel lease at admission, intent read and hash storage;
+a live configure still holding that lease refuses. The probe uses the owning
+ancestor lease for retained children and releases it immediately. The Gateway
+runs no rekey SSH, agent command, child or wait and holds no execution lease
+across native recovery. Repeating the same attempt
+reuses admission. After a terminal refusal or cancellation, the operator
+supplies another attempt number. Known pre-effect refusals are bounded.
+Configure, worker-readiness, memory and storage errors that may follow rotation
+leave the intent unresolved. Workerless Nodes, including VPN/usexit, refuse
+rekey; no PHP execution path remains.
+
+`rekey_direct_native_test.py` uses the shared native harness and production
+`gatewayHttp` client, including a secret-bearing failed storage response. It
+scans stdout, stderr and every scratch file. Only the agent transport is fake;
+exact live worker placement and real recovery remain separate canary proof.
+
 ## Scoped GitHub credentials
 
 A checked-in declaration can add
@@ -160,14 +198,15 @@ The shared helper attempts to revoke the token at the fixed GitHub
 then drops its reference. Revocation is best effort: failure reports only
 `operation.github_token_revoke_failed` and preserves the action's result or
 refusal. A successful GitHub write must not fail because revocation failed. The
-helper also attempts revocation when a private reply contains a token string
-but its grant fails validation. Each adopting family must bound mints per native
-run and make its GitHub writes idempotent. The instance limit does not enforce a
+helper also attempts revocation when a private reply contains a token string but
+its grant fails validation. Each adopting family must bound mints per native run
+and make its GitHub writes idempotent. The instance limit does not enforce a
 run-wide cap across steps or resumed executions. Reconcile an uncertain write
-before retrying it. The expiry check uses the client's injected clock. The helper refuses callback
-results containing the credential and replaces thrown diagnostics with fixed
-codes. Family results remain bounded and secret-free. Native Swamp owns retry
-policy; token minting adds no claim, lease, receipt or retry loop.
+before retrying it. The expiry check uses the client's injected clock. The
+helper refuses callback results containing the credential and replaces thrown
+diagnostics with fixed codes. Family results remain bounded and secret-free.
+Native Swamp owns retry policy; token minting adds no claim, lease, receipt or
+retry loop.
 
 Mint callers match their Operation Node. The shared private reader has no
 control-plane exception: Node209 cannot mint for a Gateway14-owned intent.
@@ -175,3 +214,11 @@ Control-plane consumers must admit the intent on the executing Node. Safe intent
 reads and result projection retain their existing authority. Each successful
 mint records one token-free Gateway Activity containing Operation, run, caller
 Node, repository, permissions and expiry.
+
+The canonical `@nckrtl/route-publication.publishCaddy` method reads fresh public
+input inside its existing Node model lock. An admitted participant may publish
+its own `input.caddy_publication` while the returned parent keeps its root Node.
+The method checks the Operation ID, kind and artifact Node; shared HTTP binds
+the root run and caller. Pass the placed Node as `node_id`, or keep the root
+`node_id` and pass `target_node_id` for the placed Node. The step returns its
+outcome to the native DAG and does not post the parent's result.

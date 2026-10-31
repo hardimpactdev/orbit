@@ -203,7 +203,7 @@ export function imageCloud(
       const plans = z.object({
         plans: z.object({
           plan: z.array(
-            z.object({ name: z.string(), storage_tier: z.string().optional() }),
+            z.object({ name: z.string(), storage_tier: z.string().nullish() }),
           ),
         }),
       })
@@ -211,7 +211,7 @@ export function imageCloud(
           plan.name === input.upcloud.plan
         );
       if (plans.length !== 1) throw refuse();
-      const tier = plans[0].storage_tier;
+      const tier = plans[0].storage_tier ?? undefined;
       if (tier !== undefined && !/^[a-z]{1,16}$/.test(tier)) throw refuse();
       const user = {
         name: "orbit",

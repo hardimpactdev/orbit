@@ -1,6 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { appStepRuntime } from "./app_step_runtime.ts";
+import { VpRuntime } from "./vp_requirements.ts";
+
+export const AppVpRuntime = VpRuntime.extend({
+  owner: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/).refine((x) =>
+    x !== "root"
+  ),
+});
+export type AppVpRuntime = z.infer<typeof AppVpRuntime>;
 
 export const StepTarget = z.discriminatedUnion("variant", [
   z.object({
@@ -25,13 +33,16 @@ export const AppStep = z.object({
   phase: z.enum(["setup", "teardown", "before_activation", "after_activation"]),
   command_digest: z.string().regex(/^[a-f0-9]{64}$/),
   timeout_seconds: z.number().int().min(1).max(3600),
+  vp_environment: AppVpRuntime.nullable().optional(),
 }).strict();
 export type AppStep = z.infer<typeof AppStep>;
 export const AppStepResult = z.union([
   z.object({
     exit_code: z.number().int(),
     timed_out: z.boolean(),
-    output_tail: z.string().max(2048),
+    output_tail: z.string().max(2048).refine((value) =>
+      new TextEncoder().encode(value).length <= 2048
+    ),
     truncated: z.boolean(),
   }).strict(),
   z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),
@@ -59,10 +70,15 @@ export async function currentProgram(
   http: Http,
   step: AppStep,
 ): Promise<string> {
+  const development = step.target.variant === "checkout" &&
+    !["setup", "teardown"].includes(step.phase);
   const path = (step.phase === "setup" || step.phase === "teardown")
     ? `/api/v1/projects/${step.project_id}/${step.phase}-steps`
+    : development
+    ? `/api/v1/projects/${step.project_id}/development-deploy-steps`
     : `/api/v1/instances/${step.instance_id}/deploy-steps`;
   try {
+    if (development && step.phase !== "before_activation") throw new Error();
     const response = await http("GET", path);
     if (response.status !== 200) throw new Error();
     const rows =
@@ -70,7 +86,8 @@ export async function currentProgram(
         .data;
     const matches = rows.filter((row) =>
       row.name === step.name &&
-      (["setup", "teardown"].includes(step.phase) || row.phase === step.phase)
+      (["setup", "teardown"].includes(step.phase) ||
+        (development ? row.phase === undefined : row.phase === step.phase))
     );
     if (matches.length !== 1) throw new Error();
     const row = matches[0];
@@ -86,11 +103,33 @@ export async function currentProgram(
   }
 }
 
+export const StepExecution = z.object({
+  operation_id: z.number().int().positive(),
+  run_id: z.string().uuid(),
+}).strict();
+
+/** Public identity only; private commands and environment never enter argv. */
+export function stepRunner(
+  execution: z.infer<typeof StepExecution>,
+  step: Pick<AppStep, "name" | "phase">,
+) {
+  const bound = StepExecution.parse({
+    operation_id: execution.operation_id,
+    run_id: execution.run_id,
+  });
+  const admitted = AppStep.pick({ name: true, phase: true }).parse({
+    name: step.name,
+    phase: step.phase,
+  });
+  return `orbit-deploy-step:${bound.operation_id}:${bound.run_id}:${admitted.phase}.${admitted.name}`;
+}
+
 /** One workflow-owned sudo step. User, directory and program are never caller-selected argv. */
 export async function sudoAppStep(
   admitted: AppStep,
   script: string,
   signal?: AbortSignal,
+  execution?: z.infer<typeof StepExecution>,
 ): Promise<AppStepResult> {
   const step = AppStep.parse(admitted);
   if (
@@ -110,6 +149,7 @@ export async function sudoAppStep(
       "-I",
       "-c",
       appStepRuntime,
+      ...(execution ? [stepRunner(execution, step)] : []),
     ],
     cwd: "/",
     clearEnv: true,
@@ -136,6 +176,9 @@ export async function sudoAppStep(
       command_digest: step.command_digest,
       timeout_seconds: step.timeout_seconds,
       script,
+      ...(step.vp_environment === undefined
+        ? {}
+        : { vp_environment: step.vp_environment }),
     })));
     await writer.close();
     for await (const part of child.stdout) {

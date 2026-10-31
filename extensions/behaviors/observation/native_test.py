@@ -19,7 +19,7 @@ class ObservationNativeTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.repo = Path(self.temp.name)
         shutil.copy(ROOT / ".swamp.yaml", self.repo)
-        for family in ("observation", "automatic-deploy", "operation-runner"):
+        for family in ("observation", "automatic-deploy"):
             shutil.copytree(ROOT / "extensions/behaviors" / family,
                             self.repo / "extensions/behaviors" / family)
         entry = self.repo / "extensions/behaviors/observation/mod.ts"
@@ -27,7 +27,10 @@ class ObservationNativeTest(unittest.TestCase):
                          entry.read_text().replace("...observation()", "...observation(() => fixtureHttp)"))
         (self.repo / "workflows").mkdir()
         for path in ROOT.glob("workflows/workflow-observation-*.yaml"):
-            shutil.copy(path, self.repo / "workflows" / path.name)
+            # This standalone read fixture has no dispatcher or enrolled workers.
+            # Production workflow placement remains unchanged.
+            (self.repo / "workflows" / path.name).write_text(
+                path.read_text().replace("labels: { pool: services-local }\n", ""))
         self.state = self.repo / "native-observation.json"
         self.state.write_text(json.dumps({"calls": [], "reads": [], "receipts": {}, "interrupt": False}))
         self.env = {**os.environ, "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}

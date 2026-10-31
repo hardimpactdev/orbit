@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { type DevelopmentContext, DevelopmentState } from "./development.ts";
 import { GatewayClient, gatewayHttp } from "./gateway.ts";
 import {
   type Gateway,
@@ -26,6 +27,11 @@ interface Context {
   ): Promise<{ name: string }>;
 }
 export interface LiveGateway extends Gateway {
+  development(
+    context: DevelopmentContext,
+    now: string,
+    filter: number[],
+  ): Promise<{ name: string }[]>;
   discover(filter: number[]): Promise<number[]>;
   guard(instance: number, observation: Observation): Promise<void>;
   publish(
@@ -55,6 +61,12 @@ export function automaticDeploy(
       ),
     }),
     resources: {
+      development: {
+        description: "Development admission intent and public policy state",
+        schema: DevelopmentState,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
       state: {
         description:
           "Policy memory, admission intent and policy-event receipts; never deploy success",
@@ -66,7 +78,7 @@ export function automaticDeploy(
     methods: {
       tick: {
         description:
-          "Discover enabled production Instances and run one live tick per Instance, after Gateway ownership admission.",
+          "Discover production and default development Instances and run native policy after Gateway ownership admission.",
         arguments: TickArguments,
         execute: async (input: { instances?: number[] }, context: Context) => {
           const { instances } = TickArguments.parse(input);
@@ -146,6 +158,9 @@ export function automaticDeploy(
               failures.push({ instance, error });
             }
           }
+          handles.push(
+            ...await client.development(context, clock(), instances),
+          );
           if (failures.length) {
             throw new AggregateError(
               failures.map(({ error }) => error),

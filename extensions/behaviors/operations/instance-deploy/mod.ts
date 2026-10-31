@@ -23,7 +23,6 @@ const Kind = z.enum([
   "instance.sync_environment",
   "instance.prepare_vp_environment",
   "instance.prepare_php_runtime",
-  "instance.repair_projection",
   "instance.prepare_served_web_roots",
   "instance.synchronize_environment",
 ]);
@@ -346,7 +345,6 @@ export function instanceDeploy(
             } else if (
               operation.kind === "instance.prepare_vp_environment" ||
               operation.kind === "instance.prepare_php_runtime" ||
-              operation.kind === "instance.repair_projection" ||
               operation.kind === "instance.prepare_served_web_roots" ||
               operation.kind === "instance.synchronize_environment"
             ) {
@@ -378,8 +376,6 @@ export function instanceDeploy(
                   ]
                   : operation.kind === "instance.prepare_served_web_roots"
                   ? ["web_roots", "verification"]
-                  : operation.kind === "instance.repair_projection"
-                  ? ["projection", "verification"]
                   : operation.kind === "instance.prepare_php_runtime"
                   ? ["php_plan", "php_packages", "php_converge", "php_receipt"]
                   : [];

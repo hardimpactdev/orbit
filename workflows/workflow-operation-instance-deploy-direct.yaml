@@ -1,0 +1,28 @@
+id: 738a2f9d-dc6c-4754-92c3-f51de9cb91f9
+name: operation-instance-deploy-direct
+description: Development deployment on its admitted configured Node account.
+vaults: []
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.deploy]}
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: deploy
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels:
+      node: '${{ string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: deploy
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-deploy-direct'
+          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
+          methodName: run
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

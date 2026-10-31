@@ -26,7 +26,7 @@ class Gateway {
   childKey = "vp_environment";
   legacy = false;
   config = {
-    variant: "development",
+    variant: "production",
     php: false,
     needs_vp: false,
     steps: [{ name: "install", phase: "before_activation", required: true }],
@@ -54,9 +54,9 @@ class Gateway {
     });
     return [
       descriptor(
-        "source.resolve",
+        "source.previous",
         "source_preparation.resolve",
-        "instance.resolve-development-target",
+        "instance.inspect-release",
         {
           ...input,
           branch: "main",
@@ -67,9 +67,9 @@ class Gateway {
       ...(this.steps["source_preparation.resolve"]
         ? [
           descriptor(
-            "source.checkout",
+            "source.prepare",
             "source_preparation",
-            "instance.checkout-development-default",
+            "instance.prepare-release",
             { ...input, branch: "main", commit: "a".repeat(40) },
           ),
         ]
@@ -88,7 +88,7 @@ class Gateway {
       descriptor(
         "before_activation.install",
         "before_activation.install",
-        "instance.run-development-step",
+        "instance.run-deploy-step",
         {
           ...input,
           step: "install",
@@ -280,8 +280,8 @@ Deno.test("deployment uses exact Gateway descriptors and protected references on
   const gateway = new Gateway();
   assertEquals((await gateway.execute()).status, "succeeded");
   assertEquals(gateway.effects, [
-    "source.resolve",
-    "source.checkout",
+    "source.previous",
+    "source.prepare",
     "before_activation.install",
     "verification",
   ]);
@@ -403,13 +403,13 @@ Deno.test("deployment yields its worker for a child and resumes before scripts w
   assertEquals((await gateway.execute()).status, "waiting");
   assertEquals(gateway.completion, null);
   assertEquals(gateway.statuses.vp_environment, undefined);
-  assertEquals(gateway.effects, ["source.resolve", "source.checkout"]);
+  assertEquals(gateway.effects, ["source.previous", "source.prepare"]);
   const wait = gateway.calls.find((call) => call.path.endsWith("/wait"))!;
   assertEquals(wait.body, { worker: "workflow-7", keys: ["vp_environment"] });
   gateway.childStatus = "succeeded";
   assertEquals((await gateway.execute()).status, "succeeded");
   assertEquals(
-    gateway.effects.filter((key) => key === "source.checkout").length,
+    gateway.effects.filter((key) => key === "source.prepare").length,
     1,
   );
   assertEquals(

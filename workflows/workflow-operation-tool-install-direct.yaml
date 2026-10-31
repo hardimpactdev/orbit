@@ -1,0 +1,27 @@
+id: 07064d78-f081-476f-b770-8308e4a16790
+name: operation-tool-install-direct
+description: Install one admitted Tool on its exact Node worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tool.install] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: tools
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: apply
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/tool-direct"
+          behaviorName: '${{ "tools-node-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

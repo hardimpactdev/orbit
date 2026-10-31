@@ -1,31 +1,28 @@
 # Direct Tools intent
 
-`operation-tool-direct` runs `tool.install`, `tool.update`, `tool.remove`,
-`tool.adopt` and `tool.manager_converge` through the
-[shared direct Operation boundary](direct-operations.md). The Gateway declares
-one workflow, `writer_config: swamp.direct_writers`, immutable `tool_writer` and
-`ToolIntentProjection`. It uses `StartSwampRun` and the one
-`ORBIT_SWAMP_RUN_TOKEN`. No family token, controller, request, route, primitive
-or Gateway execution relay is added.
+`operation-tool-install-direct` runs `tool.install`. `operation-tool-direct`
+runs `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge`.
+Both use the [shared direct Operation boundary](direct-operations.md). The
+Gateway declares only fixed workflow names and `ToolIntentProjection` in its
+sole `direct-operations.php` registration. `StartOperationAction` starts the
+native root through `StartSwampRun` with the existing run token.
 
 The Gateway admits package identity, enrolled account, agent pin and public
 recipe data. Its read projection exposes only those safe inputs. Native Node
 policy selects fixed typed commands from the closed manager registry. Result
-projection stores bounded manager/package versions and refusal codes; it never
-stores manager stdout or execution receipts.
+projection stores bounded manager/package versions and refusal codes. It never
+stores manager stdout or execution receipts, or repeats native completion rules.
 
-The canary uses the existing Node209 `pool=migration` workers. Admit canary
-intent only for Node209. Converted kinds have one direct dispatch path; their
-legacy discovery and executor registrations are removed. When per-Node
-workers are available, place the action on exact `orbit-node-<admitted-node-id>`
-before fleet takeover. `tools-node-<id>` is a stable behavior identity for
-native scope serialization. The workflow uses `writes: true`, `vaults: []` and
-native placement, concurrency and retention defaults. There is no placement
-fallback or polling schedule.
+Every Tool kind targets `orbit-node-<admitted-node-id>` and its matching `node`
+label. No migration worker or other Node can receive that job. Parent workflows
+compose their own native manager steps instead of creating child Operations.
+`tools-node-<id>` stays the native serialization identity. Placement uses Swamp's
+queue, concurrency and retention defaults. A missing exact worker waits under
+the native queue policy.
 
 ## Policy and native recovery
 
-The direct and retained writers share `policy.ts`: constraints gate normal
+Native Tool actions use `policy.ts`: constraints gate normal
 candidates, install refuses silent adoption, adoption never mutates, and removal
 requires only the exact recorded root with no autoremove. Manager
 materialization is part of the native action, rather than a Gateway child
@@ -44,7 +41,7 @@ A terminal Gateway read avoids another action. Bounded Gateway HTTP calls do not
 inherit the workflow cancellation signal. Cancellation is checked before action;
 a started action must stop safely and retain an uncertain outcome if needed.
 
-## Activation gates
+## Worker execution
 
 The worker runs as the Node's configured user with its existing passwordless
 sudo. Fixed policy commands run through the admitted, root-owned local agent;
@@ -60,23 +57,22 @@ started mutation finishes under its agent deadline even if workflow cancellation
 arrives; native recovery reconciles uncertain outcomes. No socket, broker,
 account, sudo rule, token, grant or runtime unit is installed by this family.
 
-Each kind ships its direct start, writer selection and Gateway execution deletion
-in one slice. Its converted kind is also removed from legacy discovery and
-executor registration. Rollback is a revert PR. If the owning writer needs a
+Each kind ships its direct start and Gateway execution deletion together. Its converted kind is also removed from legacy discovery
+and executor registration. Rollback is a revert PR. If the owning writer needs a
 release, merge first, then canary immediately against a test target and revert
 on failure. The shared boundary lane owns final executor API deletion.
 
-All five Tool kinds use the direct workflow. The legacy `operation-tools`
+All five Tool kinds use a direct workflow. The legacy `operation-tools`
 schedule, discovery model, slot models, executor registration, claim runner and
 receipt schemas are retired. Existing native history and data are preserved;
 source retirement does not run `swamp workflow delete`.
 
-The Gateway records the bounded constraint string. `constraints.ts` is the
-Tool range evaluator in Swamp and uses the existing node-semver dependency for
+The Gateway records the bounded constraint string. `constraints.ts` is the Tool
+range evaluator in Swamp and uses the existing node-semver dependency for
 comparisons. Composer numeric-range forms retain their bounds, including zero
-major carets, two-part tildes, exclusions and prereleases. Swamp rejects malformed
-ranges before any manager or package command. No compiled intervals cross the
-Gateway boundary.
+major carets, two-part tildes, exclusions and prereleases. Swamp rejects
+malformed ranges before any manager or package command. No compiled intervals
+cross the Gateway boundary.
 
 The Node209 ten-second cadence baseline was 45/45 empty Tools discovery runs,
 about 6,392 inodes/hour. Evidence is
@@ -94,5 +90,5 @@ only in a disposable checkout; fixture success is not live canary proof.
 Run Deno tests/check/lint/fmt for this directory and
 `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s extensions/behaviors/operations/tools -p direct_native_test.py`.
 Gateway `ToolIntentsTest.php` covers immutable safe admission, start-binding and
-first-read ordering, Node identity, bounded results, inventory projection and
-refusal of a retired polled writer.
+first-read ordering, Node identity, bounded results and inventory projection
+without Gateway step receipts or runtime completion proofs.

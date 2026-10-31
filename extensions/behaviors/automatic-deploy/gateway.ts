@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { type DevelopmentContext, tickDevelopment } from "./development.ts";
 import {
   CallerNodeIdSchema,
   type Decision,
@@ -18,7 +19,7 @@ export interface Response {
   body: unknown;
 }
 export type Http = (
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "PATCH",
   path: string,
   body?: unknown,
   key?: string,
@@ -78,7 +79,7 @@ const InstanceSchema = z.object({
 export class GatewayClient implements Gateway {
   constructor(private http: Http) {}
   private async request(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "PATCH",
     path: string,
     body?: unknown,
     key?: string,
@@ -147,6 +148,9 @@ export class GatewayClient implements Gateway {
       );
     }
     return parsed.data;
+  }
+  development(context: DevelopmentContext, now: string, filter: number[]) {
+    return tickDevelopment(this.http, context, this, now, filter);
   }
   async discover(filter: number[] = []): Promise<number[]> {
     // Both list endpoints return complete arrays, without pagination.

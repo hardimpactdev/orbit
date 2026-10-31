@@ -42,6 +42,13 @@ export interface Operation {
   attempts?: number;
   error_code?: string | null;
 }
+/** Only the shared zero-effect admission resolution proves that no deployment started. */
+export function isAdmissionFence(receipt: Operation | null): boolean {
+  return receipt?.status === "cancelled" &&
+    receipt.error_code === "operation.admission_fenced" &&
+    receipt.attempts === 0 && receipt.result?.admission_fenced === true &&
+    !receipt.result?.deployment_id;
+}
 /** Complete policy evidence. This is an internal port, not a proposed HTTP route. */
 export interface Observation {
   enabled: boolean;
@@ -272,10 +279,7 @@ export async function tick(
     }
   }
   if (
-    state.intent && receipt?.status === "cancelled" &&
-    receipt.error_code === "operation.admission_fenced" &&
-    receipt.attempts === 0 &&
-    receipt.result?.admission_fenced === true && !receipt.result?.deployment_id
+    state.intent && isAdmissionFence(receipt)
   ) {
     state.intent = null;
     await save(state);

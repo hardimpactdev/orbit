@@ -5,7 +5,6 @@
     "instance.sync_environment",
     "instance.prepare_vp_environment",
     "instance.prepare_php_runtime",
-    "instance.repair_projection",
     "instance.prepare_served_web_roots",
     "instance.synchronize_environment"
   ],

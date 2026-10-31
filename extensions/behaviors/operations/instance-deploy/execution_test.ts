@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
-  type Configuration,
+  Configuration,
   type DeploymentPort,
   DeploymentRefused,
   type Phase,
@@ -118,19 +118,15 @@ Deno.test("cleanup refusal keeps a successful deployment", async () => {
   target.refusal = { phase: "cleanup", error: "deployment.prune_failed" };
   assertEquals((await deploy(production, target)).status, "succeeded");
 });
-Deno.test("development deploys in place and runs only Project before-activation steps", async () => {
-  const target = new Target();
-  await deploy({ ...production, variant: "development" }, target);
-  assertEquals(target.calls, [
-    "source_preparation",
-    "before_activation.migrate",
-  ]);
-  assertEquals(target.selected, "previous");
+Deno.test("the polled deployment contract rejects development before any phase", () => {
+  assertEquals(
+    Configuration.safeParse({ ...production, variant: "development" }).success,
+    false,
+  );
 });
 Deno.test("best-effort executed failure continues, other refusals stop", async () => {
   const config: Configuration = {
     ...production,
-    variant: "development",
     steps: [
       { name: "warm", phase: "before_activation", required: false },
       { name: "build", phase: "before_activation", required: true },
@@ -155,14 +151,14 @@ Deno.test("best-effort executed failure continues, other refusals stop", async (
     );
   }
 });
-Deno.test("required failure keeps the previous successful development seed", async () => {
+Deno.test("required failure before production selection preserves the previous result", async () => {
   const target = new Target();
   target.refusal = {
     phase: "before_activation.migrate",
     error: "deployment.step_failed",
   };
   assertEquals(
-    (await deploy({ ...production, variant: "development" }, target)).status,
+    (await deploy(production, target)).status,
     "failed",
   );
   assertEquals(target.seed, "previous-commit");

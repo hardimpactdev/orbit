@@ -1,16 +1,20 @@
 id: 1e424a34-8bb2-4bc9-8889-223125af21e3
 name: operation-tool-direct
 description: Execute one admitted Tool intent on its Node without polling.
-labels: { pool: migration }
 vaults: []
 inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, enum: [209] }
-    kind: { type: string, enum: [tool.install, tool.update, tool.remove, tool.adopt, tool.manager_converge] }
+    node_id: { type: integer, minimum: 1 }
+    kind: {
+      type: string,
+      enum: [tool.update, tool.remove, tool.adopt, tool.manager_converge],
+    }
   required: [operation_id, node_id, kind]
 jobs:
   - name: tools
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
     steps:
       - name: apply
         writes: true
