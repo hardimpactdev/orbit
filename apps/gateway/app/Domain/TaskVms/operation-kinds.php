@@ -9,7 +9,7 @@ use App\Domain\TaskVms\TaskVmCommandContracts;
 use App\Domain\TaskVms\TaskVmDestroyCancelGuard;
 use App\Domain\TaskVms\TaskVmEffectCompletion;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
-use App\Domain\TaskVms\TaskVmSweepProjection;
+use App\Domain\TaskVms\TaskVmSweepContracts;
 use App\Domain\TaskVms\TaskVmUpCloudImageContracts;
 
 return (static function (): array {
@@ -32,7 +32,7 @@ return (static function (): array {
         ];
     }
 
-    $kinds = [...$kinds, ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmUpCloudImageContracts::kinds()];
+    $kinds = [...$kinds, ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
             if (! OperationKinds::supports('cancel_guard')) {
@@ -51,7 +51,7 @@ return (static function (): array {
 
         if (isset($definition['runs']) && is_array($definition['runs'])) {
             foreach ($definition['runs'] as &$run) {
-                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
+                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle', 'task_vm_sweep', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
                     $run['resumable'] = true;
                 }
             }
@@ -82,5 +82,5 @@ return (static function (): array {
 
     return [...$kinds, ...TaskVmCommandContracts::packageCacheKinds(), 'task_vm.image_build' => [
         'executor' => 'swamp', 'result_fields' => ['ready', 'phase', 'completed', 'fingerprint', 'error_code'],
-    ], 'task_vm.sweep_host' => ['executor' => 'swamp', 'result_fields' => TaskVmSweepProjection::resultFields()]];
+    ]];
 })();
