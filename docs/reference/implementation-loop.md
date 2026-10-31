@@ -100,6 +100,8 @@ Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks an
 
 `Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
 
+Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Only the validation job receives its two approved secret inputs, on pull requests and pushes to main. Shape and Operation test jobs receive no secret environment. CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
+
 Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.

@@ -17,7 +17,10 @@ The gate implements Nick's migration policy using these manual references:
   proof of the business meaning of an action.
 - [Vaults](https://swamp-club.com/manual/reference/vaults): resolve private values
   with `vault.get`. Our pilot restricts them to whole `task.inputs.env` values;
-  argv, shell concatenation and workflow inputs cannot carry them.
+  argv, shell concatenation and workflow inputs cannot carry them. An explicitly
+  closed empty `execution_secrets` object carries no values. SourceControl's
+  `repository_identity` is the established public host/org/repo identifier; this
+  exact field name is public, unlike SSH or bootstrap identity material.
 - [Data](https://swamp-club.com/manual/reference/data): outputs are persisted.
   Do not write private material to resources, files or logs.
 
@@ -29,7 +32,11 @@ concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
 polling, retries and lock calls are counted separately. Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,
-not passing.
+not passing. The agent rule examines executable command positions in shell and
+Python subprocess calls, including sudo, shell and SSH wrappers. Service units
+such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools and
+configuration metadata are not agent invocations. Actual executable calls still
+use the observer/action inventory; unresolved commands remain unknown.
 
 Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
 workflow has known steps and no findings in its own source or reachable local
@@ -61,11 +68,18 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
-Runtime validation requires the existing Swamp account credentials. The old
-repo has `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`; Orbit needs an approved transfer
-before the caller can use this workflow. The reusable workflow declares both
-secrets. Pass them with `secrets: inherit` from the approved caller. No credential
-is printed, copied from local config or passed as argv.
+Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
+with `extensions:read` scope. Only the native workflow-validation step receives
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
+and Deno jobs receive neither. The caller maps both secrets explicitly, never
+through inherited secrets. Pull-request-target events cannot receive them.
+
+The helper downloads the public checksum-verified official artifact and starts
+it with fresh HOME, XDG and Swamp configuration directories. Its environment
+allowlist admits only these two approved credentials. Official e459's startup
+account gate precedes local schema loading and verifies through
+`GET /api/whoami`. Native validation is required: unavailable authentication and
+schema, checksum or download failures fail the job. There is no import exception.
 
 The gate prints current debt separately from base comparison. Retained historical
 agent actions are grandfathered; only growing counts or new action evidence fail.
