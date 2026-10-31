@@ -6,14 +6,15 @@ import { runLocalProgram } from "./local-program.ts";
 import { convergeFirewall, convergeRouteLan } from "./firewall-local.ts";
 import { convergeRouterLan } from "./router-lan.ts";
 import { prepareRouter } from "./router-preparation.ts";
+import { readRoleAccount, RoleAccount } from "../node/role_baseline_system.ts";
 import { verifyLocal } from "./verification.ts";
 import { removalActions } from "./removal-local.ts";
 const Args = DirectArgs.extend({ node_id: z.number().int().positive() });
 const Node = z.object({
   node_id: z.number().int().positive(),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  user: z.string(),
-  home: z.string(),
+  user: RoleAccount.shape.user,
+  home: RoleAccount.shape.home.optional(),
 }).passthrough();
 const Inventory = z.object({
   cluster_id: z.number().int().positive(),
@@ -52,7 +53,20 @@ export function clusterRouter(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   invoke = runLocalProgram,
   probeAction = verifyLocal,
+  accountAction = (user: string, signal?: AbortSignal) =>
+    readRoleAccount(user, undefined, signal),
 ) {
+  async function account(args: z.infer<typeof LocalArgs>, ctx: Context) {
+    if (args.target_node_id !== args.node.node_id) {
+      throw new Error("Router account differs from worker");
+    }
+    const resolved = await accountAction(args.node.user, ctx.signal);
+    if (resolved === null) throw new Error("role.prerequisite_failed");
+    if (args.node.home !== undefined && args.node.home !== resolved.home) {
+      throw new Error("role.prerequisite_conflict");
+    }
+    return resolved;
+  }
   function local(
     name: string,
     field: string,
@@ -88,7 +102,7 @@ export function clusterRouter(
   }
   return {
     type: "@nckrtl/cluster-router",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       inventory: {
@@ -136,12 +150,29 @@ export function clusterRouter(
         (input, signal) =>
           prepareRouter("caddy.install-package", input, invoke, signal),
       ),
-      installPrerequisites: local(
-        "role.install-prerequisites",
-        "prerequisites",
-        (input, signal) =>
-          prepareRouter("role.install-prerequisites", input, invoke, signal),
-      ),
+      installPrerequisites: {
+        description:
+          "Resolve the local account and install Router prerequisites",
+        arguments: LocalArgs,
+        execute: async (args: z.infer<typeof LocalArgs>, ctx: Context) => {
+          const resolved = await account(args, ctx);
+          const result = await prepareRouter(
+            "role.install-prerequisites",
+            {
+              ...object(args.node.prerequisites),
+              ...resolved,
+            },
+            invoke,
+            ctx.signal,
+          );
+          if (result.error_code !== undefined) {
+            throw new Error(
+              z.string().regex(/^[a-z0-9_.-]{1,100}$/).parse(result.error_code),
+            );
+          }
+          return { ready: true };
+        },
+      },
       firewall: local(
         "firewall.rules",
         "firewall",
@@ -186,11 +217,10 @@ export function clusterRouter(
           "Remove old Router scopes after native DNS expiry and Caddy withdrawal",
         arguments: LocalArgs,
         execute: async (args: z.infer<typeof LocalArgs>, ctx: Context) => {
-          if (args.target_node_id !== args.node.node_id) {
-            throw new Error("Router cleanup differs from worker");
-          }
+          const resolved = await account(args, ctx);
           return await removalActions(invoke).certificates({
             ...args.node,
+            ...resolved,
             lan_route_ids: [],
             shared_php: false,
             production_instance_ids: [],

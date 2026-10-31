@@ -49,5 +49,18 @@ export async function invoke(_program: string, call: Record<string, unknown>) {
       : call.mode === "route"
       ? "firewall.route-lan"
       : "firewall.router-lan");
-  return await record(String(name));
+  const state = JSON.parse(await Deno.readTextFile("native-cluster.json"));
+  (state.calls ??= []).push(call);
+  await Deno.writeTextFile("native-cluster.json", JSON.stringify(state));
+  await record(String(name));
+  return name === "certificate.inspect-leaf"
+    ? { present: false }
+    : { matches: true };
+}
+
+export async function readAccount(user: string) {
+  const state = JSON.parse(await Deno.readTextFile("native-cluster.json"));
+  (state.accounts ??= []).push(user);
+  await Deno.writeTextFile("native-cluster.json", JSON.stringify(state));
+  return { user, group: "orbit", home: "/home/orbit" };
 }

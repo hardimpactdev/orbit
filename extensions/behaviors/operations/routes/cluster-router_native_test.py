@@ -12,6 +12,9 @@ class ClusterNative(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy','operation-runner','operations/_lib','operations/certificates')
+        for directory,names in [('operations/node',['role_baseline_system.ts','system_command.ts']),('node-worker',['command.ts'])]:
+            target=self.repo/'extensions/behaviors'/directory;target.mkdir(parents=True,exist_ok=True)
+            for name in names: shutil.copy(ROOT/'extensions/behaviors'/directory/name,target)
         failure=self.repo/'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./routes/cluster-router_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
         route=self.repo/'extensions/behaviors/operations/routes';route.mkdir(parents=True)
@@ -20,11 +23,11 @@ class ClusterNative(NativeTestCase):
         cert=self.repo/'extensions/behaviors/operations/certificates/mod.ts'
         cert.write_text('import {fixtureHttp,record} from "../routes/cluster-router_native_fixture.ts";\n'+cert.read_text().replace('...certificates()', '...certificates(() => fixtureHttp, { request: async () => { await record("certificate-request"); return {state:"current"}; }, publish: async () => { await record("certificate-publish"); return {applied:true}; }, inspect: async () => { await record("certificate-inspect"); return {present:true}; }, remove: async () => ({applied:true}) })'))
         module=route/'cluster-router.ts'
-        text=module.read_text().replace('export const behavior = clusterRouter();','export const behavior = clusterRouter(() => fixtureHttp, invoke);')
+        text=module.read_text().replace('export const behavior = clusterRouter();','export const behavior = clusterRouter(() => fixtureHttp, invoke, undefined, readAccount);')
         # Only replace the actual clock in this fixture; source keeps the full 31 seconds.
         self.assertIn('setTimeout(resolve, 31000)',text)
         text=text.replace('setTimeout(resolve, 31000)','setTimeout(() => { record("dns-grace-31").then(resolve); }, 1)')
-        module.write_text('import {fixtureHttp,invoke,record} from "./cluster-router_native_fixture.ts";\n'+text)
+        module.write_text('import {fixtureHttp,invoke,record,readAccount} from "./cluster-router_native_fixture.ts";\n'+text)
         (route/'publication.ts').write_text('import {z} from "npm:zod@4.4.3"; import {record} from "./cluster-router_native_fixture.ts"; export const behavior={type:"@nckrtl/route-publication",version:"2026.10.31.1",globalArguments:z.object({}),methods:Object.fromEntries(["publishDns","publishCaddy"].map(name=>[name,{description:name,arguments:z.object({operation_id:z.number(),node_id:z.number(),kind:z.string(),run_id:z.string(),target_node_id:z.number()}),execute:()=>record(name)}]))};')
         source=yaml.safe_load((ROOT/'workflows/workflow-operation-cluster-router.yaml').read_text())
         for job in source['jobs']:
@@ -59,6 +62,23 @@ class ClusterNative(NativeTestCase):
         state=self.run_workflow()
         self.assertLess(state['events'].index('certificate-request'),state['events'].index('certificate-publish'))
         self.assertLess(state['events'].index('certificate-inspect'),state['events'].index('router-serving'))
+    def test_home_less_unset_resolves_old_account_before_certificate_retirement(self):
+        self.state['operation']['kind']='cluster.router_unset'
+        inventory=self.state['operation']['input']['cluster_router'];inventory['candidate']=None
+        old=inventory['old_nodes'][0];old.pop('home');old['certificate_scopes']=['route-7-router'];self.save()
+        state=self.run_workflow()
+        self.assertEqual('succeeded',state['operation']['status'])
+        self.assertEqual(['orbit'],state['accounts'])
+        self.assertLess(state['events'].index('publishCaddy'),state['events'].index('certificate.remove-leaf'))
+        self.assertLess(state['events'].index('certificate.inspect-leaf'),state['events'].index('firewall.rules'))
+    def test_home_less_set_resolves_candidate_prerequisites_on_the_worker(self):
+        inventory=self.state['operation']['input']['cluster_router']
+        inventory['candidate'].pop('home');inventory['candidate']['prerequisites']={'packages':['git']}
+        inventory['old_nodes']=[];self.save();state=self.run_workflow()
+        self.assertEqual('succeeded',state['operation']['status'])
+        self.assertEqual(['orbit'],state['accounts'])
+        prepared=next(call for call in state['calls'] if call.get('name')=='role.install-prerequisites')
+        self.assertEqual(dict(packages=['git'],user='orbit',group='orbit',home='/home/orbit'),prepared['input'])
     def test_current_router_set_records_success_without_any_host_or_dns_effect(self):
         inventory=self.state['operation']['input']['cluster_router']
         inventory.update(noop=True,old_nodes=[],edge_node_ids=[14],dns_node_ids=[1,14],workloads=[dict(node_id=13,agent_sha256='a'*64,user='orbit',home='/home/orbit',route_id=7,firewall=dict(route_id=7,router='192.0.2.18',workload='192.0.2.13'))])
