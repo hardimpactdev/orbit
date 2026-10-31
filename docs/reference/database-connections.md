@@ -257,3 +257,9 @@ The shared `StartSwampRun` helper starts the workflow after commit with `ORBIT_S
 The action runs on the admitted Node. Node 209 uses its existing migration worker; other Nodes require the matching `orbit-node-<node_id>` worker and Node label. Missing placement stays queued under native Swamp defaults.
 
 The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the admitted pinned agent through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
+
+### Direct SQL writes
+
+`database:query --write` starts `operation-database-write` directly. SQLite runs the pinned sudo agent on its admitted Node. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. PDO writes need no agent pin; SQLite verifies the admitted pin before invoking its fixed agent command. Native projection resumes from its saved row count without repeating SQL.
+
+SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection stays in the Gateway.

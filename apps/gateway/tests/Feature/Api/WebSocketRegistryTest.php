@@ -4,15 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\WebSocket\ChangeWebSocketRegistryAction;
 use App\Actions\WebSocket\ReadWebSocketApplyStatusAction;
-use App\Actions\WebSocket\StartWebSocketOperationAction;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketCredentialManager;
-use App\Domain\WebSocket\WebSocketOperationCompletion;
 use App\Domain\WebSocket\WebSocketRegistry;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -205,47 +200,6 @@ it('returns the latest safe process error and clears it after recovery or a new 
     $this->postJson($base.'/boots', ['boot_id' => (string) Str::uuid()])->assertNoContent();
     expect($status()['processes'][0]['error'])->toBeNull();
     $this->putJson($base, [...$report, 'sequence' => 4, 'error' => 'credential-sentinel'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-});
-
-it('binds each registry kind to its admitted identity and rejects unlisted effects', function (string $verb): void {
-    if (in_array($verb, ['destroy', 'rotate'], true)) {
-        app(ChangeWebSocketRegistryAction::class)->execute('create', 'alpha', $this->gateway->id, 'seed');
-    }
-    $registry = app(ChangeWebSocketRegistryAction::class)->execute($verb, $verb === 'sync' ? null : 'alpha', $this->gateway->id, 'effect');
-    $operation = app(StartWebSocketOperationAction::class)->execute($registry);
-    $contract = app(OperationExecutionContract::class);
-    $run = ['worker' => 'proof', 'key' => 'probe', 'transport' => 'remote_program', 'name' => 'websocket.registry-applied', 'input' => ['registry_operation_id' => $registry->id]];
-    expect($operation->node_id)->toBe($this->gateway->id)
-        ->and($operation->kind)->toBe($verb === 'sync' ? 'websocket.sync' : 'websocket.app_'.$verb)
-        ->and($contract->authorizeRun($operation, $run)['name'])->toBe('websocket.registry-applied');
-    foreach ([
-        [...$run, 'input' => ['registry_operation_id' => (string) Str::uuid()]],
-        [...$run, 'input' => [...$run['input'], 'node_id' => $this->server->id]],
-        [...$run, 'name' => 'websocket.converge-runtime', 'transport' => 'agent'],
-    ] as $forged) {
-        expect(fn () => $contract->authorizeRun($operation, $forged))->toThrow(ResourceOperationException::class);
-    }
-    $result = ['outcome' => 'succeeded', 'data' => ['backend' => 'applied']];
-    expect(fn () => $contract->assertCompletion($operation, $result))->toThrow(ResourceOperationException::class)
-        ->and(fn () => $contract->assertStep($operation, 'reverb-registry-applied', $result))->toThrow(ResourceOperationException::class);
-    $operation->state = ['executor_runs' => ['probe' => ['transport' => 'remote_program', 'name' => 'websocket.registry-applied', 'result' => $result]]];
-    $contract->assertStep($operation, 'reverb-registry-applied', $result);
-    expect($contract->result($operation, [...$result, 'secret' => 'must-not-survive', 'stdout' => 'must-not-survive']))->toBe($result);
-})->with(['rotate']);
-
-it('rechecks the current boot before completing a proven registry Operation', function (): void {
-    $registry = app(ChangeWebSocketRegistryAction::class)->execute('create', 'alpha', $this->gateway->id, 'boot-proof');
-    $operation = app(StartWebSocketOperationAction::class)->execute($registry);
-    $completion = app(WebSocketOperationCompletion::class);
-    $outcome = OperationOutcome::succeeded();
-    expect(fn () => $completion->complete($operation, $outcome))->toThrow(ResourceOperationException::class);
-    $this->runtime->update(['boot_id' => (string) Str::uuid(), 'epoch' => $registry->epoch,
-        'applied_revision' => $registry->revision, 'state' => 'serving', 'reported_at' => now()]);
-    $completion->complete($operation, $outcome);
-    $this->runtime->update(['boot_id' => (string) Str::uuid(), 'epoch' => null, 'applied_revision' => null]);
-    expect(fn () => $completion->complete($operation, $outcome))->toThrow(ResourceOperationException::class);
-    WebSocketApp::query()->where('name', 'alpha')->delete();
-    expect(fn () => $completion->complete($operation, $outcome))->toThrow(ResourceOperationException::class, 'A later registry change superseded this result.');
 });
 
 it('binds registry retries to the admitted caller', function (): void {

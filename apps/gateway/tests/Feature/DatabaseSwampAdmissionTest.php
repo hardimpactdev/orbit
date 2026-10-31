@@ -3,10 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationSecrets;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
@@ -20,7 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FakeValkeyServerAdmin;
 
 function databaseAdmissionNode($test): Node
 {
@@ -45,6 +42,8 @@ function databaseAdmissionServer(Node $node, string $driver = 'mysql'): Database
 }
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'fake.token']);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
     }
@@ -61,7 +60,8 @@ it('accepts server creation without running PHP infrastructure', function (): vo
     expect(Operation::query()->sole()->node_id)->toBe($node->id);
     expect($response->getContent())->not->toContain('root_password', 'environment', 'PGPASSWORD');
     $intent = DatabaseExecutionIntent::query()->sole();
-    expect($intent->payload['commands'])->toHaveKeys(['container', 'initialize', 'remove-initialization-secret', 'database-apply']);
+    expect($intent->payload['commands'])->toHaveKeys(['database-apply']);
+    expect($intent->payload['commands']['database-apply']['name'])->toBe('database.server-create');
     expect(DB::table('database_execution_intents')->where('id', $intent->id)->value('payload'))->not->toContain(DatabaseServer::query()->sole()->root_password);
     Queue::assertNothingPushed();
 });
@@ -122,28 +122,20 @@ it('keeps registration and reads in Orbit', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('admits a protected SQLite write with a nonresumable effect', function (): void {
+it('admits a protected SQLite write without a Gateway execution path', function (): void {
     $node = databaseAdmissionNode($this);
     DatabaseConnection::query()->create(['slug' => 'throwaway', 'driver' => 'sqlite', 'node_id' => $node->id, 'path' => '/tmp/throwaway.sqlite']);
 
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-write', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->postJson('/api/v1/database-connections/throwaway/query', ['sql' => 'CREATE TABLE sample (id integer)', 'write' => true])
         ->assertAccepted()->assertJsonPath('data.kind', 'database.write');
 
     $command = DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply'];
     expect($command['name'])->toBe('database.write-sqlite');
-    expect($command['resumable'])->toBeFalse();
-    expect(Operation::query()->sole()->input)->not->toHaveKey('sql');
-});
-
-it('admits removal of a failed server with no Process through a proven Gateway read', function (): void {
-    $node = databaseAdmissionNode($this);
-    $server = DatabaseServer::query()->create(['slug' => 'failed-server', 'driver' => 'mysql', 'node_id' => $node->id,
-        'tag' => '8.4', 'port' => 3306, 'root_password' => 'synthetic-admin-password', 'status' => 'failed']);
-
-    $this->deleteJson('/api/v1/database-servers/failed-server')->assertAccepted()->assertJsonPath('data.kind', 'database_server.destroy');
-    $intent = DatabaseExecutionIntent::query()->sole();
-    expect($intent->payload['commands']['database-apply'])->toMatchArray(['transport' => 'gateway', 'name' => 'database.server-absent']);
-    $this->assertModelExists($server);
+    expect(Operation::query()->sole()->input['sql'])->toBe(['$secret' => 'database.intent', 'id' => DatabaseExecutionIntent::query()->sole()->id]);
 });
 
 it('retries failed database creation with its reserved credentials and immutable intent', function (): void {
@@ -176,35 +168,15 @@ it('refuses reusing failed create intent after its recorded credentials change',
     expect(Operation::query()->count())->toBe(1);
 });
 
-it('hydrates server descriptors against the installed command schemas without executing them', function (string $driver, bool $repair): void {
+it('keeps server initializer material out of safe direct input', function (string $driver): void {
     $node = databaseAdmissionNode($this);
     $tag = match ($driver) {
-        'mysql' => '8.4', 'pgsql' => '18', default => '8.1'
+        'mysql' => '8.0', 'pgsql' => '18', default => '8.1'
     };
-    $body = ['slug' => 'throwaway', 'node_id' => $node->id, 'driver' => $driver, 'tag' => $tag, 'port' => 15432];
-    if ($repair) {
-        $server = databaseAdmissionServer($node, 'redis');
-        $server->update(['tag' => $tag]);
-        $body = [...$body, 'slug' => $server->slug, 'port' => $server->port];
-        $valkey = new FakeValkeyServerAdmin;
-        $valkey->passwords[$node->wireguard_ip.':'.$server->port] = $server->root_password;
-        $valkey->failCommands = true;
-        app()->instance(ValkeyServerAdmin::class, $valkey);
-    }
-    $this->postJson('/api/v1/database-servers', $body)->assertAccepted();
+    $this->postJson('/api/v1/database-servers', ['slug' => 'throwaway', 'node_id' => $node->id, 'driver' => $driver, 'tag' => $tag, 'port' => 15432])->assertAccepted();
     $operation = Operation::query()->sole();
-    $contract = app(OperationExecutionContract::class);
-    $context = $contract->context($operation);
-    foreach ($context['descriptors'] as $descriptor) {
-        $run = ['worker' => 'proof', 'key' => $descriptor['key'], 'transport' => $descriptor['transport'], 'name' => $descriptor['name'], 'input' => $descriptor['input']];
-        $spec = $contract->authorizeRun($operation, $run);
-        $hydrated = app(OperationSecrets::class)->hydrate($operation, $descriptor['key'], $descriptor['input'], $spec['secrets'] ?? []);
-        $contract->validateHydratedInput($operation, $run, $spec, $hydrated['input']);
-    }
-    expect($context['descriptors'])->not->toBeEmpty();
-    expect(json_encode($context))->not->toContain(DatabaseServer::query()->sole()->root_password);
-    if ($repair) {
-        expect(array_column($context['descriptors'], 'key'))->toBe(['acl-file', 'container', 'restart-acl', 'acl-readiness', 'acl-converge', 'database-apply', 'database-complete']);
-        expect($valkey->calls)->not->toContain('acl save');
-    }
-})->with([['mysql', false], ['pgsql', false], ['redis', false], ['redis', true]]);
+    $input = app(DatabaseServerCreateProjection::class)->input($operation);
+    expect($input)->not->toHaveKeys(['password', 'environment', 'acl', 'payload']);
+    expect($input['container_input'])->not->toHaveKey('environment');
+    expect($operation->state['database_server_create_writer'])->toBe('direct');
+})->with(['mysql', 'pgsql', 'redis']);

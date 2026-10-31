@@ -7,11 +7,13 @@ use App\Domain\DatabaseConnections\DatabaseQueryResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeDatabaseInspectionExecutor;
+use Tests\Support\FakeRoutePublicationSocket;
 
 const DATABASE_INSPECTION_SECRET = 'db-query-secret-6c2e';
 
@@ -19,7 +21,7 @@ beforeEach(function (): void {
     $node = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'amd64',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'user' => 'orbit',
@@ -82,6 +84,10 @@ it('queries a registered mysql connection as read-only by default and redacts au
 });
 
 it('refuses write SQL without the write flag and executes it when gated', function (): void {
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-write', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',
         'driver' => 'mysql',
@@ -185,7 +191,7 @@ it('runs sqlite queries on the owning node through the native agent with typed i
     $worker = Node::query()->create([
         'name' => 'worker',
         'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
+        'platform' => 'linux', 'architecture' => 'amd64',
         'public_ssh_host' => '192.0.2.11',
         'public_ssh_port' => 22,
         'user' => 'orbit',

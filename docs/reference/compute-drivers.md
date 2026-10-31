@@ -288,9 +288,9 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 
 [Nightly recipe maintenance](#nightly-recipe-maintenance) runs it every night, with the snapshot pull request. One `nightly/artifacts-<digest>` pull request holds all authenticated Sury and Incus pin changes. The digest names those pins; later nights reuse the PR, and a closed PR is never reopened.
 
-Swamp verifies the App’s signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. Native workflow history and recovery own execution; the Gateway keeps no execution proof or retry cache. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
+The Gateway App verifies its signed single commit, the exact recipe-only change, the branch digest, and an authenticated update from the parent recipe using signed indexes only. That proof is cached for one hour per head; failed index fetches retry at most hourly. A newer authenticated fingerprint closes a superseded PR, even when its runner check is red. Any other edit blocks automatic merge.
 
-The Swamp control worker needs `gpg` and `gpgv`; the standalone recipe CLI also uses `python3`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
+The Gateway needs `python3`, `gpg`, and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. A red self-hosted runner check holds this shared PR, including its Incus pins, until an operator updates the runners from the PR branch. The Gateway App then merges on green Required checks, under the same rule as Ubuntu snapshot PRs. ADR 0213 will automate runner PHP updates later. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
 2. Each task VM host [builds a new base image](#build-the-base-image).
@@ -1138,41 +1138,39 @@ Pruning also removes the unused gateway, app-dev, app-prod, and operator aliases
 
 #### Nightly Ubuntu rollout policy
 
-Every Ubuntu pin follows the named snapshot, including `resolute-updates`. Swamp auto-merges these PRs on green Required checks. The fleet rollout converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
+Nick's decision of 2026-10-19 is that every Ubuntu pin follows the named snapshot, including `resolute-updates`. The Gateway auto-merges these PRs on green Required checks and converges every eligible Linux Node, including `app-prod`, in its configured window. A failed Node halts convergence and raises an alert; later Nodes stay untouched.
 
 Signed indexes and digests authenticate the inputs. CI verifies every Ubuntu pin, and the merge accepts only the regenerated bump on the checked head. Verified images gate rollout. Ordered Node inventory, health, and Doctor checks stop a faulty rollout. These checks make automation safe without promising that an upstream package cannot regress.
 
-At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. The Gateway records intent and starts `operation-fleet-recipe-pr` directly on its own Node worker. Swamp calls GitHub for the fixed `hardimpactdev/orbit` repository. App signing stays in the Gateway; the shared private reader issues a short-lived scoped token to the bound run on the admitted Node. The step attempts to revoke it before returning a bounded result. No credential enters Operation input, output or Swamp data.
+At 03:00 Europe/Amsterdam (01:00 UTC in summer, 02:00 UTC in winter), Swamp requests a recipe PR Operation. Its named `github.recipe-pr` command runs inside the Gateway against `hardimpactdev/orbit` through the existing GitHub App. The App credential stays inside the Gateway; the Operation and Swamp hold only a secret reference.
 
-Swamp reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
+The Gateway reads main and advances `ubuntu.snapshot` to the current date at UTC midnight. The same bump resolves every `source: ubuntu` pin to the newest Debian version across the snapshot's release, updates, and security pockets. It verifies signed metadata and index digests and requires the same versions on every recipe architecture. Missing packages or differing architecture versions stop the bump without writing. Artifact versions, URLs, and hashes stay pinned; there is no separate Sury snapshot field. An unchanged or newer date creates no PR.
 
-The Swamp maintenance workflow checks every five minutes from 03:00 through the end of the Amsterdam date. Each date, variant and serving recipe revision admits one open Operation; repeated requests reuse that intent. If main has recipe definitions other than the snapshot date that the serving release does not carry, the Operation fails with `fleet.recipe_pending_deployment` before any GitHub write. A new serving recipe revision permits a new intent. A date branch makes repeated submissions reuse the same PR. The same workflow opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
-
-Before its first GitHub write, the action saves the authenticated candidate in a native Swamp resource. Native retry keeps that candidate even if package indexes change. It reads the branch content and existing PR before repeating a write, so a lost reply after a committed write creates no duplicate branch update or PR. Refresh uses the expected old head; a retry after its committed push cannot push again from the old admitted head.
+The Swamp maintenance workflow checks every five minutes from 03:00 through the end of the Amsterdam date until both nightly PR Operations succeed. If main has recipe definitions other than the snapshot date that the serving release does not yet carry, it logs a deployment wait without an alert and tries again on the same date. It never decodes that recipe with an older catalog. A date branch makes repeated submissions reuse the same PR. The same workflow opens the authenticated [artifact update](#bump-the-php-build) pull request for newer Sury PHP or Incus LTS builds.
 
 Refresh and merge use one rule to end a nightly PR: close an App `nightly/recipe-*` PR once main’s snapshot has reached its date or a newer-date App PR is open. This runs before Required checks, evidence resolution, or merge attempts, whatever kept the PR open. It covers failed checks, rejected evidence, and refused merges.
 
-Swamp closes first, then posts a best-effort comment with the reason. An uncertain GitHub write fails the native run for inspection before recovery; the Gateway adds no retry timer. Other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
+The Gateway closes first, then posts a best-effort comment with the reason. A failed close retries after 300 seconds; other PRs can proceed because main’s snapshot also proves supersession after a replacement merges.
 
 For today’s date, Refresh rebuilds a remaining failed PR only if main advanced beyond its commit’s parent. It creates one fresh Gateway App commit on current main, using an expected-head force update so a concurrent push cannot be overwritten.
 
 Recovery is one-shot per PR: any previous force push or close/reopen blocks it. Before writing, it verifies App authorship, the single authenticated snapshot-and-Ubuntu-pin commit, the PR timeline, and body edit history, then rechecks the PR head. Refresh leaves green, pending, or closed PRs unchanged, as well as PRs modified by a person. The shared closing rule still applies to superseded App PRs. Other bots' reviews and edits also block recovery; only cross-references are ignored.
 
-A short recovery comment is best-effort. An uncertain GitHub recovery write fails the native run for inspection. Other admitted Operations can proceed.
+A short recovery comment is best-effort. GitHub recovery errors raise an alert without stopping tonight's snapshot or artifact PR.
 
 A cross-reference from another issue or PR is not a modification and does not block refresh; unknown or truncated history still blocks it.
 
 Keeping a same-date PR preserves its URL and CI history; rerunning CI alone would reuse the stale merge commit. The shared closing rule avoids keeping a superseded PR open beside tonight’s replacement.
 
-Swamp requests retire, refresh and merge Operations for each candidate on rotating five-minute ticks. Each action runs at most every fifteen minutes.
+Swamp requests retire, refresh and merge Operations for each candidate.
 
-Unchanged evidence reuses the same Gateway intent and starts no new native run. Retirement wakes when the recipe or candidate set changes; refresh wakes when main or the required-check observation changes; merge wakes when its required-check observation changes, plus the recipe revision for artifact candidates. These actions also wake when a candidate leaves draft, changes its base, or changes its source repository. Ordinary main commits do not wake retirement. Daily opens use the serving recipe revision separately.
+The Gateway checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author blocks the merge and raises the existing alert; the merge uses the expected head SHA.
 
-The Gateway exposes these read-only revisions without a retry cache, timer or execution receipt. The native action rechecks all write policy before an effect.
+Successful evidence verification records the head SHA. Retries reuse that result until the head changes, avoiding repeated index downloads after a refused merge. Required checks and the live PR target, author, head, and draft state are still checked before each merge attempt.
 
-Swamp checks retirement first on every merge request. A stale candidate is closed before check inspection; a failed retirement defers the merge. It performs a merge only after Required checks pass on the exact head. It verifies the PR files, patch, and one App-authored commit with GitHub’s verified web-flow signature. Date PRs must equal the snapshot bump regenerated from authenticated indexes, including every Ubuntu pin and no other change. Any extra change, commit, or different author stops the native run; the merge uses the expected head SHA.
+Only a rejected recipe evidence check after green Required checks records a blocked head. The Gateway skips its evidence and index checks until the head changes.
 
-Each admitted merge regenerates its evidence and checks the live PR target, author, head, and draft state. There is no Gateway evidence cache, blocked-head record, retry timer or per-PR execution receipt. GitHub, network, snapshot download and uncertain write failures remain native failures for inspection and recovery. A terminal Gateway projection lets native resume return without repeating an effect whose result was already committed.
+GitHub, network, snapshot download, and merge errors remain retryable after a 300-second backoff per head. Retry, merge-refused, evidence-block, and retirement-failure alerts have distinct incident identities, so an earlier temporary failure cannot hide the rejection reason. When GitHub refuses a merge, the alert includes its HTTP status and message.
 
 The shared closing rule applies even to a green PR whose merge was refused. Superseded PRs need no further index downloads or merge attempts. A person does not need to push a commit that would invalidate App-only evidence. This reuses the existing App and PR API without Actions secrets or a second publisher.
 
@@ -1397,11 +1395,11 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 
-`php artisan task-vms:build-upcloud-image` builds the template on the Gateway. It creates billed servers. The build prints each stage with its time:
+`php artisan task-vms:build-upcloud-image` records one image intent and starts `operation-task-vm-upcloud-image-build` directly. One native Swamp workflow runs its API and guest steps on the admitted Gateway Node's worker. It creates billed servers. The Gateway projects progress, owned server UUIDs and the final template; it creates no child Operations and performs no image actions.
 
 | Stage | What it does |
 | --- | --- |
@@ -1430,7 +1428,9 @@ Reconcile raises a recipe-maintenance alert when the current identity has a fail
 
 The build keeps the two newest verified templates and any template pinned by a live VM awaiting server creation. Pruning ignores the source template reference once the VM has a server UUID. It also runs with overflow off without enabling claims. A failed build keeps the previous template, but a stale template cannot serve a new claim. Reconcile reports UpCloud token, API, or refresh-dispatch errors and continues Incus submission recovery and image scheduling.
 
-The build takes about 20 minutes and occupies one `builds` worker. When it runs past its 1700 seconds, the worker stops it, and the sweep deletes its servers two hours after its start.
+The build takes about 20 minutes. Swamp owns dispatch, placed steps, cancellation and recovery. API credentials and generated guest host keys use the shared private-material and encrypted output boundaries. Private bytes stay out of native arguments, resources, reports and command arguments. The worker pins each guest's generated host key before its first SSH connection. It uses the official Swamp SSH library, pinned at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`, with the Gateway's existing managed identity. Pi uses the shared bounded private artifact reference and its admitted SHA-256 pin.
+
+Recipe observation uses the same native evaluator as Incus, including the 1440-second phase budget and 60-second consecutive read outage limit. A failed smoke check prevents promotion. Native recovery resumes the same root; an explicit retry records a new attempt.
 
 ### Sweep UpCloud
 

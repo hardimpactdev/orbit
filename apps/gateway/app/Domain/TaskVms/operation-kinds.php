@@ -10,7 +10,6 @@ use App\Domain\TaskVms\TaskVmDestroyCancelGuard;
 use App\Domain\TaskVms\TaskVmEffectCompletion;
 use App\Domain\TaskVms\TaskVmFamilyChildren;
 use App\Domain\TaskVms\TaskVmSweepProjection;
-use App\Domain\TaskVms\TaskVmUpCloudImageContracts;
 
 return (static function (): array {
     $kinds = [];
@@ -32,7 +31,7 @@ return (static function (): array {
         ];
     }
 
-    $kinds = [...$kinds, ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmUpCloudImageContracts::kinds()];
+    $kinds = [...$kinds, ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
             if (! OperationKinds::supports('cancel_guard')) {
@@ -51,7 +50,7 @@ return (static function (): array {
 
         if (isset($definition['runs']) && is_array($definition['runs'])) {
             foreach ($definition['runs'] as &$run) {
-                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
+                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle'], true) || in_array($kind, ['task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
                     $run['resumable'] = true;
                 }
             }
@@ -80,7 +79,7 @@ return (static function (): array {
     }
     unset($definition);
 
-    return [...$kinds, ...TaskVmCommandContracts::packageCacheKinds(), 'task_vm.image_build' => [
+    return [...$kinds, ...TaskVmCommandContracts::packageCacheKinds(), 'task_vm.upcloud_image_build' => ['executor' => 'swamp', 'result_fields' => ['ready', 'phase', 'resources', 'template_uuid', 'promoted', 'error_code']], 'task_vm.image_build' => [
         'executor' => 'swamp', 'result_fields' => ['ready', 'phase', 'completed', 'fingerprint', 'error_code'],
     ], 'task_vm.sweep_host' => ['executor' => 'swamp', 'result_fields' => TaskVmSweepProjection::resultFields()]];
 })();
