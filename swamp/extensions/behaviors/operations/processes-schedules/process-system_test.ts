@@ -896,3 +896,80 @@ Deno.test("foreign temporary generation refuses removal before effects", async (
   );
   assertEquals(host.mutations(), []);
 });
+
+Deno.test("mount requirements must match the staged unit before any publication", async () => {
+  const host = new Host();
+  const input = await stageInput();
+  const before = [...host.files.keys()];
+  assertEquals(
+    await host.invoke("process.stage-unit", {
+      ...input,
+      required_mount_paths: ["/srv/state"],
+    }),
+    { error_code: "process.mount_requirements_changed" },
+  );
+  assertEquals([...host.files.keys()], before);
+  assert(
+    !host.calls.some((call) =>
+      ["/usr/bin/tee", "/usr/bin/mv", "/usr/bin/systemctl"].includes(
+        call.program,
+      )
+    ),
+  );
+});
+
+Deno.test("activation refuses a missing required path before replacing the installed unit", async () => {
+  const host = new Host();
+  const input = await stageInput();
+  input.content = input.content.replace(
+    "[Unit]",
+    "[Unit]\nRequiresMountsFor=/srv/state",
+  );
+  assertEquals(
+    await host.invoke("process.stage-unit", {
+      ...input,
+      required_mount_paths: ["/srv/state"],
+    }),
+    { staged: true, previous: false, state: null },
+  );
+  host.calls = [];
+  assertEquals(
+    await host.invoke("process.activate-unit", {
+      process_id: 7,
+      unit,
+      change: "create",
+      desired: "running",
+      on_demand: false,
+      required_mount_paths: ["/srv/state"],
+    }),
+    { error_code: "process.mount_path_unavailable" },
+  );
+  assert(!host.files.has(`${units}/${unit}`));
+  assert(!host.calls.some((call) => call.program === "/usr/bin/systemctl"));
+});
+
+Deno.test("activation preserves declared mount directives through publication", async () => {
+  const host = new Host();
+  host.dir("/srv/state");
+  const input = await stageInput();
+  input.content = input.content.replace(
+    "[Unit]",
+    "[Unit]\nRequiresMountsFor=/srv/state",
+  );
+  await host.invoke("process.stage-unit", {
+    ...input,
+    required_mount_paths: ["/srv/state"],
+  });
+  assertEquals(
+    await host.invoke("process.activate-unit", {
+      process_id: 7,
+      unit,
+      change: "create",
+      desired: "running",
+      on_demand: false,
+      required_mount_paths: ["/srv/state"],
+    }),
+    { backup_left: false },
+  );
+  assertEquals(host.files.get(`${units}/${unit}`)!.content, input.content);
+});

@@ -162,7 +162,11 @@ Process removal runs the tagged [Process removal guards](/reference/extensions#p
 
 ### Update in place
 
-[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, and `user` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
+JSON requests for ordinary systemd Processes accept `required_mount_paths`, a public list of up to 64 unique absolute paths. Each path is at most 4096 UTF-8 bytes and must have no control characters, `.` or `..` components, repeated slashes or trailing slash except `/`. Orbit renders these literal paths in one `RequiresMountsFor` directive, which gives systemd mount dependencies and ordering. Native installation checks that the captured directive matches the admitted list and that each path exists before running activation.
+
+Create defaults to an empty list; update omission preserves the stored list, and explicit `[]` clears it. Null is invalid. Docker accepts only an empty list; presets own their configuration and reject this explicit field. The list does not create mounts or prove that a mounted directory contains the intended state. State migration needs a separate admitted mount definition, identity check and ordered handoff; this option does not authorize a Serve self-update.
+
+[`process:update`](/cli/process#orbit-processupdate) changes only the fields the caller sends. `PATCH /api/v1/processes/{process}` accepts optional `runtime`, `command`, `image`, `working_directory`, `environment`, `ports`, `volumes`, `restart_policy`, `keep_alive`, `restart_on_deploy`, `user`, and `required_mount_paths` where allowed. Omitted fields keep their stored values, including runtime, image, and command.
 
 The resulting specification must satisfy the runtime rules. The Process ID, name, owner, and desired state stay the same; identity, preset, and initial-start fields cannot be changed. A supplied environment map or list replaces that whole field. An empty map or list clears it. Explicit `working_directory: null` restores the Docker image default or the systemd owner default; omission keeps the current directory. Create defaults do not apply to updates. The CLI, PHP SDK, and MCP use the same partial-update contract.
 

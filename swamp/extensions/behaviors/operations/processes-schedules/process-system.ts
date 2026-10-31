@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { matchesMountPaths, RequiredMountPaths } from "./required-mount-paths.ts";
 import { DockerEngine } from "../_lib/docker_engine.ts";
 import { type SystemCommand, systemCommand } from "./system.ts";
 
@@ -27,6 +28,7 @@ const Stage = z.object({
   unit: z.string().max(255),
   content: Text,
   environment: Text,
+  required_mount_paths: RequiredMountPaths.default([]),
 }).strict();
 const Activate = z.object({
   process_id: Id,
@@ -34,6 +36,7 @@ const Activate = z.object({
   change: z.enum(["create", "replace", "reload"]),
   desired: z.enum(["running", "stopped"]),
   on_demand: z.boolean(),
+  required_mount_paths: RequiredMountPaths.default([]),
 }).strict();
 const Remove = Artifact.extend({
   anonymous_volumes: z.boolean().optional(),
@@ -500,6 +503,9 @@ class ProcessSystem {
     name("systemd", input.process_id, input.unit);
     const current = await this.ownedUnit(input.process_id, input.unit);
     if (!marked(input.content, input.process_id)) refuse();
+    if (!matchesMountPaths(input.content, input.required_mount_paths)) {
+      refuse("process.mount_requirements_changed");
+    }
     await this.installEnvironment(
       input.process_id,
       input.content,
@@ -550,6 +556,17 @@ class ProcessSystem {
     name("systemd", input.process_id, input.unit);
     const current = await this.ownedUnit(input.process_id, input.unit);
     const backup = `${Candidates}/.${input.unit}.backup`;
+    const planned = input.change === "reload"
+      ? current
+      : await this.ownedUnit(input.process_id, input.unit, Candidates);
+    if (planned !== null && !matchesMountPaths(planned, input.required_mount_paths)) {
+      refuse("process.mount_requirements_changed");
+    }
+    if (input.desired === "running") {
+      for (const path of input.required_mount_paths) {
+        await this.must("/usr/bin/test", ["-e", path], "process.mount_path_unavailable");
+      }
+    }
     if (input.change === "reload") {
       if (current === null) refuse("process.not_found");
       await this.reload("process.activation_failed");
