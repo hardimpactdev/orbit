@@ -280,23 +280,20 @@ it('admits production release ownership and managed SQL through the same native 
         'source_digest' => str_repeat('c', 64), 'source_commit' => str_repeat('a', 40), 'common_repository_path' => $home,
         'source_identity' => '42:73', 'linked_worktree_paths' => [], 'worktree_inventory' => base64_encode('captured-production-worktree'),
         'origin' => $this->instance->project->repository_url];
-    $production = ['instance_id' => $this->instance->id, 'project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
-        'operation' => $operation->input['removal_id'], 'member' => (string) InstanceRemoval::query()->sole()->members()->sole()->id,
-        'user' => $user, 'home' => $home, 'checkout' => $this->instance->checkout_path, 'repository' => $source['origin'], 'force' => true,
-        'capture' => ['marker' => true, 'uid' => 1234, 'gid' => 1234, 'group' => $user, 'identity' => '42:73', 'release' => $this->instance->checkout_path,
-            'release_identity' => '42:74', 'commit' => str_repeat('a', 40), 'origin' => $source['origin'], 'worktrees' => $source['worktree_inventory'],
-            'digest' => str_repeat('c', 64)]];
-    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
-        'started_at' => '2026-10-31T11:00:00Z', 'result' => ['source_inspection' => ['members' => [$source], 'production' => $production]]]);
+    $source += ['environment' => 'production', 'source' => $home, 'release' => $this->instance->checkout_path,
+        'uid' => 500, 'gid' => 500, 'release_identity' => '42:74', 'marker' => null,
+        'git_admin' => $this->instance->checkout_path.'/.git', 'git_admin_identity' => '42:75',
+        'git_common' => $this->instance->checkout_path.'/.git', 'git_common_identity' => '42:75'];
     app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
         'started_at' => '2026-10-31T11:00:00Z', 'finished_at' => '2026-10-31T11:00:01Z',
-        'result' => ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'], 'error_code' => 'instance.destroy_failed']);
+        'result' => ['source_inspection' => ['members' => [$source]], 'error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'],
+        'error_code' => 'instance.destroy_failed']);
     $this->withHeader('Idempotency-Key', 'production-retry');
     $next = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
     $retried = Operation::query()->findOrFail($next);
-    $executable = app(InstanceDestroySourceInspection::class)->executable($retried->input);
+    $native = app(InstanceDestroyProjection::class)->input($retried);
     expect($next)->not->toBe($id)
-        ->and($executable['direct_destroy']['production'])->toBe($production)
+        ->and($native['intent']['captured_sources']['members'][0])->toBe($source)
         ->and(InstanceRemoval::query()->sole()->members()->sole()->worktree_inventory)->toBe($source['worktree_inventory'])
         ->and(InstanceRemoval::query()->sole()->members()->sole()->origin)->toBe($source['origin']);
 });

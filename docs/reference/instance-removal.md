@@ -3,7 +3,7 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/{ProjectDirectInstanceDestroyAction,StartInstanceDestroyAction},DatabaseConnections/PrepareOwnedDatabaseDestructionAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceRouteRemovalAdmission.php,ProductionRemovalIntent.php,Removal/**}
+  - apps/gateway/app/Domain/Instances/{InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,InstanceDestroyDisposition.php,ProductionRemovalIntent.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
@@ -28,7 +28,7 @@ Swamp executes these stages in order within the bound native run.
 | Stage | Action |
 | --- | --- |
 | 1 | Capture source facts on the admitted workload Node. |
-| 2 | Prepare the source removal journal. |
+| 2 | Verify that each non-forced source commit is published. |
 | 3 | Stop Schedules, then Processes. |
 | 4 | Run admitted Project teardown as the configured Node account for development or the dedicated `orbit-app-<project-id>` account for production. |
 | 5 | Withdraw whole-Node PHP, the dedicated production PHP runtime, Caddy, private DNS and ingress firewall rules. |
@@ -37,7 +37,7 @@ Swamp executes these stages in order within the bound native run.
 | 8 | Finalize the checkout or worktree, or the exact production home and account. |
 | 9 | Project the admitted records atomically. |
 
-The native model `route-publication-node-<node-id>` serializes a publication method. A publisher reads fresh authenticated intent after acquiring that model lock. It never publishes a pre-lock render. PHP material stays private. Every effect uses exact `orbit-node-N` placement and the matching string Node label.
+The Gateway supplies full non-secret intent when it starts the run. Each placed command performs one action. The native run resolves execution copies from vault key names in its step environment. Steps do not read intent or report results through Gateway HTTP. Terminal projection reads the bound native history once. Every effect uses exact `orbit-node-N` placement and the matching string Node label. Publication steps retain the Route owner’s whole-Node freshness rule.
 
 ## Retry and ownership
 
@@ -51,11 +51,13 @@ Only owned resources go with an Instance. Registered external databases lose the
 
 The native workflow composes owned MySQL, PostgreSQL and Valkey removal on each recorded server Node, local SQLite removal and registered external record cleanup. It uses one encrypted aggregate database intent for the admitted member set. Each SQL Node receives only its own server passwords.
 
+### Production source
+
 Production removal requires the exclusive recorded `orbit-app-<project-id>` account and `/home/<account>` release layout. Swamp captures the home and selected release inode, account IDs, Git origin and worktree inventory before effects. Production releases are deploy artifacts; their managed shared-path links do not count as dirty source. Missing accounts and homes, and prepared homes without a current release, are valid captured states. Teardown requires both a captured release and admitted scripts.
 
-A root-owned journal binds that capture to the removal. The canonical production-home lower verifies its Orbit marker, system account, nologin shell and primary group before deletion. Finalization atomically quarantines the exact home, removes its contents and deletes only that account.
+The saved native capture binds source finalization to the removal. Native inspection verifies the Orbit marker, system account, nologin shell and primary group. Separate command steps quarantine the exact home, remove its contents, delete the account and remove the captured marker directory. Linked worktrees finish before their primary checkout.
 
-An interrupted deletion resumes from the same journal; a replacement home, release or account refuses further effects. Foreign publication participants read only their admitted public view. There is no polled or synchronous fallback.
+Native resume and a fresh destroy admission reuse the original capture. Current source dispositions are separate outputs, so a missing or quarantined source does not rerun teardown. Existing capture values and array membership stay immutable; native inspection may add missing filesystem metadata after proving the original identity. A replacement home, release or account refuses further effects. Foreign publication participants receive only their admitted plans and vault references.
 
 The synchronous `DestroyInstanceAction` and its executor-Node HTTP fork are removed. Task workspace ending requires its own native parent DAG; it cannot call a synchronous Instance remover, start a child Operation, or admit removal and pretend cleanup has completed.
 

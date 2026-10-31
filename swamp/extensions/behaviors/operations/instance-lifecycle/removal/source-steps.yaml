@@ -54,6 +54,7 @@ jobs:
         intent: ${{ inputs.intent }}
         stdout: ${{ steps["inspect-sources"].outputs.stdout }}
 - name: finalize_worktrees
+  concurrency: 1
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
     node: ${{ string(inputs.node_id) }}
