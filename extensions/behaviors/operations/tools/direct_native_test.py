@@ -38,7 +38,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
                 self.assertEqual(job.pop('target'), '${{ "orbit-node-" + string(inputs.node_id) }}')
                 self.assertEqual(job.pop('labels'), {'node': '${{ string(inputs.node_id) }}'})
             (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(workflow, sort_keys=False))
-        self.state = {'operation':{'id':17,'node_id':209,'kind':'tool.install','input':{'node_id':209,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','agent_sha256':'a'*64,'platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
+        self.state = {'operation':{'id':17,'node_id':209,'kind':'tool.install','input':{'node_id':209,'manager':'apt','package':'jq','version_constraint':None,'user':'orbit','platform':'linux','architecture':'x86_64','tool_id':None},'status':'queued','result':None,'cancel_requested':False},'calls':[],'effects':0,'commands':[],'installed':None}
         self.save()
 
     def save(self):
