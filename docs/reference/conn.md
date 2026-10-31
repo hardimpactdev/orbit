@@ -255,6 +255,8 @@ When a terminal result repeats, Conn returns the recorded result even after the 
 
 ### Native pairing revocation
 
+The extension manifest declares the revocation behavior and its script files. Serve bundles those files for the Node 209 worker. The metadata step resolves paths in that worker's bundle; the following command steps execute those shipped files.
+
 Swamp core command steps, child workflows and native `forEach` supply the execution. Official SSH, cfgmgmt, datastore and cloud-vault extensions were checked at `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`; they do not implement T3 session APIs. Each command uses Python's standard HTTPS client for one existing T3 request. There is no custom transport, authentication protocol, Gateway relay or runtime restart. Since this is an API integration, no worker or SSH step runs on the subject Node.
 
 A child workflow orders each fresh session read before its ownership check and one revoke request. A missing session is already absent; a changed label or a session that became current refuses.

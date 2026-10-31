@@ -1,3 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/conn-revocation-plan'
+version: 2026.10.31.2
+visibility: private
+license: MIT
+description: Public Conn revocation planning and shipped T3 API actions.
+behaviors:
+  - operations/conn-revocation/mod.ts
 additionalFiles:
   - scripts/list_sessions.py
   - scripts/revoke.py
