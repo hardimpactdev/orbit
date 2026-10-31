@@ -35,3 +35,17 @@ runtime.
 Removal accepts leftover `.orbit-process-*` files only inside the selected
 Process private generation directory and only with the same root ownership, 0600
 mode and regular-file checks. It validates the whole set before effects.
+
+## Instance member steps
+
+`instanceActions()` composes the canonical local Process and Schedule actions
+inside an existing native root. `instanceRuntime()` also exposes the dedicated
+restart and definition-installation DAG methods. The Gateway captures owned
+members and only projects bounded native member outcomes. No member Operation or
+child admission is created.
+
+Restart selection includes only active, desired-running Processes with
+`restart_on_deploy`. Definition copies retain stopped Process intent and
+disabled timers. The captured member list is immutable. Private definitions are
+selected from the root callback and stay inside each local action. Vite
+preparation runs before same-root Caddy publication and activation.
