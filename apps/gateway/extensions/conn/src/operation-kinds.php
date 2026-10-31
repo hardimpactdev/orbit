@@ -7,7 +7,11 @@ use Orbit\Extensions\Conn\Domain\ConnRevocationExecution;
 
 $kinds = [];
 $kinds['conn.pairing_create'] = [
-    'executor' => 'swamp',
+    'executor' => 'swamp', 'completion' => ConnOperationCompletion::class,
+    'runs' => [['transport' => 'gateway', 'name' => 'conn.pairing-issue', 'resumable' => false,
+        'uncertain_error_code' => 'conn.pairing_outcome_unknown', 'input_fields' => ['environment', 'pairing_ids'],
+        'secrets' => ['environment' => 'conn.environment']]],
+    'completion_contract' => ['step' => 'pairing-create', 'transport' => 'gateway', 'name' => 'conn.pairing-issue', 'result' => ['backend' => 'issued']],
     'result_fields' => ['backend', 'pairing_id', 'pairing_link_id', 'expires_at', 'error_code',
         ['name' => 'credential', 'secret' => true, 'store' => 'conn.pairing.credential']],
 ];
