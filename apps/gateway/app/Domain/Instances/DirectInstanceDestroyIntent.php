@@ -40,15 +40,15 @@ final readonly class DirectInstanceDestroyIntent
      * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
-    public function record(array $input): array
+    public function record(array $input, bool $parentOwnsRoutes = false): array
     {
-        return DB::transaction(fn (): array => $this->recordIntent($input));
+        return DB::transaction(fn (): array => $this->recordIntent($input, $parentOwnsRoutes));
     }
 
     /** @param array<string, mixed> $input
      * @return array<string, mixed>
      */
-    private function recordIntent(array $input): array
+    private function recordIntent(array $input, bool $parentOwnsRoutes): array
     {
         $members = InstanceLifecycleInput::members($input);
         if (Operation::query()->whereIn('kind', ['instance.destroy'])
@@ -141,12 +141,14 @@ final readonly class DirectInstanceDestroyIntent
         }
         Instance::query()->whereKey($ids)->update(['status' => InstanceState::Removing]);
         // Desired serving state is intent. Associations remain until native withdrawal succeeds.
-        Route::query()->whereKey($routeIds)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+        if (! $parentOwnsRoutes) {
+            Route::query()->whereKey($routeIds)->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
+        }
         $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
         $routes = Route::query()->with('targets')->whereKey($routeIds)->orderBy('id')->get();
         $withdrawals = [];
         $nodes = [$node->id];
-        foreach ($ids as $id) {
+        foreach ($parentOwnsRoutes ? [] : $ids as $id) {
             $target = Instance::query()->with(['node', 'project'])->findOrFail($id);
             $artifact = $this->routes->forDevelopmentRemoval($target,
                 $routes->filter(static fn (Route $route): bool => $route->targets->contains('instance_id', $id)));
@@ -156,7 +158,7 @@ final readonly class DirectInstanceDestroyIntent
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
 
-        $recorded = [...$input, 'participant_node_ids' => $nodes, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $nodes, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
             'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
             'direct_destroy' => [

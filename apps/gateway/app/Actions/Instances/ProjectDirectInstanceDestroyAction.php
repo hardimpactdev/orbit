@@ -16,6 +16,7 @@ use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
 use App\Models\Process;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,10 @@ final readonly class ProjectDirectInstanceDestroyAction
                 return $removal->load('members');
             }
             $saved = $removal->native_intent ?? $input;
+            $parentOwnsRoutes = ($saved['parent_owns_routes'] ?? false) === true;
+            if ($parentOwnsRoutes && RouteTarget::query()->whereIn('instance_id', $removal->members()->pluck('instance_id'))->exists()) {
+                throw new ResourceOperationException('instance.removal_conflict', 'The parent must detach the removed Instances before projecting deletion.', 409);
+            }
             $detail = ValidatedData::object($saved['direct_destroy']);
             $runtime = ValidatedData::object($detail['runtime']);
             $processIds = array_column(InstanceLifecycleInput::members(['members' => $runtime['processes']]), 'process_id');
@@ -65,7 +70,7 @@ final readonly class ProjectDirectInstanceDestroyAction
             $removal->update(['status' => InstanceRemovalStatus::Removing, 'failed_step' => null, 'error_code' => null]);
             foreach ($removal->members()->lockForUpdate()->get() as $member) {
                 $member->update(['source_prepared_at' => $member->source_prepared_at ?? now()]);
-                foreach ($member->route_ids ?? [] as $routeId) {
+                foreach ($parentOwnsRoutes ? [] : ($member->route_ids ?? []) as $routeId) {
                     Route::query()->whereKey($routeId)->delete();
                     $this->deleted(RecordEventType::RouteDeleted, $routeId);
                 }
