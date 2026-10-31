@@ -8,7 +8,7 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [schedule.enable, schedule.destroy],
+      enum: [schedule.enable],
     }
   required: [operation_id, node_id, kind]
 jobs:

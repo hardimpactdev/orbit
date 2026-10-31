@@ -20,7 +20,7 @@ class ScheduleNativeFixture(NativeTestCase):
         failure = self.repo/'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {http} from "./processes-schedules/control_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => http);'))
         module = self.repo/'extensions/behaviors/operations/processes-schedules/control.ts'
-        module.write_text('import {http, action, install} from "./control_native_fixture.ts";\nimport {installSchedule} from "./installation.ts";\n'+module.read_text().replace('export const behavior = scheduleControl();', 'export const behavior = scheduleControl(() => http, action, (input, gateway, signal) => installSchedule(input, gateway, signal, install));'))
+        module.write_text('import {http, action} from "./control_native_fixture.ts";\n'+module.read_text().replace('export const behavior = scheduleControl();', 'export const behavior = scheduleControl(() => http, action);'))
         source = ROOT/'workflows/workflow-operation-schedule-control.yaml'
         text = '\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('labels:', 'target:')))+'\n'
         (self.repo/'workflows'/source.name).write_text(text)
@@ -80,12 +80,7 @@ class DirectControlRecovery:
 
 
 class ScheduleNative(DirectControlRecovery, ScheduleNativeFixture):
-    def test_create_installs_private_command_in_same_native_root(self):
-        self.state['operation']['kind'] = 'schedule.create'
-        self.save()
-        self.cli('workflow', 'run', 'operation-schedule-create', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=schedule.create')
-        state = self.read()
-        self.assertEqual(state['actions'], 1)
-        self.assertEqual(state['operation']['status'], 'succeeded')
-        self.assertEqual(state['seen']['desired'], 'disabled')
-        self.assertNotIn('command', state['seen'])
+    def test_create_is_refused_by_the_retired_control_entrypoint(self):
+        self.cli('workflow', 'run', 'operation-schedule-control', '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=schedule.create', success=False)
+        self.assertEqual(self.read()['actions'], 0)
+        self.assertEqual(self.read()['operation']['status'], 'queued')

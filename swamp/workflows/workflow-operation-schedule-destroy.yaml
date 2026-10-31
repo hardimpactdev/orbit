@@ -1,0 +1,564 @@
+id: 38356821-a5bb-4272-afab-60acf0a9cf22
+name: operation-schedule-destroy
+description: Native Schedule destroy on a209 worker through official SSH; public units
+  and bounded terminal result.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - schedule.destroy
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            command_hash:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+            user:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            group:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            home:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            shell:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            working_directory:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            login_shell:
+              type: boolean
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 86400
+            calendar:
+              type: string
+              pattern: ^[ -~]+$
+              minLength: 1
+              maxLength: 255
+            desired:
+              type: string
+              enum:
+              - enabled
+              - disabled
+          required:
+          - id
+          - command_hash
+          - user
+          - group
+          - home
+          - shell
+          - working_directory
+          - login_shell
+          - timeout_seconds
+          - calendar
+          - desired
+          additionalProperties: false
+        cascade:
+          type: boolean
+        ssh_execution:
+          type: object
+      required:
+      - schedule
+      - cascade
+      - ssh_execution
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: schedule
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-lifecycle-assets-" + string(inputs.operation_id)
+        }}
+      methodName: lifecycle
+      inputs:
+        schedule: ${{ inputs.intent.schedule }}
+        cascade: ${{ inputs.intent.cascade }}
+  - name: prepare_assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id }}
+  - name: copy_assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: inspect
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: copy_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=destroy
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/inspect_schedule.py"
+          }}
+        sudo: true
+  - name: observation
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-lifecycle-assets-" + string(inputs.operation_id)
+        }}
+      methodName: observation
+      inputs:
+        stdout: ${{ steps.inspect.outputs.stdout }}
+  - name: accept
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: observation
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-destroy-accept-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'test "$OK" = true
+
+          '
+        env:
+          OK: ${{ string(steps.observation.outputs.ok) }}
+  - name: disable_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: accept
+      condition:
+        type: succeeded
+    guard: ${{ !steps.observation.outputs.has_timer }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - disable
+        - --now
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: stop_service
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: accept
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !inputs.intent.cascade || !steps.observation.outputs.has_service }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - stop
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+        sudo: true
+  - name: remove_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: accept
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: stop_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id +
+          ".timer" }}
+        sudo: true
+  - name: remove_service
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: remove_timer
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id +
+          ".service" }}
+        sudo: true
+  - name: remove_script
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: remove_service
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".sh" }}
+        sudo: true
+  - name: remove_callback
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: remove_script
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".complete" }}
+        sudo: true
+  - name: reload_units
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: remove_callback
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+  - name: reset_service
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: reload_units
+      condition:
+        type: succeeded
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - reset-failed
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+        sudo: true
+  - name: reset_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: reload_units
+      condition:
+        type: succeeded
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - reset-failed
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: verify
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: reload_units
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=destroy
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/verify_schedule.py"
+          }}
+        sudo: true
+  - name: complete
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-destroy-complete-" + string(inputs.operation_id)
+        }}
+      methodName: execute
+      inputs:
+        run: 'true
+
+          '
+        env: {}
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: prepare_assets
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: inspect
+      condition:
+        type: always
+    - step: observation
+      condition:
+        type: always
+    - step: accept
+      condition:
+        type: always
+    - step: disable_timer
+      condition:
+        type: always
+    - step: stop_service
+      condition:
+        type: always
+    - step: remove_timer
+      condition:
+        type: always
+    - step: remove_service
+      condition:
+        type: always
+    - step: remove_script
+      condition:
+        type: always
+    - step: remove_callback
+      condition:
+        type: always
+    - step: reload_units
+      condition:
+        type: always
+    - step: reset_service
+      condition:
+        type: always
+    - step: reset_timer
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: complete
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-destroy-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\nif [ \"$COMPLETE\" = succeeded ]; then\n  printf '%s\\n' '{\"\
+          ready\":true}'\nelif [ -n \"$ERROR\" ]; then\n  printf '{\"error_code\"\
+          :\"%s\"}\\n' \"$ERROR\"\nelse\n  printf '%s\\n' '{\"error_code\":\"schedule.remove_failed\"\
+          }'\nfi\n"
+        env:
+          COMPLETE: '${{ "complete" in steps ? steps.complete.status : "skipped" }}'
+          ERROR: '${{ "observation" in steps ? (steps.observation.outputs.error_code
+            == null ? "" : steps.observation.outputs.error_code) : "" }}'
+  - name: cleanup_assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    guard: ${{ !("complete" in steps && steps.complete.status == "succeeded") }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id }}
+        sudo: true

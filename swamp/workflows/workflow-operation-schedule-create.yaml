@@ -1,8 +1,10 @@
 id: 2631be29-8b8d-40af-94d8-07f76f795c87
 name: operation-schedule-create
-description: Install one admitted Schedule on its exact Node worker.
+description: Native Schedule create on a209 worker through official SSH; public units
+  and bounded terminal result.
 vaults: []
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -12,45 +14,1388 @@ inputs:
       minimum: 1
     kind:
       type: string
-      const: schedule.create
+      enum:
+      - schedule.create
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            command_hash:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+            user:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            group:
+              type: string
+              pattern: ^[a-z_][a-z0-9_-]{0,255}$
+            home:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            shell:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            working_directory:
+              type: string
+              pattern: ^/[^\x00-\x1f\x7f]*$
+              maxLength: 4096
+            login_shell:
+              type: boolean
+            timeout_seconds:
+              type: integer
+              minimum: 1
+              maximum: 86400
+            calendar:
+              type: string
+              pattern: ^[ -~]+$
+              minLength: 1
+              maxLength: 255
+            desired:
+              type: string
+              enum:
+              - enabled
+              - disabled
+          required:
+          - id
+          - command_hash
+          - user
+          - group
+          - home
+          - shell
+          - working_directory
+          - login_shell
+          - timeout_seconds
+          - calendar
+          - desired
+          additionalProperties: false
+        cascade:
+          type: boolean
+        ssh_execution:
+          type: object
+      required:
+      - schedule
+      - cascade
+      - ssh_execution
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
-    - operation_id
-    - node_id
-    - kind
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: node
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
-    steps:
-      - name: install
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/schedule-control"
-          behaviorName: ${{ "schedule-control-node-" + string(inputs.node_id) }}
-          methodName: install
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
-  - name: failed-node
+- name: schedule
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-lifecycle-assets-" + string(inputs.operation_id)
+        }}
+      methodName: lifecycle
+      inputs:
+        schedule: ${{ inputs.intent.schedule }}
+        cascade: ${{ inputs.intent.cascade }}
+  - name: prepare_assets
+    target: orbit-node-209
+    labels: *id001
     dependsOn:
-      - job: node
-        condition:
-          type: failed
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: project-failure
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "operation-failure-" + run.id }}'
-          methodName: report
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            kind: ${{ inputs.kind }}
-            node_id: ${{ inputs.node_id }}
-            run_id: ${{ run.id }}
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id }}
+  - name: copy_assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: inspect
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: copy_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/inspect_schedule.py"
+          }}
+        sudo: true
+  - name: observation
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/schedule-run-assets'
+      behaviorName: ${{ "schedule-lifecycle-assets-" + string(inputs.operation_id)
+        }}
+      methodName: observation
+      inputs:
+        stdout: ${{ steps.inspect.outputs.stdout }}
+  - name: accept
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: observation
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-create-accept-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'test "$OK" = true
+
+          '
+        env:
+          OK: ${{ string(steps.observation.outputs.ok) }}
+  - name: account
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: accept
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/account.py" }}
+        - ${{ inputs.intent.schedule.user }}
+        - ${{ inputs.intent.schedule.home }}
+        - ${{ inputs.intent.schedule.shell }}
+        - ${{ inputs.intent.schedule.group }}
+  - name: directory
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: account
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - ${{ inputs.intent.schedule.user }}
+        - --
+        - /usr/bin/test
+        - -d
+        - ${{ inputs.intent.schedule.working_directory }}
+  - name: accessible
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - ${{ inputs.intent.schedule.user }}
+        - --
+        - /usr/bin/test
+        - -x
+        - ${{ inputs.intent.schedule.working_directory }}
+  - name: calendar
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: accessible
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemd-analyze
+        - calendar
+        - ${{ inputs.intent.schedule.calendar }}
+  - name: prepare_owner
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: calendar
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/install
+        - -d
+        - -o
+        - '0'
+        - -g
+        - '0'
+        - -m
+        - '711'
+        - --
+        - /etc/orbit
+        sudo: true
+  - name: prepare_candidates
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare_owner
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/install
+        - -d
+        - -o
+        - '0'
+        - -g
+        - '0'
+        - -m
+        - '700'
+        - --
+        - /etc/orbit/schedule-candidates
+        sudo: true
+  - name: backup
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: prepare_candidates
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - ${{ "ORBIT_SCHEDULE_OBSERVATION=" + steps.observation.outputs.observation_json
+          }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/backup_schedule.py"
+          }}
+        sudo: true
+  - name: stage_service
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: backup
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/stage_schedule_unit.py"
+          }}
+        - service
+        sudo: true
+  - name: stage_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: stage_service
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/stage_schedule_unit.py"
+          }}
+        - timer
+        sudo: true
+  - name: validate_units
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: stage_timer
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemd-analyze
+        - verify
+        - ${{ "/etc/orbit/schedule-candidates/" + inputs.intent.schedule.id + "/"
+          + run.id + "/orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+        - ${{ "/etc/orbit/schedule-candidates/" + inputs.intent.schedule.id + "/"
+          + run.id + "/orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: disable_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    guard: ${{ !steps.observation.outputs.needs_install || !steps.observation.outputs.has_timer
+      }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - disable
+        - --now
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: publish_service
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.needs_install }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mv
+        - -T
+        - --
+        - ${{ "/etc/orbit/schedule-candidates/" + inputs.intent.schedule.id + "/"
+          + run.id + "/orbit-schedule-" + inputs.intent.schedule.id + ".service" }}
+        - ${{ "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id +
+          ".service" }}
+        sudo: true
+  - name: publish_timer
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.needs_install }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mv
+        - -T
+        - --
+        - ${{ "/etc/orbit/schedule-candidates/" + inputs.intent.schedule.id + "/"
+          + run.id + "/orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        - ${{ "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id +
+          ".timer" }}
+        sudo: true
+  - name: reload_units
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.needs_install }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+  - name: boot_policy
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload_units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.needs_install }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - '${{ ((steps.observation.outputs.obsolete || !steps.observation.outputs.needs_install)
+          ? steps.observation.outputs.timer_enabled : inputs.intent.schedule.desired
+          == "enabled") ? "enable" : "disable" }}'
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: timer_control
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload_units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: boot_policy
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.needs_install }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - '${{ ((steps.observation.outputs.obsolete || !steps.observation.outputs.needs_install)
+          ? steps.observation.outputs.timer_active : inputs.intent.schedule.desired
+          == "enabled") ? "start" : "stop" }}'
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: verify
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: validate_units
+      condition:
+        type: succeeded
+    - step: disable_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_service
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: publish_timer
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: reload_units
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: boot_policy
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: timer_control
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - '${{ "ORBIT_SCHEDULE_ENABLED=" + string((steps.observation.outputs.obsolete
+          || !steps.observation.outputs.needs_install) ? steps.observation.outputs.timer_enabled
+          : inputs.intent.schedule.desired == "enabled") }}'
+        - '${{ "ORBIT_SCHEDULE_ACTIVE=" + string((steps.observation.outputs.obsolete
+          || !steps.observation.outputs.needs_install) ? steps.observation.outputs.timer_active
+          : inputs.intent.schedule.desired == "enabled") }}'
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/verify_schedule.py"
+          }}
+        sudo: true
+  - name: remove_old_script
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+    guard: ${{ !steps.observation.outputs.has_script }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".sh" }}
+        sudo: true
+  - name: remove_old_callback
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+    - step: remove_old_script
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !steps.observation.outputs.has_callback }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + ".complete" }}
+        sudo: true
+  - name: complete
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: verify
+      condition:
+        type: succeeded
+    - step: remove_old_script
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: remove_old_callback
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-create-complete-" + string(inputs.operation_id)
+        }}
+      methodName: execute
+      inputs:
+        run: 'true
+
+          '
+        env: {}
+  - name: rollback_disable
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: prepare_assets
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: inspect
+      condition:
+        type: always
+    - step: observation
+      condition:
+        type: always
+    - step: accept
+      condition:
+        type: always
+    - step: account
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: accessible
+      condition:
+        type: always
+    - step: calendar
+      condition:
+        type: always
+    - step: prepare_owner
+      condition:
+        type: always
+    - step: prepare_candidates
+      condition:
+        type: always
+    - step: backup
+      condition:
+        type: always
+    - step: stage_service
+      condition:
+        type: always
+    - step: stage_timer
+      condition:
+        type: always
+    - step: validate_units
+      condition:
+        type: always
+    - step: disable_timer
+      condition:
+        type: always
+    - step: publish_service
+      condition:
+        type: always
+    - step: publish_timer
+      condition:
+        type: always
+    - step: reload_units
+      condition:
+        type: always
+    - step: boot_policy
+      condition:
+        type: always
+    - step: timer_control
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: remove_old_script
+      condition:
+        type: always
+    - step: remove_old_callback
+      condition:
+        type: always
+    - step: complete
+      condition:
+        type: always
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - disable
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: rollback_stop
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: prepare_assets
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: inspect
+      condition:
+        type: always
+    - step: observation
+      condition:
+        type: always
+    - step: accept
+      condition:
+        type: always
+    - step: account
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: accessible
+      condition:
+        type: always
+    - step: calendar
+      condition:
+        type: always
+    - step: prepare_owner
+      condition:
+        type: always
+    - step: prepare_candidates
+      condition:
+        type: always
+    - step: backup
+      condition:
+        type: always
+    - step: stage_service
+      condition:
+        type: always
+    - step: stage_timer
+      condition:
+        type: always
+    - step: validate_units
+      condition:
+        type: always
+    - step: disable_timer
+      condition:
+        type: always
+    - step: publish_service
+      condition:
+        type: always
+    - step: publish_timer
+      condition:
+        type: always
+    - step: reload_units
+      condition:
+        type: always
+    - step: boot_policy
+      condition:
+        type: always
+    - step: timer_control
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: remove_old_script
+      condition:
+        type: always
+    - step: remove_old_callback
+      condition:
+        type: always
+    - step: complete
+      condition:
+        type: always
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - stop
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: rollback_files
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: rollback_disable
+      condition:
+        type: always
+    - step: rollback_stop
+      condition:
+        type: always
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/restore_schedule.py"
+          }}
+        sudo: true
+  - name: rollback_reload
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: rollback_files
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - daemon-reload
+        sudo: true
+  - name: rollback_boot
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: rollback_reload
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) || !steps.observation.outputs.has_timer
+      }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - '${{ steps.observation.outputs.timer_enabled ? "enable" : "disable" }}'
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: rollback_active
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: rollback_reload
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: rollback_boot
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) || !steps.observation.outputs.has_timer
+      }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/systemctl
+        - '${{ steps.observation.outputs.timer_active ? "start" : "stop" }}'
+        - ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+        sudo: true
+  - name: rollback_verify
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: rollback_reload
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: rollback_boot
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: rollback_active
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ !("backup" in steps && steps.backup.status == "succeeded" && (("disable_timer"
+      in steps && steps.disable_timer.status == "succeeded") || ("publish_service"
+      in steps && steps.publish_service.status == "succeeded") || ("publish_timer"
+      in steps && steps.publish_timer.status == "succeeded")) && !("complete" in steps
+      && steps.complete.status == "succeeded")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_SCHEDULE_INPUT=" + steps.assets.outputs.lifecycle_json }}
+        - ${{ "ORBIT_SCHEDULE_RUN=" + run.id }}
+        - ORBIT_SCHEDULE_ACTION=create
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id + "/scripts/verify_rollback.py"
+          }}
+        sudo: true
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: prepare_assets
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: inspect
+      condition:
+        type: always
+    - step: observation
+      condition:
+        type: always
+    - step: accept
+      condition:
+        type: always
+    - step: account
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: accessible
+      condition:
+        type: always
+    - step: calendar
+      condition:
+        type: always
+    - step: prepare_owner
+      condition:
+        type: always
+    - step: prepare_candidates
+      condition:
+        type: always
+    - step: backup
+      condition:
+        type: always
+    - step: stage_service
+      condition:
+        type: always
+    - step: stage_timer
+      condition:
+        type: always
+    - step: validate_units
+      condition:
+        type: always
+    - step: disable_timer
+      condition:
+        type: always
+    - step: publish_service
+      condition:
+        type: always
+    - step: publish_timer
+      condition:
+        type: always
+    - step: reload_units
+      condition:
+        type: always
+    - step: boot_policy
+      condition:
+        type: always
+    - step: timer_control
+      condition:
+        type: always
+    - step: verify
+      condition:
+        type: always
+    - step: remove_old_script
+      condition:
+        type: always
+    - step: remove_old_callback
+      condition:
+        type: always
+    - step: complete
+      condition:
+        type: always
+    - step: rollback_disable
+      condition:
+        type: always
+    - step: rollback_stop
+      condition:
+        type: always
+    - step: rollback_files
+      condition:
+        type: always
+    - step: rollback_reload
+      condition:
+        type: always
+    - step: rollback_boot
+      condition:
+        type: always
+    - step: rollback_active
+      condition:
+        type: always
+    - step: rollback_verify
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "schedule-create-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: "set -eu\nif [ \"$COMPLETE\" = succeeded ]; then\n  printf '%s\\n' '{\"\
+          ready\":true}'\nelif [ -n \"$ERROR\" ]; then\n  printf '{\"error_code\"\
+          :\"%s\"}\\n' \"$ERROR\"\nelif [ \"$ROLLBACK_0\" = failed ] || [ \"$ROLLBACK_1\"\
+          \ = failed ] || [ \"$ROLLBACK_2\" = failed ] || [ \"$ROLLBACK_3\" = failed\
+          \ ] || [ \"$ROLLBACK_4\" = failed ]; then\n  printf '%s\\n' '{\"error_code\"\
+          :\"schedule.rollback_failed\"}'\nelif [ \"$ACCOUNT\" = failed ] || [ \"\
+          $DIRECTORY\" = failed ] || [ \"$ACCESSIBLE\" = failed ]; then\n  printf\
+          \ '%s\\n' '{\"error_code\":\"schedule.target_unavailable\"}'\nelif [ \"\
+          $CALENDAR\" = failed ]; then\n  printf '%s\\n' '{\"error_code\":\"schedule.calendar_invalid\"\
+          }'\nelse\n  printf '%s\\n' '{\"error_code\":\"schedule.install_failed\"\
+          }'\nfi\n"
+        env:
+          COMPLETE: '${{ "complete" in steps ? steps.complete.status : "skipped" }}'
+          ERROR: '${{ "observation" in steps ? (steps.observation.outputs.error_code
+            == null ? "" : steps.observation.outputs.error_code) : "" }}'
+          ACCOUNT: '${{ "account" in steps ? steps.account.status : "skipped" }}'
+          DIRECTORY: '${{ "directory" in steps ? steps.directory.status : "skipped"
+            }}'
+          ACCESSIBLE: '${{ "accessible" in steps ? steps.accessible.status : "skipped"
+            }}'
+          CALENDAR: '${{ "calendar" in steps ? steps.calendar.status : "skipped" }}'
+          ROLLBACK_0: '${{ "rollback_files" in steps ? steps.rollback_files.status
+            : "skipped" }}'
+          ROLLBACK_1: '${{ "rollback_reload" in steps ? steps.rollback_reload.status
+            : "skipped" }}'
+          ROLLBACK_2: '${{ "rollback_boot" in steps ? steps.rollback_boot.status :
+            "skipped" }}'
+          ROLLBACK_3: '${{ "rollback_active" in steps ? steps.rollback_active.status
+            : "skipped" }}'
+          ROLLBACK_4: '${{ "rollback_verify" in steps ? steps.rollback_verify.status
+            : "skipped" }}'
+  - name: cleanup_snapshot
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    guard: ${{ !("complete" in steps && steps.complete.status == "succeeded") }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/etc/orbit/schedule-candidates/" + inputs.intent.schedule.id + "/"
+          + run.id }}
+        sudo: true
+  - name: cleanup_assets
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    guard: ${{ !("complete" in steps && steps.complete.status == "succeeded") }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "schedule-lifecycle-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-schedule-lifecycle-" + run.id }}
+        sudo: true
