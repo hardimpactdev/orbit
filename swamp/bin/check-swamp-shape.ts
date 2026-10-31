@@ -1739,6 +1739,8 @@ async function run(argv: string[], stdin?: string) {
   return { ...result, text: new TextDecoder().decode(result.stdout) };
 }
 let gitPrefix = "";
+// Set only after the existing ancestry/repository-id relocation checks succeed.
+const preservedRootRefs = new Set<string>();
 async function filesAt(ref?: string): Promise<Map<string, string>> {
   let listed = await run(
     ref
@@ -1782,6 +1784,7 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
       ref,
     ]);
     blobPrefix = "";
+    preservedRootRefs.add(ref);
   }
   const names = selected(listed.text);
   if (!ref) {
@@ -2176,15 +2179,45 @@ if (import.meta.main) {
     );
     const moves: SourceMove[] = [];
     if (head.has(PROXY_HTTP_MOVE.to)) {
-      for (const descendant of [baseRef, "HEAD"]) {
-        const lineage = await run([
+      const originInHead = await run([
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        PROXY_HTTP_MOVE.origin,
+        "HEAD",
+      ]);
+      const originInBase = await run([
+        "git",
+        "merge-base",
+        "--is-ancestor",
+        PROXY_HTTP_MOVE.origin,
+        baseRef,
+      ]);
+      if (!originInHead.success) {
+        throw new Error("HTTP source move lacks immutable origin ancestry");
+      }
+      if (!originInBase.success) {
+        // The first import compares the actual preserved, unprefixed source,
+        // which predates the approved origin checkpoint and has no gate/ledger.
+        // Keep that comparison source and its scanned caps. The origin is only
+        // an immutable code witness, never a substitute comparison base.
+        const baseInOrigin = await run([
           "git",
           "merge-base",
           "--is-ancestor",
+          baseRef,
           PROXY_HTTP_MOVE.origin,
-          descendant,
         ]);
-        if (!lineage.success) {
+        const checkerAtBase = await run([
+          "git",
+          "cat-file",
+          "-e",
+          `${baseRef}:bin/check-swamp-shape.ts`,
+        ]);
+        if (
+          !preservedRootRefs.has(baseRef) || base.has(BASELINE) ||
+          checkerAtBase.success || !baseInOrigin.success
+        ) {
           throw new Error("HTTP source move lacks immutable origin ancestry");
         }
       }

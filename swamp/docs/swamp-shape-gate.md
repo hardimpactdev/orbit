@@ -18,7 +18,13 @@ requires the exact two imports, removes the original definitions, and preserves
 only the existing automatic-deploy caller and call expression. Extra declarations,
 new or indirect callers, changed executable bodies, count/evidence growth and
 resurrection after the actual comparison base removed the debt all fail. The
-origin must be an ancestor of both HEAD and the comparison base.
+origin must be an ancestor of HEAD. Normally it must also be an ancestor of the
+comparison base. For the first history-preserving import only, the verified
+unprefixed comparison source may instead precede the origin: it must have the
+same repository identity, retained ancestry, and no gate or baseline. The actual
+older source still supplies the declarations, caller, findings and derived caps;
+the later origin never replaces the comparison base. A prefixed or unrelated
+older tree cannot use this path.
 
 The raw baseline still only shrinks. This source proof derives one virtual limit
 at the new path for each run; `--write-baseline` never writes that limit into the
@@ -27,6 +33,18 @@ call. JSON metrics report checked-in baseline rows and derived source moves
 separately; `SHAPE-GATE` includes `source_moves`. This is not a general permission
 to transfer allowances on rename. The support lower must reach the comparison
 base before the extraction, so the frozen checker enforces the same contract.
+
+## Review checklist
+
+- Before adding a mechanism, check [Swamp core](https://swamp-club.com/manual) and the [official extensions](https://github.com/swamp-club/swamp-extensions), including ssh, vault, datastore, git, container-image, cfgmgmt and workflows. Use the provided feature and its defaults when it fits. A PR that adds a mechanism must name what it checked and explain why it does not fit.
+- Reject custom wrappers, transports, supervisors, protocols or channels for work Swamp already provides. For example, use official `@swamp/ssh` instead of a custom SSH runner.
+- Keep the design proportionate. Orbit Nodes are trusted; do not add custody, placement or identity hardening beyond Swamp defaults for hypothetical edge cases.
+
+These are review items. The scanner does not decide whether a custom mechanism
+has a justified business purpose. The binding [Swamp shape guide](swamp-shape.md)
+owns the execution contract.
+
+## Automated checks
 
 The gate implements Nick's migration policy using these manual references:
 
@@ -128,6 +146,12 @@ The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
+
+Legacy Gateway HTTP over proxy Nodes 1/18 lives in
+`operations/_lib/node-proxy-http.ts`. Its retained caller uses pinned SSH curl
+on the effect Node with the caller's CA file and timeout. Command lowers import
+`operations/_lib/node-proxy.ts`, which contains no Gateway HTTP client. This
+separation grants no new use of the legacy client or admission on proxy Nodes.
 
 Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
 with `extensions:read` scope. Only the native workflow-validation step receives
