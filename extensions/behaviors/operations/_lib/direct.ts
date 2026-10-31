@@ -1,6 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
+/** Shared native configuration, independent of the retired polled runner. */
+export const Globals = z.object({
+  gatewayUrl: z.string().url().default("https://gateway.orbit"),
+  caFile: z.string().default(
+    "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+  ),
+});
+
 export const DirectArgs = z.object({
   operation_id: z.number().int().positive(),
   kind: z.string().regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/),
@@ -310,9 +318,13 @@ export async function directOperation(
       if (result.error_code !== undefined) safeCode(result.error_code);
       status = result.error_code === undefined ? "succeeded" : "failed";
     } catch (error) {
-      if (!(error instanceof DirectOperationCancelled)) throw error;
-      result = {};
-      status = "cancelled";
+      if (error instanceof DirectOperationCancelled) {
+        result = {};
+        status = "cancelled";
+      } else {
+        result = { error_code: "operation.native_outcome_unknown" };
+        status = "failed";
+      }
     }
   }
   await gateway.project({

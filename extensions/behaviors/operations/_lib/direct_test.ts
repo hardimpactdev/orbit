@@ -80,7 +80,7 @@ Deno.test("shared template refuses foreign operation identity before action or p
     assertEquals(f.projected, []);
   }
 });
-Deno.test("shared template leaves native failure handling in Swamp and never retries an action", async () => {
+Deno.test("shared template projects bounded failure after an unexpected action error and never retries", async () => {
   const f = fixture();
   let attempts = 0;
   await assertRejects(() =>
@@ -90,7 +90,12 @@ Deno.test("shared template leaves native failure handling in Swamp and never ret
     }, (r) => r)
   );
   assertEquals(attempts, 1);
-  assertEquals(f.projected.map((p) => p.status), ["running"]);
+  assertEquals(f.projected.map((p) => p.status), ["running", "failed"]);
+  assertEquals(f.projected[1].error_code, "operation.native_outcome_unknown");
+  assertEquals(
+    JSON.stringify(f.projected).includes("uncertain external result"),
+    false,
+  );
 });
 Deno.test("shared template checks cancellation before a local Node action", async () => {
   const f = fixture();
@@ -131,7 +136,8 @@ Deno.test("shared template projects safe family refusals and rejects free-form d
       (r) => r,
     )
   );
-  assertEquals(g.projected.length, 1);
+  assertEquals(g.projected.length, 2);
+  assertEquals(g.projected[1].error_code, "operation.native_outcome_unknown");
 });
 Deno.test("shared gateway client binds every projection to the workflow run and hides remote diagnostics", async () => {
   const calls: unknown[] = [];
@@ -320,7 +326,7 @@ Deno.test("only explicit no-effect cancellation can end a running direct action 
         throw error;
       }, (r) => r)
     );
-    assertEquals(f.projected.map((p) => p.status), ["running"]);
+    assertEquals(f.projected.map((p) => p.status), ["running", "failed"]);
   }
   const f = fixture();
   const controller = new AbortController();
