@@ -6,8 +6,6 @@ use App\Domain\WebSocket\DirectWebSocketProjection;
 
 $registry = [
     'workflow' => 'operation-websocket-registry',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'websocket_registry_writer',
     'projection' => DirectWebSocketProjection::class,
 ];
 
