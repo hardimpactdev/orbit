@@ -1,278 +1,150 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { DirectOperationCancelled } from "../_lib/direct.ts";
-import { Input, type Pi, turn, type Workspace } from "./turn.ts";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { finish, Input, prepare } from "./turn.ts";
 
-const head = "a".repeat(40);
-const tree = "b".repeat(40);
-function fixture(role = "implementer") {
-  const input = Input.parse({
-    new_session: true,
-    group_id: 10,
-    instance_id: 12,
-    node_id: 30,
-    subtask: 11,
-    thread_id: 14,
-    checkout_path: "/srv/task",
-    session_id: "session-14",
-    role,
-    prompt: "Fix the requested task",
-    model: "orbit-task-vm/gpt-6.1-sol",
-    effort: "high",
-    pi_host: "10.44.0.30",
-    pi_port: 3774,
-    candidate: role === "reviewer" ? head : null,
-    deliverables: [],
-    analysis_evidence: null,
-  });
-  const sends: string[] = [];
-  const resets: string[] = [];
-  let receipt: unknown = {
-    thread: 14,
-    outcome: role === "reviewer" ? "approved" : "ready_for_review",
-    summary: "Implemented the requested change",
-  };
-  const terminal = {
-    state: "done",
-    turnId: "operation-15",
-    usage: {
-      input: 10,
-      output: 5,
-      cacheRead: 8,
-      cacheWrite: 2,
-      total: 25,
-      calls: 1,
-      peakContext: 20,
-    },
-  };
-  const pi: Pi = {
-    create: () => Promise.resolve(),
-    send: (_session, key) => {
-      sends.push(key);
-      return Promise.resolve();
-    },
-    states: async function* () {
-      yield { state: "working", turnId: "older" };
-      yield terminal;
-    },
-    interrupt: () => Promise.resolve(),
-  };
-  const workspace: Workspace = {
-    analysis: () => Promise.resolve({}),
-    difference: () =>
-      Promise.resolve({
-        files: [],
-        diff: "",
-        files_complete: true,
-        diff_available: true,
-        summary: { files: 0, insertions: 0, deletions: 0 },
-      }),
-    prepare: () => Promise.resolve({ head, tree }),
-    snapshot: () => Promise.resolve({ head, tree }),
-    receipt: () => Promise.resolve(receipt),
-    reset: (sha) => {
-      resets.push(sha);
-      return Promise.resolve();
-    },
-  };
-  return {
-    input,
-    pi,
-    workspace,
-    sends,
-    resets,
-    terminal,
-    setReceipt: (value: unknown) => {
-      receipt = value;
-    },
-  };
+const head = "a".repeat(40), tree = "b".repeat(40);
+export function turnInput(role = "implementer") {
+    return Input.parse({
+        new_session: true,
+        group_id: 10,
+        instance_id: 12,
+        node_id: 30,
+        subtask: 11,
+        thread_id: 14,
+        checkout_path: "/srv/task",
+        session_id: "session-14",
+        role,
+        prompt: "Fix the requested task",
+        model: "orbit-task-vm/gpt-6.1-sol",
+        effort: "high",
+        pi_host: "10.44.0.30",
+        pi_port: 3774,
+        candidate: role === "reviewer" ? head : null,
+        deliverables: [],
+        analysis_evidence: null,
+    });
 }
-
-Deno.test("Pi turn returns the matching completion and board token metrics", async () => {
-  const f = fixture();
-  const result = await turn(
-    f.input,
-    "operation-15",
-    { head, tree },
-    f.pi,
-    f.workspace,
-  );
-  assertEquals(result.state, "done");
-  assertEquals(
-    (result.receipt as Record<string, unknown>).outcome,
-    "ready_for_review",
-  );
-  assertEquals(result.metrics, {
-    tokens: 25,
-    input_tokens: 12,
-    cached_input_tokens: 8,
-    output_tokens: 5,
-    model_calls: 1,
-    peak_context_tokens: 20,
-  });
-  assertEquals(f.sends, ["operation-15"]);
-});
-Deno.test("native resume uses the same Pi session and Durable send key", async () => {
-  const f = fixture();
-  await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
-  await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
-  assertEquals(f.sends, ["operation-15", "operation-15"]);
-});
-Deno.test("reviewer restores the checked candidate after collecting its receipt", async () => {
-  const f = fixture("reviewer");
-  const result = await turn(
-    f.input,
-    "operation-15",
-    { head, tree },
-    f.pi,
-    f.workspace,
-  );
-  assertEquals(f.resets, [head]);
-  assertEquals(result.after_reset, { head, tree });
-});
-Deno.test("a moved review candidate starts no Pi turn", async () => {
-  const f = fixture("reviewer");
-  assertEquals(
-    await turn(
-      f.input,
-      "operation-15",
-      { head: "c".repeat(40), tree },
-      f.pi,
-      f.workspace,
-    ),
-    { error_code: "tasks.head_moved" },
-  );
-  assertEquals(f.sends, []);
-});
-Deno.test("receipts from another thread or role never authorize task progression", async () => {
-  const f = fixture();
-  for (
-    const receipt of [
-      { thread: 99, outcome: "ready_for_review", summary: "Old" },
-      { thread: 14, outcome: "approved", summary: "Wrong role" },
-      { thread: 14, outcome: "blocked", summary: "Blocked" },
-    ]
-  ) {
-    f.setReceipt(receipt);
+function result(role = "implementer") {
+    return {
+        input: turnInput(role),
+        before: JSON.stringify({ head, tree }),
+        after: JSON.stringify({ head, tree }),
+        restored: "",
+        difference: "",
+        terminal: JSON.stringify({
+            state: "done",
+            turnId: "operation-15",
+            usage: {
+                input: 10,
+                output: 5,
+                cacheRead: 8,
+                cacheWrite: 2,
+                total: 25,
+                calls: 1,
+                peakContext: 20,
+            },
+        }),
+        receipt: JSON.stringify({
+            thread: 14,
+            outcome: role === "reviewer" ? "approved" : "ready_for_review",
+            summary: "Changed the requested code",
+        }),
+    };
+}
+Deno.test("public shaping preserves the immutable Pi key and session settings", () => {
+    const input = turnInput();
+    const first = prepare({ operation_id: 15, node_id: 30, intent: input });
     assertEquals(
-      (await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace))
-        .receipt,
-      null,
+        first,
+        prepare({ operation_id: 15, node_id: 30, intent: input }),
     );
-  }
+    assertEquals(JSON.parse(first.send_json).key, "operation-15");
+    assertEquals(JSON.parse(first.create_json).model, input.model);
+    input.new_session = false;
+    assertEquals(
+        JSON.parse(
+            prepare({ operation_id: 15, node_id: 30, intent: input })
+                .intent_json,
+        )
+            .new_session,
+        false,
+    );
 });
-Deno.test("disconnect without a terminal Pi observation remains uncertain", async () => {
-  const f = fixture();
-  f.pi.states = async function* () {
-    yield { state: "working", turnId: "operation-15" };
-  };
-  await assertRejects(
-    () => turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace),
-    Error,
-    "no terminal observation",
-  );
+Deno.test("untrusted prompt expressions remain inert JSON content", () => {
+    const input = turnInput();
+    input.prompt =
+        "Do not execute $(touch /tmp/unsafe), `id`, or ${{ env.HOME }}";
+    assertEquals(
+        JSON.parse(
+            prepare({ operation_id: 15, node_id: 30, intent: input }).send_json,
+        ).text
+            .startsWith(input.prompt),
+        true,
+    );
 });
-Deno.test("cancellation interrupts Pi and waits for its terminal observation", async () => {
-  const f = fixture();
-  const signal = new AbortController();
-  let interrupts = 0;
-  f.pi.interrupt = () => {
-    interrupts++;
-    return Promise.resolve();
-  };
-  f.pi.states = async function* () {
-    signal.abort();
-    yield { ...f.terminal, state: "failed" };
-  };
-  await assertRejects(
-    () =>
-      turn(
-        f.input,
-        "operation-15",
-        { head, tree },
-        f.pi,
-        f.workspace,
-        signal.signal,
-      ),
-    DirectOperationCancelled,
-  );
-  assertEquals(interrupts, 1);
+Deno.test("turn result retains the existing board token metrics", () => {
+    const value = JSON.parse(finish(result()).result_json);
+    assertEquals(value.state, "done");
+    assertEquals(value.receipt.outcome, "ready_for_review");
+    assertEquals(value.metrics, {
+        tokens: 25,
+        input_tokens: 12,
+        cached_input_tokens: 8,
+        output_tokens: 5,
+        model_calls: 1,
+        peak_context_tokens: 20,
+    });
 });
-Deno.test("stale analysis does not start a Pi turn", async () => {
-  const f = fixture();
-  f.input.analysis_evidence = {
-    input: {},
-    result: { provenance: { instance_id: 999, node_id: 30, head, tree } },
-  };
-  assertEquals(
-    await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace),
-    { error_code: "tasks.analysis_stale" },
-  );
-  assertEquals(f.sends, []);
+Deno.test("wrong thread, role and incomplete blocked receipts never authorize progress", () => {
+    for (
+        const receipt of [
+            { thread: 99, outcome: "ready_for_review", summary: "Old" },
+            { thread: 14, outcome: "approved", summary: "Wrong role" },
+            { thread: 14, outcome: "blocked", summary: "Missing question" },
+        ]
+    ) {
+        assertEquals(
+            JSON.parse(
+                finish({ ...result(), receipt: JSON.stringify(receipt) })
+                    .result_json,
+            ).receipt,
+            null,
+        );
+    }
+});
+Deno.test("missing completion or failed cleanup produces a failed terminal result", () => {
+    for (const overrides of [{ terminal: "" }, { failure: true }]) {
+        const value = JSON.parse(
+            finish({ ...result(), ...overrides }).result_json,
+        );
+        assertEquals(value.state, "failed");
+        assertEquals(value.error_code, "tasks.turn_failed");
+        assertEquals(value.receipt, null);
+    }
+});
+Deno.test("review evidence retains the restored candidate identity", () => {
+    const value = JSON.parse(
+        finish({
+            ...result("reviewer"),
+            restored: JSON.stringify({ head, tree }),
+        }).result_json,
+    );
+    assertEquals(value.after_reset, { head, tree });
+    assertEquals(value.receipt.outcome, "approved");
+});
+Deno.test("analysis plus prompt cannot exceed the existing prompt bound", () => {
+    const input = turnInput();
+    input.prompt = "x".repeat(100000);
+    assertThrows(
+        () => prepare({ operation_id: 15, node_id: 30, intent: input }),
+        Error,
+        "tasks.analysis_prompt_too_large",
+    );
 });
 
-Deno.test("a continued thread retains its existing Pi session settings", async () => {
-  const f = fixture();
-  f.input.new_session = false;
-  f.pi.create = () => {
-    throw new Error("A continued session must not be recreated");
-  };
-  await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
-  assertEquals(f.sends, ["operation-15"]);
-});
-
-Deno.test("native analysis is bound to its exact artifact and entrypoint before Pi sends", async () => {
-  const f = fixture();
-  const content = JSON.stringify({ report: "complete evidence" });
-  const bytes = new TextEncoder().encode(content);
-  const digest = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
-  ).map((v) => v.toString(16).padStart(2, "0")).join("");
-  const repository = "https://github.com/acme/test.git";
-  f.input.analysis_evidence = {
-    input: { base: head, plan_sha256: "d".repeat(64), repository },
-    result: {
-      provenance: {
-        instance_id: f.input.instance_id,
-        node_id: f.input.node_id,
-        head,
-        tree,
-        base: head,
-        plan_sha256: "d".repeat(64),
-        repository,
-        branch: "task-1",
-        entrypoint_sha256: "e".repeat(64),
-      },
-      artifact: { content, bytes: bytes.length, sha256: digest },
-    },
-  };
-  f.workspace.analysis = () =>
-    Promise.resolve({
-      repository,
-      branch: "task-1",
-      entrypoint_sha256: "e".repeat(64),
-    });
-  await turn(f.input, "operation-15", { head, tree }, f.pi, f.workspace);
-  assertEquals(f.sends, ["operation-15"]);
-  f.sends.length = 0;
-  f.workspace.analysis = () =>
-    Promise.resolve({
-      repository,
-      branch: "task-1",
-      entrypoint_sha256: "f".repeat(64),
-    });
-  assertEquals(
-    await turn(f.input, "operation-16", { head, tree }, f.pi, f.workspace),
-    { error_code: "tasks.analysis_stale" },
-  );
-  assertEquals(f.sends, []);
-  f.input.analysis_evidence.result.artifact = {
-    content: content + "tampered",
-    bytes: bytes.length,
-    sha256: digest,
-  };
-  assertEquals(
-    await turn(f.input, "operation-17", { head, tree }, f.pi, f.workspace),
-    { error_code: "tasks.analysis_stale" },
-  );
-  assertEquals(f.sends, []);
+Deno.test("a mismatched worker Node is refused before any placed action", () => {
+    assertThrows(
+        () => prepare({ operation_id: 15, node_id: 31, intent: turnInput() }),
+        Error,
+        "tasks.node_mismatch",
+    );
 });

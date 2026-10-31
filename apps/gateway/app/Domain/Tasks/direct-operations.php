@@ -17,13 +17,19 @@ return ['tasks.provision' => [
     'workflow' => 'operation-task-provision', 'projection' => TaskProvisionProjection::class,
     'private_material' => ['git_read' => 'instance.lifecycle_git', ...$vmProvision['private_material']],
     'secret_outputs' => $vmProvision['secret_outputs'],
-], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'private_material' => ['credentials' => 'github.task_repository']], 'tasks.analyze' => ['workflow' => 'operation-task-analyze', 'projection' => TaskAnalysisProjection::class], 'tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'private_material' => ['credentials' => 'github.task_repository']], 'tasks.script' => ['workflow' => 'operation-task-script', 'projection' => TaskScriptProjection::class], 'tasks.turn' => ['workflow' => 'operation-task-turn', 'projection' => TaskTurnProjection::class], 'tasks.dependency_merge' => [
-    'workflow' => 'operation-dependency-merge', 'projection' => DependencyMergeProjection::class,
-    'private_material' => ['token' => 'github.dependency_merge'],
-], 'tasks.park' => [
-    'workflow' => 'operation-task-park',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'task_park_writer',
-    'projection' => TaskParkProjection::class,
-    'private_material' => ['upcloud_token' => 'upcloud.api'],
-]];
+], 'tasks.publish' => ['workflow' => 'operation-task-publish', 'projection' => TaskPublishProjection::class, 'private_material' => ['credentials' => 'github.task_repository']],
+    'tasks.analyze' => ['workflow' => 'operation-task-analyze', 'projection' => TaskAnalysisProjection::class],
+    'tasks.check' => ['workflow' => 'operation-task-check', 'projection' => TaskCheckProjection::class, 'private_material' => ['credentials' => 'github.task_repository']],
+    'tasks.script' => ['workflow' => 'operation-task-script', 'projection' => TaskScriptProjection::class],
+    'tasks.turn' => ['workflow' => 'operation-task-turn', 'projection' => TaskTurnProjection::class,
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'turn', 'step' => 'result']],
+    'tasks.dependency_merge' => [
+        'workflow' => 'operation-dependency-merge', 'projection' => DependencyMergeProjection::class,
+        'private_material' => ['token' => 'github.dependency_merge'],
+    ], 'tasks.park' => [
+        'workflow' => 'operation-task-park',
+        'writer_config' => 'swamp.direct_writers',
+        'writer_state' => 'task_park_writer',
+        'projection' => TaskParkProjection::class,
+        'private_material' => ['upcloud_token' => 'upcloud.api'],
+    ]];

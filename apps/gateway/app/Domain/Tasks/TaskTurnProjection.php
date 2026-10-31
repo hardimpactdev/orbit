@@ -16,7 +16,8 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return $operation->input;
+        return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),
+            'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation

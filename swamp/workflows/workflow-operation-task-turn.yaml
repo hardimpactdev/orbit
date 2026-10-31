@@ -1,43 +1,556 @@
 id: d98239bb-4a95-4873-a3e1-6f7c5bdb76ab
 name: operation-task-turn
-description: Pi writes or reviews code in the admitted task VM, under one native run.
-vaults: []
+description: Run the full admitted Pi turn as separate placed workspace and API actions.
+vaults:
+- orbit-control-inputs
 inputs:
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.turn] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.turn
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        pi_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-vm\.[1-9][0-9]*\.pi-token$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - pi_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
 jobs:
-  - name: turn
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: pi
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/task-workspace"
-          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: failure
-    dependsOn: [{ job: turn, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "task-turn-failure-" + string(inputs.node_id) }}'
-          methodName: report
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: turn
+  steps:
+  - name: prepare
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+      behaviorName: ${{ "task-turn-prepare-node-" + string(inputs.node_id) }}
+  - name: snapshot_before
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=value['checkout_path'], stderr=subprocess.DEVNULL, text=True).strip()
+          git('add', '--all')
+          print(json.dumps({'head': git('rev-parse', 'HEAD'), 'tree': git('write-tree')}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+      behaviorName: ${{ "task-turn-snapshot_before-node-" + string(inputs.node_id) }}
+  - name: candidate
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: snapshot_before
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          before = json.loads(os.environ['ORBIT_BEFORE'])
+          if value['candidate'] is not None and before['head'] != value['candidate']:
+              raise SystemExit('tasks.head_moved')
+          evidence = value['analysis_evidence']
+          if evidence is not None:
+              source, result = evidence['input'], evidence['result']
+              provenance, artifact = result.get('provenance', {}), result.get('artifact', {})
+              content = artifact.get('content', '').encode()
+              expected = {'node_id': value['node_id'], 'instance_id': value['instance_id'],
+                          'head': before['head'], 'tree': before['tree'], 'base': source.get('base'),
+                          'repository': source.get('repository'), 'plan_sha256': source.get('plan_sha256')}
+              if any(provenance.get(k) != v for k, v in expected.items()) or len(content) > 65536 or artifact.get('bytes') != len(content) or artifact.get('sha256') != hashlib.sha256(content).hexdigest():
+                  raise SystemExit('tasks.analysis_stale')
+              cwd = pathlib.Path(value['checkout_path'])
+              def git(*args):
+                  return subprocess.check_output(['git', *args], cwd=cwd, stderr=subprocess.DEVNULL).strip()
+              git('merge-base', '--is-ancestor', provenance['base'], 'HEAD')
+              entry = cwd / 'bin/task-analyze'
+              if entry.is_symlink() or not entry.is_file() or not entry.stat().st_mode & 0o111 or entry.read_bytes().strip() != git('show', 'HEAD:bin/task-analyze') or not git('ls-tree', 'HEAD', '--', 'bin/task-analyze').startswith(b'100755 '):
+                  raise SystemExit('tasks.analysis_stale')
+              observed = {'branch': git('symbolic-ref', '--short', 'HEAD').decode(),
+                          'repository': git('remote', 'get-url', 'origin').decode(),
+                          'entrypoint_sha256': hashlib.sha256(entry.read_bytes()).hexdigest()}
+              if any(provenance.get(k) != v for k, v in observed.items()):
+                  raise SystemExit('tasks.analysis_stale')
+          print(json.dumps({'admitted': True}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_BEFORE: ${{ steps.snapshot_before.outputs.stdout }}
+      behaviorName: ${{ "task-turn-candidate-node-" + string(inputs.node_id) }}
+  - name: receipt_prepare
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: candidate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          path = subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'orbit'], cwd=value['checkout_path'], text=True).strip()
+          root = pathlib.Path(path)
+          root.mkdir(mode=0o700, parents=True, exist_ok=True)
+          for name in ['turn', 'turn.json', 'receipt.json']:
+              if (root / name).is_symlink():
+                  raise SystemExit('tasks.receipt_path_invalid')
+          (root / 'turn').write_text("#!/usr/bin/env python3\nimport argparse,json,os\np=argparse.ArgumentParser()\np.add_argument('--thread',type=int,required=True)\np.add_argument('--outcome',required=True,choices=['ready_for_review','approved','changes_requested','blocked','answered'])\np.add_argument('--summary',required=True)\np.add_argument('--question')\np.add_argument('--deliverable',action='append',default=[])\na=p.parse_args()\nif not a.summary.strip() or (a.outcome=='blocked' and not (a.question or '').strip()): p.error('A summary and blocked question are required')\ndirectory=os.path.dirname(os.path.realpath(__file__))\nwith open(directory+'/turn.json') as f: expected=json.load(f)\nif a.thread!=expected['thread']: p.error('This turn belongs to another thread')\nresult={'thread':a.thread,'outcome':a.outcome,'summary':a.summary,'deliverables':dict(v.split('=',1) for v in a.deliverable)}\nif a.question: result['question']=a.question\nwith open(directory+'/receipt.json','w') as f: json.dump(result,f)\n")
+          (root / 'turn').chmod(0o700)
+          (root / 'turn.json').write_text(json.dumps({'thread': value['thread_id'], 'role': value['role'], 'deliverables': value['deliverables']}))
+          (root / 'turn.json').chmod(0o600)
+          (root / 'receipt.json').unlink(missing_ok=True)
+          print(json.dumps({'prepared': True}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+      behaviorName: ${{ "task-turn-receipt_prepare-node-" + string(inputs.node_id) }}
+  - name: session_create
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: receipt_prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import urllib.request
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *_args, **_kwargs):
+                  raise RuntimeError('tasks.pi_redirect_refused')
+
+          opener = urllib.request.build_opener(RefuseRedirect)
+          token = os.environ.pop('ORBIT_PI_TOKEN')
+          if len(token) < 32:
+              raise SystemExit('tasks.pi_credential_unavailable')
+
+          request = urllib.request.Request(os.environ['ORBIT_PI_URL'] + '/sessions',
+              data=os.environ['ORBIT_PI_BODY'].encode(), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+          with opener.open(request, timeout=30) as response:
+              response.read(65536)
+          print(json.dumps({'created': True, 'session_id': value['session_id']}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
+      behaviorName: ${{ "task-turn-session_create-node-" + string(inputs.node_id) }}
+    guard: ${{ !inputs.intent.new_session }}
+  - name: message_send
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: receipt_prepare
+      condition:
+        type: succeeded
+    - step: session_create
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import urllib.request
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *_args, **_kwargs):
+                  raise RuntimeError('tasks.pi_redirect_refused')
+
+          opener = urllib.request.build_opener(RefuseRedirect)
+          token = os.environ.pop('ORBIT_PI_TOKEN')
+          if len(token) < 32:
+              raise SystemExit('tasks.pi_credential_unavailable')
+
+          request = urllib.request.Request(os.environ['ORBIT_PI_URL'] + '/sessions/' + value['session_id'] + '/messages',
+              data=os.environ['ORBIT_PI_BODY'].encode(), headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+          with opener.open(request, timeout=30) as response:
+              response.read(65536)
+          print(json.dumps({'accepted': True}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
+      behaviorName: ${{ "task-turn-message_send-node-" + string(inputs.node_id) }}
+  - name: observe
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: message_send
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import urllib.request
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *_args, **_kwargs):
+                  raise RuntimeError('tasks.pi_redirect_refused')
+
+          opener = urllib.request.build_opener(RefuseRedirect)
+          token = os.environ.pop('ORBIT_PI_TOKEN')
+          if len(token) < 32:
+              raise SystemExit('tasks.pi_credential_unavailable')
+
+          request = urllib.request.Request(os.environ['ORBIT_PI_URL'] + '/sessions/' + value['session_id'] + '/stream?max_bytes=1048576',
+              headers={'Authorization': 'Bearer ' + token})
+          key = 'operation-' + str(value['operation_id'])
+          with opener.open(request, timeout=1800) as response:
+              for line in response:
+                  if len(line) > 1048576:
+                      raise SystemExit('tasks.pi_event_too_large')
+                  event = json.loads(line)
+                  if event.get('turnId') == key and event.get('state') in ['done', 'failed']:
+                      print(json.dumps({k: event[k] for k in ['state', 'turnId', 'usage']}))
+                      break
+              else:
+                  raise SystemExit('tasks.pi_completion_unconfirmed')
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+        timeout: 1800000
+      behaviorName: ${{ "task-turn-observe-node-" + string(inputs.node_id) }}
+  - name: snapshot_after
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=value['checkout_path'], stderr=subprocess.DEVNULL, text=True).strip()
+          git('add', '--all')
+          print(json.dumps({'head': git('rev-parse', 'HEAD'), 'tree': git('write-tree')}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+      behaviorName: ${{ "task-turn-snapshot_after-node-" + string(inputs.node_id) }}
+  - name: receipt_read
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: snapshot_after
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          path = subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-path', 'orbit'], cwd=value['checkout_path'], text=True).strip()
+          receipt = pathlib.Path(path) / 'receipt.json'
+          if not receipt.exists():
+              print('null')
+          elif receipt.is_symlink() or receipt.stat().st_size > 65536:
+              raise SystemExit('tasks.receipt_invalid')
+          else:
+              print(json.dumps(json.loads(receipt.read_text())))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+      behaviorName: ${{ "task-turn-receipt_read-node-" + string(inputs.node_id) }}
+  - name: difference
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: receipt_read
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          before = json.loads(os.environ['ORBIT_BEFORE'])
+          base = before['head'] if value['role'] == 'reviewer' else before['tree']
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=value['checkout_path'], stderr=subprocess.DEVNULL, text=True)
+          counts = git('diff', '--numstat', '--no-renames', '-z', base, '--')
+          files = []
+          for row in counts.split('\0'):
+              if row:
+                  added, removed, name = row.split('\t', 2)
+                  files.append({'path': name, 'insertions': 0 if added == '-' else int(added), 'deletions': 0 if removed == '-' else int(removed)})
+          diff = git('diff', '--no-renames', base, '--')
+          print(json.dumps({'files': files[:500], 'diff': diff[:65536], 'files_complete': len(files) <= 500,
+              'diff_available': len(diff) <= 65536, 'summary': {'files': len(files),
+              'insertions': sum(f['insertions'] for f in files), 'deletions': sum(f['deletions'] for f in files)}}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_BEFORE: ${{ steps.snapshot_before.outputs.stdout }}
+      behaviorName: ${{ "task-turn-difference-node-" + string(inputs.node_id) }}
+    guard: ${{ inputs.intent.role == "implementer" }}
+  - name: interrupt
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: observe
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import urllib.request
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          class RefuseRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *_args, **_kwargs):
+                  raise RuntimeError('tasks.pi_redirect_refused')
+
+          opener = urllib.request.build_opener(RefuseRedirect)
+          token = os.environ.pop('ORBIT_PI_TOKEN')
+          if len(token) < 32:
+              raise SystemExit('tasks.pi_credential_unavailable')
+
+          request = urllib.request.Request(os.environ['ORBIT_PI_URL'] + '/sessions/' + value['session_id'] + '/interrupt',
+              data=b'{}', headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+          with opener.open(request, timeout=30) as response:
+              response.read(65536)
+          print(json.dumps({'interrupted': True}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+      behaviorName: ${{ "task-turn-interrupt-node-" + string(inputs.node_id) }}
+    guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
+  - name: restore
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: difference
+      condition:
+        type: always
+    - step: interrupt
+      condition:
+        type: always
+    - step: candidate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import subprocess
+
+          value = json.loads(os.environ['ORBIT_TURN_INPUT'])
+          def git(*args):
+              return subprocess.check_output(['git', *args], cwd=value['checkout_path'], stderr=subprocess.DEVNULL, text=True).strip()
+          git('reset', '--hard', value['candidate'])
+          git('clean', '-fd')
+          print(json.dumps({'head': git('rev-parse', 'HEAD'), 'tree': git('write-tree')}))
+          PYTHON
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+      behaviorName: ${{ "task-turn-restore-node-" + string(inputs.node_id) }}
+    guard: ${{ inputs.intent.role != "reviewer" }}
+  - name: shape_result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: snapshot_before
+      condition:
+        type: always
+    - step: candidate
+      condition:
+        type: always
+    - step: observe
+      condition:
+        type: always
+    - step: snapshot_after
+      condition:
+        type: always
+    - step: receipt_read
+      condition:
+        type: always
+    - step: difference
+      condition:
+        type: always
+    - step: interrupt
+      condition:
+        type: always
+    - step: restore
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: result
+      inputs:
+        input: ${{ inputs.intent }}
+        before: '${{ has(steps.snapshot_before) && has(steps.snapshot_before.outputs) && has(steps.snapshot_before.outputs.stdout) ? steps.snapshot_before.outputs.stdout
+          : "" }}'
+        after: '${{ has(steps.snapshot_after) && has(steps.snapshot_after.outputs) && has(steps.snapshot_after.outputs.stdout) ? steps.snapshot_after.outputs.stdout
+          : "" }}'
+        terminal: '${{ has(steps.observe) && has(steps.observe.outputs) && has(steps.observe.outputs.stdout) ? steps.observe.outputs.stdout : "" }}'
+        receipt: '${{ has(steps.receipt_read) && has(steps.receipt_read.outputs) && has(steps.receipt_read.outputs.stdout) ? steps.receipt_read.outputs.stdout : ""
+          }}'
+        difference: '${{ has(steps.difference) && has(steps.difference.outputs) && has(steps.difference.outputs.stdout) ? steps.difference.outputs.stdout : "" }}'
+        restored: '${{ has(steps.restore) && has(steps.restore.outputs) && has(steps.restore.outputs.stdout) ? steps.restore.outputs.stdout : "" }}'
+        failure: ${{ !has(steps.candidate) || steps.candidate.status != "succeeded" || !has(steps.observe) || steps.observe.status != "succeeded" || !has(steps.receipt_read)
+          || steps.receipt_read.status != "succeeded" || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded")) }}
+      behaviorName: ${{ "task-turn-shape_result-node-" + string(inputs.node_id) }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: shape_result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$ORBIT_RESULT"
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+      behaviorName: ${{ "task-turn-result-node-" + string(inputs.node_id) }}
+  - name: outcome
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+
+          raise SystemExit(1 if json.loads(os.environ['ORBIT_RESULT']).get('error_code') else 0)
+          PYTHON
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+      behaviorName: ${{ "task-turn-outcome-node-" + string(inputs.node_id) }}
