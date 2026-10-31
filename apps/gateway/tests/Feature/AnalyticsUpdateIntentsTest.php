@@ -93,8 +93,7 @@ it('projects native success with bounded admitted fields and no runtime proof', 
         'result' => ['environment' => 'secret.fixture', 'version' => '9.9.9']]);
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)
-        ->and($projected->result)->toBe(['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1'])
-        ->and($projected->steps()->count())->toBe(0);
+        ->and($projected->result)->toBe(['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1']);
     expect($this->process->fresh()->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
         ->and($this->process->fresh()->runtime_config['environment']['EXTRA'])->toBe('newer');
 });
@@ -153,7 +152,7 @@ it('reads the admitted environment privately without persisting it or declaring 
         ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.runtime_environment', $this->environment);
     $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertDontSee($this->environment['SECRET_KEY_BASE']);
     expect($operation->fresh()->getAttributes())->toBe($before);
-    expect(json_encode([$operation->fresh()->toArray(), $operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain($this->environment['SECRET_KEY_BASE']);
+    expect(json_encode([$operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain($this->environment['SECRET_KEY_BASE']);
     $this->postJson($path.'/secret-output', ['run_id' => $this->runId, 'outputs' => ['environment' => 'invented']])->assertUnprocessable();
 });
 

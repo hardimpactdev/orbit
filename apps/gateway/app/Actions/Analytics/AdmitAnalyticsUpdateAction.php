@@ -54,9 +54,9 @@ final readonly class AdmitAnalyticsUpdateAction
         $changed = clone $process;
         $changed->runtime_config = [...$process->runtime_config, 'image' => PlausibleProcess::IMAGE.':v'.$version,
             'command' => PlausibleProcess::Startup,
-            'volumes' => array_values(array_filter($process->runtime_config['volumes'] ?? [],
-                static fn (array $volume): bool => ($volume['source'] ?? null) !== '/usr/local/bin/orbit-agent'
-                    && ($volume['target'] ?? null) !== '/usr/local/bin/orbit-agent'))];
+            'volumes' => array_values(array_filter($before['mounts'],
+                static fn (array $volume): bool => $volume['source'] !== '/usr/local/bin/orbit-agent'
+                    && $volume['target'] !== '/usr/local/bin/orbit-agent'))];
         $after = $this->docker->containerInput($changed, $target);
         unset($after['environment']);
 

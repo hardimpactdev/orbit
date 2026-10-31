@@ -62,9 +62,9 @@ The role then converges in this order.
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-The Gateway waits for Plausible with the agent's `http.await-healthy`: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+Swamp waits for Plausible with the canonical Process readiness check: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
 
-Plausible initializes its database with the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands, then starts `/entrypoint.sh run`. The image's non-root account runs this fixed command sequence. A failed initialization stops startup, and the final `exec` passes stop signals to the server. The container has no agent binary mount or agent service wrapper.
+Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
 
 The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
@@ -78,7 +78,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The role calls `analytics.configure-clickhouse` on the Node that runs the ClickHouse Process. The Rust agent carries Plausible's four files and publishes them as root with mode `0644`. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The Gateway mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
+The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The native footprint mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
 
 | Host file | Container path |
 | --- | --- |

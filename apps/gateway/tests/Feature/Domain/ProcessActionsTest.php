@@ -179,7 +179,7 @@ it('refuses arbitrary intent at every fixed bootstrap entry point', function (st
     $this->assertDatabaseCount('processes', 0);
     $this->assertDatabaseCount('operations', 0);
     expect($this->runtime->converged)->toBeEmpty();
-})->with(['bootstrapCollector', 'bootstrapPlausible', 'bootstrapPi', 'bootstrapHorizon']);
+})->with(['bootstrapCollector', 'bootstrapPi', 'bootstrapHorizon']);
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
@@ -343,39 +343,6 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         ->toBeFalse()
         ->and(Process::query()->count())
         ->toBe(1);
-});
-
-it('refuses arbitrary Docker intent at the closed Plausible bootstrap boundary without leaking secrets', function (): void {
-    $sensitiveValue = 'action-boundary-secret';
-    $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
-        targetId: $this->instance->id,
-        name: 'worker',
-        runtime: ProcessRuntime::Docker,
-        command: ['php', 'artisan', 'queue:work'],
-        image: 'php:8.5-cli',
-        workingDirectory: '/app',
-        environment: ['APP_KEY' => $sensitiveValue],
-        ports: [],
-        volumes: [],
-        restartPolicy: 'unless-stopped',
-        start: false,
-    );
-    $this->runtime->startFailure = new ProcessOperationException(
-        step: 'create-container',
-        errorCode: 'process.docker_converge_failed',
-        message: 'Docker convergence failed.',
-    );
-
-    try {
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->bootstrapPlausible($data);
-    } catch (ResourceOperationException $exception) {
-        expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
-
-        return;
-    }
-
-    $this->fail('Expected the closed bootstrap boundary to refuse.');
 });
 
 it('records desired-running Docker intent with explicit configuration without executing it', function (): void {

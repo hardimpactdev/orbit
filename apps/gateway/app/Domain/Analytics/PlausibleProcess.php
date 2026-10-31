@@ -23,7 +23,7 @@ final readonly class PlausibleProcess
 
     public const int PORT = 8000;
 
-    public const array Startup = ['/bin/sh', '-ec', '/entrypoint.sh db createdb && /entrypoint.sh db migrate && exec /entrypoint.sh run'];
+    public const array Startup = ['/entrypoint.sh', 'run'];
 
     public static function data(
         Node $node,
