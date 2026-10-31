@@ -31,7 +31,6 @@ use DateTimeImmutable;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Throwable;
 
@@ -164,7 +163,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         $repository = $grant->repository;
         $requestedPermissions = $grant->permissions;
         $deadline = microtime(true) + 5;
-        $issued = null;
         try {
             $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
                 ->get($this->repositoryPath($repository).'/installation');
@@ -183,13 +181,14 @@ final readonly class HttpGitHubApi implements GitHubApi
             $token = $response->json('token');
             $expires = $response->json('expires_at');
             $permissions = $response->json('permissions');
-            if (is_string($token) && $token !== '' && strlen($token) <= 2048 && preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) === 1) {
-                $issued = new GitHubAccessToken($token, is_string($expires) ? $expires : '');
-            }
+            $repos = $response->json('repositories');
             if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1 || ! is_string($expires)
                 || ! is_array($permissions) || array_any($requestedPermissions, static fn (string $level, string $name): bool => ($permissions[$name] ?? null) !== $level)
                 || array_diff_key($permissions, $requestedPermissions + ['metadata' => 'read']) !== []
                 || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')
+                || ! is_array($repos) || count($repos) !== 1 || ! is_array($repos[0] ?? null)
+                || ! is_string($repos[0]['full_name'] ?? null)
+                || strtolower($repos[0]['full_name']) !== strtolower($repository->owner.'/'.$repository->name)
                 || preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\z/D', $expires) !== 1) {
                 throw new \UnexpectedValueException;
             }
@@ -198,27 +197,11 @@ final readonly class HttpGitHubApi implements GitHubApi
                 throw new \UnexpectedValueException;
             }
 
-            $remaining = $deadline - microtime(true);
-            if ($remaining <= 0) {
-                throw new \UnexpectedValueException;
-            }
-            $scope = $this->request()->withToken($token)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
-                ->get('/installation/repositories', ['per_page' => 2]);
-            $this->assertDependencyTokenResponse($scope);
-            $repos = $scope->json('repositories');
-            if (! $scope->successful() || $scope->json('total_count') !== 1 || ! is_array($repos) || count($repos) !== 1
-                || ! is_array($repos[0] ?? null) || ! is_string($repos[0]['full_name'] ?? null)
-                || strtolower($repos[0]['full_name']) !== strtolower($repository->owner.'/'.$repository->name)) {
-                throw new \UnexpectedValueException;
-            }
-
             return new GitHubAccessToken($token, $expires);
-        } catch (Throwable $exception) {
-            if ($issued !== null && ! $this->revokeInstallationToken($issued)) {
-                Log::warning('github.scoped_token_revoke_failed');
-            }
-            throw $exception instanceof ResourceOperationException ? $exception
-                : new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
+        } catch (ResourceOperationException $exception) {
+            throw $exception;
+        } catch (Throwable) {
+            throw new ResourceOperationException('dependency_token.unavailable', 'Repository credential unavailable.', 503);
         }
     }
 
@@ -718,11 +701,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return $id;
-    }
-
-    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
-    {
-        return $this->merge($token, $repository, $number, $sha, 'squash');
     }
 
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
