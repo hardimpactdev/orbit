@@ -4,9 +4,11 @@ import datetime, getpass, hashlib, json, os, pathlib, re, subprocess, tempfile, 
 PROGRAM = re.search(r'String.raw`(.*?)`;', pathlib.Path(__file__).with_name('system.ts').read_text(), re.S)[1]
 
 class CertificateSystemTest(unittest.TestCase):
+    program = PROGRAM
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=pathlib.Path(self.temp.name)
-        self.ns={'__name__':'fixture'};exec(PROGRAM,self.ns)
+        self.ns={'__name__':'fixture'};exec(self.program,self.ns)
         self.ns['CADDY']=self.root/'caddy';self.ns['ANCHOR']=self.root/'anchor.pem';self.ns['BUNDLE']=self.root/'anchor.pem'
         original_chown=os.chown
         self.ns['os']=types.SimpleNamespace(**{name:getattr(os,name) for name in dir(os) if not name.startswith('__')})
