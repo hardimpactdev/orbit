@@ -4,11 +4,12 @@ import json
 import os
 import tempfile
 
-from payload_common import ROOT, directory, metadata, stage_for
+from payload_common import ROOTS, directory, metadata, stage_for
 
 value = metadata()
-directory(ROOT)
-base = ROOT / ".orbit-deltas"
+root = ROOTS[value["family"]]
+directory(root)
+base = root / ".orbit-deltas"
 base.mkdir(mode=0o700, exist_ok=True)
 directory(base)
 (base / value["run_id"]).mkdir(mode=0o700, exist_ok=True)

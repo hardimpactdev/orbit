@@ -8,11 +8,18 @@ import stat
 from pathlib import Path
 
 ROOT = Path("/etc/caddy")
+ROOTS = {
+    "caddy": ROOT,
+    "php": Path("/etc/php"),
+    "dns": Path("/var/lib/orbit/private-dns"),
+}
 UUID = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 
 
 def metadata():
-    value = json.loads(os.environ["ORBIT_CADDY_DELTA_META"])
+    value = json.loads(os.environ["ORBIT_ROUTE_PUBLICATION_META"])
+    if value["family"] not in ROOTS:
+        raise ValueError("route.publication_family_invalid")
     if not UUID.fullmatch(value["run_id"]) or not re.fullmatch(
         r"[a-f0-9]{64}", value["sha256"]
     ):
@@ -32,8 +39,9 @@ def directory(path):
 
 
 def stage_for(value):
-    base = ROOT / ".orbit-deltas"
-    directory(ROOT)
+    root = ROOTS[value["family"]]
+    base = root / ".orbit-deltas"
+    directory(root)
     directory(base)
     stage = base / value["run_id"]
     directory(stage)

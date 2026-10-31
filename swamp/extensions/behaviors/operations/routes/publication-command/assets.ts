@@ -23,6 +23,7 @@ const Assets = z.object({
     metadata_json: z.string(),
     chunks: z.array(z.object({ json: z.string() })),
     scripts: z.record(z.string(), z.string()),
+    versions: z.array(z.string()).optional(),
 });
 export async function publicationAssets(
     raw: unknown,
@@ -37,7 +38,21 @@ export async function publicationAssets(
             publication: { node_id: args.node_id, user: args.user, caddy },
         });
     }
-    const bytes = new TextEncoder().encode(JSON.stringify(args));
+    return payloadAssets(args, "caddy", [
+        "prepare_payload",
+        "write_payload_chunk",
+        "compose_caddy",
+        "cleanup_payload",
+    ], extensionFile);
+}
+
+async function payloadAssets(
+    value: { run_id: string },
+    family: "caddy" | "php" | "dns",
+    names: string[],
+    extensionFile: (name: string) => string,
+) {
+    const bytes = new TextEncoder().encode(JSON.stringify(value));
     // Base64 and native metadata must fit the shared measured 8 MiB frame.
     if (bytes.length > 4194304) throw new Error("caddy.delta_input_too_large");
     const sha256 = Array.from(
@@ -56,20 +71,63 @@ export async function publicationAssets(
     }
     return {
         metadata_json: JSON.stringify({
-            run_id: args.run_id,
+            run_id: value.run_id,
+            family,
             content_bytes: bytes.length,
             sha256,
         }),
         chunks,
         scripts: Object.fromEntries(
-            [
-                "prepare_payload",
-                "write_payload_chunk",
-                "compose_caddy",
-                "cleanup_payload",
-            ].map((name) => [name, extensionFile(`scripts/${name}.py`)]),
+            names.map((name) => [name, extensionFile(`scripts/${name}.py`)]),
         ),
     };
+}
+
+const Php = z.object({
+    account_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
+    configurations: z.record(
+        z.string().regex(/^[1-9][0-9]*\.[0-9]+$/),
+        z.string().max(1048576),
+    ),
+}).strict();
+const PhpArgs = z.object({
+    run_id: z.uuid(),
+    node_id: z.number().int().positive().refine((id) => id !== 1 && id !== 18),
+    user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
+    before: Php,
+    after: Php,
+    direction: z.enum(["forward", "restore"]),
+}).strict();
+export async function phpAssets(
+    raw: unknown,
+    extensionFile: (name: string) => string,
+) {
+    const args = PhpArgs.parse(raw);
+    if (
+        args.before.account_user !== args.user ||
+        args.after.account_user !== args.user
+    ) throw new Error("php.account_conflict");
+    const versions = [
+        ...new Set([
+            ...Object.keys(args.before.configurations),
+            ...Object.keys(args.after.configurations),
+        ]),
+    ].sort();
+    const output = await payloadAssets(args, "php", [
+        "prepare_payload",
+        "write_payload_chunk",
+        "php_stage",
+        "php_validate",
+        "php_publish",
+        "php_enable",
+        "php_reload",
+        "php_confirm",
+        "php_restore",
+        "php_restore_enable",
+        "php_restore_runtime",
+        "cleanup_payload",
+    ], extensionFile);
+    return { ...output, versions };
 }
 
 type Context = {
@@ -95,6 +153,16 @@ export const behavior = {
         },
     },
     methods: {
+        php: {
+            description:
+                "Shape immutable shared PHP deltas and resolve one-action scripts",
+            arguments: PhpArgs,
+            execute: async (raw: unknown, ctx: Context) => {
+                const value = await phpAssets(raw, ctx.extensionFile);
+                await ctx.writeResource("assets", "assets", value);
+                return value;
+            },
+        },
         assets: {
             description:
                 "Validate public section inputs and resolve native action files",

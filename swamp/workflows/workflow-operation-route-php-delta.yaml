@@ -1,0 +1,404 @@
+id: 3ae539e4-bd32-4fbc-b50d-bd13e660ed30
+name: operation-route-php-delta
+description: Publish immutable shared PHP pool deltas with native compensation and survivor preservation.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      pattern: ^[a-z][a-z0-9_.-]+$
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+          not:
+            enum:
+            - 1
+            - 18
+        user:
+          type: string
+        before:
+          type: object
+        after:
+          type: object
+        direction:
+          type: string
+          enum:
+          - forward
+          - restore
+      required:
+      - node_id
+      - user
+      - before
+      - after
+      - direction
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.intent.node_id) }}
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication-command'
+      behaviorName: ${{ "php-delta-assets-" + run.id }}
+      methodName: php
+      inputs:
+        run_id: ${{ run.id }}
+        node_id: ${{ inputs.intent.node_id }}
+        user: ${{ inputs.intent.user }}
+        before: ${{ inputs.intent.before }}
+        after: ${{ inputs.intent.after }}
+        direction: ${{ inputs.intent.direction }}
+- name: composition
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id002
+    node: ${{ string(inputs.intent.node_id) }}
+  steps:
+  - name: prepare-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-delta-prepare-payload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.prepare_payload }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+  - name: write-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id002
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-delta-write-payload-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.write_payload_chunk }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_CADDY_DELTA_CHUNK: ${{ self.chunk.json }}
+    dependsOn:
+    - step: prepare-payload
+      condition:
+        type: succeeded
+    forEach:
+      item: chunk
+      in: ${{ steps.assets.outputs.chunks }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+- name: publication
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: &id003
+    node: ${{ string(inputs.intent.node_id) }}
+  dependsOn:
+  - job: composition
+    condition:
+      type: succeeded
+  steps:
+  - name: stage
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_stage }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+  - name: validate
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_validate }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: stage
+      condition:
+        type: succeeded
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_publish }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: validate
+      condition:
+        type: succeeded
+  - name: enable
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_enable }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+  - name: reload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_reload }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: enable
+      condition:
+        type: succeeded
+  - name: confirm
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_confirm }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: reload
+      condition:
+        type: succeeded
+- name: restore
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: *id003
+  dependsOn:
+  - job: publication
+    condition:
+      type: failed
+  steps:
+  - name: recovery-restore
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_restore }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+  - name: recovery-restore_enable
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_restore_enable }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: recovery-restore
+      condition:
+        type: succeeded
+  - name: recovery-restore_runtime
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.php_restore_runtime }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PHP_VERSION: ${{ self.version }}
+    forEach:
+      item: version
+      in: ${{ steps.assets.outputs.versions }}
+    dependsOn:
+    - step: recovery-restore_enable
+      condition:
+        type: succeeded
+- name: completion
+  target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+  labels: *id003
+  dependsOn:
+  - job: publication
+    condition:
+      type: succeeded
+  steps:
+  - name: cleanup-payload
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-node-publication-" + string(inputs.intent.node_id) }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_ROUTE_PHP_VERSION /usr/bin/python3 "${{
+          steps.assets.outputs.scripts.cleanup_payload }}"
+
+          '
+        env:
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
+    allowFailure: true
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id003
+    dependsOn:
+    - step: cleanup-payload
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "php-delta-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          printf ''%s\n'' ''{"ready":true}''
+
+          '

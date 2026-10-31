@@ -84,3 +84,35 @@ Deno.test("canonical capture block evidence is accepted without duplicating the 
     assertEquals("blocks" in payload.before, false);
     assertEquals(payload.before, input.before);
 });
+
+Deno.test("shared PHP metadata retains both version sets and exact admitted account", async () => {
+    const { phpAssets } = await import("./assets.ts");
+    const identity = await args();
+    const input = {
+        run_id: identity.run_id,
+        node_id: 9,
+        user: "orbit",
+        direction: "forward",
+        before: { account_user: "orbit", configurations: { "8.4": "" } },
+        after: { account_user: "orbit", configurations: { "8.5": "" } },
+    };
+    const value = await phpAssets(input, (name) => "/worker/" + name);
+    assertEquals(value.versions, ["8.4", "8.5"]);
+    assertEquals(JSON.parse(value.metadata_json).family, "php");
+    assertEquals(
+        value.scripts.php_restore_runtime,
+        "/worker/scripts/php_restore_runtime.py",
+    );
+    await assertRejects(
+        () =>
+            phpAssets({
+                ...input,
+                after: { ...input.after, account_user: "foreign" },
+            }, (v) => v),
+        Error,
+        "php.account_conflict",
+    );
+    for (const node_id of [1, 18]) {
+        await assertRejects(() => phpAssets({ ...input, node_id }, (v) => v));
+    }
+});

@@ -13,3 +13,14 @@ additionalFiles:
   - scripts/write_payload_chunk.py
   - scripts/compose_caddy.py
   - scripts/cleanup_payload.py
+  - scripts/php_sections.py
+  - scripts/php_common.py
+  - scripts/php_stage.py
+  - scripts/php_validate.py
+  - scripts/php_publish.py
+  - scripts/php_enable.py
+  - scripts/php_reload.py
+  - scripts/php_confirm.py
+  - scripts/php_restore.py
+  - scripts/php_restore_enable.py
+  - scripts/php_restore_runtime.py

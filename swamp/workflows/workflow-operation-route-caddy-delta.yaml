@@ -89,9 +89,9 @@ jobs:
       inputs:
         run: |
           set -eu
-          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.prepare_payload }}"
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.prepare_payload }}"
         env: &id002
-          ORBIT_CADDY_DELTA_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
   - name: write-payload
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
     labels: *id001
@@ -103,9 +103,9 @@ jobs:
       inputs:
         run: |
           set -eu
-          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.write_payload_chunk }}"
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.write_payload_chunk }}"
         env:
-          ORBIT_CADDY_DELTA_META: ${{ steps.assets.outputs.metadata_json }}
+          ORBIT_ROUTE_PUBLICATION_META: ${{ steps.assets.outputs.metadata_json }}
           ORBIT_CADDY_DELTA_CHUNK: ${{ self.chunk.json }}
     dependsOn:
     - step: prepare-payload
@@ -125,7 +125,7 @@ jobs:
       inputs:
         run: |
           set -eu
-          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.compose_caddy }}"
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.compose_caddy }}"
         env: *id002
     dependsOn:
     - step: write-payload
@@ -189,7 +189,7 @@ jobs:
       inputs:
         run: |
           set -eu
-          sudo --preserve-env=ORBIT_CADDY_DELTA_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup_payload }}"
+          sudo --preserve-env=ORBIT_ROUTE_PUBLICATION_META,ORBIT_CADDY_DELTA_CHUNK /usr/bin/python3 "${{ steps.assets.outputs.scripts.cleanup_payload }}"
         env: *id002
     allowFailure: true
   - name: result
