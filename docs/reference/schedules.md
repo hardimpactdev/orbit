@@ -107,21 +107,25 @@ The service sends an authenticated Node request to the Gateway run endpoint. Its
 
 ## Install and recover
 
-Swamp checks the calendar with `systemd-analyze calendar`, validates accounts and directories, stages the public units, checks them with `systemd-analyze verify`, publishes them and reloads systemd. First installation applies desired timer state. Identical installation preserves actual enabled and active state separately. A changed installed specification refuses with `schedule.artifact_conflict`.
+Creation uses `@swamp/cfgmgmt/file` to deploy the public units, the official exec model to reload systemd, and `@swamp/cfgmgmt/systemd` to converge the timer to its recorded enabled/running or disabled/stopped intent. Repeating create converges the same Schedule UUID. Obsolete script and completion files are removed through `@swamp/cfgmgmt/file`; they are not executed or copied into native history.
 
-Existing files must be regular, root-owned files with the exact expected modes and generated content. Wrong ownership, links, modified context or a mismatched command hash refuse before effects. Swamp recognizes an exact obsolete runner layout only to remove it during conversion. It verifies private command bytes and every remaining old artifact before removal, and preserves actual timer state. It executes no obsolete runner. A failure restores the earlier files and timer state; a failed restore returns `schedule.rollback_failed`.
+A failed create or destroy records `operation.native_failed` through the shared native terminal projection. Successful actions stay applied. Correct the cause and repeat the operation to converge; these workflows do not keep snapshots or roll back host state. Definition installation and enable retain their existing canonical installer and recovery behavior.
 
 ## Direct Swamp control
 
-`schedule.create` uses the single native `operation-schedule-create` DAG. Its installation step shares the canonical Schedule model with enable and destroy controls. The Gateway validates and records intent, starts the native DAG, and projects its bounded outcome. It does not install or control timers. Roll back through a revert PR.
+`schedule.create` uses `operation-schedule-create`; destroy uses `operation-schedule-destroy`. Both use the same canonical Schedule unit rendering and ownership rules as the remaining installation consumers. The Gateway validates and records intent, starts the native DAG, and projects its bounded outcome. It does not install or control timers. Roll back through a revert PR.
 
 When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
 
-The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. For create, enable and destroy, the selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. These DAGs project only bounded ready/error fields through the shared endpoint.
+The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. For enable, the selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. These DAGs project only bounded ready/error fields through the shared endpoint.
 
 `schedule.run` uses `operation-schedule-run`. Every step runs on a Node 209 worker. The Gateway supplies the complete public execution context, the canonical pinned SSH target and the existing command execution-copy vault descriptor. Official `@swamp/ssh` checks the recorded account and directory, verifies the command hash, then executes the command on the target through stdin. No target worker or forwarded environment is required. The command timeout remains 1 through 86,400 seconds; the SSH execution deadline includes the existing ten-second termination margin. Native dependencies control ordering and recovery. The shared terminal subscriber projects only the fixed public result. Timer intent stays unchanged.
 
-Create, enable and destroy retain their current target-worker placement until each kind is converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
+`schedule.create` and `schedule.destroy` also run on Node 209 workers. They receive the complete public Schedule specification and canonical SSH target. Official cfgmgmt models use the approved identity file and runner SSH configuration. The shared worker pin workflow seeds stored host keys in that runner's `known_hosts`. The Gateway triggers it after a pin is recorded or changed; lifecycle families consume it and do not select or capture trust.
+
+Creation reloads after applying the files, including on rerun; the systemd model's content-triggered reload alone would miss a previous reload failure. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal uses an unconditional official exec stop so an activating oneshot is stopped too. These paths read no private command source and need no command execution copy.
+
+Enable retains its current target-worker placement until converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
 
 Definition installation composes the same Schedule installer as steps of its parent native DAG. It does not create child Operations.
 
@@ -145,7 +149,7 @@ The native run result sets `last_run_at` and `last_run_status` through the share
 
 ## Remove
 
-Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the two public units and any exactly verified obsolete artifacts, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and fails the Operation with `schedule.run_active` and keeps the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
+Destroy marks the Schedule `removing`. If its service is active and cascade removal was not requested, the native active-work check fails before host mutation; the Schedule stays `removing`. After active work ends, repeat destroy to converge. Otherwise the workflow disables and stops the timer, stops the service for cascade removal, removes the public units and obsolete files at that UUID's owned paths, and reloads systemd. Native success deletes the Schedule record. A failed step leaves the record and completed host actions in place for the next convergence.
 
 [Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
 
@@ -155,6 +159,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 | Error code | Meaning |
 | --- | --- |
+| `operation.native_failed` | Native create or destroy failed. Completed host work remains; fix the cause and repeat to converge. |
 | `schedule.name_invalid`, `schedule.calendar_invalid`, `schedule.command_invalid`, `schedule.timeout_invalid` | The input is outside the accepted form, or the host's systemd refuses the calendar. |
 | `schedule.target_invalid` | The target does not exist, or the operation does not apply to it. The Gateway also uses it with 403 when a completion report comes from another Node. |
 | `schedule.target_unavailable` | The target, its Node, its user, or its working directory cannot run the operation. |

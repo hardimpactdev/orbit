@@ -9,6 +9,7 @@ export function routeMutationSteps(
     mode: "forward" | "restore",
     guard?: string,
     parentRunId = "run.id",
+    ingress = false,
 ): Fields[] {
     const side = `${intent}.${mode}`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
@@ -141,6 +142,14 @@ export function routeMutationSteps(
         direction: mode,
     });
     child("lan", "route-lan-apply", `${side}.lan`, targetIntent("rule"));
+    if (ingress) {
+        child(
+            "ingress",
+            "route-ingress-apply",
+            `${side}.ingress`,
+            targetIntent("rule"),
+        );
+    }
     if (mode === "forward") caddy("prepare_caddy", "before", "prepared");
     child(
         "urls",
@@ -169,6 +178,14 @@ export function routeMutationSteps(
         `${side}.retire_lan`,
         targetIntent("rule"),
     );
+    if (ingress) {
+        child(
+            "retire_ingress",
+            "route-ingress-apply",
+            `${side}.retire_ingress`,
+            targetIntent("rule"),
+        );
+    }
     steps.push({
         name,
         ...coordinator,

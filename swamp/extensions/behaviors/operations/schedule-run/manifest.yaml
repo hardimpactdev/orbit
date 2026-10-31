@@ -1,9 +1,9 @@
 manifestVersion: 1
 name: '@nckrtl/schedule-run-scripts'
-version: 2026.10.31.1
+version: 2026.10.31.3
 visibility: private
 license: MIT
-description: One-action Schedule run checks and public asset metadata.
+description: Canonical public Schedule units and command validation assets.
 behaviors:
   - operations/schedule-run/assets.ts
 additionalFiles:

@@ -24,6 +24,8 @@ it('refuses missing intent for booted core, computed and extension declarations'
         ->toThrow(LogicException::class, $workflow);
 })->with([
     'Horizon' => 'operation-process-horizon-handoff',
+    'Schedule create' => 'operation-schedule-create',
+    'Schedule destroy' => 'operation-schedule-destroy',
     'Schedule run' => 'operation-schedule-run',
     'computed bootstrap' => 'operation-node-bootstrap-probe',
     'Conn contribution' => 'operation-conn-direct',

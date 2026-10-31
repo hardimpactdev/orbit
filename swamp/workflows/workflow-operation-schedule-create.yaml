@@ -1,56 +1,127 @@
 id: 2631be29-8b8d-40af-94d8-07f76f795c87
 name: operation-schedule-create
-description: Install one admitted Schedule on its exact Node worker.
+description: Converge public Schedule units and timer intent through official cfgmgmt on 209.
 vaults: []
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      const: schedule.create
-  required:
-    - operation_id
-    - node_id
-    - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [schedule.create]}
+    intent:
+      type: object
+      properties:
+        schedule:
+          type: object
+          properties: {id: {type: string, format: uuid}}
+          required: [id]
+        cascade: {type: boolean}
+        ssh_execution: {type: object}
+      required: [schedule, cascade, ssh_execution]
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-  - name: node
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
+  - name: schedule
+    target: orbit-node-209
+    labels: &placement {node: "209"}
     steps:
-      - name: install
+      - name: units
+        target: orbit-node-209
+        labels: *placement
         task:
           type: behavior
-          behaviorType: "@nckrtl/schedule-control"
-          behaviorName: ${{ "schedule-control-node-" + string(inputs.node_id) }}
-          methodName: install
-          inputs:
-            operation_id: ${{ inputs.operation_id }}
-            node_id: ${{ inputs.node_id }}
-            kind: ${{ inputs.kind }}
-            run_id: ${{ run.id }}
-  - name: failed-node
-    dependsOn:
-      - job: node
-        condition:
-          type: failed
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: project-failure
-        writes: true
+          behaviorType: '@nckrtl/schedule-run-assets'
+          behaviorName: ${{ "schedule-units-" + string(inputs.operation_id) }}
+          methodName: lifecycle
+          inputs: {schedule: '${{ inputs.intent.schedule }}'}
+      - name: files
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: units, condition: {type: succeeded}}]
+        forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
         task:
           type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "operation-failure-" + run.id }}'
-          methodName: report
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: ${{ "schedule-unit-" + self.unit + "-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            path: ${{ "/etc/systemd/system/orbit-schedule-" + inputs.intent.schedule.id + "." + self.unit }}
+            ensure: present
+            content: ${{ steps.units.outputs[self.unit] }}
+            owner: root
+            group: root
+            mode: "0644"
+          inputs: {}
+      - name: reload
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: files, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/exec'
+          behaviorName: ${{ "schedule-reload-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            command: systemctl daemon-reload
+          inputs: {}
+      - name: timer
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: reload, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/systemd'
+          behaviorName: ${{ "schedule-timer-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            service: ${{ "orbit-schedule-" + inputs.intent.schedule.id + ".timer" }}
+            enabled: ${{ inputs.intent.schedule.desired == "enabled" }}
+            ensure: '${{ inputs.intent.schedule.desired == "enabled" ? "running" : "stopped" }}'
+          inputs: {}
+      - name: remove_obsolete
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: timer, condition: {type: succeeded}}]
+        forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}
+        task:
+          type: behavior
+          behaviorType: '@swamp/cfgmgmt/file'
+          behaviorName: ${{ "schedule-remove_obsolete-" + string(inputs.operation_id) }}
+          methodName: apply
+          globalArgs:
+            nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
+            nodeUser: ${{ inputs.intent.ssh_execution.target.user }}
+            nodePort: ${{ inputs.intent.ssh_execution.target.port }}
+            nodeIdentityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+            become: true
+            path: ${{ "/etc/orbit/schedules/" + inputs.intent.schedule.id + self.suffix }}
+            ensure: absent
+          inputs: {}
+      - name: result
+        target: orbit-node-209
+        labels: *placement
+        dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "schedule-result-" + string(inputs.operation_id) }}
+          methodName: execute
           inputs:
-            operation_id: ${{ inputs.operation_id }}
-            kind: ${{ inputs.kind }}
-            node_id: ${{ inputs.node_id }}
-            run_id: ${{ run.id }}
+            run: |
+              printf '%s\n' '{"ready":true}'

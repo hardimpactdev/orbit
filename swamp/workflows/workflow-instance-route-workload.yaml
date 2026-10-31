@@ -1,0 +1,490 @@
+id: e0784b8d-cf13-4d2d-a5b5-bc0d0046b9d3
+name: instance-route-workload
+description: Prepare one captured workload through official SSH, file actions and validate-before-reload.
+vaults: []
+inputs:
+  type: object
+  properties:
+    intent:
+      type: object
+    operation_id:
+      type: integer
+    node_id:
+      type: integer
+    kind:
+      type: string
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - intent
+  - operation_id
+  - node_id
+  - kind
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: workload
+  steps:
+  - name: served-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
+    dependsOn: []
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: served-assets
+      methodName: read
+      inputs:
+        action: served_roots
+        input: ${{ self.part }}
+  - name: served-command
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: script
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["served-assets-0"].outputs.script_body }}
+  - name: served
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [inputs.intent.plan.served_roots] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: served-decode
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["served-command-0"].outputs.stdout }}
+  - name: dev-source-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: dev-source-assets
+      methodName: read
+      inputs:
+        action: source_access
+        input: ${{ self.part }}
+  - name: dev-source-command
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: script
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["dev-source-assets-0"].outputs.script_body }}
+  - name: dev-source
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: dev-source-decode
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["dev-source-command-0"].outputs.stdout }}
+  - name: prod-source-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: prod-source-assets
+      methodName: read
+      inputs:
+        action: source_access
+        input: ${{ {"user":steps["served-0"].outputs.user,"sites":steps["served-0"].outputs.sites} }}
+  - name: prod-source-command
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: script
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["prod-source-assets-0"].outputs.script_body }}
+  - name: prod-source
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.served_roots != null ? [{}] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: prod-source-decode
+      methodName: decode
+      inputs:
+        stdout: ${{ steps["prod-source-command-0"].outputs.stdout }}
+  - name: runtime-identity
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - /usr/bin/cmp
+        - ${{ "/etc/orbit/php-fpm/" + self.part.user + "/orbit.identity" }}
+        - '-'
+        stdin: ${{ self.part.marker }}
+  - name: runtime-pool
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    - {step: runtime-identity, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "instance-route-pool-" + string(inputs.intent.instance_id) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+        nodePort: ${{ inputs.intent.connection.nodePort }}
+        become: true
+        path: ${{ "/etc/orbit/php-fpm/" + self.part.user + "/generated/pool.conf" }}
+        ensure: present
+        owner: root
+        group: root
+        mode: '0644'
+        content: ${{ self.part.pool }}
+      inputs: {}
+  - name: runtime-pool-proof
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    - {step: runtime-identity, condition: {type: always}}
+    - {step: runtime-pool, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: runtime-pool-proof
+      methodName: verifyPool
+      inputs:
+        expected: ${{ self.part.pool_sha256 }}
+        state: ${{ steps["runtime-pool-0"].outputs }}
+  - name: runtime-validate
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    - {step: runtime-identity, condition: {type: always}}
+    - {step: runtime-pool, condition: {type: always}}
+    - {step: runtime-pool-proof, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - env
+        - ${{ "PHP_INI_SCAN_DIR=/etc/php/" + self.part.version + "/fpm/conf.d:/etc/orbit/php-fpm/" + self.part.user
+          + "/generated" }}
+        - ${{ "/usr/sbin/php-fpm" + self.part.version }}
+        - -t
+        - --fpm-config
+        - ${{ "/etc/orbit/php-fpm/" + self.part.user + "/generated/php-fpm.conf" }}
+  - name: runtime-reload
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : [] }}'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    - {step: runtime-identity, condition: {type: always}}
+    - {step: runtime-pool, condition: {type: always}}
+    - {step: runtime-pool-proof, condition: {type: always}}
+    - {step: runtime-validate, condition: {type: always}}
+    guard: ${{ steps.exists(key, steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "instance-route-workload-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "instance-route-workload-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv:
+        - /usr/bin/systemctl
+        - reload
+        - ${{ "orbit-" + self.part.user + "-php" + self.part.version + "-fpm.service" }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: served-assets, condition: {type: always}}
+    - {step: served-command, condition: {type: always}}
+    - {step: served, condition: {type: always}}
+    - {step: dev-source-assets, condition: {type: always}}
+    - {step: dev-source-command, condition: {type: always}}
+    - {step: dev-source, condition: {type: always}}
+    - {step: prod-source-assets, condition: {type: always}}
+    - {step: prod-source-command, condition: {type: always}}
+    - {step: prod-source, condition: {type: always}}
+    - {step: runtime-identity, condition: {type: always}}
+    - {step: runtime-pool, condition: {type: always}}
+    - {step: runtime-pool-proof, condition: {type: always}}
+    - {step: runtime-validate, condition: {type: always}}
+    - {step: runtime-reload, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-route-workload'
+      behaviorName: workload-prepared
+      methodName: prepared
+      inputs:
+        outcomes: ${{ steps }}
+        required:
+          dev-source: '${{ size(inputs.intent.plan.source_access != null ? [inputs.intent.plan.source_access] :
+            []) }}'
+          prod-source: '${{ size(inputs.intent.plan.served_roots != null ? [{}] : []) }}'
+          runtime-reload: '${{ size(inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : []) }}'
