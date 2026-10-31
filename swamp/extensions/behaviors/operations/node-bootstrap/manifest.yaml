@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/node-bootstrap-probe'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public result projection for the official SSH bootstrap probe.
+behaviors:
+  - operations/node-bootstrap/probe_result.ts

@@ -1,0 +1,17 @@
+# Official package @swamp/ssh 2026.10.23.1, model version 2026.10.20.1.
+# Source: swamp-club/swamp-extensions d6f7afdcd6d04a63fdbc6ed56c403832770f67a6
+# ssh/extensions/models/_lib/schemas.ts and ssh/README.md (Authentication).
+name: official-ssh-fixture
+type: '@swamp/ssh'
+version: '2026.10.20.1'
+globalArguments:
+  name: official-ssh-fixture
+  transport:
+    kind: ssh
+    user: orbit
+    identityContent: ${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}
+  hosts:
+    - name: hub
+      address: example.invalid
+      transport:
+        identityContent: ${{ vault.get('orbit-control-inputs', 'ssh-hub') }}

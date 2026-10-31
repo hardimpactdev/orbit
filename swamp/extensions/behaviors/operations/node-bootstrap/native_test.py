@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
 
-KINDS = ('node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect', 'node.prepare_php_packages')
+KINDS = ('node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect', 'node.prepare_php_packages')
 
 class BootstrapNative(NativeTestCase):
     def setUp(self):
@@ -50,7 +50,7 @@ execute:async (...args:Parameters<typeof fixture.methods.apply.execute>) => {
                 self.assertEqual(job.pop('target'),'${{ "orbit-node-" + string(inputs.node_id) }}')
                 self.assertEqual(job.pop('labels'),{'node':'${{ string(inputs.node_id) }}'})
             (self.repo/'workflows'/name).write_text(yaml.safe_dump(workflow,sort_keys=False))
-        self.state={'calls':[],'actions':0,'operation':{'id':17,'node_id':14,'kind':'node.bootstrap_probe','status':'queued','result':None,'cancel_requested':False,
+        self.state={'calls':[],'actions':0,'operation':{'id':17,'node_id':14,'kind':'node.bootstrap_verify','status':'queued','result':None,'cancel_requested':False,
             'input':{'bootstrap':{'schema_version':1,'node_id':209,'platform':'linux','target':{'node_id':209,'host':'192.0.2.209','port':2222,'user':'bootstrap','fingerprint':'SHA256:'+'a'*43},
             'managed_user':'candidate','expected_architecture':'x86_64','address':'10.44.0.209','artifacts':{},'command':{'user':'candidate','public_key':'ssh-ed25519 AAAA','releases':['resolute'],'packages':['curl'],'dns_policy':'preserve'},'firewall':None}}}}
 

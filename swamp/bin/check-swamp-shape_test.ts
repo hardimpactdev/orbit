@@ -24,6 +24,134 @@ const inventory = {
   "cli.install": "action",
   "caddy.publish": "action",
 };
+const officialSshFixture = Deno.readTextFileSync(
+  new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
+);
+Deno.test("official SSH transport identity vault fields are native sensitive inputs", () => {
+  assertEquals(
+    analyzeYaml("models/official-ssh.yaml", officialSshFixture).findings,
+    [],
+  );
+  const step = `name: official-ssh
+jobs:
+- name: action
+  steps:
+  - name: run
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '\${{ "wireguard-hub-" + string(inputs.hub_id) }}'
+      methodName: script
+      globalArgs:
+        name: wireguard-hub
+        transport:
+          kind: ssh
+          identityContent: \${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}
+        hosts:
+        - name: hub
+          address: example.invalid
+          transport:
+            identityContent: \${{ vault.get('orbit-control-inputs', 'ssh-hub') }}
+      inputs:
+        hosts: name:hub
+        interpreter: python3
+        sudo: true
+        script: '\${{ steps.assets.outputs.script }}'
+`;
+  assertEquals(analyzeYaml("workflows/official-ssh.yaml", step).findings, []);
+  assertEquals(
+    analyzeYaml(
+      "workflows/official-ssh.yaml",
+      step.replace("type: behavior", "type: model_method").replace(
+        "behaviorType:",
+        "modelType:",
+      ),
+    ).findings,
+    [],
+  );
+  assert(
+    analyzeYaml(
+      "models/official-ssh.yaml",
+      officialSshFixture.replace(
+        "${{ vault.get('orbit-control-inputs', 'ssh-hub') }}",
+        "plaintext-private-key",
+      ),
+    ).findings.some((entry) => entry.rule === "secret-native-source"),
+  );
+  for (
+    const source of [
+      officialSshFixture.replace("type: '@swamp/ssh'", "type: '@example/ssh'"),
+      officialSshFixture.replaceAll("identityContent:", "identityFile:"),
+      officialSshFixture.replace("globalArguments:", "inputs:"),
+      step.replace(
+        "behaviorType: '@swamp/ssh'",
+        "behaviorType: '@example/ssh'",
+      ),
+      step.replace("globalArgs:", "inputs:").replace(
+        "      inputs:\n        hosts:",
+        "      other:\n        hosts:",
+      ),
+    ]
+  ) {
+    const findings = analyzeYaml(
+      source.startsWith("name: official-ssh\n")
+        ? "workflows/official-ssh.yaml"
+        : "models/official-ssh.yaml",
+      source,
+    ).findings;
+    assert(
+      findings.some((entry) => entry.rule === "vault-placement"),
+      source,
+    );
+  }
+});
+Deno.test("official SSH identity content requires one whole vault value, never raw or composite secrets", () => {
+  const original =
+    "${{ vault.get('orbit-control-inputs', inputs.execution_secrets.ssh.key) }}";
+  for (
+    const value of [
+      "plaintext-private-key",
+      "${{ inputs.private_key }}",
+      "${{ env.SSH_IDENTITY }}",
+      "prefix " + original,
+      original + " suffix",
+      "${{ vault.get('vault','key') + string('suffix') }}",
+      "${{ vault.get('vault','key') || identity() }}",
+      "${{ vault.get('vault','key') }}${{ vault.get('other','key') }}",
+      "{not: a string}",
+    ]
+  ) {
+    const findings = analyzeYaml(
+      "models/official-ssh.yaml",
+      officialSshFixture.replace(original, value),
+    ).findings;
+    assert(
+      findings.some((entry) => entry.rule === "secret-native-source"),
+      value,
+    );
+  }
+  for (
+    const value of [
+      "${{ vault.get('vault', inputs.execution_secrets.ssh.key) }}",
+      "${{ vault.get('vault', 'ssh-node-' + string(inputs.node_id)) }}",
+    ]
+  ) {
+    assertEquals(
+      analyzeYaml(
+        "models/official-ssh.yaml",
+        officialSshFixture.replace(original, value),
+      ).findings,
+      [],
+    );
+  }
+  const argv =
+    "name: official-ssh\njobs:\n- steps:\n  - task:\n      type: behavior\n      behaviorType: '@swamp/ssh'\n      inputs:\n        argv:\n        - \"${{ vault.get('vault','key') }}\"\n";
+  assert(
+    analyzeYaml("workflows/official-ssh.yaml", argv).findings.some((entry) =>
+      entry.rule === "secret-argv"
+    ),
+  );
+});
 const rules = (source: string) =>
   analyzeTs(file, source, inventory).findings.map((f) => f.rule);
 const program = (n: number) =>
@@ -680,6 +808,48 @@ Deno.test("normalized repository identity is public while authentication identit
       ),
     );
   }
+});
+
+Deno.test("official cfgmgmt identity file workflow input is a public string path", () => {
+  const source = (name: string, schema: unknown) =>
+    "inputs:\n  properties:\n    connection:\n      type: object\n      properties:\n        " +
+    name + ": " + JSON.stringify(schema) + "\n";
+  assert(
+    !analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      source("nodeIdentityFile", { type: "string" }),
+    ).findings.some((f) => f.rule === "secret-input"),
+  );
+  for (const schema of [{}, { type: "object" }, { type: "array" }]) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source("nodeIdentityFile", schema))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  for (
+    const name of ["identityContent", "nodeIdentityContent", "ssh_identity"]
+  ) {
+    assert(
+      analyzeYaml("workflows/cfgmgmt.yaml", source(name, { type: "string" }))
+        .findings.some((f) => f.rule === "secret-input"),
+    );
+  }
+  const vault = "${{ vault.get('execution', 'ssh') }}";
+  assert(
+    analyzeYaml(
+      "models/cfgmgmt.yaml",
+      "globalArguments:\n  nodeIdentityFile: " + vault,
+    )
+      .findings.some((f) => f.rule === "vault-placement"),
+  );
+  assert(
+    analyzeYaml(
+      "workflows/cfgmgmt.yaml",
+      workflow(
+        "        run: 'tool $NODE_IDENTITY_FILE'\n",
+      ),
+    ).findings.some((f) => f.rule === "secret-argv"),
+  );
 });
 
 Deno.test("agent invocations inside shell substitutions and interpreter bodies are actions", () => {

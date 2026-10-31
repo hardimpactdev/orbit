@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -13,8 +14,11 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Route;
 
 beforeEach(function (): void {
     $cluster = Cluster::query()->create(['name' => 'Router transition']);
@@ -64,7 +68,7 @@ it('captures the complete obsolete Router baseline for unset without changing as
     {
         public function resolve(Node $node): ManagedUserAccount
         {
-            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+            throw new RuntimeException('Router admission must not look up an account on a Node.');
         }
     });
     $this->old->update(['architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.9']);
@@ -77,13 +81,34 @@ it('captures the complete obsolete Router baseline for unset without changing as
             ->and(array_column($intent['old_nodes'], 'assignment_id'))->toBe([$this->oldRole->id, $this->newRole->id])
             ->and($intent['old_nodes'][0]['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
             ->and($intent['old_nodes'][0]['router_lan'])->toBe(['desired' => [], 'expand' => false, 'prune' => true])
+            ->and($intent['old_nodes'][0]['user'])->toBe('orbit')
+            ->and($intent['old_nodes'][0])->not->toHaveKey('home')
             ->and($this->oldRole->fresh()->status)->toBe(LifecycleStatus::Active);
+        $project = Project::query()->create(['name' => 'Router app', 'slug' => 'router-app', 'repository_url' => 'https://example.test/router.git', 'root' => 'public']);
+        $target = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->old->id, 'name' => 'default', 'checkout_path' => '/srv/router/default', 'status' => 'active', 'source_is_laravel' => false]);
+        $route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $this->old->cluster_id, 'domain' => 'router.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $target->id, 'position' => 0]);
+        $route->update(['status' => 'active', 'sites_published' => true]);
+        app()->instance(LeafCertificateSigner::class, new class implements LeafCertificateSigner
+        {
+            public function rootCertificate(): string
+            {
+                return 'public-root-fixture';
+            }
+        });
         $this->operation->kind = 'cluster.router_set';
         $this->operation->node_id = $this->candidate->id;
         $this->operation->input = ['cluster_id' => $this->old->cluster_id, 'candidate_role_id' => $this->newRole->id];
         $setting = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
         expect($setting['candidate']['assignment_id'])->toBe($this->newRole->id)
-            ->and($setting['candidate']['prerequisites'])->toHaveKeys(['user', 'group', 'home', 'packages'])
+            ->and($setting['candidate']['user'])->toBe('orbit')
+            ->and($setting['candidate'])->not->toHaveKey('home')
+            ->and($setting['candidate']['prerequisites'])->toHaveKeys(['user', 'packages'])
+            ->and($setting['candidate']['prerequisites'])->not->toHaveKeys(['home', 'group'])
+            ->and($setting['leaves'])->toHaveCount(1)
+            ->and($setting['leaves'][0]['user'])->toBe('orbit')
+            ->and($setting['leaves'][0]['root_hash'])->toBe(hash('sha256', 'public-root-fixture'))
+            ->and($setting['leaves'][0])->not->toHaveKey('home')
             ->and($setting['candidate']['firewall'])->toHaveKeys(['desired', 'remove', 'enable'])
             ->and($setting['old_nodes'])->toHaveCount(1)
             ->and($this->newRole->fresh()->status)->toBe(LifecycleStatus::Provisioning);
@@ -105,6 +130,18 @@ it('authorizes only the captured root candidate and publication participants', f
     }
     expect(fn () => $projection->assertPublicParticipant($this->operation, 8004))->toThrow(ResourceOperationException::class);
 });
+
+it('rejects invalid configured participant accounts before capturing a Router inventory', function (array $attributes): void {
+    $this->old->update($attributes);
+    $this->operation->kind = 'cluster.router_unset';
+    $this->operation->input = ['cluster_id' => $this->old->cluster_id];
+
+    expect(fn () => app(NativeClusterRouterIntent::class)->forOperation($this->operation))
+        ->toThrow(ResourceOperationException::class, 'Router participants require a configured Linux Node account.');
+})->with([
+    'invalid username' => [['user' => 'orbit;id']],
+    'non-Linux participant' => [['platform' => 'macos']],
+]);
 
 it('records only bounded Router results and refuses an old checkpoint after completion', function (): void {
     $runId = 'c43ba393-aaf7-4166-a736-e421dd9d7e0a';

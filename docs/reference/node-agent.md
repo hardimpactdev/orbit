@@ -495,7 +495,7 @@ A task read uses a workspace only when its `base` and `start` equal the values t
 
 ### Publish runs
 
-The subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work and does not wait for it. Task workspaces, Process usage, and log lines each have their own lane, with one run at a time. A run that takes longer than 12 seconds is stopped.
+For agent observations, the subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. Native terminal results use the [shared synchronous projection path](/reference/swamp-command-steps#event-connection), which runs independently of Horizon. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work and does not wait for it. Task workspaces, Process usage, and log lines each have their own lane, with one run at a time. A run that takes longer than 12 seconds is stopped.
 
 When a workspace of an unfinished task reports a new `head` or new diff counts, a run stores the task's line counts when the diff is complete and broadcasts [`task_group.updated`](/reference/events#tasks). A failed run retries after 15 seconds. After five failures in a row, the workspace is dropped until the agent reports a new change.
 

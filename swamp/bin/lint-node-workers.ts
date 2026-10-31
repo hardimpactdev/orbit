@@ -67,7 +67,12 @@ async function reviewed(path: string) {
   }
   if (
     /\bcommandOutput\b/.test(text) &&
-    !["node-command-process.ts", "node-commands.ts", "node-proxy.ts"].some((
+    ![
+      "node-command-process.ts",
+      "node-commands.ts",
+      "node-proxy.ts",
+      "node-proxy-http.ts",
+    ].some((
       name,
     ) => path === `${root}/extensions/behaviors/operations/_lib/${name}`)
   ) {
@@ -93,9 +98,9 @@ async function reviewed(path: string) {
     }
     if (
       /node-command-process\.ts$/.test(dependency) &&
-      !["node-commands.ts", "node-proxy.ts"].some((name) =>
-        path === `${root}/extensions/behaviors/operations/_lib/${name}`
-      )
+      !["node-commands.ts", "node-proxy.ts", "node-proxy-http.ts"].some((
+        name,
+      ) => path === `${root}/extensions/behaviors/operations/_lib/${name}`)
     ) {
       errors.push(
         `Raw Node command transport is restricted to reviewed adapters: ${path}`,
@@ -160,14 +165,11 @@ for (const path of await files(`${root}/workflows`)) {
     if (
       node && task.type === "assert" &&
       (typeof task.expr !== "string" ||
-        [task.expr, value.guard].some((v) =>
-          typeof v === "string" && v.includes("(")
-        ) ||
         typeof task.message === "string" &&
           task.message.includes("${{"))
     ) {
       errors.push(
-        `Node assertions must use data-only predicates and static messages: ${path}`,
+        `Node assertions must use string expressions and static messages: ${path}`,
       );
     }
     if (

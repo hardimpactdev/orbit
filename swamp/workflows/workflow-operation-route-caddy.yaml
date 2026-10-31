@@ -1,7 +1,6 @@
 id: a7839446-4acb-4e72-b82f-d188f108a1fc
 name: operation-route-caddy
-description: Publish one full public Caddy snapshot as placed shell actions, retaining
-  the actual composing parent identity.
+description: Official file application, validation and reload with complete public intent.
 vaults: []
 inputs:
   type: object
@@ -14,7 +13,6 @@ inputs:
       minimum: 1
     kind:
       type: string
-      pattern: ^[a-z][a-z0-9_.-]+$
     execution_secrets:
       type: object
       additionalProperties: false
@@ -35,12 +33,33 @@ inputs:
               type: string
             caddy:
               type: object
-            expected_current:
+            control_node_id:
+              type: integer
+              minimum: 1
+            connection:
               type: object
+              properties:
+                nodeHost:
+                  type: string
+                nodeUser:
+                  type: string
+                nodeIdentityFile:
+                  type: string
+                become:
+                  type: boolean
+                  const: true
+              required:
+              - nodeHost
+              - nodeUser
+              - nodeIdentityFile
+              - become
+              additionalProperties: false
           required:
           - node_id
           - user
           - caddy
+          - control_node_id
+          - connection
           additionalProperties: false
       required:
       - caddy_publication
@@ -49,928 +68,85 @@ inputs:
   - operation_id
   - node_id
   - kind
-  - intent
   - execution_secrets
+  - intent
   additionalProperties: false
 jobs:
-- name: admission
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-  labels: &id001
-    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
+- name: publication
+  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+  labels:
+    node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
   steps:
   - name: input
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: ${{ "caddy-input-" + run.id }}
+      behaviorName: ${{ "input-" + run.id }}
       methodName: prepare
       inputs:
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
         publication: ${{ inputs.intent.caddy_publication }}
-        target_node_id: ${{ inputs.intent.caddy_publication.node_id }}
-- name: observation
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-  steps:
-  - name: observe-host
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
+  - name: apply-config
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.control_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.control_node_id) }}
     task:
       type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-observe-host-" + run.id }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED,ORBIT_CADDY_OUTCOME /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import ipaddress
-          import json
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          def service_state(action, inactive):
-              reply = subprocess.run(
-                  ["/usr/bin/systemctl", action, "--quiet", "caddy"],
-                  check=False,
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-                  timeout=35,
-              )
-              if reply.returncode not in (0, inactive) and not (reply.returncode == 4 and meta["unserved"] and not Path("/usr/bin/caddy").is_file()):
-                  raise SystemExit("caddy.service_state_unavailable")
-              return reply.returncode == 0
-
-
-          live = root / "Caddyfile"
-          prior_digest = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-          prior_target = str(live.resolve()) if live.is_file() else None
-          expected = meta.get("expected_current")
-          if expected is not None and (prior_digest != expected["sha256"] or prior_target != expected["target"]):
-              raise SystemExit("caddy.publication_stale")
-          active = service_state("is-active", 3)
-          enabled = service_state("is-enabled", 1)
-          missing = not Path("/usr/bin/caddy").is_file()
-          withdraw = meta["unserved"] and missing and not active
-          if missing and not withdraw:
-              raise SystemExit("caddy.release_missing")
-          if not withdraw:
-              reply = subprocess.run(
-                  ["/usr/bin/caddy", "version"], check=False, capture_output=True, timeout=35
-              )
-              match = re.match(rb"v?(\d+)\.(\d+)\.(\d+)(?:[-+\s]|$)", reply.stdout)
-              if (
-                  reply.returncode != 0
-                  or not match
-                  or tuple(map(int, match.groups())) < (2, 9, 0)
-              ):
-                  raise SystemExit("caddy.release_invalid")
-              reply = subprocess.run(
-                  ["/usr/sbin/ip", "-o", "-4", "addr", "show"],
-                  check=False,
-                  capture_output=True,
-                  timeout=35,
-              )
-              if reply.returncode:
-                  raise SystemExit("caddy.addresses_unavailable")
-              addresses = {
-                  line.split()[3].split("/")[0]
-                  for line in reply.stdout.decode().splitlines()
-                  if len(line.split()) > 3
-              }
-              if any(
-                  str(ipaddress.IPv4Address(address)) not in addresses
-                  for address in meta["listen_addresses"]
-              ):
-                  raise SystemExit("caddy.address_missing")
-          loaded = False
-          if active and live.is_symlink():
-              generation = live.resolve().parent
-              receipt = generation / "loaded.json"
-              if generation.parent == root / "orbit-versions" and receipt.is_file():
-                  invocation = subprocess.run(
-                      ["/usr/bin/systemctl", "show", "--property=InvocationID", "--value", "caddy"],
-                      check=True, capture_output=True, timeout=35,
-                  ).stdout.decode().strip()
-                  recorded = json.loads(receipt.read_text())
-                  loaded = bool(re.fullmatch(r"[a-f0-9]{32}", invocation)) and recorded == {
-                      "sha256": prior_digest, "invocation_id": invocation,
-                  }
-          unchanged = prior_digest == meta["sha256"] and loaded and enabled
-          print(
-              json.dumps(
-                  {
-                      "prior_digest": prior_digest,
-                      "prior_target": prior_target,
-                      "unchanged": unchanged,
-                      "publish": not withdraw and not unchanged,
-                      "withdraw": withdraw,
-                      "active": active,
-                      "enabled": enabled,
-                  }
-              )
-          )
-          PYTHON
-        env: &id005
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-  - name: observation
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
+      behaviorType: '@swamp/cfgmgmt/file'
+      behaviorName: ${{ "apply-config-" + run.id }}
+      methodName: apply
+      inputs: {}
+      globalArgs:
+        path: /etc/caddy/Caddyfile
+        ensure: present
+        content: ${{ steps.input.outputs.caddy.content }}
+        owner: root
+        group: caddy
+        mode: '0640'
+        nodeHost: ${{ inputs.intent.caddy_publication.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.caddy_publication.connection.nodeUser }}
+        nodeIdentityFile: ${{ inputs.intent.caddy_publication.connection.nodeIdentityFile }}
+        become: ${{ inputs.intent.caddy_publication.connection.become }}
     dependsOn:
-    - step: observe-host
+    - step: input
       condition:
         type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/caddy-public-input'
-      behaviorName: ${{ "caddy-observation-" + run.id }}
-      methodName: observe
-      inputs:
-        stdout: ${{ steps["observe-host"].outputs.stdout }}
-- name: publication
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-  labels: &id002
-    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
-  steps:
-  - name: prepare-candidate
+  - name: validate
     target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
+      behaviorName: ${{ "validate-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import grp
-          import json
-          import os
-          import stat
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          gid = grp.getgrnam("caddy").gr_gid
-          for directory in (root / ".orbit-staging", stage):
-              directory.mkdir(mode=0o750, exist_ok=True)
-              info = directory.lstat()
-              if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0:
-                  raise SystemExit("caddy.candidate_unsafe")
-              os.chown(directory, 0, gid)
-              directory.chmod(0o750)
-          path = stage / "Caddyfile"
-          try:
-              descriptor = os.open(
-                  path, os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_RDWR, 0o640
-              )
-          except FileExistsError:
-              descriptor = os.open(path, os.O_NOFOLLOW | os.O_RDWR)
-          with os.fdopen(descriptor, "r+b") as output:
-              info = os.fstat(output.fileno())
-              if not stat.S_ISREG(info.st_mode) or info.st_uid != 0:
-                  raise SystemExit("caddy.candidate_unsafe")
-              output.truncate(meta["content_bytes"])
-              os.fchown(output.fileno(), 0, gid)
-              os.fchmod(output.fileno(), 0o640)
-          print('{"prepared":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-    dependsOn: []
-  - name: write-chunk
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
+        run: sudo -u caddy /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
     dependsOn:
-    - step: prepare-candidate
+    - step: apply-config
       condition:
         type: succeeded
-    forEach:
-      item: chunk
-      in: ${{ steps.input.outputs.chunks }}
+  - name: reload
+    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
+      behaviorName: ${{ "reload-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import base64
-          import json
-          import os
-          import stat
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          chunk = json.loads(os.environ["ORBIT_CADDY_CHUNK"])
-          value = base64.b64decode(chunk["data"], validate=True)
-          if chunk["offset"] < 0 or chunk["offset"] + len(value) > meta["content_bytes"]:
-              raise SystemExit("caddy.chunk_invalid")
-          descriptor = os.open(stage / "Caddyfile", os.O_NOFOLLOW | os.O_RDWR)
-          with os.fdopen(descriptor, "r+b") as output:
-              info = os.fstat(output.fileno())
-              if (
-                  not stat.S_ISREG(info.st_mode)
-                  or info.st_uid != 0
-                  or info.st_size != meta["content_bytes"]
-              ):
-                  raise SystemExit("caddy.candidate_unsafe")
-              output.seek(chunk["offset"])
-              output.write(value)
-              output.flush()
-          print('{"written":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-          ORBIT_CADDY_CHUNK: ${{ self.chunk.json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: inspect-candidate
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
+        run: sudo /usr/bin/systemctl reload caddy
     dependsOn:
-    - step: write-chunk
+    - step: validate
       condition:
         type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          content = (stage / "Caddyfile").read_bytes()
-          if hashlib.sha256(content).hexdigest() != meta["sha256"]:
-              raise SystemExit("caddy.candidate_changed")
-          print('{"verified":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: validate-candidate
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
-    dependsOn:
-    - step: inspect-candidate
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          reply = subprocess.run(
-              [
-                  "/usr/sbin/runuser",
-                  "-u",
-                  "caddy",
-                  "--",
-                  "/usr/bin/caddy",
-                  "validate",
-                  "--config",
-                  str(stage / "Caddyfile"),
-                  "--adapter",
-                  "caddyfile",
-              ],
-              check=False,
-              stdout=subprocess.DEVNULL,
-              stderr=subprocess.DEVNULL,
-              timeout=35,
-          )
-          if reply.returncode:
-              raise SystemExit("caddy.validation_failed")
-          print('{"validated":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: activate-config
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
-    dependsOn:
-    - step: validate-candidate
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import grp
-          import hashlib
-          import json
-          import os
-          import shutil
-          import stat
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-          observed = json.loads(os.environ["ORBIT_CADDY_OBSERVED"])
-          live = root / "Caddyfile"
-          current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-          current_target = str(live.resolve()) if live.is_file() else None
-          if current != observed["prior_digest"] or current_target != observed["prior_target"]:
-              raise SystemExit("caddy.publication_stale")
-          if live.is_file():
-              target = live.resolve()
-              previous = live.read_bytes()
-              managed_generation = (
-                  live.is_symlink()
-                  and target.is_relative_to(root / "orbit-versions")
-                  and previous.startswith(b"# Managed by Orbit: Node Caddy build\n")
-                  and hashlib.sha256(previous).hexdigest()[:32] == target.parent.name[:32]
-              )
-              if not managed_generation:
-                  backup = root / "orbit-backups" / meta["run_id"]
-                  backup.mkdir(mode=0o700, parents=True, exist_ok=True)
-                  saved = backup / "Caddyfile"
-                  if saved.exists():
-                      if saved.read_bytes() != previous:
-                          raise SystemExit("caddy.backup_conflict")
-                  else:
-                      shutil.copy2(live, saved)
-                      saved.chmod(0o600)
-          state_path = stage / "restore.json"
-          prior = stage / "prior"
-          if not state_path.is_file():
-              existed = live.exists() or live.is_symlink()
-              if existed:
-                  if live.is_symlink():
-                      prior.symlink_to(os.readlink(live))
-                  elif stat.S_ISREG(live.lstat().st_mode):
-                      shutil.copy2(live, prior)
-                  else:
-                      raise SystemExit("caddy.live_unsafe")
-              state_path.write_text(
-                  json.dumps(
-                      {
-                          "had_live": existed,
-                          "previous_target": os.readlink(live) if live.is_symlink() else None,
-                          "active": observed["active"],
-                          "enabled": observed["enabled"],
-                          "prior_digest": observed["prior_digest"],
-                          "prior_target": observed["prior_target"],
-                      }
-                  )
-              )
-          gid = grp.getgrnam("caddy").gr_gid
-          versions = root / "orbit-versions"
-          versions.mkdir(mode=0o750, exist_ok=True)
-          if not stat.S_ISDIR(versions.lstat().st_mode) or versions.lstat().st_uid != 0:
-              raise SystemExit("caddy.versions_unsafe")
-          os.chown(versions, 0, gid)
-          versions.chmod(0o750)
-          published = versions / (meta["version"] + "-" + meta["run_id"])
-          published.mkdir(mode=0o750, exist_ok=True)
-          if not stat.S_ISDIR(published.lstat().st_mode) or published.lstat().st_uid != 0:
-              raise SystemExit("caddy.generation_unsafe")
-          os.chown(published, 0, gid)
-          published.chmod(0o750)
-          path = published / "Caddyfile"
-          if path.exists() or path.is_symlink():
-              if (
-                  path.is_symlink()
-                  or not path.is_file()
-                  or hashlib.sha256(path.read_bytes()).hexdigest() != meta["sha256"]
-              ):
-                  raise SystemExit("caddy.generation_changed")
-          else:
-              shutil.copy2(stage / "Caddyfile", path)
-              os.chown(path, 0, gid)
-              path.chmod(0o640)
-          link = stage / "next"
-          link.unlink(missing_ok=True)
-          link.symlink_to(path)
-          (published / "loaded.json").unlink(missing_ok=True)
-          os.replace(link, live)
-          print(json.dumps({"result": "published", "version": meta["version"]}))
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-          ORBIT_CADDY_OBSERVED: ${{ steps["observe-host"].outputs.stdout }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: enable-service
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
-    dependsOn:
-    - step: activate-config
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-          live = root / "Caddyfile"
-          expected = root / "orbit-versions" / (meta["version"] + "-" + meta["run_id"]) / "Caddyfile"
-          if not live.is_file() or live.resolve() != expected or hashlib.sha256(live.read_bytes()).hexdigest() != meta["sha256"]:
-              raise SystemExit("caddy.publication_stale")
-
-
-          reply = subprocess.run(
-              ["/usr/bin/systemctl", "enable", "--quiet", "caddy"],
-              check=False,
-              stdout=subprocess.DEVNULL,
-              stderr=subprocess.DEVNULL,
-              timeout=35,
-          )
-          if reply.returncode:
-              raise SystemExit("caddy.enable_failed")
-          print('{"enabled":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: reload-service
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
-    dependsOn:
-    - step: enable-service
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-          live = root / "Caddyfile"
-          expected = root / "orbit-versions" / (meta["version"] + "-" + meta["run_id"]) / "Caddyfile"
-          if not live.is_file() or live.resolve() != expected or hashlib.sha256(live.read_bytes()).hexdigest() != meta["sha256"]:
-              raise SystemExit("caddy.publication_stale")
-
-
-          reply = subprocess.run(
-              ["/usr/bin/systemctl", "reload-or-restart", "caddy"],
-              check=False,
-              stdout=subprocess.DEVNULL,
-              stderr=subprocess.DEVNULL,
-              timeout=35,
-          )
-          if reply.returncode:
-              raise SystemExit("caddy.reload_failed")
-          invocation = subprocess.run(
-              ["/usr/bin/systemctl", "show", "--property=InvocationID", "--value", "caddy"],
-              check=True, capture_output=True, timeout=35,
-          ).stdout.decode().strip()
-          if not re.fullmatch(r"[a-f0-9]{32}", invocation):
-              raise SystemExit("caddy.service_identity_unavailable")
-          receipt = stage / "loaded.json"
-          receipt.write_text(json.dumps({"sha256": meta["sha256"], "invocation_id": invocation}))
-          with receipt.open("rb") as output:
-              os.fsync(output.fileno())
-          os.replace(receipt, expected.parent / "loaded.json")
-          print('{"reloaded":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-    guard: ${{ !steps.observation.outputs.publish }}
-  - name: withdraw-unserved
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
-    guard: ${{ !steps.observation.outputs.withdraw }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED,ORBIT_CADDY_OUTCOME /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          observed = json.loads(os.environ["ORBIT_CADDY_OBSERVED"])
-          live = root / "Caddyfile"
-          current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-          current_target = str(live.resolve()) if live.is_file() else None
-          if current != observed["prior_digest"] or current_target != observed["prior_target"]:
-              raise SystemExit("caddy.publication_stale")
-          if (live.exists() or live.is_symlink()) and current != meta["sha256"]:
-              backup = root / "orbit-backups" / meta["run_id"]
-              backup.mkdir(mode=0o700, parents=True, exist_ok=False)
-              live.rename(backup / "Caddyfile")
-          print('{"result":"unchanged"}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-          ORBIT_CADDY_OBSERVED: ${{ steps["observe-host"].outputs.stdout }}
-  - name: clean-published-candidates
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
-    dependsOn:
-    - step: reload-service
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import shutil
-          import stat
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          if stage.is_dir():
-              (stage / "complete.json").write_text('{"completed":true}')
-          live = root / "Caddyfile"
-          active = live.resolve() if live.is_file() else None
-          versions = root / "orbit-versions"
-          if versions.is_dir():
-              entries = [
-                  entry
-                  for entry in versions.iterdir()
-                  if not entry.is_symlink() and entry.is_dir() and (entry / "Caddyfile").is_file()
-              ]
-              entries.sort(key=lambda entry: entry.stat().st_mtime_ns, reverse=True)
-              previous = [entry for entry in entries if active is None or active.parent != entry]
-              for entry in previous[9:]:
-                  content = entry / "Caddyfile"
-                  if hashlib.sha256(content.read_bytes()).hexdigest()[:32] != entry.name[:32]:
-                      backup = root / "orbit-backups" / ("edited-" + entry.name)
-                      backup.parent.mkdir(mode=0o700, exist_ok=True)
-                      if backup.exists():
-                          raise SystemExit("caddy.backup_conflict")
-                      entry.rename(backup)
-                  else:
-                      shutil.rmtree(entry)
-          staging = root / ".orbit-staging"
-          if staging.is_dir():
-              completed = [
-                  entry
-                  for entry in staging.iterdir()
-                  if not entry.is_symlink()
-                  and entry.is_dir()
-                  and (entry / "complete.json").is_file()
-              ]
-              completed.sort(key=lambda entry: entry.stat().st_mtime_ns, reverse=True)
-              for entry in completed[10:]:
-                  if entry == stage:
-                      continue
-                  if not stat.S_ISDIR(entry.lstat().st_mode) or entry.lstat().st_uid != 0:
-                      raise SystemExit("caddy.cleanup_unsafe")
-                  shutil.rmtree(entry)
-          print('{"cleaned":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-  dependsOn:
-  - job: observation
-    condition:
-      type: succeeded
-- name: restore
-  target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-  labels: &id003
-    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
-  dependsOn:
-  - job: publication
-    condition:
-      type: failed
-  steps:
-  - name: restore-config
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id003
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_CHUNK,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import shutil
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-          state_path = stage / "restore.json"
-          if state_path.is_file():
-              state = json.loads(state_path.read_text())
-              live = root / "Caddyfile"
-              current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-              current_target = str(live.resolve()) if live.is_file() else None
-              own_target = str(root / "orbit-versions" / (meta["version"] + "-" + meta["run_id"]) / "Caddyfile")
-              own = current == meta["sha256"] and current_target == own_target
-              restored = current == state["prior_digest"] and current_target == state["prior_target"]
-              if not own and not restored:
-                  raise SystemExit("caddy.publication_stale")
-              if state["had_live"]:
-                  prior = stage / "prior"
-                  if hashlib.sha256(prior.read_bytes()).hexdigest() != state["prior_digest"]:
-                      raise SystemExit("caddy.publication_stale")
-                  restored_generation = Path(state["prior_target"]).parent
-                  if restored_generation.parent == root / "orbit-versions":
-                      (restored_generation / "loaded.json").unlink(missing_ok=True)
-                  link = stage / "restore"
-                  link.unlink(missing_ok=True)
-                  if state["previous_target"] is not None:
-                      link.symlink_to(state["previous_target"])
-                  else:
-                      shutil.copy2(prior, link)
-                  os.replace(link, live)
-              else:
-                  live.unlink(missing_ok=True)
-          print('{"restored":true}')
-          PYTHON
-        env: &id004
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-  - name: restore-service
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id003
-    dependsOn:
-    - step: restore-config
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          state_path = stage / "restore.json"
-          if state_path.is_file():
-              state = json.loads(state_path.read_text())
-              live = root / "Caddyfile"
-              current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-              current_target = str(live.resolve()) if live.is_file() else None
-              if current != state["prior_digest"] or current_target != state["prior_target"]:
-                  raise SystemExit("caddy.publication_stale")
-              action = "reload-or-restart" if state["active"] else "stop"
-              reply = subprocess.run(
-                  ["/usr/bin/systemctl", action, "caddy"],
-                  check=False,
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-                  timeout=35,
-              )
-              if reply.returncode:
-                  raise SystemExit("caddy.restore_failed")
-          print('{"ready":true}')
-          PYTHON
-        env: *id004
-  - name: restore-enable-state
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
-    dependsOn:
-    - step: restore-service
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED,ORBIT_CADDY_OUTCOME /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          state_path = stage / "restore.json"
-          if state_path.is_file():
-              state = json.loads(state_path.read_text())
-              live = root / "Caddyfile"
-              current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-              current_target = str(live.resolve()) if live.is_file() else None
-              if current != state["prior_digest"] or current_target != state["prior_target"]:
-                  raise SystemExit("caddy.publication_stale")
-              reply = subprocess.run(
-                  [
-                      "/usr/bin/systemctl",
-                      "enable" if state["enabled"] else "disable",
-                      "--quiet",
-                      "caddy",
-                  ],
-                  check=False,
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-                  timeout=35,
-              )
-              if reply.returncode:
-                  raise SystemExit("caddy.restore_failed")
-          print('{"ready":true}')
-          PYTHON
-        env: *id005
-  - name: clean-restored-candidates
-    target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id001
-    dependsOn:
-    - step: restore-enable-state
-      condition:
-        type: succeeded
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "caddy-node-publication-" + string(inputs.intent.caddy_publication.node_id)
-        }}
-      methodName: execute
-      inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import shutil
-          import stat
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-
-          if stage.is_dir():
-              (stage / "complete.json").write_text('{"completed":true}')
-          live = root / "Caddyfile"
-          active = live.resolve() if live.is_file() else None
-          versions = root / "orbit-versions"
-          if versions.is_dir():
-              entries = [
-                  entry
-                  for entry in versions.iterdir()
-                  if not entry.is_symlink() and entry.is_dir() and (entry / "Caddyfile").is_file()
-              ]
-              entries.sort(key=lambda entry: entry.stat().st_mtime_ns, reverse=True)
-              previous = [entry for entry in entries if active is None or active.parent != entry]
-              for entry in previous[9:]:
-                  content = entry / "Caddyfile"
-                  if hashlib.sha256(content.read_bytes()).hexdigest()[:32] != entry.name[:32]:
-                      backup = root / "orbit-backups" / ("edited-" + entry.name)
-                      backup.parent.mkdir(mode=0o700, exist_ok=True)
-                      if backup.exists():
-                          raise SystemExit("caddy.backup_conflict")
-                      entry.rename(backup)
-                  else:
-                      shutil.rmtree(entry)
-          staging = root / ".orbit-staging"
-          if staging.is_dir():
-              completed = [
-                  entry
-                  for entry in staging.iterdir()
-                  if not entry.is_symlink()
-                  and entry.is_dir()
-                  and (entry / "complete.json").is_file()
-              ]
-              completed.sort(key=lambda entry: entry.stat().st_mtime_ns, reverse=True)
-              for entry in completed[10:]:
-                  if entry == stage:
-                      continue
-                  if not stat.S_ISDIR(entry.lstat().st_mode) or entry.lstat().st_uid != 0:
-                      raise SystemExit("caddy.cleanup_unsafe")
-                  shutil.rmtree(entry)
-          print('{"cleaned":true}')
-          PYTHON
-        env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
 - name: completion
   target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-  labels: *id001
+  labels:
+    node: ${{ string(inputs.intent.caddy_publication.node_id) }}
   dependsOn:
   - job: publication
     condition:
@@ -978,62 +154,14 @@ jobs:
   steps:
   - name: result
     target: ${{ "orbit-node-" + string(inputs.intent.caddy_publication.node_id) }}
-    labels: *id002
-    dependsOn: []
+    labels:
+      node: ${{ string(inputs.intent.caddy_publication.node_id) }}
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "caddy-result-" + run.id }}
+      behaviorName: ${{ "result-" + run.id }}
       methodName: execute
       inputs:
-        run: |
-          set -eu
-          sudo --preserve-env=ORBIT_CADDY_META,ORBIT_CADDY_OBSERVED /usr/bin/python3 - <<'PYTHON'
-          import hashlib
-          import json
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-          meta = json.loads(os.environ["ORBIT_CADDY_META"])
-          root = Path("/etc/caddy")
-          stage = root / ".orbit-staging" / meta["run_id"]
-
-          observed = json.loads(os.environ["ORBIT_CADDY_OBSERVED"])
-          live = root / "Caddyfile"
-          current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
-          if not observed["withdraw"] and current != meta["sha256"]:
-              raise SystemExit("caddy.publication_not_active")
-          if observed["withdraw"] and current not in (None, meta["sha256"]):
-              raise SystemExit("caddy.publication_stale")
-          if not observed["withdraw"]:
-              active = subprocess.run(
-                  ["/usr/bin/systemctl", "is-active", "--quiet", "caddy"],
-                  check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=35,
-              )
-              if active.returncode:
-                  raise SystemExit("caddy.publication_not_loaded")
-              generation = live.resolve().parent
-              receipt = generation / "loaded.json"
-              invocation = subprocess.run(
-                  ["/usr/bin/systemctl", "show", "--property=InvocationID", "--value", "caddy"],
-                  check=True, capture_output=True, timeout=35,
-              ).stdout.decode().strip()
-              if generation.parent != root / "orbit-versions" or not receipt.is_file() or not re.fullmatch(r"[a-f0-9]{32}", invocation):
-                  raise SystemExit("caddy.publication_not_loaded")
-              if json.loads(receipt.read_text()) != {"sha256": current, "invocation_id": invocation}:
-                  raise SystemExit("caddy.publication_not_loaded")
-          print(
-              json.dumps(
-                  {
-                      "ready": True,
-                      "result": "published" if observed["publish"] else "unchanged",
-                      "version": meta["version"],
-                  }
-              )
-          )
-          PYTHON
+        run: printf '{"ready":true,"result":"published","version":"%s"}\n' "$ORBIT_CADDY_VERSION"
         env:
-          ORBIT_CADDY_META: ${{ steps.input.outputs.metadata_json }}
-          ORBIT_CADDY_OBSERVED: ${{ steps["observe-host"].outputs.stdout }}
+          ORBIT_CADDY_VERSION: ${{ inputs.intent.caddy_publication.caddy.version }}
