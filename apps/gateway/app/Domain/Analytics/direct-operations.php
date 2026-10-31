@@ -10,7 +10,9 @@ return [
     'analytics.enable' => [
         'workflow' => 'operation-analytics-enable-direct',
         'projection' => AnalyticsIntentProjection::class,
-        'private_material' => ['plausible_credentials' => 'analytics.plausible_credentials'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'finish', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$']],
     ],
     'analytics.disable' => [
         'workflow' => 'operation-analytics-disable-direct',

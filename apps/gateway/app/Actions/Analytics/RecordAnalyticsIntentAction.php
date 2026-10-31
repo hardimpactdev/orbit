@@ -6,6 +6,8 @@ namespace App\Actions\Analytics;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Analytics\AnalyticsDisableInput;
+use App\Domain\Analytics\AnalyticsEnableInput;
+use App\Domain\Analytics\AnalyticsPlausibleCredentials;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingIntent;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
@@ -16,12 +18,14 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /** Admit desired state only. Native Swamp jobs own publication. */
 final readonly class RecordAnalyticsIntentAction
@@ -66,22 +70,33 @@ final readonly class RecordAnalyticsIntentAction
                 'previous_binding' => $binding, 'owner' => $owner === null ? null : $this->tracking->identity($owner),
                 'hosts' => $desired, 'tracking_snapshot' => $existing,
                 'dns_node_ids' => PrivateDnsPublicationNodes::query()->pluck('id')->all(),
-                ...($enabled ? ['plausible_credentials' => ['$secret' => 'analytics.plausible_credentials', 'id' => $nodeId]] : []),
             ];
             $intent = new Operation(['kind' => $enabled ? 'analytics.enable' : 'analytics.disable', 'target_type' => 'instance',
                 'target_id' => $instance->id, 'node_id' => $nodeId, 'input' => $input]);
-            $beforeSites = ! $enabled ? app(DevelopmentSiteRepository::class)->all() : null;
+            $beforeSites = app(DevelopmentSiteRepository::class)->all();
             $plan = $this->tracking->materialize($intent);
             $input['tracking'] = $plan;
             $input['certificates'] = $plan['certificates'];
             $input['participant_node_ids'] = array_values(array_unique([$nodeId, ...$plan['caddy_node_ids'], ...$plan['dns_node_ids']]));
-            if ($beforeSites !== null) {
+            if ($enabled) {
+                $input['native_enable'] = app(AnalyticsEnableInput::class)->capture($plan, $beforeSites,
+                    ValidatedData::object($input['site']), ValidatedData::string($input['base_url']));
+                $input['execution_secrets'] = ['plausible_credentials' => ['vault' => 'orbit-control-inputs', 'key' => 'analytics-plausible-'.Str::uuid()]];
+            } else {
                 $input['native_disable'] = app(AnalyticsDisableInput::class)->capture($plan, $beforeSites,
                     is_array($previous) ? ValidatedData::object($previous) : null);
             }
 
-            return $this->operations->execute($intent->kind, 'instance', $instance->id, $nodeId, $input,
+            $operation = $this->operations->execute($intent->kind, 'instance', $instance->id, $nodeId, $input,
                 'operator', request()->attributes->getString('orbit.request_id'));
+            if ($enabled && $operation->wasRecentlyCreated) {
+                $reference = ValidatedData::object(ValidatedData::object($operation->input['execution_secrets'])['plausible_credentials']);
+                $credentials = app(AnalyticsPlausibleCredentials::class)->forSite(ValidatedData::string(ValidatedData::object($input['site'])['domain']), $goals !== []);
+                app(SwampCommandStep::class)->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']),
+                    json_encode($credentials, JSON_THROW_ON_ERROR));
+            }
+
+            return $operation;
         });
     }
 }

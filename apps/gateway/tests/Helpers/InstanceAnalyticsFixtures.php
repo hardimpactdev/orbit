@@ -36,6 +36,7 @@ function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cl
         'lan_ip' => $cluster instanceof Cluster ? "10.10.0.{$octet}" : null,
         'cluster_id' => $cluster?->id,
         'user' => 'orbit',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
     ]);
     $node->roles()->create([
         'cluster_id' => in_array($role, [RoleName::Router, RoleName::Ingress], true) ? $cluster?->id : null,
@@ -133,7 +134,7 @@ function analytics_intent_socket(): FakeRoutePublicationSocket
     $signer->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\npublic-root\n-----END CERTIFICATE-----");
     app()->instance(LeafCertificateSigner::class, $signer);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+    $socket->reply = static fn (array $request): array => $request['type'] === 'vault.put' ? [['id' => $request['id'], 'type' => 'vault.put', 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $request['id'], 'event' => [
         'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'],
         'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
     ]]];
