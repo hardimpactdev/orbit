@@ -192,6 +192,12 @@ Setup, synchronization, and teardown record an Operation and return HTTP 202. Sw
 
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
-Operation receipts carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
+Setup and teardown receipts, and direct sync results, carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
 
 Merge waits for orbit-swamp#75 to run `operation-integrations` on a placed worker. A queued Operation keeps the Vault target hold until a worker completes it or the operator cancels it; the scheduler never silently drops that intent.
+
+## Direct Swamp writer
+
+`vault.sync` starts `operation-vault-direct` through the shared helper and requires its direct writer. An explicit `polled` setting refuses because its old execution contract is removed. Setup and teardown retain their current paths until their own takeover. Rollback reverts the owning PR.
+
+The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.
