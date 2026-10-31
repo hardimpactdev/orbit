@@ -47,7 +47,7 @@ def select(paths, main=False):
 
 def swamp_comparison_base(base, head):
     """The first import compares against its retained source; later changes use Orbit's base."""
-    if subprocess.run(['git', 'cat-file', '-e', f'{base}:swamp/.swamp.yaml'],
+    if subprocess.run(['git', 'cat-file', '-e', f'{base}:swamp'],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60).returncode == 0:
         return base
     source = json.loads(subprocess.check_output(
@@ -71,6 +71,7 @@ def main():
     result = select(paths, a.main)
     if a.swamp_base and result['jobs']['swamp']:
         result['swamp_base_ref'] = swamp_comparison_base(a.base, a.head)
+        result['swamp_initial_import'] = result['swamp_base_ref'] != a.base
     print(json.dumps(result))
     if a.github_output:
         with a.github_output.open('a') as output:

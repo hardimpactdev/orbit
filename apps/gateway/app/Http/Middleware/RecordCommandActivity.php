@@ -554,7 +554,7 @@ final readonly class RecordCommandActivity
     private function activityInput(Request $request): array
     {
         $command = $request->route()?->getName();
-        if (in_array($command, ['operation:direct:private-material', 'operation:direct:secret-output'], true)) {
+        if (in_array($command, ['operation:direct:private-material', 'operation:direct:secret-output', 'operation:direct:certificate-sign', 'operation:direct:github-token'], true)) {
             return [];
         }
 

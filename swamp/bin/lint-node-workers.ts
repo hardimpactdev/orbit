@@ -207,6 +207,11 @@ for (const path of await files(`${root}/workflows`)) {
       const type = task.behaviorType ?? task.modelType ??
         models.get(String(task.modelIdOrName));
       if (type === "command/shell") {
+        if (task.type !== "behavior" || task.methodName !== "execute") {
+          errors.push(
+            `Native shell steps must use command/shell.execute: ${path}`,
+          );
+        }
         const launch = nodeCommandLaunch(object(task.inputs).run);
         const assets = siblings.find((step) => step.name === launch?.assetStep);
         const assetTask = object(assets?.task);

@@ -208,6 +208,7 @@ Deno.test("parent requests effect Nodes, signs once on control209, then publishe
     ...root,
     leaves,
     requests: requests as never,
+    native_stdout: JSON.stringify({ certificates: [] }),
   }, ctx);
   assertEquals(signatures, 1);
   const batch = resources.find((r) => r.spec === "signedBatch")!.value as {
