@@ -7,7 +7,10 @@ inputs:
   properties:
     operation_id: { type: integer, minimum: 1 }
     node_id: { type: integer, enum: [209] }
-    kind: { type: string, enum: [tool.install, tool.update, tool.remove, tool.adopt, tool.manager_converge] }
+    kind: {
+      type: string,
+      enum: [tool.update, tool.remove, tool.adopt, tool.manager_converge],
+    }
   required: [operation_id, node_id, kind]
 jobs:
   - name: tools

@@ -1,12 +1,13 @@
 # Direct Tools intent
 
-`operation-tool-direct` runs `tool.install`, `tool.update`, `tool.remove`,
-`tool.adopt` and `tool.manager_converge` through the
-[shared direct Operation boundary](direct-operations.md). The Gateway declares
-one workflow, `writer_config: swamp.direct_writers`, immutable `tool_writer` and
-`ToolIntentProjection`. It uses `StartSwampRun` and the one
-`ORBIT_SWAMP_RUN_TOKEN`. No family token, controller, request, route, primitive
-or Gateway execution relay is added.
+`operation-tool-install-direct` runs standalone `tool.install` on the exact
+admitted Node worker. `operation-tool-direct` retains `tool.update`,
+`tool.remove`, `tool.adopt` and `tool.manager_converge` on standalone Node209.
+Both use the [shared direct Operation boundary](direct-operations.md). The
+Gateway declares fixed workflow names, `writer_config: swamp.direct_writers`,
+immutable `tool_writer` and `ToolIntentProjection`. It uses `StartSwampRun` and
+the one `ORBIT_SWAMP_RUN_TOKEN`. No family token, controller, request, route,
+primitive or Gateway execution relay is added.
 
 The Gateway admits package identity, enrolled account, agent pin and public
 recipe data. Its read projection exposes only those safe inputs. Native Node
@@ -14,14 +15,14 @@ policy selects fixed typed commands from the closed manager registry. Result
 projection stores bounded manager/package versions and refusal codes; it never
 stores manager stdout or execution receipts.
 
-The canary uses the existing Node209 `pool=migration` workers. Admit canary
-intent only for Node209. Converted kinds have one direct dispatch path; their
-legacy discovery and executor registrations are removed. When per-Node
-workers are available, place the action on exact `orbit-node-<admitted-node-id>`
-before fleet takeover. `tools-node-<id>` is a stable behavior identity for
-native scope serialization. The workflow uses `writes: true`, `vaults: []` and
-native placement, concurrency and retention defaults. There is no placement
-fallback or polling schedule.
+Standalone installs target `orbit-node-<admitted-node-id>` and the matching
+`node` label, including Node209. No migration worker or other Node can receive
+that job. Parent Operations remain excluded. The other four kinds retain their
+existing Node209 migration-pool placement. Each kind has one direct dispatch
+path; install is removed from the older workflow input enum when its placed
+workflow takes over. `tools-node-<id>` stays the native serialization identity.
+Placement uses Swamp's queue, concurrency and retention defaults. A missing
+exact worker waits under the native queue policy; it does not fall back.
 
 ## Policy and native recovery
 
@@ -60,23 +61,23 @@ started mutation finishes under its agent deadline even if workflow cancellation
 arrives; native recovery reconciles uncertain outcomes. No socket, broker,
 account, sudo rule, token, grant or runtime unit is installed by this family.
 
-Each kind ships its direct start, writer selection and Gateway execution deletion
-in one slice. Its converted kind is also removed from legacy discovery and
-executor registration. Rollback is a revert PR. If the owning writer needs a
+Each kind ships its direct start, writer selection and Gateway execution
+deletion in one slice. Its converted kind is also removed from legacy discovery
+and executor registration. Rollback is a revert PR. If the owning writer needs a
 release, merge first, then canary immediately against a test target and revert
 on failure. The shared boundary lane owns final executor API deletion.
 
-All five Tool kinds use the direct workflow. The legacy `operation-tools`
+All five Tool kinds use a direct workflow. The legacy `operation-tools`
 schedule, discovery model, slot models, executor registration, claim runner and
 receipt schemas are retired. Existing native history and data are preserved;
 source retirement does not run `swamp workflow delete`.
 
-The Gateway records the bounded constraint string. `constraints.ts` is the
-Tool range evaluator in Swamp and uses the existing node-semver dependency for
+The Gateway records the bounded constraint string. `constraints.ts` is the Tool
+range evaluator in Swamp and uses the existing node-semver dependency for
 comparisons. Composer numeric-range forms retain their bounds, including zero
-major carets, two-part tildes, exclusions and prereleases. Swamp rejects malformed
-ranges before any manager or package command. No compiled intervals cross the
-Gateway boundary.
+major carets, two-part tildes, exclusions and prereleases. Swamp rejects
+malformed ranges before any manager or package command. No compiled intervals
+cross the Gateway boundary.
 
 The Node209 ten-second cadence baseline was 45/45 empty Tools discovery runs,
 about 6,392 inodes/hour. Evidence is
