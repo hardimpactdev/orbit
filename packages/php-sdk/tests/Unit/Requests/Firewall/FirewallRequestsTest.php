@@ -6,10 +6,12 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
+use Orbit\Sdk\Requests\Firewall\InspectFirewallRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -213,4 +215,24 @@ it('forwards the exact firewall admission retry key', function (): void {
     $remove = new RemoveFirewallRuleRequest(7, 'proof', 'proof-remove');
     expect($allow->headers()->get('Idempotency-Key'))->toBe('proof-allow');
     expect($remove->headers()->get('Idempotency-Key'))->toBe('proof-remove');
+});
+
+it('starts a bodyless native firewall inspection and preserves the operation contract', function (): void {
+    $request = new InspectFirewallRequest(7, 'inspect-node-7');
+    $mock = new MockClient([
+        $request::class => MockResponse::make([
+            'data' => ['id' => 42, 'kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => 7,
+                'status' => 'queued', 'sequence' => 1, 'result' => null],
+            'meta' => ['request_id' => firewall_sdk_request_id()],
+        ], 202),
+    ]);
+
+    $operation = firewall_sdk_connector($mock)->send($request)->dto();
+
+    expect($request->getMethod())->toBe(Method::POST)
+        ->and($request->resolveEndpoint())->toBe('/api/v1/nodes/7/firewall-inspection')
+        ->and($mock->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('inspect-node-7')
+        ->and($request)->not->toBeInstanceOf(HasBody::class)
+        ->and($operation)->toBeInstanceOf(OperationResponse::class)
+        ->and($operation->kind)->toBe('firewall.inspect')->and($operation->status)->toBe('queued');
 });

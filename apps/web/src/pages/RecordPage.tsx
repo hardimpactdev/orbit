@@ -48,6 +48,8 @@ import {
     schedulesForInstance,
 } from "../fleet/fleet";
 import { useFallbackPoll } from "../realtime/liveness";
+import { useOperation } from "../realtime/operation";
+import { isTerminal } from "../api/operations";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { LogPane } from "../ui/LogPane";
@@ -372,7 +374,23 @@ const tableColumns: Column<{ name: string }>[] = [
 function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database }) {
     const tables = useQuery(databaseTablesQuery(database.slug));
     const users = useQuery(databaseUsersQuery(database.slug));
-    const tableRows = useMemo(() => (tables.data ?? []).map((name) => ({ name })), [tables.data]);
+    const { operation } = useOperation(
+        tables.data !== undefined && !isTerminal(tables.data) ? tables.data.id : null,
+    );
+    const inspection = operation ?? tables.data;
+    const tableRows = useMemo(() => {
+        const names = inspection?.status === "succeeded" ? inspection.result?.tables : null;
+        return Array.isArray(names)
+            ? names
+                  .filter((name): name is string => typeof name === "string")
+                  .map((name) => ({ name }))
+            : [];
+    }, [inspection]);
+    const tableError =
+        tables.error?.message ??
+        (inspection !== undefined && isTerminal(inspection) && inspection.status !== "succeeded"
+            ? (inspection.error_code ?? `Table inspection ${inspection.status}.`)
+            : null);
 
     return (
         <div
@@ -404,10 +422,10 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
                 rows={tableRows}
                 rowId={(table) => table.name}
                 empty={
-                    tables.isPending
-                        ? "Loading…"
-                        : tables.isError
-                          ? `Could not load tables: ${tables.error.message}`
+                    tableError !== null
+                        ? `Could not load tables: ${tableError}`
+                        : inspection === undefined || !isTerminal(inspection)
+                          ? "Loading…"
                           : "No tables."
                 }
             />

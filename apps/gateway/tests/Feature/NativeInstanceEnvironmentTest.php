@@ -3,11 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
-use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -15,7 +16,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 function nativeEnvironmentOperation(): array
 {
     $instance = dev935_instance('native-environment');
-    $instance->node->update(['architecture' => 'x86_64']);
+    $instance->node->update(['architecture' => null]);
     $instance->forceFill(['provisioning_step' => 'active', 'source_is_laravel' => false,
         'environment_owned_keys' => ['OLD']])->saveOrFail();
     $instance->environmentValues()->create(['env_key' => 'API_TOKEN', 'env_value' => 'synthetic-private-value']);
@@ -74,33 +75,57 @@ it('makes reserved parent environment material null without reading configuratio
         ->toThrow(ResourceOperationException::class);
 });
 
-it('refuses production synchronization before admission when an owned Process restart lacks its native lock', function (): void {
-    [, $instance] = nativeEnvironmentOperation();
-    Process::query()->create(['owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id,
-        'name' => 'environment-worker', 'runtime' => 'systemd', 'runtime_config' => [],
-        'restart_policy' => 'always', 'restart_on_deploy' => true, 'desired_state' => 'running', 'status' => 'active']);
-    $context = new InstanceEnvironmentContext(instanceId: $instance->id, projectId: $instance->project_id,
-        nodeId: $instance->node_id, environment: 'production', path: '/home/orbit-app-'.$instance->project_id,
-        executionUser: 'orbit-app-'.$instance->project_id, laravel: false, routeId: null, routeDomain: null,
-        nodeStatus: 'active', node: $instance->node);
+function nativeProductionEnvironmentInstance(bool $php = true): Instance
+{
+    $instance = dev935_instance('native-production-environment', role: 'app-prod');
+    $home = '/home/orbit-app-'.$instance->project_id;
+    $instance->node->update(['architecture' => 'x86_64']);
+    $instance->project->update(['root' => 'apps/site/public']);
+    $instance->update(['environment' => 'production', 'production_user' => 'orbit-app-'.$instance->project_id,
+        'production_home' => $home, 'checkout_path' => $home.'/releases/r1',
+        'source_is_laravel' => true, 'provisioning_step' => 'active', 'selected_php_version' => $php ? '8.5' : null]);
+    if ($php) {
+        $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5')->attributes());
+    }
+    $instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'synthetic-private-value']);
 
-    expect(fn () => app(NativeInstanceEnvironmentMaterial::class)->forContext($context))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
-    expect(Operation::query()->count())->toBe(0);
+    return $instance->refresh();
+}
+
+it('captures production PHP and only opted-in active running Processes in one native environment root', function (): void {
+    $instance = nativeProductionEnvironmentInstance();
+    $attributes = ['owner_type' => $instance->getMorphClass(), 'owner_id' => $instance->id,
+        'runtime' => 'systemd', 'runtime_config' => ['command' => ['/usr/bin/sleep', '30']],
+        'restart_policy' => 'always', 'restart_on_deploy' => true, 'desired_state' => 'running', 'status' => 'active'];
+    $process = Process::query()->create(['name' => 'worker', ...$attributes]);
+    foreach ([['restart_on_deploy' => false], ['status' => 'failed'], ['desired_state' => 'stopped'], ['owner_id' => $instance->id + 1]] as $index => $override) {
+        Process::query()->create(['name' => 'excluded-'.$index, ...$attributes, ...$override]);
+    }
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-shared-run-token']);
+    $operation = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
+    $plan = $operation->input['direct_environment'];
+    expect($plan)->not->toHaveKey('agent_sha256')
+        ->and($plan['runtime']['config'])->toBe(['user' => $instance->production_user,
+            'home' => $instance->production_home, 'version' => '8.5',
+            'application' => $instance->production_home.'/current/apps/site'])
+        ->and($plan['runtime']['php']['marker'])->toBe(ProductionPhpRuntimeIdentity::from($instance)->marker())
+        ->and(array_column($plan['runtime']['processes'], 'id'))->toBe([$process->id])
+        ->and($plan['runtime']['processes'][0]['input']['process_id'])->toBe($process->id)
+        ->and(json_encode($operation->input))->not->toContain('synthetic-private-value')
+        ->and(Operation::query()->count())->toBe(1)->and($socket->sent)->toHaveCount(1);
+    $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, true);
     expect(app(NativeInstanceEnvironmentMaterial::class)->forContext($context, false)['runtime'])->toBeNull();
 });
 
-it('refuses production PHP refresh before admitting or changing environment intent', function (): void {
-    [, $instance] = nativeEnvironmentOperation();
-    $instance->update(['selected_php_version' => '8.5']);
-    $before = $instance->fresh()->getAttributes();
-    $context = new InstanceEnvironmentContext(instanceId: $instance->id, projectId: $instance->project_id,
-        nodeId: $instance->node_id, environment: 'production', path: '/home/orbit-app-'.$instance->project_id,
-        executionUser: 'orbit-app-'.$instance->project_id, laravel: true, routeId: null, routeDomain: null,
-        nodeStatus: 'active', node: $instance->node);
-    expect(fn () => app(NativeInstanceEnvironmentMaterial::class)->forContext($context))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable'));
-    expect($instance->fresh()->getAttributes())->toBe($before)->and(Operation::query()->count())->toBe(0);
+it('captures production file sync without PHP and leaves refresh plan unset', function (): void {
+    $instance = nativeProductionEnvironmentInstance(false);
+    $instance->node->update(['architecture' => null]);
+    $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, true);
+    $plan = app(NativeInstanceEnvironmentMaterial::class)->forContext($context);
+    expect($plan['runtime'])->toBe(['config' => null, 'php' => null, 'processes' => []])
+        ->and($plan)->not->toHaveKey('agent_sha256');
 });
 
 it('admits exactly one native environment root with stored placement and no secret values', function (): void {
@@ -112,6 +137,7 @@ it('admits exactly one native environment root with stored placement and no secr
     expect($operation->kind)->toBe('instance.sync_environment')
         ->and($operation->node_id)->toBe($instance->node_id)
         ->and($operation->input['direct_environment']['user'])->toBe($instance->node->user)
+        ->and($operation->input['direct_environment'])->not->toHaveKey('agent_sha256')
         ->and(json_encode($operation->input))->not->toContain('synthetic-private-value')
         ->and($socket->sent)->toHaveCount(1)
         ->and($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-environment')

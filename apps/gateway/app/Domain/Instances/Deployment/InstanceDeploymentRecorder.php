@@ -94,6 +94,14 @@ final readonly class InstanceDeploymentRecorder
             'failed_step' => $facts['failed_step'], 'error_code' => $status === 'cancelled' ? 'deployment.cancelled' : $code,
             'finished_at' => $finished, 'duration_seconds' => max(0, $finished->diffInSeconds($deployment->started_at)),
             'events' => $events->events()]);
+        $instance = Instance::query()->lockForUpdate()->findOrFail($deployment->instance_id);
+        if ($instance->placedOnAppProd()) {
+            $state = AutomaticDeployState::of($instance);
+            foreach (new AutomaticDeployHistory($instance)->rolledAway() as $commit) {
+                $state->block($commit);
+            }
+            $state->save($instance);
+        }
         $this->prune($deployment->instance_id);
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
     }

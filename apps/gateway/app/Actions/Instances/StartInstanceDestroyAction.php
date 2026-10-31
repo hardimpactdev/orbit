@@ -5,28 +5,23 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCreationRecovery;
-use App\Domain\Instances\InstanceLifecycleAvailability;
-use App\Domain\Instances\InstanceLifecycleChildren;
-use App\Domain\Instances\InstanceLifecycleInput;
-use App\Domain\Instances\InstanceLifecycleState;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRouteRemovalAdmission;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionRemovalIntent;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
-use App\Domain\Instances\Removal\InstanceSourceInventory;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
+use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -36,65 +31,49 @@ use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use App\Models\WebSocketAppTarget;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** Admission and read-only source validation for development removal. */
+/** Record stored removal intent. The placed native run inspects source and account facts. */
 final readonly class StartInstanceDestroyAction
 {
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
-        private DevelopmentInstanceSourceRemoval $sourceInspector,
         private ManagedCheckoutOverlap $checkoutOverlap,
-        private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $boundaries,
     ) {}
 
     public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null): Operation
     {
-        if (($replay = $this->idempotency->replay('instance.destroy')) !== null) {
+        $kind = InstanceDestroyKind::forInstance($instance);
+        if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.destroy');
-        $input = $this->snapshot($instance, $force, $this->idempotency->parent);
+        $snapshot = $this->snapshot($instance, $force);
 
-        return $this->operations->execute('instance.destroy', 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
-    }
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
+            if (($replay = $this->idempotency->replay($kind)) !== null) {
+                return $replay;
+            }
+            $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
 
-    public function rollback(Operation $parent): Operation
-    {
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.destroy');
-        if (! app(InstanceLifecycleChildren::class)->canRemoveFailedCreate($parent)) {
-            throw new ResourceOperationException('operation.child_forbidden', 'This create has no proven failure that allows rollback removal.', 422);
-        }
-        $instance = app(InstanceLifecycleState::class)->instance($parent);
-        $input = $this->snapshot($instance, true);
-        $members = InstanceLifecycleInput::members($input);
-        if (count($members) !== 1 || $members[0]['instance_id'] !== $parent->target_id) {
-            throw new ResourceOperationException('instance.cleanup_incomplete', 'A create rollback cannot cascade into another Instance.', 409);
-        }
-        $input['members'] = array_map(static fn (array $member): array => [...$member, 'run_teardown' => false], $members);
-
-        return $this->operations->execute('instance.destroy', 'instance', $instance->id, $parent->node_id, $input, 'instance.create', $parent->request_id);
+            return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
+        });
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Instance $instance, bool $force, ?Operation $parent = null): array
+    public function snapshot(Instance $instance, bool $force, ?Operation $parent = null, bool $routesOwnedByParent = false): array
     {
+        if (! $instance->placedOnAppDev() || DatabaseConnection::query()->where('owner_instance_id', $instance->id)->whereNotNull('database_server_id')->exists()) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This removal placement has no native destroy DAG.', 503);
+        }
         $instance->load($this->removalRelations());
         $detached = $parent?->kind === 'route.target_set';
         if ($detached) {
             app(InstanceRouteRemovalAdmission::class)->assertAllowed($parent, $instance, $force);
         }
-        if ($instance->placedOnAppProd()) {
-            if ($instance->status !== InstanceState::Removing) {
-                $this->assertSupported($instance);
-            }
-
-            return app(ProductionRemovalIntent::class)->snapshot($instance, $force, $detached);
-        }
-        $account = $this->accounts->resolve($instance->node);
         $retained = InstanceRemovalMember::query()->where('instance_id', $instance->id)->whereNull('row_deleted_at')->with('removal.members')->first();
         if ($instance->status === InstanceState::Removing) {
             if (! $retained instanceof InstanceRemovalMember || $retained->removal->requested_instance_id !== $instance->id) {
@@ -104,32 +83,18 @@ final readonly class StartInstanceDestroyAction
             if ($removal->force !== $force && (! $force || $removal->force || $removal->status !== InstanceRemovalStatus::Failed)) {
                 $this->conflict($instance);
             }
-            $members = [];
-            foreach ($removal->members as $member) {
-                $members[] = [...$member->toArray(), 'run_teardown' => false,
-                    'source_root' => dirname((string) $member->checkout_path, 2),
-                    'user' => $account->user, 'group' => $account->group,
-                    'teardown_digest' => $this->teardownDigest($instance->project),
-                    'member_id' => $member->id, 'route_node_id' => $member->route_id === null ? null : $this->routeNode(Route::query()->find($member->route_id)),
-                ];
+            if ($removal->native_intent !== null) {
+                return [...$removal->native_intent, 'force' => $force];
             }
-
-            return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
-                'name' => $instance->name, 'force' => $force, 'removal_id' => $removal->id, 'inventory_digest' => $removal->inventory_digest,
-                'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
-                'members' => $members, 'additional_route_ids' => [], 'additional_routes' => [],
-            ];
+            $this->conflict($instance);
         }
         $this->assertSupported($instance);
-        [$members, $inventories] = $this->deletionSet($instance, $force, $detached);
-        if ($detached && $members->count() !== 1) {
-            throw new ResourceOperationException('operation.child_forbidden', 'The Route disposition cannot remove another linked Instance.', 422);
-        }
+        $this->assertMemberPathAvailable($instance);
+        $members = collect([$instance]);
         $snapshots = [];
         $additional = [];
         foreach ($members as $position => $member) {
-            $inventory = $inventories[$member->id];
-            $route = $this->route($member, $detached);
+            $route = $routesOwnedByParent ? $member->routes->sortBy('id')->first() : $this->route($member, $detached);
             foreach ($member->routes as $candidate) {
                 if ($route === null || $candidate->id !== $route->id) {
                     $additional[] = $candidate->id;
@@ -138,24 +103,29 @@ final readonly class StartInstanceDestroyAction
             $snapshots[] = [
                 'position' => $position, 'instance_id' => $member->id, 'project_id' => $member->project_id, 'node_id' => $member->node_id,
                 'route_id' => $route?->id, 'route_node_id' => $this->routeNode($route), 'name' => $member->name, 'environment' => $member->defaultAppEnv(),
-                'source_layout' => $inventory->layout, 'repository_identity' => $inventory->repositoryIdentity,
-                'checkout_path' => $inventory->checkoutPath, 'root' => $member->effectiveRoot(),
-                'branch' => $inventory->branch, 'starting_commit' => $member->starting_commit, 'source_commit' => $inventory->startingCommit,
-                'common_repository_path' => $inventory->commonRepositoryPath, 'source_identity' => $inventory->sourceIdentity,
-                'linked_worktree_paths' => $inventory->linkedWorktreePaths, 'source_digest' => $inventory->digest,
+                'source_layout' => $member->source_layout, 'repository_identity' => $member->project->repository_identity,
+                'checkout_path' => $member->checkout_path, 'root' => $member->effectiveRoot(),
+                'branch' => $member->branch, 'starting_commit' => $member->starting_commit, 'source_commit' => $member->starting_commit ?? '',
+                'common_repository_path' => dirname((string) $member->checkout_path), 'source_identity' => 'pending',
+                'linked_worktree_paths' => [], 'source_digest' => str_repeat('0', 64),
                 'runtime_published' => $member->status === InstanceState::Active,
-                'source_root' => $this->boundaries->instanceRoot($member, $account)->value,
-                'user' => $account->user, 'group' => $account->group,
+                'source_root' => $this->boundaries->instanceGroupingDirectory($member)->parent()?->value,
+                'user' => $member->node->user, 'group' => null,
                 'run_teardown' => ! $this->failedCreation($member),
                 'teardown_digest' => $this->teardownDigest($member->project),
-                'worktree_inventory' => base64_encode($inventory->worktreeInventory), 'origin' => $member->project->repository_url,
+                'worktree_inventory' => null, 'origin' => null,
+                'source_prepare_id' => $member->source_prepare_id, 'registration_request_id' => $member->registration_request_id,
+                'stored_status' => $member->status->value,
+                'failed_creation' => $this->failedCreation($member),
                 'row_deleted_at' => null,
             ];
         }
 
         return ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
             'name' => $instance->name, 'force' => $force, 'removal_id' => (string) Str::uuid(),
-            'inventory_digest' => $this->inventoryDigest($instance->id, $force, $inventories),
+            'inventory_digest' => hash('sha256', json_encode($snapshots, JSON_THROW_ON_ERROR)),
+            'source_pending' => true,
+            'protected_source_roots' => app(ProtectedPathCatalog::class)->roots(),
             'repository' => $instance->project->repository_url, 'repository_identity' => $instance->project->repository_identity,
             'members' => $snapshots, 'additional_route_ids' => $additional, 'additional_routes' => array_map(fn (int $id): array => ['route_id' => $id, 'node_id' => $this->routeNode(Route::query()->findOrFail($id))], $additional),
         ];
@@ -239,128 +209,6 @@ final readonly class StartInstanceDestroyAction
         }
     }
 
-    /** @return array{Collection<int, Instance>, array<int, InstanceSourceInventory>} */
-    private function deletionSet(Instance $requested, bool $force, bool $detached = false): array
-    {
-        $this->assertMemberPathAvailable($requested);
-        $requestedInventory = $this->inspect(
-            $requested,
-            $force,
-            inspectContent: $requested->source_layout !== InstanceSourceLayout::Checkout->value,
-        );
-        $this->assertMemberPathAvailable($requested);
-        $members = collect([$requested]);
-
-        if ($requested->source_layout === InstanceSourceLayout::Checkout->value) {
-            $registered = Instance::query()
-                ->with(['project', 'node', 'routes.targets'])
-                ->where('node_id', $requested->node_id)
-                ->whereIn('checkout_path', $requestedInventory->linkedWorktreePaths)
-                ->get();
-
-            if ($registered->count() !== count($requestedInventory->linkedWorktreePaths)) {
-                throw new ResourceOperationException(
-                    errorCode: 'instance.remove_refused',
-                    message: 'Every linked worktree must be a registered Instance before removal.',
-                    status: 409,
-                );
-            }
-
-            if ($registered->count() > 1 && (! $force || $this->failedCreation($requested))) {
-                throw new ResourceOperationException(
-                    errorCode: 'instance.remove_refused',
-                    message: 'The checkout has registered linked worktrees; retry with --force.',
-                    status: 409,
-                );
-            }
-
-            if (! $force) {
-                $contentInventory = $this->inspect($requested, false);
-                $this->assertMemberPathAvailable($requested);
-
-                if (
-                    $contentInventory->digest !== $requestedInventory->digest
-                    || $contentInventory->worktreeInventory !== $requestedInventory->worktreeInventory
-                ) {
-                    throw new ResourceOperationException(
-                        errorCode: 'instance.remove_refused',
-                        message: 'The linked-worktree inventory is inconsistent.',
-                        status: 409,
-                    );
-                }
-
-                $requestedInventory = $contentInventory;
-            }
-
-            if ($force) {
-                $members = collect(
-                    $registered
-                        ->sortBy(static fn (Instance $member): string => sprintf(
-                            '%d:%s',
-                            $member->source_layout === InstanceSourceLayout::Checkout->value ? 1 : 0,
-                            $member->checkout_path,
-                        ))
-                        ->values()
-                        ->all(),
-                );
-            }
-        }
-
-        $inventories = [];
-
-        foreach ($members as $member) {
-            $member->loadMissing(['project', 'node', 'routes.targets']);
-            $this->assertSupported($member);
-
-            if (
-                $member->node_id !== $requested->node_id
-                || $member->project_id !== $requested->project_id
-                || $member->defaultAppEnv() !== $requested->defaultAppEnv()
-                || $member->project->repository_identity !== $requested->project->repository_identity
-            ) {
-                throw new ResourceOperationException(
-                    errorCode: 'instance.remove_refused',
-                    message: "Instance [{$member->name}] is not owned by the requested source set.",
-                    status: 409,
-                );
-            }
-
-            $this->route($member, $detached && $member->id === $requested->id);
-            $this->assertMemberPathAvailable($member);
-            $inventory = $member->id === $requested->id
-                ? $requestedInventory
-                : $this->inspect($member, $force);
-            $this->assertMemberPathAvailable($member);
-
-            if (
-                $requested->source_layout === InstanceSourceLayout::Checkout->value
-                && ($inventory->linkedWorktreePaths !== $requestedInventory->linkedWorktreePaths
-                || $inventory->commonRepositoryPath !== $requestedInventory->commonRepositoryPath)
-            ) {
-                throw new ResourceOperationException(
-                    errorCode: 'instance.remove_refused',
-                    message: 'The linked-worktree inventory is inconsistent.',
-                    status: 409,
-                );
-            }
-
-            $inventories[$member->id] = $inventory;
-        }
-
-        if (
-            $requested->source_layout === InstanceSourceLayout::Checkout->value
-            && $members->where('source_layout', InstanceSourceLayout::Checkout->value)->count() !== 1
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.remove_refused',
-                message: 'The linked-worktree inventory does not identify one common checkout.',
-                status: 409,
-            );
-        }
-
-        return [$members, $inventories];
-    }
-
     private function assertMemberPathAvailable(Instance $member): void
     {
         $path = StoragePath::tryParse($member->checkout_path);
@@ -415,8 +263,8 @@ final readonly class StartInstanceDestroyAction
         return $route;
     }
 
-    /** @return \Illuminate\Database\Eloquent\Collection<int, Route> */
-    private function ownRoutes(Instance $instance): \Illuminate\Database\Eloquent\Collection
+    /** @return Collection<int, Route> */
+    private function ownRoutes(Instance $instance): Collection
     {
         return $instance->routes
             ->reject(fn (Route $route): bool => $route->hasWebRoot() || $this->ownUnactivatedReplacement($route, $instance))
@@ -494,43 +342,6 @@ final readonly class StartInstanceDestroyAction
             && $route->isUnactivatedReplacement()
             && $route->targets->count() === 1
             && $route->targets->sole()->instance_id === $instance->id;
-    }
-
-    private function inspect(
-        Instance $instance,
-        bool $force,
-        bool $inspectContent = true,
-    ): InstanceSourceInventory {
-        try {
-            return $this->sourceInspector->inspect($instance, $force, $inspectContent);
-        } catch (RuntimeConvergenceException $exception) {
-            throw new ResourceOperationException(
-                errorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                status: 409,
-                previous: $exception,
-            );
-        }
-    }
-
-    /** @param array<int, InstanceSourceInventory> $inventories */
-    private function inventoryDigest(int $requestedId, bool $force, array $inventories): string
-    {
-        $members = collect($inventories)
-            ->sortKeys()
-            ->map(static fn (InstanceSourceInventory $inventory): array => [
-                'id' => $inventory->instanceId,
-                'digest' => $inventory->digest,
-                'worktrees' => $inventory->linkedWorktreePaths,
-            ])
-            ->values()
-            ->all();
-
-        return hash('sha256', json_encode([
-            'requested_id' => $requestedId,
-            'force' => $force,
-            'members' => $members,
-        ], JSON_THROW_ON_ERROR));
     }
 
     private function conflict(Instance $instance): never

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Analytics;
 
 use App\Actions\Analytics\ShowInstanceAnalyticsAction;
-use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -26,14 +24,13 @@ use App\Support\ValidatedData;
 /**
  * Stored Route intent and observed-result projection. No host execution.
  *
- * @phpstan-type Leaf array{node_id:int,user:string,home:string,agent_sha256:string,route_id:int,domain:string,scope:string,version?:string,root_hash?:string,in_use?:bool}
+ * @phpstan-type Leaf array{node_id:int,user:string,home?:string,agent_sha256:string,route_id:int,domain:string,scope:string,version?:string,root_hash?:string,in_use?:bool}
  * @phpstan-type Plan array{publish:list<int>,remove:list<int>,snapshot:list<array<string,mixed>>,certificates:list<Leaf>,cleanup:list<Leaf>,caddy_node_ids:list<int>,dns_node_ids:list<int>,router_node_ids:list<int>,ingress_node_ids:list<int>,public_verify_node_ids:list<int>,firewall_node_ids:list<int>,cleanup_caddy_node_ids:list<int>,public_verifications:list<array<string,mixed>>}
  */
 final readonly class AnalyticsTrackingIntent
 {
     public function __construct(private ShowInstanceAnalyticsAction $show, private IngressSiteRepository $sites,
-        private AgentDelivery $agents, private SettingRepository $settings, private LeafCertificateSigner $signer,
-        private ManagedUserAccountResolver $accounts) {}
+        private AgentDelivery $agents, private SettingRepository $settings, private AnalyticsRoutePlan $routes) {}
 
     /** @return array<string,mixed> */
     public function identity(Route $route): array
@@ -75,10 +72,10 @@ final readonly class AnalyticsTrackingIntent
         $oldPublications = [];
         $oldIngress = [];
         foreach ($this->show->trackingRoutes($instance) as $route) {
-            $old = [...$old, ...$this->certificates($route, true)];
+            $old = [...$old, ...$this->routes->capture($route, true)['cleanup']];
             $oldPublications[$route->id] = $route->publication;
             $oldRouteNodes[$route->id] = [];
-            foreach ($this->placements($route, true) as $placement) {
+            foreach (AnalyticsRoutePlan::placements($route) as $placement) {
                 $oldNodes[] = $oldRouteNodes[$route->id][] = $this->sites->routerNode($placement)->id;
                 if ($placement->publication === RoutePublication::Public) {
                     $oldNodes[] = $oldRouteNodes[$route->id][] = $oldIngress[] = $this->sites->ingressNode($placement)->id;
@@ -131,7 +128,7 @@ final readonly class AnalyticsTrackingIntent
         $ingress = [];
         $verifications = [];
         foreach (Route::query()->whereIn('id', $publish)->orderBy('id')->get() as $route) {
-            $certificates = [...$certificates, ...$this->certificates($route)];
+            $certificates = [...$certificates, ...$this->routes->capture($route)['certificates']];
             $routers[] = $this->sites->routerNode($route)->id;
             if ($route->publication === RoutePublication::Public) {
                 $node = $this->sites->ingressNode($route);
@@ -147,11 +144,9 @@ final readonly class AnalyticsTrackingIntent
             array_filter($old, static fn (array $leaf): bool => ! in_array($key($leaf), $newKeys, true))));
         $nodes = array_values(array_unique([...$oldNodes, ...$routers, ...$ingress]));
         sort($nodes);
-        $root = $certificates === [] ? '' : $this->signer->rootCertificate();
 
         return ['publish' => $publish, 'remove' => $remove, 'snapshot' => $this->snapshot($instance),
-            'certificates' => array_map(static fn (array $leaf): array => [...$leaf,
-                'version' => substr(hash('sha256', $root.':'.$leaf['domain'].':'.$leaf['scope']), 0, 16), 'root_hash' => hash('sha256', $root)], $certificates),
+            'certificates' => $certificates,
             'cleanup' => $cleanup, 'caddy_node_ids' => $nodes, 'dns_node_ids' => $nodes === [] ? [] : ValidatedData::integerList($operation->input['dns_node_ids']),
             'router_node_ids' => array_values(array_unique($routers)), 'ingress_node_ids' => array_values(array_unique($ingress)),
             'public_verify_node_ids' => array_values(array_unique($ingress)), 'firewall_node_ids' => array_values(array_unique([...$oldIngress, ...$ingress])),
@@ -207,36 +202,6 @@ final readonly class AnalyticsTrackingIntent
         }
     }
 
-    /** @return list<Route> */
-    private function placements(Route $route, bool $retiring): array
-    {
-        $placements = [$route];
-        if ($retiring && $route->hasPlacementTransition()) {
-            $prior = clone $route;
-            $prior->node_id = $route->transition_node_id;
-            $prior->cluster_id = $route->transition_cluster_id;
-            $prior->unsetRelations();
-            $placements[] = $prior;
-        }
-
-        return $placements;
-    }
-
-    /** @return list<Leaf> */
-    private function certificates(Route $route, bool $retiring = false): array
-    {
-        $result = [];
-        foreach ($this->placements($route, $retiring) as $placement) {
-            $node = $this->sites->routerNode($placement);
-            $leaf = ['node_id' => $node->id, 'user' => $node->user, 'home' => $this->accounts->resolve($node)->home,
-                'agent_sha256' => $this->agents->pin($node), 'route_id' => $route->id,
-                'domain' => $route->domain, 'scope' => "route-{$route->id}-router"];
-            $result[$node->id.':'.$leaf['scope']] = $leaf;
-        }
-
-        return array_values($result);
-    }
-
     /** @return Plan */
     public function plan(Operation $operation): array
     {
@@ -246,8 +211,8 @@ final readonly class AnalyticsTrackingIntent
         }
 
         return ['publish' => ValidatedData::integerList($plan['publish']), 'remove' => ValidatedData::integerList($plan['remove']),
-            'snapshot' => $this->objects($plan['snapshot']), 'certificates' => array_map($this->leaf(...), $this->objects($plan['certificates'])),
-            'cleanup' => array_map($this->leaf(...), $this->objects($plan['cleanup'])),
+            'snapshot' => $this->objects($plan['snapshot']), 'certificates' => array_map(self::decodeLeaf(...), $this->objects($plan['certificates'])),
+            'cleanup' => array_map(self::decodeLeaf(...), $this->objects($plan['cleanup'])),
             'caddy_node_ids' => ValidatedData::integerList($plan['caddy_node_ids']), 'dns_node_ids' => ValidatedData::integerList($plan['dns_node_ids']),
             'router_node_ids' => ValidatedData::integerList($plan['router_node_ids']), 'ingress_node_ids' => ValidatedData::integerList($plan['ingress_node_ids']),
             'public_verify_node_ids' => ValidatedData::integerList($plan['public_verify_node_ids']), 'firewall_node_ids' => ValidatedData::integerList($plan['firewall_node_ids']),
@@ -267,10 +232,11 @@ final readonly class AnalyticsTrackingIntent
     /** @param array<string,mixed> $leaf
      * @return Leaf
      */
-    private function leaf(array $leaf): array
+    public static function decodeLeaf(array $leaf): array
     {
         return ['node_id' => ValidatedData::integer($leaf['node_id']), 'route_id' => ValidatedData::integer($leaf['route_id']),
-            'user' => ValidatedData::string($leaf['user']), 'home' => ValidatedData::string($leaf['home']), 'agent_sha256' => ValidatedData::string($leaf['agent_sha256']),
+            'user' => ValidatedData::string($leaf['user']),
+            ...(isset($leaf['home']) ? ['home' => ValidatedData::string($leaf['home'])] : []), 'agent_sha256' => ValidatedData::string($leaf['agent_sha256']),
             'domain' => ValidatedData::string($leaf['domain']), 'scope' => ValidatedData::string($leaf['scope']),
             ...(isset($leaf['version']) ? ['version' => ValidatedData::string($leaf['version']), 'root_hash' => ValidatedData::string($leaf['root_hash'])] : []),
             ...(array_key_exists('in_use', $leaf) ? ['in_use' => false] : [])];

@@ -607,7 +607,7 @@ The check stops each setup step's process group when its shell exits, times out,
 
 Orbit writes no auth file. Setup output redacts the token before writing the check log. The Project check and deliverable commands receive no setup token.
 
-If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source Git fetches and pushes still run only in the Gateway mirror.
+If the App cannot supply a token, setup continues without one. Shared fills retain existing verified GitHub archives and skip uncached GitHub artifacts without authentication, while other packages still fill. Source preparation still uses the Gateway mirror until the native provision adapter replaces it; task publication runs in Swamp.
 
 An interrupted claim resumes only its own checkout after the existing source identity checks.
 
@@ -650,34 +650,15 @@ A new workspace starts from `git init`, with the Project repository URL as `orig
 
 #### Publish from the VM
 
-The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) reuses this VM push job and record for the operation's recorded commit on `task-{group}-handoff`, without force or a pull request. It adds no push journal or VM runner. Same-operation recovery reconciles the recorded push and remote tip before repeating work. Cancellation invalidates a queued push; a started push must reconcile before ownership ends. Once only CI waits, cancellation stops observation, not GitHub workflows, and retains the pushed evidence. The Gateway still refuses external review-and-merge groups. The tick-owned publication flow below keeps its existing ownership.
+Swamp publishes the [checked task candidate](/reference/tasks#publish-an-external-group) directly from the task VM. Handoff CI uses the same native Git transport for `task-{group}-handoff`. The Gateway mints the existing repository installation token through shared private material and projects the result; it runs no push job or mirror import.
 
-A VM sends its pack at its own pace, so the task tick does not publish. The push of an approved commit records the commit and `task-<id>` on the task VM row as `queued`, and queues the job `PublishTaskVmCommit` on the [Git queue](#jobs). The approval stays in review, without a failure. Each later tick reads the row:
-
-- `queued`: the job waits or runs. The tick changes nothing.
-- `pushed`: GitHub has the commit at the branch. The approval continues, and the pull request opens.
-- `failed`: the tick reports the job's error as a [failed push](/reference/tasks#pull-request-and-settle-metrics), once. The next push after its backoff queues the job again.
-
-The job records its start on the row. A job that has not finished 40 minutes after its start counts as failed. A push that waits behind other jobs stays pending, for up to 2 hours. A push whose job has not started after 2 hours counts as failed too, so a lost job or a worker that never starts cannot hold the group. The job pushes only while the row still names its commit and branch as `queued`, so a repeated or late job changes nothing. It does this:
-
-1. The Gateway fetches the default branch and `task-<id>` into the mirror.
-2. It asks the VM for a pack of the approved commit. The pack leaves out the history of the mirror's commits of those branches.
-3. The Gateway calls `task-vm.export-git-pack` through the agent runner and the workspace executor. The command streams the pack to a private Gateway file through [bounded binary output](/reference/node-agent#commands).
-
-4. The Gateway indexes the pack into a quarantine object directory with `git index-pack --strict`. That command checks every object. The quarantine reads the mirror's objects but changes nothing in the mirror.
-5. It checks that the approved commit is a commit there, and that its history is complete.
-6. Only then does the verified pack move into the mirror. A pack that fails a check leaves nothing behind.
-7. It pushes `<commit>:refs/heads/task-<id>` from the mirror with the write token, and records the branch in the mirror.
-
-Pack export accepts one approved commit and at most 1,000 known object IDs. It runs Git as the checkout account, uses only locally available commits to reduce the pack, and keeps the 2 GiB pack limit. A partial transfer, a missing final result, or an oversized pack fails publication before quarantine promotion or a push. The Gateway verifies the reported byte count against the received file.
-
-The job and each of its Git commands end within 1600 seconds. Only the commit ID that the Gateway approved names what it pushes. The VM's branch names, refs, and configuration play no part.
+The native action uses an empty temporary bare Git repository with the workspace object store as an alternate. Credentials reach only Git in that trusted directory. The action ignores repository hooks and user/system Git configuration, permits HTTPS only and refuses redirects. It pushes the exact admitted commit without force and reads the remote tip before repeating a mutation. No repository command receives the credential. Native locking, cancellation and replay follow the [Tasks contract](/reference/tasks#publish-an-external-group).
 
 #### What the Gateway trusts
 
 From the VM, the Gateway takes only commit IDs and pack data. A commit ID must be 40 or 64 lowercase hex characters. Git in the mirror never reads a file from the VM. It runs with these settings: `core.hooksPath=/dev/null`, `core.fsmonitor=false`, an empty `credential.helper`, `http.followRedirects=false`, `protocol.allow=never`, and `protocol.https.allow=always`. A pack from the VM goes through `git index-pack --strict`, which runs the object checks that `transfer.fsckObjects` runs for a fetch. Fetches from GitHub skip them, because an old commit in a real repository can fail them.
 
-The Gateway refuses to send a command that carries a source Git credential to a task VM. The separate Composer setup token described above is a narrow exception for dependency downloads.
+The remaining Gateway source adapters refuse to send a command that carries a source Git credential to a task VM. Native Swamp publication consumes its repository token through the shared private reader on the admitted worker. The separate Composer setup token described above is a narrow exception for dependency downloads.
 
 A source command fails with `task_vm.git_credential_refused` before SSH starts. An `incus` command on a task VM host refuses one too. So an Instance or Project operation that would fetch on a task VM with a token fails there and passes no token. Examples are `instance:destroy` of a task VM workspace and `instance:clone` from one. `project:update` with a new repository URL sends no token: it reads the proposed repository on the Gateway and only sets `origin` on the VM. A task VM workspace goes with its group; see [Destroy a task VM](#destroy-a-task-vm).
 
@@ -1126,9 +1107,11 @@ The template's root disk keeps the size of the base image's disk. Each Node copi
 
 Only a built and smoke-tested base with its topology seed can promote the host's base alias. Consumers select the immutable base through the succeeded build row. A database write fence serializes promotion with desired-recipe changes, so an older build cannot move the base alias after a newer recipe is desired. A failed build leaves the previous images in place. The native result projection records failure or cancellation directly on the image build and Operation; it does not use a Gateway completion contract. The previous recipe does not satisfy the current-recipe claim gate.
 
-Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the retained builder. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable. Publishing runs on the Incus host, so a publish failure reports the host command error and host name.
+Failed recipe phases record the last 40 lines of command output in the build step error, with secrets redacted and a size limit. The error names the phase log under `/var/log/orbit/recipe-images/<profile>-<phase>.log` in the builder while it exists. Final cleanup removes the builder; build records and native workflow history retain the sanitized outcome. Logs are root-only. Installer logs include subprocess stdout, stderr, exit status, and Python exceptions. If the builder cannot be reached, the error reports that the log is unavailable. Publishing runs on the Incus host, so a publish failure reports the host command error and host name.
 
-A running older build stops at its next step before that host admits the newest desired recipe. Failed resources remain available for resume for 24 hours; cleanup and resume share a database fence so only one can claim them. A restart gives the builder a name for that attempt, so delayed cleanup of an older attempt cannot delete the new builder or smoke VM.
+An Incus image run always finishes with cleanup on its admitted build host, including after admission failure, recipe supersession, or a cancellation request. Swamp removes only that attempt’s builder and smoke VM, including their root disks, and verifies instance and root-volume absence before recording success, failure, or cancellation. Cleanup reads retain immutable attempt ownership even after cancellation or supersession. A changed attempt refuses cleanup.
+
+An uncertain deletion is reconciled by observation without repeating the mutation; an unconfirmed absence reports `task_vm.image_cleanup_failed`. Published images and shared topology seeds remain subject to normal image pruning. A failed build needs a fresh stock attempt; native resume cannot continue recipe work after its builder has been removed.
 
 After promotion, the final chain step prunes old recipe images on that host. It keeps the current and previous promoted base images, images used by existing VMs, and images of other running builds.
 

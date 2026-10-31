@@ -67,14 +67,15 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toBeLessThan(strpos(haystack: $unit, needle: 'EnvironmentFile='));
 });
 
-it('uses only its private generation when a Node Process has no application environment file', function (): void {
+it('starts a Gateway Horizon unit without an empty private environment generation', function (?array $environment): void {
     $process = new Process([
-        'name' => 'log-shipper',
+        'name' => 'horizon',
         'runtime_config' => [
-            'command' => ['/usr/local/bin/log-shipper'],
+            'command' => ['/usr/bin/php8.5', 'artisan', 'horizon'],
             'environment_file' => '',
+            ...($environment === null ? [] : ['environment' => $environment]),
         ],
-        'working_directory' => '/home/orbit',
+        'working_directory' => '/home/orbit/orbit/apps/gateway',
         'restart_policy' => 'never',
     ]);
     $process->id = 9;
@@ -89,13 +90,18 @@ it('uses only its private generation when a Node Process has no application envi
     $unit = $renderer->render($process, $target);
 
     expect($renderer->unitName($process))
-        ->toBe('orbit-process-9-log-shipper.service')
+        ->toBe('orbit-process-9-horizon.service')
         ->and($unit)
         ->toContain('X-Orbit-Process-ID=9')
         ->toContain('User=orbit')
-        ->toContain('WorkingDirectory=/home/orbit')
-        ->not->toContain('EnvironmentFile=-')->toMatch('#EnvironmentFile=/etc/orbit/processes/[0-9]+/[a-f0-9]{64}\.env#');
-});
+        ->toContain('WorkingDirectory=/home/orbit/orbit/apps/gateway')
+        ->toContain('ExecStart="/usr/bin/php8.5" "artisan" "horizon"')
+        ->not->toContain('EnvironmentFile=');
+})->with([
+    'no environment field' => [null],
+    'empty environment map' => [[]],
+    'only derived environment values' => [['PATH' => '/ignored', 'NODE_USE_SYSTEM_CA' => '0']],
+]);
 
 it('maps common restart policies to valid systemd values', function (string $policy, string $expected): void {
     $process = new Process([

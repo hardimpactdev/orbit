@@ -6,42 +6,8 @@ namespace App\Domain\Tasks;
 
 use App\Models\Task;
 
-/**
- * Pushes the task branch from the group's workspace and opens its pull request.
- * The refspec names the stored approved commit, never HEAD (ADR 0160).
- */
+/** Handoff-branch cleanup for the remaining terminal workspace adapter. */
 interface TaskPullRequestPublisher
 {
-    /**
-     * Pushes `$commit` and opens the pull request.
-     *
-     * @return string the pull request's web URL
-     *
-     * @throws TaskPullRequestException
-     */
-    public function publish(Task $group, string $body, string $commit): string;
-
-    /**
-     * Pushes `$commit` to the task branch without opening a pull request.
-     *
-     * @throws TaskPullRequestException
-     */
-    public function push(Task $group, string $commit): void;
-
-    /**
-     * Pushes a handoff commit to Orbit's branch `task-{id}-handoff`, where CI runs on the push
-     * ([Handoff CI](/reference/tasks#handoff-ci)). No pull request has that branch as head, and this call reads and
-     * writes none. A commit that Orbit pushed there before is not pushed again.
-     *
-     * @throws TaskPullRequestException pending while the push job waits or runs
-     */
-    public function pushHandoff(Task $group, string $commit): void;
-
-    /**
-     * Deletes `task-{id}-handoff` on origin when the group ends. A branch or repository that is already gone counts
-     * as deleted.
-     *
-     * @throws TaskPullRequestException
-     */
     public function deleteHandoffBranch(Task $group): void;
 }

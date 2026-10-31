@@ -6,10 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -17,8 +14,6 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\ProjectDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
-use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -33,75 +28,17 @@ use SensitiveParameter;
 final readonly class InstantiateProjectRuntimeDefinitionsAction
 {
     public function __construct(
-        private ProcessAdmissionLock $admissions,
         private ProcessTargetResolver $processTargets,
         private ProcessSpecification $processSpecifications,
-        private ProcessRuntimeManager $processRuntime,
-        private ScheduleRuntimeManager $scheduleRuntime,
     ) {}
 
     public function captureForClone(Instance $instance): Instance
     {
-        $instanceId = $instance->id;
-
-        return $this->admissions->run(
-            [$instanceId],
-            fn (): Instance => $this->capture($instanceId),
-        );
+        return $this->capture($instance->id);
     }
 
-    public function installCaptured(Instance $instance): Instance
-    {
-        $instanceId = $instance->id;
-
-        return $this->admissions->run(
-            [$instanceId],
-            fn (): Instance => $this->installCapturedOwned($instanceId),
-        );
-    }
-
-    public function execute(Instance $instance): Instance
-    {
-        $instanceId = $instance->id;
-
-        return $this->admissions->run(
-            [$instanceId],
-            function () use ($instanceId): Instance {
-                $this->capture($instanceId);
-
-                return $this->installCapturedOwned($instanceId);
-            },
-        );
-    }
-
-    private function installCapturedOwned(int $instanceId): Instance
-    {
-        $instance = Instance::query()->with(['project', 'node'])->findOrFail($instanceId);
-
-        if ($instance->runtime_definitions_captured_at === null) {
-            return $instance;
-        }
-
-        Process::query()
-            ->whereIn('owner_type', Instance::morphTypes())
-            ->where('owner_id', $instanceId)
-            ->whereNotNull('source_definition_id')
-            ->orderBy('id')
-            ->get()
-            ->each(fn (Process $process) => $this->installProcess($process));
-
-        Schedule::query()
-            ->whereIn('target_type', Instance::morphTypes())
-            ->where('target_id', $instanceId)
-            ->whereNotNull('source_definition_id')
-            ->orderBy('id')
-            ->get()
-            ->each(fn (Schedule $schedule) => $this->installSchedule($schedule));
-
-        return $instance->refresh();
-    }
-
-    private function capture(int $instanceId): Instance
+    /** Record owned definitions inside the parent admission transaction. */
+    public function capture(int $instanceId): Instance
     {
         return DB::transaction(function () use ($instanceId): Instance {
             $instance = Instance::query()
@@ -346,55 +283,5 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         }
 
         return $volumes;
-    }
-
-    private function installProcess(#[SensitiveParameter] Process $process): void
-    {
-        if (in_array($process->status, [LifecycleStatus::Active, LifecycleStatus::Removing], strict: true)) {
-            return;
-        }
-
-        try {
-            $this->processRuntime->converge($process);
-        } catch (ProcessOperationException $exception) {
-            $process->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-
-        $process->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-    }
-
-    private function installSchedule(#[SensitiveParameter] Schedule $schedule): void
-    {
-        if (in_array($schedule->status, [LifecycleStatus::Active, LifecycleStatus::Removing], strict: true)) {
-            return;
-        }
-
-        try {
-            $this->scheduleRuntime->install($schedule);
-        } catch (ScheduleOperationException $exception) {
-            $schedule->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-
-        $schedule->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
     }
 }

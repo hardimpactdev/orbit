@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Data\DatabaseConnections\DatabaseConnectionData;
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\UpdateDatabaseConnectionData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseConnectionProfile;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
+use App\Models\Operation;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Facades\DB;
 
@@ -21,12 +22,12 @@ final readonly class UpdateDatabaseConnectionAction
     /** @param iterable<DatabaseConnectionUpdateHook> $hooks */
     public function __construct(
         #[Tag(DatabaseConnectionUpdateHook::class)] private iterable $hooks,
-        private RecordEventBroadcaster $broadcaster,
+        private RecordDatabaseOperationAction $operations,
     ) {}
 
-    public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): DatabaseConnection
+    public function execute(DatabaseConnection $connection, UpdateDatabaseConnectionData $data): Operation
     {
-        $result = DB::transaction(function () use ($connection, $data): DatabaseConnection {
+        return DB::transaction(function () use ($connection, $data): Operation {
             $locked = DatabaseConnection::query()->lockForUpdate()->findOrFail($connection->id);
             $attributes = DatabaseConnectionProfile::fromUpdate($locked, $data)->attributes();
             unset($attributes['slug']);
@@ -53,23 +54,39 @@ final readonly class UpdateDatabaseConnectionAction
             foreach ($this->hooks as $hook) {
                 $hook->validate($proposed);
             }
-            $locked->update($attributes);
-
-            return $locked->refresh();
-        });
-
-        DB::afterCommit(function () use ($result): void {
-            $this->broadcaster->broadcast(
-                RecordEventType::DatabaseUpdated,
-                $result->id,
-                DatabaseConnectionData::fromModel($result)->toArray(),
-            );
-
-            foreach ($this->hooks as $hook) {
-                $hook->afterCommit($result);
+            $server = $locked->server;
+            $validateIndex = $server instanceof DatabaseServer && $server->driver === DatabaseDriver::Redis && $proposed->isDirty('database') && $proposed->database !== null;
+            $nodeId = $server instanceof DatabaseServer ? $server->node_id : app(NodeAccessAuthorizer::class)->activeGatewayId();
+            if ($nodeId === null) {
+                throw new ResourceOperationException('database.node_unavailable', 'A worker Node is required for this update.', 422);
             }
-        });
+            $input = $validateIndex
+                ? ['validate_index' => true, 'host' => $server->node->wireguard_ip, 'port' => $server->port, 'index' => $proposed->database]
+                : ['validate_index' => false];
 
-        return $result;
+            return $this->operations->execute('database.update', 'database_connection', $locked->id, $nodeId,
+                [], ['database-apply' => ['name' => 'database.update', 'input' => [...$input, 'password' => $validateIndex ? $server->root_password : ''], 'protected' => ['password']]],
+                ['connection_update' => $this->patch($attributes, $data)]);
+        });
+    }
+
+    /** @param array<string, int|string|null> $attributes
+     * @return array<string, int|string|null>
+     */
+    private function patch(array $attributes, UpdateDatabaseConnectionData $data): array
+    {
+        $provided = [
+            'driver' => $data->driverProvided, 'node_id' => $data->nodeIdProvided,
+            'host' => $data->hostProvided, 'port' => $data->portProvided,
+            'database' => $data->databaseProvided, 'path' => $data->pathProvided,
+            'username' => $data->usernameProvided, 'password' => $data->passwordProvided,
+        ];
+        if ($data->driverProvided) {
+            foreach (['host', 'port', 'database', 'path'] as $field) {
+                $provided[$field] = true;
+            }
+        }
+
+        return array_intersect_key($attributes, array_filter($provided));
     }
 }

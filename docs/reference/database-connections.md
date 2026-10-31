@@ -8,7 +8,6 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController}.php
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
   - apps/gateway/{app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/agent/src/commands/sqlite_query*.rs
   - apps/gateway/app/Domain/Instances/DatabaseClone/**
 ---
 
@@ -18,53 +17,21 @@ A Database connection is a Gateway record that describes one database: its drive
 
 ## Execution
 
-Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp owns one native workflow and reports a bounded result. The Gateway records the outcome and updates domain records; it does not record step receipts or revalidate runtime effects. Public input has no agent binary pin; Swamp runs system commands directly. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
+Database writes that change a Node return one [Operation](/reference/operations) with HTTP 202. The Gateway validates ownership and records intent. `StartSwampRun` starts one native DAG. Swamp runs the system commands on each admitted Node with that Node's configured user and sudo. The agent observes health and drift; it does not execute Database actions. The CLI follows the Operation; use `--idempotency-key` after a lost start response.
 
-Direct workflows read stored database credentials through the shared private-material API for the recorded run and owning Node. Legacy kinds still resolve their protected parameters through the old executor until their conversion. Operation projections and native history contain no passwords. Removal deletes the managed record only after the Node confirms the effect.
+Each direct declaration names a workflow and a small result projection. There are no executor claims, child Operations, step receipts or polled Database schedules. An unavailable native kind returns `operation.kind_unavailable`.
 
-## Instance lifecycle children
+Passwords and SQL use the shared private-material API for the exact root run and admitted Node custody. They remain inside the effect callback. They do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
 
-The database family owns `PrepareDatabaseChildAction` in `apps/gateway/app/Actions/DatabaseConnections/`. Lifecycle calls this Gateway admission action inside its transaction. It records protected intent and returns `{key, kind, node_id, input}`. Preparation performs no Node writes. After activation, lifecycle submits the returned descriptor through Kit v2 child admission with a stable `key`, then waits for the child to succeed.
+Create reserves names and credentials without probing a server. A matching retry reuses them. Swamp checks the live owner and grants before creating or adopting existing names. A MySQL exact grant escapes underscores. Destruction refuses system names and prefixes, attached connections and foreign owners. PostgreSQL destruction fences admission and restores it after a refused or failed drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
 
-| Gateway admission signature | Child kind | Execution Node |
-| --- | --- | --- |
-| `create(Instance $target, DatabaseServer $server, Operation $parent): array` | `database.create` | The explicit server's Node. |
-| `clone(Instance $target, Instance $source, Operation $parent): array` | `database.clone` | The source MySQL server's Node, or the target SQLite Instance's Node. |
-| `destroyOwned(Instance $target, Operation $parent): array` | `database.destroy_owned` | The Instance's Node; managed drops run as children on their servers. |
-| `sqliteSeed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath, Operation $parent): array` | `database.sqlite_seed` | The seed target's Node. |
-| `sqliteSeedAbandon(Instance $target, int $seedIntentId, Operation $parent): array` | `database.sqlite_seed_abandon` | The target Node recorded by that seed intent. |
+## Instance database steps
 
-Every lifecycle database child requires `target_type: instance` and `target_id` equal to its owning Instance, including nested source export and cleanup children. A multi-Instance destroy prepares one descriptor per member; child admission must preserve each descriptor's recorded target. Its execution Node can differ. Public database commands keep their own database resource target. The generated `input` includes `intent_id` and `owner_instance_id`; callers preserve the complete input instead of constructing it from Instance IDs. Passwords and rendered SQL remain encrypted Gateway intent. Kit v2 records `parent_operation_id` and `child_key` through its children endpoint; neither is a caller input field.
+Lifecycle composes Database actions as placed jobs in its own native DAG. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords through the fixed private-material binding. It does not admit Database child Operations or wait in the Gateway. Managed MySQL clone resets and copies in one replayable native step. Swamp verifies the target's recorded owner and grants before reset. SQLite clone, seed and abandon use safe immutable source and target descriptors and exact Node placement.
 
-Create requires an active MySQL server and records an Instance-owned database, owner user, and test database. Clone selects the source Instance's `DB` attachment and supports managed MySQL or SQLite inside its checkout. Successful create and clone attach the result under `DB` in Gateway state. Lifecycle synchronizes the resulting environment through its own workflow after the child succeeds.
+A SQLite source writes a private snapshot into a native file artifact. The target reads that exact version and verifies the size and digest before installation. Database bytes stay out of JSON resources and public history. Native retention owns the file. The current remote native reader buffers a snapshot in worker memory, so this path does not claim bounded memory for large files. Cleanup runs as native dependencies. Abandon derives only the owning recorded development-transfer attempt.
 
-Removal selects only connections whose `owner_instance_id` matches the Instance. It preflights the full managed set before preparing drops, preserves shared users and foreign connections, and removes local owned SQLite files before completing. An Instance with no owned connections still completes through a proven `database.owned-ready` command. Lifecycle waits for removal before deleting the Instance row or its checkout.
-
-Cross-node SQLite clone and seed use database-owned `database.sqlite_export` and `database.sqlite_cleanup` children. Lifecycle admits only the top-level descriptor. Snapshot bytes stay out of Operations and Swamp. The seed placements record Instance ID, environment, base path, execution user, Node, and optional transfer Operation ID; a development transfer keeps one Instance ID with different source and target placements.
-
-Transfer rollback prepares `sqliteSeedAbandon` from the seed intent ID stored in the transfer attempt. The target placement's `operationId` identifies that attempt and must not be empty. Abandon derives both cleanup commands and Nodes from that intent, reuses one prepared descriptor, and requires the target's `cleaned` receipt and a successful receipt for the source's fixed cleanup command. It does not accept a new attempt identity, path or Node from Swamp. Target cleanup runs first; source cleanup remains eligible after a target refusal. Both named Node cleanup commands tolerate a repeat and preserve unrelated files.
-
-`database.sqlite_seed_abandon` requires `OperationKinds::supports('compensations')`, in addition to children and receipts. A cancelled transfer admits it through the kit's declared compensation boundary, directly or inside its owning rollback compensation child. The cancelled parent performs no rollback effects itself.
-
-Kind contracts, including runs, child Node relations, completion proof, and redacted results, live in `apps/gateway/app/Domain/DatabaseServers/operation-kinds.php`. Database workflow execution lives under `extensions/behaviors/operations/database/` in orbit-swamp. The placed family invocation claims and executes on the same worker. It records its assigned Operation before effects, and retries keep that assignment. A retry after a lost completion response confirms the original terminal result through the read API before finishing.
-
-Legacy database execution requires the kit's children and receipt capabilities. Until both are available, admission returns `operation.kind_unavailable`; the direct SQL-user workflow and database reads stay available. Child admission uses the recorded database intent's kind, target, Node and exact input. Swamp supplies only its key.
-
-A failed create can reuse its reserved credentials for 24 hours. Every retry repeats the name check. PostgreSQL permits existing names only when the reserved role owns them and repeats that guard in SQL before grants. MySQL uses strict `CREATE DATABASE`, so an existing database refuses creation, including a partially completed create without a successful receipt. Recovery of the same Operation uses its keyed receipt.
-
-Removal checks PostgreSQL ownership inside its admission fence before every drop. MySQL removal and clone reset require a durable create or operator adoption receipt for each database name; a reserved row alone is insufficient. MySQL create records each database in a separate keyed step before credentials and grants. A preflight name refusal with no started effect forgets the reserved connection. Removal holds the database lock across its final login check and Node dispatch, and connection reservations take that same lock.
-
-Every lifecycle preparation records the parent Operation on the intent before the child is admitted. The Gateway retains pending intent while that parent is active. The Gateway deletes protected execution intents after their Operations and ancestors finish and the 24-hour retry window closes. Operation records and redacted receipts remain available. A retry after that window must resolve the reserved connection explicitly; it cannot recover expired credential SQL.
-
-## Operator recovery
-
-Existing MySQL connections and uncertain creates need explicit ownership proof before removal. On the Gateway, run `php artisan database:ownership adopt <slug> --actor=<operator> --reason=<reason>`. This command reads the live server and requires the recorded account at `%`, the recorded database, and all database privileges for that account. MySQL has no database owner column; the recorded account and its database grants establish ownership for this explicit operator action. If a test prefix is recorded, its full prefix grant must also exist.
-
-Adoption records the operator, reason, checked names, grant scope, and time in a hidden receipt and Activity. It never creates a database or changes grants. A proven prefix grant covers matching test databases found during removal, including those created later.
-
-To discard a failed reservation or stop managing a database, run `php artisan database:ownership forget <slug> --actor=<operator> --reason=<reason>`. It deletes the connection and attachment records and records an Activity; it runs no Node command and does not drop databases or users. Both actions refuse while an Operation can still change that connection or its owning Instance. Neither action is available through an API route. A connection without creation or adoption proof still cannot drop a MySQL database.
-
-SQLite seed abandonment refuses with `sqlite.seed_busy` while an Operation for the recorded seed or its source export is queued, running, or waiting. Swamp retries after that work becomes terminal, before any cleanup effect starts.
+Successful projections make bounded record changes: attach a created or cloned connection, mark its clone complete, or remove the admitted connection records. They do not re-run SQL, inspect a Node, check receipts or validate native execution.
 
 ## Drivers and fields
 
@@ -105,7 +72,7 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 
 User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). List returns the recorded `replication` attribute without passwords. Create returns an Operation and updates the recorded user after its command succeeds. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
 
-`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the pinned SQL admin command with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
+`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the fixed native SQL action with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
 
 SQL and passwords stay in the encrypted database intent and reach only the shared run-bound private-material callback. Public intent contains the driver, container, username, admitted digest and validation flags. The Gateway projects the recorded user after native success, without a command relay or execution receipt. This direct-only kind has no polled fallback; rollback reverts its cutover PR.
 
@@ -113,31 +80,29 @@ Native resume retries a failed terminal projection from its saved safe outcome w
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
-A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [ai-router collector](/reference/ai-router#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
+A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
-A validated connection change is stored before dependent runtimes converge and is not rolled back on a runtime failure. Retrying an identical update still checks and repairs stale dependents, even when no connection field changes. See [Connection persistence and retry recovery](/reference/ai-router#connection-persistence-and-retry-recovery) for lost responses, crashes, partial completion, and retry limits.
+An update to the configured cache for AI router returns `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
 
 ## Inspect a registered connection
 
-Query, tables, schema, and describe run only against a registered slug. The request never takes its own host, path, user, or password.
+Query, tables, schema, and describe accept only a registered slug. The request never supplies its own host, path, user, or password. Every inspection returns HTTP 202 with one `database.read` Operation. The CLI follows that Operation and displays its native result. `--json` returns the terminal Operation with the inspection under `result`.
 
-A query takes `sql`, at most 16,384 characters, and `write`. It runs one statement; a stacked statement returns `database.sql_multiple_statements`.
+A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a read-only transaction on the Gateway Node's Swamp worker. SQLite opens the existing file read-only, enables query-only mode, and denies mutation, attachment, and extension functions through its authorizer. A read cannot create a missing SQLite file.
 
-Without `write: true`, the Gateway refuses a statement whose leading verb writes, such as `INSERT`, `UPDATE`, `DELETE`, `CREATE`, or `DROP`, with `database.write_required`. That check reads only the leading verb. For mysql and pgsql the statement then runs in a normal session, so a statement with side effects that does not start with a write verb, such as `SET` or a `SELECT` that calls a function, runs without `write`. Only SQLite opens the file read-only.
+Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls. Use explicit write permission for statements outside this read subset.
 
-`write: true` starts an Operation whose result holds the affected `row_count` and `truncated: false`, without result rows. It does not replay uncertain SQL until the target receipt proves the outcome. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
+`write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the native output bound. For a read, `row_count` counts returned rows. The private callback removes the stored password and credential-shaped text before saving any result resource.
 
 | Driver | Where it runs |
 | --- | --- |
-| `mysql`, `pgsql` | Reads use PDO on the Gateway. Swamp invokes the named PDO write program on the Gateway Node for writes. Credentials resolve inside the Gateway before dispatch. |
-| `sqlite` | On the linked Node, through the native `database.query-sqlite` or `database.write-sqlite` agent command. |
-| `redis` | Not supported. `database.driver_unsupported` (422). |
+| `mysql`, `pgsql` | A fixed PDO program on the exact Gateway Node worker, with SQL and credentials on protected stdin. |
+| `sqlite` | A fixed Python SQLite program on the linked Node worker, as the admitted file owner. |
+| `redis` | Not supported. Admission returns `database.driver_unsupported` (422). |
 
-For SQLite, the Gateway sends the selected owner, path, and SQL through `AgentCommandRunner` on protected standard input. The query command opens an existing file read-only. The write command opens an existing file for writing and runs under the agent's mutation supervisor and a lock for that path. Neither command creates a missing database. Both return at most 500 rows and preserve column order and scalar values.
+The SQLite Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection uses the owning production Instance user, or the production Instance user whose home contains the registered path on that Node. Development inspection uses the Node user. Swamp selects that identity before opening the file and does not change file or home permissions. No inspection calls an agent action or runs PDO in the Gateway request.
 
-The Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection runs as the owning production Instance user, or as the production Instance user whose home contains the registered path on that Node. Development inspection runs as the Node user. The agent drops to that user's identity before opening the file and does not change home or file permissions. Inaccessible files or an unavailable owner return `database.sqlite_unreadable`. SQL failures return `database.query_failed`, without database contents or native diagnostics.
-
-An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
+Unknown tables fail the Operation with `database.table_missing`. Inaccessible SQLite files fail with `database.sqlite_unreadable`. Other execution failures use `database.query_failed`. Failure results omit SQL, credentials, and native diagnostics. Table and schema metadata also use the native output bound.
 
 ## Create a database on a server
 
@@ -167,7 +132,7 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
-Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instance.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, streams it through the Gateway with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot`, and verifies its size and digest before installation. Rust tests own WAL consistency, writer locks, file modes, and temporary-file cleanup; Gateway tests cover the requested operations and public errors.
+Development SQLite copies run directly in Swamp. A same-Node copy stays on that Node. A cross-Node copy writes a native file artifact; the target reads its exact version and verifies its size and digest before installation. Native tests cover WAL consistency, writer locks, file modes and temporary-file cleanup. Gateway tests cover admission and bounded record changes.
 
 ## Test databases
 
@@ -242,24 +207,30 @@ A test run with `RefreshDatabase` empties the database it uses. A separate test 
 
 ### One result shape for every SQL driver
 
-The Gateway reaches mysql and pgsql through PDO. A SQLite file exists only on its Node, so the agent uses its embedded SQLite library and returns the same result shape. The Gateway retains owner selection, write authorization, and redaction. This removes the hidden CLI execution path and its PHP dependency. A `sqlite3` subprocess would add another output format and parser. Opening the Node file from the Gateway is impossible.
+Swamp runs fixed PDO programs for MySQL and PostgreSQL on the Gateway Node worker. SQLite uses a fixed native program on the file’s Node under its admitted owner. Both return the same bounded result shape. The Gateway records owner selection and write authorization at admission; Swamp owns execution and result redaction.
 
 ### Secrets stay off the command line
 
-The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command, and WireGuard membership is the boundary for the fleet. The token does not add protection by default.
+SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
 
 ## Direct SQLite cleanup
 
-SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. It defaults to direct admission and refuses a `polled` setting in `ORBIT_SWAMP_DIRECT_WRITERS`. The family dispatcher remains only for unconverted database kinds. Rollback reverts the kind change.
+SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. Its declaration is the only dispatcher. There is no polled database path. Rollback reverts the kind change.
 
 The shared `StartSwampRun` helper starts the workflow after commit with `ORBIT_SWAMP_RUN_TOKEN`. The Gateway exposes only the admitted cleanup fields and projects the bounded result. It has no cleanup primitive, claim, lease, target hold, keyed receipt or Node lock.
 
-The action runs on the admitted Node. Node 209 uses its existing migration worker; other Nodes require the matching `orbit-node-<node_id>` worker and Node label. Missing placement stays queued under native Swamp defaults.
+The action runs on the admitted Node. Every Node uses its matching `orbit-node-<node_id>` worker and string Node label. Missing placement stays queued under native Swamp defaults.
 
-The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the admitted pinned agent through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
+The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup runs the fixed native program through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` directly. SQLite runs the pinned sudo agent on its admitted Node. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. PDO writes need no agent pin; SQLite verifies the admitted pin before invoking its fixed agent command. Native projection resumes from its saved row count without repeating SQL.
+`database:query --write` starts `operation-database-write` directly. SQLite runs the fixed native SQLite program as its admitted owner. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. Neither path invokes an agent action or requires an agent pin. Native projection resumes from its saved row count without repeating SQL.
 
-SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection stays in the Gateway.
+SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection uses its own native database.read Operation.
+
+SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO` cannot create another database file, including through an SQL expression. The same limit refuses ordinary `VACUUM`, which needs an internal attachment. These refusals return `database.query_failed` and leave the registered file unchanged.
+
+### Instance-owned removal
+
+Removing an Instance records one `database.destroy_owned` intent. One native Swamp DAG removes its databases on their admitted Nodes and its SQLite files on the Instance Node. Each server is a placed workflow step. The Gateway creates no child Operations and performs no remote SQL or file removal. It deletes the owned connection records only after the whole native DAG succeeds. Attached databases that the Instance does not own stay.

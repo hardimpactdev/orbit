@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
@@ -17,7 +17,7 @@ use App\Support\ValidatedData;
 /** Owner-bound private sources. Bytes never enter public intent or native arguments. */
 final readonly class ProcessOperationSecrets implements OperationSecretSource
 {
-    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private DockerProcessRenderer $docker, private ManagedUserAccountResolver $accounts) {}
+    public function __construct(private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private DockerProcessRenderer $docker) {}
 
     public function name(): string
     {
@@ -43,24 +43,42 @@ final readonly class ProcessOperationSecrets implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The secret reference does not belong to this Process.', 422);
         }
 
-        if (! in_array($operation->kind, ['process.create', 'process.update'], true)
-            || ($operation->input['runtime'] ?? null) !== $process->runtime->value) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The installation runtime does not match its intent.', 422);
+        if (! in_array($operation->kind, ['process.create', 'process.update'], true)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The installation kind is not supported.', 422);
+        }
+
+        return $this->materialFor($process, $target, [...$operation->input, 'node_id' => $operation->node_id]);
+    }
+
+    /** Reuse the existing installation secret type at an admitted placement without resolving accounts.
+     * @param  array<string,mixed>  $input
+     */
+    public function materialFor(Process $process, ProcessTarget $target, array $input, ?ManagedUserAccount $account = null): OperationSecretValue
+    {
+        if (($input['process_id'] ?? null) !== $process->id || ($input['node_id'] ?? null) !== $target->node->id
+            || ($input['runtime'] ?? null) !== $process->runtime->value) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The installation does not match its admitted Process and Node.', 422);
         }
 
         if ($process->runtime === ProcessRuntime::Systemd) {
-            $value = $this->systemd->render($process, $target, $target->certificateScope === null ? null : $this->accounts->resolve($target->node));
-            if (! hash_equals(ValidatedData::string($operation->input['content_hash']), hash('sha256', $value))) {
+            if (isset($input['account_user'])) {
+                if ($input['account_user'] !== $target->user || $account !== null || $target->certificateScope === null || $process->isVpDev()) {
+                    throw new ResourceOperationException('operation.execution_forbidden', 'The Process account template does not match its target.', 422);
+                }
+                $account = new ManagedUserAccount($target->user, '__orbit_process_account_group__', ProcessOperationAdmission::AccountHomeToken);
+            }
+            $value = $this->systemd->render($process, $target, $account);
+            if (! hash_equals(ValidatedData::string($input['content_hash']), hash('sha256', $value))) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The Process unit changed after admission.', 422);
             }
 
             return new OperationSecretValue(['runtime' => 'systemd', 'content' => $value, 'environment' => $this->systemd->environmentContent($process, $target)], new OperationSecretValue($process->runtime_config)->strings());
         }
-        if (! hash_equals(ValidatedData::string($operation->input['spec']), $this->docker->specHash($process, $target))) {
+        if (! hash_equals(ValidatedData::string($input['spec']), $this->docker->specHash($process, $target))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process definition changed after admission.', 422);
         }
 
-        $value = ['runtime' => 'docker', 'spec' => $operation->input['spec'], 'definition' => $this->docker->containerInput($process, $target)];
+        $value = ['runtime' => 'docker', 'spec' => $input['spec'], 'definition' => $this->docker->containerInput($process, $target)];
 
         return new OperationSecretValue($value);
     }

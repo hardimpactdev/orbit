@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Fleet\AdmitFleetRolloutNodeAction;
+use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\AdmitFleetCliAction;
 use App\Actions\Fleet\AdmitRecipePrAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PeerDnsTargetsAction;
@@ -16,7 +17,7 @@ use App\Domain\Fleet\FleetWindow;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Fleet\AdmitRolloutNodeRequest;
+use App\Http\Requests\Fleet\AdmitFleetReleaseRequest;
 use App\Http\Requests\Fleet\FleetMaintenanceRequest;
 use App\Http\Requests\Fleet\RecipeFleetStateRequest;
 use App\Http\Requests\Fleet\RecipePrRequest;
@@ -41,11 +42,18 @@ final class FleetMaintenanceController extends Controller
         return response()->json(['data' => $action->execute(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]]);
     }
 
-    #[RequiresNodeAccess(ServingNode::Target)]
     #[StartsOperation('fleet.rollout')]
-    public function rolloutNode(AdmitRolloutNodeRequest $request, Node $node, AdmitFleetRolloutNodeAction $action): JsonResponse
+    public function rollout(AdmitFleetReleaseRequest $request, AdmitFleetRolloutAction $action): JsonResponse
     {
-        $operation = $action->execute($node, ValidatedData::integer($request->validated('rollout_id')));
+        $operation = $action->execute($request->validated('rollout_id'), $request->validated('node_ids'));
+
+        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
+    }
+
+    #[StartsOperation('fleet.cli_converge')]
+    public function cli(AdmitFleetReleaseRequest $request, AdmitFleetCliAction $action): JsonResponse
+    {
+        $operation = $action->fleet($request->validated('node_ids'));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

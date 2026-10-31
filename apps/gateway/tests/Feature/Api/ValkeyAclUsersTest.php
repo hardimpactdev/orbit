@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
-use App\Domain\DatabaseServers\ValkeyAclUser;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -15,17 +13,17 @@ use App\Models\DatabaseUser;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
-use Tests\Support\FakeDatabaseServerAdmin;
-use Tests\Support\FakeValkeyServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 
 const VALKEY_ACL_ADMIN_SECRET = 'valkey-admin-secret-4b2e';
 
 beforeEach(function (): void {
-    $this->admin = new FakeDatabaseServerAdmin;
-    app()->instance(DatabaseServerAdmin::class, $this->admin);
-    $this->valkey = new FakeValkeyServerAdmin;
-    app()->instance(ValkeyServerAdmin::class, $this->valkey);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => Str::uuid()->toString()]]];
+    app()->instance(WebSocketClient::class, $socket);
 
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -123,9 +121,7 @@ describe('database:create --server on a Valkey server', function (): void {
         expect($connection->database)->toBe('1')
             ->and($connection->username)->toBe('gateway-queue')
             ->and($connection->database_server_id)->toBe($this->server->id)
-            ->and($connection->password)->toHaveLength(40)
-            ->and($this->valkey->calls)->toBe(['config get databases', 'exists gateway-queue'])
-            ->and($this->valkey->users)->toBe([]);
+            ->and($connection->password)->toHaveLength(40);
         valkey_acl_user_assert_no_secret($response, [$connection->password, VALKEY_ACL_ADMIN_SECRET]);
     });
 
@@ -133,18 +129,6 @@ describe('database:create --server on a Valkey server', function (): void {
         $this->postJson('/api/v1/database-connections', valkey_acl_user_request())
             ->assertAccepted()->assertJsonPath('data.kind', 'database.create');
         expect(DatabaseConnection::query()->sole()->database)->toBeNull();
-    });
-
-    it('refuses a user that the server already has and Orbit did not record', function (): void {
-        $this->valkey->users['gateway-queue'] = new ValkeyAclUser('gateway-queue', 'on ~* +@all', []);
-
-        $this->postJson('/api/v1/database-connections', valkey_acl_user_request())
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'database.name_conflict');
-
-        expect($this->valkey->calls)->toBe(['exists gateway-queue'])
-            ->and($this->valkey->users['gateway-queue']->rules)->toBe('on ~* +@all')
-            ->and(DatabaseConnection::query()->exists())->toBeFalse();
     });
 
     it('refuses a username that a connection on the server already has', function (): void {
@@ -162,22 +146,6 @@ describe('database:create --server on a Valkey server', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'database.name_conflict');
 
-        expect($this->valkey->calls)->toBe([]);
-    });
-
-    it('fails without output when an admin command fails', function (): void {
-        $this->valkey->failCommands = true;
-
-        $response = $this->postJson('/api/v1/database-connections', valkey_acl_user_request());
-
-        $response
-            ->assertStatus(502)
-            ->assertJsonPath('error.code', 'database.server_command_failed')
-            ->assertJsonPath('error.message', 'Database server [services-valkey] could not run an admin command.');
-
-        expect(DatabaseConnection::query()->exists())->toBeFalse();
-
-        valkey_acl_user_assert_no_secret($response, [VALKEY_ACL_ADMIN_SECRET]);
     });
 
     it('refuses an existing slug and a server that is not active before any admin command', function (): void {
@@ -193,7 +161,6 @@ describe('database:create --server on a Valkey server', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'database.server_inactive');
 
-        expect($this->valkey->calls)->toBe([]);
     });
 
     it('refuses an Instance with database.driver_unsupported', function (): void {
@@ -201,9 +168,7 @@ describe('database:create --server on a Valkey server', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'database.driver_unsupported');
 
-        expect($this->valkey->calls)->toBe([])
-            ->and($this->admin->statements)->toBe([])
-            ->and(DatabaseConnection::query()->exists())->toBeFalse();
+        expect(DatabaseConnection::query()->exists())->toBeFalse();
     });
 
     it('refuses an invalid slug, pattern, rule, or database index', function (array $overrides, string $field): void {
@@ -212,7 +177,6 @@ describe('database:create --server on a Valkey server', function (): void {
             ->assertJsonPath('error.code', 'validation.failed')
             ->assertJsonValidationErrors($field, 'error.details');
 
-        expect($this->valkey->calls)->toBe([]);
     })->with([
         'the admin user' => [['slug' => 'default'], 'slug'],
         'no patterns' => [['patterns' => []], 'patterns'],
@@ -270,8 +234,7 @@ describe('the Valkey fields elsewhere', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
 
-        expect($this->admin->statements)->toBe([])
-            ->and(DatabaseConnection::query()->exists())->toBeFalse();
+        expect(DatabaseConnection::query()->exists())->toBeFalse();
     })->with([
         'patterns' => [['patterns' => ['reporting:*']]],
         'rules' => [['allow' => ['@read']]],
@@ -293,7 +256,6 @@ describe('the Valkey fields elsewhere', function (): void {
 
     it('refuses database:user:create on a connection of a Valkey server', function (): void {
         valkey_acl_recorded($this->server);
-        $this->valkey->calls = [];
 
         $this->postJson('/api/v1/database-connections/gateway-queue/users', [
             'username' => 'reporting',
@@ -302,9 +264,7 @@ describe('the Valkey fields elsewhere', function (): void {
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'database.driver_unsupported');
 
-        expect($this->valkey->calls)->toBe([])
-            ->and($this->admin->statements)->toBe([])
-            ->and(DatabaseUser::query()->count())->toBe(1);
+        expect(DatabaseUser::query()->count())->toBe(1);
     });
 });
 
@@ -314,13 +274,11 @@ describe('database:destroy on a Valkey server', function (): void {
         $this->deleteJson('/api/v1/database-connections/gateway-queue')
             ->assertAccepted()->assertJsonPath('data.kind', 'database.destroy');
         $this->assertModelExists($connection);
-        expect($this->valkey->calls)->toBe([]);
     })->with(['managed user' => ['gateway-queue'], 'no username' => [null], 'default' => ['default']]);
 });
 
 it('runs removal guards before deleting a managed ACL user or its records', function (): void {
     valkey_acl_recorded($this->server);
-    $this->valkey->calls = [];
     $guard = new class implements DatabaseConnectionRemovalGuard
     {
         public function assertRemovable(DatabaseConnection $connection): void
@@ -335,71 +293,5 @@ it('runs removal guards before deleting a managed ACL user or its records', func
         ->assertJsonPath('error.code', 'database_connection.test_required');
 
     expect(DatabaseConnection::query()->where('slug', 'gateway-queue')->exists())->toBeTrue()
-        ->and(DatabaseUser::query()->where('username', 'gateway-queue')->exists())->toBeTrue()
-        ->and($this->valkey->calls)->toBe([]);
-});
-
-describe('database:update on a Valkey server', function (): void {
-    it('accepts unchanged credentials through the managed connection hook', function (): void {
-        valkey_acl_recorded($this->server);
-        $password = DatabaseConnection::query()->sole()->password;
-        $this->valkey->calls = [];
-
-        $this->patchJson('/api/v1/database-connections/gateway-queue', ['password' => $password])->assertOk();
-
-        expect(DatabaseConnection::query()->sole()->password)->toBe($password)
-            ->and($this->valkey->calls)->toBe([]);
-    });
-
-    it('refuses changing the managed user or endpoint without changing either record or ACL', function (array $change): void {
-        valkey_acl_recorded($this->server);
-        $before = DatabaseConnection::query()->sole()->getAttributes();
-        $this->valkey->calls = [];
-
-        $this->patchJson('/api/v1/database-connections/gateway-queue', $change)
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_connection_managed');
-
-        expect(DatabaseConnection::query()->sole()->getAttributes())->toBe($before)
-            ->and($this->valkey->calls)->toBe([]);
-    })->with([
-        'username' => [['username' => 'another-user']],
-        'password' => [['password' => 'replacement']],
-        'host' => [['host' => '10.44.0.99']],
-        'port' => [['port' => 6379]],
-        'driver' => [['driver' => 'mysql', 'database' => 'example']],
-    ]);
-
-    it('allows changing the database index while keeping the managed identity', function (): void {
-        valkey_acl_recorded($this->server);
-        $password = DatabaseConnection::query()->sole()->password;
-        $this->valkey->calls = [];
-
-        $this->patchJson('/api/v1/database-connections/gateway-queue', ['database' => '2'])
-            ->assertOk()
-            ->assertJsonPath('data.database', '2');
-
-        expect(DatabaseConnection::query()->sole()->password)->toBe($password)
-            ->and($this->valkey->calls)->toBe(['config get databases']);
-    });
-});
-
-describe('Valkey database indexes', function (): void {
-    it('accepts the last configured database and refuses the next before creating a user', function (): void {
-        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 16]))
-            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-        expect($this->valkey->users)->toBe([])->and(DatabaseConnection::query()->exists())->toBeFalse();
-        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 15]))
-            ->assertAccepted()->assertJsonPath('data.kind', 'database.create');
-        $this->patchJson('/api/v1/database-connections/gateway-queue', ['database' => '16'])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-        expect(DatabaseConnection::query()->sole()->database)->toBe('15');
-        $this->patchJson('/api/v1/database-connections/gateway-queue', ['database' => 'named'])
-            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-    });
-
-    it('uses the adopted server configuration rather than a fixed limit', function (): void {
-        $this->valkey->databases = 32;
-        $this->postJson('/api/v1/database-connections', valkey_acl_user_request(['database' => 31]))->assertAccepted();
-    });
+        ->and(DatabaseUser::query()->where('username', 'gateway-queue')->exists())->toBeTrue();
 });

@@ -44,7 +44,7 @@ Every command accepts `--json`. Output shows `desired_timer_state` apart from th
 Create one Schedule for a Node or an Instance, or record a Project Schedule definition.
 
 ```bash
-orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [options]
+orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=production) --calendar=CALENDAR --command=COMMAND [--idempotency-key=KEY] [options]
 ```
 
 | Argument | Required | Meaning |
@@ -103,7 +103,7 @@ orbit schedule:update <name> --project=ID --for=production --calendar=CALENDAR -
 Start the Schedule's service once and return at once. The timer state does not change. A failed start returns `schedule.run_failed`.
 
 ```bash
-orbit schedule:run <uuid> [--json]
+orbit schedule:run <uuid> [--idempotency-key=KEY] [--json]
 ```
 
 ## orbit schedule:logs
@@ -125,7 +125,7 @@ The Gateway returns at most 1 MiB and sets `truncated` when that limit removed o
 Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped. `schedule` is the UUID of an installed Schedule.
 
 ```bash
-orbit schedule:enable <schedule> [--json]
+orbit schedule:enable <schedule> [--idempotency-key=KEY] [--json]
 ```
 
 ## orbit schedule:destroy
@@ -133,7 +133,7 @@ orbit schedule:enable <schedule> [--json]
 Remove one Schedule, or one definition by name.
 
 ```bash
-orbit schedule:destroy <schedule> [--project=ID] [--yes] [--json]
+orbit schedule:destroy <schedule> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
