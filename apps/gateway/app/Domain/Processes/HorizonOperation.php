@@ -8,6 +8,8 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
@@ -19,7 +21,9 @@ final readonly class HorizonOperation implements DirectOperationProjection
 
     public function input(Operation $operation): array
     {
-        return ['intent' => $operation->input, 'execution_secrets' => []];
+        return ['intent' => [...$operation->input,
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
