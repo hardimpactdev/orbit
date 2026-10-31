@@ -74,6 +74,11 @@ final readonly class NodeConvergeInput
 
                 continue;
             }
+            if (! in_array($name, ['agent', 'caddy-package', 'caddy', 'peer-dns', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
+                $refusal = 'operation.kind_unavailable';
+
+                continue;
+            }
             if (! $required) {
                 continue;
             }
@@ -103,11 +108,7 @@ final readonly class NodeConvergeInput
                 'route-residue' => $this->residue($node),
                 'php-runtime' => ['configurations' => app(PhpRuntimeFootprintArtifact::class)->inputs($node)],
                 'tmpfiles' => ['rule' => TmpfilesFootprintArtifact::Rule],
-                default => ['error_code' => 'operation.kind_unavailable'],
             };
-            if (! in_array($name, ['agent', 'caddy-package', 'caddy', 'private-dns', 'route-residue', 'php-runtime', 'tmpfiles'], true)) {
-                $refusal = 'operation.kind_unavailable';
-            }
         }
 
         return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
