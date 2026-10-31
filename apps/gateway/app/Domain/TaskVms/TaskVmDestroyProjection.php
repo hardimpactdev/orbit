@@ -61,8 +61,9 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
         $participants = $snapshot['participants'] ?? [];
         $member = is_array($participants) && array_any($participants, static fn (mixed $row): bool => is_array($row) && ($row['node_id'] ?? null) === $callerNodeId);
         $input['node_cleanup_participant'] = $snapshot !== null && $member
-            ? $this->publicNodes->participant($snapshot, Node::query()->findOrFail($callerNodeId),
-                restoring: ($operation->state['node_cleanup_restoring'] ?? false) === true) : null;
+            ? [...$this->publicNodes->participant($snapshot, Node::query()->findOrFail($callerNodeId),
+                restoring: ($operation->state['node_cleanup_restoring'] ?? false) === true),
+                'proxy_node_ids' => $input['proxy_node_ids']] : null;
 
         return $input;
     }

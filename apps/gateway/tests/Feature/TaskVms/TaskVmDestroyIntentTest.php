@@ -13,9 +13,11 @@ use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use App\Models\Task;
 use App\Models\TaskReviewedCommit;
@@ -199,6 +201,7 @@ it('returns only the canonical public input for the exact admitted cleanup parti
     expect($view['node_cleanup_participant']['node_id'])->toBe($this->host->id);
     expect($view['node_cleanup_participant']['network'])->toBeNull();
     expect($view['node_cleanup_participant']['residue'])->toBeArray();
+    expect($view['node_cleanup_participant']['proxy_node_ids'])->toBe($operation->input['proxy_node_ids']);
     expect(app(TaskVmDestroyProjection::class)->input($operation))->toBe($view);
     expect($view)->not->toHaveKey('upcloud_token')->not->toHaveKey('model_key')->not->toHaveKey('pi_token');
     expect(json_encode($view))->not->toContain('private-pi-token');
@@ -403,12 +406,16 @@ it('refuses uncomposed workspace and Route cleanup before recording or changing 
     $project = Project::query()->create(['name' => 'Retain cleanup scope', 'slug' => 'retained-cleanup-scope',
         'repository_url' => 'https://github.com/example/retain.git']);
     if ($scope === 'workspace') {
-        $record = \App\Models\Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id,
-            'name' => 'retained', 'checkout_path' => '/home/orbit/apps/retained', 'root' => 'public', 'branch' => 'main', 'status' => 'source_resolved']);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Retain workspace', 'brief' => 'Preserve work', 'status' => 'cancelled']);
+        $this->vm->update(['group_id' => $group->id]);
+        $record = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id,
+            'name' => 'retained', 'task_workspace_owner_id' => $group->id, 'checkout_path' => '/home/orbit/apps/retained', 'root' => 'public', 'branch' => 'main', 'status' => 'source_resolved']);
     } else {
-        $field = match ($scope) { 'direct' => 'node_id', 'generation' => 'generation_basis_node_id', default => 'transition_node_id' };
-        $record = \App\Models\Route::query()->create(['project_id' => $project->id, 'node_id' => $this->host->id,
-            $field => $guest->id, 'domain' => 'retained.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $field = match ($scope) {
+            'direct' => 'node_id', 'generation' => 'generation_basis_node_id', default => 'transition_node_id'
+        };
+        $record = Route::query()->create(['project_id' => $project->id, 'node_id' => $this->host->id,
+            $field => $guest->id, 'domain' => 'retained.orbit', 'provenance' => $scope === 'generation' ? 'generated' : 'explicit', 'publication' => 'private', 'status' => 'pending']);
     }
 
     expect(fn () => app(StartTaskVmDestroyAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class, 'Same-root workspace and Route cleanup');
@@ -418,3 +425,14 @@ it('refuses uncomposed workspace and Route cleanup before recording or changing 
     expect($guest->fresh()->status)->toBe(LifecycleStatus::Active);
     expect($this->vm->fresh()->state->value)->toBe('failed');
 })->with(['workspace', 'direct', 'generation', 'transition']);
+
+it('refuses an uncomposed canonical Metrics retirement contribution before provider effects', function (): void {
+    $guest = destroyGuestFixture();
+    $this->gateway->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+
+    expect(fn () => app(StartTaskVmDestroyAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class, 'Every required Node cleanup effect');
+
+    expect(Operation::query()->count())->toBe(0);
+    expect($guest->fresh()->status)->toBe(LifecycleStatus::Active);
+    expect($this->vm->fresh()->state->value)->toBe('failed');
+});
