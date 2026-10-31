@@ -1,17 +1,5 @@
 # Task VM Operations
 
-`task_vm.image_build` directly starts `operation-task-vm-image-build` (UUID
-`878a384f-8b8a-4066-bd17-dcad8eac3e86`). One root places admission and image
-steps at the exact admitted build host, and publishes the pinned public Pi
-artifact from the admitted Gateway worker as native file data. Recipe, smoke,
-seed finalization, promotion and pruning are native steps. It has no claim,
-lease, keyed receipt, child Operation, Gateway observation loop or polling
-registration. The Gateway projects bounded phase/fingerprint results and the
-terminal build state. Rollback is a revert of the paired cutover commits. The
-former image helper kinds, including `task_vm.image_finish_seed`, have no
-independent caller or registration: seed finalization is a step of this root.
-The retained paths below apply to other Task VM kinds, including UpCloud images.
-
 The Gateway records VM, runtime, image and host sweep intent. This family drives
 their effects through fixed Operations. Discovery dispatches a kind and worker;
 the placed family claims its Operation and saves that assignment before effects.
@@ -30,6 +18,11 @@ run. The target receipt layer owns effect keys and deduplication. This family
 adapts its results through `OperationEffectTransport` and `AgentEffectReceipts`.
 It stores child identities and completed stages in native Swamp resources. A
 cancelled or expired parent settles admitted children before becoming terminal.
+
+Topology seed preparation has its own checkpoint before smoke deletion. Re-entry
+after deletion goes straight to seed finalization and promotion; it does not
+probe or reinstall the deleted guest. Lost replies reuse the original seed,
+smoke and cleanup child identities.
 
 ## Protected inputs
 
@@ -187,8 +180,9 @@ resource or automatic cancellation request for an unclaimed child. Operators
 cancel the native run with `swamp workflow cancel`; the family adds no separate
 queue or cancellation policy.
 
-The retained UpCloud image observation loop yields on its last admitted child
-until the owning UpCloud parent cutover. Incus images have no such loop.
+The image observation loop still yields on its last admitted child. Replacing
+that completed-child yield with a native observation wait belongs to the direct
+start slice; do not pause active image builds for this removal.
 
 The unused cache-preparation Operation family is retired:
 `prepare_package_cache`, `cache_initialize`, `cache_mount` and `cache_seed` have

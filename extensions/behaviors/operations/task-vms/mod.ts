@@ -11,6 +11,7 @@ import { Completion, invocationFor, leafKinds } from "./contract.ts";
 import { ChildIntent, FamilyDriver, FamilyWaiting } from "./driver.ts";
 import { prepareRuntime, RuntimeInput } from "./runtime.ts";
 import { lifecycle, LifecycleInput } from "./lifecycle.ts";
+import { buildImage, ImageInput } from "./images.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
 import { sweepHost, SweepInput } from "./sweep.ts";
 
@@ -72,6 +73,7 @@ export function taskVms(
               "task_vm.resume",
               "task_vm.park",
               "task_vm.destroy",
+              "task_vm.image_build",
               "task_vm.upcloud_image_build",
               "task_vm.sweep_host",
             ],
@@ -171,13 +173,16 @@ export function taskVms(
             ].includes(operation.kind)
             ? LifecycleInput.parse(operation.input)
             : null;
+          const image = operation.kind === "task_vm.image_build"
+            ? ImageInput.parse(operation.input)
+            : null;
           const upcloudImage = operation.kind === "task_vm.upcloud_image_build"
             ? UpCloudImageInput.parse(operation.input)
             : null;
           const sweep = operation.kind === "task_vm.sweep_host"
             ? SweepInput.parse(operation.input)
             : null;
-          const invocation = runtime || life || upcloudImage || sweep
+          const invocation = runtime || life || image || upcloudImage || sweep
             ? null
             : invocationFor(operation.kind, operation.input);
           if (runtime && runtime.node_id !== operation.node_id) {
@@ -230,12 +235,12 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || upcloudImage || sweep
+              runtime || life || image || upcloudImage || sweep
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
-                (runtime ?? life ?? upcloudImage ?? sweep)!
+                (runtime ?? life ?? image ?? upcloudImage ?? sweep)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -270,6 +275,8 @@ export function taskVms(
                       ? await sweepHost(sweep, driver)
                       : upcloudImage
                       ? await buildUpCloudImage(upcloudImage, driver)
+                      : image
+                      ? await buildImage(image, driver)
                       : await lifecycle(operation.kind, life!, driver),
                     error_code: null,
                   };
