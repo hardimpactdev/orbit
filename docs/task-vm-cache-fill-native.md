@@ -1,6 +1,6 @@
 # Native Task VM cache fill
 
-`operation-task-vm-cache-fill` fills one admitted host cache on its exact `orbit-node-N` worker and matching string `node` label. The behavior performs downloads and fixed filesystem commands directly. It does not call orbit-agent actions. The paired Gateway change removes the `package-cache.host` command and its synchronous caller.
+`operation-task-vm-cache-fill` fills one admitted host cache on its exact `orbit-node-N` worker and matching string `node` label. The behavior performs downloads and fixed filesystem commands directly. It does not call orbit-agent actions. The paired Gateway change removes its synchronous cache caller. The frozen `package-cache.host` agent command remains in place and Swamp does not call it.
 
 All batches share one 1700-second deadline. Each subprocess and request uses the remaining budget. The cache keeps the existing `/var/lib/orbit/package-cache` root, ownership marker, archive paths and SHA-256 inventory. Downloads and existing cache hits must also match non-null Composer SHA-1 or npm SRI SHA-1, SHA-256 or SHA-512 lock integrity. A SHA-256 inventory digest never substitutes for another lockfile algorithm.
 
