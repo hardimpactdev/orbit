@@ -44,6 +44,7 @@ const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
 });
 const SqliteResult = z.union([
+  z.object({ cancelled: z.literal(true) }).strict(),
   z.object({ backend: z.literal("absent") }).strict(),
   z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),
 ]);
@@ -96,6 +97,19 @@ export async function destroyOwnedStep(
   }
 }
 
+const Current = z.object({
+  id: z.number().int().positive(),
+  kind: z.literal("database.destroy_owned"),
+  node_id: z.number().int().positive(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  input: Input,
+  cancel_requested: z.boolean(),
+});
+const ApplyArgs = Args.extend({
+  work: Work,
+  selected_node_id: z.number().int().positive(),
+});
+
 export function databaseDestroyOwned(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
@@ -133,16 +147,12 @@ export function databaseDestroyOwned(
         execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
           const args = Args.parse(raw),
             gateway = new GatewayOperation(makeHttp(ctx), args);
-          const current = z.object({
-            id: z.number(),
-            kind: z.literal("database.destroy_owned"),
-            node_id: z.number(),
-            input: Input,
-            cancel_requested: z.boolean(),
-          }).parse(await gateway.read(ctx.signal));
+          const current = Current.parse(await gateway.read(ctx.signal));
           if (
-            current.id !== args.operation_id || current.node_id !== args.node_id
-          ) throw new Error("Wrong admitted identity");
+            current.id !== args.operation_id ||
+            current.node_id !== args.node_id ||
+            !["queued", "running"].includes(current.status)
+          ) throw new Error("Wrong admitted identity or terminal removal");
           const started_at = new Date().toISOString();
           await gateway.project({ status: "running", started_at });
           const cancelled = current.cancel_requested || !!ctx.signal?.aborted;
@@ -174,23 +184,46 @@ export function databaseDestroyOwned(
       },
       apply: {
         description: "Run exactly one admitted removal on its placed Node",
-        arguments: Args.extend({ work: Work }),
+        arguments: ApplyArgs,
         execute: async (
-          raw: z.infer<typeof Args> & { work: z.infer<typeof Work> },
+          raw: z.infer<typeof ApplyArgs>,
           ctx: Context,
         ) => {
-          const args = Args.extend({ work: Work }).parse(raw),
+          const args = ApplyArgs.parse(raw),
             gateway = new GatewayOperation(makeHttp(ctx), args);
-          const result = SqliteResult.parse(
-            await destroyOwnedStep(
-              args.work,
-              (use) => gateway.withPrivateMaterial(use),
-              ctx.signal,
-              invoke,
-              destroy,
-              sqliteInvoke,
-            ),
-          );
+          const current = Current.parse(await gateway.read(ctx.signal));
+          const work = args.work;
+          const selected = work.type === "server" ? work.server : work.sqlite;
+          const admitted = work.type === "server"
+            ? current.input.servers.find((server) =>
+              server.server_id === work.server.server_id
+            )
+            : current.input.sqlite.find((sqlite) =>
+              sqlite.connection_id === work.sqlite.connection_id
+            );
+          const key = args.work.type === "server"
+            ? `server-${args.work.server.server_id}`
+            : `sqlite-${args.work.sqlite.connection_id}`;
+          if (
+            current.id !== args.operation_id ||
+            current.node_id !== args.node_id ||
+            !["queued", "running"].includes(current.status) ||
+            args.selected_node_id !== selected.node_id ||
+            args.work.key !== key ||
+            JSON.stringify(admitted) !== JSON.stringify(selected)
+          ) throw new Error("Wrong admitted removal or selected Node");
+          const result = current.cancel_requested || ctx.signal?.aborted
+            ? { cancelled: true as const }
+            : SqliteResult.parse(
+              await destroyOwnedStep(
+                args.work,
+                (use) => gateway.withPrivateMaterial(use),
+                ctx.signal,
+                invoke,
+                destroy,
+                sqliteInvoke,
+              ),
+            );
           return {
             dataHandles: [
               await ctx.writeResource("result", `result-${args.work.key}`, {
@@ -222,15 +255,17 @@ export function databaseDestroyOwned(
             cancelled: z.boolean(),
           }).parse(raw);
           const failure = args.results.find((r) => "error_code" in r);
-          const status = args.cancelled
-            ? "cancelled"
-            : failure
+          const cancelled = args.cancelled ||
+            args.results.some((r) => "cancelled" in r);
+          const status = failure
             ? "failed"
+            : cancelled
+            ? "cancelled"
             : "succeeded";
           const gateway = new GatewayOperation(makeHttp(ctx), args);
           await gateway.project({
             status,
-            result: args.cancelled ? {} : failure ?? { backend: "absent" },
+            result: failure ?? (cancelled ? {} : { backend: "absent" }),
             error_code: failure && "error_code" in failure
               ? failure.error_code
               : null,

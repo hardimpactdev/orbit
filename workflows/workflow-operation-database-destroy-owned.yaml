@@ -45,7 +45,7 @@ jobs:
     condition:
       type: failed
   steps:
-  - name: report
+  - name: report-admission-failure
     task:
       type: behavior
       behaviorType: '@nckrtl/operation-failure'
@@ -81,6 +81,7 @@ jobs:
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
         work: ${{ self.work }}
+        selected_node_id: '${{ self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id }}'
 - name: failure-effects
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels: *id001
@@ -89,7 +90,7 @@ jobs:
     condition:
       type: failed
   steps:
-  - name: report
+  - name: report-effects-failure
     task:
       type: behavior
       behaviorType: '@nckrtl/operation-failure'

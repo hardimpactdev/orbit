@@ -31,6 +31,8 @@ const Intent = z.object({
   target: SeedTarget.optional(),
   started_at: z.string().datetime().optional(),
   cancel_requested: z.boolean().default(false),
+  binding: Args.optional(),
+  work_started: z.boolean().default(false),
 }).strict().refine((v) =>
   !v.target ||
   (v.source.variant === "seed" && v.source.operation === v.target.operation &&
@@ -52,6 +54,12 @@ const Outcome = z.object({
   incoming: z.string().optional(),
 }).strict();
 type Result = z.infer<typeof Outcome>;
+const Selected = z.object({
+  run_id: z.string().uuid(),
+  selected_node_id: z.number().int().positive(),
+});
+type Selection = z.infer<typeof Selected>;
+type Placed = Selection & ({ source: unknown } | { target: unknown });
 type Context = FileContext & {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
@@ -74,12 +82,44 @@ export function sqliteNative(
     ctx: Context,
     name: string,
     action: () => Promise<Result>,
+    selected: Placed,
+    cleanup = false,
   ) => {
     let result: Result;
     try {
       const intent = Intent.parse(await ctx.readResource("intent"));
-      result = intent.cancel_requested
+      const binding = Args.parse(intent.binding);
+      const source = "source" in selected;
+      const descriptor = source
+        ? SnapshotSource.parse(selected.source)
+        : SeedTarget.parse(selected.target);
+      if (
+        selected.run_id !== binding.run_id ||
+        selected.selected_node_id !== descriptor.node_id ||
+        JSON.stringify(descriptor) !==
+          JSON.stringify(source ? intent.source : intent.target)
+      ) throw new Error("SQLite step differs from admitted placement");
+      if (!cleanup) {
+        const args = Args.parse(intent.binding);
+        const current = z.object({
+          id: z.literal(args.operation_id),
+          kind: z.literal(args.kind),
+          node_id: z.literal(args.node_id),
+          status: z.enum(["queued", "running"]),
+          cancel_requested: z.boolean(),
+        }).parse(await new GatewayOperation(makeHttp(ctx), args).read());
+        intent.cancel_requested ||= current.cancel_requested ||
+          ctx.signal?.aborted === true;
+        if (
+          !intent.cancel_requested &&
+          (name === "export" || name === "cleanup-target")
+        ) intent.work_started = true;
+        await ctx.writeResource("intent", "intent", intent);
+      }
+      result = intent.cancel_requested && (!cleanup || !intent.work_started)
         ? { ok: true, state: "cancelled" }
+        : cleanup && !intent.work_started
+        ? { ok: true, state: "cleaned" }
         : Outcome.parse(await action());
     } catch {
       result = {
@@ -112,6 +152,7 @@ export function sqliteNative(
               kind: z.literal(args.kind),
               node_id: z.literal(args.node_id),
               input: Intent,
+              status: z.enum(["queued", "running"]),
               cancel_requested: z.boolean(),
             }).parse(
               await gateway.read(ctx.signal),
@@ -140,6 +181,8 @@ export function sqliteNative(
                   ...current.input,
                   started_at,
                   cancel_requested: current.cancel_requested,
+                  binding: args,
+                  work_started: false,
                 }),
               ],
             };
@@ -150,12 +193,9 @@ export function sqliteNative(
       },
       export: {
         description: "Export an admitted snapshot as a native file",
-        arguments: z.object({
-          source: SnapshotSource,
-          run_id: z.string().uuid(),
-        }),
+        arguments: Selected.extend({ source: SnapshotSource }),
         execute: async (
-          args: { source: unknown; run_id: string },
+          args: Selection & { source: unknown },
           ctx: Context,
         ) =>
           await save(
@@ -171,18 +211,18 @@ export function sqliteNative(
                 ctx.signal,
               ),
             }),
+            args,
           ),
       },
       prepare: {
         description:
-          "Prepare the admitted target inode with the pinned seed primitive",
-        arguments: z.object({
-          run_id: z.string().uuid(),
+          "Prepare the admitted target inode with the native seed primitive",
+        arguments: Selected.extend({
           target: SeedTarget,
           exported: Outcome,
         }),
         execute: async (
-          args: { target: unknown; exported: Result },
+          args: Selection & { target: unknown; exported: Result },
           ctx: Context,
         ) =>
           await save(
@@ -201,19 +241,19 @@ export function sqliteNative(
                   ),
                 }
                 : args.exported,
+            args,
           ),
       },
       receive: {
         description:
           "Stream the native snapshot into the prepared private inode",
-        arguments: z.object({
-          run_id: z.string().uuid(),
+        arguments: Selected.extend({
           target: SeedTarget,
           exported: Outcome,
           prepared: Outcome,
         }),
         execute: async (
-          args: {
+          args: Selection & {
             target: z.infer<typeof SeedTarget>;
             exported: Result;
             prepared: Result;
@@ -234,18 +274,21 @@ export function sqliteNative(
               );
             }
             return { ok: true, state: args.prepared.state };
-          }),
+          }, args),
       },
       install: {
         description: "Install or resume the admitted target seed",
-        arguments: z.object({
-          run_id: z.string().uuid(),
+        arguments: Selected.extend({
           target: SeedTarget,
           exported: Outcome,
           received: Outcome,
         }),
         execute: async (
-          args: { target: unknown; exported: Result; received: Result },
+          args: Selection & {
+            target: unknown;
+            exported: Result;
+            received: Result;
+          },
           ctx: Context,
         ) =>
           await save(ctx, "install", async () => {
@@ -266,79 +309,121 @@ export function sqliteNative(
               throw new Error("install incomplete");
             }
             return { ok: true, state: result.state };
-          }),
+          }, args),
       },
       cleanupSource: {
-        description: "Clean the admitted source with the same pinned primitive",
-        arguments: z.object({
-          source: SnapshotSource,
-          run_id: z.string().uuid(),
-        }),
-        execute: async (args: { source: unknown }, ctx: Context) =>
-          await save(ctx, "cleanup-source", async () => {
-            await actions.cleanupSnapshot(args.source, invoke);
-            return { ok: true, state: "cleaned" };
-          }),
+        description: "Clean started source work even after cancellation",
+        arguments: Selected.extend({ source: SnapshotSource }),
+        execute: async (args: Selection & { source: unknown }, ctx: Context) =>
+          await save(
+            ctx,
+            "cleanup-source",
+            async () => {
+              await actions.cleanupSnapshot(args.source, invoke);
+              return { ok: true, state: "cleaned" };
+            },
+            args,
+            true,
+          ),
       },
       cleanupTarget: {
         description: "Abandon only the admitted target seed attempt",
-        arguments: z.object({ target: SeedTarget, run_id: z.string().uuid() }),
-        execute: async (args: { target: unknown }, ctx: Context) =>
-          await save(ctx, "cleanup-target", async () => {
-            const result = await actions.seedTarget(
-              args.target,
-              "cleanup",
-              undefined,
-              invoke,
-            );
-            if (result.state !== "cleaned") {
-              throw new Error("cleanup incomplete");
-            }
-            return { ok: true, state: "cleaned" };
-          }),
+        arguments: Selected.extend({
+          target: SeedTarget,
+          cancel_only: z.boolean().default(false),
+        }),
+        execute: async (
+          args: Selection & { target: unknown; cancel_only?: boolean },
+          ctx: Context,
+        ) =>
+          await save(
+            ctx,
+            "cleanup-target",
+            async () => {
+              if (args.cancel_only) {
+                const intent = Intent.parse(await ctx.readResource("intent"));
+                const prepared = await ctx.readResource("prepare");
+                if (
+                  !intent.cancel_requested || !prepared ||
+                  Outcome.parse(prepared).state === "cancelled"
+                ) return { ok: true, state: "cleaned" };
+              }
+              const result = await actions.seedTarget(
+                args.target,
+                "cleanup",
+                undefined,
+                invoke,
+              );
+              if (result.state !== "cleaned") {
+                throw new Error("cleanup incomplete");
+              }
+              return { ok: true, state: "cleaned" };
+            },
+            args,
+            args.cancel_only === true,
+          ),
       },
       project: {
         description: "Project the saved bounded native outcome",
-        arguments: Args.extend({ effect: Outcome, cleanup: Outcome }),
+        arguments: Args,
         execute: async (
-          raw: z.infer<typeof Args> & { effect: Result; cleanup: Result },
+          raw: z.infer<typeof Args>,
           ctx: Context,
         ) => {
-          const args = Args.extend({ effect: Outcome, cleanup: Outcome }).parse(
-            raw,
-          );
+          const args = Args.parse(raw);
           const intent = Intent.parse(await ctx.readResource("intent"));
+          if (
+            JSON.stringify(Args.parse(intent.binding)) !== JSON.stringify(args)
+          ) {
+            throw new Error("database.sqlite_projection_binding_invalid");
+          }
           const started_at = z.string().datetime().parse(intent.started_at);
-          const error = [args.effect, args.cleanup].find((result) => !result.ok)
-            ?.error_code ?? null;
+          const readOutcome = async (name: string) => {
+            const value = await ctx.readResource(name);
+            return value === null ? null : Outcome.parse(value);
+          };
+          const effect = await readOutcome(
+            args.kind === "database.sqlite_export"
+              ? "export"
+              : args.kind === "database.sqlite_seed"
+              ? "install"
+              : "cleanup-target",
+          );
+          const cleanup = await readOutcome("cleanup-source");
+          const targetCleanup = args.kind === "database.sqlite_seed"
+            ? await readOutcome("cleanup-target")
+            : cleanup;
+          const error =
+            [effect, targetCleanup, cleanup].find((value) => value && !value.ok)
+              ?.error_code ??
+              (!effect || !cleanup || !targetCleanup
+                ? "database.sqlite_native_failed"
+                : null);
+          const cancelled = intent.cancel_requested && !error;
           const result = error ? { error_code: error } : {
             backend: args.kind === "database.sqlite_seed_abandon"
               ? "absent"
               : "active",
-            ...(args.kind === "database.sqlite_export" && args.effect.snapshot
+            ...(args.kind === "database.sqlite_export" && effect?.snapshot
               ? {
-                bytes: args.effect.snapshot.bytes,
-                sha256: args.effect.snapshot.sha256,
-                ...(args.effect.snapshot.mode === undefined
+                bytes: effect.snapshot.bytes,
+                sha256: effect.snapshot.sha256,
+                ...(effect.snapshot.mode === undefined
                   ? {}
-                  : { mode: args.effect.snapshot.mode }),
+                  : { mode: effect.snapshot.mode }),
               }
               : {}),
           };
           await new GatewayOperation(makeHttp(ctx), args).project({
-            status: intent.cancel_requested
-              ? "cancelled"
-              : error
-              ? "failed"
-              : "succeeded",
-            result: intent.cancel_requested ? {} : result,
-            error_code: intent.cancel_requested ? null : error,
+            status: cancelled ? "cancelled" : error ? "failed" : "succeeded",
+            result: cancelled ? {} : result,
+            error_code: error,
             started_at,
             finished_at: new Date().toISOString(),
           });
           if (error) throw new Error(error);
           return {
-            status: intent.cancel_requested ? "cancelled" : "succeeded",
+            status: cancelled ? "cancelled" : "succeeded",
           };
         },
       },

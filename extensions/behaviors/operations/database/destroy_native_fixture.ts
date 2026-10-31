@@ -27,6 +27,10 @@ export const fixtureHttp: Http = (method, path, body) => {
     });
   }
   if (method === "GET") {
+    state.reads = (state.reads ?? 0) + 1;
+    if (state.cancelOnRead === state.reads) {
+      state.operation.cancel_requested = true;
+    }
     save(state);
     return Promise.resolve({ status: 200, body: { data: state.operation } });
   }

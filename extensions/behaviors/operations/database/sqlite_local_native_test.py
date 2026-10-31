@@ -18,6 +18,7 @@ from native_harness import NativeTestCase
 class SqliteLocalNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        self.copy_behaviors('operations/_lib')
         failure = self.repo / 'extensions/behaviors/operations/failure.ts'
         failure.parent.mkdir(parents=True, exist_ok=True)
         failure.write_text((ROOT / 'extensions/behaviors/operations/failure.ts').read_text())

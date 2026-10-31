@@ -38,7 +38,7 @@ jobs:
         run_id: ${{ run.id }}
 - name: failure-admission
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: &id001
+  labels:
     node: ${{ string(inputs.node_id) }}
   dependsOn:
   - job: admission
@@ -70,29 +70,11 @@ jobs:
       inputs:
         source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
         run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
   dependsOn:
   - job: admission
     condition:
       type: succeeded
-- name: failure-snapshot
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: snapshot
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: prepare
   target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
   labels:
@@ -108,29 +90,11 @@ jobs:
         target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
         exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
         run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
   dependsOn:
   - job: snapshot
     condition:
       type: succeeded
-- name: failure-prepare
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: prepare
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: receive
   target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
   labels:
@@ -147,29 +111,11 @@ jobs:
         exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
         prepared: ${{ data.latest("database-sqlite-" + run.id, "prepare").attributes }}
         run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
   dependsOn:
   - job: prepare
     condition:
       type: succeeded
-- name: failure-receive
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: receive
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: install
   target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
   labels:
@@ -186,29 +132,34 @@ jobs:
         exported: ${{ data.latest("database-sqlite-" + run.id, "export").attributes }}
         received: ${{ data.latest("database-sqlite-" + run.id, "receive").attributes }}
         run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
   dependsOn:
   - job: receive
     condition:
       type: succeeded
-- name: failure-install
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: install
-    condition:
-      type: failed
+- name: cleanup-target
+  target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
+  labels:
+    node: ${{ string(data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id) }}
   steps:
-  - name: report
+  - name: cleanupTarget
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: '@nckrtl/database-sqlite'
+      behaviorName: ${{ "database-sqlite-" + run.id }}
+      methodName: cleanupTarget
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
+        target: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target }}
         run_id: ${{ run.id }}
+        cancel_only: true
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.target.node_id }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  - job: install
+    condition:
+      type: always
 - name: cleanup
   target: ${{ "orbit-node-" + string(data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id) }}
   labels:
@@ -223,32 +174,14 @@ jobs:
       inputs:
         source: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source }}
         run_id: ${{ run.id }}
+        selected_node_id: ${{ data.latest("database-sqlite-" + run.id, "intent").attributes.source.node_id }}
   dependsOn:
   - job: admission
     condition:
-      type: always
-  - job: install
+      type: succeeded
+  - job: cleanup-target
     condition:
       type: always
-- name: failure-cleanup
-  target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels: *id001
-  dependsOn:
-  - job: cleanup
-    condition:
-      type: failed
-  steps:
-  - name: report
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
 - name: projection
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
   labels:
@@ -265,12 +198,16 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
-        effect: ${{ data.latest("database-sqlite-" + run.id, "install").attributes }}
-        cleanup: ${{ data.latest("database-sqlite-" + run.id, "cleanup-source").attributes }}
   dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
   - job: install
     condition:
       type: always
   - job: cleanup
+    condition:
+      type: always
+  - job: cleanup-target
     condition:
       type: always

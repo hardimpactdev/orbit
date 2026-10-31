@@ -25,7 +25,22 @@ class SqliteNative(NativeTestCase):
         for name in ('sqlite_actions.ts', 'sqlite_native.ts', 'sqlite_native_fixture.ts', 'sqlite_local.ts', 'sqlite_program.ts'):
             shutil.copy(ROOT / 'extensions/behaviors/operations/database' / name, destination)
         module = destination / 'sqlite_native.ts'
-        module.write_text('import { fixtureHttp, fixtureInvoke, fixtureActions } from "./sqlite_native_fixture.ts";\n' + module.read_text().replace('export const behavior = sqliteNative();', 'export const behavior = sqliteNative(() => fixtureHttp, fixtureInvoke, fixtureActions);'))
+        module.write_text('import { fixtureHttp, fixtureInvoke, fixtureActions, fixtureEngineFailure } from "./sqlite_native_fixture.ts";\n' + module.read_text().replace('export const behavior = sqliteNative();', '''export const behavior = sqliteNative(() => fixtureHttp, fixtureInvoke, fixtureActions);
+const exportStep = behavior.methods.export.execute;
+behavior.methods.export.execute = async (...args: Parameters<typeof exportStep>) => {
+  await fixtureEngineFailure("export");
+  return await exportStep(...args);
+};
+const installStep = behavior.methods.install.execute;
+behavior.methods.install.execute = async (...args: Parameters<typeof installStep>) => {
+  await fixtureEngineFailure("install");
+  return await installStep(...args);
+};
+const cleanupStep = behavior.methods.cleanupSource.execute;
+behavior.methods.cleanupSource.execute = async (...args: Parameters<typeof cleanupStep>) => {
+  await fixtureEngineFailure("cleanup");
+  return await cleanupStep(...args);
+};'''))
         for source in (ROOT / 'workflows').glob('workflow-operation-database-sqlite-*.yaml'):
             workflow = yaml.safe_load(source.read_text())
             for job in workflow['jobs']:
@@ -107,6 +122,110 @@ class SqliteNative(NativeTestCase):
         final = self.run_kind(success=False)
         self.assertEqual([final[k] for k in ('installs', 'cleanups')], [1, 1])
         self.assertEqual(final['operation']['status'], 'failed')
+
+    def test_fresh_cancellation_after_export_skips_target_but_cleans_source(self):
+        self.state['cancelAfterExport'] = True
+        final = self.run_kind()
+        self.assertEqual(final['operation']['status'], 'cancelled')
+        self.assertEqual(final['operation']['result'], {})
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [1, 0, 0, 1])
+        self.assertFalse(Path(self.snapshot).exists())
+
+    def test_fresh_cancellation_after_prepare_abandons_incoming_without_install(self):
+        self.state['cancelAfterPrepare'] = True
+        final = self.run_kind()
+        self.assertEqual(final['operation']['status'], 'cancelled')
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'targetCleanups', 'cleanups')], [1, 1, 0, 1, 1])
+        self.assertFalse(Path(self.snapshot).exists())
+        self.assertFalse(Path(self.incoming).exists())
+
+    def test_cancellation_after_install_does_not_hide_the_completed_effect(self):
+        self.state['cancelAfterInstall'] = True
+        final = self.run_kind()
+        self.assertEqual(final['operation']['status'], 'succeeded')
+        self.assertEqual([final[k] for k in ('installs', 'cleanups')], [1, 1])
+
+    def test_engine_failure_with_skipped_outcomes_projects_one_failure_after_cleanup(self):
+        self.state['engineFailure'] = 'install'
+        final = self.run_kind(success=False)
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [1, 1, 0, 1])
+        self.assertEqual(final['operation']['status'], 'failed')
+        self.assertEqual(final.get('terminalCallbacks'), 1)
+        self.assertFalse(any(path.endswith('/failure') for path in final['calls']))
+
+    def test_engine_export_failure_does_not_dereference_missing_target_outcomes(self):
+        self.state['engineFailure'] = 'export'
+        final = self.run_kind(success=False)
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs')], [0, 0, 0])
+        self.assertEqual(final['operation']['status'], 'failed')
+        self.assertEqual(final.get('terminalCallbacks'), 1)
+        self.assertFalse(any(path.endswith('/failure') for path in final['calls']))
+
+    def test_source_cleanup_failure_cannot_project_success(self):
+        self.state['failCleanup'] = True
+        final = self.run_kind(success=False)
+        self.assertEqual(final['operation']['status'], 'failed')
+        self.assertEqual(final['operation']['result'], {'error_code': 'database.sqlite_cleanup_source_failed'})
+
+    def test_engine_cleanup_failure_projects_missing_outcome_as_failed(self):
+        self.state['engineFailure'] = 'cleanup'
+        final = self.run_kind(success=False)
+        self.assertEqual(final['operation']['status'], 'failed')
+        self.assertEqual(final['operation']['result'], {'error_code': 'database.sqlite_native_failed'})
+        self.assertEqual(final.get('terminalCallbacks'), 1)
+
+    def test_foreign_selected_source_node_refuses_before_file_effects(self):
+        path = self.repo / 'workflows/workflow-operation-database-sqlite-seed.yaml'
+        workflow = yaml.safe_load(path.read_text())
+        snapshot = next(job for job in workflow['jobs'] if job['name'] == 'snapshot')
+        snapshot['steps'][0]['task']['inputs']['selected_node_id'] = 99
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        final = self.run_kind(success=False)
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [0, 0, 0, 0])
+        self.assertEqual(final['operation']['status'], 'failed')
+
+    def test_replaced_source_descriptor_refuses_before_file_effects(self):
+        path = self.repo / 'workflows/workflow-operation-database-sqlite-seed.yaml'
+        workflow = yaml.safe_load(path.read_text())
+        snapshot = next(job for job in workflow['jobs'] if job['name'] == 'snapshot')
+        source = dict(self.state['operation']['input']['source'], source_path='/home/source/other.sqlite')
+        snapshot['steps'][0]['task']['inputs']['source'] = source
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        final = self.run_kind(success=False)
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [0, 0, 0, 0])
+        self.assertEqual(final['operation']['status'], 'failed')
+
+    def test_foreign_selected_target_node_refuses_before_target_effects(self):
+        path = self.repo / 'workflows/workflow-operation-database-sqlite-seed.yaml'
+        workflow = yaml.safe_load(path.read_text())
+        prepare = next(job for job in workflow['jobs'] if job['name'] == 'prepare')
+        prepare['steps'][0]['task']['inputs']['selected_node_id'] = 99
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        final = self.run_kind(success=False)
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [1, 0, 0, 1])
+        self.assertEqual(final['operation']['status'], 'failed')
+
+    def test_terminal_root_refuses_admission_without_file_effects(self):
+        self.state['operation']['status'] = 'succeeded'
+        final = self.run_kind(success=False)
+        self.assertEqual(final['commands'], [])
+
+    def test_resume_after_terminal_engine_failure_cannot_start_the_skipped_install(self):
+        self.state['engineFailure'] = 'install'
+        self.run_kind(success=False)
+        self.state = self.state_after()
+        self.state.pop('engineFailure')
+        self.save()
+        self.cli('workflow', 'resume', 'operation-database-sqlite-seed', '--run', self.run_id, success=False)
+        final = self.state_after()
+        self.assertEqual(final['installs'], 0)
+        self.assertEqual(final['operation']['status'], 'failed')
+
+    def test_previously_installed_seed_completes_without_receiving_or_installing_again(self):
+        self.state['preparedComplete'] = True
+        final = self.run_kind()
+        self.assertEqual(final['operation']['status'], 'succeeded')
+        self.assertEqual([final[k] for k in ('exports', 'prepares', 'installs', 'cleanups')], [1, 1, 0, 1])
 
     def test_terminal_projection_resume_does_not_repeat_native_effects(self):
         self.state['loseProjection'] = True

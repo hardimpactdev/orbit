@@ -40,6 +40,7 @@ export const fixtureHttp: Http = async (method, path, body) => {
   const state = await read();
   state.calls.push(path);
   if (path.endsWith("/failure")) {
+    state.terminalCallbacks = (state.terminalCallbacks ?? 0) + 1;
     state.operation.status = "failed";
     state.operation.error_code = "operation.native_failed";
     state.operation.result = null;
@@ -62,6 +63,9 @@ export const fixtureHttp: Http = async (method, path, body) => {
     await save(state);
     throw new Error("lost projection");
   }
+  if (projection.status !== "running") {
+    state.terminalCallbacks = (state.terminalCallbacks ?? 0) + 1;
+  }
   Object.assign(state.operation, projection);
   await save(state);
   return { status: 200, body: { data: state.operation } };
@@ -73,6 +77,10 @@ export const fixtureInvoke: Invoke = async (call) => {
   if (call.action === "seedSource") {
     if (input.mode === "cleanup") {
       state.cleanups++;
+      if (state.failCleanup) {
+        await save(state);
+        throw new Error(new TextDecoder().decode(payload));
+      }
       await Deno.remove(String(input.snapshot_path)).catch(() => {});
     } else {
       state.exports++;
@@ -83,18 +91,25 @@ export const fixtureInvoke: Invoke = async (call) => {
       await Deno.writeFile(String(input.snapshot_path), payload, {
         mode: 0o600,
       });
+      if (state.cancelAfterExport) state.operation.cancel_requested = true;
       await save(state);
       return { bytes: payload.length, sha256, snapshot: input.snapshot_path };
     }
   } else if (call.action === "seedTarget") {
     if (input.mode === "cleanup") {
       state.targetCleanups++;
+      await Deno.remove(state.incoming).catch(() => {});
       await save(state);
       return { state: "cleaned" };
     }
     if (input.mode === "prepare") {
       state.prepares++;
+      if (state.preparedComplete) {
+        await save(state);
+        return { state: "complete" };
+      }
       await Deno.writeFile(state.incoming, new Uint8Array(), { mode: 0o600 });
+      if (state.cancelAfterPrepare) state.operation.cancel_requested = true;
       await save(state);
       return { state: "ready", incoming: state.incoming };
     }
@@ -106,11 +121,21 @@ export const fixtureInvoke: Invoke = async (call) => {
     ) throw new Error("invalid install");
     await save(state);
     if (state.failInstall) throw new Error(new TextDecoder().decode(payload));
+    if (state.cancelAfterInstall) {
+      state.operation.cancel_requested = true;
+      await save(state);
+    }
     return { state: "changed" };
   }
   await save(state);
   return {};
 };
+export async function fixtureEngineFailure(method: string) {
+  const state = await read();
+  if (state.engineFailure === method) {
+    throw new Error("Fixture engine failed before outcome");
+  }
+}
 export const fixtureActions = {
   exportSnapshot,
   receiveSnapshot: (
