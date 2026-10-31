@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { Scope } from "../certificates/input.ts";
+import { Leaf as CertificateLeaf, Scope } from "../certificates/input.ts";
 
 export const Domain = z.string().regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/)
     .max(253);
@@ -27,13 +27,26 @@ const RawRequest = z.union([
     z.object({ state: z.literal("current") }).strict(),
     z.object({
         state: z.literal("request"),
-        request: z.string().max(24576)
-            .regex(
-                /^-----BEGIN CERTIFICATE REQUEST-----\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE REQUEST-----\s*$/,
-            ),
+        request_base64: z.string().max(32768).refine((value) => {
+            try {
+                return /^-----BEGIN CERTIFICATE REQUEST-----\n[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE REQUEST-----\s*$/
+                    .test(atob(value));
+            } catch {
+                return false;
+            }
+        }),
     }).strict(),
     z.object({ error_code: Code }).strict(),
 ]);
+
+/** Bind the analytics Route scope before exposing any canonical certificate action. */
+export function preparingIntent(rawLeaf: unknown) {
+    const { route_id: _route, in_use: _inUse, ...intent } = PreparingLeaf.parse(
+        rawLeaf,
+    );
+    return CertificateLeaf.parse(intent);
+}
+
 export const PublicRequest = z.object({
     node_id: z.number().int().positive(),
     scope: z.string(),
@@ -55,8 +68,8 @@ export function preparedRequest(rawLeaf: unknown, stdout: string) {
             node_id: leaf.node_id,
             scope: leaf.scope,
             state: output.state,
-            ...("request" in output
-                ? { request_base64: btoa(output.request) }
+            ...("request_base64" in output
+                ? { request_base64: output.request_base64 }
                 : {}),
         });
     } catch {
@@ -66,8 +79,14 @@ export function preparedRequest(rawLeaf: unknown, stdout: string) {
 
 export const behavior = {
     type: "@nckrtl/analytics-host-plan",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
+        intent: {
+            description: "Admitted public Router certificate intent",
+            schema: z.object({ intent: CertificateLeaf }),
+            lifetime: "infinite",
+            garbageCollection: 1,
+        },
         request: {
             description: "Public CSR or current-leaf observation",
             schema: PublicRequest,
@@ -76,6 +95,25 @@ export const behavior = {
         },
     },
     methods: {
+        preparing: {
+            description:
+                "Validate the admitted analytics leaf before its Node-local command",
+            arguments: z.object({ leaf: PreparingLeaf }).strict(),
+            execute: async (
+                args: { leaf: z.infer<typeof PreparingLeaf> },
+                ctx: {
+                    writeResource(
+                        spec: string,
+                        name: string,
+                        value: unknown,
+                    ): Promise<unknown>;
+                },
+            ) => {
+                const result = { intent: preparingIntent(args.leaf) };
+                await ctx.writeResource("intent", "intent", result);
+                return result;
+            },
+        },
         prepared: {
             description:
                 "Shape the canonical local request output for the parent signer",

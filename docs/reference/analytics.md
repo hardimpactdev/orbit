@@ -222,11 +222,12 @@ The parent admits the returned union `node_ids`, plus its own root and other eff
 
 Rollback plans include candidate Router leaves that do not belong to the original active placement. After restoring stored state and republishing it, the parent builds each fresh participant view with `cleanupForNode($rollbackPlan, $callerNodeId)`. The method accepts the persisted parent plan, decodes its cleanup through the shared Analytics leaf decoder, and filters it against the Node's currently rendered certificate scopes. A scope used by any restored or newly published site is preserved. The native step removes only leaves in that fresh view.
 
+### Public host preparation
 
-### Public host-preparation contract
-
-The command-step rewrite uses one public tracking-leaf schema. The Node and Route IDs bind the scope to `route-<route_id>-router`; the worker resolves an omitted home locally. Requesting a leaf requires its admitted version and public root hash. No credential or CA key is part of this input.
+The `analytics-host-prepare` native workflow uses one public tracking-leaf schema. The Node and Route IDs bind the scope to `route-<route_id>-router`; the worker resolves an omitted home locally. Requesting a leaf requires its admitted version and public root hash. No credential or CA key is part of this input.
 
 The pure output method parses one canonical request command result. It returns the exact admitted Node ID and scope with either `state: current` or a public CSR encoded as base64. It refuses private keys, extra result fields, malformed CSR envelopes and unbounded error codes before writing a native resource. It performs no host action or Gateway call.
 
-The canonical certificate script owns key creation and current-certificate checks. Its asset method and the placed command must run on the same Node. The parent continues to own signing, publication and terminal projection; this contract adds no public child Operation.
+The enable workflow fans out to `analytics-host-prepare` for each admitted leaf. Each child validates the public intent, resolves the canonical certificate script asset, runs one request command and decodes its public result. All four steps target the same admitted Node. The canonical script owns key creation and current-certificate checks; metadata and the command share the same physical worker.
+
+The parent reads each child's `prepared` output for signing and publication. This replaces the enable workflow's request-time Gateway read and TypeScript effect wrapper. The remaining enable steps and generic Route helper still use their existing implementations. The parent continues to own signing, publication and terminal projection; no child Operation is created.
