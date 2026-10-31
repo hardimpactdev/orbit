@@ -35,20 +35,15 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
         $plan = $input['vite_plan'] ?? null;
         if (is_array($plan)) {
             $add('vite-suspend', 'vite.set-traffic', ValidatedData::object($plan['suspend']));
-            if ($verb === 'restart') {
-                $add('vite-stop', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop']);
-            }
             $add('vite-environment', 'vite.set-traffic', ValidatedData::object($plan['environment']));
-            if ($input['desired'] === 'running' || $verb === 'restart') {
+            if ($input['desired'] === 'running') {
                 for ($check = 0; $check < 60; $check++) {
                     $add('vite-ready-'.$check, 'vite.check-listener', ValidatedData::object($plan['listener']), required: false);
                 }
                 $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
             }
         }
-        if ($verb === 'restart') {
-            $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], false);
-        } elseif (in_array($verb, ['create', 'update'], true)) {
+        if (in_array($verb, ['create', 'update'], true)) {
             if (isset($input['retired_runtime'])) {
                 $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);
             }

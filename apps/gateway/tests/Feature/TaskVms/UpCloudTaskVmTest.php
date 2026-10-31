@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCapacityException;
@@ -19,7 +18,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentGuest;
 use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
-use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsRepository;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -52,7 +50,6 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\FakeGuestAgentCommandRunner;
-use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\RecordingReleaseAlertNotifier;
 use Tests\Support\RecipeImageAnswers;
@@ -94,7 +91,7 @@ final class FakeUpCloud
     public function install(): void
     {
         Http::preventStrayRequests();
-        Http::fake(['https://api.upcloud.com/1.3/*' => $this->handle(...)]);
+        Http::fake(['https://api.upcloud.com/1.3/*' => fn (Request $request): PromiseInterface => $this->handle($request)]);
     }
 
     /** @param  list<array{key: string, value: string}>  $labels */
@@ -690,17 +687,7 @@ describe('placement', function (): void {
 });
 
 describe('recipe-driven UpCloud base image refresh', function (): void {
-    beforeEach(function (): void {
-        tvm_up_image_artifact();
-        $gateway = Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14', 'user' => 'orbit']);
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        $socket = new FakeRoutePublicationSocket;
-        $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-            'kind' => 'started', 'workflowName' => 'operation-task-vm-image-build', 'runId' => '878a384f-8b8a-4066-bd17-dcad8eac3e86',
-        ]]];
-        app()->instance(WebSocketClient::class, $socket);
-        config(['swamp.run_token' => 'fixture.token']);
-    });
+    beforeEach(fn () => tvm_up_image_artifact());
 
     it('queues refresh through recipe reconcile only when the identity is missing', function (): void {
         Queue::fake();

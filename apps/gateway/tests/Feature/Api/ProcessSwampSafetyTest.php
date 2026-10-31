@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
@@ -85,21 +84,6 @@ it('creates and reuses a Services deploy helper without admitting an Operation',
 
     $this->assertDatabaseHas('processes', ['id' => $id]);
     $this->assertDatabaseCount('operations', 0);
-});
-
-it('fences an unconverted restart if its Node becomes an executor before dispatch', function (): void {
-    app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
-    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'restart');
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.restart', 'worker' => 'safety-worker'])->assertOk();
-
-    $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', [
-        'worker' => 'safety-worker', 'key' => 'process-restart', 'transport' => 'agent', 'name' => 'process.control',
-        'input' => ['process_id' => $this->process->id, 'runtime' => 'systemd', 'name' => $operation->input['name'], 'on_demand' => false, 'operation' => 'restart'],
-    ])->assertConflict()->assertJsonPath('error.code', 'process.executor_dependency');
-
-    expect($this->process->refresh()->desired_state->value)->toBe('running');
-    expect($operation->refresh()->state['executor_runs']['process-restart']['started'] ?? false)->toBeFalse();
 });
 
 it('also protects Instance-owned executor dependencies at child input admission', function (): void {
