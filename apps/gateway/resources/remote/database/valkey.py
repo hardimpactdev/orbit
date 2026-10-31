@@ -85,22 +85,7 @@ def apply(client, action, payload, password):
     if action == 'ready':
         client.command('PING')
         return 'active'
-    if action == 'create':
-        name = payload['username']
-        arguments = ['ACL', 'SETUSER', name, 'reset', 'on', '#' + payload['hash'], 'resetchannels']
-        arguments += ['~' + pattern for pattern in payload['patterns']]
-        arguments += ['-@all'] + ['+' + rule for rule in payload['allow']]
-        arguments += ['-@admin', '-@dangerous', '-function', '-script']
-        try:
-            client.command(*arguments)
-        except RedisError:
-            raise Outcome('refused', {'error_code': 'database.acl_rules_invalid'})
-        try:
-            client.command('ACL', 'SAVE')
-        except Exception:
-            client.command('ACL', 'DELUSER', name)
-            raise
-    elif action == 'remove':
+    if action == 'remove':
         lines = client.command('ACL', 'LIST')
         saved = {line.split(' ', 2)[1]: line.split(' ', 2)[2].split() for line in lines}
         names = [name for name in payload['usernames'] if name != 'default']

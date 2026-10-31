@@ -20,7 +20,7 @@ function databaseContractOperation(): Operation
 {
     $node = Node::query()->create(['name' => 'dev-db', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '192.0.2.2', 'user' => 'orbit']);
 
-    $prepared = app(RecordDatabaseOperationAction::class)->prepare('database.create', 'database_server', 123, $node->id,
+    $prepared = app(RecordDatabaseOperationAction::class)->prepare('database.clone', 'database_server', 123, $node->id,
         ['driver' => 'mysql'], ['database-apply' => ['name' => 'database.server-admin', 'input' => [
             'operation' => 'execute', 'container' => 'orbit-process-1-dev', 'password' => 'synthetic-admin-password',
             'password_variable' => 'MYSQL_PWD', 'client' => ['mysql'], 'sql' => 'CREATE DATABASE example;',

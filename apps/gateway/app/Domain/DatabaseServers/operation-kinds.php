@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $kinds = ['database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
+    $kinds = ['database.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class], 'database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $kinds;
     }
@@ -19,7 +19,7 @@ return (static function (): array {
         'input_schema' => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['host', 'port', 'password', 'default_open', 'action', 'payload'],
             'properties' => ['host' => $string, 'port' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 65535],
-                'password' => $string, 'default_open' => ['type' => 'boolean'], 'action' => ['enum' => ['ready', 'create', 'remove', 'converge']], 'payload' => $object]]];
+                'password' => $string, 'default_open' => ['type' => 'boolean'], 'action' => ['enum' => ['ready', 'remove', 'converge']], 'payload' => $object]]];
     $sql = ['transport' => 'agent', 'name' => 'database.server-admin', 'input_fields' => [], 'input_values' => ['operation' => 'execute'],
         'secrets' => ['password' => 'database.intent', 'sql' => 'database.intent']];
     $ready = [...$sql, 'input_values' => ['operation' => 'ready'], 'secrets' => ['password' => 'database.intent']];
@@ -43,7 +43,6 @@ return (static function (): array {
     foreach ([
         'database_server.create' => [$container, $acl, $ready, $valkey, $control],
         'database_server.destroy' => [$remove, $serverAbsent],
-        'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],

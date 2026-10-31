@@ -6,9 +6,7 @@ use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
-use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
-use App\Domain\DatabaseServers\DatabaseOwnership;
 use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Operations\SwampOperationExecutor;
@@ -22,24 +20,6 @@ require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
 require_once __DIR__.'/../Support/DatabaseCreationProofs.php';
 uses(ServerDatabaseFixtures::class);
 
-it('forgets a reserved connection after a proven foreign-name refusal before any effect', function (string $driver): void {
-    $this->prepareServerDatabaseFixtures();
-    $this->server->update(['driver' => $driver]);
-    $operation = app(CreateServerDatabaseAction::class)->execute(new CreateServerDatabaseData('unsafe', $this->server->slug, null), null);
-    $agents = new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => 'unsafe']);
-    app()->instance(AgentCommandRunner::class, $agents);
-    $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('database.create', 'proof', $this->gateway->id);
-    $step = app(DatabaseOperationExecution::class)->context($operation)['descriptors'][0];
-
-    $result = $executor->run($operation, ['worker' => 'proof', 'key' => $step['key'], 'transport' => $step['transport'], 'name' => $step['name'], 'input' => $step['input']], $this->gateway->id);
-    $executor->complete($operation, ['worker' => 'proof', 'status' => 'failed', 'result' => $result, 'error_code' => 'database.name_conflict'], $this->gateway->id);
-
-    expect(DatabaseConnection::query()->count())->toBe(0);
-    expect($agents->calls)->toHaveCount(1);
-    expect($agents->calls[0]['input']['sql'])->toStartWith('SELECT')->not->toContain('CREATE DATABASE');
-})->with(['mysql', 'pgsql']);
-
 it('refuses removal of a MySQL reservation without a successful per-name create receipt', function (): void {
     $this->prepareServerDatabaseFixtures();
     $connection = DatabaseConnection::query()->create(['slug' => 'restored', 'driver' => 'mysql', 'database_server_id' => $this->server->id,
@@ -50,30 +30,6 @@ it('refuses removal of a MySQL reservation without a successful per-name create 
 
     $this->assertModelExists($connection);
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
-});
-
-it('records successful MySQL creation per name and keeps its proof after intent expiry', function (): void {
-    $this->freezeTime();
-    $this->prepareServerDatabaseFixtures();
-    app(CreateServerDatabaseAction::class)->execute(new CreateServerDatabaseData('owned', $this->server->slug, null), null);
-    app()->instance(AgentCommandRunner::class, new FakeAgentCommandRunner()->answer('database.server-admin', ['output' => '']));
-    $executor = app(SwampOperationExecutor::class);
-    $operation = $executor->claim('database.create', 'proof', $this->gateway->id);
-    foreach (app(DatabaseOperationExecution::class)->context($operation)['descriptors'] as $step) {
-        $result = $executor->run($operation, ['worker' => 'proof', 'key' => $step['key'], 'transport' => $step['transport'], 'name' => $step['name'], 'input' => $step['input']], $this->gateway->id);
-        $executor->step($operation, ['worker' => 'proof', 'key' => $step['key'].'.finish', 'name' => $step['step'], 'status' => 'succeeded', 'result' => $result], $this->gateway->id);
-    }
-    $executor->complete($operation, ['worker' => 'proof', 'status' => 'succeeded', 'result' => $result], $this->gateway->id);
-    $connection = DatabaseConnection::query()->sole();
-    expect(app(DatabaseOwnership::class)->mysqlNames($connection))->toBe(['owned']);
-    expect($connection->toArray())->not->toHaveKey('creation_receipts');
-    $this->travel(25)->hours();
-    expect(app(PurgeDatabaseExecutionIntentsAction::class)->execute())->toBe(1);
-
-    $drop = app(DropServerDatabaseAction::class)->prepareMany([$connection])[0];
-
-    expect($drop->kind)->toBe('database.destroy');
-    expect(DatabaseExecutionIntent::recorded($drop->input['intent_id'])->payload['commands']['database-apply']['transport'])->toBe('database_removal');
 });
 
 it('rechecks names on clone reservation reuse and resets only proven names', function (): void {
