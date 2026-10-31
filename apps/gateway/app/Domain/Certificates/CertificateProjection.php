@@ -6,6 +6,8 @@ namespace App\Domain\Certificates;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Routes\NativeCaddyPublicationInput;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
@@ -17,7 +19,9 @@ final readonly class CertificateProjection implements DirectOperationProjection
 
     public function input(Operation $operation): array
     {
-        return $operation->input;
+        return ['intent' => ['leaf' => $operation->input,
+            ...app(NativeCaddyPublicationInput::class)->connectionForNode(Node::query()->findOrFail($operation->node_id))],
+            'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

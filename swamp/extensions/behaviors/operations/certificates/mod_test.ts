@@ -113,27 +113,18 @@ Deno.test("removal verifies absence and never trusts a failed effect", async () 
     "certificate.inspect-leaf",
   ]);
 });
-Deno.test("admission binds the worker Node before a local effect", async () => {
-  const definition = certificates(() => () =>
-    Promise.resolve({
-      status: 200,
-      body: {
-        data: {
-          id: 19,
-          kind: "certificate.converge",
-          node_id: 9,
-          input: leaf,
-          cancel_requested: false,
-        },
-      },
-    })
-  );
+Deno.test("an effect rejects another Node before touching the local account", async () => {
+  const definition = certificates(certificateActions(() => {
+    throw new Error("Must not execute");
+  }));
   await assertRejects(() =>
-    definition.methods.admit.execute({
+    definition.methods.request.execute({
       operation_id: 19,
       kind: "certificate.converge",
       node_id: 9,
       run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+      leaf,
+      cancelled: false,
     }, {
       globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/fixture" },
       writeResource: () => Promise.resolve({}),
@@ -147,9 +138,6 @@ Deno.test("parent requests effect Nodes, signs once on control209, then publishe
   const leaves = [leaf, { ...leaf, node_id: 3, scope: "route-8" }];
   let signatures = 0;
   const definition = certificates(
-    () => () => {
-      throw new Error("Signing must not call the Gateway");
-    },
     certificateActions((call) => {
       calls.push(call);
       return Promise.resolve(
