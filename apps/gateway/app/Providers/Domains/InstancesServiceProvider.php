@@ -49,7 +49,6 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
@@ -120,7 +119,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([InstanceTransferProcessMaterial::class, InstanceTransferRouteEnvironment::class, NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([InstanceTransferProcessMaterial::class, InstanceTransferRouteEnvironment::class, NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
