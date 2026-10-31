@@ -2314,6 +2314,7 @@ if (import.meta.main) {
       units: {
         inline_script_lines: "decoded_script_lines_by_source_literal",
         custom_loops: "syntactic_control_sites",
+        gateway_client_files: "files_with_gateway_http_findings",
         agent_action_calls: "syntactic_call_sites",
         agent_unknown_calls: "syntactic_call_sites",
         workflows: "workflow_files",
@@ -2327,6 +2328,9 @@ if (import.meta.main) {
           (n, e) => n + e.count,
           0,
         ),
+      gateway_client_files: new Set(
+        entries.filter((e) => e.rule === "gateway-http").map((e) => e.file),
+      ).size,
       agent_action_calls: entries.filter((e) => e.rule === "agent-action")
         .reduce((n, e) => n + e.count, 0),
       agent_unknown_calls: entries.filter((e) => e.rule === "agent-dynamic")
@@ -2340,7 +2344,7 @@ if (import.meta.main) {
     };
     console.log(JSON.stringify(metrics));
     console.log(
-      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} baseline_accepted=${coverage.baseline_accepted} unknown=${coverage.unknown} source_moves=${moves.length}`,
+      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} embedded_lines=${metrics.inline_script_lines} custom_loops=${metrics.custom_loops} gateway_client_files=${metrics.gateway_client_files}`,
     );
     if (option("--report")) {
       await Deno.writeTextFile(
