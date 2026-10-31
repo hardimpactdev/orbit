@@ -1,7 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../_lib/direct.ts";
-import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
+import { DirectArgs, GatewayOperation, Globals } from "../_lib/direct.ts";
 import { invokeSql } from "./local_sql.ts";
 import { runSqliteLocal, type SqliteInvoke } from "./sqlite_local.ts";
 import {
@@ -58,32 +57,33 @@ const Result = z.union([
   z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),
   z.object({}).strict(),
 ]);
-const Terminal = z.enum(["succeeded", "failed", "cancelled"]);
-const Stage = z.object({
-  intent: CloneInput,
-  result: Result,
-  snapshot: SnapshotRef.nullable(),
-  started_at: z.string().datetime(),
-  terminal: Terminal.nullable(),
-}).strict();
 const Args = DirectArgs.extend({
   kind: z.literal("database.clone"),
   node_id: NodeId,
 });
-const StagedArgs = Args.extend({ stage: Stage });
+const Placed = Args.extend({ selected_node_id: NodeId });
+const Stage = z.object({
+  binding: Args,
+  intent: CloneInput,
+  result: Result,
+  snapshot: SnapshotRef.nullable(),
+  started_at: z.string().datetime(),
+  terminal: z.literal("cancelled").nullable(),
+}).strict();
+type Saved = z.infer<typeof Stage>;
 export type Context = FileContext & {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
+  readResource(name: string): Promise<Record<string, unknown> | null>;
   writeResource(
     spec: string,
     name: string,
     value: Record<string, unknown>,
   ): Promise<{ name: string }>;
 };
-const stopped = (s: z.infer<typeof Stage>) =>
-  s.terminal !== null || "error_code" in s.result;
+const stopped = (s: Saved) => s.terminal !== null || "error_code" in s.result;
 
-/** One parent native DAG; source and target share typed native file data, never child Operations. */
+/** One parent run shares safe native checkpoints across its exact placed Nodes. */
 export function clone(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
@@ -91,46 +91,83 @@ export function clone(
   files = { exportSnapshot, receiveSnapshot, cleanupSnapshot },
   sqliteInvoke: SqliteInvoke = runSqliteLocal,
 ) {
-  const write = async (
+  const read = async (ctx: Context, name: string, run: string) => {
+    const value = await ctx.readResource(`${name}-${run}`);
+    return value === null ? null : Stage.parse(value);
+  };
+  const saved = async (
     ctx: Context,
-    spec: string,
+    name: string,
     args: z.infer<typeof Args>,
-    stage: z.infer<typeof Stage>,
-  ) => ({
+  ) => {
+    const stage = Stage.parse(await read(ctx, name, args.run_id));
+    if (JSON.stringify(stage.binding) !== JSON.stringify(Args.parse(args))) {
+      throw new Error("Wrong clone binding");
+    }
+    return stage;
+  };
+  const write = async (ctx: Context, spec: string, stage: Saved) => ({
     dataHandles: [
       await ctx.writeResource(
         spec,
-        `${spec}-${args.run_id}`,
+        `${spec}-${stage.binding.run_id}`,
         Stage.parse(stage),
       ),
     ],
   });
+  const placed = (
+    args: z.infer<typeof Placed>,
+    stage: Saved,
+    source = false,
+  ) => {
+    if (
+      args.selected_node_id !==
+        (source ? stage.intent.source_node_id : stage.intent.node_id)
+    ) throw new Error("Wrong clone placement");
+  };
   const step = (
     spec: string,
-    action: (
-      s: z.infer<typeof Stage>,
-      a: z.infer<typeof Args>,
-      ctx: Context,
-    ) => Promise<void>,
+    previous: string,
+    action: (s: Saved, ctx: Context) => Promise<void>,
+    source = false,
   ) => ({
     description: `Run the admitted clone ${spec} step`,
-    arguments: StagedArgs,
-    execute: async (raw: z.infer<typeof StagedArgs>, ctx: Context) => {
+    arguments: Placed,
+    execute: async (raw: z.infer<typeof Placed>, ctx: Context) => {
       try {
-        const args = StagedArgs.parse(raw);
-        if (args.node_id !== args.stage.intent.node_id) {
-          throw new Error("Wrong clone placement");
+        const args = Placed.parse(raw),
+          stage = await saved(ctx, previous, args);
+        placed(args, stage, source);
+        if (!stopped(stage) && ctx.signal?.aborted) {
+          stage.terminal = "cancelled";
+          stage.result = {};
+        } else if (!stopped(stage)) {
+          const current = z.object({
+            id: z.literal(args.operation_id),
+            kind: z.literal(args.kind),
+            node_id: z.literal(args.node_id),
+            status: z.enum(["queued", "running"]),
+            input: CloneInput,
+            cancel_requested: z.boolean(),
+          }).parse(
+            await new GatewayOperation(makeHttp(ctx), args).read(),
+          );
+          if (JSON.stringify(current.input) !== JSON.stringify(stage.intent)) {
+            throw new Error("Changed clone intent");
+          }
+          if (current.cancel_requested || ctx.signal?.aborted) {
+            stage.terminal = "cancelled";
+            stage.result = {};
+          } else await action(stage, ctx);
         }
-        const stage = structuredClone(args.stage);
-        if (!stopped(stage)) await action(stage, args, ctx);
-        return await write(ctx, spec, args, stage);
+        return await write(ctx, spec, stage);
       } catch {
         throw new Error(`database.clone_${spec}_outcome_unknown`);
       }
     },
   });
   const sqlite = async (
-    s: z.infer<typeof Stage>,
+    s: Saved,
     operation: "prepare" | "local" | "install",
     ctx: Context,
   ) => {
@@ -168,21 +205,68 @@ export function clone(
       }).strict().parse(reply);
     } else z.object({}).strict().parse(reply);
   };
+  const cleanup = (target: boolean) => ({
+    description: "Clean only admitted clone scratch after all started work",
+    arguments: Placed,
+    execute: async (raw: z.infer<typeof Placed>, ctx: Context) => {
+      const args = Placed.parse(raw),
+        admitted = await saved(ctx, "admitted", args);
+      placed(args, admitted, !target);
+      const stage = await read(ctx, "exported", args.run_id) ?? admitted;
+      try {
+        if (
+          stage.intent.variant === "sqlite_remote" &&
+          (!stopped(stage) || stage.snapshot !== null)
+        ) {
+          if (target) {
+            const prepared = await read(ctx, "prepared", args.run_id);
+            const applied = await read(ctx, "applied", args.run_id);
+            // Receive starts only after prepare succeeds and apply passes cancellation.
+            if (
+              !prepared || stopped(prepared) ||
+              applied?.terminal === "cancelled"
+            ) {
+              return await write(ctx, "target_cleaned", stage);
+            }
+            const t = stage.intent.target;
+            const reply = await sqliteInvoke({
+              action: "copy",
+              input: {
+                operation: "remove",
+                checkout: t.checkout,
+                path: t.incoming,
+              },
+            });
+            if ("error_code" in reply) {
+              throw new Error("Incoming cleanup refused");
+            }
+          } else await files.cleanupSnapshot(stage.intent.source, sqliteInvoke);
+        }
+      } catch {
+        stage.result = { error_code: "database.clone_cleanup_outcome_unknown" };
+      }
+      return await write(ctx, target ? "target_cleaned" : "cleaned", stage);
+    },
+  });
   return {
     type: "@nckrtl/database-clone",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     files: { snapshot: snapshotFile },
     resources: Object.fromEntries(
-      ["admitted", "exported", "prepared", "applied", "cleaned"]
-        .map((
-          name,
-        ) => [name, {
-          description: "Safe clone intent and native step outcome",
-          schema: Stage,
-          lifetime: "workflow",
-          garbageCollection: 1,
-        }]),
+      [
+        "admitted",
+        "exported",
+        "prepared",
+        "applied",
+        "target_cleaned",
+        "cleaned",
+      ].map((name) => [name, {
+        description: "Safe clone intent and native step outcome",
+        schema: Stage,
+        lifetime: "workflow",
+        garbageCollection: 1,
+      }]),
     ),
     methods: {
       admit: {
@@ -190,68 +274,53 @@ export function clone(
         arguments: Args,
         execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
           try {
-            const args = Args.parse(raw);
-            const gateway = new GatewayOperation(makeHttp(ctx), args);
+            const args = Args.parse(raw),
+              gateway = new GatewayOperation(makeHttp(ctx), args);
             const current = z.object({
-              id: NodeId,
-              kind: z.literal("database.clone"),
-              node_id: NodeId,
-              status: z.enum([
-                "queued",
-                "running",
-                "succeeded",
-                "failed",
-                "cancelled",
-              ]),
+              id: z.literal(args.operation_id),
+              kind: z.literal(args.kind),
+              node_id: z.literal(args.node_id),
+              status: z.enum(["queued", "running"]),
               input: CloneInput,
-              result: Result.nullable(),
               cancel_requested: z.boolean(),
             }).parse(await gateway.read(ctx.signal));
-            if (
-              current.id !== args.operation_id ||
-              current.node_id !== args.node_id ||
-              current.input.node_id !== args.node_id
-            ) {
+            if (current.input.node_id !== args.node_id) {
               throw new Error("Wrong clone identity");
             }
             const started_at = new Date().toISOString();
-            const terminal = Terminal.safeParse(current.status);
-            const stage = Stage.parse({
-              intent: current.input,
-              result: terminal.success
-                ? current.result ?? {}
-                : { backend: "active" },
-              snapshot: null,
-              started_at,
-              terminal: terminal.success ? terminal.data : null,
-            });
-            if (!terminal.success) {
-              await gateway.project({ status: "running", started_at });
-              if (current.cancel_requested || ctx.signal?.aborted) {
-                stage.terminal = "cancelled";
-                stage.result = {};
-              }
-            }
-            return await write(ctx, "admitted", args, stage);
+            await gateway.project({ status: "running", started_at });
+            const cancelled = current.cancel_requested || ctx.signal?.aborted;
+            return await write(
+              ctx,
+              "admitted",
+              Stage.parse({
+                binding: args,
+                intent: current.input,
+                result: cancelled ? {} : { backend: "active" },
+                snapshot: null,
+                started_at,
+                terminal: cancelled ? "cancelled" : null,
+              }),
+            );
           } catch {
             throw new Error("database.clone_admission_outcome_unknown");
           }
         },
       },
-      export: step("exported", async (s, args, ctx) => {
+      export: step("exported", "admitted", async (s, ctx) => {
         if (s.intent.variant === "sqlite_remote") {
           s.snapshot = await files.exportSnapshot(
             s.intent.source,
             ctx,
-            `snapshot-${args.run_id}`,
+            `snapshot-${s.binding.run_id}`,
             sqliteInvoke,
             ctx.signal,
           );
         }
-      }),
-      prepare: step("prepared", async (s, args, ctx) => {
+      }, true),
+      prepare: step("prepared", "exported", async (s, ctx) => {
         if (s.intent.variant === "mysql") {
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
+          const gateway = new GatewayOperation(makeHttp(ctx), s.binding);
           s.result = await prepareMysqlClone(
             s.intent.mysql,
             (use) => gateway.withPrivateMaterial(use),
@@ -262,9 +331,9 @@ export function clone(
           await sqlite(s, "prepare", ctx);
         }
       }),
-      apply: step("applied", async (s, args, ctx) => {
+      apply: step("applied", "prepared", async (s, ctx) => {
         if (s.intent.variant === "mysql") {
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
+          const gateway = new GatewayOperation(makeHttp(ctx), s.binding);
           s.result = await copyMysqlClone(
             s.intent.mysql,
             (use) => gateway.withPrivateMaterial(use),
@@ -291,53 +360,33 @@ export function clone(
           );
         }
       }),
-      cleanup: {
-        description:
-          "Remove the source export without changing the copy result",
-        arguments: StagedArgs,
-        execute: async (raw: z.infer<typeof StagedArgs>, ctx: Context) => {
-          try {
-            const args = StagedArgs.parse(raw);
-            if (args.node_id !== args.stage.intent.node_id) {
-              throw new Error(
-                "Wrong clone placement",
-              );
-            }
-            if (
-              args.stage.intent.variant === "sqlite_remote" &&
-              args.stage.snapshot !== null
-            ) {
-              await files.cleanupSnapshot(
-                args.stage.intent.source,
-                sqliteInvoke,
-                ctx.signal,
-              );
-            }
-            return await write(ctx, "cleaned", args, args.stage);
-          } catch {
-            throw new Error("database.clone_cleanup_outcome_unknown");
-          }
-        },
-      },
+      cleanupTarget: cleanup(true),
+      cleanup: cleanup(false),
       project: {
-        description: "Record the saved native outcome",
-        arguments: StagedArgs,
-        execute: async (raw: z.infer<typeof StagedArgs>, ctx: Context) => {
-          const args = StagedArgs.parse(raw);
-          if (args.node_id !== args.stage.intent.node_id) {
-            throw new Error(
-              "Wrong clone placement",
-            );
-          }
-          const result = args.stage.result;
-          const status = args.stage.terminal ??
-            ("error_code" in result ? "failed" : "succeeded");
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
-          await gateway.project({
+        description:
+          "Record the saved copy outcome after both scratch cleanups",
+        arguments: Args,
+        execute: async (raw: z.infer<typeof Args>, ctx: Context) => {
+          const args = Args.parse(raw),
+            admitted = await saved(ctx, "admitted", args);
+          const applied = await read(ctx, "applied", args.run_id);
+          const target = await read(ctx, "target_cleaned", args.run_id),
+            source = await read(ctx, "cleaned", args.run_id);
+          const failure = [applied, target, source].find((s) =>
+            s && "error_code" in s.result
+          )?.result;
+          const result = failure ??
+            (!applied || !target || !source
+              ? { error_code: "database.clone_native_failed" }
+              : applied.result);
+          const status = "error_code" in result
+            ? "failed"
+            : applied?.terminal ?? "succeeded";
+          await new GatewayOperation(makeHttp(ctx), args).project({
             status,
             result,
             error_code: "error_code" in result ? result.error_code : null,
-            started_at: args.stage.started_at,
+            started_at: admitted.started_at,
             finished_at: new Date().toISOString(),
           });
           if (status === "failed") throw new Error("database.clone_failed");

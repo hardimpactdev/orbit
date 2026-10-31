@@ -16,6 +16,7 @@ class Fixture {
   paths: string[] = [];
   outputs: Record<string, unknown>[] = [];
   stage: unknown;
+  resources: Record<string, Record<string, unknown>> = {};
   operation = {
     id: 17,
     kind: "database.clone",
@@ -86,7 +87,9 @@ class Fixture {
         yield new Uint8Array();
       },
     },
+    readResource: (name) => Promise.resolve(this.resources[name] ?? null),
     writeResource: (_spec, name, value) => {
+      this.resources[name] = structuredClone(value);
       this.outputs.push(value);
       this.stage = value;
       return Promise.resolve({ name });
@@ -134,7 +137,8 @@ class Fixture {
       assertEquals((ref as { bytes: number }).bytes, 4096);
       return Promise.resolve();
     },
-    cleanupSnapshot: () => {
+    cleanupSnapshot: (_source, _invoke, signal) => {
+      assertEquals(signal?.aborted, undefined);
       this.events.push("cleanup");
       return Promise.resolve();
     },
@@ -143,25 +147,49 @@ class Fixture {
     await this.behavior.methods.admit.execute(args, this.ctx);
   }
   async step(
-    name: "export" | "prepare" | "apply" | "cleanup" | "project",
+    name:
+      | "export"
+      | "prepare"
+      | "apply"
+      | "cleanupTarget"
+      | "cleanup"
+      | "project",
     stage = this.stage,
   ) {
     const method = this.behavior.methods[name];
-    const parsed = method.arguments.parse({ ...args, stage });
-    return await method.execute(parsed, this.ctx);
+    if (stage !== this.stage && name === "apply") {
+      this.resources[`prepared-${args.run_id}`] = structuredClone(
+        stage as Record<string, unknown>,
+      );
+    }
+    const intent = this.operation.input as { source_node_id: number };
+    return await method.execute({
+      ...args,
+      selected_node_id: ["export", "cleanup"].includes(name)
+        ? intent.source_node_id
+        : args.node_id,
+    }, this.ctx);
   }
 }
 Deno.test("cross-Node clone uses one native export/transfer/install pipeline without child or Gateway relay calls", async () => {
   const f = new Fixture();
   await f.admit();
   for (
-    const name of ["export", "prepare", "apply", "cleanup", "project"] as const
+    const name of [
+      "export",
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+      "project",
+    ] as const
   ) await f.step(name);
   assertEquals(f.events, [
     "export",
     "prepare",
     "transfer",
     "install",
+    "remove",
     "cleanup",
   ]);
   assertEquals(f.operation.status, "succeeded");
@@ -179,7 +207,14 @@ Deno.test("same-Node SQLite clone uses the local SQLite action without export", 
   (i.source as Record<string, unknown>).node_id = 209;
   await f.admit();
   for (
-    const name of ["export", "prepare", "apply", "cleanup", "project"] as const
+    const name of [
+      "export",
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+      "project",
+    ] as const
   ) await f.step(name);
   assertEquals(f.events, ["local"]);
   assertEquals(f.operation.status, "succeeded");
@@ -193,7 +228,15 @@ Deno.test("projection loss reuses saved applied output and never replays reset/c
     mysql,
   };
   await f.admit();
-  for (const name of ["export", "prepare", "apply", "cleanup"] as const) {
+  for (
+    const name of [
+      "export",
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+    ] as const
+  ) {
     await f.step(name);
   }
   const effects = f.events.slice();
@@ -224,6 +267,7 @@ Deno.test("uncertain SQLite install recreates incoming from the same immutable s
     "transfer",
     "install",
   ]);
+  await f.step("cleanupTarget");
   await f.step("cleanup");
   await f.step("project");
   assertEquals(f.operation.status, "succeeded");
@@ -233,7 +277,14 @@ Deno.test("cancellation before the first effect does no export or copy", async (
   f.operation.cancel_requested = true;
   await f.admit();
   for (
-    const name of ["export", "prepare", "apply", "cleanup", "project"] as const
+    const name of [
+      "export",
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+      "project",
+    ] as const
   ) await f.step(name);
   assertEquals(f.events, []);
   assertEquals(f.operation.status, "cancelled");
@@ -255,4 +306,73 @@ Deno.test("foreign Operation identity and path escapes stop before any Node effe
     assertEquals(f.events, []);
     assertEquals(f.paths.length, 1);
   }
+});
+
+Deno.test("cancellation after export stops target effects and still cleans the snapshot", async () => {
+  const f = new Fixture();
+  await f.admit();
+  await f.step("export");
+  f.operation.cancel_requested = true;
+  for (
+    const name of [
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+      "project",
+    ] as const
+  ) await f.step(name);
+  assertEquals(f.events, ["export", "cleanup"]);
+  assertEquals(f.operation.status, "cancelled");
+});
+
+Deno.test("clone refuses changed native intent, wrong selected Node and foreign run before effects", async () => {
+  for (const mutation of ["intent", "node", "run"] as const) {
+    const f = new Fixture();
+    await f.admit();
+    if (mutation === "intent") {
+      const stage = f.resources[`admitted-${args.run_id}`] as {
+        intent: { source: { source: string } };
+      };
+      stage.intent.source.source = "/home/orbit/source/other.sqlite";
+    }
+    await assertRejects(() =>
+      f.behavior.methods.export.execute({
+        ...args,
+        run_id: mutation === "run"
+          ? "df53d68d-1f5d-415e-86f3-b282c1be9ca8"
+          : args.run_id,
+        selected_node_id: mutation === "node" ? 99 : 9,
+      }, f.ctx)
+    );
+    assertEquals(f.events, []);
+  }
+});
+Deno.test("clone cleanup completes after cancellation aborts the effect context", async () => {
+  const f = new Fixture();
+  await f.admit();
+  await f.step("export");
+  const paths = f.paths.length;
+  const controller = new AbortController();
+  f.ctx.signal = controller.signal;
+  controller.abort();
+  for (
+    const name of [
+      "prepare",
+      "apply",
+      "cleanupTarget",
+      "cleanup",
+      "project",
+    ] as const
+  ) await f.step(name);
+  assertEquals(f.operation.status, "cancelled");
+  assertEquals(f.events, ["export", "cleanup"]);
+  assertEquals(f.paths.slice(paths).length, 1);
+});
+Deno.test("terminal clone admission refuses without writing checkpoints or running effects", async () => {
+  const f = new Fixture();
+  f.operation.status = "succeeded";
+  await assertRejects(() => f.admit());
+  assertEquals(f.events, []);
+  assertEquals(f.outputs, []);
 });
