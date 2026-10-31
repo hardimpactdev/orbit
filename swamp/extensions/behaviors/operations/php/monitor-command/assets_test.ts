@@ -18,9 +18,16 @@ const runtime = {
     },
 };
 Deno.test("monitor metadata preserves public runtime and resolves one script per action", () => {
-    const args = { run_id: "a075eb23-7ac4-4487-80d1-57a038a92676", runtime };
+    const args = {
+        run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+        target_node_id: 9,
+        runtime,
+    };
     const result = monitorAssets(args, (name) => "/native-cache/" + name);
-    assertEquals(JSON.parse(result.input_json), args);
+    assertEquals(JSON.parse(result.input_json), {
+        run_id: args.run_id,
+        runtime: args.runtime,
+    });
     assertEquals(Object.keys(result.scripts).length, 10);
     assertEquals(result.scripts.publish, "/native-cache/scripts/publish.py");
 });
@@ -40,7 +47,20 @@ Deno.test("monitor metadata refuses operational modes, traversal and env overflo
         assertThrows(() =>
             monitorAssets({
                 run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+                target_node_id: 9,
                 runtime: value,
+            }, () => "unused")
+        );
+    }
+});
+
+Deno.test("proxy effect placement refuses before resolving command assets", () => {
+    for (const target_node_id of [1, 18]) {
+        assertThrows(() =>
+            monitorAssets({
+                run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+                target_node_id,
+                runtime,
             }, () => "unused")
         );
     }

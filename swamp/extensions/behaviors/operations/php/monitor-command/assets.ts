@@ -21,7 +21,13 @@ export const RuntimeInput = z.object({
         unit: Text,
     }).strict(),
 }).strict();
-const Args = z.object({ run_id: z.uuid(), runtime: RuntimeInput }).strict();
+const Args = z.object({
+    run_id: z.uuid(),
+    target_node_id: z.number().int().positive().refine((id) =>
+        id !== 1 && id !== 18
+    ),
+    runtime: RuntimeInput,
+}).strict();
 const names = [
     "stage",
     "validate",
@@ -39,7 +45,10 @@ export function monitorAssets(
     extensionFile: (name: string) => string,
 ) {
     const args = Args.parse(raw);
-    const input_json = JSON.stringify(args);
+    const input_json = JSON.stringify({
+        run_id: args.run_id,
+        runtime: args.runtime,
+    });
     if (new TextEncoder().encode(input_json).length > 65536) {
         throw new Error("php.monitor_input_too_large");
     }
