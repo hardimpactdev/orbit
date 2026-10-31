@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Operations;
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use Illuminate\Validation\Validator;
@@ -12,10 +14,15 @@ final class DirectOperationPrivateRequest extends DirectOperationRequest
 {
     public function authorize(): bool
     {
-        parent::authorize();
+        $peer = $this->peerNodeId();
         $operation = $this->route('operation');
-        if (! $operation instanceof Operation || $operation->node_id !== $this->peerNodeId()) {
-            throw new ResourceOperationException('operation.executor_forbidden', 'Private transport requires the Operation Node.', 403);
+        if ($operation instanceof Operation) {
+            app(DirectOperationPrivateBindings::class)->assertParticipant($operation, $peer);
+            $definition = app(DirectOperation::class)->definition($operation->kind);
+            $transport = $this->isMethod('GET') ? 'private_material' : 'secret_outputs';
+            if ($operation->node_id !== $peer && ($definition[$transport] ?? []) === []) {
+                throw new ResourceOperationException('operation.executor_forbidden', 'This Node has no declared private transport.', 403);
+            }
         }
 
         return true;
