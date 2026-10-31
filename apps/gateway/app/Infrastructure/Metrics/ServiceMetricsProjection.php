@@ -35,6 +35,19 @@ final readonly class ServiceMetricsProjection
         $item = $this->exporters->forNode($metricsNode, $node);
         $selected = $enabled && ($item?->selection->selected ?? false);
         $node = $item->node ?? $node;
+
+        return $this->project($node, $selected);
+    }
+
+    public function forEnrollment(Node $metricsNode, Node $candidate, bool $enabled = true): ServiceMetricsNode
+    {
+        $item = $this->exporters->forEnrollment($metricsNode, $candidate);
+
+        return $this->project($item->node ?? $candidate, $enabled && ($item?->selection->selected ?? false));
+    }
+
+    private function project(Node $node, bool $selected): ServiceMetricsNode
+    {
         $node->loadMissing('roles');
         $roles = $node->roles->filter(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role))->pluck('role');
         $caddy = $selected && $roles->contains(RoleName::Ingress);

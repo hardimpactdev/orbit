@@ -106,6 +106,11 @@ it('uses the direct node projection and retains its firewall expectations', func
             return [];
         }
 
+        public function forEnrollment(Node $metricsNode, Node $candidate): ?MetricsExporterProjectionItem
+        {
+            return $this->forNode($metricsNode, $candidate);
+        }
+
         public function forNode(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem
         {
             $this->nodeCalls[] = [$metricsNode->id, $node->id];

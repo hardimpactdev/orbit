@@ -65,7 +65,12 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
             throw new ResourceOperationException('operation.execution_forbidden', 'The private Metrics runtime belongs to its active native root.', 422);
         }
         $node = Node::query()->findOrFail($id);
-        if ($node->status !== LifecycleStatus::Active || $node->wireguard_ip !== ($plan['metrics_address'] ?? null)) {
+        $candidate = $operation->kind === 'node.add' ? MetricsEnrollmentCandidate::forOperation($operation, $plan, $node) : null;
+        if ($operation->kind === 'node.add' && ! NodeRole::query()->whereKey($plan['assignment_id'])->where('node_id', $id)
+            ->where('role', RoleName::Metrics)->whereIn('status', $candidate === null ? [LifecycleStatus::Active, LifecycleStatus::Provisioning] : [LifecycleStatus::Provisioning])->exists()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The enrollment Metrics assignment is not provisioning.', 422);
+        }
+        if ($candidate === null && ($node->status !== LifecycleStatus::Active || $node->wireguard_ip !== ($plan['metrics_address'] ?? null))) {
             throw new ResourceOperationException('metrics.snapshot_changed', 'The Metrics owner changed before runtime commit.', 409);
         }
         if ($path === null && ! hash_equals(ValidatedData::string($plan['digest']), ValidatedData::string($this->capture->capture()['digest']))) {
@@ -73,6 +78,9 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
         }
         $password = $path === null ? $this->credentials->passwordForConvergence($node)
             : $this->settings->get(new SettingScope(SettingScopeType::Node, $id), NativeMetricsCredentialManager::ActivePasswordKey);
+        if ($candidate !== null && $password === null) {
+            $password = $this->credentials->passwordForConvergence($candidate);
+        }
         if (! is_string($password) || $password === '') {
             throw new ResourceOperationException('metrics.credentials_missing', 'The recorded Grafana credential is unavailable.', 409);
         }
@@ -87,6 +95,7 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
     private function parentPath(Operation $operation): ?string
     {
         return match ($operation->kind) {
+            'node.add' => '_enrollment.metrics_fleet',
             'node.role_add', 'node.role_converge' => '_role.metrics_fleet',
             'node.role_remove' => '_role_remove.metrics_fleet',
             'node.role_relocate' => '_relocate.metrics_fleet',
