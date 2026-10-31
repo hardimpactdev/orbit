@@ -3,21 +3,30 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskProvisionProjection;
+use App\Domain\Tasks\TaskProvisionWorkflowInputs;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Instance;
@@ -27,13 +36,14 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
-    $this->host = Node::query()->create(['name' => 'provision-host', 'user' => 'nckrtl', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '192.0.2.13']);
+    $this->host = Node::query()->forceCreate(['id' => 91, 'name' => 'provision-host', 'user' => 'nckrtl', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.13', 'public_ssh_host' => '192.0.2.13']);
     $this->gateway = Node::query()->create(['name' => 'provision-gateway', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14']);
     $this->gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->host->id)], 'devClusterId' => null,
@@ -215,3 +225,112 @@ it('refuses missing current recipe images without admission and permits the same
         ->and(count($this->socket->sent))->toBe(1);
 
 });
+
+/** @return array{0: Instance, 1: array<string, mixed>} */
+function taskCommandProvisionAllocation(Task $group, TaskVm $vm): array
+{
+    return app(TaskVmEnrollmentIntent::class)->admit(fn (): array => DB::transaction(function () use ($group, $vm): array {
+        app(AllocateTaskVmAction::class)->capture($group);
+        $vm->refresh();
+        $allocation = app(TaskVmProvisionIntent::class)->capture($vm);
+        $workspace = Instance::query()->create([
+            'project_id' => $group->project_id, 'node_id' => $vm->node_id, 'name' => 'task-'.$group->id,
+            'source_layout' => 'checkout', 'source_prepare_id' => 'task-command-fixture',
+            'checkout_path' => '/home/orbit/apps/native-provision/workspace', 'root' => null,
+            'branch_override' => 'task-'.$group->id, 'task_workspace_routed' => false,
+            'task_workspace_owner_id' => $group->id, 'status' => 'reserved', 'first_setup_pending' => true,
+        ]);
+
+        return [$workspace, $allocation];
+    }));
+}
+
+it('composes Tasks command inputs with full frozen setup commands and canonical VM copies without another admission', function (): void {
+    config(['swamp.run_token' => 'synthetic-start-token', 'swamp.ca_path' => '/public/root.pem', 'swamp.vault_server' => 'wss://tasks-command.test']);
+    app(ModelKeyIssuer::class)->shouldReceive('privateMaterial')->once()->andReturn([
+        'management_key' => 'synthetic-management-key', 'anchor_key' => str_repeat('2', 64),
+    ]);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->times(4)->andReturn(new CommandResult(0, '{}', '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+    $steps = app(ProjectLifecycleStepStore::class);
+    $steps->create($this->project, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first', 30), null, null);
+    $steps->create($this->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second', 30), null, null);
+    [$workspace, $allocation] = taskCommandProvisionAllocation($this->group, $this->vm);
+
+    $inputs = app(TaskProvisionWorkflowInputs::class)->capture($this->group, $workspace, $this->vm, $allocation);
+    $steps->update($this->project, LifecyclePhase::Setup, 'first', 'printf changed', null, null, null, true, false);
+
+    expect($inputs['intent'])->toMatchArray(['group_id' => $this->group->id, 'task_vm_id' => $this->vm->id,
+        'node_id' => $this->host->id, 'guest_node_id' => $this->vm->node_id, 'instance_id' => $workspace->id,
+        'repository' => $this->project->repository_url, 'repository_identity' => 'github.com/example/provision']);
+    expect($inputs['intent']['workspace']['setup']['steps'])->toBe([
+        ['name' => 'first', 'command' => 'printf first', 'timeout_seconds' => 30, 'command_digest' => hash('sha256', 'printf first')],
+        ['name' => 'second', 'command' => 'printf second', 'timeout_seconds' => 30, 'command_digest' => hash('sha256', 'printf second')],
+    ]);
+    expect($inputs['execution_secrets']['pi_token'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'task-vm-pi-token-'.$this->vm->id]);
+    expect(array_keys($inputs['execution_secrets']))->toBe(['model_key', 'model_router_management', 'model_router_anchor', 'pi_token']);
+    expect(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain($this->vm->model_key, $this->vm->pi_token,
+        'synthetic-management-key', str_repeat('2', 64), '$secret', 'private_bindings', 'installation', 'git_read');
+    expect(Operation::query()->count())->toBe(0)->and(TaskVm::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
+    expect($this->socket->sent)->toBe([]);
+});
+
+it('refuses mismatched Tasks workspace inputs before any execution-copy write', function (string $field, mixed $value): void {
+    [$workspace, $allocation] = taskCommandProvisionAllocation($this->group, $this->vm);
+    $workspace->setAttribute($field, $value);
+    app()->instance(ProcessRunner::class, Mockery::mock(ProcessRunner::class));
+
+    expect(fn () => app(TaskProvisionWorkflowInputs::class)->capture($this->group, $workspace, $this->vm, $allocation))
+        ->toThrow(ResourceOperationException::class, 'same admitted group');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+})->with([
+    'foreign group' => ['task_workspace_owner_id', 999999],
+    'foreign node' => ['node_id', 999999],
+    'foreign project' => ['project_id', 999999],
+    'worktree' => ['source_layout', 'worktree'],
+    'other branch' => ['branch_override', 'other'],
+    'escaped checkout' => ['checkout_path', '/home/orbit/apps/../workspace'],
+    'missing prepare identity' => ['source_prepare_id', null],
+]);
+
+it('refuses a secret-bearing setup command before synchronizing any VM execution copy', function (): void {
+    [$workspace, $allocation] = taskCommandProvisionAllocation($this->group, $this->vm);
+    app(ProjectLifecycleStepStore::class)->create($this->project, LifecyclePhase::Setup,
+        new LifecycleStep('unsafe', 'printf '.$this->vm->pi_token, 30), null, null);
+    app()->instance(ProcessRunner::class, Mockery::mock(ProcessRunner::class));
+
+    expect(fn () => app(TaskProvisionWorkflowInputs::class)->capture($this->group, $workspace, $this->vm, $allocation))
+        ->toThrow(ResourceOperationException::class, 'no secret values');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+});
+
+it('refuses foreign or proxy placements in the Tasks command envelope before copying secrets', function (string $field, int $value): void {
+    [$workspace, $allocation] = taskCommandProvisionAllocation($this->group, $this->vm);
+    $allocation[$field] = $value;
+    app()->instance(ProcessRunner::class, Mockery::mock(ProcessRunner::class));
+
+    expect(fn () => app(TaskProvisionWorkflowInputs::class)->capture($this->group, $workspace, $this->vm, $allocation))
+        ->toThrow(ResourceOperationException::class, 'same admitted group');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+})->with([
+    'foreign allocation' => ['task_vm_id', 999999],
+    'foreign guest' => ['guest_node_id', 999999],
+    'vpn proxy' => ['node_id', 1],
+    'usexit proxy' => ['node_id', 18],
+]);
+
+it('refuses unsafe public source intent before copying any VM secret', function (string $field, mixed $value): void {
+    [$workspace, $allocation] = taskCommandProvisionAllocation($this->group, $this->vm);
+    $this->project->setAttribute($field, $value);
+    $this->group->setRelation('project', $this->project);
+    app()->instance(ProcessRunner::class, Mockery::mock(ProcessRunner::class));
+
+    expect(fn () => app(TaskProvisionWorkflowInputs::class)->capture($this->group, $workspace, $this->vm, $allocation))
+        ->toThrow(ResourceOperationException::class, 'same admitted group');
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+})->with([
+    'repository credentials' => ['repository_url', 'https://token@github.com/example/provision.git'],
+    'option branch' => ['default_branch', '--other'],
+    'missing branch' => ['default_branch', null],
+]);

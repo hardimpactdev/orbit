@@ -111,6 +111,8 @@ Full capacity or a missing promoted image for the current recipe returns HTTP 40
 
 The native parent currently supports unrouted workspaces without Project Process or Schedule definitions. Other workspaces return `operation.kind_unavailable` before reserving capacity. It issues the existing Node worker credentials itself; caller-supplied worker credentials are unavailable for this parent.
 
+For command steps, the Tasks adapter composes an already captured VM allocation through the canonical VM composer. It adds the group's exact workspace and the complete commands from the Project's ordered setup list. Commands with secret values refuse before vault synchronization. The adapter does not allocate another VM, start an Operation, or replace the outer admission fence and transaction for model keys. Provision through command steps stays inactive until the shared provider, enrollment and workspace steps are available together; inputs alone do not enable that root.
+
 Success leaves the group `running` and its workspace `source_resolved`. The task branch starts at the Project's default branch. No subtask or check starts. The operation result includes `{ instance_id, node_id, starting_commit, analysis_base }`, naming the workspace Instance, guest Node, start commit and immutable analysis pin. The operation stays running until both VM enrollment and workspace setup finish. A failed native run ends the group `failed`; cancellation ends it `cancelled`. Neither result claims that the VM was destroyed. Cleanup remains a separate native operation.
 
 ##### Optional Swamp worker
