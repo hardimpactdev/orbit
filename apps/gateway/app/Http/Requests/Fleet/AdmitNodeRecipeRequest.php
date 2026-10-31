@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Fleet;
 
-use App\Http\Requests\Operations\ExecutorRequest;
 use Closure;
+use Illuminate\Foundation\Http\FormRequest;
 
-final class AdmitNodeRecipeRequest extends ExecutorRequest
+final class AdmitNodeRecipeRequest extends FormRequest
 {
     /** @return array<string, mixed> */
     public function rules(): array
