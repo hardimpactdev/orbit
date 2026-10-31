@@ -61,19 +61,21 @@ async function steps(
   digest: unknown,
   key: string = phase,
 ): Promise<Failure | null> {
-  const result = StepListResult.parse(
-    await s.child({
-      key,
-      kind: "instance.run_steps",
-      node_id: s.nodeId,
-      input: {
-        instance_id: instanceId,
-        list: phase,
-        source: "project",
-        configuration_digest: z.string().regex(/^[0-9a-f]{64}$/).parse(digest),
-      },
-    }),
-  );
+  const receipt = await s.child({
+    key,
+    kind: "instance.run_steps",
+    node_id: s.nodeId,
+    input: {
+      instance_id: instanceId,
+      list: phase,
+      source: "project",
+      configuration_digest: z.string().regex(/^[0-9a-f]{64}$/).parse(digest),
+    },
+  });
+  if (receipt.error_code === "operation.cancelled") {
+    throw new ExecutorError("operation.cancelled");
+  }
+  const result = StepListResult.parse(receipt);
   if (result.outcome === "succeeded") return null;
   return {
     outcome: result.outcome,

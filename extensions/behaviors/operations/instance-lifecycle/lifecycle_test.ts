@@ -241,6 +241,24 @@ Deno.test("registration runs setup only when it was requested", async () => {
   }
 });
 
+Deno.test("a cancelled unstarted teardown ends its parent without requiring a step result", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input.members = [{
+    instance_id: 501,
+    route_id: null,
+    run_teardown: true,
+    teardown_digest: "b".repeat(64),
+  }];
+  f.results.set("teardown-501", { error_code: "operation.cancelled" });
+  assertEquals(await lifecycle(f), {
+    status: "cancelled",
+    result: {},
+    error_code: "operation.cancelled",
+  });
+  assertEquals(f.calls, ["removal-inspect", "teardown-501"]);
+});
+
 Deno.test("teardown refusal stops removal before acceptance or Route withdrawal", async () => {
   const f = new Fixture();
   f.kind = "instance.destroy";

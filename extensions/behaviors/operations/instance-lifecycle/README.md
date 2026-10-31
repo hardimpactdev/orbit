@@ -45,6 +45,10 @@ Route activation. Clone captures definitions, then installs Processes stopped
 and Schedules disabled through the runtime family. Removal uses those same
 owning families to remove runtime before Route cleanup.
 
+A cancelled, never-started step-list child has no execution result. Its
+cancellation ends the parent before step-result validation; it cannot authorize
+source removal or rollback.
+
 Child admission sends only the stable child key. The Gateway builds its kind,
 Node and input from recorded parent intent. A pending child releases the parent
 lease through the shared wait route, so the workflow ends until the runner can
