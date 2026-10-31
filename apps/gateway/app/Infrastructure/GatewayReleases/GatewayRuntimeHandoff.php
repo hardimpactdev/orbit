@@ -125,7 +125,9 @@ final readonly class GatewayRuntimeHandoff
             $this->releaseUnits->converge();
         });
         // Release switching already stopped the source generation; start consumers on the selected release.
-        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): array => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? ['outcome' => 'none']);
+        $horizon = $this->step('horizon', 'gateway.release_units_failed', fn (): array => $this->withSwampRecovery(
+            fn (): array => $this->horizon?->converge($gateway, fn (): Process => $this->scheduler->process($gateway)) ?? ['outcome' => 'none'],
+        ));
 
         return [
             'caddy' => $caddy['outcome'],
@@ -228,31 +230,40 @@ final readonly class GatewayRuntimeHandoff
                 return ['outcome' => 'unchanged', 'operation_id' => null];
             }
 
-            try {
-                $operation = $this->publishCaddy($gateway);
-            } catch (ResourceOperationException $exception) {
-                if (! in_array($exception->errorCode, ['swamp.start_refused', 'swamp.start_unavailable'], true)) {
-                    throw $exception;
-                }
-                // Named release-runner self-recovery exception. Never retry an uncertain admission.
-                $deadline = ($this->clock)() + 600 * 1_000_000_000;
-                while (($remaining = ($deadline - ($this->clock)()) / 1_000_000_000) > 0) {
-                    if (($this->swampHealthy)(min(5, $remaining))) {
-                        // A second refusal with healthy serve is a real failure, not another wait cycle.
-                        $operation = $this->publishCaddy($gateway);
-
-                        return ['outcome' => 'submitted', 'operation_id' => $operation->id];
-                    }
-                    $remaining = ($deadline - ($this->clock)()) / 1_000_000_000;
-                    if ($remaining > 0) {
-                        ($this->sleep)((int) min(5_000_000, $remaining * 1_000_000));
-                    }
-                }
-                throw $exception;
-            }
+            $operation = $this->withSwampRecovery(fn (): Operation => $this->publishCaddy($gateway));
 
             return ['outcome' => 'submitted', 'operation_id' => $operation->id];
         });
+    }
+
+    /**
+     * @template T
+     *
+     * @param  Closure(): T  $start
+     * @return T
+     */
+    private function withSwampRecovery(Closure $start): mixed
+    {
+        try {
+            return $start();
+        } catch (ResourceOperationException $exception) {
+            if (! in_array($exception->errorCode, ['swamp.start_refused', 'swamp.start_unavailable'], true)) {
+                throw $exception;
+            }
+            // Named release-runner self-recovery exception. Never retry an uncertain admission.
+            $deadline = ($this->clock)() + 600 * 1_000_000_000;
+            while (($remaining = ($deadline - ($this->clock)()) / 1_000_000_000) > 0) {
+                if (($this->swampHealthy)(min(5, $remaining))) {
+                    // A second refusal with healthy serve is a real failure, not another wait cycle.
+                    return $start();
+                }
+                $remaining = ($deadline - ($this->clock)()) / 1_000_000_000;
+                if ($remaining > 0) {
+                    ($this->sleep)((int) min(5_000_000, $remaining * 1_000_000));
+                }
+            }
+            throw $exception;
+        }
     }
 
     private function publishCaddy(Node $gateway): Operation

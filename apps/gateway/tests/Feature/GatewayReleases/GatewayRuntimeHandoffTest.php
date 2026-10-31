@@ -544,6 +544,61 @@ describe('gateway:release:handoff', function (): void {
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe([]);
     });
 
+    it('uses the existing bounded release recovery for Horizon', function (string $outcome): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $gateway = handoff_gateway();
+        handoff_scheduler($gateway);
+        $version = app(NodeCaddyfileRenderer::class)->render($gateway)->version;
+        $path = sys_get_temp_dir().'/horizon-caddy-'.bin2hex(random_bytes(8));
+        symlink('/etc/caddy/orbit-versions/'.$version.'/Caddyfile', $path);
+        $checks = 0;
+        try {
+            [$handoff, , , $builds, , $probe] = runtime_handoff(horizon: app(GatewayHorizon::class), caddyfilePath: $path,
+                swampHealthy: static function (float $timeout) use (&$checks, $outcome): bool {
+                    $checks++;
+                    expect($timeout)->toBeLessThanOrEqual(5);
+
+                    return match ($outcome) {
+                        'recovered' => $checks > 1,
+                        'refused' => true,
+                        'deadline' => false,
+                        default => throw new RuntimeException('Uncertain admission must not probe health.'),
+                    };
+                });
+            if ($outcome === 'uncertain') {
+                $builds->reply = static fn (): array => [];
+            } elseif ($outcome === 'refused') {
+                $builds->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => 'Denied.']]];
+            } else {
+                $builds->onConnect = static function (int $attempt) use ($outcome): void {
+                    if ($outcome !== 'recovered' || $attempt === 1) {
+                        throw new RuntimeException('Serve is down.');
+                    }
+                };
+            }
+
+            if ($outcome === 'recovered') {
+                $result = $handoff->serve();
+                expect($result)->toMatchArray(['caddy' => 'unchanged', 'horizon' => 'submitted'])
+                    ->and(Operation::query()->findOrFail($result['horizon_operation_id'])->status->value)->toBe('running')
+                    ->and(Process::query()->where('name', 'horizon')->sole()->status)->toBe(LifecycleStatus::Provisioning);
+            } else {
+                expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_units_failed');
+            }
+            expect(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(0)
+                ->and(Operation::query()->where('kind', 'process.horizon_handoff')->count())->toBe(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
+                ->and($builds->connections)->toHaveCount(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
+                ->and($checks)->toBe(match ($outcome) {
+                    'recovered' => 2, 'refused' => 1, 'deadline' => 120, default => 0
+                })
+                ->and($probe->time->now())->toBe(match ($outcome) {
+                    'recovered' => 5_000_000_000.0, 'deadline' => 600_000_000_000.0, default => 0.0
+                });
+        } finally {
+            unlink($path);
+        }
+    })->with(['recovered', 'deadline', 'refused', 'uncertain']);
+
     it('fails the serving phase when native Horizon admission is refused', function (): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
