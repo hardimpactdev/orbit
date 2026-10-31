@@ -7,7 +7,6 @@ use App\Domain\Fleet\CliConvergeResult;
 use App\Domain\Fleet\FleetCliChildAdmission;
 use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetOperationExecution;
-use App\Domain\Fleet\PeerDnsOperationCompletion;
 use App\Domain\Fleet\RecipeOperationCompletion;
 use App\Domain\Fleet\RecipePrOperationCompletion;
 use App\Domain\Fleet\RolloutOperationCompletion;
@@ -17,14 +16,6 @@ return (static function (): array {
     $kinds = [
         'fleet.peer_dns' => [
             'executor' => 'swamp',
-            'completion' => PeerDnsOperationCompletion::class,
-            'runs' => [
-                ['transport' => 'agent', 'name' => 'wireguard.inspect-peer-dns', 'input_fields' => ['server'], 'input_values' => []],
-                ['transport' => 'agent', 'name' => 'wireguard.repair-peer-dns', 'input_fields' => ['dns_server', 'public_key', 'domains'], 'input_values' => []],
-            ],
-            'completion_contract' => [
-                'step' => 'peer-dns-verify', 'transport' => 'agent', 'name' => 'wireguard.inspect-peer-dns', 'result' => ['uplink' => true],
-            ],
             'result_fields' => ['state', 'hooks', 'dns', 'domains', 'default_route', 'uplink', 'error_code'],
         ],
     ];
