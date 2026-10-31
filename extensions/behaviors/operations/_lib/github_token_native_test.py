@@ -133,7 +133,7 @@ class GitHubTokenNative(unittest.TestCase):
             (behavior / 'credential-proof.ts').write_text(BEHAVIOR)
             (repo / 'workflows').mkdir()
             (repo / 'workflows/workflow-credential-proof.yaml').write_text(WORKFLOW)
-            sentinel = 'ghs_' + secrets.token_hex(24)
+            sentinel = 'ghs_123_' + secrets.token_hex(12) + '.' + secrets.token_hex(12) + '.' + secrets.token_hex(12)
             env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1',
                        ORBIT_CREDENTIAL_PROOF_SENTINEL=sentinel)
             for key in ('SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN',

@@ -28,7 +28,7 @@ const GitHubCredential = z.object({
     actions: z.literal("read").optional(),
     metadata: z.literal("read").optional(),
   }).strict().refine((value) => Object.keys(value).length > 0),
-  token: z.string().max(2048).regex(/^[A-Za-z0-9_-]+$/),
+  token: z.string().max(2048).regex(/^[A-Za-z0-9_.-]+$/),
   expires_at: z.iso.datetime(),
 }).strict();
 type GitHubGrant = Omit<z.infer<typeof GitHubCredential>, "token">;
