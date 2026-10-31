@@ -17,6 +17,7 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\Schedule;
@@ -49,11 +50,16 @@ final readonly class DirectInstanceDestroyIntent
      */
     private function recordIntent(array $input): array
     {
+        $members = InstanceLifecycleInput::members($input);
+        if (Operation::query()->whereIn('kind', ['instance.destroy', 'instance.destroy_development'])
+            ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
+        }
         $stored = InstanceRemoval::query()->whereKey(ValidatedData::string($input['removal_id']))->first();
         if ($stored?->native_intent !== null) {
             return $this->replay($stored, $input);
         }
-        $members = InstanceLifecycleInput::members($input);
         $ids = ValidatedData::integerList(array_column($members, 'instance_id'));
         if ($members === [] || count(array_unique($ids)) !== count($ids)
             || ! in_array($input['instance_id'] ?? null, $ids, true)
@@ -196,7 +202,9 @@ final readonly class DirectInstanceDestroyIntent
             return $route;
         }, InstanceLifecycleInput::members(['members' => $detail['routes']]));
         if ($input['force'] === true) {
-            $detail['members'] = array_map(static fn (array $member): array => [...$member, 'force' => true],
+            $independent = array_all(InstanceLifecycleInput::members($saved), static fn (array $member): bool => $member['source_layout'] !== 'checkout');
+            $detail['members'] = array_map(static fn (array $member): array => [...$member, 'force' => true,
+                'independent_worktree' => $independent && ValidatedData::object($member['source'])['layout'] === 'worktree'],
                 InstanceLifecycleInput::members(['members' => $detail['members']]));
         }
 

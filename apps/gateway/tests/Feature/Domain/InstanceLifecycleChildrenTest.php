@@ -135,3 +135,24 @@ it('admits normal failed-create removal after a proven native Git refusal', func
     app(InstanceLifecycleExecution::class)->assertCompletion($this->parent,
         OperationOutcome::failed('instance.git_failed'));
 });
+
+it('keeps the admitted native rollback kind after the removed Instance row is gone', function (): void {
+    orbit_test_set_app_placement_role($this->instance->node, false);
+    $this->parent->update(['input' => [...$this->parent->input, 'database_server_id' => null, 'database_clone_source_id' => null],
+        'state' => ['executor_runs' => ['source-resolve' => ['transport' => 'instance_lifecycle',
+            'name' => 'instance.resolve-development-source', 'step' => 'source-resolve', 'result' => ['error_code' => 'instance.git_failed']]]]]);
+    $context = app(InstanceLifecycleChildren::class)->context($this->parent);
+    $intent = array_find($context['children'], static fn (array $intent): bool => $intent['key'] === 'rollback-removal');
+    expect($intent['kind'])->toBe('instance.destroy_development');
+    $child = Operation::query()->create(['kind' => $intent['kind'], 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->parent->node_id, 'input' => $intent['input'], 'status' => 'succeeded']);
+    $snapshot = ['intent' => $intent, 'admitted' => ['parent_operation_id' => $this->parent->id, 'key' => $intent['key'],
+        'kind' => $child->kind, 'node_id' => $child->node_id, 'target_type' => 'instance', 'target_id' => $child->target_id,
+        'input' => $child->input, 'run_constraints' => []]];
+    $child->forceFill(['parent_operation_id' => $this->parent->id, 'child_key' => 'rollback-removal',
+        'child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    $this->instance->delete();
+
+    $remaining = app(InstanceLifecycleChildren::class)->context($this->parent);
+    expect(array_find($remaining['children'], static fn (array $intent): bool => $intent['key'] === 'rollback-removal'))->toBe($intent);
+});

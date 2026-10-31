@@ -66,6 +66,9 @@ final readonly class StartInstanceDestroyAction
         }
 
         return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind): Operation {
+            if (($replay = $this->idempotency->replay($kind)) !== null) {
+                return $replay;
+            }
             $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
 
             return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId, expectedWriter: 'direct');

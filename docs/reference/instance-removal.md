@@ -14,7 +14,14 @@ covers:
 
 # Instance removal
 
-Development removal is one native Swamp workflow, `operation-instance-destroy`. The Gateway records immutable source, runtime and owned-database artifacts and marks the complete member set Removing in the same SQLite IMMEDIATE transaction. The owning database save guard excludes later additions and ownership changes. Native phases stop Schedules, then Processes, then remove databases before source finalization. The Gateway projects records only after the complete bound native result succeeds. There is no destroy executor claim, run registration or Gateway child admission inside that workflow.
+Local development removal without managed databases uses `instance.destroy_development` in one native Swamp workflow, `operation-instance-destroy`. Production and managed-database removal retain their working `instance.destroy` path. The Gateway records immutable source, runtime and owned-database artifacts and marks the complete member set Removing in the same SQLite IMMEDIATE transaction. The owning database save guard excludes later additions and ownership changes. Native phases stop Schedules, then Processes, run teardown, withdraw PHP, Caddy and DNS, and remove databases before source finalization. The Gateway projects records only after the complete bound native result succeeds. There is no destroy executor claim, run registration or Gateway child admission inside that workflow.
+
+A failed direct removal reuses its complete saved admission, including source origin, worktree inventory and database artifacts. A retry never recaptures an owning database artifact. Accepted removal cannot be cancelled. Native removal stops Schedules and Processes before teardown, withdraws Caddy and DNS before database drops, and records the failed native phase without deleting resource rows. Database record projection refuses connections attached to another Instance.
+
+The local development writer uses `instance.destroy_development`. The public remove endpoint selects that kind from stored development placement when no managed database is owned. Production and managed-database removal keep `instance.destroy` until their native replacements are complete. The request kind is resolved before idempotency replay; a saved receipt remains replayable after its target row is removed. Callers cannot select an environment, account or writer.
+
+The retained synchronous caller is Task cancellation or completion through `RemoveTaskWorkspaceAction`, `InstanceRemover`, `DestroyInstanceAction::cleanupRuntime`, and `DropOwnedDatabasesAction`. It remains live until the complete Task root replaces it. The executor HTTP removal branch is removed. No synchronous result is replaced by admission-only success.
+
 
 The native result validates every ordered database result against the admitted artifact and sends a SHA-256 digest of the normalized result list. Projection checks the same complete list and digest before invoking the owning database record projector. A missing, duplicate, changed or foreign result cannot delete records. The digest bounds the parent result without dropping a connection from its proof.
 
@@ -296,9 +303,3 @@ A production Instance owns its account, home, and source state. Removal deletes 
 ### The owner check is the directory
 
 The managed user must own the checkout directory and its parent. Checking every file was rejected, because the managed user can delete every entry while the directory stays writable.
-
-A failed direct removal reuses its complete saved admission, including source origin, worktree inventory and database artifacts. A retry never recaptures an owning database artifact. Accepted removal cannot be cancelled. Native removal stops Schedules and Processes before teardown, withdraws Caddy and DNS before database drops, and records the failed native phase without deleting resource rows. Database record projection refuses connections attached to another Instance.
-
-The local development writer uses `instance.destroy_development`. The public remove endpoint selects that kind from stored development placement when no managed database is owned. Production and managed-database removal keep `instance.destroy` until their native replacements are complete. The request kind is resolved before idempotency replay; a saved receipt remains replayable after its target row is removed. Callers cannot select an environment, account or writer.
-
-The retained synchronous caller is Task cancellation or completion through `RemoveTaskWorkspaceAction`, `InstanceRemover`, `DestroyInstanceAction::cleanupRuntime`, and `DropOwnedDatabasesAction`. It remains live until the complete Task root replaces it. The executor HTTP removal branch is removed. No synchronous result is replaced by admission-only success.

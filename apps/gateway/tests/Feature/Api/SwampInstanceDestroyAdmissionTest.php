@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
@@ -13,6 +14,8 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -188,11 +191,10 @@ it('admits a registered worktree set only with force and records worktrees befor
         ->and(InstanceRemoval::query()->count())->toBe($force ? 1 : 0);
 })->with([false, true]);
 
-
 it('keeps managed development removal on its complete working admission without a direct SQL bypass', function (): void {
-    $server = \App\Models\DatabaseServer::query()->create(['slug' => 'dispatch-managed', 'node_id' => $this->node->id,
+    $server = DatabaseServer::query()->create(['slug' => 'dispatch-managed', 'node_id' => $this->node->id,
         'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
-    \App\Models\DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
+    DatabaseConnection::query()->create(['slug' => 'dispatch-managed', 'driver' => 'mysql',
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
     $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
     $this->withHeader('Idempotency-Key', 'managed-destroy');
@@ -203,4 +205,62 @@ it('keeps managed development removal on its complete working admission without 
     expect(app(OperationKinds::class)->directOnly('instance.destroy'))->toBeFalse();
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
     expect(InstanceRemoval::query()->count())->toBe(0);
+});
+
+it('keeps a force checkout cascade with a managed worktree on the working removal kind', function (): void {
+    $worktree = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
+        'name' => 'managed-linked', 'status' => InstanceState::Active, 'checkout_path' => '/srv/apps/removal-proof/managed-linked',
+        'source_layout' => 'worktree', 'branch' => 'managed-linked', 'starting_commit' => str_repeat('a', 40)]);
+    $server = DatabaseServer::query()->create(['slug' => 'cascade-managed', 'node_id' => $this->node->id,
+        'driver' => 'mysql', 'tag' => 'test', 'port' => 3306, 'root_password' => 'fixture-private-password', 'status' => 'active']);
+    DatabaseConnection::query()->create(['slug' => 'cascade-managed', 'driver' => 'mysql',
+        'database_server_id' => $server->id, 'owner_instance_id' => $worktree->id]);
+    $root = ($this->inventory)([$this->instance->checkout_path, $worktree->checkout_path]);
+    $linked = new InstanceSourceInventory(instanceId: $worktree->id, layout: 'worktree', repositoryIdentity: $root->repositoryIdentity,
+        checkoutPath: $worktree->checkout_path, root: 'public', branch: 'managed-linked', startingCommit: str_repeat('b', 40),
+        commonRepositoryPath: $root->commonRepositoryPath, sourceIdentity: '1:2', linkedWorktreePaths: $root->linkedWorktreePaths,
+        digest: str_repeat('d', 64));
+    $this->source->shouldReceive('inspect')->twice()
+        ->andReturnUsing(fn (Instance $instance): InstanceSourceInventory => $instance->id === $worktree->id ? $linked : $root);
+
+    $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy')->json('data.id');
+    expect(array_column(Operation::query()->findOrFail($id)->input['members'], 'instance_id'))->toBe([$worktree->id, $this->instance->id]);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Active);
+    expect($worktree->refresh()->status)->toBe(InstanceState::Active);
+});
+
+it('refuses a second native root with a new key while the accepted removal is queued or running', function (): void {
+    $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
+    $this->withHeader('Idempotency-Key', 'first-root');
+    $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
+    $this->deleteJson($this->path, ['force' => true])->assertAccepted()->assertJsonPath('data.id', $id);
+    $this->withHeader('Idempotency-Key', 'second-root');
+    $this->deleteJson($this->path, ['force' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    Operation::query()->findOrFail($id)->update(['status' => 'running']);
+    $this->withHeader('Idempotency-Key', 'third-root');
+    $this->deleteJson($this->path, ['force' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(1);
+    expect(InstanceRemoval::query()->count())->toBe(1);
+});
+
+it('admits a new native retry after terminal failure using the same immutable source and database admission', function (): void {
+    $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
+    $this->withHeader('Idempotency-Key', 'failed-root');
+    $id = $this->deleteJson($this->path, ['force' => true])->assertAccepted()->json('data.id');
+    $first = Operation::query()->findOrFail($id);
+    $saved = $first->input;
+    app(InstanceDestroyProjection::class)->apply($first, [
+        'run_id' => $first->state['swamp_run_id'], 'status' => 'failed', 'started_at' => '2026-10-31T04:00:00Z',
+        'finished_at' => '2026-10-31T04:00:01Z', 'result' => ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'],
+        'error_code' => 'instance.destroy_failed']);
+    $this->withHeader('Idempotency-Key', 'retry-root');
+
+    $next = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy_development')->json('data.id');
+    expect($next)->not->toBe($id);
+    expect(Operation::query()->findOrFail($next)->input)->toBe($saved);
+    expect(Operation::query()->count())->toBe(2);
+    expect(InstanceRemoval::query()->count())->toBe(1);
+    expect($this->instance->refresh()->status)->toBe(InstanceState::Removing);
 });

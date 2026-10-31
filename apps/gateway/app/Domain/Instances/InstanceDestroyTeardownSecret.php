@@ -9,7 +9,6 @@ use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskGroupEndingIntent;
 use App\Models\Instance;
 use App\Models\Operation;
 
@@ -25,7 +24,7 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
 
     public function targetTypes(): array
     {
-        return ['instance', 'task_group'];
+        return ['instance'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -45,7 +44,7 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
         if ($id !== $this->ownerId($operation) || $key !== ''
-            || $parameter !== ($operation->target_type === 'task_group' ? 'destruction.teardown' : 'teardown')) {
+            || $parameter !== 'teardown') {
             $this->refuse();
         }
         $input = $this->input($operation);
@@ -101,10 +100,6 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
     /** @return array<string, mixed>|null */
     private function input(Operation $operation): ?array
     {
-        if ($operation->target_type === 'task_group') {
-            return TaskGroupEndingIntent::admittedDestruction($operation);
-        }
-
         return $operation->kind === 'instance.destroy_development' && $operation->target_type === 'instance'
             && $operation->target_id === ($operation->input['instance_id'] ?? null) ? $operation->input : null;
     }

@@ -10,7 +10,6 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Domain\Tasks\TaskGroupEndingIntent;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Operation;
@@ -32,7 +31,7 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['instance', 'task_group'];
+        return ['instance'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -59,14 +58,13 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     {
         $project = Project::query()->findOrFail($id);
         $input = $this->input($operation);
-        $task = $operation->target_type === 'task_group';
         $repository = $input['repository'] ?? null;
         try {
             $identity = is_string($repository) ? GitRepositoryIdentity::derive($repository) : null;
         } catch (InvalidArgumentException) {
             $identity = null;
         }
-        if ($input === null || $parameter !== ($task ? 'destruction.git_read' : 'git_read') || ($task && $key !== '') || $id !== $this->ownerId($operation)
+        if ($input === null || $parameter !== 'git_read' || $id !== $this->ownerId($operation)
             || $project->repository_identity !== ($input['repository_identity'] ?? null)
             || $identity !== $project->repository_identity) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Git reference is not owned by this lifecycle intent.', 422);
@@ -81,10 +79,6 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     /** @return array<string, mixed>|null */
     private function input(Operation $operation): ?array
     {
-        if ($operation->target_type === 'task_group') {
-            return TaskGroupEndingIntent::admittedDestruction($operation);
-        }
-
         return in_array($operation->kind, self::InstanceKinds, true) && $operation->target_type === 'instance'
             && $operation->target_id === ($operation->input['instance_id'] ?? null)
             ? $operation->input : null;

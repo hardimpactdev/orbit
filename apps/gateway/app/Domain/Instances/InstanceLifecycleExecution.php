@@ -429,7 +429,7 @@ final readonly class InstanceLifecycleExecution implements OperationFamilyChildr
     private function create(Operation $operation): array
     {
         if ($operation->children()->where('child_key', 'rollback-removal')->where('status', 'succeeded')->exists()) {
-            $this->assertChild($operation, 'rollback-removal', ValidatedData::string($operation->children()->where('child_key', 'rollback-removal')->value('kind')));
+            $this->assertChild($operation, 'rollback-removal', InstanceDestroyKind::forRollback($operation));
             $descriptors = [];
             foreach (ValidatedData::object($operation->state['lifecycle_bindings'] ?? []) as $key => $binding) {
                 $binding = ValidatedData::object($binding);

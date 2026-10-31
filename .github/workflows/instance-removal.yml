@@ -1,0 +1,57 @@
+name: Instance removal regressions
+on:
+  pull_request:
+    paths:
+      - 'apps/gateway/app/Domain/Instances/**'
+      - 'apps/gateway/app/Actions/Instances/**'
+      - 'apps/gateway/app/Actions/DatabaseConnections/**'
+      - 'apps/gateway/app/Domain/DatabaseConnections/**'
+      - 'apps/gateway/app/Models/DatabaseConnection*.php'
+      - 'apps/gateway/app/Models/InstanceRemoval*.php'
+      - 'apps/gateway/app/Actions/Operations/CancelOperationAction.php'
+      - 'apps/gateway/app/Domain/Operations/OperationKinds.php'
+      - 'apps/gateway/app/Http/**'
+      - 'apps/gateway/database/migrations/**'
+      - 'apps/gateway/tests/**'
+      - '.github/workflows/instance-removal.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pest:
+    name: Instance removal Pest
+    runs-on: ubuntu-26.04
+    env:
+      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"},"bearer":{"codeload.github.com":"${{ github.token }}"}}'
+      ORBIT_SWAMP_CHECKOUT: '${{ github.workspace }}/.ci/orbit-swamp'
+      DENO_BIN: deno
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: hardimpactdev/orbit-swamp
+          ref: afc7253ffc800948d6d30442a5255c3fed01bd48
+          path: .ci/orbit-swamp
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: v2.9.8
+      - name: Install Gateway test dependencies
+        run: |
+          cp apps/gateway/.env.example apps/gateway/.env
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist
+      - name: Run removal and admission regressions
+        working-directory: apps/gateway
+        run: >-
+          vendor/bin/pest --compact
+          tests/Feature/DirectInstanceDestroyTest.php
+          tests/Feature/DatabaseOwnedDestructionArtifactTest.php
+          tests/Feature/DatabaseOwnerAdmissionTest.php
+          tests/Feature/Api/SwampInstanceDestroyAdmissionTest.php
+          tests/Feature/Domain/InstanceLifecycleChildrenTest.php
+          tests/Feature/Domain/ProductionInstanceRemovalTest.php

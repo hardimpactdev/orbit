@@ -90,7 +90,7 @@ final readonly class InstanceLifecycleChildren
             $children[] = $this->steps($parent, 'rollback-teardown', $id, 'teardown', $input['teardown_digest']);
         }
         if ($new && $this->canRemoveFailedCreate($parent)) {
-            $children[] = $this->child($parent, 'rollback-removal', InstanceDestroyKind::forInstance(Instance::query()->findOrFail($id)), ['instance_id' => $id, 'force' => true]);
+            $children[] = $this->child($parent, 'rollback-removal', InstanceDestroyKind::forRollback($parent), ['instance_id' => $id, 'force' => true]);
         }
 
         return $children;

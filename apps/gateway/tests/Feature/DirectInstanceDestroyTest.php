@@ -5,24 +5,14 @@ declare(strict_types=1);
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
-use App\Domain\GitHub\GitHubCliToken;
-use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
-use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
-use App\Domain\Operations\DirectOperationResultProjection;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskGroupEndingIntent;
-use App\Domain\Tasks\TaskGroupEndingProjection;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -35,9 +25,6 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Schedule;
-use App\Models\Task;
-use App\Models\TaskComment;
-use App\Models\TaskReviewedCommit;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -498,280 +485,6 @@ it('keeps the complete admitted Route inventory immutable before successful proj
     expect($member->refresh()->route_ids)->toBe([$route->id])->and($member->source_prepared_at)->toBeNull();
 });
 
-it('records canonical destruction inside its actual Task parent without a child', function (string $kind, string $policy, bool $attached): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'End owned workspace',
-        'brief' => 'Remove this owned checkout.', 'status' => TaskGroupStatus::Running]);
-    $this->instance = test_task_workspace($group, ['node_id' => $this->node->id, 'status' => 'reserved',
-        'source_prepare_id' => (string) Str::uuid(), 'checkout_path' => '/srv/apps/destroy-proof/task-cleanup'], $attached);
-
-    $intent = app(TaskGroupEndingIntent::class)->record($group, $kind, $policy, directDestroyFixture($this->instance));
-
-    expect($intent['group_id'])->toBe($group->id)
-        ->and($intent['project_id'])->toBe($this->project->id)
-        ->and($intent['completion_policy'])->toBe($policy)
-        ->and($intent['workspace'])->toBe(['instance_id' => $this->instance->id, 'node_id' => $this->node->id, 'task_vm_id' => null])
-        ->and($intent['destruction']['direct_destroy']['members'][0]['instance_id'])->toBe($this->instance->id)
-        ->and($intent['destruction']['direct_destroy']['node_user'])->toBe($this->node->user)
-        ->and($this->instance->refresh()->status->value)->toBe('removing')
-        ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($group->taskable_id)->toBe($attached ? $this->instance->id : null)
-        ->and(Operation::query()->count())->toBe(0)
-        ->and(InstanceRemoval::query()->count())->toBe(1);
-})->with([['tasks.cancel', 'cancel', true], ['tasks.complete', 'manual', true], ['tasks.complete', 'settle', false]]);
-
-it('records genuinely absent Task workspaces without inventing destruction', function (): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'No workspace',
-        'brief' => 'End a group with no admitted workspace.', 'status' => TaskGroupStatus::Todo]);
-
-    expect(app(TaskGroupEndingIntent::class)->record($group, 'tasks.cancel', 'cancel', null))->toBe([
-        'group_id' => $group->id, 'project_id' => $this->project->id, 'completion_policy' => 'cancel',
-        'workspace' => null, 'destruction' => null, 'preservation' => null,
-    ])->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and(InstanceRemoval::query()->count())->toBe(0)
-        ->and(Operation::query()->count())->toBe(0);
-});
-
-it('refuses inconsistent Task ending policy before recording removal', function (string $kind, string $policy): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Wrong policy',
-        'brief' => 'Keep the workspace.', 'status' => TaskGroupStatus::Running]);
-    $this->instance = test_task_workspace($group, ['node_id' => $this->node->id, 'status' => 'reserved',
-        'source_prepare_id' => (string) Str::uuid(), 'checkout_path' => '/srv/apps/destroy-proof/task-cleanup']);
-
-    expect(fn () => app(TaskGroupEndingIntent::class)->record($group, $kind, $policy, directDestroyFixture($this->instance)))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tasks.workspace_mismatch'));
-    expect(InstanceRemoval::query()->count())->toBe(0)
-        ->and($this->instance->refresh()->status->value)->toBe('reserved');
-})->with([['tasks.cancel', 'manual'], ['tasks.cancel', 'settle'], ['tasks.complete', 'cancel'], ['instance.destroy_development', 'cancel']]);
-
-it('rejects foreign or changed Task destruction identities without marking Removing', function (string $change): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Owned workspace',
-        'brief' => 'Keep other source.', 'status' => TaskGroupStatus::Running]);
-    if ($change !== 'unowned') {
-        $this->instance = test_task_workspace($group, ['node_id' => $this->node->id, 'status' => 'reserved',
-            'source_prepare_id' => (string) Str::uuid(), 'checkout_path' => '/srv/apps/destroy-proof/task-cleanup']);
-    }
-    $snapshot = directDestroyFixture($this->instance);
-    match ($change) {
-        'unowned' => null,
-        'instance' => $snapshot['instance_id']++,
-        'project' => $snapshot['project_id']++,
-        'node' => $snapshot['node_id']++,
-        'force' => $snapshot['force'] = false,
-        'member' => $snapshot['members'][0]['instance_id']++,
-        'cascade' => $snapshot['members'][] = [...$snapshot['members'][0], 'instance_id' => 999999],
-        'environment' => $snapshot['members'][0]['environment'] = 'production',
-    };
-
-    expect(fn () => app(TaskGroupEndingIntent::class)->record($group, 'tasks.cancel', 'cancel', $snapshot))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('tasks.workspace_mismatch'));
-    expect(InstanceRemoval::query()->count())->toBe(0)
-        ->and($this->instance->refresh()->status->value)->toBe('reserved')
-        ->and(Operation::query()->count())->toBe(0);
-})->with(['unowned', 'instance', 'project', 'node', 'force', 'member', 'cascade', 'environment']);
-
-it('projects Task-owned destruction atomically through the actual Task root', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $result = taskEndingResult($parent);
-
-    $projected = app(TaskGroupEndingProjection::class)->execute($parent, $result);
-
-    expect($projected->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($projected->taskable_id)->toBeNull()
-        ->and($parent->kind)->toBe('tasks.cancel')
-        ->and(Operation::query()->count())->toBe(0);
-    $this->assertModelMissing($workspace);
-    $this->assertModelExists($this->instance);
-    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
-
-    expect(app(TaskGroupEndingProjection::class)->execute($parent, $result)->status)->toBe(TaskGroupStatus::Cancelled);
-});
-
-it('keeps retained Task workspaces attached under the admitted completion policy', function (string $policy, string $status): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.complete', $policy);
-    $result = ['group_id' => $group->id, 'group_status' => $status, 'workspace_outcome' => 'retained',
-        'destruction' => null, 'cleanup_error_code' => 'instance.remove_refused', 'preservation' => null];
-
-    $projected = app(TaskGroupEndingProjection::class)->execute($parent, $result);
-
-    expect($projected->status)->toBe($policy === 'manual' ? TaskGroupStatus::Completed : TaskGroupStatus::Running)
-        ->and($projected->taskable_id)->toBe($workspace->id)
-        ->and($projected->assistance_kind->value)->toBe('removal_failure')
-        ->and($workspace->refresh()->status->value)->toBe('removing')
-        ->and(InstanceRemoval::query()->sole()->status->value)->toBe('removing');
-})->with([['manual', 'completed'], ['settle', 'unchanged']]);
-
-it('refuses unproven Task endings before deleting any workspace or association', function (string $change): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.complete', 'settle');
-    $result = taskEndingResult($parent);
-    match ($change) {
-        'parent-kind' => $parent->kind = 'instance.destroy_development',
-        'parent-target' => $parent->target_id++,
-        'parent-status' => $parent->status = 'failed',
-        'result-group' => $result['group_id']++,
-        'result-policy' => $result['group_status'] = 'cancelled',
-        'result-absent' => $result['workspace_outcome'] = 'absent',
-        'partial' => $result['destruction']['instance_ids'] = [],
-        'extra' => $result['unexpected'] = true,
-    };
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, $result))->toThrow(ResourceOperationException::class);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($group->taskable_id)->toBe($workspace->id)
-        ->and($workspace->refresh()->status->value)->toBe('removing')
-        ->and(InstanceRemoval::query()->sole()->status->value)->toBe('removing');
-})->with(['parent-kind', 'parent-target', 'parent-status', 'result-group', 'result-policy', 'result-absent', 'partial', 'extra']);
-
-it('refuses to project a late attached workspace as absent', function (): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Late workspace',
-        'brief' => 'Keep late source.', 'status' => TaskGroupStatus::Running]);
-    $input = app(TaskGroupEndingIntent::class)->record($group, 'tasks.cancel', 'cancel', null);
-    $parent = new Operation(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id,
-        'status' => 'succeeded', 'input' => $input]);
-    $workspace = test_task_workspace($group, ['node_id' => $this->node->id, 'status' => 'reserved']);
-    $result = ['group_id' => $group->id, 'group_status' => 'cancelled', 'workspace_outcome' => 'absent',
-        'destruction' => null, 'cleanup_error_code' => null, 'preservation' => null];
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, $result))->toThrow(ResourceOperationException::class);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->taskable_id)->toBe($workspace->id);
-    $this->assertModelExists($workspace);
-});
-
-it('projects an absent Task workspace only when it is still absent', function (): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Nothing to remove',
-        'brief' => 'End a group without a workspace.', 'status' => TaskGroupStatus::Running]);
-    $input = app(TaskGroupEndingIntent::class)->record($group, 'tasks.cancel', 'cancel', null);
-    $parent = new Operation(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id,
-        'status' => 'succeeded', 'input' => $input]);
-    $result = ['group_id' => $group->id, 'group_status' => 'cancelled', 'workspace_outcome' => 'absent',
-        'destruction' => null, 'cleanup_error_code' => null, 'preservation' => null];
-
-    expect(app(TaskGroupEndingProjection::class)->execute($parent, $result)->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and(InstanceRemoval::query()->count())->toBe(0);
-    $this->assertModelExists($this->instance);
-});
-
-it('does not treat local source proof as Task VM deletion proof', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $input = $parent->input;
-    $input['workspace']['task_vm_id'] = 42;
-    $parent->input = $input;
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, taskEndingResult($parent)))
-        ->toThrow(ResourceOperationException::class);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($group->taskable_id)->toBe($workspace->id)
-        ->and(InstanceRemoval::query()->sole()->status->value)->toBe('removing');
-    $this->assertModelExists($workspace);
-});
-
-it('hydrates canonical Git and teardown only inside the actual Task parent scope', function (string $kind, string $policy): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, $kind, $policy, true);
-    $parent->status = 'running';
-    $this->project->update(['source_access' => 'gh_cli']);
-    $token = 'ghp_task_destroy_private_value_893442781';
-    $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldReceive('token')->once()->andReturn($token);
-    app()->instance(GitHubCliToken::class, $cli);
-    $input = $parent->input['destruction'];
-
-    $material = app(OperationSecrets::class)->hydrate($parent, '', ['destruction' => [
-        'git_read' => $input['git_read'], 'teardown' => $input['teardown'],
-    ]], ['destruction.git_read' => 'instance.lifecycle_git', 'destruction.teardown' => 'instance.destroy_teardown']);
-
-    expect($material['input']['destruction']['git_read'])->toBeInstanceOf(GitReadEnvironment::class)
-        ->and($material['input']['destruction']['git_read']->githubToken())->toBe($token)
-        ->and($material['input']['destruction']['teardown']['members'][0]['instance_id'])->toBe($workspace->id)
-        ->and($material['input']['destruction']['teardown']['members'][0]['steps'][0]['command'])->toBe($this->command)
-        ->and($parent->kind)->toBe($kind)->and($parent->target_id)->toBe($group->id)
-        ->and(json_encode($parent->input))->not->toContain($token)->not->toContain($this->command)
-        ->and(Operation::query()->count())->toBe(0);
-    expect(app(OperationSecrets::class)->redact(['git' => $token, 'script' => $this->command], $material['values']))
-        ->toBe(['git' => '[REDACTED]', 'script' => '[REDACTED]']);
-})->with([['tasks.cancel', 'cancel'], ['tasks.complete', 'manual']]);
-
-it('refuses Task material after its exact ownership or admitted Node changes', function (string $change): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel', true);
-    $input = $parent->input;
-    match ($change) {
-        'kind' => $parent->kind = 'tasks.handoff',
-        'target' => $parent->target_id++,
-        'parent-node' => $parent->node_id++,
-        'group' => $input['group_id']++,
-        'project' => $input['project_id']++,
-        'workspace' => $input['workspace']['instance_id']++,
-        'workspace-node' => $input['workspace']['node_id']++,
-        'destruction-project' => $input['destruction']['project_id']++,
-        'destruction-node' => $input['destruction']['node_id']++,
-        'member' => $input['destruction']['members'][0]['instance_id']++,
-        'policy' => $input['completion_policy'] = 'manual',
-    };
-    $parent->input = $input;
-    $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldNotReceive('token');
-    app()->instance(GitHubCliToken::class, $cli);
-
-    expect(app(InstanceLifecycleGitSecret::class)->ownerId($parent))->toBeNull()
-        ->and(app(InstanceDestroyTeardownSecret::class)->ownerId($parent))->toBeNull();
-    expect(fn () => app(InstanceLifecycleGitSecret::class)->resolve($parent, $this->project->id, '', 'destruction.git_read'))
-        ->toThrow(ResourceOperationException::class);
-    expect(fn () => app(InstanceDestroyTeardownSecret::class)->resolve($parent, $workspace->id, '', 'destruction.teardown'))
-        ->toThrow(ResourceOperationException::class);
-})->with(['kind', 'target', 'parent-node', 'group', 'project', 'workspace', 'workspace-node', 'destruction-project', 'destruction-node', 'member', 'policy']);
-
-it('refuses top-level or child-key material requests from a Task parent', function (string $key, string $git, string $teardown): void {
-    [, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel', true);
-    $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldNotReceive('token');
-    app()->instance(GitHubCliToken::class, $cli);
-
-    expect(fn () => app(InstanceLifecycleGitSecret::class)->resolve($parent, $this->project->id, $key, $git))
-        ->toThrow(ResourceOperationException::class);
-    expect(fn () => app(InstanceDestroyTeardownSecret::class)->resolve($parent, $workspace->id, $key, $teardown))
-        ->toThrow(ResourceOperationException::class);
-})->with([['', 'git_read', 'teardown'], ['child-cleanup', 'destruction.git_read', 'destruction.teardown']]);
-
-it('refuses a Task kind disguised as an Instance-root material request', function (): void {
-    [, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel', true);
-    $parent->target_type = 'instance';
-    $parent->target_id = $workspace->id;
-    $parent->input = $parent->input['destruction'];
-    $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldNotReceive('token');
-    app()->instance(GitHubCliToken::class, $cli);
-
-    expect(app(InstanceLifecycleGitSecret::class)->ownerId($parent))->toBeNull()
-        ->and(app(InstanceDestroyTeardownSecret::class)->ownerId($parent))->toBeNull();
-    expect(fn () => app(InstanceLifecycleGitSecret::class)->resolve($parent, $this->project->id, '', 'git_read'))
-        ->toThrow(ResourceOperationException::class);
-    expect(fn () => app(InstanceDestroyTeardownSecret::class)->resolve($parent, $workspace->id, '', 'teardown'))
-        ->toThrow(ResourceOperationException::class);
-});
-
-/** @return array{Task, Instance, Operation} */
-function taskEndingFixture(Instance $example, string $kind, string $policy, bool $withTeardown = false): array
-{
-    $group = Task::topLevel()->create(['project_id' => $example->project_id, 'title' => 'Project owned cleanup',
-        'brief' => 'Remove exactly its owned workspace.', 'status' => TaskGroupStatus::Running]);
-    $workspace = test_task_workspace($group, ['node_id' => $example->node_id, 'status' => 'reserved',
-        'source_prepare_id' => (string) Str::uuid(), 'checkout_path' => '/srv/apps/destroy-proof/task-cleanup']);
-    $snapshot = directDestroyFixture($workspace);
-    $snapshot['members'][0]['run_teardown'] = $withTeardown;
-    $input = app(TaskGroupEndingIntent::class)->record($group, $kind, $policy, $snapshot);
-
-    return [$group, $workspace, new Operation(['kind' => $kind, 'target_type' => 'task_group',
-        'target_id' => $group->id, 'node_id' => $workspace->node_id, 'status' => 'succeeded', 'input' => $input])];
-}
-
-/** @return array<string, mixed> */
-function taskEndingResult(Operation $parent): array
-{
-    return ['group_id' => $parent->target_id, 'group_status' => $parent->kind === 'tasks.cancel' ? 'cancelled' : 'completed',
-        'workspace_outcome' => 'removed', 'destruction' => directDestroyResult($parent->input['destruction']), 'cleanup_error_code' => null, 'preservation' => null];
-}
-
-/** @param array<string,mixed> $intent
- * @param  list<int>  $databaseIds
- * @return array<string,mixed>
- */
 function directDestroyResult(array $intent, array $databaseIds = []): array
 {
     $results = array_map(static fn (array $artifact): array => [
@@ -803,144 +516,6 @@ function directDestroyFixture(Instance $instance): array
             'origin' => $instance->project->repository_url,
         ]]];
 }
-
-it('uses the fixed native Git wire for an actual Task private HTTP read', function (): void {
-    [, , $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel', true);
-    $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $parent->status = 'running';
-    $parent->state = ['task_ending_writer' => 'direct', 'swamp_run_id' => $run];
-    $parent->save();
-    $gateway = $this->markAsGateway(Node::query()->create(['name' => 'private-task-gateway', 'status' => 'active',
-        'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
-    $this->node->accessibleNodes()->attach($gateway);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
-    config(['operation_executor.worker_node_ids' => [], 'dependency_detection.services_node_id' => $gateway->id]);
-    $declaration = new class implements DirectOperationContribution
-    {
-        public function definitions(): array
-        {
-            return ['tasks.cancel' => ['workflow' => 'operation-task-group-ending', 'writer_config' => 'swamp.direct_writers',
-                'writer_state' => 'task_ending_writer', 'projection' => DirectOperationResultProjection::class,
-                'private_material' => ['destruction.git_read' => 'instance.lifecycle_git']]];
-        }
-    };
-    app()->instance(DirectOperation::class, new DirectOperation([$declaration]));
-    $this->project->update(['source_access' => 'gh_cli']);
-    $token = 'ghp_synthetic_native_wire_probe_763182';
-    $cli = Mockery::mock(GitHubCliToken::class);
-    $cli->shouldReceive('token')->once()->andReturn($token);
-    app()->instance(GitHubCliToken::class, $cli);
-
-    $this->getJson('/api/v1/direct-operations/'.$parent->id.'/private-material?run_id='.$run)
-        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-        ->assertJsonPath('data.destruction.git_read', ['github_token' => $token]);
-});
-
-it('captures the exact unpublished approved commit and remote branch before Task removal', function (bool $incoming): void {
-    $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Keep approved work',
-        'brief' => 'Admit exact preservation.', 'status' => TaskGroupStatus::Running]);
-    $workspace = test_task_workspace($group, ['node_id' => $this->node->id, 'status' => 'reserved',
-        'source_prepare_id' => (string) Str::uuid(), 'checkout_path' => '/srv/apps/destroy-proof/task-preservation']);
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Approved work', 'brief' => 'Preserve the approved commit.', 'status' => 'completed', 'position' => 0]);
-    if ($incoming) {
-        $group->update(['pr_branch' => 'incoming-reviewed-branch']);
-        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => 'orbit_push']);
-    } else {
-        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id,
-            'type' => TaskCommentType::Approved, 'commit_sha' => str_repeat('a', 40), 'body' => 'Keep this approved commit.', 'author' => 'reviewer', 'posted_at' => now()]);
-    }
-
-    $intent = app(TaskGroupEndingIntent::class)->record($group, 'tasks.cancel', 'cancel', directDestroyFixture($workspace));
-
-    expect($intent['preservation'])->toBe(['commit' => str_repeat('a', 40), 'branch' => $incoming ? 'incoming-reviewed-branch' : 'task-'.$group->id]);
-    expect($task->refresh()->review_handled_comment_id)->toBeNull();
-})->with(['approval' => false, 'reviewed' => true]);
-
-it('rejects Task deletion without the exact admitted preservation proof', function (string $change): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $input = $parent->input;
-    $input['preservation'] = ['commit' => str_repeat('a', 40), 'branch' => 'task-'.$group->id];
-    $parent->input = $input;
-    $result = taskEndingResult($parent);
-    $result['preservation'] = ['commit' => str_repeat('a', 40), 'branch' => 'task-'.$group->id, 'pushed' => true];
-    match ($change) {
-        'missing' => $result['preservation'] = null,
-        'commit' => $result['preservation']['commit'] = str_repeat('b', 40),
-        'branch' => $result['preservation']['branch'] = 'unrelated',
-        'unproved' => $result['preservation']['pushed'] = false,
-        'extra' => $result['preservation']['extra'] = true,
-    };
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, $result))->toThrow(ResourceOperationException::class);
-    $this->assertModelExists($workspace);
-    expect($group->refresh()->taskable_id)->toBe($workspace->id)
-        ->and(InstanceRemoval::query()->sole()->status->value)->toBe('removing');
-})->with(['missing', 'commit', 'branch', 'unproved', 'extra']);
-
-it('records proven Task preservation atomically with workspace deletion', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Approved work', 'brief' => 'Preserve the approved commit.', 'status' => 'completed', 'position' => 0]);
-    $approval = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id,
-        'type' => TaskCommentType::Approved, 'commit_sha' => str_repeat('a', 40), 'body' => 'Keep this approved commit.', 'author' => 'reviewer', 'posted_at' => now()]);
-    $input = $parent->input;
-    $input['preservation'] = ['commit' => str_repeat('a', 40), 'branch' => 'task-'.$group->id];
-    $parent->input = $input;
-    $result = taskEndingResult($parent);
-    $result['preservation'] = [...$input['preservation'], 'pushed' => true];
-
-    app(TaskGroupEndingProjection::class)->execute($parent, $result);
-
-    expect($task->refresh()->review_handled_comment_id)->toBe($approval->id);
-    $this->assertModelMissing($workspace);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
-});
-
-it('retains Task records when newer approved work was not in the admitted preservation', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Approved work', 'brief' => 'Preserve the approved commit.', 'status' => 'completed', 'position' => 0]);
-    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id,
-        'type' => TaskCommentType::Approved, 'commit_sha' => str_repeat('b', 40), 'body' => 'New approved work.', 'author' => 'reviewer', 'posted_at' => now()]);
-    $result = taskEndingResult($parent);
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, $result))->toThrow(ResourceOperationException::class);
-    $this->assertModelExists($workspace);
-    expect($task->refresh()->review_handled_comment_id)->toBeNull();
-});
-
-it('rolls back Task preservation checkpoints when canonical removal proof is rejected', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.cancel', 'cancel');
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Approved work', 'brief' => 'Preserve this commit.', 'status' => 'completed', 'position' => 0]);
-    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id,
-        'type' => TaskCommentType::Approved, 'commit_sha' => str_repeat('a', 40), 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now()]);
-    $input = $parent->input;
-    $input['preservation'] = ['commit' => str_repeat('a', 40), 'branch' => 'task-'.$group->id];
-    $parent->input = $input;
-    $result = taskEndingResult($parent);
-    $result['preservation'] = [...$input['preservation'], 'pushed' => true];
-    $result['destruction']['instance_ids'] = [];
-
-    expect(fn () => app(TaskGroupEndingProjection::class)->execute($parent, $result))->toThrow(ResourceOperationException::class);
-
-    expect($task->refresh()->review_handled_comment_id)->toBeNull();
-    $this->assertModelExists($workspace);
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
-});
-
-it('keeps a failed preservation attached under manual Task completion', function (): void {
-    [$group, $workspace, $parent] = taskEndingFixture($this->instance, 'tasks.complete', 'manual');
-    $input = $parent->input;
-    $input['preservation'] = ['commit' => str_repeat('a', 40), 'branch' => 'task-'.$group->id];
-    $parent->input = $input;
-    $result = ['group_id' => $group->id, 'group_status' => 'completed', 'workspace_outcome' => 'retained',
-        'destruction' => null, 'preservation' => null, 'cleanup_error_code' => 'tasks.push_failed'];
-
-    app(TaskGroupEndingProjection::class)->execute($parent, $result);
-
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
-        ->and($group->taskable_id)->toBe($workspace->id)
-        ->and($group->assistance_kind->value)->toBe('removal_failure');
-    $this->assertModelExists($workspace);
-});
 
 it('acknowledges actual successful destroy POST and terminal GET after owned rows are gone', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
@@ -1034,4 +609,21 @@ it('projects native failure with its exact failed phase and retries the complete
     $snapshot = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
     expect(app(DirectInstanceDestroyIntent::class)->record($snapshot))->toEqual($intent);
     $this->assertModelExists($this->instance);
+});
+
+it('upgrades a saved standalone worktree retry to independent forced removal', function (): void {
+    $this->instance->update(['source_layout' => 'worktree', 'task_workspace_routed' => false]);
+    $snapshot = directDestroyFixture($this->instance);
+    $snapshot['force'] = false;
+    $initial = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+    expect($initial['direct_destroy']['members'][0]['independent_worktree'])->toBeFalse();
+    $removal = InstanceRemoval::query()->sole();
+    $removal->update(['status' => 'failed', 'failed_step' => 'source_preparation', 'error_code' => 'instance.destroy_failed']);
+
+    $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
+    $recorded = app(DirectInstanceDestroyIntent::class)->record($retry);
+
+    expect($recorded['direct_destroy']['members'][0]['independent_worktree'])->toBeTrue();
+    expect($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($initial['direct_destroy']['members'][0]['worktrees']);
+    expect($recorded['direct_destroy']['databases'])->toBe($initial['direct_destroy']['databases']);
 });
