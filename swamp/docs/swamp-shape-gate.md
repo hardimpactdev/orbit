@@ -17,7 +17,10 @@ The gate implements Nick's migration policy using these manual references:
   proof of the business meaning of an action.
 - [Vaults](https://swamp-club.com/manual/reference/vaults): resolve private values
   with `vault.get`. Our pilot restricts them to whole `task.inputs.env` values;
-  argv, shell concatenation and workflow inputs cannot carry them.
+  argv, shell concatenation and workflow inputs cannot carry them. An explicitly
+  closed empty `execution_secrets` object carries no values. SourceControl's
+  `repository_identity` is the established public host/org/repo identifier; this
+  exact field name is public, unlike SSH or bootstrap identity material.
 - [Data](https://swamp-club.com/manual/reference/data): outputs are persisted.
   Do not write private material to resources, files or logs.
 
@@ -29,7 +32,11 @@ concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
 polling, retries and lock calls are counted separately. Agent calls are checked
 against an explicit observer/action inventory; dynamic agent targets are unknown,
-not passing.
+not passing. The agent rule examines executable command positions in shell and
+Python subprocess calls, including sudo, shell and SSH wrappers. Service units
+such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools and
+configuration metadata are not agent invocations. Actual executable calls still
+use the observer/action inventory; unresolved commands remain unknown.
 
 Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
 workflow has known steps and no findings in its own source or reachable local
