@@ -155,6 +155,7 @@ final readonly class DirectOperation
         $finishedAt = $status->terminal() ? Carbon::parse(ValidatedData::string($data['finished_at'] ?? '')) : null;
         app(OperationStore::class)->change($operation, [
             'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
+            'lock_key' => $status->terminal() ? null : $operation->lock_key,
             'current_step' => null, 'failed_step' => null, 'error_code' => $code, 'result' => $result,
         ]);
 

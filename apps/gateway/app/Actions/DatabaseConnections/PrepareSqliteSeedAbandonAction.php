@@ -44,8 +44,8 @@ final readonly class PrepareSqliteSeedAbandonAction
                     throw new ResourceOperationException('sqlite.seed_abandon_forbidden', 'The prepared cleanup does not match the seed.', 409);
                 }
 
-                return (new PreparedDatabaseOperation($admission['kind'], $abandon->target_type, $abandon->target_id,
-                    $abandon->node_id, $admission['input']))->child($parent);
+                return new PreparedDatabaseOperation($admission['kind'], $abandon->target_type, $abandon->target_id,
+                    $abandon->node_id, $admission['input'])->child($parent);
             }
             $source = DatabaseExecutionIntent::recorded($attempt['source_cleanup_intent_id']);
             $sourceCommand = $source->payload['commands']['database-apply'];

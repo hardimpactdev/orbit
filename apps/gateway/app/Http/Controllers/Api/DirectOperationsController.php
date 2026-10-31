@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -23,9 +24,14 @@ final class DirectOperationsController extends Controller
 {
     public function show(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
     {
-        $direct->projection($operation);
+        $projection = $direct->projection($operation);
+        if ($request->peerNodeId() !== $operation->node_id && $projection instanceof DirectOperationPublicView) {
+            return $this->respond($request, ['id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
+                'status' => $operation->status->value, 'cancel_requested' => $operation->cancel_requested_at !== null,
+                'input' => $projection->publicInput($operation, $request->peerNodeId())])->header('Cache-Control', 'no-store');
+        }
 
-        return $this->respond($request, $this->operation($operation));
+        return $this->respond($request, $this->operation($operation))->header('Cache-Control', 'no-store');
     }
 
     public function primitive(DirectOperationRequest $request, Operation $operation, DirectOperation $direct, OperationExecutionContract $contract): JsonResponse

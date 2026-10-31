@@ -8,7 +8,6 @@ use App\Data\Instances\InstanceSmokeFailureData;
 use App\Data\Instances\InstanceSmokeRepairEntryData;
 use App\Models\Instance;
 use App\Support\ValidatedData;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,23 +32,6 @@ final class AutomaticDeployState
     public static function of(Instance $instance): self
     {
         return new self(is_array($instance->auto_deploy_state) ? $instance->auto_deploy_state : []);
-    }
-
-    /** Records the tick's result. `since` moves only when the result or its commit changes. */
-    public function result(AutomaticDeployOutcome $outcome): bool
-    {
-        $changed = ($this->state['result'] ?? null) !== $outcome->result->value || ($this->state['commit'] ?? null) !== $outcome->commit;
-        $this->state = [
-            ...$this->state,
-            'result' => $outcome->result->value,
-            'commit' => $outcome->commit,
-            'operation_id' => $outcome->operationId,
-            'error_code' => $outcome->errorCode,
-            'message' => $outcome->message,
-            'since' => $changed ? Carbon::now()->toIso8601String() : ($this->state['since'] ?? Carbon::now()->toIso8601String()),
-        ];
-
-        return $changed;
     }
 
     /** @return array{reason: string, deployment_id: int, commit: string|null, paused_at: string}|null */

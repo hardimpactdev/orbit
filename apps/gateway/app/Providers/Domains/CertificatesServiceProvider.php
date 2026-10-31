@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;

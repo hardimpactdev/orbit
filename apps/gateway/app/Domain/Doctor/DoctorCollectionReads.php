@@ -80,7 +80,7 @@ final readonly class DoctorCollectionReads
         return $this->once($collection, 'probe-'.$index, function () use ($collection, $plan, $probe): array {
             $nodeId = Arr::integer($probe, 'node_id');
             $family = DoctorFamily::from(Arr::string($probe, 'family'));
-            $kind = constant(DoctorResourceKind::class.'::'.Arr::string($probe, 'kind'));
+            $kind = DoctorResourceKind::{Arr::string($probe, 'kind')};
             assert($kind instanceof DoctorResourceKind);
             $resources = new DoctorResources($kind, array_map(static fn (mixed $id): int|string => is_int($id) ? $id : ValidatedData::string($id), array_values(Arr::array($probe, 'ids'))));
             $contexts = [];
