@@ -55,17 +55,6 @@ with no caller command or input.
 `result`, `cancel_requested`; `input` comes only from the projection hook.
 Result body is `run_id`, `status`, `started_at`, `finished_at`, `result`,
 `error_code`. Primitive body is only `run_id`; call `gateway.primitive()`.
-
-For an existing pinned file, a declared private-material source may implement
-`OperationArtifactSource`. The private read returns a reference containing its
-relative private-read path, SHA-256 and byte count, bounded by 256 MiB. Use
-`gateway.artifact(field, admittedSha256)` on the admitted Node worker. The
-shared helper accepts only that Operation/run/field path, bounds the download
-and checks its digest before returning bytes in memory. It adds no public URL,
-inline JSON binary, family route or execution relay. The same private endpoint
-serves the declared artifact with `artifact=FIELD`; Node, run and terminal
-checks still apply.
-
 `StartSwampRun` records the native run ID after the intent commits. Existing
 Route URLs reach the same shared controller during deployment.
 

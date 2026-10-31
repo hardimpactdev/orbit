@@ -154,45 +154,6 @@ export class GatewayOperation {
       throw new Error("Private output write failed");
     }
   }
-  /** Consume one admitted artifact in memory; never expose its bytes as native output. */
-  async artifact(field: string, sha256: string): Promise<Uint8Array> {
-    if (
-      !/^[a-z][a-z0-9_]{0,63}$/.test(field) || !/^[a-f0-9]{64}$/.test(sha256)
-    ) {
-      throw new Error("Invalid artifact identity");
-    }
-    let bytes: Uint8Array | undefined;
-    await this.withPrivateMaterial(async (material) => {
-      const reference = z.object({
-        path: z.string(),
-        sha256: z.literal(sha256),
-        bytes: z.number().int().positive().max(268435456),
-        max_bytes: z.literal(268435456),
-      }).strict().parse(material[field]);
-      const path =
-        `/api/v1/direct-operations/${this.args.operation_id}/private-material?run_id=${this.args.run_id}&artifact=${field}`;
-      if (reference.path !== path) {
-        throw new Error("Foreign artifact reference");
-      }
-      const response = await this.http("GET", path);
-      if (
-        response.status !== 200 || !(response.body instanceof Uint8Array) ||
-        response.body.length !== reference.bytes
-      ) {
-        throw new Error("Invalid artifact download");
-      }
-      const observed = Array.from(
-        new Uint8Array(
-          await crypto.subtle.digest("SHA-256", new Uint8Array(response.body)),
-        ),
-        (byte) => byte.toString(16).padStart(2, "0"),
-      ).join("");
-      if (observed !== sha256) throw new Error("Artifact digest mismatch");
-      bytes = response.body;
-    });
-    if (!bytes) throw new Error("Artifact unavailable");
-    return bytes;
-  }
   primitive() {
     return this.call("POST", "/primitive", { run_id: this.args.run_id });
   }

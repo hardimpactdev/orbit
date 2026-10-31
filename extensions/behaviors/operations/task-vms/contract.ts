@@ -180,6 +180,99 @@ runtimeEffects["task_vm.stop_worker"] = {
   proof: "stopped",
 };
 for (
+  const command of [
+    "guest.cloud-init",
+    "guest.fingerprint",
+    "image.owner",
+    "image.boot",
+    "image.firewall",
+    "image.check",
+    "image.trust-ca",
+    "image.clean",
+    "image.recipe-marker",
+    "image.inspect-phase",
+    "image.start-phase",
+    "image.restart-phase",
+    "image.verify",
+  ]
+) {
+  runtimeEffects[`task_vm.guest_${command.replaceAll(/[.-]/g, "_")}`] = {
+    name: "task_vm.guest",
+    transport: "task_vm_guest",
+    fields: ["guest", "parameters_json"],
+    command,
+    step: command,
+    proof: command.endsWith("-phase") || command === "guest.fingerprint"
+      ? "receipt"
+      : "ready",
+  };
+}
+for (
+  const [verb, command, fields] of [
+    ["image_remove", "incus.vm", ["vm", "operation"]],
+    ["image_launch", "incus.vm", ["vm", "operation"]],
+    ["image_metadata", "incus.image", ["project", "operation"]],
+    ["image_publish", "incus.image", ["project", "operation"]],
+    ["image_seed", "incus.build-topology-seed", [
+      "project",
+      "pool",
+      "vm",
+      "size",
+      "fingerprint",
+    ]],
+    ["image_finish_seed", "incus.volume", ["location", "operation"]],
+  ] as const
+) {
+  runtimeEffects[`task_vm.${verb}`] = {
+    name: "task_vm.image-host",
+    transport: "task_vm_image-host",
+    fields: [...fields],
+    command,
+    proof: "ready",
+  };
+}
+for (const verb of ["image_promote", "image_prune"]) {
+  runtimeEffects[`task_vm.${verb}`] = {
+    name: "task_vm.image-host",
+    transport: "task_vm_image-host",
+    fields: ["build_id"],
+    proof: "ready",
+  };
+}
+runtimeEffects["task_vm.guest_install"] = {
+  name: "task_vm.guest",
+  transport: "task_vm_guest",
+  command: "agent.install-guest",
+  fields: ["guest"],
+  values: { parameters_json: "{}" },
+  proof: "ready",
+};
+runtimeEffects["task_vm.guest_pi_upload"] = {
+  name: "task_vm.guest",
+  transport: "task_vm_guest",
+  command: "pi.upload-guest",
+  fields: ["guest", "parameters_json"],
+  proof: "ready",
+};
+runtimeEffects["task_vm.image_intent"] = {
+  name: "task_vm.image-phase",
+  transport: "task_vm_image-phase",
+  fields: ["build_id"],
+  proof: "ready",
+};
+runtimeEffects["task_vm.image_phase_intent"] = {
+  name: "task_vm.image-phase",
+  transport: "task_vm_image-phase",
+  fields: ["key"],
+  proof: "ready",
+};
+runtimeEffects["task_vm.image_phase_confirm"] = {
+  name: "task_vm.image-phase",
+  transport: "task_vm_image-phase",
+  fields: ["key", "boot_id"],
+  proof: "ready",
+};
+for (
   const verb of [
     "prepare",
     "launch-builder",
