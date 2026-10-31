@@ -280,6 +280,7 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
             ],
             connection=dict(
                 nodeHost="fixture",
+                nodePort=22,
                 nodeUser="orbit",
                 nodeIdentityFile=str(self.fixture / "existing-identity"),
             ),

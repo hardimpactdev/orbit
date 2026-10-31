@@ -59,10 +59,15 @@ inputs:
               type: string
             nodeIdentityFile:
               type: string
+            nodePort:
+              type: integer
+              minimum: 1
+              maximum: 65535
           required:
           - nodeHost
           - nodeUser
           - nodeIdentityFile
+          - nodePort
         host_keys:
           type: array
           items:
@@ -114,6 +119,7 @@ jobs:
           kind: ssh
           user: ${{ inputs.intent.connection.nodeUser }}
           identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
         hosts:
         - name: target
           address: ${{ inputs.intent.connection.nodeHost }}
