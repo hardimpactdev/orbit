@@ -172,7 +172,12 @@ final readonly class NativeRouteTransferPlan
         $instance = Instance::query()->with(['node', 'project'])->findOrFail(ValidatedData::integer($snapshot['instance_id']));
         $target = ValidatedData::object($snapshot['target']);
         $workloads = [];
-        foreach (RouteExecutionProof::objects($target['prepared']) as $member) {
+        $members = $instance->node_id === $snapshot['source_node_id']
+            ? array_map(static fn (array $row): array => ['route_id' => $row['route_id'], 'instance_id' => $instance->id,
+                'node_id' => $instance->node_id, 'production' => false,
+                'certificate_scope' => $row['web_root'] === null ? "app-instance-{$instance->id}" : 'route-'.ValidatedData::integer($row['route_id'])], RouteExecutionProof::objects($snapshot['routes']))
+            : RouteExecutionProof::objects($target['prepared']);
+        foreach ($members as $member) {
             if ($member['node_id'] !== $nodeId || $instance->node_id !== $nodeId) {
                 continue;
             }

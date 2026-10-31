@@ -102,3 +102,14 @@ it('captures account intent from stored Node users without resolving any host ac
         ->and($snapshot['target']['certificates'][0]['user'])->toBe('orbit')
         ->and($snapshot['retire_nodes'][0])->not->toHaveKey('home');
 });
+
+it('keeps source workload ownership in the fresh pre-cutover restoration view', function (): void {
+    $plan = app(NativeRouteTransferPlan::class);
+    $snapshot = $plan->capture($this->transfer);
+    $operation = new Operation(['kind' => 'instance.transfer', 'node_id' => $this->node->id,
+        'input' => ['route_transfer' => $snapshot, 'participant_node_ids' => $snapshot['participant_node_ids']]]);
+    $view = $plan->publicInput($operation, $this->node->id);
+    expect(array_column($view['workloads'], 'instance_id'))->toBe([$this->instance->id, $this->instance->id])
+        ->and(array_column($view['workloads'], 'node_id'))->toBe([$this->node->id, $this->node->id]);
+    expect(fn () => $plan->environmentMaterial($operation, $this->destination->id))->toThrow(ResourceOperationException::class);
+});
