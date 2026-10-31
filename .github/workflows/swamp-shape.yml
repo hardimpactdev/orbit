@@ -34,6 +34,9 @@ jobs:
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
         with:
           deno-version: v2.9.8
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
       - name: Install pinned script linters
         run: |
           python3 -m venv "$RUNNER_TEMP/shape-tools"
@@ -94,7 +97,7 @@ jobs:
 
   tests:
     name: Swamp Deno tests
-    runs-on: [self-hosted, hardimpact]
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory || '.' }}
@@ -105,6 +108,16 @@ jobs:
       - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
         with:
           deno-version: v2.9.8
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+          coverage: none
+      - name: Verify disposable effect prerequisites
+        run: |
+          docker info >/dev/null
+          sudo -n true
+          php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
       - name: Run every Operations test
         env:
           DENO_JOBS: "4"
