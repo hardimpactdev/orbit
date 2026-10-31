@@ -54,6 +54,17 @@ or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
 loops remain findings. Naming a tool in a comment grants no exception. Python
 heredocs use this AST rule once rather than a second shell-token lock count.
 
+The parameterized PHP/FPM transaction also qualifies when its tracked sibling
+scripts prove the complete source contract. The Host constructor fixes the root
+to `/run/lock` and root uid/gid to zero. The Runtime constructor validates the
+account with `[a-z_][a-z0-9_-]{0,31}` before an action uses it. The checker follows
+the constructor tuple through the action dispatcher, rejects untyped callers and
+rebinding, and recognizes the exact `orbit-php-<user>.lock` acquisition sequence:
+`O_NOFOLLOW`, root-owned regular file, mode 0600, exclusive flock and close in
+finally. It preserves coordination with existing PHP deployment writers. A path
+prefix alone, missing sibling source, changed custody checks or an unknown call
+chain grants no exception; no grandfather entry is added.
+
 Rule F can prove a fixed external HTTP origin before a dynamic path suffix.
 The literal prefix must contain a complete authority and its trailing slash;
 unknown origins, partial authorities, reassigned bindings and URL joins that
