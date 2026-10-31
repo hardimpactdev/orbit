@@ -37,23 +37,7 @@ $nodeKinds = [
             ['name' => 'stale_masters', 'type' => 'list', 'items' => 'string', 'max' => 256],
             ['name' => 'deferred', 'type' => 'list', 'items' => 'string', 'max' => 256]],
     ],
-    'node.settings' => [
-        'executor' => 'swamp',
-        'completion' => NodeSettingsOperationCompletion::class,
-        'runs' => [[
-            'transport' => 'agent',
-            'name' => 'node.prepare-storage-root',
-            'input_fields' => ['root', 'user', 'group', 'create_missing'],
-            'input_values' => [],
-        ]],
-        'completion_contract' => [
-            'step' => 'node-storage-root',
-            'transport' => 'agent',
-            'name' => 'node.prepare-storage-root',
-            'result' => [],
-        ],
-        'result_fields' => ['error_code'],
-    ],
+    'node.settings' => ['executor' => 'swamp', 'result_fields' => ['prepared', 'error_code']],
 ];
 
 if (! OperationKinds::supports('list_of')) {
@@ -108,7 +92,7 @@ foreach (['node.enrollment_begin' => ['node.begin-enrollment'], 'node.enrollment
         ],
         'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'],
             $enrollmentKind === 'node.enrollment_restore' ? ['node.network_rollback', 'node.network_projection', 'node.wireguard_hub_converge',
-                'route.private_dns_publish', 'route.caddy_converge'] : []),
+                'route.private_dns_publish', 'route.caddy_converge', 'metrics.reconcile'] : []),
         'result_fields' => ['node_plan_proven', 'preparing', 'activated', 'committed', 'restoring', 'restored', 'settings_applied', 'error_code', 'failed_step'],
     ];
 }
@@ -120,7 +104,7 @@ $nodeKinds['node.add'] = [...$nodeLifecycleDefinition,
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], [
         'node.enrollment_begin', 'node.enrollment_activate', 'node.enrollment_commit', 'node.enrollment_restore', 'node.enrollment_settings',
         'node.bootstrap_probe', 'node.bootstrap_install', 'node.bootstrap_host', 'node.bootstrap_verify', 'node.macos_inspect',
-        'node.network_converge', 'node.network_projection', 'node.role_add', 'node.converge', 'fleet.cli_converge', 'tool.manager_converge', 'route.update', 'route.private_dns_publish',
+        'node.network_converge', 'node.network_projection', 'node.role_add', 'node.converge', 'fleet.cli_converge', 'tool.manager_converge', 'route.update', 'route.private_dns_publish', 'metrics.reconcile',
     ]),
     'compensations' => ['node.enrollment_restore'], 'cancellation_boundary' => 'add-begin',
     'result_fields' => ['node_plan_proven', 'node_restore_required', 'id', 'name', 'enrolled', 'follow_up', 'error_code', 'failed_step'],
@@ -156,7 +140,7 @@ $nodeKinds['node.removal_restore'] = [...$nodeLifecycleDefinition,
         ['transport' => 'gateway', 'name' => 'node.lifecycle-result', 'input_values' => [], 'resumable' => true],
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'],
-        ['node.network_projection', 'node.wireguard_hub_converge', 'route.private_dns_publish', 'route.caddy_converge']),
+        ['node.network_projection', 'node.wireguard_hub_converge', 'route.private_dns_publish', 'route.caddy_converge', 'metrics.reconcile']),
     'result_fields' => ['node_plan_proven', 'restoring', 'restored', 'error_code', 'failed_step'],
 ];
 $nodeKinds['node.remove'] = [...$nodeLifecycleDefinition,
@@ -169,7 +153,7 @@ $nodeKinds['node.remove'] = [...$nodeLifecycleDefinition,
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'],
         ['node.role_remove', 'node.removal_begin', 'node.removal_restore', 'node.network_projection', 'node.wireguard_hub_converge',
-            'route.offline_residue_clean', 'route.private_dns_publish', 'route.caddy_converge']),
+            'route.offline_residue_clean', 'route.private_dns_publish', 'route.caddy_converge', 'metrics.reconcile']),
     'compensations' => ['node.removal_restore'], 'cancellation_boundary' => 'remove-begin',
     'result_fields' => ['node_plan_proven', 'node_restore_required', 'id', 'name', 'removed', 'wireguard_peer_removed', 'dns_records_removed',
         'degradation', 'follow_up', 'matches', 'error_code', 'failed_step',
@@ -234,7 +218,7 @@ $nodeRoleDefinition = [
     ],
     'children' => array_map(static fn (string $kind): array => ['kind' => $kind, 'node_from' => 'intent.node_ids'], [
         'node.network_converge', 'node.network_rollback', 'node.role_relocate_source', 'node.role_relocate_target', 'node.converge', 'fleet.cli_converge', 'route.caddy_converge', 'route.private_dns_publish',
-        'tool.manager_converge', 'metrics.role_converge', 'metrics.role_remove',
+        'tool.manager_converge', 'metrics.reconcile', 'metrics.role_converge', 'metrics.role_remove',
         'analytics.role_converge', 'analytics.role_remove', 'websocket.role_converge', 'websocket.role_remove',
     ]),
     'completion_contract' => ['step' => 'role-result', 'transport' => 'gateway', 'name' => 'node.role-result', 'result' => ['role_proven' => true]],

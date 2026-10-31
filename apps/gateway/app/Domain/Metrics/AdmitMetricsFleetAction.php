@@ -5,34 +5,22 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Records standalone native intent. Ordered retirement needs owning native composition. */
-final readonly class AdmitMetricsFleetAction implements MetricsFleetReconciler
+/** Candidate intent admission; refuses while its production direct declaration is held. */
+final readonly class AdmitMetricsFleetAction
 {
     public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations) {}
-
-    public function reconcile(): void
-    {
-        if (NodeRole::query()->where('role', 'metrics')->where('status', 'active')->whereHas('node', static fn ($query) => $query->where('status', 'active'))->exists()) {
-            $this->execute();
-        }
-    }
-
-    public function retire(Node $node): void
-    {
-        if (NodeRole::query()->where('role', 'metrics')->where('status', 'active')->whereHas('node', static fn ($query) => $query->where('status', 'active'))->exists()) {
-            throw new ResourceOperationException('metrics.native_composition_required', 'Node retirement requires Metrics cleanup in the owning native run.', 409);
-        }
-    }
 
     /** @param list<int> $canaryNodeIds Explicit effect scope, never an owner-selection filter. */
     public function execute(array $canaryNodeIds = []): Operation
     {
+        if (app(DirectOperation::class)->writer('metrics.reconcile') !== 'direct') {
+            throw new ResourceOperationException('metrics.writer_held', 'Native Metrics activation awaits fleet placement and parent composition.', 503);
+        }
         $plan = $this->capture->capture();
         $ready = ValidatedData::integerList(array_column(array_filter(MetricsFleetCapture::members($plan), static fn (array $node): bool => $node['worker'] === true), 'node_id'));
         if (count($canaryNodeIds) !== count(array_unique($canaryNodeIds)) || array_diff($canaryNodeIds, $ready) !== []) {

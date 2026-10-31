@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Domain\Metrics\AdmitMetricsFleetAction;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -15,11 +14,13 @@ use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsFleetRuntimeMaterial;
+use App\Domain\Metrics\MetricsPasswordSecrets;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Metrics\MetricsRuntimeSecrets;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Operations\OperationSecretSource;
@@ -40,6 +41,7 @@ use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
+use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
@@ -66,7 +68,7 @@ final class MetricsServiceProvider extends ServiceProvider
         ServiceMetricsProjection::class => ServiceMetricsProjection::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
         MetricsCadvisorRuntime::class => AgentMetricsCadvisorRuntime::class,
-        MetricsFleetReconciler::class => AdmitMetricsFleetAction::class,
+        MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,
@@ -76,6 +78,7 @@ final class MetricsServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([MetricsFleetRuntimeMaterial::class], OperationSecretSource::class);
+        $this->app->tag([MetricsRuntimeSecrets::class, MetricsPasswordSecrets::class], OperationSecretSource::class);
         $this->app->tag([ServiceMetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([MetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->scoped(

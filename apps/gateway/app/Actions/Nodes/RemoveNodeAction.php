@@ -111,15 +111,9 @@ final readonly class RemoveNodeAction
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardDatabaseServers($node);
         $this->guardProtected($node, $caller);
-        if (! $offline) {
-            $this->guardRemoval($node);
-        }
         // A task VM Node never hosts a Metrics exporter, so its removal changes nothing in Metrics. Its role removal
-        // holds the fleet Metrics reconcile back, and its enrollment and removal omit Metrics retirement.
+        // holds the fleet Metrics reconcile back, and the Metrics retire below is skipped, as its enrollment skips it.
         $taskVm = TaskVm::query()->where('node_id', $node->id)->exists();
-        if (! $taskVm) {
-            $this->metrics->retire($node);
-        }
         $shed = null;
         if ($offline && $taskVm) {
             app(MetricsReconcileDeferral::class)->during(function () use ($node, $force, $deleted, &$shed): void {
@@ -178,6 +172,26 @@ final readonly class RemoveNodeAction
                 step: 'grafana-access-revocation',
                 errorCode: 'node.grafana_access_revocation_failed',
                 message: "Could not revoke Grafana access for node [{$node->name}].",
+                previous: $exception,
+            );
+        }
+
+        try {
+            if (! $taskVm) {
+                $this->metrics->retire($node);
+            }
+        } catch (Throwable $exception) {
+            $node->update(['status' => $priorStatus]);
+            $rollbackFailure = $this->restoreMetricsSelection();
+
+            if ($rollbackFailure instanceof Throwable) {
+                throw $this->metricsRollbackFailure($node, $rollbackFailure);
+            }
+
+            throw $this->failure(
+                step: 'metrics-exporters',
+                errorCode: 'node.metrics_reconcile_failed',
+                message: "Could not retire Metrics exporter state for node [{$node->name}].",
                 previous: $exception,
             );
         }

@@ -224,13 +224,11 @@ Prometheus stays unpublished. Grafana's datasource proxy reuses the publication 
 
 ## Native fleet reconciliation
 
-`metrics.reconcile` records one intent with the complete owner-captured fleet. Swamp runs placed snapshot, exporter, service, Caddy, verification and recovery steps. The Gateway captures intent, supplies owned private runtime material and projects the native result. There is no PHP fleet executor, child planner, receipt command or polled Metrics schedule.
+The native fleet replacement stays held in source: `metrics.reconcile` retains its polled execution contract and has no production direct declaration. Existing Node, role and Route composition remains unchanged until their native parents can compose Metrics in one run. Draft status does not control writer selection.
 
-Nodes without workers remain in the capture and fail with `metrics.no_worker`. Nodes 1 and 18 require a placement decision before release. Canary scope may restrict effects to the five worker Nodes; it never filters the owning inventory or authorizes fleet success. This source pair remains a draft until that decision and the required source/access and canary gates pass.
+The candidate native workflow refuses workerless or incomplete fleet coverage before snapshots or effects. Nodes 1 and 18 stay in the complete owner capture; their placement needs Nick's decision before activation. Caddy publication follows fresh desired state. Exporter, FPM and service snapshots can restore local runtime, but Caddy is not claimed as a snapshot rollback and is not republished during recovery.
 
-Native step outputs preserve snapshots. Native dependencies and assertions control execution and recovery. Typed refusal before runtime mutation permits restoration. Missing mutation output remains uncertain; the workflow does not blindly repeat it. A committed runtime survives backup-cleanup failure. The canonical Caddy publisher refreshes its render under its lock, including removal of a stale scrape site when monitoring becomes disabled. Unmanaged Caddy Nodes stay untouched.
-
-Existing PHP fleet callers record an Operation without awaiting execution. Native parents that require ordered reconciliation compose the stages in the same run. Legacy Route, Node and role child planning refuses with `metrics.native_composition_required` before effects. Node retirement also refuses before cleanup until its owning native run composes Metrics. Foreign Caddy reads remain closed until their shared contract is approved and integrated. Private material for role roots needs its own approved contract.
+Private material remains confined to an owned bound root through the existing shared transport. Candidate direct hydration and result tests use a test-only contribution; this does not register or activate a production writer.
 
 ### Role changes with unchanged monitoring intent
 

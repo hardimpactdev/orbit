@@ -20,7 +20,7 @@ use PHPUnit\Framework\AssertionFailedError;
 final class RouteForeignChildKinds
 {
     public const array Names = ['instance.prepare_php_runtime', 'instance.prepare_served_web_roots', 'instance.sync_environment',
-        'instance.destroy', 'node.role_converge', 'node.role_remove'];
+        'instance.destroy', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
 
     public static function register(bool $simulateNodeChildren = false): void
     {

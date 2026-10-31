@@ -26,6 +26,7 @@ $effect = static fn (string $command, array $secrets = []): array => [
 ];
 
 $definitions = [
+    'route.target_unset' => ['executor' => 'swamp', 'result_fields' => ['ready', 'error_code']],
     'route.router_lan_retire' => $effect('firewall.rules'),
     'route.workload_firewall' => $effect('firewall.rules'),
     'route.lan_converge' => $effect('firewall.route-lan'),
@@ -112,7 +113,7 @@ if (OperationKinds::supports('children') && OperationKinds::supports('list_of'))
         'route.workload_prepare', 'route.workload_firewall', 'route.lan_converge', 'route.lan_remove', 'route.router_lan_retire',
         'route.workload_verify', 'route.public_verify', 'route.public_firewall', 'route.shared_php_withdraw',
         'route.transfer_php_withdraw', 'route.transfer_lan_remove', 'instance.prepare_php_runtime', 'instance.prepare_served_web_roots',
-        'instance.sync_environment', 'instance.destroy', 'node.role_converge', 'node.role_remove'];
+        'instance.sync_environment', 'instance.destroy', 'node.role_converge', 'node.role_remove', 'metrics.reconcile'];
     foreach ([...RouteParentExecution::Kinds, ...ClusterRouterParentExecution::Kinds] as $kind) {
         $router = str_starts_with($kind, 'cluster.');
         $definitions[$kind] = [

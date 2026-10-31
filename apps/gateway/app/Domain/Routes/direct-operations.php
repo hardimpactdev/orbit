@@ -12,6 +12,10 @@ $publication = [
 ];
 
 return [
+    'route.target_unset' => [
+        'workflow' => 'operation-route-target-unset', 'writer_config' => 'swamp.direct_writers',
+        'writer_state' => 'route_target_unset_writer', 'projection' => RouteOperationProjection::class,
+    ],
     'route.lan_remove' => [
         'workflow' => 'operation-route-lan-remove', 'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'route_lan_writer', 'projection' => RouteOperationProjection::class,

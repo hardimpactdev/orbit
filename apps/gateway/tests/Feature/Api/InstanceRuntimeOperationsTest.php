@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationFamilyChildren;
@@ -14,6 +15,7 @@ use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,6 +26,7 @@ use App\Models\Schedule;
 use App\Models\TaskVm;
 use Illuminate\Support\Arr;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\TestCase;
 
@@ -126,7 +129,14 @@ it('refuses enabling an unfinished definition copy during stopped installation',
     expect($this->agents->calls)->toBe([]);
 })->with(['process', 'schedule']);
 
-it('proves the exact restarted Process ID list through child execution and HTTP completion', function (bool $empty): void {
+it('projects the exact Process ID list for the retained composition boundary from native outcomes', function (bool $empty): void {
+    $this->node->update(['architecture' => 'x86_64']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
     if ($empty) {
         config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     }
@@ -165,18 +175,28 @@ it('proves the exact restarted Process ID list through child execution and HTTP 
         ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
     $this->postJson($path.'/complete', ['worker' => 'restart-worker', 'status' => 'succeeded', 'result' => $result])->assertOk()->assertJsonPath('data.result.process_ids', $selected);
     $controls = array_filter($this->agents->calls, static fn (array $call): bool => $call['command'] === 'process.control');
-    expect(array_values(array_map(static fn (array $call): int => $call['input']['process_id'], $controls)))->toBe($selected);
+    expect($controls)->toBe([]);
 })->with([false, true])->skip(! OperationKinds::supports('list_of'), 'Requires the shared kit C list-result contract.');
 
 /** Execute descriptors through the real HTTP proof boundary with a fake target agent. */
 function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
 {
+    if (DirectOperation::owns($operation)) {
+        $runId = $operation->state['swamp_run_id'];
+        $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'old', 'operation_id' => $operation->id])->assertUnprocessable();
+        $response = $test->postJson('/api/v1/direct-operations/'.$operation->id.'/result', [
+            'run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z',
+            'result' => ['ready' => true, 'state' => 'active'],
+        ]);
+        $response->assertOk();
+
+        return;
+    }
     $worker = 'leaf-'.$operation->id;
     $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => $worker, 'operation_id' => $operation->id])->assertOk();
     $path = '/api/v1/operation-executor/'.$operation->id;
     $names = match ($operation->kind) {
         'process.create' => ['process-stage-unit', 'process-activate-unit', 'process-status', 'runtime-ready'],
-        'process.restart' => ['process-check-release', 'process-restart', 'process-status', 'runtime-ready'],
         default => ['schedule-install'],
     };
     $result = [];

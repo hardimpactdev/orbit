@@ -11,6 +11,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
@@ -71,7 +72,7 @@ beforeEach(function (): void {
     $this->agent = new FakeNodeAgentRuntime;
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
-    app()->instance(GatewayPeerProjectionManager::class, $this->peers);
+    app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
     app()->instance(ProcessRuntimeManager::class, $this->processRuntime);
     app()->instance(NodeAgentRuntime::class, $this->agent);
@@ -110,7 +111,7 @@ it('rejects removal contention before remote effects or state writes', function 
 it('re-reads identity after acquiring the lifecycle guard', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    app()->instance(NodeProvisioningLock::class, new readonly class($target) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new class($target) implements NodeProvisioningLock
     {
         public function __construct(private Node $target) {}
 
@@ -144,7 +145,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    app()->instance(NodeProvisioningLock::class, new readonly class($target, $project) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new class($target, $project) implements NodeProvisioningLock
     {
         public function __construct(private Node $target, private Project $project) {}
 
@@ -351,6 +352,28 @@ it('refuses Node removal around an Instance for ordinary and forced offline path
     'forced offline' => [['offline' => true, 'force' => true]],
 ]);
 
+it('retires Metrics exporter state before removing network projections', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics
+        ->shouldReceive('retire')
+        ->once()
+        ->withArgs(
+            static fn (Node $node): bool => $node->is($target) && $node->status === LifecycleStatus::Removing,
+        );
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    expect($this->peers->removed)->toBe([$target->id]);
+});
+
 it('removes the agent during online removal', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
@@ -478,6 +501,103 @@ it('refuses Node removal before mutation while a Schedule uses the Node', functi
     expect($target->refresh()->status)->toBe(LifecycleStatus::Active)
         ->and($this->peers->removed)->toBeEmpty()
         ->and($this->dns->convergences)->toBe(0);
+});
+
+it('restores active Metrics selection when exporter retirement fails', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once()->andThrow(new RuntimeException('private Metrics failure'));
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node.metrics_reconcile_failed')
+        ->assertJsonPath('error.details.step', 'metrics-exporters')
+        ->assertJsonMissing(['private Metrics failure']);
+
+    expect($target->fresh()?->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('removes an unreachable node while Metrics is enabled', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'unreachable', wireguardIp: '10.44.0.3');
+    $metricsNode = remove_node_record(name: 'metrics', wireguardIp: '10.44.0.4');
+    NodeRole::query()->create([
+        'node_id' => $metricsNode->id,
+        'role' => RoleName::Metrics->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    // Every SSH call to the removed node fails, exactly as it would while the
+    // node is powered off.
+    $exporters = new RemoveNodeUnreachableExporterRuntime('unreachable');
+    app()->instance(MetricsExporterRuntime::class, $exporters);
+    app()->instance(MetricsCadvisorRuntime::class, $exporters);
+    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    // The retire of the dead node is attempted and fails, and the remaining
+    // fleet still converges afterwards rather than the removal aborting.
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($exporters->events)
+        ->toContain('remove:unreachable')
+        ->toContain('converge:metrics')
+        ->toContain('snapshot:operator')
+        ->and(array_filter(
+            $exporters->events,
+            static fn (string $event): bool => str_ends_with($event, ':unreachable') && $event !== 'remove:unreachable',
+        ))
+        ->toBeEmpty();
+});
+
+it('reconciles a fleet peer that is unreachable without failing the removal', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $metricsNode = remove_node_record(name: 'metrics', wireguardIp: '10.44.0.4');
+    $peer = remove_node_record(name: 'dead-peer', wireguardIp: '10.44.0.5');
+    NodeRole::query()->create([
+        'node_id' => $metricsNode->id,
+        'role' => RoleName::Metrics->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    NodeRole::query()->create([
+        'node_id' => $peer->id,
+        'role' => RoleName::AppProd->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    $caller->accessibleNodes()->attach($target);
+    $exporters = new RemoveNodeUnreachableExporterRuntime('dead-peer');
+    app()->instance(MetricsExporterRuntime::class, $exporters);
+    app()->instance(MetricsCadvisorRuntime::class, $exporters);
+    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and(app(ExporterDegradationRepository::class)->get($peer->id))
+        ->toBe(ExporterDegradationReason::Unreachable);
 });
 
 it('removes only the target WireGuard peer before reconciling DNS', function (): void {
@@ -1285,10 +1405,10 @@ final class RemoveNodeUnreachableExporterRuntime implements MetricsCadvisorRunti
     }
 }
 
-final readonly class RemoveNodeFakeReachability implements NodeReachabilityProbe
+final class RemoveNodeFakeReachability implements NodeReachabilityProbe
 {
     public function __construct(
-        private ?int $unreachableNodeId,
+        private readonly ?int $unreachableNodeId,
     ) {}
 
     public function degradation(Node $node): ?ExporterDegradationReason

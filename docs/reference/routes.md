@@ -760,6 +760,8 @@ A child `route.destroy` request uses `{route_id, offline: false}`. The shared ch
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
+`route.target_unset` clears eligible Project Route associations and records its intent atomically. It starts `operation-route-target-unset` directly on the admitted Node. Swamp confirms the stored empty target set and projects the result. It has no publication, Metrics, child Operation, executor claim or polled writer. Active Instance and replacement guards still apply.
+
 Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
 
 Admission prepares the complete forward and rollback plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
@@ -776,7 +778,7 @@ An initial production web-root activation that fails withdraws DNS and Caddy bef
 
 Web-root updates record the new root at an explicit phase. Their Instance children read that stored root. A failed update restores the old root before starting separate rollback children. The restored Route stays active, and its Operation records the failure; the URL-only rollback key is `synchronize-web-root-urls.rollback.<instance_id>`.
 
-Route changes that alter the public active hostname catalog require Metrics reconciliation in the same native run. Private-only changes, target associations and web-root changes do not change that catalog. The removed Gateway child path refuses with `metrics.native_composition_required` before publication until the owning native parent supplies this composition.
+Route Operations request `metrics.reconcile` with an empty input only when their planned change alters the sorted public, active hostname catalog grouped by serving Ingress Node, and one active Metrics assignment has an active serving Node. Private-only changes, unchanged publication, target associations and web-root changes leave that catalog unchanged and skip Metrics. FPM monitoring selects active production Instances independently of their Route associations. The Metrics family captures its reconciliation intent when that child is requested.
 
 Route Operations retain their admitted Instance environment owners until completion. Admission and each executor run use the same environment locks as deploy, rollback and environment synchronization. While a Route Operation is open, unrelated Instance environment changes refuse with `env.operation_busy`; only its stamped descendants may use that owner. This keeps web-root links, Route URLs and production runtime selection on the same release through publication.
 

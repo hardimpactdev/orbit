@@ -84,7 +84,7 @@ final readonly class PrepareNodeRoleCommand implements OperationGatewayCommand
             $metrics = $assignment->role === RoleName::Metrics ? null : Node::query()->whereHas('roles',
                 static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->first();
             if ($metrics !== null) {
-                throw new ResourceOperationException('metrics.native_composition_required', 'This parent requires Metrics stages in the same native run.', 409);
+                $steps[] = ['type' => 'child', 'key' => 'role-metrics', 'kind' => 'metrics.reconcile', 'node_id' => $metrics->id, 'input' => [], 'optional' => false];
             }
         }
 
@@ -112,7 +112,7 @@ final readonly class PrepareNodeRoleCommand implements OperationGatewayCommand
             $metrics = $role === RoleName::Metrics ? $node : Node::query()->whereHas('roles',
                 static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->first();
             if ($metrics !== null) {
-                throw new ResourceOperationException('metrics.native_composition_required', 'This parent requires Metrics stages in the same native run.', 409);
+                $steps[] = ['type' => 'child', 'key' => 'role-metrics', 'kind' => 'metrics.reconcile', 'node_id' => $metrics->id, 'input' => [], 'optional' => true];
             }
         } else {
             $ghost = clone $assignment;

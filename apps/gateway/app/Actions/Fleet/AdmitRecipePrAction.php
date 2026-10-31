@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 
@@ -23,9 +24,16 @@ final readonly class AdmitRecipePrAction
             throw new ResourceOperationException('fleet.recipe_pr_invalid', 'The recipe PR action does not match the serving Gateway.', 422);
         }
 
+        $author = app(GitHubAppStore::class)->credentials()?->slug;
+        $recipe = file_get_contents(resource_path('machine-software/recipe.json'));
+        if (! is_string($author) || $author === '' || ! is_string($recipe)) {
+            throw new ResourceOperationException('fleet.recipe_pr_invalid', 'The serving recipe and App identity are required.', 422);
+        }
+
         return $this->start->execute('fleet.recipe_pr', $number === 0 ? 'recipe_'.$variant : 'recipe_pr', $number === 0 ? $nodeId : $number, $nodeId, [
+            'github' => ['$secret' => 'github.installation', 'id' => $nodeId],
             'action' => $action, 'variant' => $variant, 'pull_number' => $number, 'head_sha' => $head, 'date' => $date,
-            'token' => ['$secret' => 'github.app', 'id' => $nodeId],
-        ], 'swamp', null);
+            'author' => $author.'[bot]', 'required_check' => config()->string('orbit.gateway_releases.check'), 'deployed_recipe' => $recipe,
+        ], 'swamp', null, expectedWriter: 'direct');
     }
 }

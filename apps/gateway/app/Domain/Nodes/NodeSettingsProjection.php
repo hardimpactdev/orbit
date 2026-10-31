@@ -19,7 +19,7 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
     {
 
         return ['agent_pin' => $operation->input['agent_pin'],
-            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'group', 'create_missing']))];
+            'storage' => array_intersect_key($operation->input, array_flip(['root', 'user', 'create_missing', 'protected_roots', 'managed_checkouts']))];
     }
 
     public function apply(Operation $operation, array $data): Operation

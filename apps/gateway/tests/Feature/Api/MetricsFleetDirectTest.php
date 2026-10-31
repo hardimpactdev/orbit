@@ -2,14 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\Metrics\AdmitMetricsFleetAction;
-use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Metrics\MetricsFleetProjection;
-use App\Domain\Nodes\NodeEnrollmentPlan;
-use App\Domain\Nodes\NodeRemovalPlan;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,6 +19,17 @@ use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    $candidate = new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['metrics.reconcile' => ['workflow' => 'operation-metrics-fleet', 'writer_config' => 'swamp.direct_writers',
+                'writer_state' => 'metrics_fleet_writer', 'projection' => MetricsFleetProjection::class,
+                'private_material' => ['fleet_runtime' => 'metrics.fleet_runtime']]];
+        }
+    };
+    app()->instance(DirectOperation::class, new DirectOperation([$candidate]));
+    config(['swamp.direct_writers' => ['metrics.reconcile' => 'direct']]);
     $this->manifest = tempnam(sys_get_temp_dir(), 'fleet-direct-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('c', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64)]]], JSON_THROW_ON_ERROR));
     app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
@@ -41,7 +50,7 @@ afterEach(function (): void {
     unlink($this->manifest);
 });
 
-it('refuses the deleted polled writer without creating another intent', function (): void {
+it('refuses native candidate admission when its test writer is polled', function (): void {
     $before = Operation::query()->count();
     config(['swamp.direct_writers' => ['metrics.reconcile' => 'polled']]);
     expect(fn () => app(AdmitMetricsFleetAction::class)->execute([9]))->toThrow(ResourceOperationException::class);
@@ -124,24 +133,3 @@ it('records and starts one native root without executing or awaiting the fleet i
     expect($socket->sent)->toHaveCount(1);
     expect($operation->children()->count())->toBe(0);
 });
-
-it('refuses retirement before removal changes state or revokes access', function (): void {
-    $target = Node::query()->create(['name' => 'retiring', 'public_ssh_host' => '192.0.2.13', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.13']);
-    $before = $target->fresh()->getAttributes();
-    $access = Mockery::mock(MetricsAccessRevoker::class);
-    $access->shouldNotReceive('revoke');
-    app()->instance(MetricsAccessRevoker::class, $access);
-    $count = Operation::query()->count();
-    expect(fn () => app(RemoveNodeAction::class)->execute($target, $this->node))->toThrow(ResourceOperationException::class, 'Node retirement requires Metrics cleanup');
-    expect($target->fresh()->getAttributes())->toBe($before);
-    expect(Operation::query()->count())->toBe($count);
-});
-it('refuses legacy parent plans instead of emitting incompatible Metrics children', function (string $plan): void {
-    $target = Node::query()->create(['name' => 'planned', 'public_ssh_host' => '192.0.2.13', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit']);
-    $build = match ($plan) {
-        'remove' => fn () => app(NodeRemovalPlan::class)->build($target, false),
-        'restore' => fn () => app(NodeRemovalPlan::class)->restore($target),
-        default => fn () => app(NodeEnrollmentPlan::class)->build($target, ['mode' => 'linux', 'roleless_operator' => false], ['route_changes' => [], 'roles' => [], 'settings_provided' => false, 'task_vm_id' => null]),
-    };
-    expect($build)->toThrow(ResourceOperationException::class, 'This parent requires Metrics stages');
-})->with(['remove', 'restore', 'enroll']);
