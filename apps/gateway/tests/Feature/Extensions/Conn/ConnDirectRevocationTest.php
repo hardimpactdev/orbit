@@ -75,3 +75,43 @@ it('refuses a foreign run, a changed pairing owner and the deleted revocation wr
     $this->assertDatabaseCount('operations', 1);
     Http::assertNothingSent();
 });
+
+it('binds Gateway cleanup to its registration revision and refuses stale private input with 409', function (): void {
+    directConnRevocation($this, 'conn.gateway_sessions_revoke');
+    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.labels', ['Orbit Gateway'])->assertJsonPath('data.input.links', []);
+    expect(app(OperationKinds::class)->definition('conn.gateway_sessions_revoke'))->not->toHaveKeys(['runs', 'execution', 'completion_contract']);
+    $this->environment->update(['cleanup_version' => 2]);
+
+    foreach (['?run_id=', '/private-material?run_id='] as $suffix) {
+        $this->getJson($this->path.$suffix.$this->run)->assertConflict()->assertJsonPath('error.code', 'conn.environment_changed');
+    }
+    expect($this->environment->fresh()->cleanup_completed_version)->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('projects only the admitted cleanup revision and leaves a newer registration pending', function (bool $changed): void {
+    directConnRevocation($this, 'conn.gateway_sessions_revoke');
+    if ($changed) {
+        $this->environment->update(['cleanup_version' => 2]);
+    }
+
+    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => ['backend' => 'revoked', 'revoked_sessions' => 0]])->assertOk();
+
+    expect($this->environment->fresh()->cleanup_completed_version)->toBe($changed ? 0 : 1);
+    expect($this->pairing->fresh()->revoked_at)->toBeNull();
+    expect($this->foreign->fresh()->revoked_at)->toBeNull();
+    Http::assertNothingSent();
+})->with([false, true]);
+
+it('keeps cleanup privileged, preserves a cancelled revision and refuses a polled takeover setting', function (): void {
+    directConnRevocation($this, 'conn.gateway_sessions_revoke');
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $this->postJson('/api/v1/conn/environments/revoke-proof/sessions/cleanup')->assertForbidden();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $this->call('POST', '/api/v1/conn/operations/'.$this->operation->id.'/cancel', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')->assertOk();
+    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'cancelled', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => []])->assertOk();
+    expect($this->environment->fresh()->cleanup_completed_version)->toBe(0);
+    config(['swamp.direct_writers' => ['conn.gateway_sessions_revoke' => 'polled']]);
+    $this->postJson('/api/v1/conn/environments/revoke-proof/sessions/cleanup')->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
+    Http::assertNothingSent();
+});
