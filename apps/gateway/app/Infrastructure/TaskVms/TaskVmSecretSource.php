@@ -19,6 +19,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\TaskVm;
 use App\Models\UpCloudTaskVmImageBuild;
+use Illuminate\Support\Arr;
 
 /** Tagged family sources. Ownership checks never read credentials. */
 final readonly class TaskVmSecretSource implements OperationSecretSource
@@ -120,7 +121,7 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         $vm = TaskVm::query()->findOrFail($id);
         if ($this->source === 'task_vm.model_router') {
-            $origin = $operation->input['enrollment']['runtime']['origin'] ?? $operation->input['runtime']['origin'] ?? $operation->input['origin'] ?? null;
+            $origin = Arr::get($operation->input, 'enrollment.runtime.origin') ?? Arr::get($operation->input, 'runtime.origin') ?? ($operation->input['origin'] ?? null);
             if (! is_string($origin) || $origin === '' || $origin !== $vm->ai_router_origin) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The model router origin does not match admitted VM intent.', 422);
             }

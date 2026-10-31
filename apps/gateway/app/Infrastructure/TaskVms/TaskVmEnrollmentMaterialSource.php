@@ -69,6 +69,9 @@ final readonly class TaskVmEnrollmentMaterialSource implements OperationSecretSo
             return new OperationSecretValue(app(TaskVmEnrollmentIntent::class)->installation($vm));
         }
         if ($this->field === 'first_visit') {
+            if ($owner === $vm->node_id && $vm->provider->value === 'incus') {
+                return new OperationSecretValue(null);
+            }
             if ($owner !== $vm->node_id || $vm->provider->value !== 'upcloud'
                 || $vm->address === null || $vm->ssh_host_key === null) {
                 $this->refuse();
