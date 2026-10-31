@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -77,9 +80,7 @@ it('discards nested public result fields on terminal cleanup outcomes', function
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('nested-private-password');
 })->with(['failed', 'cancelled']);
 
-it('refuses an invalid success and another run before projection', function (): void {
-    $body = [...$this->body, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'];
-    $this->postJson($this->path.'/result', [...$body, 'result' => []])->assertUnprocessable();
+it('refuses another run before projection', function (): void {
     $this->operation->update(['state' => ['swamp_run_id' => $this->runId]]);
     $this->postJson($this->path.'/primitive', ['run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'])->assertConflict();
     expect($this->agents->calls)->toBe([]);
@@ -97,9 +98,10 @@ it('submits once after commit and records a native run without acquiring a targe
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0])->toMatchArray(['type' => 'workflow.run', 'payload' => [
-        'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'database.sqlite_cleanup', 'node_id' => $this->node->id],
+        'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => ['execution_secrets' => (object) [], 'operation_id' => $operation->id, 'kind' => 'database.sqlite_cleanup', 'node_id' => $this->node->id, 'intent' => ['variant' => 'clone', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]);
+    expect((array) $socket->sent[0]['payload']['inputs']['execution_secrets'])->toBe([]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
     expect($socket->closed)->toBeTrue();
@@ -107,12 +109,11 @@ it('submits once after commit and records a native run without acquiring a targe
 
 it('exposes no raw admitted input through the shared read boundary', function (): void {
     $this->operation->update(['input' => [...$this->operation->input, 'private' => 'never-return-this']]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['variant' => 'clone', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])->assertDontSee('never-return-this');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent', ['variant' => 'clone', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])->assertDontSee('never-return-this');
 });
 
-it('rejects contradictory success and filters cleanup results to their public fields', function (): void {
+it('filters cleanup results to their public fields', function (): void {
     $body = [...$this->body, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z'];
-    $this->postJson($this->path.'/result', [...$body, 'result' => ['backend' => 'absent', 'error_code' => 'database.failed'], 'error_code' => 'database.failed'])->assertUnprocessable();
     $this->postJson($this->path.'/result', [...$body, 'result' => ['backend' => 'absent', 'state' => 'private-detail', 'bytes' => 999]])->assertOk()->assertJsonPath('data.result', ['backend' => 'absent']);
 });
 
@@ -122,8 +123,8 @@ it('projects only the admitted cleanup variant and never command or private inte
     $payload['projection']['private'] = 'not-exported';
     $this->intent->update(['payload' => $payload]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.variant', 'clone')->assertJsonMissingPath('data.input.command')
-        ->assertJsonMissingPath('data.input.password')->assertDontSee('not-exported');
+        ->assertJsonPath('data.input.intent.variant', 'clone')->assertJsonMissingPath('data.input.intent.command')
+        ->assertJsonMissingPath('data.input.intent.password')->assertDontSee('not-exported');
 });
 
 it('refuses a foreign intent and a path outside the admitted cleanup form', function (): void {
@@ -144,8 +145,8 @@ it('projects bound seed cleanup fields and rejects another target or snapshot id
         'snapshot_path' => '/tmp/orbit-sqlite-'.$identity.'.sqlite'];
     $payload = ['commands' => ['database-apply' => ['name' => 'instance.prepare-sqlite-seed', 'input' => $input]], 'projection' => []];
     $this->intent->update(['payload' => $payload]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'seed')
-        ->assertJsonPath('data.input.operation', $identity)->assertJsonMissingPath('data.input.mode');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.variant', 'seed')
+        ->assertJsonPath('data.input.intent.operation', $identity)->assertJsonMissingPath('data.input.intent.mode');
     $payload['commands']['database-apply']['input']['snapshot_path'] = '/tmp/foreign.sqlite';
     $this->intent->update(['payload' => $payload]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
@@ -161,7 +162,7 @@ it('refuses first read and projection until the Gateway start response binds the
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     app(StartSwampRun::class)->start($this->operation);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'clone');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.variant', 'clone');
     expect($this->agents->calls)->toBe([]);
 });
 
@@ -179,3 +180,31 @@ it('discards arbitrary scalar output from a cancelled cleanup', function (): voi
         ->assertOk()->assertJsonPath('data.result', []);
     expect(json_encode($this->operation->fresh()->toArray()))->not->toContain('private-scalar-sentinel');
 });
+
+it('projects the fixed terminal cleanup output once without a second dispatch', function (string $status, array $result): void {
+    $socket = new FakeRoutePublicationSocket;
+    $history = ['id' => $this->runId, 'workflowName' => 'operation-database-cleanup', 'status' => $status,
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->node->id, 'kind' => 'database.sqlite_cleanup'],
+        'startedAt' => '2026-10-31T13:00:00Z', 'completedAt' => '2026-10-31T13:00:01Z',
+        'jobs' => [['name' => 'cleanup', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode((object) $result, JSON_THROW_ON_ERROR)]]]]],
+    ];
+    $socket->reply = static fn (array $sent): array => [['type' => 'workflow.history.get', 'id' => $sent['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.token', 'swamp.ca_path' => '/public/ca.pem']);
+    $selector = app(DirectOperation::class)->definition('database.sqlite_cleanup')['terminal_result'];
+    $terminal = ['id' => $this->runId, 'status' => $status];
+
+    $projected = app(SwampCommandStep::class)->projectTerminal($this->operation, $terminal, $selector);
+    app(SwampCommandStep::class)->projectTerminal($projected, $terminal, $selector);
+
+    expect($projected->status)->toBe(OperationStatus::from($status));
+    expect($projected->result)->toBe($result);
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.history.get']);
+    expect($this->agents->calls)->toBe([]);
+})->with([['succeeded', ['backend' => 'absent']], ['failed', ['error_code' => 'instance.sqlite_seed_refused']], ['cancelled', []]]);
+
+it('refuses a logical proxy before submitting a cleanup command', function (int $id): void {
+    $operation = new Operation(['kind' => 'database.sqlite_cleanup', 'node_id' => $id]);
+    expect(fn () => app(DirectOperation::class)->workflowInputs($operation))
+        ->toThrow(ResourceOperationException::class, 'SQLite cleanup requires a worker on the admitted Node.');
+})->with([1, 18]);

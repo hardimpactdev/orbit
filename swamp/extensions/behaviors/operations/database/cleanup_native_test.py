@@ -1,86 +1,96 @@
-"""Direct SQLite cleanup runs and recovery through the pinned native Swamp workflow."""
-import concurrent.futures
+"""Real placed-command cleanup source with local scratch and native resume."""
 import json
-import yaml
-from pathlib import Path
+import shutil
 import sys
 import unittest
+import uuid
+from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
 
 
+def reply(raw):
+    return json.JSONDecoder().raw_decode(raw.lstrip())[0]
+
+
 class DatabaseCleanupNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        failure.write_text('import { fixtureHttp } from "./database/cleanup_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
-        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
-        module = self.repo / 'extensions/behaviors/operations/database/cleanup.ts'
-        module.write_text('import {fixtureHttp, fixtureLocal} from "./cleanup_native_fixture.ts";\n' + module.read_text().replace('export const behavior = cleanup();', 'export const behavior = cleanup(() => fixtureHttp, fixtureLocal);'))
-        source = ROOT / 'workflows/workflow-operation-database-cleanup.yaml'
-        fixture_workflow = yaml.safe_load(source.read_text())
-        fixture_workflow.pop('target', None)
-        fixture_workflow.pop('labels', None)
-        for job in fixture_workflow['jobs']:
+        self.directory = Path('/tmp/orbit-sqlite-clone-' + uuid.uuid4().hex)
+        self.directory.mkdir(mode=0o700)
+        self.snapshot = self.directory / 'snapshot.sqlite'
+        self.snapshot.write_text('disposable private database bytes')
+        self.snapshot.chmod(0o600)
+        self.addCleanup(lambda: shutil.rmtree(self.directory, ignore_errors=True))
+        self.public = {'operation_id': 17, 'node_id': 9, 'kind': 'database.sqlite_cleanup',
+                       'intent': {'variant': 'clone', 'directory': str(self.directory)}, 'execution_secrets': {}}
+        self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-database-cleanup.yaml').read_text())
+        for job in self.workflow['jobs']:
             job.pop('target', None)
             job.pop('labels', None)
             for step in job['steps']:
-                step.pop('target', None)
-                step.pop('labels', None)
-        (self.repo / 'workflows' / source.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
-        self.state = {'operation': {'id': 17, 'kind': 'database.sqlite_cleanup', 'node_id': 209, 'status': 'queued', 'result': None, 'cancel_requested': False, 'input': {'variant': 'clone', 'directory': '/tmp/orbit-sqlite-clone-'+str(17).zfill(32)}}, 'calls': [], 'cleanups': 0}
+                self.assertIn('inputs.node_id', step.pop('target'))
+                self.assertIn('inputs.node_id', step.pop('labels')['node'])
         self.save()
 
     def save(self):
-        (self.repo / 'native-database-cleanup.json').write_text(json.dumps(self.state))
+        (self.repo / 'workflows/workflow-operation-database-cleanup.yaml').write_text(yaml.safe_dump(self.workflow, sort_keys=False))
 
-    def read(self):
-        return json.loads((self.repo / 'native-database-cleanup.json').read_text())
+    def run_cleanup(self, success=True):
+        self.cli('workflow', 'validate', 'operation-database-cleanup')
+        return reply(self.cli('workflow', 'run', 'operation-database-cleanup',
+                              '--input', json.dumps(self.public), success=success).stdout)
 
-    def run_workflow(self, success=True):
-        result = self.cli('workflow','run','operation-database-cleanup','--input','operation_id=17','--input','node_id=209','--input','kind='+self.state['operation']['kind'],success=success)
-        self.run_id = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-        return result
+    def test_real_cleanup_removes_only_owned_scratch_without_any_gateway(self):
+        run = self.run_cleanup()
+        self.assertEqual(run['status'], 'succeeded')
+        self.assertFalse(self.directory.exists())
+        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][2]['outputs']['stdout']), {'backend': 'absent'})
 
-    def test_direct_cleanup_has_no_discovery_claim_heartbeat_or_receipt(self):
-        self.run_workflow()
-        state=self.read()
-        self.assertEqual(state['cleanups'],1)
-        self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertTrue(all('/direct-operations/' in call for call in state['calls']))
-        self.assertFalse(any('claim' in call or 'heartbeat' in call or 'receipts' in call or '/primitive' in call for call in state['calls']))
+    def test_refusal_keeps_snapshot_and_native_run_failed(self):
+        self.directory.chmod(0o755)
+        run = self.run_cleanup(False)
+        self.assertEqual(run['status'], 'failed')
+        self.assertTrue(self.snapshot.exists())
+        self.assertEqual(json.loads(reply(self.cli('workflow', 'history', 'get', run['id']).stdout)['jobs'][0]['steps'][2]['outputs']['stdout']),
+                         {'error_code': 'database.sqlite_cleanup_failed'})
 
-    def test_native_retry_after_lost_terminal_projection_does_not_repeat_effect(self):
-        self.state['loseCompletion']=True
+    def test_repaired_refusal_resumes_failed_action_and_its_result(self):
+        self.directory.chmod(0o755)
+        run = self.run_cleanup(False)
+        self.directory.chmod(0o700)
+        resumed = reply(self.cli('workflow', 'resume', 'operation-database-cleanup', '--run', run['id']).stdout)
+        self.assertEqual(resumed['status'], 'succeeded')
+        self.assertFalse(self.directory.exists())
+        history = reply(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        self.assertEqual(json.loads(history['jobs'][0]['steps'][2]['outputs']['stdout']), {'backend': 'absent'})
+
+    def test_result_only_resume_does_not_repeat_completed_cleanup(self):
+        fail = self.repo / 'delivery-failure'
+        fail.touch()
+        self.workflow['jobs'][0]['steps'].append({
+            'name': 'fixture-delivery',
+            'dependsOn': [{'step': 'accept-result', 'condition': {'type': 'succeeded'}}],
+            'task': {'type': 'behavior', 'behaviorType': 'command/shell',
+                     'behaviorName': 'fixture-delivery-${{ run.id }}', 'methodName': 'execute',
+                     'inputs': {'run': 'test ! -f "' + str(fail) + '"'}}})
         self.save()
-        self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup')
-        self.assertEqual(self.read()['cleanups'],1)
+        run = self.run_cleanup(False)
+        self.assertFalse(self.directory.exists())
+        self.directory.mkdir(mode=0o700)
+        self.snapshot.write_text('new scratch must survive completed action resume')
+        fail.unlink()
+        resumed = reply(self.cli('workflow', 'resume', 'operation-database-cleanup', '--run', run['id']).stdout)
+        self.assertEqual(resumed['status'], 'succeeded')
+        self.assertTrue(self.snapshot.exists())
 
-    def test_native_retry_can_repeat_convergent_cleanup_without_a_gateway_receipt(self):
-        self.state['loseCleanup']=True
-        self.save()
-        self.run_workflow(success=False)
-        self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup')
-        state=self.read()
-        self.assertEqual(state['cleanups'],2)
-        self.assertEqual(state['operation']['status'],'succeeded')
-
-    def test_native_behavior_lock_serializes_two_cleanups_on_the_same_node(self):
-        first=self.state.pop('operation')
-        self.state['operations']={'17':first,'18':dict(first,id=18,input=dict(first['input'],directory='/tmp/orbit-sqlite-clone-'+str(18).zfill(32)))}
-        self.state['events']=[]
-        self.save()
-        def run(operation):
-            return self.cli('workflow', 'run', 'operation-database-cleanup', '--input', f'operation_id={operation}', '--input', 'node_id=209', '--input', 'kind=database.sqlite_cleanup')
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            for future in [pool.submit(run, operation) for operation in (17, 18)]:
-                future.result(timeout=self.native_timeout)
-        events=self.read()['events']
-        self.assertIn(events,[['start-17','end-17','start-18','end-18'],['start-18','end-18','start-17','end-17']])
+    def test_missing_scratch_is_a_successful_convergent_cleanup(self):
+        shutil.rmtree(self.directory)
+        self.assertEqual(self.run_cleanup()['status'], 'succeeded')
 
 
 if __name__ == '__main__':

@@ -747,14 +747,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/cleanup.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/database/clone.ts",
       "rule": "gateway-http",
       "count": 5,

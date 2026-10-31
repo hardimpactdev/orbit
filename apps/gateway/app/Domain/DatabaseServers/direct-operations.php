@@ -46,6 +46,8 @@ return ['database.update' => [
 ], 'database.sqlite_cleanup' => [
     'workflow' => 'operation-database-cleanup',
     'projection' => DatabaseCleanupProjection::class,
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'cleanup', 'step' => 'result'],
 ], 'database_user.create' => [
     'workflow' => 'operation-database-user-create',
     'projection' => DatabaseUserProjection::class,

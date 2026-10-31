@@ -238,3 +238,19 @@ SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO
 `database.destroy_owned` records the owned set once. One native Swamp DAG removes its databases on their admitted Nodes and its SQLite files on the Instance Node. Instance removal composes the same lower actions inside its parent run. Each server is a placed workflow step. The Gateway creates no child Operations and performs no remote SQL or file removal. It deletes the owned connection records only after the whole native DAG succeeds. Attached databases that the Instance does not own stay. Each placed step reads its admitted public descriptor and current cancellation state. A resumed projection uses saved outcomes without repeating removals.
 
 SQLite export, seed and abandon use native source and target steps in one run. Only their admitted source and target Nodes may read the public descriptors; only the root Node may record the result. Cancellation stops new work. Cleanup runs after started work, before the terminal result, and a missing native outcome records failure.
+
+### Native SQLite scratch cleanup
+
+`database.sqlite_cleanup` submits its complete non-secret snapshot descriptor to
+`operation-database-cleanup`. Separate placed command steps handle private clone
+scratch and source seed state owned by root. The admitted variant selects one step.
+Neither step calls the Gateway or uses an execution vault. Cleanup never selects
+the installed database as its deletion target.
+
+Clone cleanup requires a scratch directory owned by the worker with mode 0700.
+It refuses symlinks or unrelated entries. Seed cleanup checks its root-owned mode-0700 state,
+mode-0600 metadata, admitted source identity and saved snapshot inode. Missing
+owned scratch is already clean; a foreign or replaced file is a refusal. Native
+dependencies order each cleanup and its result. The shared terminal subscriber projects the
+bounded stdout result, and result delivery can resume without repeating a
+completed cleanup.

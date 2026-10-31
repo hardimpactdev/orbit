@@ -1,12 +1,11 @@
 id: 48d7426d-54e7-44cf-b1bf-0706b5a874f5
 name: operation-database-cleanup
-description: Clean up one admitted SQLite snapshot directly, without discovery or claims.
-target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Remove only admitted SQLite scratch through placed command steps.
+concurrency: 1
 writes: true
 vaults: []
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -18,41 +17,306 @@ inputs:
       type: string
       enum:
       - database.sqlite_cleanup
+    intent:
+      type: object
+      properties:
+        variant:
+          type: string
+          enum:
+          - clone
+          - seed
+        directory:
+          type: string
+          pattern: ^/tmp/orbit-sqlite-clone-[a-f0-9]{32}$
+        operation:
+          type: string
+        target_instance_id:
+          type: integer
+          minimum: 1
+        base:
+          type: string
+        source_path:
+          type: string
+        snapshot_path:
+          type: string
+        state_dir:
+          type: string
+        source_user:
+          type: string
+        transport_user:
+          type: string
+      required:
+      - variant
+      additionalProperties: false
+      oneOf:
+      - properties:
+          variant:
+            const: clone
+        required:
+        - directory
+      - properties:
+          variant:
+            const: seed
+        required:
+        - operation
+        - target_instance_id
+        - base
+        - source_path
+        - snapshot_path
+        - state_dir
+        - source_user
+        - transport_user
+    execution_secrets:
+      type: object
+      maxProperties: 0
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
 - name: cleanup
-  steps:
-  - name: cleanup
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/database-cleanup'
-      behaviorName: ${{ "database-cleanup-node-" + string(inputs.node_id) }}
-      methodName: cleanup
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: failure-cleanup
   target: ${{ "orbit-node-" + string(inputs.node_id) }}
-  labels:
+  labels: &id001
     node: ${{ string(inputs.node_id) }}
-  dependsOn:
-  - job: cleanup
-    condition:
-      type: failed
   steps:
-  - name: report
+  - name: clone
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    guard: ${{ inputs.intent.variant != "clone" }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: command/shell
+      behaviorName: ${{ "database-cleanup-clone-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/python3 -I - <<'PY'
+          import json
+          import os
+          import re
+          import stat
+          import sys
+          from pathlib import Path
+
+          code = 'database.sqlite_cleanup_failed'
+          try:
+              selected = os.environ['ORBIT_CLEANUP_DIRECTORY']
+              if re.fullmatch(r'/tmp/orbit-sqlite-clone-[a-f0-9]{32}', selected) is None:
+                  raise ValueError()
+              directory = Path(selected)
+              try:
+                  info = directory.lstat()
+              except FileNotFoundError:
+                  info = None
+              if info is not None:
+                  code = 'database.cleanup_owner_unavailable'
+                  if (os.geteuid() == 0 or not stat.S_ISDIR(info.st_mode)
+                          or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700):
+                      raise ValueError()
+                  code = 'database.sqlite_cleanup_refused'
+                  entries = list(directory.iterdir())
+                  for entry in entries:
+                      item = entry.lstat()
+                      if (entry.name != 'snapshot.sqlite' or not stat.S_ISREG(item.st_mode)
+                              or item.st_uid != os.geteuid() or item.st_nlink != 1):
+                          raise ValueError()
+                  for entry in entries:
+                      entry.unlink()
+                  directory.rmdir()
+              print(json.dumps({'backend': 'absent'}))
+          except (OSError, ValueError, KeyError):
+              print(json.dumps({'error_code': code}))
+              sys.exit(1)
+          PY
+        env:
+          ORBIT_CLEANUP_DIRECTORY: '${{ has(inputs.intent.directory) ? inputs.intent.directory : "" }}'
+    writes: true
+  - name: seed
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    guard: ${{ inputs.intent.variant != "seed" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "database-cleanup-seed-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_CLEANUP_OPERATION,ORBIT_CLEANUP_TARGET,ORBIT_CLEANUP_BASE,ORBIT_CLEANUP_SOURCE,ORBIT_CLEANUP_SNAPSHOT,ORBIT_CLEANUP_STATE,ORBIT_CLEANUP_OWNER,ORBIT_CLEANUP_TRANSPORT -- /usr/bin/python3 -I - <<'PY'
+          import json
+          import os
+          import pwd
+          import re
+          import stat
+          import sys
+          from pathlib import Path
+
+
+          def require(value):
+              if not value:
+                  raise ValueError()
+
+
+          def path(value):
+              require(isinstance(value, str) and value.startswith('/') and len(value) > 1
+                      and not value.endswith('/')
+                      and not re.search(r'[\x00\r\n]|(?:^|/)\.{1,2}(?:/|$)|//', value))
+              return Path(value)
+
+
+          def info(selected):
+              try:
+                  return selected.lstat()
+              except FileNotFoundError:
+                  return None
+
+
+          def walk(selected):
+              current = Path('/')
+              for part in selected.parts[1:]:
+                  current /= part
+                  require(stat.S_ISDIR(current.lstat().st_mode))
+
+
+          def account(name):
+              require(re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', name))
+              user = pwd.getpwnam(name)
+              require(user.pw_uid != 0)
+              return user.pw_uid
+
+
+          def cleanup():
+              require(os.geteuid() == 0)
+              operation = os.environ['ORBIT_CLEANUP_OPERATION']
+              require(re.fullmatch(r'[a-f0-9]{64}', operation))
+              target = os.environ['ORBIT_CLEANUP_TARGET']
+              require(re.fullmatch(r'[1-9][0-9]*', target))
+              base = path(os.environ['ORBIT_CLEANUP_BASE'])
+              source = path(os.environ['ORBIT_CLEANUP_SOURCE'])
+              require(base in source.parents)
+              snapshot = path(os.environ['ORBIT_CLEANUP_SNAPSHOT'])
+              require(str(snapshot) == '/tmp/orbit-sqlite-' + operation + '.sqlite')
+              directory = path(os.environ['ORBIT_CLEANUP_STATE'])
+              require(re.fullmatch(r'/var/lib/orbit/app-instance-sqlite-seeds/source-[1-9][0-9]*-target-'
+                                   + target + '(?:-' + operation + ')?', str(directory)))
+              owner = account(os.environ['ORBIT_CLEANUP_OWNER'])
+              transport = account(os.environ['ORBIT_CLEANUP_TRANSPORT'])
+              state_info = info(directory)
+              if state_info is None:
+                  require(info(snapshot) is None)
+                  return
+              walk(directory)
+              for selected in (directory.parent, directory):
+                  item = selected.lstat()
+                  require(item.st_uid == 0 and stat.S_IMODE(item.st_mode) == 0o700)
+              entries = list(directory.iterdir())
+              require(all(entry.name == 'state.json' for entry in entries))
+              state_file = directory / 'state.json'
+              saved = info(state_file)
+              if saved is None:
+                  require(info(snapshot) is None)
+              else:
+                  require(stat.S_ISREG(saved.st_mode) and saved.st_uid == 0
+                          and saved.st_nlink == 1 and stat.S_IMODE(saved.st_mode) == 0o600)
+                  fd = os.open(state_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                  with os.fdopen(fd) as stream:
+                      opened = os.fstat(stream.fileno())
+                      require((opened.st_dev, opened.st_ino) == (saved.st_dev, saved.st_ino))
+                      state = json.load(stream)
+                  require(isinstance(state, dict))
+                  expected = {'operation': operation, 'base': str(base),
+                              'source_path': str(source), 'snapshot_path': str(snapshot)}
+                  require(all(state.get(key) == value for key, value in expected.items()))
+                  item = info(snapshot)
+                  if item is not None:
+                      require(stat.S_ISREG(item.st_mode) and item.st_uid in (owner, transport)
+                              and item.st_nlink == 1 and stat.S_IMODE(item.st_mode) == 0o600)
+                      require('inode' not in state or state['inode'] == item.st_ino)
+                      snapshot.unlink()
+                  state_file.unlink()
+              directory.rmdir()
+
+
+          try:
+              cleanup()
+              print(json.dumps({'backend': 'absent'}))
+          except (OSError, ValueError, KeyError, TypeError):
+              print(json.dumps({'error_code': 'instance.sqlite_seed_refused'}))
+              sys.exit(1)
+          PY
+        env:
+          ORBIT_CLEANUP_OPERATION: '${{ has(inputs.intent.operation) ? inputs.intent.operation : "" }}'
+          ORBIT_CLEANUP_TARGET: '${{ has(inputs.intent.target_instance_id) ? string(inputs.intent.target_instance_id)
+            : "" }}'
+          ORBIT_CLEANUP_BASE: '${{ has(inputs.intent.base) ? inputs.intent.base : "" }}'
+          ORBIT_CLEANUP_SOURCE: '${{ has(inputs.intent.source_path) ? inputs.intent.source_path : "" }}'
+          ORBIT_CLEANUP_SNAPSHOT: '${{ has(inputs.intent.snapshot_path) ? inputs.intent.snapshot_path : "" }}'
+          ORBIT_CLEANUP_STATE: '${{ has(inputs.intent.state_dir) ? inputs.intent.state_dir : "" }}'
+          ORBIT_CLEANUP_OWNER: '${{ has(inputs.intent.source_user) ? inputs.intent.source_user : "" }}'
+          ORBIT_CLEANUP_TRANSPORT: '${{ has(inputs.intent.transport_user) ? inputs.intent.transport_user : "" }}'
+    writes: true
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: clone
+      condition:
+        type: always
+    - step: seed
+      condition:
+        type: always
+    writes: false
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "database-cleanup-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          result = {'error_code': 'database.sqlite_cleanup_failed'}
+          try:
+              value = json.loads(os.environ['ORBIT_CLEANUP_RESULT'])
+              if value == {'backend': 'absent'}:
+                  result = value
+              elif (isinstance(value, dict) and set(value) == {'error_code'}
+                    and value['error_code'] in ('database.sqlite_cleanup_failed',
+                        'database.cleanup_owner_unavailable', 'database.sqlite_cleanup_refused',
+                        'instance.sqlite_seed_refused')):
+                  result = value
+          except (ValueError, TypeError, KeyError):
+              pass
+          print(json.dumps(result))
+          sys.exit(1 if 'error_code' in result else 0)
+          PY
+        env:
+          ORBIT_CLEANUP_RESULT: '${{ inputs.intent.variant == "clone" ? (has(steps.clone.outputs) && has(steps.clone.outputs.stdout)
+            ? steps.clone.outputs.stdout : "") : (has(steps.seed.outputs) && has(steps.seed.outputs.stdout) ? steps.seed.outputs.stdout
+            : "") }}'
+        ignoreExitCode: true
+  - name: accept-result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: SQLite cleanup did not complete successfully.

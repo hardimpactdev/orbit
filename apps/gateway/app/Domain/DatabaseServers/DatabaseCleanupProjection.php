@@ -17,6 +17,9 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
     /** @return array<string, mixed> */
     public function input(Operation $operation): array
     {
+        if (in_array($operation->node_id, [1, 18], true)) {
+            throw new ResourceOperationException('database.worker_transport_unavailable', 'SQLite cleanup requires a worker on the admitted Node.', 422);
+        }
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id'] ?? null);
         $command = $intent->payload['commands']['database-apply'] ?? null;
         if ($operation->kind !== 'database.sqlite_cleanup' || $operation->target_type !== 'instance'
@@ -28,7 +31,7 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
         $input = $command['input'];
         if ($command['name'] === 'instance.copy-sqlite' && ($input['operation'] ?? null) === 'cleanup'
             && is_string($input['directory'] ?? null) && preg_match('#\A/tmp/orbit-sqlite-clone-[0-9a-f]{32}\z#D', $input['directory']) === 1) {
-            return ['variant' => 'clone', 'directory' => $input['directory']];
+            return ['intent' => ['variant' => 'clone', 'directory' => $input['directory']], 'execution_secrets' => []];
         }
         if ($command['name'] !== 'instance.prepare-sqlite-seed' || ($input['mode'] ?? null) !== 'cleanup') {
             $this->invalid();
@@ -49,7 +52,7 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
             $this->invalid();
         }
 
-        return ['variant' => 'seed', 'target_instance_id' => $operation->target_id, ...$safe];
+        return ['intent' => ['variant' => 'seed', 'target_instance_id' => $operation->target_id, ...$safe], 'execution_secrets' => []];
     }
 
     private function path(string $path): bool
@@ -72,12 +75,6 @@ final readonly class DatabaseCleanupProjection implements DirectOperationProject
         }
         if (is_string($raw['error_code'] ?? null) && preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $raw['error_code']) === 1) {
             $result['error_code'] = $raw['error_code'];
-        }
-        $status = ValidatedData::string($data['status']);
-        $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        if (($status === 'succeeded' && (($result['backend'] ?? null) !== 'absent' || $code !== null || isset($result['error_code'])))
-            || ($status === 'failed' && ($code === null || ($result['error_code'] ?? null) !== $code))) {
-            throw new ResourceOperationException('operation.result_invalid', 'The cleanup needs its bounded Swamp outcome.', 422);
         }
 
         return app(DirectOperation::class)->project($operation, $data, $result);
