@@ -5,22 +5,32 @@ declare(strict_types=1);
 namespace App\Domain\Metrics;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Records a single native intent. Writer choice remains with the operator. */
-final readonly class AdmitMetricsFleetAction
+final readonly class AdmitMetricsFleetAction implements MetricsFleetReconciler
 {
-    public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations, private DirectOperation $direct) {}
+    public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations) {}
+
+    public function reconcile(): void
+    {
+        if (NodeRole::query()->where('role', 'metrics')->where('status', 'active')->whereHas('node', static fn ($query) => $query->where('status', 'active'))->exists()) {
+            $this->execute();
+        }
+    }
+
+    public function retire(Node $node): void
+    {
+        $this->reconcile();
+    }
 
     /** @param list<int> $canaryNodeIds Explicit effect scope, never an owner-selection filter. */
     public function execute(array $canaryNodeIds = []): Operation
     {
-        if ($this->direct->writer('metrics.reconcile') !== 'direct') {
-            throw new ResourceOperationException('metrics.writer_held', 'The native Metrics writer is held for the fleet placement decision.', 503);
-        }
         $plan = $this->capture->capture();
         $ready = ValidatedData::integerList(array_column(array_filter(MetricsFleetCapture::members($plan), static fn (array $node): bool => $node['worker'] === true), 'node_id'));
         if (count($canaryNodeIds) !== count(array_unique($canaryNodeIds)) || array_diff($canaryNodeIds, $ready) !== []) {

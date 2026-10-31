@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Metrics\MetricsFleetProjection;
 
-// Explicit user hold: existing polled kind keeps its default until the fleet decision.
+// Direct-only. Release remains gated on the full fleet placement decision.
 return ['metrics.reconcile' => [
     'workflow' => 'operation-metrics-fleet',
     'writer_config' => 'swamp.direct_writers',

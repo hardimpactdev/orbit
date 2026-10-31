@@ -252,14 +252,13 @@ it('stores a web-root change only at its admitted phase and binds distinct URL-o
     expect($this->agents->calls)->toBe([]);
 });
 
-it('omits Metrics without an active assignment and captures only its Node and empty admission input', function (): void {
+it('omits Metrics without an assignment and refuses a legacy child when native composition is required', function (): void {
     $plans = app(RouteProjectionPlan::class);
     $plan = $plans->withMetrics(['stages' => []]);
     expect($plan['stages'])->toBe([]);
     $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
-    $plan = $plans->withMetrics(['stages' => []]);
-    expect($plan['stages']['metrics-reconciled'])->toBe([['key' => 'metrics-reconciled.fleet', 'kind' => 'metrics.reconcile', 'node_id' => $this->node->id, 'input' => []]])
-        ->and(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
+    expect(fn () => $plans->withMetrics(['stages' => []]))->toThrow(ResourceOperationException::class, 'Metrics must be a stage');
+    expect(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
 });
 
 it('binds Router baselines to owned Node children and forbids premature cutover', function (): void {

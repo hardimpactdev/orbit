@@ -559,10 +559,7 @@ final readonly class RouteProjectionPlan
         }
         $assignment = $assignments->first();
         if ($assignment !== null) {
-            $stages = ValidatedData::object($plan['stages']);
-            $stages['metrics-reconciled'] = [['key' => 'metrics-reconciled.fleet', 'kind' => 'metrics.reconcile',
-                'node_id' => $assignment->node_id, 'input' => []]];
-            $plan['stages'] = $stages;
+            throw new ResourceOperationException('metrics.native_composition_required', 'Metrics must be a stage of the owning native workflow.', 409);
         }
 
         return $plan;

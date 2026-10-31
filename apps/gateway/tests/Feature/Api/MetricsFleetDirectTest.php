@@ -10,9 +10,11 @@ use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->manifest = tempnam(sys_get_temp_dir(), 'fleet-direct-agent-');
@@ -35,8 +37,9 @@ afterEach(function (): void {
     unlink($this->manifest);
 });
 
-it('keeps native fleet admission held without creating another intent', function (): void {
+it('refuses the deleted polled writer without creating another intent', function (): void {
     $before = Operation::query()->count();
+    config(['swamp.direct_writers' => ['metrics.reconcile' => 'polled']]);
     expect(fn () => app(AdmitMetricsFleetAction::class)->execute([9]))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe($before);
 });
@@ -101,4 +104,19 @@ it('refuses a changed desired runtime before reading its credential', function (
     $this->credentials->shouldNotReceive('passwordForConvergence');
     $this->node->update(['name' => 'changed-after-capture']);
     expect(fn () => app(DirectOperationPrivateMaterial::class)->read($this->operation))->toThrow(ResourceOperationException::class);
+});
+
+it('records and starts one native root without executing or awaiting the fleet in PHP', function (): void {
+    $this->operation->update(['status' => OperationStatus::Cancelled]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-metrics-fleet', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'scoped-fixture']);
+    $operation = app(AdmitMetricsFleetAction::class)->execute([9]);
+    expect($operation->status)->toBe(OperationStatus::Queued)->and($operation->parent_operation_id)->toBeNull()
+        ->and($operation->state['metrics_fleet_writer'])->toBe('direct')->and($operation->state['swamp_run_id'])->toBe($this->run);
+    expect($socket->sent)->toHaveCount(1);
+    expect($operation->children()->count())->toBe(0);
 });

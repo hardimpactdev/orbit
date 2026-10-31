@@ -222,19 +222,15 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
 
 
-## Reconciliation child Operation
+## Native fleet reconciliation
 
-Route parents request `metrics.reconcile {}` on the one active Metrics serving Node only when their public, active host catalog changes. The catalog maps each host to its serving Ingress Node; FPM Instance selection does not depend on Route targets. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
+`metrics.reconcile` records one intent with the complete owner-captured fleet. Swamp runs placed snapshot, exporter, service, Caddy, verification and recovery steps. The Gateway captures intent, supplies owned private runtime material and projects the native result. There is no PHP fleet executor, child planner, receipt command or polled Metrics schedule.
 
-Swamp snapshots exporters and service monitoring before changing them. It then refreshes the Metrics runtime, verifies Grafana credentials and proves service Caddy updates through the owning Route child only for fleet Nodes with Orbit-managed Caddy (`caddy: true` in the captured intent).
+Nodes without workers remain in the capture and fail with `metrics.no_worker`. Nodes 1 and 18 require a placement decision before release. Canary scope may restrict effects to the five worker Nodes; it never filters the owning inventory or authorizes fleet success. This source pair remains a draft until that decision and the required source/access and canary gates pass.
 
-Service restoration uses the same restriction. Exporters and other service monitoring still run on Nodes without managed Caddy; unrelated Caddy Processes stay untouched. Reconciliation keeps the existing Metrics publication; it makes no certificate or private DNS change. Only proven matching child results permit successful completion. Failed or cancelled reconciliation requires restoration from the same parent's successful snapshots before it ends. A lost Node lock, lost Operation lease or cancelled service recovery stops reconciliation and requires fleet rollback. A refused or cancelled rollback completes as `metrics.rollback_failed`. Once the new runtime succeeds, later failure preserves it for recovery.
+Native step outputs preserve snapshots. Native dependencies and assertions control execution and recovery. Typed refusal before runtime mutation permits restoration. Missing mutation output remains uncertain; the workflow does not blindly repeat it. A committed runtime survives backup-cleanup failure. The canonical Caddy publisher refreshes its render under its lock, including removal of a stale scrape site when monitoring becomes disabled. Unmanaged Caddy Nodes stay untouched.
 
-Runtime configuration and credentials are resolved inside the Gateway through owner-bound secret references. Receipts keep only declared redacted metadata. Retained Gateway callers keep the synchronous fleet reconciler and its tests until their owning parent composition converts them. This child adds no HTTP cutover and deletes no retained executor.
-
-## Native fleet composition under development
-
-The Metrics owner supplies one immutable public fleet capture for standalone reconciliation and role roots. The role root keeps its required post-baseline reconciliation dependency. Native placed stages perform snapshot, exporter and service changes, canonical locked Caddy publication, verification and restoration in one run; the Gateway records intent and projects bounded results. Nodes without workers remain in owner selection and produce an explicit `metrics.no_worker` failure. The writer switch is held pending the placement decision for Nodes 1 and 18. Public input contains no credential, and foreign participant private access requires its reviewed shared contract.
+Existing PHP fleet callers record an Operation without awaiting execution. Native parents that require ordered reconciliation compose the stages in the same run. Legacy Route child planning refuses with `metrics.native_composition_required` before effects. Foreign Caddy reads remain closed until their shared contract is approved and integrated. Private material for role roots needs its own approved contract.
 
 ### Role changes with unchanged monitoring intent
 

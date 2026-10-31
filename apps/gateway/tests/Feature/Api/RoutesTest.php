@@ -292,16 +292,6 @@ it('lists, shows, updates, clears, and removes a pre-existing explicit Route', f
         ->toBe('route:destroy');
 });
 
-it('preserves a structured Metrics runtime failure through the Route update API', function (): void {
-    $route = route_api_active_development_route($this->orbitApp, $this->target);
-    $this->gateway->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
-    $this->routeSwamp->foreign->failKind = 'metrics.reconcile';
-    $op = $this->routeSwamp->finish($this->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public']));
-    expect($op->status->value)->toBe('failed')->and($op->error_code)->toBe('fixture.child_failed')
-        ->and($op->children()->where('kind', 'metrics.reconcile')->sole()->error_code)->toBe('fixture.child_failed');
-
-});
-
 it('refuses targetless app Route creation in the action', function (): void {
     expect(fn () => app(CreateRouteAction::class)->execute(new CreateRouteData(
         projectId: $this->orbitApp->id,
