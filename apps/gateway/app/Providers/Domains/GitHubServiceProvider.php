@@ -6,8 +6,13 @@ namespace App\Providers\Domains;
 
 use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppCredentialsOutput;
+use App\Domain\GitHub\GitHubAppJwtSource;
+use App\Domain\GitHub\GitHubAppRegistrationCodeSource;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\GreenCommitResolver;
+use App\Domain\Operations\OperationSecretOutputStore;
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
@@ -23,4 +28,10 @@ final class GitHubServiceProvider extends ServiceProvider
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         BranchHeadReader::class => GitHubBranchHeadReader::class,
     ];
+
+    public function register(): void
+    {
+        $this->app->tag([GitHubAppRegistrationCodeSource::class, GitHubAppJwtSource::class], OperationSecretSource::class);
+        $this->app->tag(GitHubAppCredentialsOutput::class, OperationSecretOutputStore::class);
+    }
 }

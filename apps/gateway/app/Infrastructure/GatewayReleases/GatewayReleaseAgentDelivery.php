@@ -23,15 +23,7 @@ use Illuminate\Support\Facades\Http;
 use JsonException;
 use Throwable;
 
-/**
- * The agent a release pins, taken from its commit's public Orbit release, which holds the CLI and the agent
- * ([Node agent: Delivery](/reference/node-agent#delivery)). Prepare finds the release by the tag that points at the
- * commit, downloads the manifest and `SHA256SUMS` without authentication, and verifies their provenance
- * ([Release provenance](/reference/gateway-recovery#release-provenance)). It checks the manifest against
- * `SHA256SUMS` and downloads the Gateway's binary against its digest, all before it changes anything. Install
- * puts the manifest into the release and installs the binary on the Gateway through the binary's own installer,
- * so the running agent is never needed to install the agent.
- */
+/** Frozen, provenance-verified observer delivery, independent of Gateway release publication. */
 final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 {
     public const string Manifest = 'apps/agent/delivery/manifest.json';
@@ -52,15 +44,22 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         private string $repository,
         private string $cacheDirectory,
         private Closure $runner,
+        private ?string $frozenManifest = null,
     ) {}
 
     /**
-     * A commit without a complete release yet refuses before anything changes, so a later attempt can find it. A
-     * release whose provenance does not verify refuses for good, because a published release never changes.
+     * Verifies the frozen delivery before anything changes. Gateway commits need no published agent release.
      */
     public function fetch(string $revision, Node $gateway): array
     {
-        [$sha, $tag] = $this->release($revision);
+        $sha = $this->commit($revision);
+        $frozen = $this->frozenManifest ?? @file_get_contents(resource_path('agent/frozen-manifest.json'));
+        $pin = is_string($frozen) ? json_decode($frozen, true) : null;
+        $url = is_array($pin) ? ($pin['artifacts']['linux-x86_64']['url'] ?? null) : null;
+        if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
+            throw $this->invalid($sha, 'The frozen agent manifest has no fixed published release.');
+        }
+        $tag = $match[1];
         $base = rtrim($this->repository, '/').'/releases/download/'.rawurlencode($tag);
         $manifest = $this->download($base.'/manifest.json', $sha);
         $sums = $this->download($base.'/SHA256SUMS', $sha);
@@ -72,6 +71,9 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
             throw $unavailable->local
                 ? new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_unconfigured', 'The Gateway cannot verify release provenance: '.$unavailable->getMessage(), 503, sha: $sha, previous: $unavailable)
                 : $this->unavailable($sha, $unavailable->getMessage());
+        }
+        if (! hash_equals(hash('sha256', $frozen), hash('sha256', $manifest))) {
+            throw $this->invalid($sha, 'The published manifest differs from the frozen agent pin.');
         }
         $this->validate($manifest, $this->checksums($sums, $sha), $base, $sha);
 
@@ -111,15 +113,18 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
         }
     }
 
-    /** @return array{0: string, 1: string} the full commit and the release tag that points at it */
-    private function release(string $revision): array
+    /** Resolve the Gateway commit independently of the frozen agent's published release. */
+    private function commit(string $revision): string
     {
         $revision = GatewayReleaseCommit::parse($revision);
         if (! str_starts_with($this->repository, 'https://')) {
             throw $this->unavailable(null, 'The release repository must be an HTTPS URL.');
         }
+        if (GatewayReleaseCommit::isSha($revision)) {
+            return $revision;
+        }
         $result = $this->processes->run(new ProcessInvocation(
-            ['git', 'ls-remote', '--tags', '--refs', $this->repository, 'refs/tags/cli-v*'],
+            ['git', 'ls-remote', '--refs', $this->repository, 'refs/tags/cli-v*', 'refs/heads/*'],
             timeout: 60.0,
             environment: ['GIT_TERMINAL_PROMPT' => '0'],
         ));
@@ -129,18 +134,18 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 
         $matches = [];
         foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
-            if (preg_match('#\A([0-9a-f]{40})\trefs/tags/(cli-v0\.[1-9][0-9]*\.0)\z#D', $line, $tag) === 1 && str_starts_with($tag[1], $revision)) {
-                $matches[$tag[1]] = $tag[2];
+            if (preg_match('#\A([0-9a-f]{40})\trefs/(?:tags/cli-v0\.[1-9][0-9]*\.0|heads/[^\s]+)\z#D', $line, $tag) === 1 && str_starts_with($tag[1], $revision)) {
+                $matches[$tag[1]] = true;
             }
         }
         if (count($matches) > 1) {
-            throw new GatewayReleaseException('resolve', 'gateway.release_commit_unknown', "The prefix [{$revision}] names more than one released commit.", 422);
+            throw new GatewayReleaseException('resolve', 'gateway.release_commit_unknown', "The prefix [{$revision}] names more than one commit.", 422);
         }
         if ($matches === []) {
-            throw $this->unavailable(null, "No published release holds commit [{$revision}] yet.");
+            throw new GatewayReleaseException('resolve', 'gateway.release_commit_unknown', "No published tag or branch resolves [{$revision}]. Pass its full commit SHA.", 422);
         }
 
-        return [(string) array_key_first($matches), (string) reset($matches)];
+        return (string) array_key_first($matches);
     }
 
     private function download(string $url, string $sha): string
@@ -235,7 +240,7 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
 
     private function unavailable(?string $sha, string $message): GatewayReleaseException
     {
-        return new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', $message.' The release waits for its published agent.', 503, sha: $sha);
+        return new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', $message.' The frozen published agent must be reachable.', 503, sha: $sha);
     }
 
     private function invalid(string $sha, string $message): GatewayReleaseException
