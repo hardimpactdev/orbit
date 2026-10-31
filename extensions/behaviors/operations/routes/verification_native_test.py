@@ -58,7 +58,7 @@ class VerificationNative(NativeTestCase):
         self.assertEqual(self.read()['operation']['status'], 'succeeded')
 
     def test_lost_terminal_reply_is_read_without_repeating_probe(self):
-        self.state['loseCompletion'] = True
+        self.state['loseProjection'] = True
         self.save()
         self.run_workflow(success=False)
         self.cli('workflow', 'resume', 'operation-route-verification', '--run', self.run_id, '--from', 'verify')

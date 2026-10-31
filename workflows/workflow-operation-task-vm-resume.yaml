@@ -1,0 +1,118 @@
+id: de1b2603-fc9c-4054-91ec-3f51474109bb
+name: operation-task-vm-resume
+description: Start one owned VM and confirm its guest and Pi in the same native root.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [task_vm.resume] }
+  required: [operation_id, node_id, kind]
+vaults: []
+jobs:
+  - name: admission
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: admit
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-resume'
+          behaviorName: '${{ "task-vm-resume-" + run.id }}'
+          methodName: admit
+          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}' }
+  - name: provider
+    dependsOn: [{ job: admission, condition: { type: succeeded } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: provider
+        guard: '${{ !steps.admit.outputs.active }}'
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-resume'
+          behaviorName: '${{ "task-vm-resume-" + run.id }}'
+          methodName: stage
+          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: provider }
+      - name: provider-ready
+        guard: '${{ !steps.admit.outputs.active }}'
+        dependsOn: [{ step: provider, condition: { type: succeeded } }]
+        task: { type: assert, expr: steps.provider.outputs.ok, message: The VM provider did not confirm started power, severity: high }
+  - name: guest
+    dependsOn: [{ job: provider, condition: { type: succeeded } }]
+    target: '${{ "orbit-node-" + string(steps.admit.outputs.input.guest_node_id) }}'
+    labels: { node: '${{ string(steps.admit.outputs.input.guest_node_id) }}' }
+    steps:
+      - name: guest
+        guard: '${{ !steps.admit.outputs.active }}'
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-resume'
+          behaviorName: '${{ "task-vm-resume-" + run.id }}'
+          methodName: stage
+          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: guest }
+      - name: guest-ready
+        guard: '${{ !steps.admit.outputs.active }}'
+        dependsOn: [{ step: guest, condition: { type: succeeded } }]
+        task: { type: assert, expr: steps.guest.outputs.ok, message: The exact guest agent and Pi artifact are not ready, severity: high }
+  - name: pi
+    dependsOn: [{ job: guest, condition: { type: succeeded } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: pi
+        guard: '${{ !steps.admit.outputs.active }}'
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-resume'
+          behaviorName: '${{ "task-vm-resume-" + run.id }}'
+          methodName: stage
+          inputs: { operation_id: '${{ inputs.operation_id }}', kind: '${{ inputs.kind }}', node_id: '${{ inputs.node_id }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: pi }
+      - name: pi-ready
+        guard: '${{ !steps.admit.outputs.active }}'
+        dependsOn: [{ step: pi, condition: { type: succeeded } }]
+        task: { type: assert, expr: steps.pi.outputs.ok, message: The admitted Pi server did not answer with its private token, severity: high }
+  - name: projection
+    dependsOn:
+      - { job: admission, condition: { type: always } }
+      - { job: provider, condition: { type: always } }
+      - { job: guest, condition: { type: always } }
+      - { job: pi, condition: { type: always } }
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: project
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-resume'
+          behaviorName: '${{ "task-vm-resume-" + run.id }}'
+          methodName: project
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            kind: '${{ inputs.kind }}'
+            node_id: '${{ inputs.node_id }}'
+            run_id: '${{ run.id }}'
+            admission: '${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs : null }}'
+            outcomes: '${{ (has(steps.provider) && has(steps.provider.outputs) ? [steps.provider.outputs] : []) + (has(steps.guest) && has(steps.guest.outputs) ? [steps.guest.outputs] : []) + (has(steps.pi) && has(steps.pi.outputs) ? [steps.pi.outputs] : []) }}'
+
+  - name: failure
+    dependsOn: [{ job: projection, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: settle-failure
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: task-vm-resume-failure
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
