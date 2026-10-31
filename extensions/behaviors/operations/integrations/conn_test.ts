@@ -14,7 +14,7 @@ class ConnFixture {
   operation = Operation.parse({
     id: 12,
     node_id: 2,
-    kind: "conn.pairing_revoke",
+    kind: "conn.gateway_sessions_revoke",
     status: "running",
     cancel_requested: false,
     input: { environment: { $secret: "conn.environment", id: 8 } },
@@ -147,68 +147,6 @@ class ConnFixture {
     }, ctx);
   }
 }
-
-Deno.test("Conn revokes each admitted device session and link once, without touching other or current clients", async () => {
-  const f = new ConnFixture();
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.revoked, ["phone-old-1", "phone-old-2", "phone-link"]);
-  assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
-      call.body.key
-    ),
-    [
-      "revocation-inspect",
-      "session-0",
-      "session-1",
-      "link-0",
-      "pairing-revoke",
-    ],
-  );
-  assertEquals(f.result, { backend: "revoked", revoked_sessions: 2 });
-});
-
-for (const key of ["revocation-inspect", "session-0", "link-0"]) {
-  Deno.test(`Conn restart after lost ${key} reply reuses the exact effect key`, async () => {
-    const f = new ConnFixture();
-    f.loseRun = key;
-    await assertRejects(() => f.execute(), Error, "Lost Conn reply");
-    assertEquals((await f.execute()).status, "succeeded");
-    assertEquals(f.revoked, ["phone-old-1", "phone-old-2", "phone-link"]);
-    assertEquals(f.receipts.size, 5);
-  });
-}
-
-Deno.test("Conn lost final completion and workflow re-entry cannot issue another revoke", async () => {
-  const f = new ConnFixture();
-  f.loseCompletion = true;
-  await assertRejects(() => f.execute(), Error, "Lost Conn completion");
-  const count = f.calls.filter((call) => call.path.endsWith("/run")).length;
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/run")).length,
-    count,
-  );
-});
-
-Deno.test("Conn refuses success after a failed effect and stops later revocations", async () => {
-  const f = new ConnFixture();
-  f.fail = "session-0";
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.error, "conn.request_refused");
-  assertEquals(f.revoked, []);
-  assertEquals(
-    f.calls.some((call) => call.body.key === "pairing-revoke"),
-    false,
-  );
-});
-
-Deno.test("Conn cancellation stops before the next revoke and never reports a cleanup receipt", async () => {
-  const f = new ConnFixture();
-  f.cancelAfter = "session-0";
-  assertEquals((await f.execute()).status, "cancelled");
-  assertEquals(f.revoked, ["phone-old-1"]);
-  assertEquals(f.result, {});
-});
 
 Deno.test("Conn registration cleanup handles repeated intermediate sessions and empty snapshots", async () => {
   for (const sessions of [["first-old", "intermediate"], []]) {

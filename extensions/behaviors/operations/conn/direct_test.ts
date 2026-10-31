@@ -27,6 +27,11 @@ function fixture() {
     pairing_link_id: null as string | null,
     expires_at: null as string | null,
   };
+  let sessions = [
+    { sessionId: "self", current: true, client: { label: input.labels[0] } },
+    { sessionId: "other", client: { label: "unrelated" } },
+    { sessionId: "owned", client: { label: input.labels[0] } },
+  ];
   const ctx = {
     globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/test/ca" },
     readResource: (key: string) => Promise.resolve(resources.get(key) ?? null),
@@ -97,6 +102,9 @@ function fixture() {
   const gateway = new GatewayOperation(http, identity);
   const effects: unknown[] = [];
   const t3: T3 = (_method, path, _input, body) => {
+    if (path === "/api/auth/clients") {
+      return Promise.resolve(structuredClone(sessions));
+    }
     effects.push({ path, body });
     if (path === "/api/auth/pairing-token") {
       return Promise.resolve({
@@ -105,7 +113,10 @@ function fixture() {
         expiresAt: "2026-10-30T23:59:00.000Z",
       });
     }
-    return Promise.reject(new Error("Unexpected effect"));
+    sessions = sessions.filter((s) =>
+      s.sessionId !== (body as { sessionId?: string }).sessionId
+    );
+    return Promise.resolve({ revoked: true });
   };
   return {
     ctx,
@@ -166,6 +177,66 @@ Deno.test("Conn stored credential recovers a lost projection without issuing aga
   );
   assertEquals(f.effects.length, 1);
 });
+for (
+  const kind of ["conn.pairing_revoke"] as const
+) {
+  Deno.test(`${kind} preserves current admin and unrelated sessions`, async () => {
+    const f = fixture();
+    assertEquals(
+      await executeConn(
+        { ...identity, kind },
+        f.ctx,
+        f.gateway,
+        f.t3,
+        f.safe(),
+      ),
+      { backend: "revoked", revoked_sessions: 1 },
+    );
+    assertEquals(
+      f.effects.map((e) => (e as { body: unknown }).body),
+      [{ sessionId: "owned" }, { id: "link-1" }],
+    );
+  });
+}
+Deno.test("Conn malformed inspection fails without a revoke or leaked diagnostic", async () => {
+  const f = fixture();
+  assertEquals(
+    await executeConn(
+      { ...identity, kind: "conn.pairing_revoke" },
+      f.ctx,
+      f.gateway,
+      () => Promise.resolve({ credential: "pairing-secret-sentinel" }),
+      f.safe(),
+    ),
+    { error_code: "conn.response_invalid" },
+  );
+  assertEquals(f.effects.length, 0);
+});
+Deno.test("Conn changed session owner refuses before revoke", async () => {
+  const f = fixture();
+  let reads = 0;
+  const t3: T3 = (method, path, input, body) => {
+    if (path === "/api/auth/clients" && ++reads > 1) {
+      return Promise.resolve([{
+        sessionId: "owned",
+        client: { label: "other-owner" },
+      }]);
+    }
+    return f.t3(method, path, input, body);
+  };
+  assertEquals(
+    await executeConn(
+      { ...identity, kind: "conn.pairing_revoke" },
+      f.ctx,
+      f.gateway,
+      t3,
+      f.safe(),
+    ),
+    { error_code: "conn.session_owner_changed" },
+  );
+  assertEquals(f.effects.length, 0);
+});
+
 Deno.test("Conn transport preserves a registered URL prefix and refuses redirects", async () => {
   const f = fixture();
   f.input.environment.url = "http://t3.test/server/prefix/";
@@ -177,13 +248,13 @@ Deno.test("Conn transport preserves a registered URL prefix and refuses redirect
   };
   try {
     assertEquals(
-      await requestT3("POST", "/api/auth/pairing-token", f.input, {
+      await requestT3("POST", "/api/auth/clients/revoke", f.input, {
         sessionId: "owned",
       }),
       { revoked: true },
     );
     assertEquals(seen, [{
-      url: "http://t3.test/server/prefix/api/auth/pairing-token",
+      url: "http://t3.test/server/prefix/api/auth/clients/revoke",
       redirect: "error",
     }]);
   } finally {
@@ -203,4 +274,67 @@ Deno.test("Conn rejects a pairing secret echoed in public link metadata", async 
     { error_code: "conn.response_invalid" },
   );
   assertFalse(f.input.issued);
+});
+
+Deno.test("Conn admin-session rotation mid-revoke stops before an effect", async () => {
+  const f = fixture();
+  const t3: T3 = (method, path, input, body) => {
+    const result = f.t3(method, path, input, body);
+    if (path === "/api/auth/clients") {
+      f.input.environment.admin_session = "rotated-private-sentinel";
+    }
+    return result;
+  };
+  assertEquals(
+    await executeConn(
+      { ...identity, kind: "conn.pairing_revoke" },
+      f.ctx,
+      f.gateway,
+      t3,
+      f.safe(),
+    ),
+    { error_code: "conn.environment_changed" },
+  );
+  assertEquals(f.effects.length, 0);
+});
+Deno.test("Conn unadmitted link is refused before link revocation", async () => {
+  const f = fixture();
+  f.input.labels = [];
+  const admitted = f.safe();
+  f.input.links = [];
+  assertEquals(
+    await executeConn(
+      { ...identity, kind: "conn.pairing_revoke" },
+      f.ctx,
+      f.gateway,
+      f.t3,
+      admitted,
+    ),
+    { error_code: "conn.environment_changed" },
+  );
+  assertEquals(f.effects.length, 0);
+});
+
+Deno.test("Conn admin rotation during the final inspection cannot revoke the new admin", async () => {
+  const f = fixture();
+  f.input.links = [];
+  let inspections = 0;
+  const t3: T3 = (method, path, input, body) => {
+    const result = f.t3(method, path, input, body);
+    if (path === "/api/auth/clients" && ++inspections === 2) {
+      f.input.environment.admin_session = "new-admin-private-sentinel";
+    }
+    return result;
+  };
+  assertEquals(
+    await executeConn(
+      { ...identity, kind: "conn.pairing_revoke" },
+      f.ctx,
+      f.gateway,
+      t3,
+      f.safe(),
+    ),
+    { error_code: "conn.environment_changed" },
+  );
+  assertEquals(f.effects.length, 0);
 });

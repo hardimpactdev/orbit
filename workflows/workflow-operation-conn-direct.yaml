@@ -8,7 +8,7 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [conn.pairing_create],
+      enum: [conn.pairing_create, conn.pairing_revoke],
     }
   required: [operation_id, node_id, kind]
 jobs:

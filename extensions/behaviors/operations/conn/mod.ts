@@ -7,7 +7,10 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 
-const Kind = z.literal("conn.pairing_create");
+const Kind = z.enum([
+  "conn.pairing_create",
+  "conn.pairing_revoke",
+]);
 const Args = DirectArgs.extend({ kind: Kind });
 const Id = z.string().regex(/^[a-zA-Z0-9_-]{1,1024}$/);
 const Time = z.string().datetime({ offset: true });
@@ -17,6 +20,10 @@ const SafeResult = z.union([
     pairing_id: z.number().int().positive(),
     pairing_link_id: Id,
     expires_at: Time,
+  }).strict(),
+  z.object({
+    backend: z.literal("revoked"),
+    revoked_sessions: z.number().int().nonnegative(),
   }).strict(),
   z.object({ error_code: z.string().regex(/^conn\.[a-z_]{1,80}$/) }).strict(),
 ]);
@@ -35,6 +42,11 @@ const Input = z.object({
   pairing_link_id: Id.nullable(),
   expires_at: Time.nullable(),
 }).strict();
+const Session = z.object({
+  sessionId: Id,
+  current: z.boolean().optional(),
+  client: z.object({ label: z.string().nullable().optional() }).optional(),
+});
 const Scopes = [
   "orchestration:read",
   "orchestration:operate",
@@ -85,7 +97,7 @@ export async function executeConn(
           pairing_link_id: id,
           expires_at,
         });
-        {
+        if (args.kind === "conn.pairing_create") {
           if (admitted.issued) {
             outcome = SafeResult.parse(
               result(admitted.pairing_link_id!, admitted.expires_at!),
@@ -130,6 +142,56 @@ export async function executeConn(
           outcome = metadata;
           return;
         }
+        const stillCurrent = async (link?: string) => {
+          const current = z.object({ input: z.record(z.string(), z.unknown()) })
+            .parse(await gateway.read());
+          let matches = false;
+          await gateway.withPrivateMaterial((fresh) => {
+            const value = Input.parse({ ...current.input, ...fresh });
+            matches = value.environment.admin_session ===
+                admitted.environment.admin_session &&
+              value.environment.url === admitted.environment.url &&
+              (link === undefined || value.links.includes(link));
+            return Promise.resolve();
+          });
+          if (!matches) refuse("conn.environment_changed");
+        };
+        const inspect = async () =>
+          z.array(Session).max(4096).parse(
+            await t3("GET", "/api/auth/clients", admitted),
+          );
+        const sessions = admitted.labels.length ? await inspect() : [];
+        let revoked = 0;
+        for (const session of sessions) {
+          if (
+            session.current ||
+            !admitted.labels.includes(session.client?.label ?? "")
+          ) continue;
+          const fresh = (await inspect()).find((value) =>
+            value.sessionId === session.sessionId
+          );
+          if (!fresh) continue;
+          if (
+            fresh.current ||
+            !admitted.labels.includes(fresh.client?.label ?? "")
+          ) refuse("conn.session_owner_changed");
+          await stillCurrent();
+          const reply = z.object({ revoked: z.boolean() }).parse(
+            await t3("POST", "/api/auth/clients/revoke", admitted, {
+              sessionId: fresh.sessionId,
+            }),
+          );
+          if (reply.revoked) revoked++;
+        }
+        for (const link of admitted.links) {
+          await stillCurrent(link);
+          z.object({ revoked: z.boolean() }).parse(
+            await t3("POST", "/api/auth/pairing-links/revoke", admitted, {
+              id: link,
+            }),
+          );
+        }
+        outcome = { backend: "revoked", revoked_sessions: revoked };
       } catch (error) {
         outcome = {
           error_code: error instanceof Refusal

@@ -32,7 +32,6 @@ export function invocation(
 ): Invocation {
   if (
     [
-      "conn.pairing_revoke",
       "conn.gateway_sessions_revoke",
     ].includes(kind)
   ) {

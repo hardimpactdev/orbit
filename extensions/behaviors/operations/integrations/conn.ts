@@ -45,9 +45,7 @@ export async function revokeConn(
   ctx: Context,
   checkLease: () => void,
 ) {
-  const finalStep = operation.kind === "conn.pairing_revoke"
-    ? "pairing-revoke"
-    : "gateway-sessions-revoke";
+  const finalStep = "gateway-sessions-revoke";
   let current = operation;
   for (;;) {
     checkLease();

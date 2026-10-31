@@ -330,21 +330,6 @@ Deno.test("Reverb waits for fresh process reports and resumes a completed pendin
   );
 });
 
-Deno.test("Conn revoke preserves the admitted pairing set", async () => {
-  const f = new Fixture();
-  f.operation.kind = "conn.pairing_revoke";
-  f.operation.input = {
-    environment: { $secret: "conn.environment", id: 8 },
-    pairing_ids: [77, 78],
-  };
-  f.result = { backend: "revoked", revoked_sessions: 1 };
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(
-    f.calls.find((call) => call.path.endsWith("/run"))!.body.input,
-    f.operation.input,
-  );
-});
-
 Deno.test("a still-running target receipt ends without another effect or completion", async () => {
   const f = new Fixture();
   f.loseRun = true;

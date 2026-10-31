@@ -1,4 +1,7 @@
 {
-  "kinds": ["conn.pairing_create"],
+  "kinds": [
+    "conn.pairing_create",
+    "conn.pairing_revoke"
+  ],
   "workflow": "operation-conn-direct"
 }

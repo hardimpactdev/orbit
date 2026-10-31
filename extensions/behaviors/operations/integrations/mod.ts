@@ -148,8 +148,7 @@ export function integrations(
             }, 30_000);
             try {
               if (
-                (operation.kind === "conn.pairing_revoke" ||
-                  operation.kind === "conn.gateway_sessions_revoke") &&
+                (operation.kind === "conn.gateway_sessions_revoke") &&
                 operation.execution_context?.descriptors.some((item) =>
                   item.name === "conn.revocation"
                 )

@@ -1,9 +1,10 @@
 # Direct Conn pairing creation
 
-Only `conn.pairing_create` starts `operation-conn-direct`. Its owning Gateway
-slice selects the direct writer and removes the PHP issue command, pairing HTTP
-relay and receipt tests. Other Conn and Vault kinds retain their existing paths
-until their own takeover. Rollback reverts the owning PR.
+`conn.pairing_create` and `conn.pairing_revoke` start `operation-conn-direct`.
+Its owning Gateway slice selects the direct writer and removes the PHP issue
+command, pairing HTTP relay and receipt tests. Gateway session cleanup and Vault
+kinds retain their existing paths until their own takeover. Rollback reverts the
+owning PR.
 
 Workflow input contains only Operation, kind and Node identifiers. The shared
 private-material endpoint requires the Gateway-recorded run, exact caller Node
@@ -41,5 +42,11 @@ native-start and first-projection timings without private bytes. Injected Http
 fixtures are regression evidence and do not satisfy this canary requirement.
 No shared source merge implies family activation or runtime readiness.
 
-Scheduled integrations discovery excludes pairing creation; its only executor
-is the direct Conn workflow.
+Revocation reads its admitted labels and links through the same shared private
+callback. It checks current admin identity and owner before each revoke, keeps
+the current admin and unrelated clients, and projects only the revoked count.
+The Gateway no longer executes device revokes or pairing-link HTTP calls.
+
+The polled integrations schedule excludes `conn.pairing_create` and
+`conn.pairing_revoke`. Both use only the direct Conn workflow. Their executor
+registrations are removed in the same cutover; rollback reverts the owning PR.
