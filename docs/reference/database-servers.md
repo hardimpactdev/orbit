@@ -26,6 +26,8 @@ Instance lifecycle workflows compose Database actions as placed jobs. They do no
 
 Native workflows read stored credentials through the declared private-material source for the admitted run and Node. Operation history contains no passwords or step receipts. Removal deletes the admitted record after native success.
 
+The SQL user parent resolves private data inside its existing read boundary. The shared SQL user action accepts that data directly and returns only a public completion or refusal. It does not receive a Gateway client or fetch callback.
+
 ## Create a server
 
 `database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes.
