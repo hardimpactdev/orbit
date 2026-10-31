@@ -1,0 +1,27 @@
+id: b6db2e34-cc2c-43f0-a68e-14ae79a54e32
+name: operation-fleet-recipe-pr
+description: Maintain one admitted recipe PR through the shared scoped GitHub mint.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [fleet.recipe_pr] }
+  required: [operation_id, node_id, kind]
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+jobs:
+  - name: github
+    writes: true
+    steps:
+      - name: maintain
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/fleet-recipe-pr"
+          behaviorName: fleet-recipe-pr
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

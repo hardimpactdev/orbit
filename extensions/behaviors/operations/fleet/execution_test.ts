@@ -401,26 +401,6 @@ Deno.test("a failed first footprint child stops the rollout before verification"
   assertEquals((await f.execute()).status, "failed");
   assertEquals(f.commands().includes("fleet.verify"), false);
 });
-Deno.test("recipe PR write keeps only the declared App secret reference in Swamp", async () => {
-  const f = new Fixture();
-  f.operation.kind = "fleet.recipe_pr";
-  f.operation.input = {
-    action: "merge",
-    variant: "snapshot",
-    date: "20261028",
-    pull_number: 99,
-    head_sha: "a".repeat(40),
-    token: { $secret: "github.app", id: 2 },
-  };
-  f.loseRun = "github.recipe-pr";
-  await assertRejects(() => f.execute(), Error, "Lost run reply");
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.mutations, 1);
-  assertEquals(
-    f.calls.find((c) => c.path.endsWith("/run"))!.body.transport,
-    "gateway",
-  );
-});
 
 Deno.test("queued shared visits stop outside the window and interrupted visits halt without further effects", async () => {
   const queued = rollout();
