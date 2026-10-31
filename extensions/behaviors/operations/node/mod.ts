@@ -11,7 +11,6 @@ import {
 import { converge } from "./converge.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { lifecycle } from "./lifecycle.ts";
-import { network } from "./network.ts";
 import { role } from "./role.ts";
 import { projectWireGuard } from "./wireguard.ts";
 const LifecycleKinds = [
@@ -40,8 +39,6 @@ const RoleKinds = [
 const AdditionalKinds = [
   ...LifecycleKinds,
   ...RoleKinds,
-  "node.network_converge",
-  "node.network_rollback",
   "node.wireguard_hub_converge",
 ] as const;
 
@@ -268,8 +265,6 @@ export function node(
                 ? await lifecycle(execution)
                 : RoleKinds.includes(operation.kind)
                 ? await role(execution)
-                : operation.kind === "node.network_converge"
-                ? await network(execution)
                 : operation.kind === "node.wireguard_hub_converge"
                 ? await projectWireGuard(execution)
                 : operation.kind === "node.converge"

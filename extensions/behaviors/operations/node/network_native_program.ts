@@ -195,9 +195,8 @@ def publish(data):
     owner='peer-'+hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     saved,resumed=transaction(owner)
     if resumed:
-        current=read('orbit.conf',True)
-        if current and 'PublicKey = '+data['server_public_key'] in current and command('wg',['show','orbit','public-key']).stdout.strip()==public and state()['active']:
-            return {'public_key':public}
+        # A pending transaction may precede any write or contain only a partial
+        # publication. Restore its exact baseline, then apply every desired field.
         restore(saved);saved,_=transaction(owner)
     if data['operator_dns'] is None and not uplink(data['dns_server'],saved['resolver']['server'] if saved['resolver'] else '') and (not saved['resolver'] or saved['resolver']['link']=='orbit'):
         remove('.orbit.native-network-transaction');refuse('wireguard.peer_dns_uplink_missing')
