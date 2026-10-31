@@ -95,7 +95,7 @@ final readonly class NodeWireGuardInput
         if (! is_array($snapshot) || count($snapshot) !== 6 || ($snapshot['schema_version'] ?? null) !== 1
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
-            || ! in_array($operation->kind, ['node.add', 'node.remove', 'node.removal_restore',
+            || ! in_array($operation->kind, ['node.add', 'node.remove',
                 'node.network_converge', 'node.wireguard_hub_converge', 'task_vm.destroy',
                 'task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)
             || ! array_key_exists('excluded_node_id', $snapshot)
@@ -118,6 +118,16 @@ final readonly class NodeWireGuardInput
         $taskVmContext = $operation->kind === 'task_vm.destroy'
             ? $operation->target_type === 'task_vm' && TaskVm::query()->whereKey($operation->target_id)->where('node_id', $snapshot['context_node_id'])->exists()
             : $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;
+        $removal = $operation->input['_node_removal'] ?? null;
+        $execution = $operation->input['_removal'] ?? null;
+        $removalContext = $operation->kind === 'node.remove' && $operation->target_type === 'node' && is_array($removal) && is_array($execution)
+            && $operation->node_id === $snapshot['executor_node_id'] && self::gateway($snapshot['executor_node_id'])
+            && ($removal['node_id'] ?? null) === $operation->target_id
+            && ($execution['snapshot'] ?? null) === $removal
+            && ($execution[$restoring ? 'restore_hub' : 'hub'] ?? null) === $snapshot;
+        if ($operation->kind === 'node.remove' && ! $removalContext) {
+            return null;
+        }
         $contextMatches = $taskVmKind || $operation->kind === 'task_vm.destroy'
             ? $taskVmContext
             : $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
@@ -128,7 +138,7 @@ final readonly class NodeWireGuardInput
             && ($enrollment['executor_node_id'] ?? null) === $snapshot['executor_node_id']
             && $snapshot['excluded_node_id'] === null;
         if ($snapshot['executor_node_id'] !== $snapshot['hub_id']
-            && ((! $taskVmContext && ! $enrollmentContext) || ! self::gateway($snapshot['executor_node_id']))) {
+            && ((! $taskVmContext && ! $enrollmentContext && ! $removalContext) || ! self::gateway($snapshot['executor_node_id']))) {
             return null;
         }
         if (! $contextMatches || ! is_array($participants) || ! is_array($binding)
