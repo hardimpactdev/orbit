@@ -113,3 +113,17 @@ it('keeps source workload ownership in the fresh pre-cutover restoration view', 
         ->and(array_column($view['workloads'], 'node_id'))->toBe([$this->node->id, $this->node->id]);
     expect(fn () => $plan->environmentMaterial($operation, $this->destination->id))->toThrow(ResourceOperationException::class);
 });
+
+it('exposes only this participant candidate leaf scopes for pre-cutover cleanup', function (): void {
+    $plan = app(NativeRouteTransferPlan::class);
+    $snapshot = $plan->capture($this->transfer);
+    $operation = new Operation(['kind' => 'instance.transfer_rollback', 'node_id' => $this->node->id,
+        'input' => ['route_transfer' => $snapshot, 'participant_node_ids' => $snapshot['participant_node_ids']]]);
+    $view = $plan->publicInput($operation, $this->destination->id);
+    expect($view['route_rollback']['node_id'])->toBe($this->destination->id)
+        ->and($view['route_rollback']['user'])->toBe('orbit')
+        ->and($view['route_rollback']['certificate_scopes'])->toContain('app-instance-'.$this->instance->id)
+        ->and($view['route_rollback'])->not->toHaveKey('home')
+        ->and($view['route_rollback']['lan_route_ids'])->toBe([]);
+    expect($plan->publicInput($operation, $this->node->id)['route_rollback'])->toBeNull();
+});
