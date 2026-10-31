@@ -27,6 +27,12 @@ The fragment exposes a typed public `provider` result with its address, admitted
 
 The pending parent integration composes the canonical enrollment and model fragments. Enrollment owns the bootstrap identity, network configuration, worker enrollment and runtime actions. Model issuance uses the shared router identity. These fragments retain their admitted placement; provision does not start child Gateway Operations or create a second model-key writer.
 
+The available `task-vm-pi-install` fragment takes `{operation_id, kind, node_id, intent}`. It runs on `intent.guest_node_id` and retains the owning root's `node_id`. After canonical artifact delivery, it inspects, installs when needed, and verifies `runtime.pi_sha256`. Its public result is `{task_vm_id, sha256, installed: true}`. Installation alone does not activate the Process or mark the VM ready. Upload remains blocked on the shared immutable artifact transport; no local path or family upload protocol replaces it.
+
+### Cutover and projection
+
+All old and new router writers must switch together before activation. The old custom behavior and the new built-in shell behavior have separate native lock identities, even when they use the same router name. This includes issuance from provision, Tasks provision, enrollment and runtime, plus destroy revocation. A partial parent cutover cannot provide shared serialization. Keep this conversion draft until the coordinated switch and old-helper deletion are complete.
+
 The parent integration must end with a result step that prints one public JSON object. The shared subscriber reads native history once and invokes `TaskVmProvisionProjection`. At that cutover, provider observations and the admitted guest's public identity move to terminal projection. Only successful enrollment makes the VM, app-dev role and Pi Process ready. Failure must retain observed provider metadata for the separate destroy intent without claiming cleanup.
 
 `AllocateTaskVmAction::capture(Task $group): TaskVm` records placement for a Task parent without starting a separate VM Operation. The Task parent captures enrollment in its own transaction. Ordinary VM admission uses `execute`, which records placement and the VM parent in one transaction. Both paths use the same placement rules and the existing reentrant model admission fence around the entire outer transaction and after-commit native start.
