@@ -14,8 +14,8 @@ final readonly class LifecycleStep
     public const int DefaultTimeoutSeconds = 240;
 
     /**
-     * Public configuration bounds for a Project list. Swamp executes each admitted step
-     * with its complete timeout; no Gateway request budget truncates it.
+     * Setup and teardown run inside one API request, whose remote work ends 550 seconds in (the
+     * 570-second command deadline less its cleanup reserve). One step, and one whole list, must fit.
      */
     public const int MaxTimeoutSeconds = 540;
 

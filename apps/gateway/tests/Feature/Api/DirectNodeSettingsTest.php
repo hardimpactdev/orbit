@@ -61,7 +61,8 @@ it('binds only the Gateway start response and refuses first reads until bound', 
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-node-settings',
-        'inputs' => ['operation_id' => $op->id, 'kind' => 'node.settings', 'node_id' => $this->node->id]]);
+        'inputs' => ['operation_id' => $op->id, 'kind' => 'node.settings', 'node_id' => $this->node->id],
+        'runtimeTags' => ['orbit_start_key' => 'operation:'.$op->id]]);
     $this->getJson($path)->assertOk()->assertJsonPath('data.input.storage.root', '/srv/new');
     expect($op->fresh()->lock_key)->toBeNull();
     expect($op->fresh()->state['swamp_run_id'])->toBe($this->run);

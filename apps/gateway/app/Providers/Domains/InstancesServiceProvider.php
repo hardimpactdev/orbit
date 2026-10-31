@@ -49,6 +49,7 @@ use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
+use App\Domain\Instances\StepLists\InstanceStepListSecrets;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
@@ -133,7 +134,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, EnvironmentSyncSecrets::class, InstanceStepListSecrets::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

@@ -53,9 +53,9 @@ it('publishes the stored Node without claims keys or Gateway execution state', f
     expect($this->operation->fresh()->worker)->toBeNull();
 });
 
-it('binds enrolled Node workers to their own intent across shared endpoints', function (): void {
+it('authorizes the admitted Node without the legacy executor allowlist across shared endpoints', function (): void {
     $this->node->accessibleNodes()->attach($this->gateway);
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    config(['operation_executor.worker_node_ids' => []]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
     $this->postJson($this->path.'/primitive', $this->body)->assertOk();
