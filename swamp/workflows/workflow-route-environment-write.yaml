@@ -1,0 +1,94 @@
+id: ba623d94-9335-4d39-a9a3-f77a004cfae6
+name: route-environment-write
+description: Apply one captured Route environment or URL write from a vault execution
+  copy.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+      properties:
+        material:
+          type: object
+          additionalProperties: false
+          properties:
+            vault:
+              type: string
+              enum: [orbit-control-inputs]
+            key:
+              type: string
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+          required:
+          - vault
+          - key
+      required:
+      - material
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: environment
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.intent.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-assets-" + run.id }}
+      methodName: environment
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: write
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-write-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_ROUTE_INPUT,ORBIT_ROUTE_MATERIAL /usr/bin/python3
+          -B "${{ steps.assets.outputs.script }}"'
+        env:
+          ORBIT_ROUTE_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_ROUTE_MATERIAL: ${{ vault.get(inputs.execution_secrets.material.vault,
+            inputs.execution_secrets.material.key) }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-result-" + run.id }}
+      methodName: environmentResult
+      inputs:
+        stdout: ${{ steps.write.outputs.stdout }}
+    dependsOn:
+    - step: write
+      condition:
+        type: succeeded

@@ -41,12 +41,13 @@ final readonly class NativeCaddyPublicationInput
     public function connectionForNode(Node $node): array
     {
         $gateway = GatewayCommandNode::find();
-        if ($gateway === null || $node->wireguard_ip === null || $node->user === '') {
+        $address = app(RouteRenderContext::class)->wireguardIp($node);
+        if ($gateway === null || $address === null || $node->user === '') {
             throw new ResourceOperationException('caddy.connection_unavailable', 'Publication requires the active Gateway and admitted Node SSH identity.', 503);
         }
 
         return ['control_node_id' => $gateway->id, 'connection' => [
-            'nodeHost' => $node->wireguard_ip,
+            'nodeHost' => $address,
             'nodeUser' => $node->user,
             'nodeIdentityFile' => app(SshKeyProvider::class)->privateKeyPath(),
             'become' => true,

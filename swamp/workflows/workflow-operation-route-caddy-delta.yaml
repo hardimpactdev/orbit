@@ -53,11 +53,17 @@ inputs:
           type: object
         after:
           type: object
+        alternatives:
+          type: array
+          items:
+            type: object
         direction:
           type: string
           enum:
           - forward
           - restore
+        retain_removed:
+          type: boolean
       required:
       - node_id
       - user
@@ -90,9 +96,9 @@ jobs:
       behaviorName: ${{ "route-delta-read-current-" + run.id }}
       methodName: execute
       inputs:
-        run: |-
-          set -eu
-          if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi
+        run: 'set -eu
+
+          if sudo /usr/bin/test -f /etc/caddy/Caddyfile; then sudo /usr/bin/cat /etc/caddy/Caddyfile; fi'
   - name: compose
     target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
     labels:
@@ -111,6 +117,8 @@ jobs:
         after: ${{ inputs.intent.after }}
         direction: ${{ inputs.intent.direction }}
         current: ${{ steps["read-current"].outputs.stdout }}
+        alternatives: '${{ "alternatives" in inputs.intent ? inputs.intent.alternatives : [] }}'
+        retain_removed: '${{ "retain_removed" in inputs.intent ? inputs.intent.retain_removed : false }}'
     dependsOn:
     - step: read-current
       condition:

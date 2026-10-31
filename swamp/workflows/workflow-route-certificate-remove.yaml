@@ -1,0 +1,102 @@
+id: 2c16b6c3-e9db-48ec-af98-05cb1a473782
+name: route-certificate-remove
+description: Remove only an admitted scope absent from freshly adapted Caddy references.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    parent_run_id:
+      type: string
+    restoring:
+      type: boolean
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - parent_run_id
+  - restoring
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: certificate
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.intent.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "route-cert-assets-" + run.id }}
+      methodName: read
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        intent: ${{ inputs.intent }}
+  - name: remove
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-remove-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED /usr/bin/python3
+          -B "${{ steps.assets.outputs.remove_script }}"'
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: inspect
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-inspect-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED,ORBIT_CERTIFICATE_EXPECT_PRESENT /usr/bin/python3
+          -B "${{ steps.assets.outputs.inspect_script }}"'
+        env:
+          ORBIT_CERTIFICATE_EXPECT_PRESENT: 'false'
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: remove
+      condition:
+        type: succeeded
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-cert-result-" + run.id }}
+      methodName: certificateRemoved
+      inputs:
+        leaf: ${{ inputs.intent }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
