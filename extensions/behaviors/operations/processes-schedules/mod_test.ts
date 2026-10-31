@@ -170,9 +170,9 @@ class Fixture {
   }
 }
 
-Deno.test("unconverted Schedule create and enable use only admitted fields", async () => {
+Deno.test("unconverted Schedule create uses only admitted fields", async () => {
   for (
-    const [verb, command] of [["create", "install"], ["enable", "activate"]]
+    const [verb, command] of [["create", "install"]]
   ) {
     const f = new Fixture();
     f.operation.kind = `schedule.${verb}`;
@@ -190,7 +190,7 @@ Deno.test("unconverted Schedule create and enable use only admitted fields", asy
 });
 Deno.test("lost run reply reuses the same effect key", async () => {
   const f = new Fixture();
-  f.operation.kind = "schedule.enable";
+  f.operation.kind = "schedule.create";
   f.failAfterRun = true;
   await assertRejects(() => f.execute());
   await f.execute();
@@ -199,7 +199,7 @@ Deno.test("lost run reply reuses the same effect key", async () => {
     f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
       call.body.key
     ),
-    ["schedule-activate"],
+    ["schedule-install"],
   );
 });
 Deno.test("lost successful step reply resumes from recorded results", async () => {
@@ -570,9 +570,9 @@ Deno.test("A failed runtime child prevents the readiness run", async () => {
   assertEquals(f.resources.get("operation-7")!.status, "failed");
   assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 0);
 });
-Deno.test("A proven not-started unconverted Schedule activation can retry the same key once", async () => {
+Deno.test("A proven not-started unconverted Schedule installation can retry the same key once", async () => {
   const f = new Fixture();
-  f.operation.kind = "schedule.enable";
+  f.operation.kind = "schedule.create";
   f.notStartedOnce = true;
   assertEquals((await f.execute()).status, "pending");
   await f.execute();
@@ -582,7 +582,7 @@ Deno.test("A proven not-started unconverted Schedule activation can retry the sa
     f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
       call.body.key
     ),
-    ["schedule-activate", "schedule-activate"],
+    ["schedule-install", "schedule-install"],
   );
 });
 
@@ -591,6 +591,7 @@ Deno.test("direct kinds refuse polled dispatch before claim or effect", async ()
     const kind of [
       "process.stop",
       "process.destroy",
+      "schedule.enable",
       "schedule.run",
       "schedule.destroy",
     ]

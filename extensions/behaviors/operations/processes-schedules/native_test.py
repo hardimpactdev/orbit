@@ -80,6 +80,3 @@ class NativeProcessesSchedulesTest(NativeTestCase):
 
     def test_restart_new_process_reads_original_receipt(self):
         self.assert_control_reply_recovery('process.restart', {'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'on_demand': False})
-
-    def test_unconverted_schedule_activation_reads_original_receipt(self):
-        self.assert_control_reply_recovery('schedule.enable', {'id': '830fd68c-948b-4e46-a215-229c7f510246', 'user': 'orbit', 'working_directory': '/home/orbit'})

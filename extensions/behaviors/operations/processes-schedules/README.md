@@ -62,10 +62,11 @@ The polled family claims only kinds listed in `registration.json`, persists an
 assignment before effects, and keeps retries bound to that Operation. Native
 tests remove placement labels only inside their disposable local repository.
 They prove DAG and receipt recovery, while deployed worker placement needs the
-live verification. Proven `process.stop`, `process.destroy`, `schedule.run` and
-`schedule.destroy` are absent from that registration and scheduled discovery;
-the executor refuses them before any claim or command. Their Gateway
-declarations require direct execution and refuse an explicit polled writer.
+live verification. Direct `process.stop`, `process.destroy`, `schedule.enable`,
+`schedule.run` and `schedule.destroy` are absent from that registration and
+scheduled discovery; the executor refuses them before any claim or command.
+Their Gateway declarations require direct execution and refuse an explicit
+polled writer.
 
 ## Direct Schedule controls
 
@@ -76,13 +77,13 @@ local agent command with `sudo -n` as the configured Node user. It verifies the
 admitted agent digest, root ownership, regular file and safe permissions first.
 Native command deadlines are15/45/60seconds and output is capped at16KiB. Only a
 typed ready result or error code reaches Gateway projection. No root socket or
-broker is used. Placement stays exactly `orbit-node-<admitted node_id>`.
+broker is used. Node209 uses `swamp209-migration-a`; other targets are exactly
+`orbit-node-<admitted node_id>` with matching Node labels.
 
-`schedule.run` and `schedule.destroy` use their proven direct path only.
-Unconverted Schedule kinds retain their polled path until the complete owning
-cutover. The earlier209pre-cancelled canaries proved binding/read/projection
-only; their temporary migration placement was restored live in main e830a3d.
-Production success must precede deletion of the replaced Gateway executor.
+`schedule.enable`, `schedule.run` and `schedule.destroy` require direct
+execution. Enable's owning Gateway slice removes PHP activation and its polled
+contract. Create and Instance definition installation retain their polled paths
+until their own complete cutovers.
 
 ## Direct Process controls
 
@@ -111,13 +112,10 @@ and Process kind keeps exact `orbit-node-ID` placement. There is no fallback to
 another Node. The canary owns a short-lived sleep Process and changes no serving
 unit.
 
-For the first real `schedule.run` canary, Node209uses its existing reviewed
-`swamp209-migration-a` token identity, which runs as the Node user with sudo.
-The workflow chooses that identity only for admitted Node209; every other Node
-retains exact `orbit-node-ID` placement. This is explicit placement, with no
-fallback to another Node. Remove the209exception when lane21enrolls its exact
-per-Node identity. The canary owns a future-dated timer whose command is
-`/usr/bin/true`; it changes no serving unit.
+Every Schedule control targets `orbit-node-<admitted node_id>` with its matching
+Node label, including Node209. The exact209worker has independent native
+placement and sudo proof. The temporary migration-worker exception is removed in
+the owning enable slice. No fallback or worker/grant change is required.
 
 A local agent that fails its admitted build or ownership preflight returns
 `operation.agent_invalid` before sudo starts. The native action projects that

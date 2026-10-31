@@ -5,7 +5,6 @@
     "process.start",
     "process.restart",
     "schedule.create",
-    "schedule.enable",
     "process.install_instance_definitions",
     "schedule.install_instance_definitions",
     "process.restart_instance"

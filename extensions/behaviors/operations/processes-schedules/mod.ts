@@ -305,7 +305,7 @@ export function processesSchedules(
                   });
                 } else {
                   result = family === "schedule"
-                    ? await invoke(scheduleCall(operation.kind, input))
+                    ? await invoke(scheduleCall("schedule.create", input))
                     : await executeProcess(
                       operation.kind,
                       input,
@@ -534,7 +534,6 @@ function refusalCode(code: string, runtime: unknown, command: string): string {
     ) return code;
     return {
       "schedule.install": "schedule.install_failed",
-      "schedule.activate": "schedule.activation_failed",
     }[command] ?? code;
   }
   if (command.startsWith("process.")) {
