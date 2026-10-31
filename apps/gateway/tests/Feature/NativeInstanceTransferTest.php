@@ -149,3 +149,34 @@ it('records a DB-only native transfer and scopes URL material to its own Node', 
         ])->and($this->instance->fresh()->node_id)->toBe($this->node->id)
         ->and(Operation::query()->count())->toBe(1);
 });
+
+it('returns one native source-root Operation through the transfer API', function (): void {
+    $this->transfer->delete();
+    $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
+    $this->node->update(['wireguard_ip' => '10.44.0.9']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.17', 'settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $this->destination->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $caller = Node::query()->create(['name' => 'native-transfer-caller', 'user' => 'orbit', 'platform' => 'linux',
+        'status' => 'active', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1']);
+    $this->markAsGateway($caller);
+    $this->node->accessibleNodes()->attach($caller);
+    $this->destination->accessibleNodes()->attach($caller);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->postJson('/api/v1/instances/'.$this->instance->id.'/transfer', ['node_id' => $this->destination->id])
+        ->assertAccepted()->assertJsonPath('data.kind', 'instance.transfer');
+    expect(Operation::query()->count())->toBe(1)->and(Operation::query()->sole()->node_id)->toBe($this->node->id)
+        ->and($this->instance->fresh()->node_id)->toBe($this->node->id);
+});
+
+it('rejects malformed or caller-selected transfer authority before mutation', function (string $body): void {
+    $caller = Node::query()->create(['name' => 'native-transfer-caller', 'user' => 'orbit', 'platform' => 'linux',
+        'status' => 'active', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1']);
+    $this->markAsGateway($caller);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST',
+        '/api/v1/instances/'.$this->instance->id.'/transfer',
+        server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body)
+        ->assertUnprocessable();
+    expect(Operation::query()->count())->toBe(0)->and(Instance::query()->count())->toBe(1);
+})->with(['malformed' => ['{"node_id":'], 'array' => ['[]'], 'duplicate' => ['{"node_id":2,"node_id":3}'],
+    'path authority' => ['{"node_id":2,"destination_path":"/foreign"}'],
+    'secret authority' => ['{"node_id":2,"environment":"private"}'], 'boolean' => ['{"node_id":true}']]);
