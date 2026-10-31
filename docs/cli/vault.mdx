@@ -26,8 +26,10 @@ Every command accepts `--json`.
 Check and store the Gateway's Vaultwarden account, organization, and collection.
 
 ```bash
-orbit vault:setup --url=<origin> --client-id=<id> --client-secret-file=<path> --master-password-file=<path> --organization=<name-or-id> --collection=<name-or-id> [--json]
+orbit vault:setup --url=<origin> --client-id=<id> --client-secret-file=<path> --master-password-file=<path> --organization=<name-or-id> --collection=<name-or-id> [--idempotency-key=KEY] [--json]
 ```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 | Option | Required | Meaning |
 | --- | --- | --- |
@@ -61,8 +63,10 @@ The output shows `configured`, `url`, `email`, `organization`, `collection`, `it
 Publish changes now. The run also recreates published items that are gone from Vaultwarden and rewrites ones that someone changed there.
 
 ```bash
-orbit vault:sync [--json]
+orbit vault:sync [--idempotency-key=KEY] [--json]
 ```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 The output is the [status](#orbit-vaultstatus). The scheduler runs the same reconcile every minute, so this command is needed only to see the result at once. When a change failed, the Gateway returns `vault.sync_failed` and the command exits with a failure.
 
@@ -71,8 +75,10 @@ The output is the [status](#orbit-vaultstatus). The scheduler runs the same reco
 Permanently delete every Orbit item in the collection, then delete the stored account, organization, and collection.
 
 ```bash
-orbit vault:teardown [--keep-items] [--yes] [--json]
+orbit vault:teardown [--keep-items] [--yes] [--idempotency-key=KEY] [--json]
 ```
+
+Use `--idempotency-key=KEY` to retry the same Operation admission after a lost response.
 
 | Option | Required | Meaning |
 | --- | --- | --- |

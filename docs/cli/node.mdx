@@ -24,6 +24,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:list`](#orbit-nodelist) | List the Nodes. |
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
+| [`node:migrate-docker`](#orbit-nodemigrate-docker) | Plan or run a Docker provider migration during a maintenance window. |
 | [`node:rename`](#orbit-noderename) | Change the name of a Node. |
 | [`node:settings`](#orbit-nodesettings) | Set the apps root or task VM host configuration of a Node. |
 | [`node:wireguard-key`](#orbit-nodewireguard-key) | Set an unmanaged Node's WireGuard public key and reconverge the hub. |
@@ -150,6 +151,25 @@ The Gateway returns HTTP 202 with an Operation for every admitted target. The CL
 ```bash
 orbit node:converge beast
 ```
+
+## orbit node:migrate-docker
+
+Plan or run a migration from Docker CE to the recipe's Ubuntu `docker.io`, or restore container restart policies after manual CE recovery. This is a maintenance action that can stop containers. Follow the [Docker migration procedure](/reference/docker-provider-migration) before changing a Node.
+
+```bash
+orbit node:migrate-docker <node> [--dry-run] [--yes] [--fallback] [--restore-policies] [--recipe=RECIPE] [--idempotency-key=KEY] [--json]
+```
+
+`node` accepts an ID or exact Node name. The command records and follows one native Operation.
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Read the migration plan without changing the Node. |
+| `--yes` | Confirm migration or policy recovery without a prompt. Required for mutations in noninteractive and JSON modes. |
+| `--fallback` | Authorize a fresh Docker engine if the recorded metadata is unreadable. |
+| `--restore-policies` | Restore policies after manual CE recovery. Cannot be combined with `--dry-run` or `--fallback`. |
+| `--recipe=RECIPE` | Require the exact serving recipe identity. |
+| `--idempotency-key=KEY` | Retry the same Operation admission after a lost response. |
 
 ## orbit node:rename
 
@@ -476,3 +496,21 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 A rename changes one identity field and does not touch WireGuard. Removing and adding the Node again would delete its WireGuard peer and records. `node:update` is rejected as a name, because update means a partial field patch.
 
 Role addition returns one queued Operation for every mutable role. `node:role:add` follows it to completion and prints any follow-up warning. Use `--converge` to converge an existing assignment and `--idempotency-key` to retry the same request.
+
+## orbit node:network:converge
+
+Converge a Node's WireGuard peer and publish the current peer list on the VPN hub.
+The Gateway captures the Node's saved network policy and admits one native Swamp
+Operation. The CLI follows that Operation to its terminal result.
+
+```bash
+orbit node:network:converge <node> [--idempotency-key=KEY] [--json]
+```
+
+`node` accepts an ID or exact Node name. Reuse `--idempotency-key` to retry the
+same admission. This command accepts no credentials, scripts, pins, or placement
+options. It requires an active managed peer selected for worker rollout. The VPN
+hub uses its exact logical worker; it never runs on another Node as a fallback.
+A failed publication restores the saved peer configuration and resolver policy.
+An interrupted publication restores its transaction baseline before reapplying
+the complete desired configuration and DNS policy.
