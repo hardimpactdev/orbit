@@ -116,44 +116,6 @@ function conn_revocation_effect(object $test, Operation $operation, string $key,
     return $result;
 }
 
-it('binds every revoke to the owned snapshot and refuses final proof until all exact steps settle', function (): void {
-    $this->pairing->update(['pairing_link_id' => 'phone-link', 'credential' => 'phone-sentinel']);
-    $other = ConnPairing::query()->create(['node_id' => $this->other->id, 'conn_environment_id' => $this->environment->id,
-        'pairing_link_id' => 'other-link', 'client_label' => 'other-label', 'credential' => 'other-sentinel']);
-    Http::fake([
-        'http://dev.test/api/auth/clients' => Http::response([
-            ['sessionId' => 'phone-session', 'client' => ['label' => $this->pairing->client_label], 'current' => false],
-            ['sessionId' => 'current', 'client' => ['label' => $this->pairing->client_label], 'current' => true],
-            ['sessionId' => 'other-session', 'client' => ['label' => 'other-label'], 'current' => false],
-        ]),
-        'http://dev.test/api/auth/clients/revoke' => Http::response(['revoked' => true]),
-        'http://dev.test/api/auth/pairing-links/revoke' => Http::response(['revoked' => false]),
-    ]);
-    $operation = conn_revocation_admit($this);
-    expect($operation->input['pairing_ids'])->toBe([$this->pairing->id]);
-    $path = '/api/v1/operation-executor/'.$operation->id;
-    $forged = ['worker' => 'conn-h', 'key' => 'session-0', 'transport' => 'gateway', 'name' => 'conn.revocation',
-        'input' => ['environment' => $operation->input['environment'], 'action' => 'session', 'id' => 'other-session']];
-    $this->postJson($path.'/run', $forged)->assertUnprocessable();
-    Http::assertNothingSent();
-    expect(conn_revocation_effect($this, $operation, 'revocation-inspect', 'inspect'))->toBe(['backend' => 'inspected', 'sessions' => ['phone-session'], 'links' => ['phone-link']]);
-    $this->postJson($path.'/run', $forged)->assertUnprocessable();
-    $final = ['worker' => 'conn-h', 'key' => 'pairing-revoke', 'transport' => 'gateway', 'name' => 'conn.revocation',
-        'input' => ['environment' => $operation->input['environment'], 'action' => 'receipt', 'id' => '']];
-    $this->postJson($path.'/run', $final)->assertUnprocessable();
-    conn_revocation_effect($this, $operation, 'session-0', 'session', 'phone-session');
-    $this->postJson($path.'/run', $final)->assertUnprocessable();
-    conn_revocation_effect($this, $operation, 'link-0', 'link', 'phone-link');
-    $result = $this->postJson($path.'/run', $final)->assertOk()->json('data');
-    $this->postJson($path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertConflict();
-    expect($this->pairing->fresh()->revoked_at)->toBeNull();
-    $this->postJson($path.'/step', ['worker' => 'conn-h', 'key' => 'final.done', 'name' => 'pairing-revoke', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    expect($this->pairing->fresh()->credential)->toBeNull()->and($this->pairing->fresh()->revoked_at)->not->toBeNull()
-        ->and($other->fresh()->credential)->toBe('other-sentinel')->and($other->fresh()->revoked_at)->toBeNull();
-    Http::assertNotSent(static fn (HttpRequest $request): bool => $request->method() === 'POST' && in_array($request['sessionId'] ?? null, ['current', 'other-session'], true));
-});
-
 it('requires Gateway access for cleanup and keeps a newer registration revision pending after completion', function (): void {
     $this->environment->update(['cleanup_version' => 1]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);

@@ -21,17 +21,17 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
     {
         $ids = ValidatedData::integerList($operation->input['pairing_ids'] ?? []);
         $pairings = ConnPairing::query()->whereIn('id', $ids)->where('conn_environment_id', $operation->input['conn_environment_id'])
-            ->where('node_id', $operation->input['caller_node_id'] ?? null)->get();
+            ->where('node_id', $operation->kind === 'conn.pairing_revoke' ? $operation->target_id : $operation->input['caller_node_id'] ?? null)->get();
         if ($pairings->count() !== count($ids)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The admitted pairing owner changed.', 422);
         }
-        $pairing = $pairings->sole();
+        $pairing = $operation->kind === 'conn.pairing_create' ? $pairings->sole() : null;
 
         return ['action' => substr($operation->kind, 5),
             'labels' => $pairings->pluck('client_label')->all(),
             'links' => $pairings->pluck('pairing_link_id')->filter()->values()->all(),
-            'pairing_id' => $pairing->id, 'issue_started' => $pairing->issue_started_at !== null, 'issued' => $pairing->credential !== null,
-            'pairing_link_id' => $pairing->pairing_link_id, 'expires_at' => $pairing->expires_at?->toIso8601String()];
+            'pairing_id' => $pairing?->id, 'issue_started' => $pairing?->issue_started_at !== null, 'issued' => $pairing !== null && $pairing->credential !== null,
+            'pairing_link_id' => $pairing?->pairing_link_id, 'expires_at' => $pairing?->expires_at?->toIso8601String()];
     }
 
     public function validate(Operation $operation, array $result, OperationStatus $status): array
@@ -40,6 +40,13 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
             return [];
         }
         if (array_keys($result) === ['error_code'] && is_string($result['error_code']) && preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $result['error_code']) === 1) {
+            return $result;
+        }
+        if ($operation->kind !== 'conn.pairing_create') {
+            if (count($result) !== 2 || ($result['backend'] ?? null) !== 'revoked' || ! is_int($result['revoked_sessions'] ?? null) || $result['revoked_sessions'] < 0) {
+                $this->refuse();
+            }
+
             return $result;
         }
         $store = app(ConnPairingCredentialStore::class);
