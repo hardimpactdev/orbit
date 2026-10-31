@@ -1,0 +1,50 @@
+# Parent-callable source. Activation requires lane21's canonical shipped-asset transport on 1/18.
+id: a06a254a-6dd2-4f2e-af76-7b432101e89f
+name: node-hub-peer-mutation
+description: Mutate one admitted peer in an existing hub; preserve unrelated fresh peers.
+inputs:
+  type: object
+  properties:
+    intent: {type: object}
+    mode: {type: string, enum: [publish, remove, restore-publish, restore-remove]}
+    prepared_peer: {type: object}
+  required: [intent, mode]
+jobs:
+  - name: hub
+    steps:
+      - name: assets
+        target: '${{ "orbit-node-" + string(inputs.intent.hub_id) }}'
+        labels: {node: '${{ string(inputs.intent.hub_id) }}'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-hub-command'
+          behaviorName: '${{ "wireguard-hub-assets-" + string(inputs.intent.hub_id) }}'
+          methodName: read
+          inputs:
+            intent: '${{ inputs.intent }}'
+            mode: '${{ inputs.mode }}'
+            prepared_peer: '${{ has(inputs.prepared_peer) ? inputs.prepared_peer : null }}'
+      - name: transport
+        target: '${{ "orbit-node-" + string(inputs.intent.hub_id) }}'
+        labels: {node: '${{ string(inputs.intent.hub_id) }}'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-command-assets'
+          behaviorName: '${{ "node-command-assets-" + string(inputs.intent.hub_id) }}'
+          methodName: read
+      - name: mutate
+        writes: true
+        dependsOn: [{step: assets, condition: {type: succeeded}}, {step: transport, condition: {type: succeeded}}]
+        target: '${{ "orbit-node-" + string(inputs.intent.hub_id) }}'
+        labels: {node: '${{ string(inputs.intent.hub_id) }}'}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "wireguard-hub-" + string(inputs.intent.hub_id) }}'
+          methodName: execute
+          inputs:
+            run: |
+              exec /usr/bin/python3 -I "${{ steps.transport.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.assets.outputs.script }}" --interpreter python3 --as-root --env ORBIT_HUB_CONTEXT
+            env:
+              ORBIT_EFFECT_NODE_ID: '${{ string(inputs.intent.hub_id) }}'
+              ORBIT_HUB_CONTEXT: '${{ steps.assets.outputs.action_json }}'

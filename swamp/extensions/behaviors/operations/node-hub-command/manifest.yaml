@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/node-hub-command'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public hub peer intent and one canonical placed mutation asset.
+behaviors:
+  - operations/node-hub-command/assets.ts
+additionalFiles:
+  - scripts/hub_peer.py
