@@ -1,5 +1,7 @@
 import { z } from "npm:zod@4.4.3";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import type { NodeCall } from "../_lib/node-agent.ts";
+import { runLocalProgram } from "./local-program.ts";
+import { caddyProgram } from "./caddy-program.ts";
 
 const Identity = z.object({
   node_id: z.number().int().positive(),
@@ -24,7 +26,10 @@ export const CaddyPublication = z.union([
 /** Fresh public input, applied locally while the canonical native model lock is held. */
 export async function publishCaddy(
   raw: unknown,
-  invoke = runNodeAgent,
+  invoke?: (
+    call: NodeCall,
+    signal?: AbortSignal,
+  ) => Promise<Record<string, unknown>>,
   signal?: AbortSignal,
 ) {
   const input = CaddyPublication.parse(raw);
@@ -43,15 +48,17 @@ export async function publishCaddy(
   if (digest.slice(0, 32) !== input.caddy.version) {
     throw new Error("Caddy publication digest does not match");
   }
-  const result = await invoke({
-    name: "caddy.publish",
-    input: input.caddy,
-    pin: input.agent_sha256,
-    sudo: true,
-    mutates: true,
-    deadlineMs: 120000,
-    maxOutputBytes: 4096,
-  }, signal);
+  const result = invoke
+    ? await invoke({
+      name: "caddy.publish",
+      input: input.caddy,
+      pin: input.agent_sha256,
+      sudo: true,
+      mutates: true,
+      deadlineMs: 120000,
+      maxOutputBytes: 4096,
+    }, signal)
+    : await runLocalProgram(caddyProgram, input.caddy, signal);
   if (result.error_code !== undefined) {
     const error_code = z.string().regex(/^[a-z0-9_.-]{1,100}$/).parse(
       result.error_code,

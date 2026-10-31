@@ -8,7 +8,7 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 import { CaddyPublication, publishCaddy as applyCaddy } from "./caddy.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import type { runNodeAgent } from "../_lib/node-agent.ts";
 import { removeLan } from "./lan.ts";
 
 const Args = DirectArgs.extend({
@@ -40,11 +40,11 @@ function boundCaddy(input: unknown, nodeId: number) {
 export function publication(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  invoke = runNodeAgent,
+  invoke: typeof runNodeAgent | undefined = undefined,
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.3",
+    version: "2026.10.31.4",
     globalArguments: Globals,
     methods: {
       removeLan: {

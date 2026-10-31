@@ -222,3 +222,5 @@ The method checks the Operation ID, kind and artifact Node; shared HTTP binds
 the root run and caller. Pass the placed Node as `node_id`, or keep the root
 `node_id` and pass `target_node_id` for the placed Node. The step returns its
 outcome to the native DAG and does not post the parent's result.
+
+Caddy publication runs its filesystem transaction and fixed system commands directly in Swamp. It keeps the host publication lock, validates before activation, preserves manual files, and restores the previous live configuration if reload fails. The Node agent observes; publication does not invoke an agent action.
