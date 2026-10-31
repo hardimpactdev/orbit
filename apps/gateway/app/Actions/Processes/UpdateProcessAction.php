@@ -10,6 +10,7 @@ use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -26,6 +27,7 @@ final readonly class UpdateProcessAction
 {
     public function __construct(
         private ProcessRuntimeManager $runtime,
+        private ProcessRuntimeLease $lease,
         private ProcessTargetResolver $targets,
         private ProcessSpecification $specifications,
         private SshProcessUserResolver $users,
@@ -35,8 +37,7 @@ final readonly class UpdateProcessAction
 
     public function admit(Process $process, UpdateProcessData $update, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        return DB::transaction(function () use ($process, $update, $caller, $requestId): Operation {
-            $fresh = $process->refresh();
+        return $this->lease->run($process, fn (Process $fresh): Operation => DB::transaction(function () use ($fresh, $update, $caller, $requestId): Operation {
             $this->databaseServers->assertUpdatable($fresh);
             if (isset($fresh->runtime_config['preset'])) {
                 throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
@@ -66,6 +67,6 @@ final readonly class UpdateProcessAction
             $fresh->fill(['status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null])->save();
 
             return app(ProcessOperationAdmission::class)->execute($fresh, 'update', caller: $caller, requestId: $requestId);
-        });
+        }));
     }
 }

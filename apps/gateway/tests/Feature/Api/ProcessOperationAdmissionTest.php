@@ -6,8 +6,8 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationCompletion;
-use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -70,7 +70,6 @@ it('records lifecycle intent without marking an unexecuted effect successful', f
 })->with(['start', 'restart']);
 
 it('starts creation directly without the old admission lease or claim contract', function (): void {
-    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class)->shouldNotReceive('run')->getMock());
     app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
@@ -114,12 +113,11 @@ it('captures the real first-visit systemd input with a boolean activation flag',
     expect($input)->toBe($fixture);
 });
 
-it('starts update directly without an admission lease and keeps private definition bytes out of its input', function (): void {
+it('starts update directly with only record admission serialization and keeps private definition bytes out of its input', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     $process = Process::query()->sole();
     $process->update(['status' => 'active']);
-    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class)->shouldNotReceive('run')->getMock());
     app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
 
     config(['dependency_detection.services_node_id' => $this->node->id, 'operation_executor.worker_node_ids' => [(string) $this->node->id]]);
@@ -153,4 +151,20 @@ it('settles pending activation metadata from a bounded native update result', fu
     expect($process->refresh()->systemd_activation_pending)->toBeFalse()
         ->and($process->systemd_activation_hash)->toBe($operation->input['content_hash'])
         ->and($process->retired_runtime)->toBeNull();
+});
+
+it('refuses update intent while a Route owns the Process reservation lock', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active']);
+    $before = $process->runtime_config;
+    $reservation = new NativeProcessRuntimeLease;
+    $reservation->run($process, function () use ($process, $before): void {
+        $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])
+            ->assertConflict()->assertJsonPath('error.code', 'process.runtime_lock_failed');
+        expect($process->fresh()->runtime_config)->toBe($before);
+        expect(Operation::query()->where('kind', 'process.update')->exists())->toBeFalse();
+    });
+    $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])->assertAccepted();
 });

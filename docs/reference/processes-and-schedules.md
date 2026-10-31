@@ -295,9 +295,9 @@ A candidate can run test options or a development-only server, such as Vite. Tho
 
 A copied worker or Schedule can run before the new Instance's data is ready, for example with copied queue jobs. So preparation installs every copy stopped, and the operator starts each one.
 
-### Managed environment as `Environment=` directives
+### Managed environment in private files
 
-A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
+Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
 
 The `vp-dev` preset applies only to development Instance Processes. Runtime definitions are copied only to production Instances.
 
@@ -336,7 +336,7 @@ Process creation records its owned definition and starts one native Process DAG.
 
 A newly admitted Process starts with `systemd_activation_pending=false` in memory as well as in storage. The first public installation input therefore carries a boolean before any refresh. The Gateway admission test and native create schema use the same captured public shape.
 
-The Node installs the captured definition through the pinned local agent. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
+Swamp installs the captured definition with direct Node-local system commands. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
 
 ### Native Process start
 
