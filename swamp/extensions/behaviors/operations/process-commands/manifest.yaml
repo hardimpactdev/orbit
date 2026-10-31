@@ -1,0 +1,14 @@
+manifestVersion: 1
+name: '@nckrtl/process-command-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Reusable one-action Process command components and public metadata.
+behaviors:
+  - operations/process-commands/assets.ts
+additionalFiles:
+  - scripts/process_common.py
+  - scripts/inspect.py
+  - scripts/control.py
+  - scripts/enable.py
+  - scripts/verify.py
