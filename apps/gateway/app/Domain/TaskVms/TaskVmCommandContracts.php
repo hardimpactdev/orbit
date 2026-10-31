@@ -30,6 +30,16 @@ final class TaskVmCommandContracts
         return ValidatedData::object($input);
     }
 
+    /** @return array<string, mixed> */
+    public static function guestParameters(string $command): array
+    {
+        return match ($command) {
+            'agent.install-guest' => ['type' => 'object', 'additionalProperties' => false, 'properties' => [], 'required' => []],
+            'pi.upload-guest' => ['type' => 'object', 'additionalProperties' => false, 'properties' => ['artifact' => ['type' => 'string'], 'sha256' => ['type' => 'string', 'pattern' => '^[a-f0-9]{64}$']], 'required' => ['artifact', 'sha256']],
+            default => self::agentInput($command),
+        };
+    }
+
     /** @return array<string, array<string, mixed>> */
     public static function runtimeKinds(): array
     {
