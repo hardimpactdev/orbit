@@ -224,6 +224,23 @@ def route(payload):
     if payload['operation']=='remove':
         delete_comments({comment},rows)
         if any(row['comment']==comment for row in status()[1]): raise Refusal('firewall.remove_verify_failed')
+    elif payload['operation']=='retire':
+        keep=payload['keep']
+        if not isinstance(keep,list) or len(keep)>256: raise Refusal('firewall.input_invalid')
+        expected=[]
+        for pair in keep:
+            router,workload=str(ipaddress.IPv4Address(pair['router'])),str(ipaddress.IPv4Address(pair['workload']))
+            expected.append(dict(comment=comment,action='allow',direction='in',source=router,destination=workload,port='443',protocol='tcp',in_interface=None,out_interface=None,family='v4'))
+        if backend!='active': raise Refusal('firewall.status_failed')
+        owned=[row for row in rows if row['comment']==comment]
+        if any(row.get('shape') is None or row['number'] is None for row in owned): raise Refusal('firewall.rule_collision')
+        if any(not any(row['shape']==shape for row in owned) for shape in expected): raise Refusal('firewall.verify_failed')
+        obsolete=[row for row in owned if row['shape'] not in expected]
+        for row in sorted(obsolete,key=lambda row:row['number'],reverse=True):
+            change(['--force','delete',str(row['number'])])
+        observed,after=status()
+        remaining=[row for row in after if row['comment']==comment]
+        if observed!='active' or any(row.get('shape') not in expected for row in remaining) or any(not any(row.get('shape')==shape for row in remaining) for shape in expected): raise Refusal('firewall.remove_verify_failed')
     elif payload['operation']=='converge':
         router,workload=str(ipaddress.IPv4Address(payload['router'])),str(ipaddress.IPv4Address(payload['workload']))
         expected=dict(comment=comment,action='allow',direction='in',source=router,destination=workload,port='443',protocol='tcp',in_interface=None,out_interface=None,family='v4')

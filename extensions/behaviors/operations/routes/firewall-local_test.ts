@@ -59,3 +59,32 @@ Deno.test("direct firewall propagates bounded ownership refusal", async () => {
     { error_code: "node.firewall_convergence_failed" },
   );
 });
+Deno.test("Route LAN retirement sends only admitted survivor endpoint pairs", async () => {
+  let sent: unknown;
+  assertEquals(
+    await convergeRouteLan({
+      operation: "retire",
+      route_id: 7,
+      keep: [{ router: "192.168.6.2", workload: "192.168.6.18" }],
+    }, (_program, input) => {
+      sent = input;
+      return Promise.resolve({ matches: true });
+    }),
+    { matches: true },
+  );
+  assertEquals(sent, {
+    mode: "route",
+    operation: "retire",
+    route_id: 7,
+    keep: [{ router: "192.168.6.2", workload: "192.168.6.18" }],
+  });
+  await assertRejects(() =>
+    convergeRouteLan({
+      operation: "retire",
+      route_id: 7,
+      keep: [{ router: "not-ip", workload: "192.168.6.18" }],
+    }, () => {
+      throw new Error("must not invoke");
+    })
+  );
+});

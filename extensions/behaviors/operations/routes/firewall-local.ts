@@ -10,6 +10,12 @@ export const RouteLan = z.discriminatedUnion("operation", [
     workload: z.ipv4(),
   }).strict(),
   z.object({ operation: z.literal("remove"), route_id: Id }).strict(),
+  z.object({
+    operation: z.literal("retire"),
+    route_id: Id,
+    keep: z.array(z.object({ router: z.ipv4(), workload: z.ipv4() }).strict())
+      .max(256),
+  }).strict(),
 ]);
 const Shape = z.object({
   comment: z.string().min(1).max(256),

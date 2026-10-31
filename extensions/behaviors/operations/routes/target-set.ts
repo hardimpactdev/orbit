@@ -136,8 +136,13 @@ export async function routeTargetTransition(
   return { ready: true };
 }
 
+export type RouteWorkloadView = Pick<
+  RouteTargetView,
+  "publication" | "environment_fields" | "workloads" | "probes" | "firewall"
+>;
+
 /** Local effects shared by target mutation and Instance transfer in their own root. */
-export function routeTargetActions(
+export function routeWorkloadActions(
   workloads: Pick<
     ReturnType<typeof routeWorkloadLocal>,
     "prepareRuntime" | "grantSourceAccess" | "synchronizeEnvironment"
@@ -151,7 +156,6 @@ export function routeTargetActions(
     firewall: convergeFirewall,
     verify: verifyLocal,
   },
-  certificates = certificateActions(),
 ) {
   const success = (value: Record<string, unknown>) => {
     if (value.error_code !== undefined) {
@@ -159,7 +163,7 @@ export function routeTargetActions(
     }
   };
   return {
-    async prepare(view: RouteTargetView, signal?: AbortSignal) {
+    async prepare(view: RouteWorkloadView, signal?: AbortSignal) {
       for (const member of view.workloads) {
         signal?.throwIfAborted();
         if (member.production) {
@@ -170,19 +174,19 @@ export function routeTargetActions(
       }
       return { ready: true };
     },
-    async lan(view: RouteTargetView, signal?: AbortSignal) {
+    async lan(view: RouteWorkloadView, signal?: AbortSignal) {
       for (const member of view.workloads) {
         signal?.throwIfAborted();
         if (member.lan != null) success(await network.lan(member.lan));
       }
       return { ready: true };
     },
-    async firewall(view: RouteTargetView, signal?: AbortSignal) {
+    async firewall(view: RouteWorkloadView, signal?: AbortSignal) {
       signal?.throwIfAborted();
       if (view.firewall) success(await network.firewall(view.firewall));
       return { ready: true };
     },
-    async verify(view: RouteTargetView, signal?: AbortSignal) {
+    async verify(view: RouteWorkloadView, signal?: AbortSignal) {
       for (const probe of view.probes) {
         signal?.throwIfAborted();
         success(await network.verify(probe));
@@ -190,7 +194,7 @@ export function routeTargetActions(
       return { ready: true };
     },
     async synchronizeEnvironment(
-      view: RouteTargetView,
+      view: RouteWorkloadView,
       material: Record<string, unknown>,
       signal?: AbortSignal,
     ) {
@@ -218,6 +222,26 @@ export function routeTargetActions(
       success(await workloads.synchronizeEnvironment(writes));
       return { ready: true };
     },
+  };
+}
+
+/** Target-specific retirement composes the same placed workload actions. */
+export function routeTargetActions(
+  workloads: Parameters<typeof routeWorkloadActions>[0] = routeWorkloadLocal(),
+  network: Parameters<typeof routeWorkloadActions>[1] = {
+    lan: convergeRouteLan,
+    firewall: convergeFirewall,
+    verify: verifyLocal,
+  },
+  certificates = certificateActions(),
+) {
+  const success = (value: Record<string, unknown>) => {
+    if (value.error_code !== undefined) {
+      throw new Error(String(value.error_code));
+    }
+  };
+  return {
+    ...routeWorkloadActions(workloads, network),
     async cleanup(
       view: RouteTargetView,
       rollback: boolean,
