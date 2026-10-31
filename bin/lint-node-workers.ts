@@ -66,7 +66,7 @@ async function reviewed(path: string) {
 for (const path of await files(`${root}/workflows`)) {
   if (!path.endsWith(".yaml")) continue;
   const workflow = object(parse(await Deno.readTextFile(path)));
-  async function walk(value: Map, inherited: Map) {
+  const walk = async (value: Map, inherited: Map) => {
     const placement = {
       ...inherited,
       ...Object.fromEntries(
@@ -102,7 +102,22 @@ for (const path of await files(`${root}/workflows`)) {
       }
     }
     const task = object(value.task);
-    if (node && Object.keys(task).length && task.type !== "workflow") {
+    if (
+      node && task.type === "assert" &&
+      (typeof task.expr !== "string" ||
+        [task.expr, value.guard].some((v) =>
+          typeof v === "string" && v.includes("(")
+        ) ||
+        typeof task.message === "string" && task.message.includes("${{"))
+    ) {
+      errors.push(
+        `Node assertions must use data-only predicates and static messages: ${path}`,
+      );
+    }
+    if (
+      node && Object.keys(task).length &&
+      !["workflow", "assert"].includes(String(task.type))
+    ) {
       const type = task.behaviorType ?? task.modelType ??
         models.get(String(task.modelIdOrName));
       if (typeof type !== "string" || !sources.has(type)) {
@@ -118,7 +133,7 @@ for (const path of await files(`${root}/workflows`)) {
         const child of Array.isArray(value[key]) ? value[key] as unknown[] : []
       ) await walk(object(child), placement);
     }
-  }
+  };
   await walk(workflow, {});
 }
 if (errors.length) {

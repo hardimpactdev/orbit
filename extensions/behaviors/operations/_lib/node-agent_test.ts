@@ -94,3 +94,26 @@ Deno.test("only the typed restoration boolean survives refusal diagnostics", () 
     restored: true,
   });
 });
+
+Deno.test("only the fixed Caddy validate stage survives redacted refusal diagnostics", () => {
+  const reply = (code: string, stage: string) =>
+    agentReply(
+      new TextEncoder().encode(
+        JSON.stringify({
+          ok: false,
+          error: { code, details: { stage, message: "PRIVATE" } },
+        }),
+      ),
+      false,
+    );
+  assertEquals(reply("caddy.publication_failed", "validate"), {
+    error_code: "caddy.publication_failed",
+    stage: "validate",
+  });
+  assertEquals(reply("caddy.publication_failed", "reload"), {
+    error_code: "caddy.publication_failed",
+  });
+  assertEquals(reply("agent.configure_failed", "PRIVATE"), {
+    error_code: "agent.configure_failed",
+  });
+});

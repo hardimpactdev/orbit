@@ -1,0 +1,563 @@
+id: daace7ba-223f-47b6-9452-7c0da7cf384e
+name: operation-node-converge-direct
+description: One exact-Node native footprint DAG per admitted standalone worker-backed converge intent.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - node.converge
+  required:
+    - operation_id
+    - node_id
+    - kind
+  additionalProperties: false
+target: ${{ "orbit-node-" + string(inputs.node_id) }}
+labels:
+  node: ${{ string(inputs.node_id) }}
+jobs:
+  - name: admission
+    steps:
+      - name: admit
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: admit
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+  - name: agent_install_job
+    dependsOn:
+      - job: admission
+        condition:
+          type: succeeded
+    steps:
+      - name: agent_install_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: agent-install
+      - name: agent_install
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: agent-install
+            binary_changed: false
+            cancellation: ${{ steps.agent_install_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: agent_install_cancellation
+            condition:
+              type: succeeded
+      - name: agent_install_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: agent_install
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.agent_install.outputs.ok
+          message: The agent-install stage refused its admitted footprint
+          severity: high
+  - name: caddy_package_job
+    dependsOn:
+      - job: agent_install_job
+        condition:
+          type: succeeded
+    steps:
+      - name: caddy_package_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: caddy-package
+      - name: caddy_package
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: caddy-package
+            binary_changed: false
+            cancellation: ${{ steps.caddy_package_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: caddy_package_cancellation
+            condition:
+              type: succeeded
+      - name: caddy_package_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: caddy_package
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.caddy_package.outputs.ok
+          message: The caddy-package stage refused its admitted footprint
+          severity: high
+  - name: caddy_job
+    dependsOn:
+      - job: caddy_package_job
+        condition:
+          type: succeeded
+    steps:
+      - name: caddy_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: caddy
+      - name: caddy
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: caddy
+            binary_changed: false
+            cancellation: ${{ steps.caddy_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: caddy_cancellation
+            condition:
+              type: succeeded
+      - name: caddy_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: caddy
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.caddy.outputs.ok
+          message: The caddy stage refused its admitted footprint
+          severity: high
+  - name: peer_dns_job
+    dependsOn:
+      - job: caddy_job
+        condition:
+          type: succeeded
+    steps:
+      - name: peer_dns_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: peer-dns
+      - name: peer_dns
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: peer-dns
+            binary_changed: false
+            cancellation: ${{ steps.peer_dns_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: peer_dns_cancellation
+            condition:
+              type: succeeded
+      - name: peer_dns_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: peer_dns
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.peer_dns.outputs.ok
+          message: The peer-dns stage refused its admitted footprint
+          severity: high
+  - name: private_dns_job
+    dependsOn:
+      - job: peer_dns_job
+        condition:
+          type: succeeded
+    steps:
+      - name: private_dns_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: private-dns
+      - name: private_dns
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: private-dns
+            binary_changed: false
+            cancellation: ${{ steps.private_dns_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: private_dns_cancellation
+            condition:
+              type: succeeded
+      - name: private_dns_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: private_dns
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.private_dns.outputs.ok
+          message: The private-dns stage refused its admitted footprint
+          severity: high
+  - name: route_residue_job
+    dependsOn:
+      - job: private_dns_job
+        condition:
+          type: succeeded
+    steps:
+      - name: route_residue_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: route-residue
+      - name: route_residue
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: route-residue
+            binary_changed: false
+            cancellation: ${{ steps.route_residue_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: route_residue_cancellation
+            condition:
+              type: succeeded
+      - name: route_residue_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: route_residue
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.route_residue.outputs.ok
+          message: The route-residue stage refused its admitted footprint
+          severity: high
+  - name: php_runtime_job
+    dependsOn:
+      - job: route_residue_job
+        condition:
+          type: succeeded
+    steps:
+      - name: php_runtime_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: php-runtime
+      - name: php_runtime
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: php-runtime
+            binary_changed: false
+            cancellation: ${{ steps.php_runtime_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: php_runtime_cancellation
+            condition:
+              type: succeeded
+      - name: php_runtime_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: php_runtime
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.php_runtime.outputs.ok
+          message: The php-runtime stage refused its admitted footprint
+          severity: high
+  - name: tmpfiles_job
+    dependsOn:
+      - job: php_runtime_job
+        condition:
+          type: succeeded
+    steps:
+      - name: tmpfiles_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: tmpfiles
+      - name: tmpfiles
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: tmpfiles
+            binary_changed: false
+            cancellation: ${{ steps.tmpfiles_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: tmpfiles_cancellation
+            condition:
+              type: succeeded
+      - name: tmpfiles_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: tmpfiles
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.tmpfiles.outputs.ok
+          message: The tmpfiles stage refused its admitted footprint
+          severity: high
+  - name: agent_job
+    dependsOn:
+      - job: tmpfiles_job
+        condition:
+          type: succeeded
+    steps:
+      - name: agent_cancellation
+        writes: false
+        guard: ${{ !steps.admit.outputs.ready }}
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            stage: agent
+      - name: agent
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: stage
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            stage: agent
+            binary_changed: "${{ has(steps.agent_install) && has(steps.agent_install.outputs) ? steps.agent_install.outputs.binary_changed
+              : false }}"
+            cancellation: ${{ steps.agent_cancellation.outputs }}
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: agent_cancellation
+            condition:
+              type: succeeded
+      - name: agent_proven
+        guard: ${{ !steps.admit.outputs.ready }}
+        dependsOn:
+          - step: agent
+            condition:
+              type: succeeded
+        task:
+          type: assert
+          expr: steps.agent.outputs.ok
+          message: The agent stage refused its admitted footprint
+          severity: high
+  - name: projection
+    dependsOn:
+      - job: admission
+        condition:
+          type: always
+      - job: agent_install_job
+        condition:
+          type: always
+      - job: caddy_package_job
+        condition:
+          type: always
+      - job: caddy_job
+        condition:
+          type: always
+      - job: peer_dns_job
+        condition:
+          type: always
+      - job: private_dns_job
+        condition:
+          type: always
+      - job: route_residue_job
+        condition:
+          type: always
+      - job: php_runtime_job
+        condition:
+          type: always
+      - job: tmpfiles_job
+        condition:
+          type: always
+      - job: agent_job
+        condition:
+          type: always
+    steps:
+      - name: project
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-converge-direct"
+          behaviorName: ${{ "node-converge-" + string(inputs.node_id) }}
+          methodName: project
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: ${{ inputs.node_id }}
+            kind: ${{ inputs.kind }}
+            run_id: ${{ run.id }}
+            admission: ${{ steps.admit.outputs }}
+            outcomes: "${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs]
+              : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs]
+              : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns)
+              && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs)
+              ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ?
+              [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs]
+              : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent)
+              && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}"
+        guard: ${{ !has(steps.admit) || !has(steps.admit.outputs) }}
