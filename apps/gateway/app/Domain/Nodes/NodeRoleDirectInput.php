@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Metrics\MetricsRoleReconcileImpact;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerIntent;
@@ -13,19 +15,31 @@ use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
+use App\Support\ValidatedData;
+use InvalidArgumentException;
 
 /** Public intent only. Account discovery and every effect belong to the native root. */
 final readonly class NodeRoleDirectInput
 {
     public function __construct(private AgentDelivery $delivery, private RolePrerequisites $prerequisites,
-        private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint, private ToolManagerIntent $managers) {}
+        private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint, private ToolManagerIntent $managers,
+        private MetricsFleetCapture $metrics, private MetricsRoleReconcileImpact $metricsImpact) {}
 
-    /** @return array<string,mixed> */
-    public function capture(Node $node, NodeRole $assignment, bool $created): array
+    /** @param array<string,mixed>|null $metricsBefore Complete owning capture before recording the role transition.
+     * @return array<string,mixed>
+     */
+    public function capture(Node $node, NodeRole $assignment, bool $created, ?array $metricsBefore = null): array
     {
         if ($assignment->node_id !== $node->id || ! in_array($assignment->role, [RoleName::AppDev, RoleName::Database, RoleName::CiRunner], true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot requires its admitted Node assignment.', 422);
         }
+        $metricsNodeId = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
+            static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->value('id');
+        if (($metricsNodeId === null) !== ($metricsBefore === null)) {
+            throw new ResourceOperationException('metrics.snapshot_changed', 'The role needs the complete pre-transition Metrics intent.', 409);
+        }
+        $impact = $metricsBefore === null ? null : $this->metricsImpact->compare($metricsBefore, $this->metrics->capture());
         $role = $assignment->role;
         $prerequisites = $this->prerequisites->input($node, $role,
             new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
@@ -45,7 +59,48 @@ final readonly class NodeRoleDirectInput
             'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
             'managers' => $managers, 'footprint' => $footprint,
-            'metrics_node_id' => Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
-                static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->value('id')];
+            'metrics_node_id' => $metricsNodeId, 'metrics_impact' => $impact];
+    }
+
+    /** Canonical read-only ownership check for the role root and its protected hash source. */
+    public static function ownerId(Operation $operation): ?int
+    {
+        try {
+            return ValidatedData::integer(self::bound($operation)['node_id']);
+        } catch (ResourceOperationException|InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /** @return array<string,mixed> */
+    public static function bound(Operation $operation): array
+    {
+        $snapshot = ValidatedData::object($operation->input['_role'] ?? []);
+        $intent = ValidatedData::object($operation->state['role_intent'] ?? []);
+        $footprint = ValidatedData::object($snapshot['footprint'] ?? []);
+        $run = $operation->state['swamp_run_id'] ?? null;
+        $role = $snapshot['role'] ?? null;
+        $pin = $snapshot['agent_sha256'] ?? null;
+        if (! in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)
+            || $operation->target_type !== 'node' || $operation->node_id === null || $operation->target_id !== $operation->node_id
+            || $operation->parent_operation_id !== null || $operation->status->terminal()
+            || ($operation->state['node_role_writer'] ?? null) !== 'direct'
+            || ($operation->state['role_owned_by_parent'] ?? false) !== false
+            || ! is_string($run) || preg_match('/\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/D', $run) !== 1
+            || ($snapshot['schema_version'] ?? null) !== 1 || ($snapshot['node_id'] ?? null) !== $operation->node_id
+            || ($operation->input['node_id'] ?? null) !== $operation->node_id
+            || ! in_array($role, ['app-dev', 'database', 'ci-runner'], true) || ($operation->input['role'] ?? null) !== $role
+            || ! is_string($pin) || preg_match('/\A[a-f0-9]{64}\z/D', $pin) !== 1
+            || ($footprint['schema_version'] ?? null) !== 1 || ($footprint['node_id'] ?? null) !== $operation->node_id
+            || ($footprint['agent_sha256'] ?? null) !== $pin || array_key_exists('secret_hash', $footprint)
+            || ! is_int($snapshot['assignment_id'] ?? null) || ! is_bool($snapshot['created'] ?? null)
+            || ($intent['assignment_id'] ?? null) !== $snapshot['assignment_id'] || ($intent['created'] ?? null) !== $snapshot['created']
+            || ($intent['role'] ?? null) !== $role || ($intent['source_node_id'] ?? null) !== $operation->node_id
+            || ($intent['target_node_id'] ?? null) !== null
+            || ! NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)->where('role', $role)->exists()) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot does not belong to this standalone Node root.', 422);
+        }
+
+        return $snapshot;
     }
 }
