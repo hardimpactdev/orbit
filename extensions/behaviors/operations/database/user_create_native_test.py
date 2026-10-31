@@ -1,5 +1,6 @@
 """Native DAG privacy proof with fake private HTTP and fake agent effects."""
 import json
+import yaml
 from pathlib import Path
 import unittest
 import sys
@@ -12,19 +13,29 @@ from native_harness import NativeTestCase
 class UserCreateNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/database')
+        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
+        failure.parent.mkdir(parents=True, exist_ok=True)
+        failure.write_text('import { fixtureHttp } from "./database/user_create_native_fixture.ts";\n' + (ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         module = self.repo / 'extensions/behaviors/operations/database/user_create.ts'
         module.write_text('import { fixtureHttp, fixtureInvoke } from "./user_create_native_fixture.ts";\n' + module.read_text().replace('export const behavior = userCreate();', 'export const behavior = userCreate(() => fixtureHttp, fixtureInvoke);'))
         workflow = ROOT / 'workflows/workflow-operation-database-user-create.yaml'
-        (self.repo / 'workflows' / workflow.name).write_text('\n'.join(
-            line for line in workflow.read_text().splitlines()
-            if not line.startswith(('target:', 'labels:'))) + '\n')
+        fixture_workflow = yaml.safe_load(workflow.read_text())
+        fixture_workflow.pop('target', None)
+        fixture_workflow.pop('labels', None)
+        for job in fixture_workflow['jobs']:
+            job.pop('target', None)
+            job.pop('labels', None)
+            for step in job['steps']:
+                step.pop('target', None)
+                step.pop('labels', None)
+        (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
         self.password = 'private-root-native-sentinel'
         self.sql = "CREATE USER proof IDENTIFIED BY 'private-native-login-sentinel';"
         self.node_id = 209
         self.fixture = {'operation': {'id': 17, 'kind': 'database_user.create', 'node_id': 209,
             'status': 'queued', 'result': None, 'cancel_requested': False,
-            'input': {'driver': 'mysql', 'container': 'orbit-process-42-proof', 'agent_sha256': 'a' * 64,
+            'input': {'driver': 'mysql', 'container': 'orbit-process-42-proof', 
                       'username': 'proof', 'replication': False, 'known_user': False}},
             'material': {'password': self.password, 'sql': self.sql}, 'calls': [], 'effects': 0}
 

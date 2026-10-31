@@ -14,37 +14,52 @@ export type SystemTransport = (
 /** Once a mutation starts, the caller reconciles its outcome before observing cancellation. */
 export const localSystemCommand: SystemTransport = async (input, signal) => {
   signal?.throwIfAborted();
+  const timeout = AbortSignal.timeout(input.timeoutMs);
   const child = new Deno.Command(input.command, {
     args: [...input.args],
     stdin: input.stdin === undefined ? "null" : "piped",
     stdout: "piped",
     stderr: "null",
-    signal: AbortSignal.timeout(input.timeoutMs),
+    signal: timeout,
   }).spawn();
   let finished = false;
   try {
-    if (input.stdin !== undefined) {
+    // Drain output while writing input: either pipe can exceed the kernel buffer.
+    const writing = (async () => {
+      if (input.stdin === undefined) return;
       const writer = child.stdin.getWriter();
-      await writer.write(new TextEncoder().encode(input.stdin));
-      await writer.close();
-    }
-    const chunks: Uint8Array[] = [];
-    let length = 0;
-    for await (const chunk of child.stdout) {
-      length += chunk.length;
-      if (length > 65536) {
-        throw new Error("System command output exceeded its bound");
+      try {
+        await writer.write(new TextEncoder().encode(input.stdin));
+        await writer.close();
+      } finally {
+        writer.releaseLock();
       }
-      chunks.push(chunk);
-    }
-    const status = await child.status;
+    })();
+    const reading = (async () => {
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      for await (const chunk of child.stdout) {
+        length += chunk.length;
+        if (length > 65536) {
+          throw new Error("System command output exceeded its bound");
+        }
+        chunks.push(chunk);
+      }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return bytes;
+    })();
+    const [, bytes, status] = await Promise.all([
+      writing,
+      reading,
+      child.status,
+    ]);
+    timeout.throwIfAborted();
     finished = true;
-    const bytes = new Uint8Array(length);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
     return { success: status.success, stdout: new TextDecoder().decode(bytes) };
   } catch {
     throw new Error("The system command has no confirmed outcome");

@@ -3,7 +3,7 @@ import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { createUser, UserResult } from "./user_create_action.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
 
 const Args = DirectArgs.extend({
   kind: z.literal("database_user.create"),
@@ -44,7 +44,8 @@ type Context = {
 export function userCreate(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  invoke = runNodeAgent,
+  invoke: (call: NodeCall, signal?: AbortSignal) => Promise<unknown> =
+    invokeSql,
 ) {
   return {
     type: "@nckrtl/database-user-create",

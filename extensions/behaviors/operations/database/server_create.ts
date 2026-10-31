@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { localServerRuntime, type ServerRuntime } from "./server_runtime.ts";
 import { nativeEffect } from "./native_effect.ts";
 import { ValkeyClient } from "./valkey_client.ts";
 import {
@@ -36,7 +36,6 @@ const Input = z.object({
   container_input: Container,
   spec: Digest,
   scrub_spec: Digest,
-  agent_sha256: Digest,
   initialize: z.boolean(),
   validate_existing: z.boolean(),
   was_active: z.boolean(),
@@ -60,7 +59,6 @@ const Material = z.object({
 }).strict();
 const Refusal = z.object({
   error_code: z.enum([
-    "agent.version_mismatch",
     "database.server_adoption_refused",
     "database.server_policy_changed",
     "database.server_command_failed",
@@ -76,6 +74,10 @@ const Refusal = z.object({
     "process.restart_failed",
     "process.converge_failed",
     "process.recovery_required",
+    "process.status_failed",
+    "process.not_found",
+    "process.candidate_invalid",
+    "process.activation_failed",
   ]),
 }).strict();
 export const ServerResult = z.union([
@@ -121,7 +123,7 @@ export async function createServer(
   raw: unknown,
   use: PrivateMaterialUse,
   signal?: AbortSignal,
-  invoke = runNodeAgent,
+  runtime: ServerRuntime = localServerRuntime,
   connect: (host: string, port: number) => Promise<Client> =
     ValkeyClient.connect,
 ) {
@@ -189,23 +191,7 @@ export async function createServer(
           material.environment[k] !== v
         )
       ) throw new Error("Wrong initializer environment");
-      const run = async (
-        name: string,
-        body: Record<string, unknown>,
-        deadlineMs: number,
-        mutates = true,
-      ) => {
-        const reply = await invoke(
-          {
-            name,
-            input: body,
-            pin: input.agent_sha256,
-            sudo: true,
-            mutates,
-            deadlineMs,
-          } as NodeCall,
-          signal,
-        );
+      const applied = (reply: unknown) => {
         const refusal = Refusal.safeParse(reply);
         if (refusal.success) throw new Refused(refusal.data);
         z.object({}).strict().parse(reply);
@@ -312,69 +298,72 @@ export async function createServer(
           if (input.volume === null || !material.acl) {
             throw new Error("Missing ACL file intent");
           }
-          await run("database.write-valkey-acl", {
-            volume: input.volume,
-            image: input.container_input.image,
-            acl: material.acl,
-          }, 300000);
+          applied(
+            await runtime.writeAcl({
+              volume: input.volume,
+              image: input.container_input.image,
+              acl: material.acl,
+            }, signal),
+          );
         }
-        const converge = (env: Record<string, string>, spec: string) =>
-          run("process.converge-container", {
-            ...input.container_input,
-            process_id: input.process_id,
-            container: input.container,
-            desired: "running",
-            spec,
-            environment: env,
-          }, 900000);
+        const converge = async (env: Record<string, string>, spec: string) =>
+          applied(
+            await runtime.converge({
+              ...input.container_input,
+              process_id: input.process_id,
+              container: input.container,
+              desired: "running",
+              spec,
+              environment: env,
+            }, signal),
+          );
         await converge(environment, input.spec);
         if (rebuild && input.was_active) {
-          await run("process.control", {
-            operation: "restart",
-            process_id: input.process_id,
-            runtime: "docker",
-            name: input.container,
-            on_demand: false,
-          }, 300000);
+          applied(
+            await runtime.restart({
+              process_id: input.process_id,
+              container: input.container,
+            }, signal),
+          );
         }
         const ready = async () => {
           if (input.driver === "redis") {
             if (!await waitForValkeyReady(login, signal)) {
               throw new Refused({ error_code: "database.server_not_ready" });
             }
-          } else {await run(
-              "database.server-admin",
-              {
-                operation: "ready",
-                container: input.container,
-                password: material.password,
-                password_variable: input.driver === "pgsql"
-                  ? "PGPASSWORD"
-                  : "MYSQL_PWD",
-                client: input.driver === "pgsql"
-                  ? [
-                    "psql",
-                    "--no-psqlrc",
-                    "--host=127.0.0.1",
-                    "--username=postgres",
-                    "--dbname=postgres",
-                    "--no-align",
-                    "--tuples-only",
-                    "--quiet",
-                    "--set=ON_ERROR_STOP=1",
-                  ]
-                  : [
-                    "mysql",
-                    "--protocol=TCP",
-                    "--host=127.0.0.1",
-                    "--user=root",
-                    "--batch",
-                    "--skip-column-names",
-                  ],
-                timeout_seconds: 120,
-              },
-              150000,
-              false,
+          } else {applied(
+              await runtime.ready(
+                {
+                  operation: "ready",
+                  container: input.container,
+                  password: material.password,
+                  password_variable: input.driver === "pgsql"
+                    ? "PGPASSWORD"
+                    : "MYSQL_PWD",
+                  client: input.driver === "pgsql"
+                    ? [
+                      "psql",
+                      "--no-psqlrc",
+                      "--host=127.0.0.1",
+                      "--username=postgres",
+                      "--dbname=postgres",
+                      "--no-align",
+                      "--tuples-only",
+                      "--quiet",
+                      "--set=ON_ERROR_STOP=1",
+                    ]
+                    : [
+                      "mysql",
+                      "--protocol=TCP",
+                      "--host=127.0.0.1",
+                      "--user=root",
+                      "--batch",
+                      "--skip-column-names",
+                    ],
+                  timeout_seconds: 120,
+                },
+                signal,
+              ),
             );}
         };
         if (input.initialize) {
@@ -409,7 +398,7 @@ export async function createServer(
 }
 export function serverCreate(
   makeHttp?: Parameters<typeof nativeEffect>[4],
-  invoke = runNodeAgent,
+  runtime: ServerRuntime = localServerRuntime,
   connect: (host: string, port: number) => Promise<Client> =
     ValkeyClient.connect,
 ) {
@@ -422,7 +411,7 @@ export function serverCreate(
         input,
         (use) => gateway.withPrivateMaterial(use),
         signal,
-        invoke,
+        runtime,
         connect,
       ),
     makeHttp,

@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
 
 /** Public projection only. SQL and passwords belong to the shared private read. */
 export const UserCreateInput = z.object({
@@ -7,7 +7,6 @@ export const UserCreateInput = z.object({
   container: z.string().regex(
     /^orbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$/,
   ),
-  agent_sha256: z.string().regex(/^[0-9a-f]{64}$/),
   username: z.string().regex(/^[A-Za-z0-9_]{1,64}$/),
   replication: z.boolean(),
   known_user: z.boolean(),
@@ -21,7 +20,6 @@ const Material = z.object({
 }).strict();
 const Refusal = z.object({
   error_code: z.enum([
-    "agent.version_mismatch",
     "database.server_admin_invalid",
     "database.server_admin_failed",
     "database.server_not_ready",
@@ -46,7 +44,7 @@ export async function createUser(
   withPrivateMaterial: PrivateMaterialUse,
   signal?: AbortSignal,
   invoke: (call: NodeCall, signal?: AbortSignal) => Promise<unknown> =
-    runNodeAgent,
+    invokeSql,
 ): Promise<{ backend: "active" } | z.infer<typeof Refusal>> {
   try {
     const intent = UserCreateInput.parse(rawIntent);
@@ -62,7 +60,6 @@ export async function createUser(
       const execute = (sql: string, mutates: boolean) =>
         invoke({
           name: "database.server-admin",
-          pin: intent.agent_sha256,
           sudo: true,
           mutates,
           deadlineMs: 900_000,

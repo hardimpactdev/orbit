@@ -1,7 +1,34 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { createServer, waitForValkeyReady } from "./server_create.ts";
+import {
+  createServer as createLocalServer,
+  waitForValkeyReady,
+} from "./server_create.ts";
 import { aclState, convergeAcl, passwordHash } from "./valkey_policy.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import type { ServerRuntime } from "./server_runtime.ts";
+type ServerCall = {
+  name: string;
+  input: Record<string, unknown>;
+  mutates: boolean;
+};
+function createServer(
+  raw: unknown,
+  use: Parameters<typeof createLocalServer>[1],
+  signal?: AbortSignal,
+  invoke: (call: ServerCall) => Promise<Record<string, unknown>> = () =>
+    Promise.resolve({}),
+  connect?: Parameters<typeof createLocalServer>[4],
+) {
+  const action = (name: string, input: unknown, mutates = true) =>
+    invoke({ name, input: input as Record<string, unknown>, mutates });
+  const runtime: ServerRuntime = {
+    converge: (i) => action("converge", i),
+    remove: (i) => action("remove", i),
+    restart: (i) => action("restart", i),
+    writeAcl: (i) => action("writeAcl", i),
+    ready: (i) => action("ready", i, false),
+  };
+  return createLocalServer(raw, use, signal, runtime, connect);
+}
 
 const input = {
   driver: "mysql",
@@ -21,7 +48,6 @@ const input = {
   },
   spec: "b".repeat(64),
   scrub_spec: "c".repeat(64),
-  agent_sha256: "a".repeat(64),
   initialize: true,
   validate_existing: false,
   was_active: false,
@@ -40,7 +66,7 @@ const material = {
 const use = (f: (m: Record<string, unknown>) => Promise<void>) => f(material);
 
 Deno.test("MySQL initializes with protected stdin, proves readiness, scrubs the environment then proves readiness", async () => {
-  const calls: NodeCall[] = [];
+  const calls: ServerCall[] = [];
   assertEquals(
     await createServer(input, use, undefined, (call) => {
       calls.push(call);
@@ -49,15 +75,11 @@ Deno.test("MySQL initializes with protected stdin, proves readiness, scrubs the 
     { backend: "active" },
   );
   assertEquals(calls.map((c) => c.name), [
-    "process.converge-container",
-    "database.server-admin",
-    "process.converge-container",
-    "database.server-admin",
+    "converge",
+    "ready",
+    "converge",
+    "ready",
   ]);
-  assertEquals(
-    calls.map((c) => [c.pin, c.sudo]),
-    Array.from({ length: 4 }, () => [input.agent_sha256, true]),
-  );
   assertEquals(calls[0].input.environment, material.environment);
   assertEquals(calls[0].input.spec, input.spec);
   assertEquals(calls[2].input.environment, {});
@@ -74,7 +96,7 @@ Deno.test("MySQL initializes with protected stdin, proves readiness, scrubs the 
 });
 
 Deno.test("PostgreSQL uses the authenticated TCP readiness client and its own initializer", async () => {
-  const calls: NodeCall[] = [];
+  const calls: ServerCall[] = [];
   assertEquals(
     await createServer(
       {
@@ -110,7 +132,7 @@ Deno.test("PostgreSQL uses the authenticated TCP readiness client and its own in
 });
 
 Deno.test("a failed readiness stops before scrub and exposes only its closed code", async () => {
-  const calls: NodeCall[] = [];
+  const calls: ServerCall[] = [];
   assertEquals(
     await createServer(input, use, undefined, (call) => {
       calls.push(call);
@@ -124,7 +146,7 @@ Deno.test("a failed readiness stops before scrub and exposes only its closed cod
 });
 
 Deno.test("an active SQL repair never reintroduces the initialization password", async () => {
-  const calls: NodeCall[] = [];
+  const calls: ServerCall[] = [];
   assertEquals(
     await createServer(
       { ...input, initialize: false, was_active: true, spec: input.scrub_spec },
@@ -197,7 +219,7 @@ function redisInput() {
 }
 
 Deno.test("new Valkey writes its private ACL before converge and authenticates readiness", async () => {
-  const calls: NodeCall[] = [];
+  const calls: ServerCall[] = [];
   const commands: string[][] = [];
   const acl = `user default on #${await passwordHash(password)} ~* &* +@all\n`;
   assertEquals(
@@ -227,8 +249,8 @@ Deno.test("new Valkey writes its private ACL before converge and authenticates r
     { backend: "active" },
   );
   assertEquals(calls.map((c) => c.name), [
-    "database.write-valkey-acl",
-    "process.converge-container",
+    "writeAcl",
+    "converge",
   ]);
   assertEquals(calls[0].input.acl, acl);
   assertEquals(calls[1].input.environment, {});

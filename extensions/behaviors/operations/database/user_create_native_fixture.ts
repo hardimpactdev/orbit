@@ -1,5 +1,5 @@
 import type { Http } from "../../automatic-deploy/gateway.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import type { DatabaseSqlCall as NodeCall } from "./local_sql.ts";
 
 const file = "private-user-fixture.json";
 async function state() {

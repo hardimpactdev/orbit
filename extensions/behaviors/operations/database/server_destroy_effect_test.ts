@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { destroyServer } from "./server_destroy.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import { localServerRuntime } from "./server_runtime.ts";
 
 Deno.test({
   name:
@@ -10,15 +10,6 @@ Deno.test({
     const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
     const container = `orbit-process-999997-server-destroy-${suffix}`;
     const volume = `orbit-server-destroy-${suffix}-data`;
-    const pin = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest(
-          "SHA-256",
-          await Deno.readFile("/usr/local/bin/orbit-agent"),
-        ),
-      ),
-      (b) => b.toString(16).padStart(2, "0"),
-    ).join("");
     const docker = async (args: string[], success = true) => {
       const reply = await new Deno.Command("docker", {
         args,
@@ -29,30 +20,23 @@ Deno.test({
     };
     try {
       assertEquals(
-        await runNodeAgent({
-          name: "process.converge-container",
-          pin,
-          sudo: true,
-          mutates: true,
-          deadlineMs: 30000,
-          input: {
-            process_id: 999997,
-            container,
-            desired: "running",
-            spec: "a".repeat(64),
-            image: "valkey/valkey:8.1",
-            command: ["valkey-server", "--dir", "/data"],
-            restart: "unless-stopped",
-            working_directory: null,
-            ports: [],
-            mounts: [{ source: volume, target: "/data", read_only: false }],
-            environment: {},
-          },
+        await localServerRuntime.converge({
+          process_id: 999997,
+          container,
+          desired: "running",
+          spec: "a".repeat(64),
+          image: "valkey/valkey:8.1",
+          command: ["valkey-server", "--dir", "/data"],
+          restart: "unless-stopped",
+          working_directory: null,
+          ports: [],
+          mounts: [{ source: volume, target: "/data", read_only: false }],
+          environment: {},
         }),
         {},
       );
       await docker(["exec", container, "touch", "/data/volume-preserved"]);
-      const input = { process_id: 999997, container, agent_sha256: pin };
+      const input = { process_id: 999997, container };
       assertEquals(await destroyServer(input), { backend: "absent" });
       await docker(["container", "inspect", container], false);
       await docker(["volume", "inspect", volume]);

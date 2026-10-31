@@ -5,9 +5,9 @@ import { cleanupSeed } from "./cleanup_seed.ts";
 export async function cleanupAsOwner(
   raw: unknown,
 ): Promise<Record<string, unknown>> {
-  const { input, agent_sha256 } = cleanupPayload(raw);
+  const { input } = cleanupPayload(raw);
   if (input.variant !== "clone") {
-    return await cleanupSeed(agent_sha256, input);
+    return await cleanupSeed(input);
   }
   try {
     let directory: Deno.FileInfo;

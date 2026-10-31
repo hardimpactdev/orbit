@@ -21,7 +21,6 @@ class Fixture {
     cancel_requested: false,
     input: {
       variant: "clone",
-      agent_sha256: "a".repeat(64),
       directory: `/tmp/orbit-sqlite-clone-${"b".repeat(32)}`,
     },
   };
@@ -96,16 +95,25 @@ Deno.test("native retry after lost terminal projection reads the committed resul
   );
 });
 
-Deno.test("uncertain cleanup escapes for native step recovery without inventing a receipt or local retry", async () => {
+Deno.test("uncertain cleanup records a bounded terminal failure and never repeats effects", async () => {
   const f = new Fixture();
   f.loseCleanup = true;
-  await assertRejects(() => f.execute(), Error, "lost cleanup reply");
-  assertEquals(f.calls.length, 2);
-  assertEquals(await f.execute(), { status: "succeeded" });
-  assertEquals(
-    f.localCalls.length,
-    2,
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.native_outcome_unknown",
   );
+  assertEquals(f.calls.length, 3);
+  assertEquals(f.calls.at(-1)!.body.status, "failed");
+  assertEquals(f.calls.at(-1)!.body.result, {
+    error_code: "operation.native_outcome_unknown",
+  });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.native_outcome_unknown",
+  );
+  assertEquals(f.localCalls.length, 1);
 });
 
 Deno.test("cancelled intent makes no Node call and projects its native outcome", async () => {
@@ -115,7 +123,7 @@ Deno.test("cancelled intent makes no Node call and projects its native outcome",
   assertEquals(f.localCalls.length, 0);
 });
 
-Deno.test("unproven or malformed cleanup refuses terminal success", async () => {
+Deno.test("unproven or malformed cleanup records a bounded failure without terminal success", async () => {
   for (
     const result of [{ result: "unknown" }, {
       error_code: "private diagnostic spaces",
@@ -126,7 +134,7 @@ Deno.test("unproven or malformed cleanup refuses terminal success", async () => 
     await assertRejects(() => f.execute());
     assertEquals(
       f.calls.filter((call) => call.path.endsWith("/result")).length,
-      1,
+      2,
     );
   }
 });

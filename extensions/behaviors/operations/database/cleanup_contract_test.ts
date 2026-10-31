@@ -1,14 +1,11 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
 import { cleanupPayload } from "./cleanup_contract.ts";
-const pin = "a".repeat(64);
 const clone = {
   variant: "clone",
-  agent_sha256: pin,
   directory: `/tmp/orbit-sqlite-clone-${"b".repeat(32)}`,
 };
-Deno.test("cleanup exposes one typed variant and separates the pin from action input", () => {
+Deno.test("cleanup exposes only the admitted typed descriptor", () => {
   assertEquals(cleanupPayload(clone), {
-    agent_sha256: pin,
     input: { variant: "clone", directory: clone.directory },
   });
 });
@@ -19,7 +16,7 @@ Deno.test("cleanup cannot select a generic owner command or foreign path", () =>
       { ...clone, command: "instance.copy-sqlite" },
       { ...clone, directory: "/tmp/orbit-sqlite-clone-../foreign" },
       { ...clone, variant: "install" },
-      { ...clone, agent_sha256: "invalid" },
+      { ...clone, program: "arbitrary caller source" },
     ]
   ) assertThrows(() => cleanupPayload(bad));
 });
@@ -27,7 +24,6 @@ Deno.test("seed cleanup binds source base target state and operation snapshot", 
   const operation = "c".repeat(64);
   const seed = {
     variant: "seed",
-    agent_sha256: pin,
     target_instance_id: 42,
     base: "/home/app/database",
     source_path: "/home/app/database/database.sqlite",

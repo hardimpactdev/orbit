@@ -1,0 +1,122 @@
+id: 9b7c8d6f-2e2a-4a8a-b0bb-bb626fe1008b
+name: operation-database-destroy-owned
+description: Remove all admitted owned databases in one placed native DAG.
+target: ${{ "orbit-node-" + string(inputs.node_id) }}
+labels:
+  node: ${{ string(inputs.node_id) }}
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - database.destroy_owned
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: admission
+  steps:
+  - name: plan
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-destroy-owned'
+      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
+      methodName: plan
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: failure-admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.node_id) }}
+  dependsOn:
+  - job: admission
+    condition:
+      type: failed
+  steps:
+  - name: report
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: effects
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+  steps:
+  - name: remove-${{ self.work.key }}
+    forEach:
+      item: work
+      in: ${{ steps.plan.outputs.work }}
+    target: '${{ "orbit-node-" + string(self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id)
+      }}'
+    labels:
+      node: '${{ string(self.work.type == "server" ? self.work.server.node_id : self.work.sqlite.node_id) }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-destroy-owned'
+      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
+      methodName: apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        work: ${{ self.work }}
+- name: failure-effects
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  dependsOn:
+  - job: effects
+    condition:
+      type: failed
+  steps:
+  - name: report
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: projection
+  dependsOn:
+  - job: effects
+    condition:
+      type: succeeded
+  steps:
+  - name: project
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-destroy-owned'
+      behaviorName: ${{ "database-destroy-owned-" + string(inputs.operation_id) }}
+      methodName: project
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        started_at: ${{ steps.plan.outputs.started_at }}
+        cancelled: ${{ steps.plan.outputs.cancelled }}
+        results: ${{ steps.plan.outputs.work.map(w, steps["remove-" + w.key].outputs.result) }}

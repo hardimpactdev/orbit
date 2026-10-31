@@ -101,7 +101,7 @@ for (const path of await files(`${root}/workflows`)) {
       if (typeof placement.target === "string") {
         const literal = /^orbit-node-([1-9][0-9]*)$/.exec(placement.target);
         const expression = placement.target.includes("orbit-node-")
-          ? /string\(([^)]+)\)/.exec(placement.target)
+          ? /string\((.+)\)\s*\}\}$/s.exec(placement.target)
           : null;
         if (
           literal && labels.node !== literal[1] ||

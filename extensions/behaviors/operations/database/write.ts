@@ -1,13 +1,11 @@
 import { z } from "npm:zod@4.4.3";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { runSqliteLocal, type SqliteCall } from "./sqlite_local.ts";
 import { nativeEffect } from "./native_effect.ts";
 import type { PrivateMaterialUse } from "./user_create_action.ts";
 
-const Pin = z.string().regex(/^[a-f0-9]{64}$/);
 const Input = z.discriminatedUnion("driver", [
   z.object({
     driver: z.literal("sqlite"),
-    agent_sha256: Pin,
     owner: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/),
     path: z.string().startsWith("/").refine((p) =>
       !/[\0\r\n]|(?:^|\/)\.{1,2}(?:\/|$)|\/\//.test(p)
@@ -23,7 +21,6 @@ const Material = z.object({
 }).strict();
 const Refusal = z.object({
   error_code: z.enum([
-    "agent.version_mismatch",
     "database.sqlite_unreadable",
     "database.query_failed",
     "database.write_outcome_unknown",
@@ -93,7 +90,7 @@ export async function writeDatabase(
   raw: unknown,
   use: PrivateMaterialUse,
   signal?: AbortSignal,
-  invoke = runNodeAgent,
+  invoke = runSqliteLocal,
   pdo = pdoWrite,
 ) {
   let invoked = false;
@@ -113,12 +110,8 @@ export async function writeDatabase(
           material.dsn !== "" || material.username !== null ||
           material.password !== ""
         ) throw new Error("Foreign SQLite material");
-        const call: NodeCall = {
-          name: "database.write-sqlite",
-          pin: input.agent_sha256,
-          sudo: true,
-          mutates: true,
-          deadlineMs: 30000,
+        const call: SqliteCall = {
+          action: "write",
           input: { owner: input.owner, path: input.path, sql: material.sql },
         };
         invoked = true;
@@ -147,7 +140,7 @@ export async function writeDatabase(
 }
 export function databaseWrite(
   makeHttp?: Parameters<typeof nativeEffect>[4],
-  invoke = runNodeAgent,
+  invoke = runSqliteLocal,
   pdo = pdoWrite,
 ) {
   return nativeEffect(

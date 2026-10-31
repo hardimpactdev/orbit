@@ -5,15 +5,12 @@ const Path = z.string().startsWith("/").refine((value) =>
   !/(?:^|\/)\.{1,2}(?:\/|$)|\/\//.test(value)
 );
 const User = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
-const Pin = z.string().regex(/^[0-9a-f]{64}$/);
 const Clone = z.object({
   variant: z.literal("clone"),
-  agent_sha256: Pin,
   directory: z.string().regex(/^\/tmp\/orbit-sqlite-clone-[0-9a-f]{32}$/),
 }).strict();
 export const Seed = z.object({
   variant: z.literal("seed"),
-  agent_sha256: Pin,
   target_instance_id: z.number().int().positive(),
   base: Path,
   source_path: Path,
@@ -32,8 +29,7 @@ export const Seed = z.object({
 export const CleanupInput = z.union([Clone, Seed]);
 export type CleanupIntent = z.infer<typeof CleanupInput>;
 
-/** The admitted pin is separate from the typed cleanup command input. */
+/** Safe descriptor only; the reviewed native implementation owns the effect. */
 export function cleanupPayload(raw: unknown) {
-  const { agent_sha256, ...input } = CleanupInput.parse(raw);
-  return { agent_sha256, input };
+  return { input: CleanupInput.parse(raw) };
 }
