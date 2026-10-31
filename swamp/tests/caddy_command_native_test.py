@@ -126,6 +126,23 @@ if name=='systemctl' and os.environ.get('FIXTURE_FAIL')=='reload': sys.exit(1)
         (self.host / "Caddyfile").symlink_to(old)
         result, calls = self.run_caddy()
         self.assertEqual(result["status"], "succeeded")
+        history = json.loads(
+            self.cli("workflow", "history", "get", result["id"]).stdout
+        )
+        completion = next(job for job in history["jobs"] if job["name"] == "completion")
+        terminal = next(
+            step for step in completion["steps"] if step["name"] == "result"
+        )
+        self.assertEqual(
+            json.loads(terminal["outputs"]["stdout"]),
+            {
+                "ready": True,
+                "result": "published",
+                "version": self.inputs["intent"]["caddy_publication"]["caddy"][
+                    "version"
+                ],
+            },
+        )
         self.assertEqual((self.host / "Caddyfile").read_text(), self.content)
         self.assertFalse((self.host / "Caddyfile").is_symlink())
         self.assertEqual([row[0] for row in calls], ["caddy", "systemctl"])

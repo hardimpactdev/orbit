@@ -169,7 +169,18 @@ if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
     def test_absent_runtime_is_reported_without_file_or_service_effects(self):
         (self.directory / "php-fpm.conf").unlink()
         (self.directory / "pool.conf").unlink()
-        self.assertEqual(self.run_monitor()["status"], "succeeded")
+        result = self.run_monitor()
+        self.assertEqual(result["status"], "succeeded")
+        history = json.loads(
+            self.cli("workflow", "history", "get", result["id"]).stdout
+        )
+        completion = next(job for job in history["jobs"] if job["name"] == "completion")
+        terminal = next(
+            step for step in completion["steps"] if step["name"] == "result"
+        )
+        self.assertEqual(
+            json.loads(terminal["outputs"]["stdout"]), {"ready": True, "present": False}
+        )
         self.assertFalse((self.directory / "pool.conf").exists())
         self.assertFalse(self.audit.exists())
 
