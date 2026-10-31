@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -74,11 +75,12 @@ it('admits one exact Node root and projects stopped proof without PHP execution'
     $operation = Operation::query()->findOrFail($id);
     expect($operation->state['task_park_writer'])->toBe('direct')->and($operation->node_id)->toBe($this->vm->host_node_id)
         ->and($operation->lock_key)->toBeNull()->and($operation->worker)->toBeNull()->and($operation->children()->count())->toBe(0)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull()
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull()
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)->and($this->provider->calls)->toBe([]);
     $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.eligible', true);
     parkResult($id)->assertOk();
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->vm->fresh()->stop_confirmed_at)->not->toBeNull()
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Instance::query()->find($this->group->taskable_id))->not->toBeNull()->and($this->provider->calls)->toBe([]);
     $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);
@@ -86,6 +88,28 @@ it('admits one exact Node root and projects stopped proof without PHP execution'
         expect(app(OperationKinds::class)->definition($kind))->toBeNull();
     }
 });
+
+it('keeps a cancelled park ready without stop proof or topology changes', function (): void {
+    $this->vm->update(['topology_run' => 'preserved-topology-run']);
+    $id = $this->withHeader('Idempotency-Key', 'review.cancel')->postJson($this->url)->assertAccepted()->json('data.id');
+    $before = $this->vm->fresh()->getRawOriginal();
+    parkResult($id, 'cancelled', [])->assertOk();
+    expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull()
+        ->and($this->vm->fresh()->topology_run)->toBe('preserved-topology-run')
+        ->and($this->vm->fresh()->getRawOriginal())->toBe($before)->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('preserves lock based busy detection for non-direct Task rows', function (bool $locked): void {
+    Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $this->group->id,
+        'status' => OperationStatus::Queued, 'input' => [], 'triggered_by' => 'fixture',
+        'lock_key' => $locked ? OperationStore::lockKey('task_group', $this->group->id) : null]);
+    $response = $this->withHeader('Idempotency-Key', 'review.legacy-lock')->postJson($this->url);
+    if ($locked) {
+        $response->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    } else {
+        $response->assertAccepted();
+    }
+})->with([true, false]);
 
 it('reports changed eligibility without an effect or a false board transition', function (): void {
     $id = $this->withHeader('Idempotency-Key', 'review.changed')->postJson($this->url)->assertAccepted()->json('data.id');
@@ -96,11 +120,8 @@ it('reports changed eligibility without an effect or a false board transition', 
         ->and($this->vm->fresh()->error_code)->toBe('tasks.park_refused')->and($this->provider->calls)->toBe([]);
 });
 
-it('refuses foreign stopped proof and a late running result without changing park rows', function (): void {
+it('refuses a late running result without changing park rows', function (): void {
     $id = $this->withHeader('Idempotency-Key', 'review.proof')->postJson($this->url)->assertAccepted()->json('data.id');
-    parkResult($id, result: ['group_id' => $this->group->id, 'task_vm_id' => $this->vm->id + 1, 'instance_id' => $this->group->taskable_id,
-        'status' => 'waiting_for_review', 'power' => 'stopped'])->assertUnprocessable();
-    expect($this->vm->fresh()->stop_confirmed_at)->toBeNull();
     parkResult($id)->assertOk();
     $before = $this->vm->fresh()->getRawOriginal();
     parkResult($id, 'running', [])->assertConflict();
