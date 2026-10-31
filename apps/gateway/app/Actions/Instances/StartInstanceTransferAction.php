@@ -9,17 +9,15 @@ use App\Data\Instances\TransferInstanceData;
 use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Instances\NativeInstanceTransferIntent;
+use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Nodes\Storage\StorageRootResolver;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
@@ -45,11 +43,7 @@ final readonly class StartInstanceTransferAction
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
-        private ManagedUserAccountResolver $accounts,
-        private StorageRootResolver $storageRoots,
-        private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $checkoutOverlap,
-        private InstanceDestinationGuard $destinationGuard,
         private RouteStateResolver $routeState,
         private ScheduleTargetUseGuard $schedules,
     ) {}
@@ -59,12 +53,11 @@ final readonly class StartInstanceTransferAction
         if (($replay = $this->idempotency->replay('instance.transfer')) !== null) {
             return $replay;
         }
-        if (app(DirectOperation::class)->definition('instance.transfer') === null) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'Instance transfer has no native workflow.', 503);
-        }
+        app(DirectOperation::class)->writer('instance.transfer');
 
         return DB::transaction(function () use ($instance, $data, $caller, $requestId): Operation {
             $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
+            app(NativeInstanceTransferIntent::class)->assertSupported($instance, $data->sqliteSourcePath);
             $existing = $this->existingTransfer($instance, $data);
             $transfer = $existing ?? $this->reserve($instance, $data);
             $destination = Node::query()->findOrFail($transfer->destination_node_id);
@@ -74,7 +67,12 @@ final readonly class StartInstanceTransferAction
             app(SsrPortAllocator::class)->assign($instance);
             app(SsrPortAllocator::class)->assign($instance, $destination);
 
+            $routePlan = app(NativeRouteTransferPlan::class)->capture($transfer);
+            $plan = app(NativeInstanceTransferIntent::class)->capture($transfer);
+
             return $this->operations->execute('instance.transfer', 'instance', $instance->id, $transfer->source_node_id, [
+                'direct_transfer' => $plan, 'route_transfer' => $routePlan,
+                'participant_node_ids' => $routePlan['participant_node_ids'],
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'transfer_id' => $transfer->id,
                 'created' => $existing === null, 'node_id' => $transfer->source_node_id,
                 'destination_node_id' => $transfer->destination_node_id, 'destination_path' => $transfer->destination_path,
@@ -308,35 +306,17 @@ final readonly class StartInstanceTransferAction
 
     private function destinationPath(Node $destination, string $projectSlug, string $name): StoragePath
     {
-        $account = $this->accounts->resolve($destination);
-        $roots = $this->storageRoots->resolveApps(
-            $this->nodeSettings->fromStored($destination->settings),
-            $account,
-        );
+        $root = data_get($destination->settings, 'apps.path');
+        if (! is_string($root) || StoragePath::tryParse($root) === null) {
+            throw $this->conflict('operation.kind_unavailable', 'Native transfer requires a stored absolute apps path.');
+        }
 
-        return $roots->append($projectSlug, $name);
+        return StoragePath::parse($root)->append($projectSlug, $name);
     }
 
     private function assertDestinationAvailable(Node $destination, StoragePath $path): void
     {
-        try {
-            $this->checkoutOverlap->assertAvailable(
-                $destination->id,
-                $path,
-                'instance.destination_exists',
-            );
-            $this->destinationGuard->assertUnoccupied($destination, $path);
-        } catch (ResourceOperationException $exception) {
-            if (in_array($exception->errorCode, [
-                'instance.destination_exists',
-                'instance.path_taken',
-                'instance.migration_conflict',
-            ], true)) {
-                throw $this->destinationExists($path);
-            }
-
-            throw $exception;
-        }
+        $this->checkoutOverlap->assertAvailable($destination->id, $path, 'instance.destination_exists');
     }
 
     private function destinationExists(StoragePath $path): ResourceOperationException
