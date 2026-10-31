@@ -1,0 +1,112 @@
+id: f5ddfbc0-f9ba-44e2-9390-50ed20238d8c
+name: instance-transfer-source-runtime
+description: Pause or restore the captured source Processes without changing boot policy.
+writes: true
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.transfer]}
+    node_id: {type: integer, minimum: 1}
+    phase: {type: string, enum: [pause, restore]}
+    intent:
+      type: object
+      properties:
+        process_runtime:
+          type: object
+          properties:
+            source:
+              type: object
+              properties:
+                node_id: {type: integer, minimum: 1}
+                members:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id: {type: integer, minimum: 1}
+                      input:
+                        type: object
+                        properties:
+                          control: {type: object}
+                          installation: {type: object}
+                        required: [control, installation]
+                        additionalProperties: false
+                    required: [id, input]
+                    additionalProperties: false
+              required: [node_id, members]
+              additionalProperties: false
+          required: [source]
+      required: [process_runtime]
+  required: [operation_id, kind, node_id, phase, intent]
+  additionalProperties: false
+jobs:
+  - name: source-runtime
+    steps:
+      - name: assets
+        forEach:
+          item: member
+          in: ${{ inputs.intent.process_runtime.source.members }}
+        target: ${{ "orbit-node-" + string(inputs.intent.process_runtime.source.node_id) }}
+        labels: {node: '${{ string(inputs.intent.process_runtime.source.node_id) }}'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/process-command-assets'
+          behaviorName: ${{ "transfer-source-assets-" + run.id + "-" + string(self._index) }}
+          methodName: read
+          inputs:
+            control: >-
+              ${{ self.member.input.control.runtime == "docker"
+                ? {"process_id": self.member.input.control.process_id,
+                   "runtime": self.member.input.control.runtime,
+                   "name": self.member.input.control.name,
+                   "on_demand": self.member.input.control.on_demand,
+                   "vite": self.member.input.control.vite,
+                   "expected_spec": self.member.input.installation.spec}
+                : self.member.input.control }}
+            installation: ${{ self.member.input.installation }}
+      - name: control
+        forEach:
+          item: member
+          in: ${{ inputs.intent.process_runtime.source.members }}
+        dependsOn:
+          - step: assets
+            condition: {type: succeeded}
+        target: ${{ "orbit-node-" + string(inputs.intent.process_runtime.source.node_id) }}
+        labels: {node: '${{ string(inputs.intent.process_runtime.source.node_id) }}'}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "transfer-source-control-" + run.id + "-" + string(self._index) }}
+          methodName: execute
+          inputs:
+            run: |
+              sudo -n --preserve-env=ORBIT_PROCESS_CONTROL,ORBIT_PROCESS_OPERATION,ORBIT_OPERATION_ID /usr/bin/python3 "${{ steps['assets-' + string(self._index)].outputs.control_script }}"
+            env:
+              ORBIT_PROCESS_CONTROL: ${{ steps['assets-' + string(self._index)].outputs.control_json }}
+              ORBIT_PROCESS_OPERATION: >-
+                ${{ inputs.phase == "pause" || self.member.input.installation.desired == "stopped" ? "stop" : "start" }}
+              ORBIT_OPERATION_ID: ${{ string(inputs.operation_id) }}
+      - name: verify
+        forEach:
+          item: member
+          in: ${{ inputs.intent.process_runtime.source.members }}
+        dependsOn:
+          - step: assets
+            condition: {type: succeeded}
+          - step: control
+            condition: {type: succeeded}
+        target: ${{ "orbit-node-" + string(inputs.intent.process_runtime.source.node_id) }}
+        labels: {node: '${{ string(inputs.intent.process_runtime.source.node_id) }}'}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "transfer-source-verify-" + run.id + "-" + string(self._index) }}
+          methodName: execute
+          inputs:
+            run: |
+              sudo -n --preserve-env=ORBIT_PROCESS_CONTROL,ORBIT_PROCESS_DESIRED /usr/bin/python3 "${{ steps['assets-' + string(self._index)].outputs.verify_script }}"
+            env:
+              ORBIT_PROCESS_CONTROL: ${{ steps['assets-' + string(self._index)].outputs.control_json }}
+              ORBIT_PROCESS_DESIRED: >-
+                ${{ inputs.phase == "pause" ? "stopped" : self.member.input.installation.desired }}

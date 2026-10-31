@@ -27,6 +27,8 @@ The internal workflows capture files, materialize checkouts and retire source ch
 
 These command components do not register a second public transfer kind or supply an archive relay. The owning parent controls source pause, private archive delivery, Route publication and retirement order. The [Swamp shape guide](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md) owns the shared execution-copy and terminal-result contracts.
 
+The command workflow for source Processes fans out over their recorded batch. It resolves the canonical Process scripts on the source worker, stops each Process, and verifies the stopped state. Pausing preserves boot policy and recorded desired state. Restoration starts Processes whose desired state is running and keeps the others stopped. Docker actions require the captured specification. Invalid metadata blocks all control actions; a failed control action blocks verification. This component needs no secret material and does not change placement or install destination runtime.
+
 ## Source and archive
 
 The destination worker checks readiness before the source is captured. The source worker archives the checkout into a private native file resource. The destination streams that resource and verifies its byte count and SHA-256 before publishing the checkout. Archive bytes never enter the Gateway, workflow arguments or JSON results. The archive limit is 1 TiB.
