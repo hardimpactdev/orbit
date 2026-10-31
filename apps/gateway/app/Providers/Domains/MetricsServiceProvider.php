@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialResetMaterial;
@@ -23,7 +22,6 @@ use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
 use App\Infrastructure\Metrics\AgentMetricsHostObserver;
 use App\Infrastructure\Metrics\MetricsRuntimeCommands;
-use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
@@ -40,7 +38,6 @@ final class MetricsServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
-        MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsRuntimeCommands::class,
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,

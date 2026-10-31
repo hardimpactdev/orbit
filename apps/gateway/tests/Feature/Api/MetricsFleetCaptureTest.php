@@ -162,3 +162,17 @@ it('reports no Metrics contribution when retirement has no Metrics assignment', 
     $this->nodes[9]->roles()->delete();
     expect(app(MetricsFleetCapture::class)->captureRetiring($this->nodes[13]))->toBeNull();
 });
+
+it('captures the exact Gateway for access revocation without changing host or intent state', function (): void {
+    $gateway = Node::query()->forceCreate(['id' => 14, 'name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.14', 'public_ssh_host' => '192.0.2.14']);
+    $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    expect(app(MetricsFleetCapture::class)->captureAccessRevocation())->toBe(['node_id' => 14]);
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('requires a Gateway when Metrics streams may exist, and no stage when Metrics has no owner', function (): void {
+    expect(fn () => app(MetricsFleetCapture::class)->captureAccessRevocation())->toThrow(ResourceOperationException::class);
+    $this->nodes[9]->roles()->delete();
+    expect(app(MetricsFleetCapture::class)->captureAccessRevocation())->toBeNull();
+});

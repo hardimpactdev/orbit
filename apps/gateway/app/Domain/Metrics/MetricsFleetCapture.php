@@ -26,7 +26,7 @@ final readonly class MetricsFleetCapture
 {
     public function __construct(private MetricsExporterProjection $exporters, private ServiceMetricsProjection $services,
         private AgentDelivery $agents, private NodeWorkerRollout $workers, private ProductionPhpRuntimeConfigRenderer $php,
-        private ServiceMetricsConfigRenderer $service, private MetricsConfigurationRenderer $runtime) {}
+        private ServiceMetricsConfigRenderer $service, private MetricsConfigurationRenderer $runtime, private MetricsGatewayResolver $gateways) {}
 
     /** @return array<string,mixed> */
     public function capture(): array
@@ -81,6 +81,18 @@ final readonly class MetricsFleetCapture
         }
 
         return $this->build($assignment, $assignment->node_id !== $retiring->id, $retiring);
+    }
+
+    /** Read-only owner of the stream-closing step after a Node access change.
+     * @return array{node_id:int}|null
+     */
+    public function captureAccessRevocation(): ?array
+    {
+        if (! NodeRole::query()->where('role', RoleName::Metrics)->exists()) {
+            return null;
+        }
+
+        return ['node_id' => $this->gateways->resolve()->id];
     }
 
     /** @return array<string,mixed> */
