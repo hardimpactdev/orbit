@@ -1,0 +1,25 @@
+id: a7839446-4acb-4e72-b82f-d188f108a1fc
+name: operation-route-caddy
+description: Render and publish Caddy under the admitted Node's native publication lock.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [route.caddy_converge] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: publication
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: publish
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/route-publication"
+          behaviorName: '${{ "route-publication-node-" + string(inputs.node_id) }}'
+          methodName: convergeCaddy
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

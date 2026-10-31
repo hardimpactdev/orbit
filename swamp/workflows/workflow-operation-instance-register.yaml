@@ -1,0 +1,43 @@
+id: c0791777-2696-430c-a78e-97b9289a655f
+name: operation-instance-register
+description: Inspect and adopt a development checkout in place.
+vaults: []
+writes: true
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [instance.register] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: register
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: inspect-and-project
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-register'
+          behaviorName: '${{ "instance-register-node-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
+  - name: native-failure
+    dependsOn: [{ job: register, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: record-native-failure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "operation-failure-node-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

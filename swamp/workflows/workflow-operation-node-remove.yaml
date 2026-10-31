@@ -1,0 +1,2044 @@
+{
+  "id": "450e57df-e174-4ad6-bba5-306c2581d919",
+  "name": "operation-node-remove",
+  "description": "Remove one Node and restore serving state on failure in the same native run.",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "operation_id": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "node_id": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "node.remove"
+        ]
+      }
+    },
+    "required": [
+      "operation_id",
+      "node_id",
+      "kind"
+    ],
+    "additionalProperties": false
+  },
+  "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+  "labels": {
+    "node": "${{ string(inputs.node_id) }}"
+  },
+  "jobs": [
+    {
+      "name": "admission",
+      "steps": [
+        {
+          "name": "admit",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "admit",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "recover",
+      "dependsOn": [
+        {
+          "job": "admission",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "recover_access",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.snapshot.node_id) }}",
+          "labels": {
+            "node": "${{ string(steps.admit.outputs.snapshot.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || steps.admit.outputs.effective_offline || steps.admit.outputs.public_ssh == null }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "recoverAccess",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw",
+      "dependsOn": [
+        {
+          "job": "recover",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "begin",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (!steps.admit.outputs.effective_offline && steps.admit.outputs.public_ssh != null && !(has(steps.recover_access) && has(steps.recover_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "begin",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "access",
+      "dependsOn": [
+        {
+          "job": "withdraw",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "revoke_access",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.begin) && has(steps.begin.outputs)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "revokeAccess",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_capture_job",
+      "dependsOn": [
+        {
+          "job": "access",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_capture",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "capture",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_availability_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_capture_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_availability",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"removal_metrics_capture\" in steps ? steps.removal_metrics_capture.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.removal_metrics_capture.outputs.available",
+            "message": "metrics.no_worker",
+            "severity": "high"
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_snapshot_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_availability_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_snapshot",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "snapshot",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "removal_metrics_snapshot_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "dependsOn": [
+            {
+              "step": "removal_metrics_snapshot",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "snapshot",
+              "ready": "${{ steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_snapshot-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_snapshot-\" + string(id)] && steps[\"removal_metrics_snapshot-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_apply_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_snapshot_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_apply",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "apply",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "removal_metrics_apply_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "dependsOn": [
+            {
+              "step": "removal_metrics_apply",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "apply",
+              "ready": "${{ steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_apply-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_apply-\" + string(id)] && steps[\"removal_metrics_apply-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_service_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_apply_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_service",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "service",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "removal_metrics_service_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "dependsOn": [
+            {
+              "step": "removal_metrics_service",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "service",
+              "ready": "${{ steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_service-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_service-\" + string(id)] && steps[\"removal_metrics_service-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_verify_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_service_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_verify",
+          "writes": false,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "verify",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "removal_metrics_verify_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) }}",
+          "dependsOn": [
+            {
+              "step": "removal_metrics_verify",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "verify",
+              "ready": "${{ steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_verify-\" + string(id)] && steps[\"removal_metrics_verify-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_runtime_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_verify_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_runtime",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) && steps.removal_metrics_capture.outputs.plan != null ? steps.removal_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) && steps.removal_metrics_capture.outputs.plan != null ? steps.removal_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) || (!(has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs)) || !steps.removal_metrics_capture.outputs.runtime_required) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(steps.removal_metrics_capture.outputs.plan != null ? steps.removal_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}",
+            "methodName": "runtime",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == steps.removal_metrics_capture.outputs.plan.metrics_node_id)[0] }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_restore_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_runtime_job",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_restore",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) || (!((!has(steps.removal_metrics_runtime) || steps.removal_metrics_runtime.status == \"skipped\" || (has(steps.removal_metrics_runtime.outputs) && !steps.removal_metrics_runtime.outputs.committed)) && (steps.removal_metrics_capture.outputs.runtime_required || !(steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_verify-\" + string(id)] && steps[\"removal_metrics_verify-\" + string(id)].outputs.ok))) && \"removal_metrics_snapshot-\" + string(self.id) in steps && \"outputs\" in steps[\"removal_metrics_snapshot-\" + string(self.id)] && steps[\"removal_metrics_snapshot-\" + string(self.id)].outputs.ok && \"removal_metrics_apply-\" + string(self.id) in steps && \"outputs\" in steps[\"removal_metrics_apply-\" + string(self.id)] && (!(\"removal_metrics_apply-\" + string(self.id) in steps && steps[\"removal_metrics_apply-\" + string(self.id)].status == \"failed\" && !(\"outputs\" in steps[\"removal_metrics_apply-\" + string(self.id)])) && !(\"removal_metrics_service-\" + string(self.id) in steps && steps[\"removal_metrics_service-\" + string(self.id)].status == \"failed\" && !(\"outputs\" in steps[\"removal_metrics_service-\" + string(self.id)]))))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "phase": "restore",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}",
+              "snapshot": "${{ steps[\"removal_metrics_snapshot-\" + string(self.id)].outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "removal_metrics_complete_job",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_restore_job",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "removal_metrics_complete",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs))) || (!(has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "complete",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "enabled": "${{ steps.removal_metrics_capture.outputs.plan != null }}",
+              "ready": "${{ (steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_verify-\" + string(id)] && steps[\"removal_metrics_verify-\" + string(id)].outputs.ok)) && (!steps.removal_metrics_capture.outputs.runtime_required || (has(steps.removal_metrics_runtime) && has(steps.removal_metrics_runtime.outputs) && steps.removal_metrics_runtime.outputs.ok)) }}",
+              "committed": "${{ (has(steps.removal_metrics_runtime) && has(steps.removal_metrics_runtime.outputs) && steps.removal_metrics_runtime.outputs.committed) }}",
+              "restored": "${{ steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_restore-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_restore-\" + string(id)] && steps[\"removal_metrics_restore-\" + string(id)].outputs.ok) }}",
+              "error_code": "${{ steps.removal_metrics_capture.outputs.plan == null || ((steps.removal_metrics_capture.outputs.ids.all(id, \"removal_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"removal_metrics_verify-\" + string(id)] && steps[\"removal_metrics_verify-\" + string(id)].outputs.ok)) && (!steps.removal_metrics_capture.outputs.runtime_required || (has(steps.removal_metrics_runtime) && has(steps.removal_metrics_runtime.outputs) && steps.removal_metrics_runtime.outputs.ok))) ? null : (!steps.removal_metrics_capture.outputs.available ? \"metrics.no_worker\" : (has(steps.removal_metrics_runtime) && has(steps.removal_metrics_runtime.outputs) && has(steps.removal_metrics_runtime.outputs.error_code) ? steps.removal_metrics_runtime.outputs.error_code : \"metrics.fleet_failed\")) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "metrics_ready",
+      "dependsOn": [
+        {
+          "job": "removal_metrics_complete_job",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "metrics_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"removal_metrics_complete\" in steps ? steps.removal_metrics_complete.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.removal_metrics_complete.outputs.ready",
+            "message": "node.removal_dependency_failed",
+            "severity": "high"
+          }
+        }
+      ]
+    },
+    {
+      "name": "hub",
+      "dependsOn": [
+        {
+          "job": "metrics_ready",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "hub_publish",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string((steps.admit.outputs.hub == null ? inputs.node_id : steps.admit.outputs.hub.executor_node_id)) }}",
+          "labels": {
+            "node": "${{ string((steps.admit.outputs.hub == null ? inputs.node_id : steps.admit.outputs.hub.executor_node_id)) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs)) || !(has(steps.metrics_ready) && steps.metrics_ready.status == \"succeeded\") || steps.admit.outputs.hub == null }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-wireguard-direct",
+            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub == null ? inputs.node_id : steps.admit.outputs.hub.hub_id) }}",
+            "methodName": "publish",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "snapshot": "${{ steps.admit.outputs.hub }}"
+            }
+          }
+        },
+        {
+          "name": "hub_publish_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"hub_publish\" in steps ? steps.hub_publish.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.hub_publish.outputs.status == \"succeeded\"",
+            "message": "node.removal_dependency_failed",
+            "severity": "high"
+          },
+          "dependsOn": [
+            {
+              "step": "hub_publish",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serving",
+      "dependsOn": [
+        {
+          "job": "hub",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "participant_${{ self.member.node_id }}",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(self.member.node_id) }}",
+          "labels": {
+            "node": "${{ string(self.member.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs)) || !(has(steps.metrics_ready) && steps.metrics_ready.status == \"succeeded\") || (steps.admit.outputs.hub != null && !(has(steps.hub_publish_ready) && steps.hub_publish_ready.status == \"succeeded\")) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "participant",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "restore": false,
+              "placement": {
+                "effect_node_id": "${{ self.member.node_id }}",
+                "execution_node_id": "${{ self.member.node_id }}",
+                "transport": "local"
+              }
+            }
+          },
+          "forEach": {
+            "item": "member",
+            "in": "${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs.snapshot.participants : [] }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "retire",
+      "dependsOn": [
+        {
+          "job": "serving",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "guest",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.revoke_access) && has(steps.revoke_access.outputs)) || !(has(steps.metrics_ready) && steps.metrics_ready.status == \"succeeded\") || (steps.admit.outputs.hub != null && !(has(steps.hub_publish_ready) && steps.hub_publish_ready.status == \"succeeded\")) || !(steps.admit.outputs.snapshot.participants.all(member, \"participant_\"+string(member.node_id) in steps && \"outputs\" in steps[\"participant_\"+string(member.node_id)] && steps[\"participant_\"+string(member.node_id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "guest",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projection",
+      "dependsOn": [
+        {
+          "job": "retire",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "finish",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || !(has(steps.guest) && has(steps.guest.outputs)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "finish",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_begin",
+      "dependsOn": [
+        {
+          "job": "admission",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "recover",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "withdraw",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "access",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_capture_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_availability_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_snapshot_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_apply_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_service_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_verify_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_runtime_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_restore_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "removal_metrics_complete_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "metrics_ready",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "hub",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "serving",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "retire",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "projection",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_begin",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "beginRestore",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restored_hub",
+      "dependsOn": [
+        {
+          "job": "restore_begin",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_hub",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string((steps.admit.outputs.restore_hub == null ? inputs.node_id : steps.admit.outputs.restore_hub.executor_node_id)) }}",
+          "labels": {
+            "node": "${{ string((steps.admit.outputs.restore_hub == null ? inputs.node_id : steps.admit.outputs.restore_hub.executor_node_id)) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || steps.admit.outputs.restore_hub == null }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-wireguard-direct",
+            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.restore_hub == null ? inputs.node_id : steps.admit.outputs.restore_hub.hub_id) }}",
+            "methodName": "publish",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "snapshot": "${{ steps.admit.outputs.restore_hub }}",
+              "recovery": true
+            }
+          }
+        },
+        {
+          "name": "restore_hub_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"restore_hub\" in steps ? steps.restore_hub.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.restore_hub.outputs.status == \"succeeded\"",
+            "message": "node.removal_dependency_failed",
+            "severity": "high"
+          },
+          "dependsOn": [
+            {
+              "step": "restore_hub",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "restore_certificate_requests",
+      "dependsOn": [
+        {
+          "job": "restored_hub",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_certificate_request_${{ self.id }}",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || steps.admit.outputs.restore_certificates.size() == 0 }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "requestRestoreCertificates",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "target_node_id": "${{ self.id }}"
+            }
+          },
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs.restore_certificate_node_ids : [] }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_certificate_sign",
+      "dependsOn": [
+        {
+          "job": "restore_certificate_requests",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_certificate_sign",
+          "writes": true,
+          "target": "orbit-node-209",
+          "labels": {
+            "node": "209"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || steps.admit.outputs.restore_certificates.size() == 0 || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_request_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_request_\"+string(id)]) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/certificates",
+            "behaviorName": "orbit-certificate-signing",
+            "methodName": "signBatch",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "leaves": "${{ steps.admit.outputs.restore_certificates }}",
+              "requests": "${{ (steps.admit.outputs.restore_certificate_node_ids).map(id, steps[\"restore_certificate_request_\" + string(id)].outputs.requests) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_certificate_publish",
+      "dependsOn": [
+        {
+          "job": "restore_certificate_sign",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_certificate_publish_${{ self.id }}",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || steps.admit.outputs.restore_certificates.size() == 0 || !(has(steps.restore_certificate_sign) && has(steps.restore_certificate_sign.outputs)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "publishRestoreCertificates",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "target_node_id": "${{ self.id }}",
+              "requests": "${{ steps[\"restore_certificate_request_\" + string(self.id)].outputs.requests }}",
+              "signed": "${{ steps.restore_certificate_sign.outputs.certificates }}"
+            }
+          },
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs.restore_certificate_node_ids : [] }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_serving",
+      "dependsOn": [
+        {
+          "job": "restore_certificate_publish",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_participant_${{ self.member.node_id }}",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(self.member.node_id) }}",
+          "labels": {
+            "node": "${{ string(self.member.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "participant",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "restore": true,
+              "placement": {
+                "effect_node_id": "${{ self.member.node_id }}",
+                "execution_node_id": "${{ self.member.node_id }}",
+                "transport": "local"
+              }
+            }
+          },
+          "forEach": {
+            "item": "member",
+            "in": "${{ has(steps.admit) && has(steps.admit.outputs) ? steps.admit.outputs.snapshot.participants : [] }}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_exporters",
+      "dependsOn": [
+        {
+          "job": "restore_serving",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_exporter_${{ self.id }}",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs) ? steps.removal_metrics_capture.outputs.ids : [] }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(\"removal_metrics_snapshot-\" + string(self.id) in steps) || !(\"outputs\" in steps[\"removal_metrics_snapshot-\" + string(self.id)]) || !steps[\"removal_metrics_snapshot-\" + string(self.id)].outputs.ok }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "restore",
+              "node": "${{ steps.removal_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.removal_metrics_capture.outputs.plan.metrics_address }}",
+              "snapshot": "${{ steps[\"removal_metrics_snapshot-\" + string(self.id)].outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_capture_job",
+      "dependsOn": [
+        {
+          "job": "restore_exporters",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_capture",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "capture",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_availability_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_capture_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_availability",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"restore_metrics_capture\" in steps ? steps.restore_metrics_capture.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.restore_metrics_capture.outputs.available",
+            "message": "metrics.no_worker",
+            "severity": "high"
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_snapshot_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_availability_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_snapshot",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) ? steps.restore_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "snapshot",
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.restore_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "restore_metrics_snapshot_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "dependsOn": [
+            {
+              "step": "restore_metrics_snapshot",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "snapshot",
+              "ready": "${{ steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_snapshot-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_snapshot-\" + string(id)] && steps[\"restore_metrics_snapshot-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_apply_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_snapshot_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_apply",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) ? steps.restore_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "apply",
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.restore_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "restore_metrics_apply_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "dependsOn": [
+            {
+              "step": "restore_metrics_apply",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "apply",
+              "ready": "${{ steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_apply-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_apply-\" + string(id)] && steps[\"restore_metrics_apply-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_service_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_apply_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_service",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) ? steps.restore_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "service",
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.restore_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "restore_metrics_service_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "dependsOn": [
+            {
+              "step": "restore_metrics_service",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "service",
+              "ready": "${{ steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_service-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_service-\" + string(id)] && steps[\"restore_metrics_service-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_verify_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_service_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_verify",
+          "writes": false,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) ? steps.restore_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "verify",
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.restore_metrics_capture.outputs.plan.metrics_address }}"
+            }
+          }
+        },
+        {
+          "name": "restore_metrics_verify_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) }}",
+          "dependsOn": [
+            {
+              "step": "restore_metrics_verify",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "checkpoint",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "verify",
+              "ready": "${{ steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_verify-\" + string(id)] && steps[\"restore_metrics_verify-\" + string(id)].outputs.ok) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_runtime_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_verify_job",
+          "condition": {
+            "type": "succeeded"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_runtime",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) && steps.restore_metrics_capture.outputs.plan != null ? steps.restore_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) && steps.restore_metrics_capture.outputs.plan != null ? steps.restore_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) || (!(has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs)) || !steps.restore_metrics_capture.outputs.runtime_required) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(steps.restore_metrics_capture.outputs.plan != null ? steps.restore_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}",
+            "methodName": "runtime",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == steps.restore_metrics_capture.outputs.plan.metrics_node_id)[0] }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_restore_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_runtime_job",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_restore",
+          "writes": true,
+          "forEach": {
+            "item": "id",
+            "in": "${{ has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs) ? steps.restore_metrics_capture.outputs.ids : [] }}"
+          },
+          "target": "${{ \"orbit-node-\" + string(self.id) }}",
+          "labels": {
+            "node": "${{ string(self.id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) || (!((!has(steps.restore_metrics_runtime) || steps.restore_metrics_runtime.status == \"skipped\" || (has(steps.restore_metrics_runtime.outputs) && !steps.restore_metrics_runtime.outputs.committed)) && (steps.restore_metrics_capture.outputs.runtime_required || !(steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_verify-\" + string(id)] && steps[\"restore_metrics_verify-\" + string(id)].outputs.ok))) && \"restore_metrics_snapshot-\" + string(self.id) in steps && \"outputs\" in steps[\"restore_metrics_snapshot-\" + string(self.id)] && steps[\"restore_metrics_snapshot-\" + string(self.id)].outputs.ok && \"restore_metrics_apply-\" + string(self.id) in steps && \"outputs\" in steps[\"restore_metrics_apply-\" + string(self.id)] && (!(\"restore_metrics_apply-\" + string(self.id) in steps && steps[\"restore_metrics_apply-\" + string(self.id)].status == \"failed\" && !(\"outputs\" in steps[\"restore_metrics_apply-\" + string(self.id)])) && !(\"restore_metrics_service-\" + string(self.id) in steps && steps[\"restore_metrics_service-\" + string(self.id)].status == \"failed\" && !(\"outputs\" in steps[\"restore_metrics_service-\" + string(self.id)]))))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(self.id) }}",
+            "methodName": "stage",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "phase": "restore",
+              "node": "${{ steps.restore_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}",
+              "metrics_address": "${{ steps.restore_metrics_capture.outputs.plan.metrics_address }}",
+              "snapshot": "${{ steps[\"restore_metrics_snapshot-\" + string(self.id)].outputs }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restore_metrics_complete_job",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_restore_job",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restore_metrics_complete",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ (!(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) || !(has(steps.restore_begin) && has(steps.restore_begin.outputs)) || (steps.admit.outputs.restore_hub != null && !(has(steps.restore_hub_ready) && steps.restore_hub_ready.status == \"succeeded\")) || !(steps.admit.outputs.restore_certificate_node_ids).all(id, \"restore_certificate_publish_\"+string(id) in steps && \"outputs\" in steps[\"restore_certificate_publish_\"+string(id)] && steps[\"restore_certificate_publish_\"+string(id)].outputs.ready)) || (!(has(steps.restore_metrics_capture) && has(steps.restore_metrics_capture.outputs))) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-role-metrics",
+            "behaviorName": "${{ \"node-role-metrics-\" + string(inputs.node_id) }}",
+            "methodName": "complete",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}",
+              "restoring": true,
+              "enabled": "${{ steps.restore_metrics_capture.outputs.plan != null }}",
+              "ready": "${{ (steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_verify-\" + string(id)] && steps[\"restore_metrics_verify-\" + string(id)].outputs.ok)) && (!steps.restore_metrics_capture.outputs.runtime_required || (has(steps.restore_metrics_runtime) && has(steps.restore_metrics_runtime.outputs) && steps.restore_metrics_runtime.outputs.ok)) }}",
+              "committed": "${{ (has(steps.restore_metrics_runtime) && has(steps.restore_metrics_runtime.outputs) && steps.restore_metrics_runtime.outputs.committed) }}",
+              "restored": "${{ steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_restore-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_restore-\" + string(id)] && steps[\"restore_metrics_restore-\" + string(id)].outputs.ok) }}",
+              "error_code": "${{ steps.restore_metrics_capture.outputs.plan == null || ((steps.restore_metrics_capture.outputs.ids.all(id, \"restore_metrics_verify-\" + string(id) in steps && \"outputs\" in steps[\"restore_metrics_verify-\" + string(id)] && steps[\"restore_metrics_verify-\" + string(id)].outputs.ok)) && (!steps.restore_metrics_capture.outputs.runtime_required || (has(steps.restore_metrics_runtime) && has(steps.restore_metrics_runtime.outputs) && steps.restore_metrics_runtime.outputs.ok))) ? null : (!steps.restore_metrics_capture.outputs.available ? \"metrics.no_worker\" : (has(steps.restore_metrics_runtime) && has(steps.restore_metrics_runtime.outputs) && has(steps.restore_metrics_runtime.outputs.error_code) ? steps.restore_metrics_runtime.outputs.error_code : \"metrics.fleet_failed\")) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "restoration_ready",
+      "dependsOn": [
+        {
+          "job": "restore_metrics_complete_job",
+          "condition": {
+            "type": "or",
+            "conditions": [
+              {
+                "type": "succeeded"
+              },
+              {
+                "type": "skipped"
+              }
+            ]
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "restoration_ready",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ \"restore_metrics_complete\" in steps ? steps.restore_metrics_complete.status != \"succeeded\" : true }}",
+          "task": {
+            "type": "assert",
+            "expr": "steps.restore_metrics_complete.outputs.ready",
+            "message": "node.removal_dependency_failed",
+            "severity": "high"
+          }
+        }
+      ]
+    },
+    {
+      "name": "failure",
+      "dependsOn": [
+        {
+          "job": "restore_begin",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restored_hub",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_certificate_requests",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_certificate_sign",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_certificate_publish",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_serving",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_exporters",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_capture_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_availability_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_snapshot_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_apply_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_service_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_verify_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_runtime_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_restore_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restore_metrics_complete_job",
+          "condition": {
+            "type": "always"
+          }
+        },
+        {
+          "job": "restoration_ready",
+          "condition": {
+            "type": "always"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "failed",
+          "writes": true,
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "guard": "${{ !(has(steps.admit) && has(steps.admit.outputs)) || !steps.admit.outputs.ready || (has(steps.finish) && has(steps.finish.outputs)) }}",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-removal-direct",
+            "behaviorName": "${{ \"node-removal-root-\" + string(inputs.node_id) }}",
+            "methodName": "fail",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "restored": "${{ !(has(steps.guest) && steps.guest.status == \"failed\") && (has(steps.restore_begin) && has(steps.restore_begin.outputs)) && (has(steps.restoration_ready) && steps.restoration_ready.status == \"succeeded\") && (steps.admit.outputs.snapshot.participants.all(member, \"restore_participant_\"+string(member.node_id) in steps && \"outputs\" in steps[\"restore_participant_\"+string(member.node_id)] && steps[\"restore_participant_\"+string(member.node_id)].outputs.ready)) && (!(has(steps.removal_metrics_capture) && has(steps.removal_metrics_capture.outputs)) || steps.removal_metrics_capture.outputs.ids.all(id, !(\"removal_metrics_snapshot-\"+string(id) in steps) || !(\"outputs\" in steps[\"removal_metrics_snapshot-\"+string(id)]) || !steps[\"removal_metrics_snapshot-\"+string(id)].outputs.ok || (\"restore_exporter_\"+string(id) in steps && \"outputs\" in steps[\"restore_exporter_\"+string(id)] && steps[\"restore_exporter_\"+string(id)].outputs.ok))) }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "admission_failure",
+      "dependsOn": [
+        {
+          "job": "admission",
+          "condition": {
+            "type": "failed"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "admission_failure_report",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/operation-failure",
+            "behaviorName": "${{ \"operation-failure-node-\"+string(inputs.node_id) }}",
+            "methodName": "report",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "failure_callback",
+      "dependsOn": [
+        {
+          "job": "failure",
+          "condition": {
+            "type": "failed"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "name": "failure_callback_report",
+          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "labels": {
+            "node": "${{ string(inputs.node_id) }}"
+          },
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/operation-failure",
+            "behaviorName": "${{ \"operation-failure-node-\"+string(inputs.node_id) }}",
+            "methodName": "report",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

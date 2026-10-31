@@ -1,0 +1,1 @@
+Generated with Bun 1.4.0 using `bun install --lockfile-only --ignore-scripts`. The local package lives at `l/package.json`; `local-package.json` stores its contents. The remote tarball is the public npm is-number 7.0.0 archive. Tests copy these inputs into an isolated Git fixture; they make no network requests.

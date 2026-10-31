@@ -1,0 +1,48 @@
+id: 64e7b66e-e7e4-42c6-ad24-3aa96f2cb56d
+name: operation-firewall-inspect
+description: Read a complete bounded live IPv4 firewall snapshot on its own Node.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [firewall.inspect] }
+  required: [operation_id, node_id, kind]
+  additionalProperties: false
+jobs:
+  - name: inspection
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: inspect
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/firewall-inspection'
+          behaviorName: '${{ "firewall-inspection-node-" + string(inputs.node_id) }}'
+          methodName: inspect
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
+  - name: native-failure
+    dependsOn:
+      - job: inspection
+        condition: { type: or, conditions: [{type: failed}, {type: skipped}] }
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: native-failure
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: firewall-inspection-failure
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

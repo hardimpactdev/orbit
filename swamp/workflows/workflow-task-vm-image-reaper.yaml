@@ -1,0 +1,38 @@
+id: 39da727f-537c-4ff8-8955-ae713f91b20d
+name: task-vm-image-reaper
+description: Every thirty minutes remove image builders older than two hours without active build references.
+concurrency: 1
+trigger:
+  schedule: "0 */30 * * * *"
+vaults: []
+jobs:
+  - name: discover
+    steps:
+      - name: discover
+        target: orbit-node-209
+        labels: { node: "209" }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-vm-image-reaper"
+          behaviorName: task-vm-image-reaper-plan
+          methodName: plan
+          inputs: { run_id: '${{ run.id }}' }
+  - name: hosts
+    dependsOn: [{ job: discover, condition: { type: succeeded } }]
+    steps:
+      - name: host-${{ self.host.node_id }}
+        forEach:
+          item: host
+          in: '${{ steps.discover.outputs.nodes }}'
+        concurrency: 1
+        target: orbit-node-${{ self.host.node_id }}
+        labels: { node: '${{ string(self.host.node_id) }}' }
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-vm-image-reaper"
+          behaviorName: task-vm-image-reaper-node-${{ self.host.node_id }}
+          methodName: sweep
+          inputs:
+            run_id: '${{ run.id }}'
+            node_id: '${{ self.host.node_id }}'

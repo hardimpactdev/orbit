@@ -1,0 +1,20 @@
+id: 3d737825-ce09-46b4-9df7-4491d2b06482
+name: '@nckrtl/project-ai-cli-proxy/routine'
+labels: { pool: migration, node: "209" }
+description: ai-cli-proxy routine through its private project extension.
+trigger:
+  schedule: 0 3 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-51
+      methodName: project_routine
+      inputs:
+        projectId: 51
+        mode: routine

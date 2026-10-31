@@ -1,0 +1,8 @@
+type: '@nckrtl/project-launch'
+typeVersion: 2026.10.27.1
+id: 31b1e259-e636-4001-8b25-4c46ed197a83
+name: project-launch
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "project_id": 20,
+    "repository": "github.com/nckrtl/website",
+    "clone_url": "https://github.com/nckrtl/website.git",
+    "token": "ephemeral_sentinel",
+    "expires_at": "2026-10-28T17:00:00Z"
+  }
+}

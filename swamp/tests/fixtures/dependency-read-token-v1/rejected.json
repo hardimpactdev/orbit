@@ -1,0 +1,59 @@
+[
+  {
+    "patch": {
+      "project_id": 99
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": {
+      "clone_url": "http://github.com/nckrtl/website.git"
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": {
+      "repository": "github.com/other/repo"
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": {
+      "expires_at": "2020-01-01T00:00:00Z"
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": {
+      "expires_at": "2099-01-01T00:00:00Z"
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": {
+      "token": ""
+    },
+    "status": 200,
+    "error": "token_invalid"
+  },
+  {
+    "patch": null,
+    "status": 403,
+    "error": "token_refused"
+  },
+  {
+    "patch": null,
+    "status": 503,
+    "error": "token_unavailable"
+  },
+  {
+    "patch": null,
+    "status": 200,
+    "error": "token_missing"
+  }
+]

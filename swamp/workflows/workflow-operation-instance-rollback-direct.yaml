@@ -1,0 +1,46 @@
+id: 507fae10-c9e2-40b4-9fb4-917995135a8b
+name: operation-instance-rollback-direct
+description: Select an admitted production retained release in one native run.
+vaults: []
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.rollback]}
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: rollback
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels:
+      node: '${{ string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: rollback
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-deploy-direct'
+          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
+          methodName: rollback
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
+  - name: failure
+    dependsOn: [{job: rollback, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels:
+      node: '${{ string(inputs.node_id) }}'
+    writes: true
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-deploy-direct'
+          behaviorName: '${{ "instance-deploy-node-" + string(inputs.node_id) }}'
+          methodName: rollbackFailure
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

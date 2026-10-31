@@ -1,0 +1,26 @@
+id: d83a5174-05bf-41ab-8468-f36d5fe30b03
+name: groups-driver
+description: Discover every active group and reconcile independent owning runs.
+trigger:
+  # Discovery and fan-out take 35–47 seconds under the first live load.
+  schedule: "0 * * * * *"
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: groups
+    steps:
+      - name: discover
+        labels: { pool: migration, node: "209" }
+        task:
+          type: behavior
+          behavior: orbit-group-runs
+          methodName: discover
+      - name: fanout
+        dependsOn: [{ step: discover, condition: { type: succeeded } }]
+        labels: { pool: migration, node: "209" }
+        task:
+          type: workflow
+          workflowIdOrName: group-fanout
+          inputs:
+            groups: '${{ steps.discover.outputs.groups }}'
+            conflicts: '${{ steps.discover.outputs.conflicts }}'

@@ -1,0 +1,20 @@
+id: b877e67a-4b8f-449d-bfe1-f72093700025
+name: '@nckrtl/project-recall/routine'
+labels: { pool: migration, node: "209" }
+description: recall routine through its private project extension.
+trigger:
+  schedule: 50 2 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-49
+      methodName: project_routine
+      inputs:
+        projectId: 49
+        mode: routine

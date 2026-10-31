@@ -1,0 +1,83 @@
+id: d195304a-0be0-4f02-91b2-4f7f99f76976
+name: operation-doctor-inspect
+description: Inspect admitted Nodes locally and record one bounded Doctor report.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [doctor.inspect] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: prepare
+    steps:
+      - name: prepare
+        writes: true
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: { node: "${{ string(inputs.node_id) }}" }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/doctor"
+          behaviorName: '${{ "doctor-root-" + string(inputs.node_id) }}'
+          methodName: prepare
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: inspect
+    dependsOn: [{ job: prepare, condition: { type: succeeded } }]
+    steps:
+      - name: inspect-${{ self.node }}
+        writes: true
+        forEach:
+          item: node
+          in: "${{ steps.prepare.outputs.node_ids }}"
+        target: '${{ "orbit-node-" + string(self.node) }}'
+        labels: { node: "${{ string(self.node) }}" }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/doctor"
+          behaviorName: '${{ "doctor-node-" + string(self.node) }}'
+          methodName: inspect
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            target_node_id: "${{ self.node }}"
+  - name: finish
+    dependsOn: [{ job: prepare, condition: { type: always } }, { job: inspect, condition: { type: always } }]
+    steps:
+      - name: finish
+        writes: true
+        target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+        labels: { node: "${{ string(inputs.node_id) }}" }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/doctor"
+          behaviorName: '${{ "doctor-root-" + string(inputs.node_id) }}'
+          methodName: finish
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            node_results: "${{ steps }}"
+
+  - name: report_failure
+    dependsOn: [{job: finish, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    steps:
+      - name: report_failure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "observation-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            kind: '${{ inputs.kind }}'
+            node_id: '${{ inputs.node_id }}'
+            run_id: '${{ run.id }}'

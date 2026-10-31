@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Provision only the named migration workers; never change CI containers."""
+import argparse
+import json
+import os
+import time
+from pathlib import Path
+import shlex
+import subprocess
+
+ROOT = Path(__file__).resolve().parent.parent
+CONFIG = json.loads((ROOT / "config/services-workers.json").read_text())
+CA = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
+
+
+def command(argv, source=None):
+    result = subprocess.run(argv, input=source, capture_output=True, text=True, timeout=600)
+    if result.returncode:
+        # Native token commands can return plaintext. Never echo their output.
+        raise RuntimeError(f"{argv[0]} failed (exit {result.returncode}); no credential output retained")
+    return result.stdout
+
+
+def reply(text):
+    for start, char in enumerate(text):
+        if char in "{[":
+            try:
+                value, end = json.JSONDecoder().raw_decode(text[start:])
+            except json.JSONDecodeError:
+                continue
+            if not text[start + end:].strip():
+                return value
+    raise ValueError("Native CLI did not return one JSON reply")
+
+
+def orbit(*args):
+    return reply(command(["orbit", *args, "--json"]))
+
+
+def definition(worker, home):
+    name = worker["name"]
+    directory = f"{home}/.config/swamp/migration/{name}"
+    return {
+        "command": ["worker", "connect", "wss://swamp.orbit", "--token-file", "/tokens/enrollment",
+                    "--server-token-file", "/tokens/server", "--ca-cert", CA,
+                    "--cache-dir", "/var/lib/swamp-worker", "--concurrency", "auto",
+                    "--label", f"pool={worker['pool']}", "--label", f"node={worker['node']}"],
+        "volumes": [f"{directory}/enrollment:/tokens/enrollment:ro",
+                    f"{directory}/server:/tokens/server:ro", f"{CA}:{CA}:ro",
+                    f"{name}-cache:/var/lib/swamp-worker"],
+    }
+
+
+def configure(args):
+    def swamp(*parts):
+        return reply(command(["swamp", *parts, "--server", "wss://swamp.orbit",
+                              "--token-file", args.token_file, "--ca-cert", CA, "--json"]))
+
+    def journal(action, **metadata):
+        with open(args.journal, "a", opener=lambda path, flags: os.open(path, flags, 0o600)) as stream:
+            stream.write(json.dumps({"action": action, **metadata}) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    records = []
+    for worker in CONFIG["workers"]:
+        if args.node and worker["node"] not in args.node:
+            continue
+        node = orbit("node:show", str(worker["node"]))
+        if node["status"] != "active" or node["platform"] != "linux":
+            raise RuntimeError(f"Node {worker['node']} must be active Linux")
+        processes = orbit("process:list", f"--node={worker['node']}")["processes"]
+        if any(p["name"] == worker["name"] for p in processes):
+            raise RuntimeError(f"{worker['name']} already exists; inspect/reuse it, never remint blindly")
+        host = f"{node['user']}@{node['wireguard_ip']}"
+
+        def remote(code, source=None):
+            return command(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host, code], source)
+
+        # Existing operator access only. No SSH keys, sudo policy or CI edits.
+        docker = (["sudo", "-n"] if worker.get("docker_sudo") else []) + ["docker"]
+        remote("test $(id -u) = 1000 && " + shlex.join(docker + ["info"]) + " >/dev/null")
+        journal("image_build_attempt", node=worker["node"], image=CONFIG["image"])
+        remote(shlex.join(docker + ["build", "--tag", CONFIG["image"], "-"]),
+               (ROOT / "containers/services-worker.Dockerfile").read_text())
+        journal("image_built", node=worker["node"], image=CONFIG["image"])
+        added_edges = []
+        if worker["node"] != 17:
+            existing = {n["id"] for n in node["access"]["can_access"]}
+            for serving in (17, 14):
+                if serving not in existing:
+                    journal("access_add_attempt", consumer=worker["node"], serving=serving)
+                    orbit("node:access:add", str(worker["node"]), str(serving))
+                    added_edges.append([worker["node"], serving])
+                    journal("access_added", consumer=worker["node"], serving=serving)
+        home = f"/home/{node['user']}"
+        spec = definition(worker, home)
+        server = worker["name"] + "-access"
+        owned = []
+        enrollment = authentication = None
+        try:
+            journal("enrollment_create_attempt", node=worker["node"], name=worker["name"])
+            enrollment = swamp("worker", "token", "create", worker["name"], "--duration", "7d", "--max-enrollments", "1")
+            owned.append(("worker", "token", "revoke", worker["name"]))
+            expires_at = enrollment["expiresAt"]
+            journal("enrollment_created", node=worker["node"], name=worker["name"], expires_at=expires_at)
+            journal("server_token_create_attempt", node=worker["node"], name=server)
+            minted = swamp("access", "token", "mint", server, "--principal", f"worker:{worker['name']}", "--duration", "7d")
+            owned.append(("access", "token", "revoke", server))
+            journal("server_token_created", node=worker["node"], name=server)
+            # Native reveal is deliberately local-only. Run it on Services
+            # through the operator's existing SSH; never bypass vault policy.
+            service = orbit("node:show", "17")
+            local = ["env", "-u", "SWAMP_SERVER_URL", "-u", "SWAMP_SERVE_URL",
+                     "HOME=/home/orbit", "SWAMP_HOME=/home/orbit/.swamp",
+                     "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp",
+                     "SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key",
+                     "/home/orbit/.local/bin/swamp", "access", "token", "reveal", server,
+                     "--yes", "--repo-dir", "/home/orbit/apps/orbit-swamp/default", "--json"]
+            authentication = reply(command(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+                                             f"{service['user']}@{service['wireguard_ip']}", shlex.join(local)]))
+            # Plaintext crosses SSH stdin once; never argv, Process fields or logs.
+            write = """import json,os,sys,pathlib
+d=pathlib.Path(sys.argv[1]);d.mkdir(parents=True,mode=0o700,exist_ok=True)
+if any((d/n).exists() for n in ('enrollment','server')):raise SystemExit('Credential files already exist')
+for name,value in json.load(sys.stdin).items():
+ fd=os.open(d/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+ with os.fdopen(fd,'w') as f:f.write(value)
+"""
+            directory = f"{home}/.config/swamp/migration/{worker['name']}"
+            remote(shlex.join(["python3", "-c", write, directory]),
+                   json.dumps({"enrollment": enrollment["token"], "server": authentication["token"]}))
+            # The manual's host network keeps the Node's private split DNS
+            # and peer source address. The worker remains a container.
+            launch = (["/usr/bin/sudo", "-n"] if worker.get("docker_sudo") else [])
+            launch += ["/usr/bin/docker", "run", "--rm", "--init", "--network", "host", "--name", worker["name"]]
+            for volume in spec["volumes"]:
+                launch += ["--volume", volume]
+            launch += [CONFIG["image"], *spec["command"]]
+            create = ["process:create", worker["name"], f"--node={worker['node']}", "--runtime=systemd",
+                      f"--user={node['user']}", f"--working-directory={home}", "--restart=unless-stopped",
+                      "--keep-alive", "--no-restart-on-deploy", "--start"]
+            create += [f"--command={part}" for part in launch]
+            journal("process_create_attempt", node=worker["node"], name=worker["name"])
+            result = orbit(*create)
+            journal("worker_created", node=worker["node"], name=worker["name"], process=result["id"], labels={"pool": worker["pool"], "node": str(worker["node"])})
+        except BaseException:
+            # Revoke only credentials minted by this invocation. Existing CI is untouched.
+            journal("setup_failed", node=worker["node"], enrollment=worker["name"], server_token=server,
+                    recovery="Reconcile attempted names from native metadata; never revoke an unowned credential")
+            for parts in owned:
+                try:
+                    swamp(*parts)
+                    journal("token_revoked", command=list(parts))
+                except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+                    journal("recovery_needed", command=list(parts))
+            raise
+        finally:
+            enrollment = authentication = None
+        created = next(p for p in orbit("process:list", f"--node={worker['node']}")["processes"]
+                       if p["name"] == worker["name"])
+        deadline = time.monotonic() + 60
+        while True:
+            entries = swamp("worker", "list")["workers"]
+            connected = next((entry for entry in entries if entry.get("tokenName") == worker["name"]
+                              and entry.get("status") in ("idle", "busy")
+                              and entry.get("labels", {}).get("pool") == worker["pool"]
+                              and entry.get("labels", {}).get("node") == str(worker["node"])), None)
+            if connected:
+                break
+            if time.monotonic() >= deadline:
+                journal("recovery_needed", node=worker["node"], process=created["id"], reason="worker_not_connected")
+                raise RuntimeError(f"{worker['name']} did not enroll with expected labels; inspect the recorded Process")
+            time.sleep(2)
+        record = {**worker, "process": created["id"], "unit": f"orbit-process-{created['id']}-{worker['name']}",
+                  "image": CONFIG["image"], "concurrency": "auto", "added_access_edges": added_edges,
+                  "enrollment": worker["name"], "server_token": server, "credential_directory": directory,
+                  "cache_volume": worker["name"] + "-cache", "expires_at": expires_at}
+        records.append(record)
+        journal("worker_verified", **record)
+        print(json.dumps(record), flush=True)
+    return records
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--journal", required=True, help="Protected JSONL record of every temporary mutation")
+    parser.add_argument("--node", type=int, action="append", choices=[17,12,13], help="Configure only these approved Nodes")
+    parser.add_argument("--token-file", required=True, help="Existing operator Swamp token file; consumed by Swamp only")
+    try:
+        configure(parser.parse_args())
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        parser.exit(1, str(error) + "\n")
