@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { AppStep, currentProgram, sha256, sudoAppStep } from "./app_step.ts";
+import {
+  AppStep,
+  currentProgram,
+  sha256,
+  stepRunner,
+  sudoAppStep,
+} from "./app_step.ts";
 import { setupDirect } from "./setup_direct.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
@@ -387,5 +393,15 @@ Deno.test("development deploy commands use only the Project before-activation li
         }), admitted),
     Error,
     "instance.step_not_admitted",
+  );
+});
+
+Deno.test("step runner identity is public and bound to Operation run and admitted step", () => {
+  assertEquals(
+    stepRunner({
+      operation_id: 100,
+      run_id: "ed7cfb7a-64f3-496f-8722-e3fd1c06947d",
+    }, step),
+    "orbit-deploy-step:100:ed7cfb7a-64f3-496f-8722-e3fd1c06947d:setup.install",
   );
 });

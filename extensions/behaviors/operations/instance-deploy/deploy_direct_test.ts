@@ -625,3 +625,80 @@ Deno.test("typed uncertain source outcomes retain their active checkpoint withou
     assertEquals([...f.checkpoints.values()].at(-1)?.active, true);
   }
 });
+
+for (const probe of ["gone", "alive", "refused", "wrong runner", "throws"]) {
+  Deno.test(`restart mid-step cancellation ${probe} never replays and settles only proven absence`, async () => {
+    const f = await fixture();
+    let attempts = 0;
+    const root = deployDirect({
+      http: () => f.http,
+      invoke: async (call) => {
+        if (call.name !== "instance.inspect-deploy-step") {
+          return await f.invoke(call);
+        }
+        f.calls.push(call);
+        assertEquals(call.mutates, false);
+        assertEquals(call.sudo, true);
+        assertEquals(call.pin, f.input.agent_sha256);
+        assertEquals(call.input, {
+          runner:
+            `orbit-deploy-step:100:${f.args.run_id}:before_activation.proof`,
+        });
+        if (probe === "throws") throw new Error("unreadable process table");
+        if (probe === "refused") {
+          return { error_code: "deployment.runner_probe_unconfirmed" };
+        }
+        return {
+          runner: probe === "wrong runner" ? "foreign" : call.input.runner,
+          gone: probe !== "alive",
+        };
+      },
+      run: (_step, _script, _signal, execution) => {
+        attempts++;
+        assertEquals(execution, {
+          operation_id: f.args.operation_id,
+          run_id: f.args.run_id,
+        });
+        throw new Error("lost worker mid-step");
+      },
+    });
+    await assertRejects(() => root.methods.run.execute(f.args, f.ctx));
+    assertEquals([...f.checkpoints.values()][0].step, {
+      name: "proof",
+      phase: "before_activation",
+    });
+    const before = f.posts.length;
+    f.calls.length = 0;
+    // A restart without operator cancellation must neither probe nor settle.
+    await assertRejects(
+      () => root.methods.run.execute(f.args, f.ctx),
+      Error,
+      "deployment.execution_unconfirmed",
+    );
+    assertEquals(f.calls, []);
+    f.cancel();
+    await assertRejects(
+      () => root.methods.run.execute(f.args, f.ctx),
+      Error,
+      probe === "gone" ? "deployment.interrupted" : undefined,
+    );
+    assertEquals(attempts, 1);
+    assertEquals(f.calls.map((call) => call.name), [
+      "instance.inspect-deploy-step",
+    ]);
+    assertEquals(f.posts.length, before + (probe === "gone" ? 1 : 0));
+    if (probe === "gone") {
+      assertEquals(f.posts.at(-1)?.status, "failed");
+      assertEquals(f.posts.at(-1)?.error_code, "deployment.interrupted");
+      const result = f.posts.at(-1)?.result as Record<string, unknown>;
+      assertEquals(result.failed_step, "before_activation.proof");
+      assertEquals(result.step_outcome, "unknown");
+      assertEquals(result.output_tail, null);
+      const calls = f.calls.length;
+      assertEquals(await root.methods.run.execute(f.args, f.ctx), {
+        status: "failed",
+      });
+      assertEquals(f.calls.length, calls);
+    }
+  });
+}

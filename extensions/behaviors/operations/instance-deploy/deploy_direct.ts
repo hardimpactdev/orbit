@@ -4,7 +4,12 @@ import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../../operation-runner/mod.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 import { runNodeAgent } from "../_lib/node-agent.ts";
-import { currentProgram, sudoAppStep } from "./app_step.ts";
+import {
+  AppStep,
+  currentProgram,
+  stepRunner,
+  sudoAppStep,
+} from "./app_step.ts";
 import { DeploySourceInput, prepareDeploySource } from "./deploy_source.ts";
 import { DeployAppInput, runDeployPhase } from "./deploy_steps.ts";
 import { prepareDeployVp } from "./deploy_vp.ts";
@@ -30,6 +35,7 @@ const Checkpoint = z.object({
   run_id: z.string().uuid(),
   started_at: z.string(),
   active: z.boolean(),
+  step: AppStep.pick({ name: true, phase: true }).nullable().default(null),
 }).strict();
 type Context = {
   globalArgs: z.infer<typeof Globals>;
@@ -109,18 +115,58 @@ export function deployDirect(ports: Ports = {}) {
             (checkpoint.operation_id !== args.operation_id ||
               checkpoint.run_id !== args.run_id)
           ) throw new Error("deployment.identity_changed");
+          let interruptedStep: string | null = null;
           if (checkpoint?.active) {
-            throw new Error("deployment.execution_unconfirmed");
+            if (
+              !initial.cancel_requested || initial.status !== "running" ||
+              !checkpoint.step
+            ) {
+              throw new Error("deployment.execution_unconfirmed");
+            }
+            const saved = checkpoint.step;
+            const admitted = d.steps.find((step) =>
+              step.name === saved.name && step.phase === saved.phase
+            );
+            if (!admitted) throw new Error("deployment.identity_changed");
+            const runner = stepRunner(args, saved);
+            const reply = z.object({
+              runner: z.literal(runner),
+              gone: z.literal(true),
+            }).strict().safeParse(
+              await (ports.invoke ?? runNodeAgent)({
+                name: "instance.inspect-deploy-step",
+                input: { runner },
+                pin: input.agent_sha256,
+                sudo: true,
+                mutates: false,
+                deadlineMs: 30000,
+              }, ctx.signal),
+            );
+            if (!reply.success) {
+              throw new Error("deployment.execution_unconfirmed");
+            }
+            const confirmed = await read();
+            if (
+              confirmed.status !== "running" || !confirmed.cancel_requested ||
+              !isDeepStrictEqual(Input.parse(confirmed.input), input)
+            ) {
+              throw new Error("deployment.identity_changed");
+            }
+            interruptedStep = `${saved.phase}.${saved.name}`;
           }
           const started_at = checkpoint?.started_at ??
             new Date(now()).toISOString();
           let effectActive = false;
-          const mark = async (active: boolean) => {
+          const mark = async (
+            active: boolean,
+            step: z.infer<typeof Checkpoint>["step"] = null,
+          ) => {
             await ctx.writeResource("execution", checkpointName, {
               operation_id: args.operation_id,
               run_id: args.run_id,
               started_at,
               active,
+              step,
             });
             effectActive = active;
           };
@@ -136,8 +182,17 @@ export function deployDirect(ports: Ports = {}) {
             return reply;
           };
           const run: typeof sudoAppStep = async (...parameters) => {
-            await mark(true);
-            const reply = await (ports.run ?? sudoAppStep)(...parameters);
+            const [step, script, signal] = parameters;
+            await mark(true, { name: step.name, phase: step.phase });
+            const reply = await (ports.run ?? sudoAppStep)(
+              step,
+              script,
+              signal,
+              {
+                operation_id: args.operation_id,
+                run_id: args.run_id,
+              },
+            );
             if (
               !("error_code" in reply) ||
               !/execution_(unconfirmed|uncertain)/.test(reply.error_code)
@@ -160,6 +215,9 @@ export function deployDirect(ports: Ports = {}) {
             failed_step: null as string | null,
             warnings: 0,
             output_tail: null as string | null,
+            ...(interruptedStep === null
+              ? {}
+              : { step_outcome: "unknown" as const }),
           };
           let phase = "source_preparation", error_code: string | null = null;
           const current = async () => {
@@ -202,6 +260,10 @@ export function deployDirect(ports: Ports = {}) {
             return reply;
           };
           try {
+            if (interruptedStep !== null) {
+              result.failed_step = interruptedStep;
+              throw new Refused("deployment.interrupted");
+            }
             if (initial.status !== "queued") {
               throw new Refused(
                 initial.cancel_requested

@@ -25,6 +25,10 @@ const root = deployDirect({
       }
       return Promise.resolve({ commit });
     }
+    if (call.name === "instance.inspect-deploy-step") {
+      if (!call.sudo || call.mutates) throw new Error("Wrong probe privilege");
+      return Promise.resolve({ runner: call.input.runner, gone: true });
+    }
     if (call.name === "account.lookup") {
       if (call.sudo || call.mutates) throw new Error("Wrong account privilege");
       return Promise.resolve({ user: "orbit", uid: 1000, group: "developers" });
@@ -49,6 +53,9 @@ const root = deployDirect({
       step.target.variant !== "checkout" || step.target.user !== "orbit" ||
       !script.includes(Deno.env.get("ORBIT_DEPLOY_SENTINEL")!)
     ) throw new Error("Private command binding failed");
+    if (Deno.env.get("ORBIT_DEPLOY_TEST_UNCERTAIN_STEP") === "1") {
+      throw new Error("lost worker during synthetic step");
+    }
     return Promise.resolve({
       exit_code: 0,
       timed_out: false,

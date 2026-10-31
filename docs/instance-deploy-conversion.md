@@ -62,3 +62,15 @@ owned by the admitted runtime account and free of writable or symlink components
 This runner grants no filesystem access. A production app that cannot traverse
 the runtime store refuses before its script starts. Setup and teardown keep their
 existing account and directory contract.
+
+
+Development deploy checkpoints record each active app step and its public
+Operation/run/step runner identity before launch. Recovery never replays an
+active step. After operator cancellation, the native run uses the admitted
+agent digest to call read-only `instance.inspect-deploy-step` on its own Node.
+A complete process scan must prove the exact runner is gone before projecting
+`failed`, `deployment.interrupted`, the saved `failed_step`, and
+`step_outcome: unknown`. A live runner, an unreadable scan, or an active source
+mutation without step identity keeps the hold. No probe kills or adopts a
+process. Terminal projection releases the shared target lock for every direct
+kind; it does not claim a successful step or advance the development seed.

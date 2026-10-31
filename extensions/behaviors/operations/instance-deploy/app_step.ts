@@ -103,11 +103,33 @@ export async function currentProgram(
   }
 }
 
+export const StepExecution = z.object({
+  operation_id: z.number().int().positive(),
+  run_id: z.string().uuid(),
+}).strict();
+
+/** Public identity only; private commands and environment never enter argv. */
+export function stepRunner(
+  execution: z.infer<typeof StepExecution>,
+  step: Pick<AppStep, "name" | "phase">,
+) {
+  const bound = StepExecution.parse({
+    operation_id: execution.operation_id,
+    run_id: execution.run_id,
+  });
+  const admitted = AppStep.pick({ name: true, phase: true }).parse({
+    name: step.name,
+    phase: step.phase,
+  });
+  return `orbit-deploy-step:${bound.operation_id}:${bound.run_id}:${admitted.phase}.${admitted.name}`;
+}
+
 /** One workflow-owned sudo step. User, directory and program are never caller-selected argv. */
 export async function sudoAppStep(
   admitted: AppStep,
   script: string,
   signal?: AbortSignal,
+  execution?: z.infer<typeof StepExecution>,
 ): Promise<AppStepResult> {
   const step = AppStep.parse(admitted);
   if (
@@ -127,6 +149,7 @@ export async function sudoAppStep(
       "-I",
       "-c",
       appStepRuntime,
+      ...(execution ? [stepRunner(execution, step)] : []),
     ],
     cwd: "/",
     clearEnv: true,

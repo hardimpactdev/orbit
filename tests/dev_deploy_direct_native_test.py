@@ -40,7 +40,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
                            'timeout_seconds': 60, 'command_digest': hashlib.sha256(script.encode()).hexdigest()}],
             },
         }
-        state = {'status': 'queued', 'posts': [], 'paths': [], 'run_id': None}
+        state = {'status': 'queued', 'posts': [], 'paths': [], 'run_id': None, 'cancel_requested': False}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -68,7 +68,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
                     self.reply({'git_read': secret, 'vp_materialize': {}})
                 elif base == '/api/v1/direct-operations/100':
                     self.reply({'id': 100, 'kind': 'instance.deploy', 'node_id': 9,
-                                'status': state['status'], 'input': safe, 'result': None, 'cancel_requested': False})
+                                'status': state['status'], 'input': safe, 'result': None, 'cancel_requested': state['cancel_requested']})
                 else:
                     self.send_error(404)
 
@@ -127,9 +127,27 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assert_private_absent(json.dumps(state['posts']))
         # Resume the same native run: its checkpoint must survive the failed method.
         before = list(state['posts'])
-        self.cli('workflow', 'resume', 'dev-deploy-direct-proof', success=False)
+        self.cli('workflow', 'resume', 'dev-deploy-direct-proof', '--run', state['run_id'], success=False)
         self.assertEqual(state['status'], 'running')
         self.assertEqual(state['posts'], before)
+        # A worker loss during an app step keeps its marker. Operator cancellation
+        # resumes the SAME run, probes its bound runner, and projects unknown failure.
+        state.update(status='queued', posts=[], paths=[], run_id=None, cancel_requested=False)
+        self.native_env.pop('ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE')
+        self.native_env.pop('ORBIT_DEPLOY_TEST_FAIL_AFTER_STEPS')
+        self.native_env['ORBIT_DEPLOY_TEST_UNCERTAIN_STEP'] = '1'
+        self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
+        self.assertEqual(state['status'], 'running')
+        before = list(state['posts'])
+        self.cli('workflow', 'resume', 'dev-deploy-direct-proof', '--run', state['run_id'], success=False)
+        self.assertEqual(state['posts'], before)
+        state['cancel_requested'] = True
+        resumed = self.cli('workflow', 'resume', 'dev-deploy-direct-proof', '--run', state['run_id'], success=False)
+        self.assertEqual(state['status'], 'failed', resumed.stdout + resumed.stderr)
+        self.assertEqual(state['posts'][-1]['error_code'], 'deployment.interrupted')
+        self.assertEqual(state['posts'][-1]['result']['failed_step'], 'before_activation.proof')
+        self.assertEqual(state['posts'][-1]['result']['step_outcome'], 'unknown')
+        self.assert_private_absent(json.dumps(state['posts']))
 
 
 if __name__ == '__main__':

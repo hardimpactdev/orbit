@@ -87,6 +87,10 @@ try:
  secrets=set(line for text in env.values() for line in text.splitlines() if line)
  disabled=len(secrets)>4096
  secrets=sorted(secrets,key=len,reverse=True)[:4096]
+ if len(sys.argv)==2:
+  if not re.fullmatch(r'orbit-deploy-step:[1-9][0-9]*:[0-9a-fA-F-]{36}:[a-z_]+\.[a-z0-9-]+',sys.argv[1]):refuse()
+  env['ORBIT_DEPLOY_STEP_RUNNER']=sys.argv[1]
+ elif len(sys.argv)!=1:refuse()
  env.update(HOME=home,USER=account.pw_name,LOGNAME=account.pw_name,PATH='/usr/local/bin:/usr/bin:/bin')
  if variant=='checkout':
   env.update(ORBIT_SEED_PATH=target['seed_path'],ORBIT_SEED_COMMIT=target['seed_commit'])
