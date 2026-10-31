@@ -13,7 +13,6 @@ use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
-use Orbit\Sdk\Requests\Operations\ResumeOperationRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Requests\Tasks\AnalyzeTaskGroupRequest;
@@ -51,10 +50,9 @@ const OPERATION_REQUEST_ID = '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
 
 /**
  * @param  array<string, mixed>  $overrides
- * @param  list<array<string, mixed>>  $steps
  * @return array<string, mixed>
  */
-function cli_operation(array $overrides = [], array $steps = []): array
+function cli_operation(array $overrides = []): array
 {
     return [
         'id' => 42,
@@ -76,16 +74,6 @@ function cli_operation(array $overrides = [], array $steps = []): array
         'finished_at' => null,
         'poll_after_seconds' => 2,
         ...$overrides,
-        ...($steps === [] ? [] : ['steps' => $steps]),
-    ];
-}
-
-/** @return array<string, mixed> */
-function cli_step(string $name, int $position, string $status, int $sequence, ?string $output = null, ?string $error = null): array
-{
-    return [
-        'name' => $name, 'position' => $position, 'status' => $status, 'resumable' => ! str_contains($name, '.'), 'sequence' => $sequence,
-        'started_at' => null, 'finished_at' => null, 'error_code' => $error, 'output' => $output, 'output_truncated' => false,
     ];
 }
 
@@ -117,7 +105,7 @@ function cli_deploy_gateway(array $reads, array &$seen, string $start = DeployIn
 }
 
 describe('instance:deploy', function (): void {
-    it('renders the Process restart step and its deployment outcome', function (bool $fails): void {
+    it('renders the native deployment outcome', function (bool $fails): void {
         $seen = [];
         cli_deploy_gateway([
             cli_operation([
@@ -126,68 +114,53 @@ describe('instance:deploy', function (): void {
                 'error_code' => $fails ? 'process.restart_failed' : null,
                 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
                 'result' => ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => null],
-            ], [cli_step('process_restart', 1, $fails ? 'failed' : 'succeeded', 5,
-                $fails ? "Failed to restart Process 12.\n" : "Restarted Process 12.\n", $fails ? 'process.restart_failed' : null)]),
+            ]),
         ], $seen);
 
         $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe($fails ? 1 : 0)
-            ->and($output)->toContain($fails ? 'Restarting Processes' : 'Restarted Processes')
             ->and($output)->toContain($fails ? 'Deployment failed.' : 'Deployment succeeded.');
         if ($fails) {
             expect($output)->toContain('process.restart_failed')->not->toContain('Deployment succeeded.');
         }
     })->with([false, true]);
 
-    it('starts the operation and follows it by polling until it ends, printing new step output once', function (): void {
+    it('follows the parent Operation until its native result arrives', function (): void {
         $seen = [];
         $done = cli_operation(['status' => 'succeeded', 'sequence' => 9, 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null,
             'result' => ['deployment_id' => 5, 'release' => 'r2', 'selected_release' => 'r2', 'commit' => null]]);
         cli_deploy_gateway([
-            cli_operation(['status' => 'running', 'sequence' => 3, 'started_at' => '2026-10-15T10:00:01+00:00', 'current_step' => 'source_preparation'], [
-                cli_step('source_preparation', 1, 'running', 3, "cloning\n"),
-                cli_step('before_activation.migrate', 2, 'pending', 2),
-            ]),
-            cli_operation(['status' => 'running', 'sequence' => 6, 'started_at' => '2026-10-15T10:00:01+00:00', 'current_step' => 'before_activation.migrate'], [
-                cli_step('source_preparation', 1, 'succeeded', 4, "cloning\ncloned\n"),
-                cli_step('before_activation.migrate', 2, 'running', 6, "migrating\n"),
-            ]),
-            [...$done, 'steps' => [cli_step('before_activation.migrate', 2, 'succeeded', 9, "migrating\nmigrated\n")]],
+            cli_operation(['status' => 'running', 'sequence' => 3, 'started_at' => '2026-10-15T10:00:01+00:00', 'current_step' => 'source_preparation']),
+            cli_operation(['status' => 'running', 'sequence' => 6, 'started_at' => '2026-10-15T10:00:01+00:00', 'current_step' => 'before_activation.migrate']),
+            $done,
         ], $seen);
 
         $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Deploy Instance [17]', 'Prepared source', 'Ran migrate', 'Deployment succeeded.', 'Selected release: r2', 'Operation: 42')
-            ->and(substr_count($output, '"cloning"'))->toBe(1)
-            ->and($output)->toContain('source_preparation: "cloned"', 'before_activation.migrate: "migrated"')
-            ->and($seen)->toBe(['after_sequence=0', 'after_sequence=3', 'after_sequence=6']);
+            ->and($output)->toContain('Deploy Instance [17]', 'Deployment succeeded.', 'Selected release: r2', 'Operation: 42')
+            ->and($seen)->toBe(['', '', '']);
     });
 
     it('fails with the failed step and error code of the operation', function (): void {
         $seen = [];
         cli_deploy_gateway([
             cli_operation(['status' => 'failed', 'sequence' => 5, 'started_at' => '2026-10-15T10:00:01+00:00', 'failed_step' => 'source_preparation',
-                'error_code' => 'deployment.prepare_failed', 'poll_after_seconds' => null], [
-                    cli_step('source_preparation', 1, 'failed', 5, null, 'deployment.prepare_failed'),
-                    cli_step('cleanup', 2, 'pending', 2),
-                ]),
+                'error_code' => 'deployment.prepare_failed', 'poll_after_seconds' => null]),
         ], $seen);
 
         $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
 
         expect($exitCode)->toBe(1)
-            ->and(Artisan::output())->toContain('Deployment failed.', 'Failed step: source_preparation', 'Error code: deployment.prepare_failed', 'Not reached.');
+            ->and(Artisan::output())->toContain('Deployment failed.', 'Failed step: source_preparation', 'Error code: deployment.prepare_failed');
     });
 
-    it('prints only the final operation with every step in JSON mode', function (): void {
+    it('prints only the final parent Operation in JSON mode', function (): void {
         $seen = [];
-        $final = cli_operation(['status' => 'succeeded', 'sequence' => 4, 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null], [
-            cli_step('source_preparation', 1, 'succeeded', 4),
-        ]);
+        $final = cli_operation(['status' => 'succeeded', 'sequence' => 4, 'started_at' => '2026-10-15T10:00:01+00:00', 'poll_after_seconds' => null]);
         cli_deploy_gateway([$final], $seen);
 
         $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
@@ -195,7 +168,7 @@ describe('instance:deploy', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($payload['status'])->toBe('succeeded')
-            ->and(array_column($payload['steps'], 'name'))->toBe(['source_preparation'])
+            ->and($payload)->not->toHaveKey('steps')
             ->and(end($seen))->toBe('');
     });
 
@@ -221,25 +194,17 @@ describe('instance:rollback', function (): void {
         $seen = [];
         $rollback = ['id' => 43, 'kind' => 'instance.rollback', 'input' => ['release' => 'release-a']];
         $mock = cli_deploy_gateway([
-            cli_operation([...$rollback, 'status' => 'running', 'sequence' => 3, 'started_at' => '2026-10-16T10:00:01+00:00', 'current_step' => 'activation'], [
-                cli_step('rollback', 1, 'succeeded', 2),
-                cli_step('activation', 2, 'running', 3),
-                cli_step('process_restart', 3, 'pending', 1),
-            ]),
+            cli_operation([...$rollback, 'status' => 'running', 'sequence' => 3, 'started_at' => '2026-10-16T10:00:01+00:00', 'current_step' => 'activation']),
             cli_operation([...$rollback, 'status' => 'succeeded', 'sequence' => 6, 'started_at' => '2026-10-16T10:00:01+00:00', 'poll_after_seconds' => null,
-                'result' => ['deployment_id' => 7, 'release' => 'release-a', 'selected_release' => 'release-a', 'commit' => null]], [
-                    cli_step('activation', 2, 'succeeded', 4),
-                    cli_step('process_restart', 3, 'succeeded', 6, "Restarted Process 12.\n"),
-                ]),
+                'result' => ['deployment_id' => 7, 'release' => 'release-a', 'selected_release' => 'release-a', 'commit' => null]]),
         ], $seen, RollbackInstanceRequest::class, $rollback);
 
         $exitCode = Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--no-interaction' => true]);
         $output = Artisan::output();
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Roll back Instance [17]', 'Found retained release', 'Activated release', 'Restarted Processes', 'Rollback succeeded.', 'Selected release: release-a', 'Operation: 43')
-            ->and($output)->toContain('process_restart: "Restarted Process 12."')
-            ->and($seen)->toBe(['after_sequence=0', 'after_sequence=3']);
+            ->and($output)->toContain('Roll back Instance [17]', 'Rollback succeeded.', 'Selected release: release-a', 'Operation: 43')
+            ->and($seen)->toBe(['', '']);
         $mock->assertSentCount(1, RollbackInstanceRequest::class);
         expect($mock->findResponseByRequest(RollbackInstanceRequest::class)?->getPendingRequest()->body()?->all())->toBe(['release' => 'release-a']);
     });
@@ -250,26 +215,20 @@ describe('instance:rollback', function (): void {
         cli_deploy_gateway([
             cli_operation([...$rollback, 'status' => 'failed', 'sequence' => 4, 'started_at' => '2026-10-16T10:00:01+00:00', 'failed_step' => 'rollback',
                 'error_code' => 'rollback.release_invalid', 'poll_after_seconds' => null,
-                'result' => ['deployment_id' => 7, 'release' => null, 'selected_release' => 'release-b', 'commit' => null]], [
-                    cli_step('rollback', 1, 'failed', 4, null, 'rollback.release_invalid'),
-                    cli_step('activation', 2, 'pending', 1),
-                ]),
+                'result' => ['deployment_id' => 7, 'release' => null, 'selected_release' => 'release-b', 'commit' => null]]),
         ], $seen, RollbackInstanceRequest::class, $rollback);
 
         $exitCode = Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-x', '--no-interaction' => true]);
 
         expect($exitCode)->toBe(1)
-            ->and(Artisan::output())->toContain('Rollback failed.', 'Failed step: rollback', 'Error code: rollback.release_invalid', 'Selected release: release-b', 'Not reached.');
+            ->and(Artisan::output())->toContain('Rollback failed.', 'Failed step: rollback', 'Error code: rollback.release_invalid', 'Selected release: release-b');
     });
 
     it('prints only the final operation in JSON mode', function (): void {
         $seen = [];
         $rollback = ['id' => 43, 'kind' => 'instance.rollback', 'input' => ['release' => 'release-a']];
         cli_deploy_gateway([
-            cli_operation([...$rollback, 'status' => 'succeeded', 'sequence' => 4, 'started_at' => '2026-10-16T10:00:01+00:00', 'poll_after_seconds' => null], [
-                cli_step('rollback', 1, 'succeeded', 2),
-                cli_step('activation', 2, 'succeeded', 4),
-            ]),
+            cli_operation([...$rollback, 'status' => 'succeeded', 'sequence' => 4, 'started_at' => '2026-10-16T10:00:01+00:00', 'poll_after_seconds' => null]),
         ], $seen, RollbackInstanceRequest::class, $rollback);
 
         $exitCode = Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--json' => true, '--no-interaction' => true]);
@@ -278,7 +237,7 @@ describe('instance:rollback', function (): void {
         expect($exitCode)->toBe(0)
             ->and($payload['kind'])->toBe('instance.rollback')
             ->and($payload['input'])->toBe(['release' => 'release-a'])
-            ->and(array_column($payload['steps'], 'name'))->toBe(['rollback', 'activation'])
+            ->and($payload)->not->toHaveKey('steps')
             ->and(end($seen))->toBe('');
     });
 
@@ -316,9 +275,7 @@ describe('instance:rollback', function (): void {
                 // The person presses Ctrl-C while the CLI follows the running rollback.
                 posix_kill(getmypid(), SIGINT);
 
-                return cli_operation_response(cli_operation([...$rollback, 'status' => 'running', 'sequence' => 2, 'current_step' => 'rollback'], [
-                    cli_step('rollback', 1, 'running', 2),
-                ]));
+                return cli_operation_response(cli_operation([...$rollback, 'status' => 'running', 'sequence' => 2, 'current_step' => 'rollback']));
             },
         ]);
 
@@ -344,7 +301,7 @@ describe('operation commands', function (): void {
         $exitCode = Artisan::call('operation:list', ['--status' => 'running', '--instance' => '17', '--no-interaction' => true]);
 
         expect($exitCode)->toBe(0)
-            ->and(Artisan::output())->toContain('instance.deploy', 'instance 17', 'running', 'activation');
+            ->and(Artisan::output())->toContain('instance.deploy', 'instance 17', 'running');
         $mock->assertSent(static fn ($request): bool => $request instanceof ListOperationsRequest
             && $request->query()->all() === ['status' => 'running', 'target_type' => 'instance', 'target_id' => 17]);
 
@@ -357,73 +314,33 @@ describe('operation commands', function (): void {
         ]);
 
         expect(Artisan::call('operation:list', ['--status' => 'waiting', '--no-interaction' => true]))->toBe(0)
-            ->and(Artisan::output())->toContain('waiting', 'external');
+            ->and(Artisan::output())->toContain('waiting');
         $mock->assertSent(static fn ($request): bool => $request instanceof ListOperationsRequest && $request->query()->all() === ['status' => 'waiting']);
     });
 
-    it('follows a waiting step until it succeeds without settling it as failed', function (): void {
+    it('follows a waiting parent until its native result succeeds', function (): void {
         $seen = [];
         cli_deploy_gateway([
-            cli_operation(['status' => 'waiting', 'sequence' => 3, 'current_step' => 'source_preparation'], [cli_step('source_preparation', 1, 'waiting', 3)]),
-            cli_operation(['status' => 'waiting', 'sequence' => 5, 'current_step' => 'source_preparation'], [cli_step('source_preparation', 1, 'waiting', 5)]),
-            cli_operation(['status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null], [cli_step('source_preparation', 1, 'succeeded', 7)]),
+            cli_operation(['status' => 'waiting', 'sequence' => 3, 'current_step' => 'source_preparation']),
+            cli_operation(['status' => 'waiting', 'sequence' => 5, 'current_step' => 'source_preparation']),
+            cli_operation(['status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null]),
         ], $seen);
 
         expect(Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]))->toBe(0)
-            ->and(Artisan::output())->toContain('Prepared source', 'Deployment succeeded.')
+            ->and(Artisan::output())->toContain('Deployment succeeded.')
             ->and(Artisan::output())->not->toContain('Deployment failed.')
-            ->and($seen)->toBe(['after_sequence=0', 'after_sequence=3', 'after_sequence=5']);
+            ->and($seen)->toBe(['', '', '']);
     });
 
-    it('shows an operation with its steps and output', function (): void {
+    it('shows the parent result without Gateway step output', function (): void {
         MockClient::global([
-            ShowOperationRequest::class => cli_operation_response(cli_operation(['status' => 'failed', 'failed_step' => 'before_activation.migrate', 'error_code' => 'deployment.step_failed'], [
-                cli_step('before_activation.migrate', 1, 'failed', 3, "boom\n", 'deployment.step_failed'),
-            ])),
+            ShowOperationRequest::class => cli_operation_response(cli_operation(['status' => 'failed', 'failed_step' => 'before_activation.migrate', 'error_code' => 'deployment.step_failed'])),
         ]);
 
         $exitCode = Artisan::call('operation:show', ['operation' => '42', '--no-interaction' => true]);
 
         expect($exitCode)->toBe(0)
-            ->and(Artisan::output())->toContain('Operation: 42', 'deployment.step_failed', 'Output of before_activation.migrate:', 'boom');
-    });
-
-    it('resumes one parked operation without following it in human and JSON output', function (bool $json): void {
-        $mock = MockClient::global([
-            ResumeOperationRequest::class => cli_operation_response(cli_operation(['status' => 'queued', 'attempts' => 0])),
-        ]);
-
-        expect(Artisan::call('operation:resume', ['operation' => '42', '--json' => $json, '--no-interaction' => true]))->toBe(0);
-        $output = Artisan::output();
-        if ($json) {
-            $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-            expect($data['id'])->toBe(42)->and($data['status'])->toBe('queued')->and($data['attempts'])->toBe(0);
-        } else {
-            expect($output)->toContain('Queued operation to resume', 'Operation: 42', 'orbit operation:show 42', 'Request ID:');
-        }
-        $mock->assertSentCount(1);
-        $mock->assertSent(static fn ($request): bool => $request instanceof ResumeOperationRequest && (string) $request->body() === '{}');
-    })->with([false, true]);
-
-    it('reports a refused resume without claiming success', function (bool $json): void {
-        $mock = MockClient::global([
-            ResumeOperationRequest::class => MockResponse::make(['error' => ['code' => 'operation.not_resumable', 'message' => 'Operation is not at its reclaim limit.'],
-                'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a846']], 409),
-        ]);
-        expect(Artisan::call('operation:resume', ['operation' => '42', '--json' => $json, '--no-interaction' => true]))->toBe(1);
-        $output = Artisan::output();
-        expect($output)->toContain('Operation is not at its reclaim limit.')->not->toContain('Queued operation to resume');
-        if ($json) {
-            expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.not_resumable');
-        }
-        $mock->assertSentCount(1);
-    })->with([false, true]);
-
-    it('refuses an invalid resume ID before Gateway access', function (): void {
-        $mock = MockClient::global([]);
-        expect(Artisan::call('operation:resume', ['operation' => 'bad', '--json' => true, '--no-interaction' => true]))->toBe(1);
-        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('operation.id_invalid');
-        $mock->assertNothingSent();
+            ->and(Artisan::output())->toContain('Operation: 42', 'deployment.step_failed')->not->toContain('Output of before_activation.migrate:', 'boom');
     });
 
     it('asks an operation to stop and says how to follow it', function (): void {
@@ -450,9 +367,9 @@ describe('tasks:provision', function (): void {
         $seen = [];
         $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
         $mock = cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'provision'], [cli_step('provision', 1, 'waiting', 4)]),
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'provision']),
             cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null,
-                'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]], [cli_step('provision', 1, 'succeeded', 7)]),
+                'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]]),
         ], $seen, ProvisionTaskGroupRequest::class, $identity);
 
         expect(Artisan::call('tasks:provision', ['group' => '17', '--idempotency-key' => 'group.provision.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
@@ -462,19 +379,18 @@ describe('tasks:provision', function (): void {
             expect($data['kind'])->toBe('tasks.provision');
             expect($data['result'])->toBe(['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]);
         } else {
-            expect($output)->toContain('Provision task group [17]', 'Claimed task VM', 'Provision succeeded.');
+            expect($output)->toContain('Provision task group [17]', 'Provision succeeded.');
         }
         $mock->assertSentCount(1, ProvisionTaskGroupRequest::class);
         expect($mock->findResponseByRequest(ProvisionTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.provision.c1');
-        expect($seen)->toBe($json ? ['after_sequence=0', 'after_sequence=4', ''] : ['after_sequence=0', 'after_sequence=4']);
+        expect($seen)->toBe($json ? ['', '', ''] : ['', '']);
     })->with([false, true]);
 
     it('returns a VM error from the followed operation', function (): void {
         $seen = [];
         $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
         cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'provision', 'error_code' => 'task_vm.invalid_config', 'poll_after_seconds' => null],
-                [cli_step('provision', 1, 'failed', 5, error: 'task_vm.invalid_config')]),
+            cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'provision', 'error_code' => 'task_vm.invalid_config', 'poll_after_seconds' => null]),
         ], $seen, ProvisionTaskGroupRequest::class, $identity);
 
         expect(Artisan::call('tasks:provision', ['group' => '17', '--json' => true, '--no-interaction' => true]))->toBe(1);
@@ -501,8 +417,8 @@ describe('tasks:check', function (): void {
         $identity = ['kind' => 'tasks.check', 'target_type' => 'task_group'];
         $result = ['outcome' => $outcome, 'check_id' => 31, 'commit' => $outcome === 'passed' ? str_repeat('c', 40) : null, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'deliverables' => [], 'output' => 'Check result.'];
         $mock = cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'check'], [cli_step('check', 2, 'waiting', 4)]),
-            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result], [cli_step('check', 2, 'succeeded', 7)]),
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'check']),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result]),
         ], $seen, CheckTaskGroupRequest::class, $identity);
 
         expect(Artisan::call('tasks:check', ['group' => '17', '--subtask' => '21', '--phase' => 'handoff', '--idempotency-key' => 'group.check.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
@@ -510,7 +426,7 @@ describe('tasks:check', function (): void {
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
         } else {
-            expect($output)->toContain('Check task group [17]', 'Ran task check', 'Check: 31', match ($outcome) {
+            expect($output)->toContain('Check task group [17]', 'Check: 31', match ($outcome) {
                 'passed' => 'Check passed.',
                 'failed' => 'Check failed.',
                 'changed' => 'Check changed the tree.',
@@ -602,8 +518,8 @@ describe('tasks:publish', function (): void {
         $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
         $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => $pull ? 12 : null, 'pull_request_url' => $pull ? 'https://github.com/acme/shop/pull/12' : null];
         $mock = cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'push'], [cli_step('push', 2, 'waiting', 4)]),
-            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result], [cli_step('push', 2, 'succeeded', 7)]),
+            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'push']),
+            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result]),
         ], $seen, PublishTaskGroupRequest::class, $identity);
 
         expect(Artisan::call('tasks:publish', ['group' => '17', '--check' => '31', ...($pull ? ['--title' => 'Title', '--body' => 'Body'] : []), '--idempotency-key' => 'group.publish.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
@@ -612,7 +528,7 @@ describe('tasks:publish', function (): void {
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
         } else {
-            expect($output)->toContain('Publish task group [17]', 'Pushed checked commit', 'Branch: task-17', 'Commit: '.str_repeat('a', 40));
+            expect($output)->toContain('Publish task group [17]', 'Branch: task-17', 'Commit: '.str_repeat('a', 40));
             if ($pull) {
                 expect($output)->toContain('Pull request: https://github.com/acme/shop/pull/12');
             }
@@ -650,13 +566,13 @@ describe('tasks:park', function (): void {
         $seen = [];
         $identity = ['kind' => 'tasks.park', 'target_type' => 'task_group'];
         $result = ['group_id' => 17, 'task_vm_id' => 8, 'instance_id' => 12, 'status' => 'waiting_for_review', 'power' => 'stopped'];
-        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 4, 'poll_after_seconds' => null, 'result' => $result], [cli_step('park', 1, 'succeeded', 4)])], $seen, ParkTaskGroupRequest::class, $identity);
+        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 4, 'poll_after_seconds' => null, 'result' => $result])], $seen, ParkTaskGroupRequest::class, $identity);
         expect(Artisan::call('tasks:park', ['group' => '17', '--idempotency-key' => 'group.park.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
         $output = Artisan::output();
         if ($json) {
             expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['result'])->toBe($result);
         } else {
-            expect($output)->toContain('Park task group [17]', 'Parked task VM', 'Park succeeded.');
+            expect($output)->toContain('Park task group [17]', 'Park succeeded.');
         }
         $mock->assertSentCount(1, ParkTaskGroupRequest::class);
         expect($mock->findResponseByRequest(ParkTaskGroupRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.park.c1');
