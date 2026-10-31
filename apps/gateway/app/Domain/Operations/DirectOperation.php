@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Operation;
 use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use LogicException;
 
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
@@ -104,22 +102,7 @@ final readonly class DirectOperation
     {
         $known = $operation->state['swamp_run_id'] ?? null;
         if (! is_string($known) || $known === '') {
-            $workflow = $this->definition($operation->kind)['workflow'] ?? null;
-            if (($operation->state['swamp_start_key'] ?? null) !== 'operation:'.$operation->id || $workflow === null || ! self::owns($operation)) {
-                throw new ResourceOperationException('operation.run_unbound', 'The Gateway has not recorded the native start identity.', 409);
-            }
-            $identity = [$operation->id, $operation->kind, $operation->node_id, $operation->state['swamp_start_key'], $workflow, $runId];
-            $authority = request()->attributes;
-            if ($authority->get('orbit.direct_run_authority') !== $identity) {
-                app(StartSwampRun::class)->verify($operation, $runId);
-                $operation->refresh();
-                $current = [$operation->id, $operation->kind, $operation->node_id, $operation->state['swamp_start_key'] ?? null, $this->definition($operation->kind)['workflow'] ?? null, $runId];
-                if ($current !== $identity) {
-                    throw new ResourceOperationException('operation.run_unverified', 'The admitted run identity changed.', 409);
-                }
-                $authority->set('orbit.direct_run_authority', $identity);
-            }
-            $known = $operation->state['swamp_run_id'] ?? $runId;
+            throw new ResourceOperationException('operation.run_unbound', 'The Gateway has not recorded the native start response.', 409);
         }
         if ($known !== $runId) {
             throw new ResourceOperationException('operation.run_mismatch', 'This status belongs to another Swamp run.', 409);
@@ -154,43 +137,37 @@ final readonly class DirectOperation
      */
     public function project(Operation $operation, array $data, array $result, string $stepName): Operation
     {
+        $operation->refresh();
+        if (! self::owns($operation)) {
+            throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
+        }
         $this->assertRun($operation, ValidatedData::string($data['run_id']));
+        $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
+        $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        if ($operation->status->terminal()) {
+            if ($operation->status !== $status || ($operation->result ?? []) !== $result || $operation->error_code !== $code) {
+                throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another terminal result.', 409);
+            }
 
-        return DB::transaction(function () use ($operation, $data, $result, $stepName): Operation {
-            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            if (($operation->state['swamp_run_id'] ?? $data['run_id']) !== $data['run_id']) {
-                throw new ResourceOperationException('operation.run_mismatch', 'This status belongs to another Swamp run.', 409);
-            }
-            if (! self::owns($operation)) {
-                throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
-            }
-            $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
-            $code = ValidatedData::nullableString($data['error_code'] ?? null);
-            if ($operation->status->terminal()) {
-                if ($operation->status !== $status || ($operation->result ?? []) !== $result || $operation->error_code !== $code) {
-                    throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another terminal result.', 409);
-                }
+            return $operation;
+        }
+        $step = $operation->steps()->where('name', $stepName)->first() ?? new OperationStep([
+            'operation_id' => $operation->id, 'position' => 1, 'name' => $stepName, 'resumable' => true,
+        ]);
+        $startedAt = Carbon::parse(ValidatedData::string($data['started_at']));
+        $finishedAt = $status->terminal() ? Carbon::parse(ValidatedData::string($data['finished_at'] ?? '')) : null;
+        $state = $operation->state ?? [];
+        if ($status === OperationStatus::Succeeded) {
+            $state['steps'] = [...ValidatedData::object($state['steps'] ?? []), $stepName => $result];
+        }
+        app(OperationStore::class)->change($operation, [
+            'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
+            'current_step' => $status->terminal() ? null : $stepName, 'failed_step' => $status === OperationStatus::Failed ? $stepName : null,
+            'error_code' => $code, 'result' => $status->terminal() ? $result : null, 'state' => $state,
+        ], $step, [
+            'status' => OperationStepStatus::from($status->value), 'started_at' => $startedAt, 'finished_at' => $finishedAt, 'error_code' => $code,
+        ]);
 
-                return $operation;
-            }
-            $step = $operation->steps()->where('name', $stepName)->first() ?? new OperationStep([
-                'operation_id' => $operation->id, 'position' => 1, 'name' => $stepName, 'resumable' => true,
-            ]);
-            $startedAt = Carbon::parse(ValidatedData::string($data['started_at']));
-            $finishedAt = $status->terminal() ? Carbon::parse(ValidatedData::string($data['finished_at'] ?? '')) : null;
-            $state = $operation->state ?? [];
-            if ($status === OperationStatus::Succeeded) {
-                $state['steps'] = [...ValidatedData::object($state['steps'] ?? []), $stepName => $result];
-            }
-            app(OperationStore::class)->change($operation, [
-                'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
-                'current_step' => $status->terminal() ? null : $stepName, 'failed_step' => $status === OperationStatus::Failed ? $stepName : null,
-                'error_code' => $code, 'result' => $status->terminal() ? $result : null, 'state' => $state,
-            ], $step, [
-                'status' => OperationStepStatus::from($status->value), 'started_at' => $startedAt, 'finished_at' => $finishedAt, 'error_code' => $code,
-            ]);
-
-            return $operation->refresh();
-        });
+        return $operation->refresh();
     }
 }

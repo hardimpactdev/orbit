@@ -66,19 +66,17 @@ it('captures the validated hop and pin without a Gateway effect or execution hol
     expect($this->agents->calls)->toBe([]);
 });
 
-it('refuses first reads if native evidence is unavailable before the start reply', function (): void {
+it('refuses the first worker read before the Gateway start response binds the root', function (): void {
     config(['swamp.direct_writers' => ['route.workload_verify' => 'direct']]);
     $reply = $this->socket->reply;
     $readBeforeBinding = false;
     $this->socket->reply = function (array $request) use ($reply, &$readBeforeBinding): array {
         $operation = Operation::query()->latest('id')->firstOrFail();
         $path = '/api/v1/direct-operations/'.$operation->id;
-        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket(false));
-        $this->getJson($path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unverified');
+        $this->getJson($path.'?run_id='.$this->runId)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
         $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'running', 'started_at' => '2026-10-30T15:00:00.000Z'])->assertConflict();
         expect($operation->fresh()->state)->not->toHaveKey('swamp_run_id');
         $readBeforeBinding = true;
-        app()->instance(WebSocketClient::class, $this->socket);
 
         return $reply($request);
     };

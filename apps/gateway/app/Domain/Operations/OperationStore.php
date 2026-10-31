@@ -89,9 +89,6 @@ final readonly class OperationStore
                     'triggered_by' => $triggeredBy,
                     'request_id' => $requestId,
                 ]);
-                if ($writer === 'direct') {
-                    $created->forceFill(['state' => [...($created->state ?? []), 'swamp_start_key' => 'operation:'.$created->id]])->save();
-                }
                 if ($this->idempotency->parent !== null) {
                     $created->forceFill(['parent_operation_id' => $this->idempotency->parent->id, 'child_key' => $this->idempotency->childKey, 'run_constraints' => $this->idempotency->parent->run_constraints ?? []])->save();
                 }
