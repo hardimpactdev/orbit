@@ -59,9 +59,9 @@ final readonly class TaskTurnIntent
             if ($thread !== null && $data->model !== null) {
                 throw new ResourceOperationException('tasks.model_fixed', 'A continued thread keeps its model.', 422);
             }
-            $model = $thread?->model ?? $data->model ?? ($data->threadRole() === TaskThreadRole::Implementer ? $group->implementer_model : $group->reviewer_model);
+            $model = $thread->model ?? $data->model ?? ($data->threadRole() === TaskThreadRole::Implementer ? $group->implementer_model : $group->reviewer_model);
             try {
-                $model = PiModel::onlyProvider($model ?? '', 'orbit-task-vm');
+                $model = PiModel::onlyProvider($model, 'orbit-task-vm');
             } catch (AgentDriverException $exception) {
                 throw new ResourceOperationException('tasks.model_refused', $exception->getMessage(), 422);
             }
@@ -84,7 +84,7 @@ final readonly class TaskTurnIntent
 
             return $this->start->execute('tasks.turn', 'task_group', $group->id, $instance->node_id, [
                 ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id,
+                'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
                 'model' => $model, 'effort' => $thread->effort, 'pi_port' => config('orbit.pi.port', 3774),
                 'pi_host' => $instance->node->wireguard_ip, 'candidate' => $candidate,
                 'deliverables' => $task->deliverables ?? [], 'analysis_evidence' => $analysis,

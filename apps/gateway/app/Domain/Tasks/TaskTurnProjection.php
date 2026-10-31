@@ -26,7 +26,7 @@ final readonly class TaskTurnProjection implements DirectOperationProjection
             $result = ValidatedData::object($data['result'] ?? []);
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $projected->status->terminal()) {
-                $thread = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail($operation->input['thread_id']);
+                $thread = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail(ValidatedData::integer($operation->input['thread_id']));
                 $thread->update([
                     ...array_intersect_key(ValidatedData::object($result['metrics'] ?? []), array_flip(['tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'])),
                     'state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(),
