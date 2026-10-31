@@ -10,11 +10,12 @@ $publication = [
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'route_publication_writer',
     'projection' => RoutePublicationProjection::class,
+    'primitive' => DirectRoutePublication::class,
 ];
 
 return [
-    'route.caddy_converge' => [...$publication, 'workflow' => 'operation-route-caddy'],
-    'route.private_dns_publish' => [...$publication, 'primitive' => DirectRoutePublication::class],
+    'route.caddy_converge' => $publication,
+    'route.private_dns_publish' => $publication,
     ...array_fill_keys(RouteVerificationProjection::Kinds, [
         'workflow' => 'operation-route-verification',
         'writer_config' => 'swamp.direct_writers',
