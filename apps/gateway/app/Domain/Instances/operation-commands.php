@@ -5,7 +5,6 @@ use App\Domain\Instances\Deployment\InstanceChildReceiptCommand;
 use App\Domain\Instances\Deployment\InstanceDeploymentBudgetCommand;
 use App\Domain\Instances\Deployment\InstanceDeploymentReceiptCommand;
 use App\Domain\Instances\Deployment\InstanceExecutorRuntimeCommand;
-use App\Domain\Instances\Deployment\InstanceProjectionReceiptCommand;
 use App\Domain\Instances\Environment\InstanceServedWebRootsReceiptCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpPlanCommand;
 use App\Domain\Instances\PhpRuntime\InstancePhpReceiptCommand;
@@ -14,7 +13,6 @@ use App\Domain\Instances\VpEnvironment\InstanceVpReceiptCommand;
 
 return [
     'instance.web-roots-receipt' => InstanceServedWebRootsReceiptCommand::class,
-    'instance.projection-receipt' => InstanceProjectionReceiptCommand::class,
     'instance.executor-runtime' => InstanceExecutorRuntimeCommand::class,
     'instance.child-receipt' => InstanceChildReceiptCommand::class,
     'instance.deployment-budget' => InstanceDeploymentBudgetCommand::class,

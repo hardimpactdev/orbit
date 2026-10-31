@@ -48,9 +48,7 @@ final readonly class AdmitClusterRouterOperationAction
             }
             $current = $assignments->first(static fn (NodeRole $row): bool => $row->status === LifecycleStatus::Active);
             $candidate = $assignments->first(static fn (NodeRole $row): bool => $row->node_id === $node->id);
-            if ($candidate === null) {
-                $candidate = NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
-            }
+            $candidate ??= NodeRole::query()->create(['node_id' => $node->id, 'cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Provisioning]);
             if ($candidate->status !== LifecycleStatus::Active) {
                 $candidate->update(['status' => LifecycleStatus::Provisioning, 'error_code' => null,
                     ...($candidate->status === LifecycleStatus::Failed ? ['failed_step' => null] : [])]);

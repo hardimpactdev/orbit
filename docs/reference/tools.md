@@ -461,9 +461,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-An admitted Tool Operation holds `node_tools:<node id>` until it ends. This serializes package and manager changes on that Node, including the shared Homebrew prefix. Another start returns `operation.target_busy`. The agent retains its native package-manager locks. Scan does not hold the Operation target. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
-
-`operation.target_busy` means another Tool Operation holds the Node. It does not mean a dpkg lock is busy. [The dpkg lock](#the-dpkg-lock) says which apt commands wait for one.
+Swamp serializes Tool mutations through the stable `tools-node-<node_id>` behavior identity. The Node agent retains the package manager's native locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). The Gateway records no Tool target hold. Scan does not acquire an Operation lock.
 
 ## Check removal with Doctor
 
@@ -471,13 +469,11 @@ The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the No
 
 ## Direct Swamp execution
 
-When `tool.adopt` selects the direct writer, it also requires the admitted Tool status `installed`, read from an existing managed Tool row. New ownership and failed-Tool adoption retries keep the polled writer. The selected writer is stamped once; changing the writer map or declaration does not reselect an existing or replayed intent.
+Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). Each kind requires its direct writer. The Gateway records package, manager, configured Node account and pinned agent intent. Swamp runs policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
 
-Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). `ORBIT_SWAMP_DIRECT_WRITERS` is a JSON map keyed by exact kind and defaults to `{}`. An absent entry keeps the previous Swamp writer. A `direct` entry records immutable `tool_writer` state and starts `operation-tool-direct` through `StartSwampRun` with the one `ORBIT_SWAMP_RUN_TOKEN`. The Gateway records safe package, manager, enrolled account and recipe intent; the Node worker executes policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
+Standalone `tool.install` starts `operation-tool-install-direct`. Its one job targets `orbit-node-<node_id>` with the matching `node` label, including Node 209. The worker uses that Node's configured account and existing sudo. The other four Tool kinds retain `operation-tool-direct` and their standalone Node 209 scope. Parent Operations remain outside this standalone path; Node and Task VM owners compose manager work in their native parent workflow. A missing worker stays subject to Swamp's native queue policy. It never sends the install to a different Node.
 
-APT `tool.manager_converge` and `tool.adopt` admit direct root intents on Node 209 when their exact kind entry is `direct`. The declaration's literal `writer_scope` limits admission to that proven manager and Node. Other managers, Nodes and privileged kinds stay polled. Existing callers that admit manager children also stay polled. The chosen writer is immutable; reverting either entry to `polled` changes new intents only. The public kinds and API stay the same.
-
-The loaded workflow uses Node 209's `pool=migration` workers and fixed unprivileged APT version/inventory commands. A stable behavior identity serializes the Node's manager scopes. The Gateway start response binds the root run ID before worker reads. Real APT manager convergence and adoption of an existing package passed canaries before takeover.
+Both workflows use the same fixed Tool policy and stable behavior identity to serialize each Node's manager scopes. The Gateway start response binds the root run ID before worker reads. Real APT manager convergence and adoption of an existing package passed canaries before takeover.
 
 Production verification precedes deletion of replaced execution helpers. Synchronous manager-version and selected-package relay methods with no production callers are removed; bulk inventory and the live Vite+ Doctor probe remain. Other actions wait for their own proof and approved privilege boundary; parent lanes move legacy manager children into native DAG steps. Shared executor core remains with the boundary lane.
 

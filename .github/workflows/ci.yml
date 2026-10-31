@@ -27,12 +27,19 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: php
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - name: Validate Composer metadata
+        if: steps.scope.outputs.selected == 'true'
         run: git ls-files -z '*composer.json' | xargs -0 -I '{}' composer validate --strict --no-check-publish '{}'
       - name: Check changed PHP syntax
+        if: steps.scope.outputs.selected == 'true'
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
@@ -45,6 +52,7 @@ jobs:
     with:
       commit: ${{ github.sha }}
       version: ''
+      changed-only: true
 
   docs:
     name: Docs build
@@ -54,12 +62,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: docs
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - name: Install Docs dependencies
+        if: steps.scope.outputs.selected == 'true'
         run: composer install --working-dir=apps/docs --no-interaction --prefer-dist --no-dev
       - name: Build and check the documentation index
+        if: steps.scope.outputs.selected == 'true'
         run: |
           composer docs-build
           composer docs-lint
@@ -72,26 +87,42 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: api-reference
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           bun-version: 1.4.2
+      - name: Cache installed PHP dependencies
+        if: steps.scope.outputs.selected == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/gateway/vendor
+          key: php-runtime-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.lock', 'packages/php-sdk/composer.json') }}
       - name: Install generator dependencies
+        if: steps.scope.outputs.selected == 'true'
         run: |
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
       - name: Boot and validate Operation kinds
+        if: steps.scope.outputs.selected == 'true'
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: bin/check-operation-kinds
       - name: Check OpenAPI and MCP tools
+        if: steps.scope.outputs.selected == 'true'
         run: |
           bin/docs-openapi --check
           bin/mcp-tools --check
       - name: Generate web schema
+        if: steps.scope.outputs.selected == 'true'
         run: bun run --cwd apps/web types
 
   web:
@@ -105,23 +136,39 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: web
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           node-version-file: .node-version
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.selected == 'true'
         with:
           bun-version: 1.4.2
       - uses: ./.github/actions/php
+        if: steps.scope.outputs.selected == 'true'
         with:
           coverage: none
+      - name: Cache installed PHP dependencies
+        if: steps.scope.outputs.selected == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/gateway/vendor
+          key: php-runtime-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.lock', 'packages/php-sdk/composer.json') }}
       - name: Build API contracts
+        if: steps.scope.outputs.selected == 'true'
         working-directory: .
         run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.selected == 'true'
       - name: Build
+        if: steps.scope.outputs.selected == 'true'
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Publish web build
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.scope.outputs.selected == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist-${{ github.sha }}
@@ -134,15 +181,29 @@ jobs:
     name: Select agent delivery
     runs-on: ubuntu-26.04
     outputs:
-      build: ${{ steps.agent.outputs.build }}
+      build: ${{ steps.agent.outputs.build || 'false' }}
+      jobs: ${{ steps.plan.outputs.jobs }}
       release: ${{ steps.agent.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           persist-credentials: false
+      - name: Select changed build inputs
+        id: plan
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          MAIN: ${{ github.ref == 'refs/heads/main' }}
+          PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
+          if [ "$PR" = true ]; then git fetch --no-tags --depth=1 origin "$BASE"; fi
+          args=()
+          if [ "$MAIN" = true ]; then args+=(--main); fi
+          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --github-output "$GITHUB_OUTPUT"
       - name: Compare with the published agent source
+        if: github.event_name != 'pull_request' || steps.plan.outputs.agent == 'true'
         id: agent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -268,7 +329,7 @@ jobs:
   agent-delivery:
     name: Combine agent delivery
     needs: [changes, agent, agent-macos]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && (needs.changes.outputs.build == 'false' || (needs.agent.result == 'success' && needs.agent-macos.result == 'success')) }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && (github.event_name != 'pull_request' || needs.changes.outputs.build == 'true') && (needs.changes.outputs.build == 'false' || (needs.agent.result == 'success' && needs.agent-macos.result == 'success')) }}
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -310,7 +371,15 @@ jobs:
           python3 - <<'PYTHON'
           import json, os, sys
           needs = json.loads(os.environ['NEEDS'])
-          failed = {job: data['result'] for job, data in needs.items() if data['result'] != 'success' and not (job == 'package-boundary' and data['result'] == 'skipped' and needs['changes']['outputs'].get('build') == 'false')}
+          if needs['changes']['result'] != 'success':
+              sys.exit('Build input selection failed')
+          selected = json.loads(needs['changes']['outputs']['jobs'])
+          selected['package-boundary'] = needs['changes']['outputs'].get('build') == 'true'
+          expected = set(needs) - {'changes'}
+          if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
+              sys.exit('Incomplete build selections')
+          failed = {job: needs[job]['result'] for job, touched in selected.items()
+                    if needs[job]['result'] != 'success' and not (not touched and needs[job]['result'] == 'skipped')}
           if failed:
               sys.exit(f'Builds or static checks failed: {failed}')
           PYTHON

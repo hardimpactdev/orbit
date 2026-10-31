@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPrivateBindings;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Validation\Validator;
 
-class DirectOperationRequest extends ExecutorRequest
+class DirectOperationRequest extends OperationPeerRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array
@@ -36,13 +39,34 @@ class DirectOperationRequest extends ExecutorRequest
     {
         $peer = $this->peerNodeId();
         $operation = $this->route('operation');
-        if ($operation instanceof Operation) {
-            if (! in_array(config('dependency_detection.services_node_id'), [$peer, (string) $peer], true) && $operation->node_id !== $peer) {
-                throw new ResourceOperationException('operation.executor_forbidden', 'A Node worker may access only its own Node intent.', 403);
+        if ($operation instanceof Operation && $operation->node_id !== $peer) {
+            $projection = app(DirectOperation::class)->projection($operation);
+            $participants = $operation->input['participant_node_ids'] ?? [];
+            if ($this->route()?->getActionMethod() !== 'show'
+                || ! is_array($participants) || ! in_array($peer, $participants, true)
+                || ! $projection instanceof DirectOperationPublicView) {
+                throw new ResourceOperationException('operation.executor_forbidden', 'Only the root Node may mutate its intent; public participants may read their own public view.', 403);
             }
+            app(DirectOperationPrivateBindings::class)->assertParticipant($operation, $peer);
+            if ($operation->status->terminal()) {
+                throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
+            }
+            $projection->assertPublicParticipant($operation, $peer);
         }
 
         return true;
+    }
+
+    /** @return list<\Closure(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            $allowed = $this->route()?->getActionMethod() === 'result'
+                ? ['run_id', 'status', 'started_at', 'finished_at', 'result', 'error_code'] : ['run_id'];
+            if (array_diff(array_keys($this->all()), $allowed) !== []) {
+                $validator->errors()->add('request', 'Unexpected request fields.');
+            }
+        }];
     }
 
     protected function passedValidation(): void
