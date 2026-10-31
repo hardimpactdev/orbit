@@ -11,6 +11,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DatabaseDestroyProjection implements DirectOperationProjection
@@ -25,9 +26,9 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, array_intersect_key($data['result'] ?? [], array_flip(['backend', 'error_code'])));
+            $projected = app(DirectOperation::class)->project($operation, $data, array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code'])));
             if (! $terminal && $data['status'] === 'succeeded') {
-                foreach ($operation->input['connection_ids'] ?? [] as $id) {
+                foreach (ValidatedData::integerList($operation->input['connection_ids'] ?? []) as $id) {
                     $connection = DatabaseConnection::query()->find($id);
                     if ($connection === null) {
                         continue;

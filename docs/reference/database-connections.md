@@ -87,25 +87,21 @@ A validated connection change is stored before dependent runtimes converge and i
 
 ## Inspect a registered connection
 
-Query, tables, schema, and describe run only against a registered slug. The request never takes its own host, path, user, or password.
+Query, tables, schema, and describe accept only a registered slug. The request never supplies its own host, path, user, or password. Every inspection returns HTTP 202 with one `database.read` Operation. The CLI follows that Operation and displays its native result. `--json` returns the terminal Operation with the inspection under `result`.
 
-A query takes `sql`, at most 16,384 characters, and `write`. It runs one statement; a stacked statement returns `database.sql_multiple_statements`.
+A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a read-only transaction on the Gateway Node's Swamp worker. SQLite opens the existing file read-only, enables query-only mode, and denies mutation, attachment, and extension functions through its authorizer. A read cannot create a missing SQLite file. Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls. Use explicit write permission for statements outside this read subset.
 
-Without `write: true`, the Gateway refuses a statement whose leading verb writes, such as `INSERT`, `UPDATE`, `DELETE`, `CREATE`, or `DROP`, with `database.write_required`. That check reads only the leading verb. For mysql and pgsql the statement then runs in a normal session, so a statement with side effects that does not start with a write verb, such as `SET` or a `SELECT` that calls a function, runs without `write`. Only SQLite opens the file read-only.
-
-`write: true` starts an Operation whose result holds the affected `row_count` and `truncated: false`, without result rows. It does not replay uncertain SQL until the target receipt proves the outcome. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when more rows exist. For a read, `row_count` is the number of returned rows. The Gateway replaces the stored password with `[REDACTED]` wherever it appears in a result. See [text-redaction failures](/cli/activity#text-redaction-failures) for the shared failure rule.
+`write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the native output bound. For a read, `row_count` counts returned rows. The private callback removes the stored password and credential-shaped text before saving any result resource.
 
 | Driver | Where it runs |
 | --- | --- |
-| `mysql`, `pgsql` | Reads use PDO on the Gateway. Swamp invokes the named PDO write program on the Gateway Node for writes. Credentials resolve inside the Gateway before dispatch. |
-| `sqlite` | On the linked Node, through the native `database.query-sqlite` or `database.write-sqlite` agent command. |
-| `redis` | Not supported. `database.driver_unsupported` (422). |
+| `mysql`, `pgsql` | A fixed PDO program on the exact Gateway Node worker, with SQL and credentials on protected stdin. |
+| `sqlite` | A fixed Python SQLite program on the linked Node worker, as the admitted file owner. |
+| `redis` | Not supported. Admission returns `database.driver_unsupported` (422). |
 
-For SQLite, the Gateway sends the selected owner, path, and SQL through `AgentCommandRunner` on protected standard input. The query command opens an existing file read-only. The write command opens an existing file for writing and runs under the agent's mutation supervisor and a lock for that path. Neither command creates a missing database. Both return at most 500 rows and preserve column order and scalar values.
+The SQLite Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection uses the owning production Instance user, or the production Instance user whose home contains the registered path on that Node. Development inspection uses the Node user. Swamp selects that identity before opening the file and does not change file or home permissions. No inspection calls an agent action or runs PDO in the Gateway request.
 
-The Node must be active and have a WireGuard address. A record without a Node returns `database.sqlite_node_required`. SQLite inspection runs as the owning production Instance user, or as the production Instance user whose home contains the registered path on that Node. Development inspection runs as the Node user. The agent drops to that user's identity before opening the file and does not change home or file permissions. Inaccessible files or an unavailable owner return `database.sqlite_unreadable`. SQL failures return `database.query_failed`, without database contents or native diagnostics.
-
-An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
+Unknown tables fail the Operation with `database.table_missing`. Inaccessible SQLite files fail with `database.sqlite_unreadable`. Other execution failures use `database.query_failed`. Failure results omit SQL, credentials, and native diagnostics. Table and schema metadata also use the native output bound.
 
 ## Create a database on a server
 
@@ -218,19 +214,19 @@ The SQL, the path, and the token travel on protected standard input, so they nev
 
 ## Direct SQLite cleanup
 
-SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. It defaults to direct admission and refuses a `polled` setting in `ORBIT_SWAMP_DIRECT_WRITERS`. The family dispatcher remains only for unconverted database kinds. Rollback reverts the kind change.
+SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. Its declaration is the only dispatcher. There is no polled database path. Rollback reverts the kind change.
 
 The shared `StartSwampRun` helper starts the workflow after commit with `ORBIT_SWAMP_RUN_TOKEN`. The Gateway exposes only the admitted cleanup fields and projects the bounded result. It has no cleanup primitive, claim, lease, target hold, keyed receipt or Node lock.
 
-The action runs on the admitted Node. Node 209 uses its existing migration worker; other Nodes require the matching `orbit-node-<node_id>` worker and Node label. Missing placement stays queued under native Swamp defaults.
+The action runs on the admitted Node. Every Node uses its matching `orbit-node-<node_id>` worker and string Node label. Missing placement stays queued under native Swamp defaults.
 
-The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the admitted pinned agent through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
+The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup runs the fixed native program through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` directly. SQLite runs the pinned sudo agent on its admitted Node. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. PDO writes need no agent pin; SQLite verifies the admitted pin before invoking its fixed agent command. Native projection resumes from its saved row count without repeating SQL.
+`database:query --write` starts `operation-database-write` directly. SQLite runs the fixed native SQLite program as its admitted owner. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. Neither path invokes an agent action or requires an agent pin. Native projection resumes from its saved row count without repeating SQL.
 
-SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection stays in the Gateway.
+SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection uses its own native database.read Operation.
 
 ### Instance-owned removal
 

@@ -24,11 +24,13 @@ Database writes that change a Node return an [Operation](/reference/operations) 
 
 Retained Instance removal finishes its database work synchronously with the existing SQL plans, removal locks and ownership checks. MySQL removal accepts stored Activity receipts that prove creation without passwords, proven child receipts or explicit operator adoption. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any test prefix that could match them. The same check applies before retained synchronous removal probes and to expanded database names. SQL create and clone reset prepare work for Operations; they have no synchronous execution helper. SQLite seed callers keep their synchronous agent bindings.
 
-The Gateway resolves stored database credentials only when it invokes an authorized named command. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
+Native workflows read stored credentials through the declared private-material source for the admitted run and Node. Operation history contains no passwords or step receipts. Removal deletes the admitted record after native success.
 
 ## Create a server
 
-`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes. Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. Container convergence, rollback, removal, and SQL readiness run directly in Swamp. Private command and initialization values reach Docker through protected stdin. The agent observes the Node. Rollback reverts the kind PR.
+`database_server.create` records Server and Process intent and directly starts `operation-database-server-create` on the admitted Node. Swamp performs local initialization, readiness, secret removal and Valkey checks; the Gateway only validates records and projects the result. The initializer environment, admin password, ACL file and ACL user data use the shared private-material API. Public Operation input and native output omit these bytes.
+
+Newly reserved Process records store an empty environment; successful projection removes legacy initializer fields. Container convergence, rollback, removal, and SQL readiness run directly in Swamp. Private command and initialization values reach Docker through protected stdin. The agent observes the Node. Rollback reverts the kind PR.
 
 `database:server:create` creates the server and its Process in one command. It refuses a server with an unfinished removal intent. A Valkey repair also refuses a changed default-user policy. An old open repair never reopens a closed default user.
 
@@ -280,7 +282,7 @@ On a Valkey server, `database:destroy` deletes the connection's ACL user with `A
 
 `database:server:destroy <slug>` refuses with `database.server_in_use` (409) while a connection points to the server. Otherwise it removes the Process and the server record. Admission marks the server as removing, so new database creation refuses an inactive server. It keeps the volume, so the data survives. Remove the volume on the Node by hand when its data must go.
 
-`database:server:destroy` records one intent and starts `operation-database-server-destroy`. The owning Node removes only the admitted Process containers through the pinned agent with sudo. Its named data volume stays intact. A server without a Process uses a native no-op step. The Gateway validates that no connections remain and deletes the Server and Process records only after a successful native result. There is no Gateway execution relay or child Operation. Rollback reverts the cutover PR.
+`database:server:destroy` records one intent and starts `operation-database-server-destroy`. The owning Node removes only the admitted Process containers through the canonical native Process action with sudo. Its named data volume stays intact. A server without a Process uses a native no-op step. The Gateway validates that no connections remain and deletes the Server and Process records only after a successful native result. There is no Gateway execution relay or child Operation. Rollback reverts the cutover PR.
 
 A new Valkey server with the slug of a removed one finds the old volume. It writes a new ACL file there, so the old users are gone, but the old keys stay.
 

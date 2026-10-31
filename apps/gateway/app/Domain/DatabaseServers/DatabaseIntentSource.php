@@ -47,7 +47,7 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
         $intent = DatabaseExecutionIntent::recorded($id);
         if ($key === '' && $operation->kind === 'database.destroy_owned' && $parameter === 'payload'
             && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
-            $caller = request()->user();
+            $caller = (request()->getUserResolver())();
             if (! $caller instanceof Node || app(DirectOperationPrivateBindings::class)->ownerNode($operation, $parameter) !== $intent->node_id) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The database material requires its authenticated participant.', 403);
             }

@@ -9,18 +9,11 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\PreparedDatabaseOperation;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
-use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
 
 /** Admission for one native DAG, including databases on other Nodes and SQLite files. */
 final readonly class DropOwnedDatabasesAction
 {
     public function __construct(private DropServerDatabaseAction $servers, private RecordDatabaseOperationAction $operations) {}
-
-    public function execute(int $instanceId): Operation
-    {
-        return DB::transaction(fn (): Operation => $this->operations->start($this->prepare(Instance::query()->findOrFail($instanceId))));
-    }
 
     public function prepare(Instance $owner): PreparedDatabaseOperation
     {
@@ -28,7 +21,7 @@ final readonly class DropOwnedDatabasesAction
         $managed = $connections->filter(static fn (DatabaseConnection $connection): bool => $connection->database_server_id !== null)->values()->all();
         $servers = [];
         $passwords = [];
-        foreach ($this->servers->snapshots($managed, $owner->id) as $snapshot) {
+        foreach ($this->servers->snapshots(array_values($managed), $owner->id) as $snapshot) {
             $servers[] = ['server_id' => $snapshot['server_id'], 'node_id' => $snapshot['node_id'], 'intent' => $snapshot['input']];
             $passwords[$snapshot['node_id']][$snapshot['server_id']] = $snapshot['password'];
         }

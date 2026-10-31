@@ -13,6 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
+use App\Models\DatabaseUser;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -125,6 +126,6 @@ final readonly class DropServerDatabaseAction
     /** @return list<string> */
     private function usernames(DatabaseConnection $connection): array
     {
-        return [...($connection->username === null ? [] : [$connection->username]), ...$connection->users->pluck('username')->all()];
+        return [...($connection->username === null ? [] : [$connection->username]), ...$connection->users->map(static fn (DatabaseUser $user): string => $user->username)->values()->all()];
     }
 }

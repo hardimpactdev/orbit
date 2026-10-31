@@ -6,13 +6,10 @@ namespace App\Actions\DatabaseConnections;
 
 use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
-use App\Domain\DatabaseConnections\DatabaseQueryResult;
 use App\Domain\DatabaseConnections\DatabaseSqlClassifier;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\DatabaseConnections\PdoDatabaseInspector;
-use App\Infrastructure\DatabaseConnections\SqliteNodeDatabaseInspector;
+use App\Infrastructure\DatabaseConnections\DatabaseConnectionInput;
 use App\Models\DatabaseConnection;
 use App\Models\Operation;
 
@@ -20,29 +17,29 @@ final readonly class QueryDatabaseConnectionAction
 {
     public function __construct(
         private DatabaseSqlClassifier $classifier,
-        private DatabaseInspectionExecutor $executor,
+        private ReadDatabaseConnectionAction $reads,
         private RecordDatabaseOperationAction $operations,
     ) {}
 
-    public function execute(DatabaseConnection $connection, string $sql, bool $write): DatabaseQueryResult|Operation
+    public function execute(DatabaseConnection $connection, string $sql, bool $write): Operation
     {
         $sql = $this->classifier->normalize($sql);
         $this->classifier->assertWriteAllowed($sql, $write);
 
         if (! $write) {
-            return $this->executor->query($connection, $sql, false);
+            return $this->reads->execute($connection, 'query', $sql);
         }
         if ($connection->driver === DatabaseDriver::Redis) {
             throw new ResourceOperationException('database.driver_unsupported', 'Redis does not support SQL.', 422);
         }
         if ($connection->driver === DatabaseDriver::Sqlite) {
-            $input = app(SqliteNodeDatabaseInspector::class)->writeInput($connection, $sql);
+            $input = app(DatabaseConnectionInput::class)->sqlite($connection, $sql);
             $nodeId = $connection->node_id;
             $command = ['name' => 'database.write-sqlite', 'input' => [...$input, 'password' => '', 'dsn' => '', 'username' => null], 'protected' => ['password', 'sql', 'dsn', 'username']];
         } else {
             $nodeId = app(NodeAccessAuthorizer::class)->activeGatewayId();
             $command = ['name' => 'database.write', 'input' => [
-                'dsn' => app(PdoDatabaseInspector::class)->dsn($connection), 'username' => $connection->username,
+                'dsn' => app(DatabaseConnectionInput::class)->dsn($connection), 'username' => $connection->username,
                 'password' => $connection->password ?? '', 'sql' => $sql,
             ], 'protected' => ['password', 'sql', 'dsn', 'username']];
         }

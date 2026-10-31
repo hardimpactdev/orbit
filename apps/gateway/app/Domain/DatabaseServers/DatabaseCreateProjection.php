@@ -41,7 +41,7 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
             $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal) {
-                $connection = DatabaseConnection::query()->find($operation->input['connection_id']);
+                $connection = DatabaseConnection::query()->find(ValidatedData::integer($operation->input['connection_id']));
                 if ($connection !== null && ($data['status'] ?? null) === 'succeeded') {
                     if ($connection->owner_instance_id !== null) {
                         app(AttachDatabaseConnectionAction::class)->project(Instance::query()->findOrFail($connection->owner_instance_id), $connection, 'DB', replace: true);

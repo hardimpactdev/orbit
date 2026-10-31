@@ -6,7 +6,6 @@ namespace App\Providers\Domains;
 
 use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
-use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
@@ -48,7 +47,6 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
@@ -66,7 +64,6 @@ use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
-use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
@@ -77,7 +74,6 @@ use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
-use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
@@ -98,7 +94,6 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
-        InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
@@ -125,7 +120,6 @@ final class InstancesServiceProvider extends ServiceProvider
         ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
-        SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,
         InstanceQueueReader::class => RemoteInstanceQueueReader::class,
     ];

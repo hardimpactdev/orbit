@@ -39,9 +39,9 @@ final readonly class DatabaseCloneProjection implements DirectOperationProjectio
             if ($data['status'] === 'succeeded' && ! $terminal) {
                 $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
                 $projection = $intent->payload['projection'];
-                $connection = DatabaseConnection::query()->findOrFail($projection['created_connection']);
+                $connection = DatabaseConnection::query()->findOrFail(ValidatedData::integer($projection['created_connection'] ?? null));
                 $connection->update(['clone_step' => 'complete']);
-                app(AttachDatabaseConnectionAction::class)->project(Instance::query()->findOrFail($projection['attach_instance']), $connection, 'DB', replace: true);
+                app(AttachDatabaseConnectionAction::class)->project(Instance::query()->findOrFail(ValidatedData::integer($projection['attach_instance'] ?? null)), $connection, 'DB', replace: true);
                 app(RecordEventBroadcaster::class)->broadcast(RecordEventType::DatabaseCreated, $connection->id, DatabaseConnectionData::fromModel($connection)->toArray());
             }
 

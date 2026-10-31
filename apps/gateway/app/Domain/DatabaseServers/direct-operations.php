@@ -7,6 +7,7 @@ use App\Domain\DatabaseServers\DatabaseCloneProjection;
 use App\Domain\DatabaseServers\DatabaseCreateProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyOwnedProjection;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
+use App\Domain\DatabaseServers\DatabaseReadProjection;
 use App\Domain\DatabaseServers\DatabaseServerCloseProjection;
 use App\Domain\DatabaseServers\DatabaseServerCreateProjection;
 use App\Domain\DatabaseServers\DatabaseServerDestroyProjection;
@@ -14,7 +15,11 @@ use App\Domain\DatabaseServers\DatabaseSqliteProjection;
 use App\Domain\DatabaseServers\DatabaseUserProjection;
 use App\Domain\DatabaseServers\DatabaseWriteProjection;
 
-return ['database.create' => [
+return ['database.read' => [
+    'workflow' => 'operation-database-read',
+    'projection' => DatabaseReadProjection::class,
+    'private_material' => array_fill_keys(['password', 'sql', 'dsn', 'username'], 'database.intent'),
+], 'database.create' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,
     'private_material' => ['password' => 'database.intent', 'payload' => 'database.intent'],

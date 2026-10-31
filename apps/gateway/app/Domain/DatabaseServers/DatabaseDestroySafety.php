@@ -39,7 +39,8 @@ final readonly class DatabaseDestroySafety
             ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->get();
         foreach ($operations as $operation) {
             $direct = $operation->target_type === 'database_server' && $operation->target_id === $server->id;
-            $owned = array_any($operation->input['servers'] ?? [], static fn (array $entry): bool => ($entry['server_id'] ?? null) === $server->id);
+            $servers = $operation->input['servers'] ?? [];
+            $owned = is_array($servers) && array_any($servers, static fn (mixed $entry): bool => is_array($entry) && ($entry['server_id'] ?? null) === $server->id);
             if ($direct || $owned) {
                 throw new ResourceOperationException('database.server_in_use', 'Database removal is unfinished on this server.', 409);
             }

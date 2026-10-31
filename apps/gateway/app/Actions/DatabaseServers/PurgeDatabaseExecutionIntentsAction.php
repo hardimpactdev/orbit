@@ -6,6 +6,7 @@ namespace App\Actions\DatabaseServers;
 
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Removes protected material after its Operation and retry window finish. */
 final readonly class PurgeDatabaseExecutionIntentsAction
@@ -25,6 +26,6 @@ final readonly class PurgeDatabaseExecutionIntentsAction
             }
         }
 
-        return DatabaseExecutionIntent::query()->where('created_at', '<', $cutoff)->whereNotIn('id', $retained)->delete();
+        return ValidatedData::integer(DatabaseExecutionIntent::query()->where('created_at', '<', $cutoff)->whereNotIn('id', $retained)->delete());
     }
 }

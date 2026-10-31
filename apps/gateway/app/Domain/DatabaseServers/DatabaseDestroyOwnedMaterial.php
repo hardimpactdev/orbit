@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Called only by the shared private source with its authenticated participant Node. */
 final readonly class DatabaseDestroyOwnedMaterial
@@ -15,20 +16,24 @@ final readonly class DatabaseDestroyOwnedMaterial
     public function resolve(Operation $operation, int $authenticatedNodeId): OperationSecretValue
     {
         $serverIds = [];
-        foreach ($operation->input['servers'] ?? [] as $server) {
+        foreach ($this->servers($operation) as $server) {
             if (($server['node_id'] ?? null) === $authenticatedNodeId) {
-                $serverIds[] = $server['server_id'];
+                $serverIds[] = ValidatedData::integer($server['server_id']);
             }
         }
         if ($operation->kind !== 'database.destroy_owned' || $serverIds === []
-            || ! in_array($authenticatedNodeId, $operation->input['participant_node_ids'] ?? [], true)) {
+            || ! in_array($authenticatedNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             $this->forbidden();
         }
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id'] ?? null);
         if ($intent->target_type !== $operation->target_type || $intent->target_id !== $operation->target_id || $intent->node_id !== $operation->node_id) {
             $this->forbidden();
         }
-        $recorded = $intent->payload['commands']['database-apply']['input']['participant_passwords'][$authenticatedNodeId] ?? [];
+        $map = $intent->payload['commands']['database-apply']['input']['participant_passwords'] ?? [];
+        if (! is_array($map) || ! is_array($map[$authenticatedNodeId] ?? null)) {
+            $this->forbidden();
+        }
+        $recorded = $map[$authenticatedNodeId];
         $passwords = [];
         foreach ($serverIds as $id) {
             $password = $recorded[$id] ?? null;
@@ -39,6 +44,17 @@ final readonly class DatabaseDestroyOwnedMaterial
         }
 
         return new OperationSecretValue(['passwords' => (object) $passwords], array_values($passwords));
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function servers(Operation $operation): array
+    {
+        $servers = $operation->input['servers'] ?? [];
+        if (! is_array($servers) || ! array_is_list($servers)) {
+            $this->forbidden();
+        }
+
+        return array_map(static fn (mixed $server): array => ValidatedData::object($server), $servers);
     }
 
     private function forbidden(): never

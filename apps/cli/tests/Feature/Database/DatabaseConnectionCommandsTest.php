@@ -19,6 +19,8 @@ use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -334,12 +336,9 @@ it('queries a registered connection and sends the write flag only when asked', f
         ->doesntExpectOutputToContain(DATABASE_CLI_SECRET)
         ->assertExitCode(0);
 
-    expect($mockClient->getLastRequest())
-        ->toBeInstanceOf(QueryDatabaseConnectionRequest::class)
-        ->and($mockClient->getLastRequest()?->resolveEndpoint())
-        ->toBe('/api/v1/database-connections/app/query')
-        ->and($mockClient->getLastRequest()?->body()->all())
-        ->toBe(['sql' => 'SELECT email FROM users', 'write' => false]);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof QueryDatabaseConnectionRequest
+        && $request->resolveEndpoint() === '/api/v1/database-connections/app/query'
+        && $request->body()->all() === ['sql' => 'SELECT email FROM users', 'write' => false]);
 });
 
 it('preserves exact query JSON for a write-enabled statement', function (): void {
@@ -360,18 +359,8 @@ it('preserves exact query JSON for a write-enabled statement', function (): void
         '--json' => true,
     ]);
     expect($exit)->toBe(0);
-    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
-        'slug' => 'app',
-        'driver' => 'mysql',
-        'write' => true,
-        'columns' => [],
-        'rows' => [],
-        'row_count' => 1,
-        'truncated' => false,
-        'request_id' => database_cli_request_id(),
-    ]);
-    expect($writeClient->getLastRequest()?->body()->all())
-        ->toBe(['sql' => 'DELETE FROM users', 'write' => true]);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toMatchArray(['id' => 7, 'kind' => 'database.write', 'status' => 'succeeded', 'result' => ['backend' => 'active', 'row_count' => 1, 'truncated' => false], 'request_id' => database_cli_request_id()]);
+    $writeClient->assertSent(static fn ($request): bool => $request instanceof QueryDatabaseConnectionRequest && $request->body()->all() === ['sql' => 'DELETE FROM users', 'write' => true]);
 });
 
 it('renders a successful no-rowset write-enabled statement without an empty-table message', function (): void {
@@ -390,13 +379,9 @@ it('renders a successful no-rowset write-enabled statement without an empty-tabl
         'sql' => 'DELETE FROM users',
         '--write' => true,
     ]);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
     expect($exit)->toBe(0);
-    expect($flat)->toContain('Write permission yes');
-    expect($flat)->toContain('Reported row count 0');
-    expect($output)->toContain('Statement completed.');
+    expect($output)->toContain('Database statement succeeded.');
     expect($output)->not->toContain('No matching records found.');
-    expect($output)->not->toContain('Wrote');
     expect($output)->not->toContain('Rows affected');
 });
 
@@ -416,17 +401,13 @@ it('does not treat a sqlite write-enabled row_count of zero as a failed mutation
         'sql' => 'INSERT INTO items (name) VALUES (\'ok\')',
         '--write' => true,
     ]);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
     expect($exit)->toBe(0);
-    expect($flat)->toContain('Write permission yes');
-    expect($flat)->toContain('Reported row count 0');
-    expect($output)->toContain('Statement completed.');
+    expect($output)->toContain('Database statement succeeded.');
     expect($output)->not->toContain('No matching records found.');
-    expect($output)->not->toContain('Wrote 0');
     expect($output)->not->toContain('Rows affected');
 });
 
-it('keeps a SELECT rowset when write permission is admitted', function (): void {
+it('keeps SELECT writes on the bounded database.write result without returning rowsets', function (): void {
     database_cli_mock(QueryDatabaseConnectionRequest::class, [
         'slug' => 'app',
         'driver' => 'mysql',
@@ -442,11 +423,9 @@ it('keeps a SELECT rowset when write permission is admitted', function (): void 
         'sql' => 'SELECT email FROM users',
         '--write' => true,
     ]);
-    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
     expect($exit)->toBe(0);
-    expect($flat)->toContain('Write permission yes');
-    expect($output)->toContain('owner@example.test');
-    expect($output)->not->toContain('Statement completed.');
+    expect($output)->toContain('Database statement succeeded.');
+    expect($output)->not->toContain('owner@example.test');
 });
 
 it('warns when a read is truncated without inventing omitted totals', function (): void {
@@ -469,7 +448,7 @@ it('warns when a read is truncated without inventing omitted totals', function (
     expect($flat)->toContain('Write permission no');
     expect($flat)->toContain('Truncated yes');
     expect($output)->toContain('owner@example.test');
-    expect($output)->toContain('Result truncated at the Gateway row limit.');
+    expect($output)->toContain('Result truncated at the native read limit.');
     expect($output)->toContain('The omitted total is not known.');
 });
 
@@ -513,51 +492,17 @@ it('renders query null boolean float and formatter-tag cells literally', functio
     expect($flat)->toContain('Write permission no');
 });
 
-it('lists tables and describes schema through typed inspection requests', function (): void {
-    $columns = [
-        ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
-    ];
-    $client = MockClient::global([
-        ListDatabaseTablesRequest::class => MockResponse::make([
-            'data' => ['slug' => 'app', 'driver' => 'mysql', 'tables' => ['users']],
-            'meta' => ['request_id' => database_cli_request_id()],
-        ]),
-        ShowDatabaseSchemaRequest::class => MockResponse::make([
-            'data' => [
-                'slug' => 'app',
-                'driver' => 'mysql',
-                'tables' => [['name' => 'users', 'columns' => $columns]],
-            ],
-            'meta' => ['request_id' => database_cli_request_id()],
-        ]),
-        DescribeDatabaseTableRequest::class => MockResponse::make([
-            'data' => ['slug' => 'app', 'driver' => 'mysql', 'table' => 'users', 'columns' => $columns],
-            'meta' => ['request_id' => database_cli_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('database:tables', ['slug' => 'app', '--json' => true])
-        ->assertExitCode(0);
-
-    expect($client->getLastRequest())
-        ->toBeInstanceOf(ListDatabaseTablesRequest::class)
-        ->and($client->getLastRequest()?->resolveEndpoint())
-        ->toBe('/api/v1/database-connections/app/tables');
-
-    $this
-        ->artisan('database:schema', ['slug' => 'app', '--json' => true])
-        ->assertExitCode(0);
-
-    $this
-        ->artisan('database:describe', ['slug' => 'app', 'table' => 'users', '--json' => true])
-        ->assertExitCode(0);
-
-    expect($client->getLastRequest())
-        ->toBeInstanceOf(DescribeDatabaseTableRequest::class)
-        ->and($client->getLastRequest()?->resolveEndpoint())
-        ->toBe('/api/v1/database-connections/app/describe/users');
-});
+it('renders native table and schema results through typed inspection requests', function (string $name, array $arguments, string $requestClass, array $result, string $expected): void {
+    $client = database_cli_mock($requestClass, ['slug' => 'app', 'driver' => 'mysql', ...$result]);
+    [$exit, $output] = database_cli_display($name, $arguments);
+    expect($exit)->toBe(0);
+    expect($output)->toContain($expected);
+    $client->assertSent(static fn ($request): bool => $request instanceof $requestClass);
+})->with([
+    ['database:tables', ['slug' => 'app'], ListDatabaseTablesRequest::class, ['tables' => ['users']], 'users'],
+    ['database:schema', ['slug' => 'app'], ShowDatabaseSchemaRequest::class, ['tables' => [['name' => 'users', 'columns' => [['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true]]]]], 'users'],
+    ['database:describe', ['slug' => 'app', 'table' => 'users'], DescribeDatabaseTableRequest::class, ['table' => 'users', 'columns' => [['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true]]], 'int'],
+]);
 
 it('refuses an invalid describe table before it contacts the Gateway', function (): void {
     $mock = MockClient::global();
@@ -602,6 +547,18 @@ function database_cli_display(string $command, array $arguments = []): array
 
 function database_cli_mock(string $request, array $data, int $status = 200): MockClient
 {
+    if (in_array($request, [QueryDatabaseConnectionRequest::class, ListDatabaseTablesRequest::class, ShowDatabaseSchemaRequest::class, DescribeDatabaseTableRequest::class], true)) {
+        $write = ($data['write'] ?? false) === true;
+        unset($data['slug'], $data['driver'], $data['write']);
+        if ($write) {
+            $data = ['backend' => 'active', 'row_count' => $data['row_count'], 'truncated' => $data['truncated']];
+        }
+        $operation = ['id' => 7, 'kind' => $write ? 'database.write' : 'database.read', 'target_type' => 'database_connection', 'target_id' => 4, 'status' => 'succeeded', 'sequence' => 3, 'input' => ['driver' => 'mysql'], 'result' => $data];
+        $envelope = ['data' => $operation, 'meta' => ['request_id' => database_cli_request_id()]];
+
+        return MockClient::global([$request => MockResponse::make($envelope, 202), ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)]);
+    }
+
     return MockClient::global([
         $request => MockResponse::make([
             'data' => $data,
