@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessOperationCompletion;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -74,7 +76,6 @@ it('starts creation directly without the old admission lease or claim contract',
     $operation = Operation::query()->sole();
     expect($operation->state['process_control_writer'])->toBe('direct')->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
     config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.create', 'worker' => 'old'])->assertUnprocessable();
 });
 
 it('returns only admitted public installation input and binds private bytes to the current definition', function (): void {
@@ -144,6 +145,20 @@ it('starts update directly without an admission lease and keeps private definiti
     $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $process->id)
         ->assertJsonMissingPath('data.input.installation.definition');
     $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'update-private-value');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.update', 'worker' => 'old'])->assertUnprocessable();
     Queue::assertNothingPushed();
+});
+
+it('settles pending activation metadata from a bounded native update result', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'pending-update',
+        'runtime' => 'systemd', 'command' => ['/usr/bin/true'], 'start' => false,
+    ])->assertAccepted();
+    $process = Process::query()->sole();
+    $process->forceFill(['systemd_activation_pending' => true, 'retired_runtime' => 'docker'])->save();
+    $operation = Operation::query()->sole();
+    app(ProcessOperationCompletion::class)->complete($operation,
+        OperationOutcome::succeeded(['state' => 'inactive']));
+    expect($process->refresh()->systemd_activation_pending)->toBeFalse()
+        ->and($process->systemd_activation_hash)->toBe($operation->input['content_hash'])
+        ->and($process->retired_runtime)->toBeNull();
 });

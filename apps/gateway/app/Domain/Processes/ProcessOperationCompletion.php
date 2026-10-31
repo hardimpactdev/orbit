@@ -42,8 +42,8 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
             'process.stop' => DesiredProcessState::Stopped,
             default => $process->desired_state,
         };
-        $process->update(['status' => LifecycleStatus::Active, 'desired_state' => $desired, 'failed_step' => null, 'error_code' => null,
-            'retired_runtime' => null, ...isset($operation->input['content_hash']) ? ['systemd_activation_hash' => $operation->input['content_hash'], 'systemd_activation_pending' => false] : []]);
+        $process->forceFill(['status' => LifecycleStatus::Active, 'desired_state' => $desired, 'failed_step' => null, 'error_code' => null,
+            'retired_runtime' => null, ...isset($operation->input['content_hash']) ? ['systemd_activation_hash' => $operation->input['content_hash'], 'systemd_activation_pending' => false] : []])->save();
         $this->statuses->remember($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'));
         $this->broadcaster->broadcast(($operation->input['created'] ?? false) ? RecordEventType::ProcessCreated : RecordEventType::ProcessStatus,
             $process->id, ProcessData::fromModel($process, ValidatedData::string($outcome->result['state'] ?? 'unknown'))->toArray());
