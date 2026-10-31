@@ -6,7 +6,6 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -22,7 +21,7 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
 
     public const array LocalKinds = ['route.lan_remove'];
 
-    public function __construct(private DirectOperation $direct, private OperationExecutionContract $contract) {}
+    public function __construct(private DirectOperation $direct) {}
 
     public function input(Operation $operation): array
     {
@@ -82,7 +81,7 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
         }
         $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
         $raw = ValidatedData::object($data['result'] ?? []);
-        $result = $this->contract->result($operation, $publication ? $raw : Arr::only($raw, ['ready', 'error_code']));
+        $result = Arr::only($raw, ['version', 'result', 'ready', 'stage', 'error_code', 'outcome', 'data']);
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
         if (($status === OperationStatus::Succeeded && (($result['ready'] ?? false) !== true || (! $publication && $result !== ['ready' => true])))
             || ($status === OperationStatus::Failed && ($code === null || ($result['error_code'] ?? null) !== $code || (! $publication && ($result !== ['error_code' => $code] || preg_match('/\A[a-z0-9_.-]{1,100}\z/D', $code) !== 1))))
@@ -92,9 +91,6 @@ final readonly class RouteOperationProjection implements DirectOperationProjecti
             throw new ResourceOperationException('operation.result_invalid', 'The Route operation needs its bounded result or refusal.', 422);
         }
 
-        return $this->direct->project($operation, $data, $result, match ($operation->kind) {
-            'route.caddy_converge' => 'caddy-publish', 'route.private_dns_publish' => 'private-dns-publish',
-            'route.lan_remove' => 'route-lan-removed', 'route.target_unset' => 'route-targets-unset', default => 'route-verified',
-        });
+        return $this->direct->project($operation, $data, $result);
     }
 }

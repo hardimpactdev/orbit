@@ -6,7 +6,6 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ReservesRolePackages;
@@ -19,7 +18,6 @@ use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
@@ -82,11 +80,8 @@ final readonly class StartToolOperationAction
                 $intentOnly = $roleOwned || ($verb === 'remove' && $tool?->status === ToolStatus::Failed
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
 
-                OperationFamilySpec::assertAvailable('tool.'.$verb);
-
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                    'agent_sha256' => app(AgentDelivery::class)->pin($node),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
@@ -95,7 +90,7 @@ final readonly class StartToolOperationAction
                     'intent_only' => $intentOnly,
                     'protected_packages' => $protected,
                     ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
-                ], 'operator', request()->attributes->getString('orbit.request_id'), expectedWriter: 'direct');
+                ], 'operator', request()->attributes->getString('orbit.request_id'));
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {

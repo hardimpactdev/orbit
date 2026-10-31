@@ -40,7 +40,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 | [`instance:teardown-step:destroy`](#orbit-instanceteardown-stepdestroy) | Remove one named teardown step. |
 | [`instance:list`](#orbit-instancelist) | List Instances. |
 | [`instance:show`](#orbit-instanceshow) | Show one Instance with its Route, source, and deploy steps. |
-| [`instance:rename`](#orbit-instancerename) | Record an already checked-out branch and change a development checkout's Route domain. |
+| [`instance:rename`](#orbit-instancerename) | Record an already checked-out development branch. |
 | [`instance:transfer`](#orbit-instancetransfer) | Move a development Instance to another Node. |
 | [`instance:destroy`](#orbit-instancedestroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
 | [`instance:logs`](#orbit-instancelogs) | Return the application log tail, or follow new lines. |
@@ -128,10 +128,10 @@ A failed setup step removes the new Instance after the teardown steps run. A mis
 
 ## orbit instance:rename
 
-Record a Git branch that is already checked out, change the Instance's Route domain, or do both. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or run Git commands that alter the checkout.
+Record a Git branch that is already checked out. Swamp reads the checkout on its Node and the Gateway records the branch after success. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or change Git HEAD.
 
 ```bash
-orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
+orbit instance:rename <instance> --branch=BRANCH [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -141,56 +141,46 @@ orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--branch=BRANCH` | unchanged | Record this local branch. Symbolic `HEAD` must already name it. |
-| `--domain=HOST` | unchanged | Replace the domain of the Instance's own single-target Project Route, including a generated Route. |
+| `--domain=HOST` | unchanged | Currently returns `operation.kind_unavailable`; native Route replacement is not available through rename. |
 | `--json` | off | Return the final Operation JSON, or an admission error, without prompts or progress. |
 
-Supply at least one of `--branch` and `--domain`. Supplied values must be nonempty strings. The command needs no `--yes` or `--force`: it records intent and converges the Route without discarding source. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`. There is no implicit branch or domain selection.
+Supply a nonempty branch. The command needs no `--yes` or `--force`. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`.
 
-Rename the branch locally before recording it. Orbit checks the managed checkout's identity and the supplied branch locally on the Node, with no origin access. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
+Rename the branch locally before recording it. Swamp checks the managed checkout's identity and the supplied branch locally, with no origin access. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
 
 ```bash
 # In the Instance checkout:
 git branch -m t3code/login-redirect
 orbit instance:rename 1 --branch=t3code/login-redirect
-orbit instance:rename 1 --domain=login-redirect.acme.test
-orbit instance:rename 1 --branch=t3code/login-redirect --domain=login-redirect.acme.test --json
 ```
 
-A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch is a no-op that preserves its existing override. A domain-only request does not change either branch field. The domain follows [Route replacement](/reference/routes#change-an-instance-route-domain); Laravel's stored `APP_URL`, `.env`, and cached configuration follow it. Generated provenance stays generated, so a later Project slug or effective-TLD change can recompute the domain.
-
-All supplied fields, checkout identity, the supplied branch, and domain availability are checked before mutation. A combined request with a branch mismatch or domain conflict changes nothing. A changed branch is recorded only after any requested domain convergence succeeds. A retry with the same idempotency key returns the same Operation without creating an additional Route, including when the caller lost the success response. An incomplete Route replacement follows the existing recovery rules. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds. A different domain while replacement recovery is incomplete is refused. See [recorded branch behavior](/domains/applications#record-a-renamed-branch) and [Route recovery](/reference/routes#resume-or-refuse-a-change).
+A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch preserves its existing override. A retry with the same idempotency key returns the same Operation, including when the caller lost the response. See [recorded branch behavior](/domains/applications#record-a-renamed-branch).
 
 ### Human output
 
-The command follows the Operation and shows its recorded steps. `instance:show` reads the resulting Instance. Success exits with status `0`; a refusal or failed convergence exits with status `1`.
+The command follows the parent Operation and shows its final native result. `instance:show` reads the resulting Instance. Success exits with status `0`; a refusal or failure exits with status `1`.
 
 ### JSON and API output
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain`, for example `{"branch":"t3code/login-redirect","domain":"login-redirect.acme.test"}`. At least one field is required; null, empty, and wrong-type values are invalid. The MCP tool is `instance-rename`, with `instance_id` and the same optional fields.
+The API is `POST /api/v1/instances/{instance}/rename` with `{"branch":"t3code/login-redirect"}`. The MCP tool is `instance-rename`, with `instance_id` and `branch`.
 
-Admission returns HTTP 202 with an `instance.rename` Operation. The CLI follows it and prints the final Operation in JSON mode. The final result includes the Instance ID and recorded branch. Read `instance:show` for its full Route and placement state. Admission failures use the shared API error shape; execution failures appear on the Operation with their stable error code. JSON output contains no human tree, prompt, or animation.
+Admission returns HTTP 202 with an `instance.rename` Operation. The CLI follows it and prints the final Operation in JSON mode. The final result includes the recorded branch. Admission failures use the shared API error shape; execution failures appear on the Operation with their stable error code.
 
 ### Refusal codes
 
 | Code | Meaning |
 | --- | --- |
 | `validation.failed` | Neither field was supplied, or a supplied value is null, empty, wrong-type, or an invalid Git branch name. |
+| `operation.kind_unavailable` | A domain was supplied; native Route replacement is unavailable through rename. |
 | `instance.id_invalid` | The CLI Instance selector is missing in noninteractive mode or is not a positive numeric ID. |
 | `instance.rename_unsupported` | The Instance is production or is not a development checkout, including linked worktrees. |
-| `instance.rename_inactive` | The development checkout is not active and is not being removed. |
-| `instance.lifecycle_busy` | Another lifecycle or environment operation owns the Instance, including removal, an incomplete transfer, or clone. |
-| `instance.source_identity_invalid` | Local inspection cannot establish the managed checkout's path, ownership, layout, or Project origin identity. |
+| `instance.rename_inactive` | The development checkout is not active. |
+| `instance.lifecycle_busy` | Another lifecycle operation owns the Instance. |
+| `instance.source_identity_invalid` | Local inspection cannot establish the Project origin identity. |
+| `instance.source_invalid` | The checkout path, ownership, or layout does not match the admitted boundary. |
 | `instance.branch_not_checked_out` | The supplied branch is not the current symbolic `HEAD`, including detached `HEAD`. |
-| `instance.route_required` | A domain was supplied, but there is no own single-target Project Route. |
-| `route.domain_invalid` | The requested domain is invalid. |
-| `route.domain_conflict` | Another Route owns the normalized domain, or it is a reserved domain. |
-| `route.domain_change_conflict` | A different domain replacement is already in progress. |
-| `instance.source_profile_missing` | Domain convergence lacks the recorded source profile needed for URL synchronization. |
-| `env.owner_changed` | Route targets or environment ownership changed while acquiring the operation owner. |
-| `route.reconciliation_required` | An incompatible Route or placement reconciliation is in progress. |
-| `route.domain_change_failed` | Route projection or URL synchronization failed; inspect Route failure details and retry the same request. |
 
-Authentication, access and missing-record errors, and more specific Route projection errors retain the shared API error contract. A preflight refusal changes nothing. Infrastructure failure during convergence follows Route rollback before cutover and forward recovery after cutover; it is not a promise of atomic rollback across the Node and Gateway.
+Authentication, access and missing-record errors retain the shared API error contract.
 
 ## orbit instance:register
 

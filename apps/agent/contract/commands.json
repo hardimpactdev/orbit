@@ -1157,22 +1157,6 @@
       ]
     },
     {
-      "name": "tool.materialize-vp",
-      "summary": "Prepare the Linux Vite+ scope and verify its managed launchers.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "tool.vp_materialize_invalid",
-        "tool.vp_materialize_conflict",
-        "tool.vp_materialize_failed",
-        "tool.vp_materialize_restore_failed"
-      ]
-    },
-    {
       "name": "tool.composer-version",
       "summary": "Read the Composer manager version.",
       "mutates": false,
@@ -1233,51 +1217,6 @@
       ]
     },
     {
-      "name": "tool.composer-install",
-      "summary": "Add one Composer global root requirement.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "tool.composer_input_invalid",
-        "tool.composer_operation_failed",
-        "tool.composer_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.composer-update",
-      "summary": "Update one Composer global root and its dependencies.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "tool.composer_input_invalid",
-        "tool.composer_operation_failed",
-        "tool.composer_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.composer-remove",
-      "summary": "Remove one Composer global root requirement.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "tool.composer_input_invalid",
-        "tool.composer_operation_failed",
-        "tool.composer_output_invalid"
-      ]
-    },
-    {
       "name": "tool.inspect-homebrew-scope",
       "summary": "Inspect the enrolled account's Homebrew prefix without changing it.",
       "mutates": false,
@@ -1285,23 +1224,6 @@
       "privilege": {
         "linux": "account",
         "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_account_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_materialize_failed"
-      ]
-    },
-    {
-      "name": "tool.materialize-homebrew",
-      "summary": "Prepare the owned Linux Homebrew prefix and verify its pinned release.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
       },
       "errors": [
         "tool.homebrew_account_invalid",
@@ -1420,87 +1342,6 @@
       ]
     },
     {
-      "name": "tool.homebrew-formula-install",
-      "summary": "Install one verified Core bottle.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
-      "name": "tool.homebrew-formula-update",
-      "summary": "Upgrade one verified Core bottle without unpinning it.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
-      "name": "tool.homebrew-formula-remove",
-      "summary": "Remove exactly one unprotected Core formula.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
       "name": "tool.homebrew-cask-inventory",
       "summary": "Read installed official cask versions.",
       "mutates": false,
@@ -1582,87 +1423,6 @@
       ]
     },
     {
-      "name": "tool.homebrew-cask-install",
-      "summary": "Install one safe official cask.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": null,
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
-      "name": "tool.homebrew-cask-update",
-      "summary": "Upgrade one safe official cask.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": null,
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
-      "name": "tool.homebrew-cask-remove",
-      "summary": "Remove one cask after checking uninstall safety.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": null,
-        "macos": "account"
-      },
-      "errors": [
-        "tool.homebrew_input_invalid",
-        "tool.homebrew_scope_absent",
-        "tool.homebrew_scope_conflict",
-        "tool.homebrew_scope_unreadable",
-        "tool.homebrew_operation_failed",
-        "tool.homebrew_output_invalid",
-        "tool.homebrew_version_unsupported",
-        "tool.homebrew_bottle_unavailable",
-        "tool.homebrew_package_protected",
-        "tool.homebrew_candidate_invalid",
-        "tool.homebrew_cask_source",
-        "tool.homebrew_cask_artifact",
-        "tool.homebrew_cask_authorization",
-        "tool.homebrew_cask_checksum",
-        "tool.homebrew_cask_version"
-      ]
-    },
-    {
       "name": "tool.homebrew-scan",
       "summary": "Read formula and cask inventories independently without changing Tool intent.",
       "mutates": false,
@@ -1696,23 +1456,6 @@
       "timeout_seconds": 30,
       "privilege": {
         "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "tool.composer_account_invalid",
-        "tool.composer_scope_absent",
-        "tool.composer_scope_conflict",
-        "tool.composer_scope_unreadable",
-        "tool.composer_materialize_failed"
-      ]
-    },
-    {
-      "name": "tool.materialize-composer",
-      "summary": "Install Composer prerequisites and prepare the account-owned shared scope.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
         "macos": null
       },
       "errors": [
@@ -1784,51 +1527,6 @@
       ]
     },
     {
-      "name": "tool.apt-install",
-      "summary": "Install exactly the requested APT package with no recommendations.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "tool.apt_input_invalid",
-        "tool.apt_operation_failed",
-        "tool.apt_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.apt-update",
-      "summary": "Update exactly the requested APT package to its normal candidate.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "tool.apt_input_invalid",
-        "tool.apt_operation_failed",
-        "tool.apt_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.apt-remove",
-      "summary": "Remove the requested APT package without purging or autoremoving.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "tool.apt_input_invalid",
-        "tool.apt_operation_failed",
-        "tool.apt_output_invalid"
-      ]
-    },
-    {
       "name": "tool.vp-version",
       "summary": "Read the account's Vite+ manager version.",
       "mutates": false,
@@ -1889,63 +1587,6 @@
       "name": "tool.vp-removal-plan",
       "summary": "Check removal of exactly one Vite+ global package.",
       "mutates": false,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.vp_input_invalid",
-        "tool.vp_package_protected",
-        "tool.vp_scope_absent",
-        "tool.vp_scope_conflict",
-        "tool.vp_scope_unreadable",
-        "tool.vp_operation_failed",
-        "tool.vp_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.vp-install",
-      "summary": "Install one Vite+ global package with its normal Node selection.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.vp_input_invalid",
-        "tool.vp_package_protected",
-        "tool.vp_scope_absent",
-        "tool.vp_scope_conflict",
-        "tool.vp_scope_unreadable",
-        "tool.vp_operation_failed",
-        "tool.vp_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.vp-update",
-      "summary": "Update one Vite+ global package and reconcile its Node runtime.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": "account"
-      },
-      "errors": [
-        "tool.vp_input_invalid",
-        "tool.vp_package_protected",
-        "tool.vp_scope_absent",
-        "tool.vp_scope_conflict",
-        "tool.vp_scope_unreadable",
-        "tool.vp_operation_failed",
-        "tool.vp_output_invalid"
-      ]
-    },
-    {
-      "name": "tool.vp-remove",
-      "summary": "Remove exactly one Vite+ global package.",
-      "mutates": true,
       "timeout_seconds": 900,
       "privilege": {
         "linux": "account",

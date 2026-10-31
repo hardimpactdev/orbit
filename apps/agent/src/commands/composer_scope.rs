@@ -1,13 +1,13 @@
 //! Native Composer scope ownership, manifest discovery, and Linux first-use setup.
-use super::recipe::{self, store::Account, Files, Host, Invocation, WorkDir};
+use super::recipe::{self, store::Account, Files};
 use crate::command::{identity, Command, Context, Platform, Privilege};
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use std::{
     collections::BTreeMap,
     fs,
-    io::{self, Read},
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    io::Read,
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::Path,
     time::Duration,
 };
@@ -26,17 +26,10 @@ const MAX_MANIFEST: u64 = 1_048_576;
 #[derive(schemars::JsonSchema, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empty {}
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Input {
-    user: String,
-}
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Output {
     roots: Vec<String>,
 }
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Done {}
 fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
     recipe::metadata(path).map_err(|_| Error::Unreadable {})
 }
@@ -126,100 +119,6 @@ fn inspect(files: &Files, account: &Account) -> Result<Output> {
         roots: roots(&files.path(SCOPE).join("composer.json"), account)?,
     })
 }
-fn directory(files: &Files, path: &Path, uid: u32, gid: u32) -> Result<()> {
-    files
-        .directory(path, uid, gid)
-        .map_err(|_| Error::Failed {})?;
-    if fs::metadata(path).map_err(|_| Error::Failed {})?.mode() & 0o7777 != 0o755 {
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
-            .map_err(|_| Error::Failed {})?;
-    }
-    Ok(())
-}
-fn materialize(host: &mut impl Host, files: &Files, account: &Account) -> Result<Done> {
-    let parent = files.path("/opt/orbit");
-    let scope = files.path(SCOPE);
-    let manifest = scope.join("composer.json");
-    let dirs = [
-        (parent.clone(), files.uid, files.gid),
-        (scope.clone(), account.uid, account.gid),
-        (scope.join("vendor"), account.uid, account.gid),
-        (scope.join("vendor/bin"), account.uid, account.gid),
-    ];
-    for (path, uid, gid) in &dirs {
-        check(path, *uid, *gid, true)?;
-    }
-    check(&manifest, account.uid, account.gid, false)?;
-    for args in [
-        vec![
-            "/usr/bin/apt-get",
-            "-o",
-            "DPkg::Lock::Timeout=300",
-            "update",
-        ],
-        vec![
-            "/usr/bin/apt-get",
-            "-o",
-            "DPkg::Lock::Timeout=300",
-            "install",
-            "--yes",
-            "--no-install-recommends",
-            "--no-remove",
-            "--",
-            "composer",
-            "git",
-            "unzip",
-        ],
-    ] {
-        let mut invocation = Invocation::new(&args)
-            .env("DEBIAN_FRONTEND", "noninteractive")
-            .env("LC_ALL", "C");
-        invocation.timeout = Duration::from_secs(900);
-        recipe::run(host, &invocation, true).map_err(|_| Error::Failed {})?;
-    }
-    for (path, uid, gid) in &dirs {
-        directory(files, path, *uid, *gid)?;
-    }
-    if !check(&manifest, account.uid, account.gid, false)? {
-        let work = WorkDir::within(&parent).map_err(|_| Error::Failed {})?;
-        let temporary = work.0.join("composer.json");
-        files
-            .publish(
-                &temporary,
-                b"{\"require\":{}}\n",
-                0o644,
-                account.uid,
-                account.gid,
-                false,
-            )
-            .map_err(|_| Error::Failed {})?;
-        match fs::hard_link(&temporary, &manifest) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                check(&manifest, account.uid, account.gid, false)?;
-            }
-            Err(_) => return Err(Error::Failed {}),
-        }
-    }
-    let scope_env = format!("COMPOSER_HOME={}", scope.display());
-    let home_env = format!("HOME={}", account.home.display());
-    let mut args = vec![];
-    if identity::effective_uid() != account.uid {
-        args.extend(["/usr/sbin/runuser", "-u", &account.name, "--"]);
-    }
-    args.extend([
-        "/usr/bin/env",
-        "-C",
-        account.home.to_str().ok_or(Error::Invalid {})?,
-        &home_env,
-        &scope_env,
-        "/usr/bin/composer",
-        "--version",
-        "--no-ansi",
-    ]);
-    recipe::run(host, &Invocation::new(&args), true).map_err(|_| Error::Failed {})?;
-    Ok(Done {})
-}
 pub struct Inspect;
 impl Command for Inspect {
     const NAME: &'static str = "tool.inspect-composer-scope";
@@ -236,28 +135,6 @@ impl Command for Inspect {
         let name = identity::user_name(identity::effective_uid()).ok_or(Error::Invalid {})?;
         let account = Account::named(&name).map_err(|_| Error::Invalid {})?;
         inspect(&Files::system(), &account)
-    }
-}
-pub struct Materialize;
-impl Command for Materialize {
-    const NAME: &'static str = "tool.materialize-composer";
-    const SUMMARY: &'static str =
-        "Install Composer prerequisites and prepare the account-owned shared scope.";
-    const MUTATES: bool = true;
-    const RESOURCES: &'static [&'static str] = &["packages"];
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = Input;
-    type Output = Done;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(_: &Input) -> Option<String> {
-        Some("tools:composer".into())
-    }
-    fn run(input: Input, context: &Context) -> Result<Done> {
-        let account = Account::named(&input.user).map_err(|_| Error::Invalid {})?;
-        materialize(&mut recipe::Native(context), &Files::system(), &account)
     }
 }
 #[cfg(test)]
