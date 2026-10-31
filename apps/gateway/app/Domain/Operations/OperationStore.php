@@ -32,16 +32,23 @@ final readonly class OperationStore
         if ($nodeId === null) {
             throw new ResourceOperationException('operation.node_required', 'A direct Operation requires its admitted root Node.', 422);
         }
-        $definition = $direct->definition($kind);
+        $definition = $direct->definition($kind) ?? throw new LogicException('The admitted direct Operation declaration is unavailable.');
         $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
-            $operation = Operation::query()->create([
-                'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
-                'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
-                'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
-                'triggered_by' => $triggeredBy, 'request_id' => $requestId,
-            ]);
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition): Operation {
+                $operation = Operation::query()->create([
+                    'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
+                    'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
+                    'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+                    'triggered_by' => $triggeredBy, 'request_id' => $requestId,
+                ]);
+                $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
+                    'key' => 'operation:'.$operation->id, 'workflow' => $definition['workflow'],
+                ]]])->save();
+
+                return $operation;
+            });
         } catch (UniqueConstraintViolationException $exception) {
             return $this->idempotency->replay($kind) ?? throw $exception;
         }
