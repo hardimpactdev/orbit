@@ -28,7 +28,13 @@ The first-contact steps use official `@swamp/ssh` on the admitted Gateway worker
 
 On failure, the same native workflow restores the captured network configuration and publishes the prior Route and hub snapshots. It retains installed prerequisites and managed access. The terminal result states which restoration actions completed. The shared terminal projector records the resulting Node identity once. A missing restoration result cannot claim that the prior placement was restored. The complete enrollment parent and the canonical hub writer retirement ship at the same cut.
 
+The network snapshot remains available until the whole parent settles. A later role or runtime failure restores the peer and the prior hub publication even after network verification succeeded. Cleanup follows complete forward work or successful peer and hub restoration. Failed restoration retains the snapshot for native recovery. These steps reuse the canonical peer and hub action exports; enrollment adds no WireGuard implementation.
+
 Core workflow dependencies, failure conditions and history provide sequencing and recovery. Official SSH supplies the transport and vault-backed `identityContent`. Official `cfgmgmt` package, user, authorized-key, file and node models were checked at package `2026.10.27.1`: their SSH schemas accept identity-file paths, but not vault-backed identity content or the admitted full host-key list. Enrollment therefore uses official SSH methods for that connection contract. Each step performs one action from the repository.
+
+### Worker prerequisites
+
+Public worker prerequisites read `@nckrtl/node-worker-assets.read` with only the admitted Node ID and account. Official SSH runs its preflight, creates the checker directory and publishes the checker through `exec` stdin before any unit activation. The issuer-to-execution-copy route is still required to complete enrollment. Public asset delivery supplies neither token issuance nor credential delivery.
 
 ## Swamp execution copies
 
