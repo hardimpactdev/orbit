@@ -1,6 +1,7 @@
 """Actual same-root placed member DAGs, using the shared local native harness."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import sys
 import uuid
@@ -13,6 +14,21 @@ class InstanceRuntimeCase(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/processes-schedules', 'operations/routes')
+        # Keep the canonical Route publication import graph, including other
+        # families' lower components, without loading their behavior registries.
+        pending = [ROOT / 'extensions/behaviors/operations/routes/publication.ts']
+        visited = set()
+        while pending:
+            original = pending.pop().resolve()
+            if original in visited:
+                continue
+            visited.add(original)
+            destination = self.repo / original.relative_to(ROOT)
+            if not destination.exists():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(original.read_text())
+            for relative in re.findall(r'(?:from\s*|import\s*)[\"\'](\.[^\"\']+)[\"\']', original.read_text()):
+                pending.append(original.parent / relative)
         transport = self.repo/'extensions/behaviors/operations/node/system_command.ts'
         transport.parent.mkdir(parents=True, exist_ok=True)
         transport.write_text((ROOT/'extensions/behaviors/operations/node/system_command.ts').read_text())
@@ -47,5 +63,3 @@ class InstanceRuntimeCase(NativeTestCase):
         output = self.cli('workflow', 'run', name, '--input', 'operation_id=17', '--input', 'node_id=9', '--input', 'kind=' + self.state['operation']['kind'], success=success)
         self.run = json.JSONDecoder().raw_decode(output.stdout.lstrip())[0]
         return json.loads((self.repo / 'instance-native.json').read_text())
-
-
