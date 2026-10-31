@@ -19,7 +19,6 @@ class Fixture {
     input: {
       driver: "mysql",
       container: "orbit-process-42-proof",
-      agent_sha256: "a".repeat(64),
       username: "reader",
       replication: false,
       known_user: false,

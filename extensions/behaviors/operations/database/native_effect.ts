@@ -6,6 +6,7 @@ import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
 export type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
+  readResource?(name: string): Promise<Record<string, unknown> | null>;
   writeResource(
     spec: string,
     name: string,
@@ -56,6 +57,12 @@ export function nativeEffect(
     version: "2026.10.30.1",
     globalArguments: Globals,
     resources: {
+      invocation: {
+        description: "This native run may have invoked a non-replayable write",
+        schema: z.object({ run_id: z.string().uuid() }),
+        lifetime: "workflow",
+        garbageCollection: 1,
+      },
       outcome: {
         description: "Safe outcome passed to this workflow's projection step",
         schema: z.object({ outcome: Projection }),
@@ -79,11 +86,6 @@ export function nativeEffect(
             ) {
               throw new Error("Wrong admitted identity");
             }
-            if (current.status === "running" && !replayRunning) {
-              throw new Error(
-                "An uncertain write requires inspection before settlement",
-              );
-            }
             const started_at = new Date().toISOString();
             let status: z.infer<typeof Projection>["status"];
             let result: z.infer<typeof Result> = {};
@@ -97,6 +99,17 @@ export function nativeEffect(
               if (current.cancel_requested || ctx.signal?.aborted) {
                 status = "cancelled";
               } else {
+                if (!replayRunning) {
+                  const name = `invoked-${args.run_id}`;
+                  if (!ctx.readResource || await ctx.readResource(name)) {
+                    throw new Error(
+                      "An uncertain write requires inspection before settlement",
+                    );
+                  }
+                  await ctx.writeResource("invocation", name, {
+                    run_id: args.run_id,
+                  });
+                }
                 result = resultSchema.parse(
                   await action(current.input, gateway, ctx.signal),
                 );

@@ -13,15 +13,6 @@ for (const driver of ["mysql", "pgsql", "redis"] as const) {
       const container = `orbit-process-999998-server-create-${suffix}`;
       const volume = `orbit-server-create-${suffix}-data`;
       const password = crypto.randomUUID().replaceAll("-", "") + suffix;
-      const pin = Array.from(
-        new Uint8Array(
-          await crypto.subtle.digest(
-            "SHA-256",
-            await Deno.readFile("/usr/local/bin/orbit-agent"),
-          ),
-        ),
-        (b) => b.toString(16).padStart(2, "0"),
-      ).join("");
       const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
       const port = (listener.addr as Deno.NetAddr).port;
       listener.close();
@@ -68,7 +59,6 @@ for (const driver of ["mysql", "pgsql", "redis"] as const) {
         },
         spec: "b".repeat(64),
         scrub_spec: "c".repeat(64),
-        agent_sha256: pin,
         initialize: !redis,
         validate_existing: false,
         was_active: false,
@@ -96,8 +86,8 @@ for (const driver of ["mysql", "pgsql", "redis"] as const) {
             : {},
         });
       const docker = async (...args: string[]) => {
-        const r = await new Deno.Command("docker", {
-          args,
+        const r = await new Deno.Command("/usr/bin/sudo", {
+          args: ["-n", "--", "/usr/bin/docker", ...args],
           stdout: "piped",
           stderr: "null",
         }).output();
@@ -166,12 +156,12 @@ for (const driver of ["mysql", "pgsql", "redis"] as const) {
           const name of [
             container,
             `${container}-candidate`,
-            `${container}-rollback`,
+            `${container}-rollback-stopped`,
             `${container}-rollback-running`,
           ]
         ) {
-          await new Deno.Command("docker", {
-            args: ["rm", "--force", name],
+          await new Deno.Command("/usr/bin/sudo", {
+            args: ["-n", "--", "/usr/bin/docker", "rm", "--force", name],
             stdout: "null",
             stderr: "null",
           }).output();

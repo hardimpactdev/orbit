@@ -1,24 +1,30 @@
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { z } from "npm:zod@4.4.3";
+import { runLocalProgram } from "../routes/local-program.ts";
+import { FirewallProgram } from "../routes/firewall-program.ts";
 
-/** The Node user's existing passwordless sudo runs the frozen local primitive. */
-export function firewallAgent(invoke = runNodeAgent) {
-  return async (input: Record<string, unknown>) => {
-    const { agent_sha256, ...rule } = input;
-    if (
-      typeof agent_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(agent_sha256)
-    ) {
-      throw new Error("Firewall requires its admitted agent digest");
-    }
-    const call: NodeCall = {
-      name: "firewall.rule",
-      input: rule,
-      pin: agent_sha256,
-      sudo: true,
-      mutates: true,
-      deadlineMs: 120000,
-      maxOutputBytes: 16384,
-    };
-    return await invoke(call);
-  };
+export const Rule = z.object({
+  node_id: z.number().int().positive(),
+  name: z.string().regex(/^[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?$/),
+  action: z.enum(["allow", "deny"]),
+  source: z.string(),
+  protocol: z.enum(["tcp", "udp"]),
+  port: z.string(),
+});
+const Input = Rule.extend({ operation: z.enum(["converge", "remove"]) })
+  .strict();
+export async function applyNamedRule(
+  raw: unknown,
+  invoke = runLocalProgram,
+  signal?: AbortSignal,
+) {
+  return await invoke(
+    FirewallProgram,
+    { mode: "named", ...Input.parse(raw) },
+    signal,
+  );
 }
-export const localRule = firewallAgent();
+/** Run one fixed local UFW transaction under the same host lock as Route and role writers. */
+export const localRule = (
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+) => applyNamedRule(input, runLocalProgram, signal);

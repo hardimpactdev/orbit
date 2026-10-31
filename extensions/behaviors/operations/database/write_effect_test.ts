@@ -104,20 +104,13 @@ for (const driver of ["mysql", "pgsql"] as const) {
 }
 
 Deno.test({
-  name:
-    "SQLite writes use the installed pinned sudo agent on a disposable owner file",
+  name: "SQLite writes use the admitted account on a disposable owner file",
   ignore: Deno.env.get("DATABASE_WRITE_EFFECT_CANARY") !== "1",
   fn: async () => {
     const dir = await Deno.makeTempDir({ prefix: "database-write-sqlite-" });
     try {
       const path = `${dir}/proof.sqlite`;
       await Deno.writeTextFile(path, "", { mode: 0o600 });
-      const binary = await Deno.readFile("/usr/local/bin/orbit-agent");
-      const digest = await crypto.subtle.digest("SHA-256", binary);
-      const pin = Array.from(
-        new Uint8Array(digest),
-        (byte) => byte.toString(16).padStart(2, "0"),
-      ).join("");
       const ownerReply = await new Deno.Command("id", {
         args: ["-un"],
         stdout: "piped",
@@ -125,7 +118,7 @@ Deno.test({
       if (!ownerReply.success) throw new Error("Fixture owner unavailable");
       const owner = new TextDecoder().decode(ownerReply.stdout).trim();
       const result = await writeDatabase(
-        { driver: "sqlite", agent_sha256: pin, owner, path },
+        { driver: "sqlite", owner, path },
         (use) =>
           use({
             password: "",

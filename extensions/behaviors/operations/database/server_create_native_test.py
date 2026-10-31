@@ -2,6 +2,7 @@
 import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import yaml
 from pathlib import Path
 import secrets
 import subprocess
@@ -17,7 +18,10 @@ from native_harness import NativeTestCase
 class ServerCreateNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/database')
+        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
+        failure.parent.mkdir(parents=True, exist_ok=True)
+        failure.write_text((ROOT / 'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => gatewayHttp(Deno.env.get("SERVER_CREATE_FIXTURE_URL")!, Deno.env.get("SERVER_CREATE_FIXTURE_CA")!));'))
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database', 'operations/processes-schedules', 'operations/node')
         self.password = 'private-server-initializer-' + secrets.token_hex(16)
         self.secrets = (self.password, base64.b64encode(self.password.encode()).decode())
         self.operation = {'id': 17, 'kind': 'database_server.create', 'node_id': 209,
@@ -26,8 +30,7 @@ class ServerCreateNative(NativeTestCase):
                 'container_input': {'image': 'mysql:8.0', 'command': ['mysqld'], 'restart': 'unless-stopped',
                     'working_directory': None, 'ports': ['10.44.0.209:3306:3306'],
                     'mounts': [{'source': 'orbit-proof-data', 'target': '/var/lib/mysql', 'read_only': False}]},
-                'spec': 'b' * 64, 'scrub_spec': 'c' * 64, 'agent_sha256': 'a' * 64,
-                'initialize': True, 'validate_existing': False, 'was_active': False,
+                'spec': 'b' * 64, 'scrub_spec': 'c' * 64,                 'initialize': True, 'validate_existing': False, 'was_active': False,
                 'host': '10.44.0.209', 'port': 3306, 'default_open': False, 'volume': None}}
         self.lose_projection = False
         fixture = self
@@ -68,18 +71,28 @@ class ServerCreateNative(NativeTestCase):
         self.native_env.update(SERVER_CREATE_FIXTURE_URL=f'http://127.0.0.1:{server.server_port}', SERVER_CREATE_FIXTURE_CA=str(cert))
         module = self.repo / 'extensions/behaviors/operations/database/server_create.ts'
         module.write_text('import { gatewayHttp } from "../../automatic-deploy/gateway.ts";\n'
-            'import { fixtureInvoke } from "./server_create_native_fixture.ts";\n' + module.read_text().replace(
-            '...serverCreate()', '...serverCreate(() => gatewayHttp(Deno.env.get("SERVER_CREATE_FIXTURE_URL")!, Deno.env.get("SERVER_CREATE_FIXTURE_CA")!), fixtureInvoke)'))
-        (module.parent / 'server_create_native_fixture.ts').write_text('''import type { NodeCall } from "../_lib/node-agent.ts";
-export async function fixtureInvoke(call: NodeCall) {
+            'import { fixtureRuntime } from "./server_create_native_fixture.ts";\n' + module.read_text().replace(
+            '...serverCreate()', '...serverCreate(() => gatewayHttp(Deno.env.get("SERVER_CREATE_FIXTURE_URL")!, Deno.env.get("SERVER_CREATE_FIXTURE_CA")!), fixtureRuntime)'))
+        (module.parent / 'server_create_native_fixture.ts').write_text('''import type { ServerRuntime } from "./server_runtime.ts";
+async function fixtureInvoke(input: unknown) {
   await Deno.writeTextFile("effects", "effect\\n", { append: true });
-  if (Deno.env.get("SERVER_CREATE_THROW") === "1") throw new Error(JSON.stringify(call.input));
+  if (Deno.env.get("SERVER_CREATE_THROW") === "1") throw new Error(JSON.stringify(input));
   return {};
 }
+export const fixtureRuntime: ServerRuntime = { converge: fixtureInvoke, remove: fixtureInvoke,
+  restart: fixtureInvoke, writeAcl: fixtureInvoke, ready: fixtureInvoke };
 ''')
         workflow = ROOT / 'workflows/workflow-operation-database-server-create.yaml'
-        (self.repo / 'workflows' / workflow.name).write_text('\n'.join(line for line in workflow.read_text().splitlines()
-            if not line.startswith(('target:', 'labels:'))) + '\n')
+        fixture_workflow = yaml.safe_load(workflow.read_text())
+        fixture_workflow.pop('target', None)
+        fixture_workflow.pop('labels', None)
+        for job in fixture_workflow['jobs']:
+            job.pop('target', None)
+            job.pop('labels', None)
+            for step in job['steps']:
+                step.pop('target', None)
+                step.pop('labels', None)
+        (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
 
     def start(self, success=True):
         self.cli('workflow', 'validate', 'operation-database-server-create')

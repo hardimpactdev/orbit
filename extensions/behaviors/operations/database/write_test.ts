@@ -4,7 +4,6 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 
 const input = {
   driver: "sqlite",
-  agent_sha256: "a".repeat(64),
   owner: "orbit",
   path: "/tmp/proof.sqlite",
 };
@@ -16,11 +15,9 @@ const material = {
 };
 const use = (callback: (m: Record<string, unknown>) => Promise<void>) =>
   callback(material);
-Deno.test("SQLite write uses only fixed pinned owner input and discards returned rows", async () => {
+Deno.test("SQLite write uses only fixed native owner input and discards returned rows", async () => {
   const result = await writeDatabase(input, use, undefined, (call) => {
-    assertEquals(call.name, "database.write-sqlite");
-    assertEquals(call.sudo, true);
-    assertEquals(call.deadlineMs, 30000);
+    assertEquals(call.action, "write");
     assertEquals(call.input, {
       owner: "orbit",
       path: "/tmp/proof.sqlite",
@@ -169,7 +166,10 @@ Deno.test("native projection settles pre-effect refusal and retains post-invocat
       effects++;
       throw new Error("private-diagnostic");
     });
+    const resources = new Map<string, Record<string, unknown>>();
     const ctx = {
+      readResource: (name: string) =>
+        Promise.resolve(resources.get(name) ?? null),
       globalArgs: {
         gatewayUrl: "https://gateway.orbit",
         caFile: "/fixture/ca.pem",
@@ -179,7 +179,8 @@ Deno.test("native projection settles pre-effect refusal and retains post-invocat
         name: string,
         value: Record<string, unknown>,
       ) => {
-        output = value;
+        resources.set(name, value);
+        if (_spec === "outcome") output = value;
         return Promise.resolve({ name });
       },
     };

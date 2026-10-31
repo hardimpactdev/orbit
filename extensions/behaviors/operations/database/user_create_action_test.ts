@@ -1,11 +1,14 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { agentLaunch, type NodeCall } from "../_lib/node-agent.ts";
+import {
+  type DatabaseSqlCall as NodeCall,
+  SqlInput,
+  sqlProcess,
+} from "./local_sql.ts";
 import { createUser, type PrivateMaterialUse } from "./user_create_action.ts";
 
 const intent = {
   driver: "mysql",
   container: "orbit-process-42-database-proof",
-  agent_sha256: "a".repeat(64),
   username: "proof",
   replication: false,
   known_user: true,
@@ -32,7 +35,6 @@ Deno.test("SQL user action keeps private material in stdin and drops native SQL 
     const call = calls[0];
     assertEquals(call.name, "database.server-admin");
     assertEquals(call.sudo, true);
-    assertEquals(call.pin, intent.agent_sha256);
     assertEquals(call.deadlineMs, 900_000);
     assertEquals(call.input.password, password);
     assertEquals(call.input.sql, sql);
@@ -44,15 +46,9 @@ Deno.test("SQL user action keeps private material in stdin and drops native SQL 
       (call.input.client as string[])[0],
       driver === "pgsql" ? "psql" : "mysql",
     );
-    const launch = agentLaunch(call);
+    const launch = sqlProcess(SqlInput.parse(call.input), call.deadlineMs);
     assertEquals(launch.command, "/usr/bin/sudo");
-    assertEquals(launch.args, [
-      "-n",
-      "--",
-      "/usr/local/bin/orbit-agent",
-      "command",
-      "database.server-admin",
-    ]);
+    assertEquals(launch.args[2], "/usr/bin/docker");
     assertEquals(JSON.stringify(launch.args).includes(password), false);
     assertEquals(JSON.stringify(launch.args).includes(sql), false);
   }
@@ -128,10 +124,10 @@ Deno.test("SQL user action projects only closed refusals and rejects unexpected 
       intent,
       material,
       undefined,
-      () => Promise.resolve({ error_code: "agent.version_mismatch" }),
+      () => Promise.resolve({ error_code: "database.server_admin_failed" }),
     ),
     {
-      error_code: "agent.version_mismatch",
+      error_code: "database.server_admin_failed",
     },
   );
   for (

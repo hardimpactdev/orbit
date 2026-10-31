@@ -1,13 +1,9 @@
 # Database private material
 
-Database direct workflows use lane 23's shared direct-Operation private-material
-API. The SQL-user workflow uses the reviewed Orbit #1743 / Swamp #206 contract;
-those shared PRs require orchestrator credential approval before deployment.
-This family adds no endpoint, publisher or hydrator. Each kind PR includes its
-switch and replaced-path deletion after a safe canary.
+Database direct workflows use the shared direct-Operation private-material API. This family adds no endpoint, publisher or hydrator. The Gateway records intent and projects results; Swamp executes the system commands.
 
 Public intent contains only typed resource identity, admitted paths, driver,
-container identity and the admitted agent digest. Passwords, dynamic SQL,
+container identity. Passwords, dynamic SQL,
 environment, ACL text and Valkey payloads stay in the encrypted
 `DatabaseExecutionIntent`. References contain the existing `database.intent`
 source and the intent ID. The existing source checks the Operation's target and
@@ -76,18 +72,4 @@ including 209, and requires the admitted Node's string `labels.node`. A foreign
 Node never executes the local action.
 
 `user_create_native_test.py` uses the shared `tests/native_harness.py` and
-exercises privacy success and failures in the native DAG with fake HTTP and
-agent effects. The opt-in `user_create_effect_native_test.py` runs the actual
-Laravel Gateway, shared TLS native start, private read, sudo agent and encrypted
-user projection against an owned, network-isolated disposable PostgreSQL
-container on Beast Node 9. It checks unbound 409 before submission, binding
-before successful reads, terminal private-read refusal and every scratch file
-for the synthetic credential, then removes its container and services.
-
-The manual test uses local execution and an auth-none loopback scratch serve; it
-does not establish fleet worker placement, live credential grants or package
-isolation. The installed digest must match the recorded canary pin. Set
-`DATABASE_USER_EFFECT_CANARY=beast-9`, `DATABASE_USER_GATEWAY_ROOT` to the
-matching Orbit Gateway checkout, `DATABASE_USER_EXPECTED_AGENT_SHA256` to the
-independently matched Gateway/Node pin and `SWAMP_BIN` to the repository's
-pinned native binary before running that test.
+exercises privacy success and failures in the native DAG with fake HTTP and native effect injection. `local_sql_effect_test.ts` exercises the real native MySQL create, clone and destroy actions on an owned disposable container. `write_native_test.py`, `clone_native_test.py` and the server fixtures use the real `gatewayHttp` client and scan their scratch repositories for private sentinels. Opt-in effect tests prove system behavior on disposable resources; they do not prove live fleet placement or grants.

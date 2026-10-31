@@ -1,5 +1,6 @@
 """Real gatewayHttp privacy/recovery on native; only SQL is injected."""
 import json
+import yaml
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import ssl
@@ -18,13 +19,16 @@ from native_harness import NativeTestCase
 class WriteNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/database')
+        failure = self.repo / 'extensions/behaviors/operations/failure.ts'
+        failure.parent.mkdir(parents=True, exist_ok=True)
+        failure.write_text((ROOT / 'extensions/behaviors/operations/failure.ts').read_text())
+        self.copy_behaviors('automatic-deploy', 'operations/_lib', 'operations/database')
         marker = uuid.uuid4().hex
         self.material = {'password': 'password-' + marker, 'username': 'owner-' + marker,
                          'dsn': 'pgsql:host=127.0.0.1;dbname=' + marker,
                          'sql': 'UPDATE private_' + marker + ' SET value = 17'}
         self.secrets = tuple(self.material.values())
-        self.operation = {'id': 17, 'kind': 'database.write', 'node_id': 14, 'status': 'queued',
+        self.operation = {'id': 17, 'kind': 'database.write', 'node_id': 14, 'status': 'running',
                           'input': {'driver': 'pgsql'}, 'result': None, 'cancel_requested': False}
         self.effects = self.private_reads = 0
         self.run_id = None
@@ -58,6 +62,10 @@ class WriteNative(NativeTestCase):
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if self.path.endswith('/failure'):
+                    fixture.operation.update(status='failed', result=None, error_code='operation.native_failed')
+                    self.respond(200, {'data': fixture.operation})
+                    return
                 if self.path == '/fixture-effect':
                     fixture.assertEqual(body, fixture.material)
                     fixture.effects += 1
@@ -100,7 +108,7 @@ class WriteNative(NativeTestCase):
         self.addCleanup(server.shutdown)
         url = 'https://127.0.0.1:' + str(server.server_port)
         self.native_env.update(ORBIT_WRITE_FIXTURE_URL=url, ORBIT_WRITE_FIXTURE_CA=str(cert), HTTP_PROXY="", HTTPS_PROXY="", ALL_PROXY="", NO_PROXY="127.0.0.1,localhost")
-        globals_file = self.repo / 'extensions/behaviors/operation-runner/mod.ts'
+        globals_file = self.repo / 'extensions/behaviors/operations/_lib/direct.ts'
         globals_file.write_text(globals_file.read_text().replace('https://gateway.orbit', url)
                                 .replace('/usr/local/share/ca-certificates/orbit-root.crt', str(cert)))
         module = self.repo / 'extensions/behaviors/operations/database/write.ts'
@@ -112,8 +120,16 @@ class WriteNative(NativeTestCase):
         source = workflow.read_text()
         self.assertIn('"orbit-node-" + string(inputs.node_id)', source)
         self.assertNotIn('migration', source)
-        (self.repo / 'workflows' / workflow.name).write_text('\n'.join(
-            line for line in source.splitlines() if not line.startswith(('target:', 'labels:'))) + '\n')
+        fixture_workflow = yaml.safe_load(workflow.read_text())
+        fixture_workflow.pop('target', None)
+        fixture_workflow.pop('labels', None)
+        for job in fixture_workflow['jobs']:
+            job.pop('target', None)
+            job.pop('labels', None)
+            for step in job['steps']:
+                step.pop('target', None)
+                step.pop('labels', None)
+        (self.repo / 'workflows' / workflow.name).write_text(yaml.safe_dump(fixture_workflow, sort_keys=False))
 
     def run_write(self, success):
         self.cli('workflow', 'validate', 'operation-database-write')

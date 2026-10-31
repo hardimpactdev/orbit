@@ -19,7 +19,6 @@ class Fixture {
     input: {
       process_id: 42,
       container: "orbit-process-42-proof",
-      agent_sha256: "a".repeat(64),
     },
   };
   paths: string[] = [];
@@ -128,7 +127,7 @@ Deno.test("record-only removal makes no Node call and rejects foreign container 
   };
   assertEquals(
     await destroyServer(
-      { process_id: null, container: null, agent_sha256: "a".repeat(64) },
+      { process_id: null, container: null },
       undefined,
       invoke,
     ),
@@ -139,7 +138,6 @@ Deno.test("record-only removal makes no Node call and rejects foreign container 
       {
         process_id: 42,
         container: "orbit-process-43-foreign",
-        agent_sha256: "a".repeat(64),
       },
       undefined,
       invoke,
@@ -147,22 +145,17 @@ Deno.test("record-only removal makes no Node call and rejects foreign container 
   );
   assertEquals(calls, 0);
 });
-Deno.test("removal invokes only pinned sudo process.remove and discards refusal details", async () => {
+Deno.test("removal invokes only the local typed container action and discards refusal details", async () => {
   const result = await destroyServer(
     {
       process_id: 42,
       container: "orbit-process-42-proof",
-      agent_sha256: "a".repeat(64),
     },
     undefined,
     (call) => {
-      assertEquals(call.name, "process.remove");
-      assertEquals(call.sudo, true);
-      assertEquals(call.deadlineMs, 300000);
-      assertEquals(call.input, {
+      assertEquals(call, {
         process_id: 42,
-        runtime: "docker",
-        name: "orbit-process-42-proof",
+        container: "orbit-process-42-proof",
       });
       return Promise.resolve({ error_code: "process.remove_failed" });
     },

@@ -9,7 +9,7 @@ async function fixture(
   const directory = `/tmp/orbit-sqlite-clone-${
     crypto.randomUUID().replaceAll("-", "")
   }`;
-  const input = { variant: "clone", agent_sha256: "a".repeat(64), directory };
+  const input = { variant: "clone", directory };
   await Deno.mkdir(directory, { mode: 0o700 });
   try {
     await run(input, directory);
