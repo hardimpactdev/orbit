@@ -107,9 +107,9 @@ The service sends an authenticated Node request to the Gateway run endpoint. Its
 
 ## Install and recover
 
-Swamp checks the calendar with `systemd-analyze calendar`, validates accounts and directories, stages the public units, checks them with `systemd-analyze verify`, publishes them and reloads systemd. First installation applies desired timer state. Identical installation preserves actual enabled and active state separately. A changed installed specification refuses with `schedule.artifact_conflict`.
+Creation uses the official `@swamp/cfgmgmt/systemd` model to deploy the public service and timer units. Its `apply` method reloads systemd when unit content changes and converges the timer to its recorded enabled/running or disabled/stopped intent. Repeating create converges the same Schedule UUID. Obsolete script and completion files are removed through `@swamp/cfgmgmt/file`; they are not executed or copied into native history.
 
-Existing files must be regular, root-owned files with the exact expected modes and generated content. Wrong ownership, links, modified context or a mismatched command hash refuse before effects. Swamp recognizes an exact obsolete runner layout only to remove it during conversion. It verifies private command bytes and every remaining old artifact before removal, and preserves actual timer state. It executes no obsolete runner. A failure restores the earlier files and timer state; a failed restore returns `schedule.rollback_failed`.
+A failed create or destroy records `operation.native_failed` through the shared native terminal projection. Successful actions stay applied. Correct the cause and repeat the operation to converge; these workflows do not keep snapshots or roll back host state. Definition installation and enable retain their existing canonical installer and recovery behavior.
 
 ## Direct Swamp control
 
@@ -121,9 +121,9 @@ The shared [direct Operation boundary](/reference/operations#direct-swamp-starts
 
 `schedule.run` uses `operation-schedule-run`. Every step runs on a Node 209 worker. The Gateway supplies the complete public execution context, the canonical pinned SSH target and the existing command execution-copy vault descriptor. Official `@swamp/ssh` checks the recorded account and directory, verifies the command hash, then executes the command on the target through stdin. No target worker or forwarded environment is required. The command timeout remains 1 through 86,400 seconds; the SSH execution deadline includes the existing ten-second termination margin. Native dependencies control ordering and recovery. The shared terminal subscriber projects only the fixed public result. Timer intent stays unchanged.
 
-`schedule.create` and `schedule.destroy` also run on Node 209 workers through official SSH. They receive the complete public Schedule specification and pinned target. Creation stages and verifies public service and timer files, publishes them, reloads systemd, applies timer state, and verifies it as separate native steps. A failed publication restores the previous owned files and the separate enabled and active timer states through native failure dependencies. Destruction checks owned artifacts and active work before disabling the timer, removing each artifact, reloading systemd and verifying absence.
+`schedule.create` and `schedule.destroy` also run on Node 209 workers. They receive the complete public Schedule specification and canonical SSH target. Official cfgmgmt models use the approved identity file and runner SSH configuration. Stored host keys must be seeded in that runner's `known_hosts`, as the official models document; lifecycle workflows do not select or capture trust.
 
-These paths read no private command source and need no command execution copy. Existing obsolete artifacts are validated against the admitted digest and removed without executing them.
+Creation uses the systemd model's `unitFile` input so the model owns both the write and daemon reload. Destruction makes one official `@swamp/ssh` active-work check before effects, stops and disables the timer through the systemd model, removes the UUID-owned files through the file model, then reloads systemd through the official exec model. A cascade removal also stops the service. These paths read no private command source and need no command execution copy.
 
 Enable retains its current target-worker placement until converted. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
 
@@ -149,7 +149,7 @@ The native run result sets `last_run_at` and `last_run_status` through the share
 
 ## Remove
 
-Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the two public units and any exactly verified obsolete artifacts, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and fails the Operation with `schedule.run_active` and keeps the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
+Destroy marks the Schedule `removing`. If its service is active and cascade removal was not requested, the native active-work check fails before host mutation; the Schedule stays `removing`. After active work ends, repeat destroy to converge. Otherwise the workflow disables and stops the timer, stops the service for cascade removal, removes the public units and obsolete files at that UUID's owned paths, and reloads systemd. Native success deletes the Schedule record. A failed step leaves the record and completed host actions in place for the next convergence.
 
 [Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
 

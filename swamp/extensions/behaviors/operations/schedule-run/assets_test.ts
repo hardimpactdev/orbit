@@ -28,7 +28,6 @@ Deno.test("lifecycle assets contain canonical public units and no private comman
   const writes: unknown[] = [];
   const args = behavior.methods.lifecycle.arguments.parse({
     schedule,
-    cascade: false,
   });
   const result = await behavior.methods.lifecycle.execute(args, {
     extensionFile: (path) => "/bundle/" + path,
@@ -36,11 +35,7 @@ Deno.test("lifecycle assets contain canonical public units and no private comman
       writes.push(args);
     },
   });
-  const value = JSON.parse(result.lifecycle_json);
-  assertEquals(value.schedule, schedule);
-  assertEquals(value.units, renderScheduleUnits(schedule));
-  assertEquals(value.legacy, legacyScheduleUnits(schedule));
-  assertEquals(result.scripts_directory, "/bundle/scripts");
+  assertEquals(result, renderScheduleUnits(schedule));
   assertEquals(writes.length, 1);
   assertThrows(() =>
     PublicInstall.parse({ ...schedule, command: "private-command" })

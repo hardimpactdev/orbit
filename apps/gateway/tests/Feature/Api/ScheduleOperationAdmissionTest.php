@@ -136,14 +136,14 @@ it('projects the fixed lifecycle result through native history once', function (
     }
     $operation = Operation::query()->findOrFail($id);
     $runId = $operation->state['swamp_run_id'];
-    $code = $kind === 'schedule.create' ? 'schedule.install_failed' : 'schedule.remove_failed';
+    $code = 'operation.native_failed';
     config(['swamp.read_token' => 'read.fixture', 'swamp.address' => '127.0.0.1', 'swamp.ca_path' => '/fixture/ca.pem']);
     $before = count($this->socket->sent);
     $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
         'id' => $runId, 'workflowName' => str_replace('.', '-', 'operation-'.$kind), 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind],
         'startedAt' => '2026-10-31T20:00:00Z', 'completedAt' => '2026-10-31T20:00:01Z',
-        'jobs' => [['name' => 'schedule', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($status === 'succeeded' ? ['ready' => true] : ['error_code' => $code], JSON_THROW_ON_ERROR)]]]]],
+        'jobs' => [['name' => 'schedule', 'steps' => [['name' => 'result', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped', 'outputs' => $status === 'succeeded' ? ['stdout' => '{"ready":true}'] : []]]]],
     ]]]];
     $step = app(SwampCommandStep::class);
     $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];

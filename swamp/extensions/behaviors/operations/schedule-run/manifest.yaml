@@ -1,18 +1,11 @@
 manifestVersion: 1
 name: '@nckrtl/schedule-run-scripts'
-version: 2026.10.31.2
+version: 2026.10.31.3
 visibility: private
 license: MIT
-description: Canonical Schedule command assets and one-action lifecycle components.
+description: Canonical public Schedule units and command validation assets.
 behaviors:
   - operations/schedule-run/assets.ts
 additionalFiles:
   - scripts/account.py
   - scripts/command_hash.py
-  - scripts/schedule_common.py
-  - scripts/inspect_schedule.py
-  - scripts/backup_schedule.py
-  - scripts/stage_schedule_unit.py
-  - scripts/restore_schedule.py
-  - scripts/verify_schedule.py
-  - scripts/verify_rollback.py
