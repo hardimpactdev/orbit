@@ -1,4 +1,7 @@
-import { prepareProvisioningVp } from "./provisioning_vp.ts";
+import {
+  prepareProvisioningVp,
+  type ProvisioningVpPort,
+} from "./provisioning_vp.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
@@ -10,7 +13,6 @@ import {
 } from "./production_home_system.ts";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { invokeLocalEnvironment } from "../instance-environment/local.ts";
-import { invokeLocalVp } from "./provisioning_vp_local.ts";
 import {
   runProjectStepList,
   type StepListPort,
@@ -61,11 +63,6 @@ export function invokeLocalProvisioning(call: NodeCall, signal?: AbortSignal) {
     case "instance.inspect-environment-sync":
     case "instance.write-environment":
       return invokeLocalEnvironment({ ...call, name: call.name }, signal);
-    case "tool.read-vp-project":
-    case "tool.inspect-vp-scope":
-    case "tool.vp-version":
-    case "tool.inspect-vp-store":
-      return invokeLocalVp({ ...call, name: call.name }, signal);
     default:
       return runLocalSource(call, signal);
   }
@@ -78,6 +75,7 @@ export function provisioningRoot(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   invoke = invokeLocalProvisioning,
   run?: StepListPort["run"],
+  vp?: Pick<ProvisioningVpPort, "local" | "materialize">,
 ) {
   const Args = DirectArgs.extend({
     kind: z.literal(kind),
@@ -310,21 +308,26 @@ export function provisioningRoot(
               break;
             case "vp":
               if (!plan.already_active) {
-                await project({
-                  phase: "vp",
-                  environment: await prepareProvisioningVp(
-                    plan,
-                    (call, signal) =>
-                      invokeForPlan({
-                        ...call,
-                        pin: plan.agent_sha256 ?? "",
-                        sudo: call.name === "tool.read-vp-project",
-                        mutates: false,
-                        deadlineMs: 120000,
-                      }, signal),
-                    ctx.signal,
-                  ),
-                });
+                const environment = await prepareProvisioningVp(plan, {
+                  ...vp,
+                  current: async () => {
+                    const fresh = await current(args, ctx);
+                    return {
+                      cancel_requested: fresh.value.cancel_requested ||
+                        !["queued", "running"].includes(fresh.value.status),
+                    };
+                  },
+                  reference: async (environment, runtime_status) => {
+                    await project({ phase: "vp", environment, runtime_status });
+                  },
+                }, ctx.signal);
+                if (environment === null) {
+                  await project({
+                    phase: "vp",
+                    environment: null,
+                    runtime_status: "active",
+                  });
+                }
               }
               break;
             case "setup":

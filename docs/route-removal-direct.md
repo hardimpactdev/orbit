@@ -29,3 +29,17 @@ Node or VM admission while retaining the complete Route inventory and survivor
 publication. No worker selector fallback or fabricated home is used. Workers
 for logical Nodes 1 and 18 use the same exact target and string Node label as
 all other Nodes.
+
+Cleanup is composed by the owning Instance or Node parent, never a child Route
+Operation. `routes/cleanup-local.ts::cleanupActions` rebuilds remaining
+production runtimes and validates the entire admitted URL-write set inside the
+private callback. Transfer keeps its captured placements and uses
+`removal-local.ts::removalActions` for exact leaf and LAN retirement.
+
+`routes/residue-local.ts::cleanRouteResidue(raw, identity, dependencies, signal)`
+is the sole offline residue executor. Node convergence delegates its captured
+`route-residue` payload to it. It preserves Caddy, PHP, certificates, LAN,
+ingress and DNS ordering, stops on the first refusal, and leaves captured-row
+removal to the Node result projection. Certificate removal receives the admitted
+system user as well as the resolved home. Empty shared PHP configurations still
+remove the final pool set. No agent command is invoked.

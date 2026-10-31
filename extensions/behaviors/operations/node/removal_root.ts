@@ -3,7 +3,11 @@ import { Leaf, Request, Signed } from "../certificates/input.ts";
 import { certificateActions } from "../certificates/actions.ts";
 import { CertificateSignedRecord } from "../certificates/signing.ts";
 import { localAccount } from "./converge_local.ts";
-import { RoleMetricsPlan } from "./role_metrics.ts";
+import {
+  hasRoleTransport,
+  ProxyNodeIds,
+  RoleMetricsPlan,
+} from "./role_metrics.ts";
 import { revokeMetricsAccess } from "../integrations/metrics_certificate_system.ts";
 import { networkCommand, runNetworkSystem } from "./network_system.ts";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
@@ -33,6 +37,7 @@ const Args = DirectArgs.extend({
 });
 export const RemovalAdmission = z.object({
   snapshot: NodeRemovalSnapshot,
+  proxy_node_ids: ProxyNodeIds.default([]),
   placements: z.array(RemovalPlacement),
   hub: HubPublicationInput.nullable(),
   online_blocker: z.string().regex(/^[a-z0-9_.-]+$/).nullable().default(null),
@@ -170,7 +175,7 @@ export function nodeRemovalRoot(
   };
   return {
     type: "@nckrtl/node-removal-direct",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       progress: {
@@ -225,7 +230,8 @@ export function nodeRemovalRoot(
             current.input.unavailable_node_ids.length === 0 &&
             (current.input.metrics_fleet === null ||
               current.input.metrics_fleet.fleet.every((node) =>
-                excludedMetrics.includes(node.node_id) || node.worker
+                excludedMetrics.includes(node.node_id) ||
+                hasRoleTransport(node, current.input.proxy_node_ids)
               )) &&
             JSON.stringify([...snapshot.route_ids].sort((a, b) => a - b)) ===
               JSON.stringify(

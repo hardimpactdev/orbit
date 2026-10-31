@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../../operation-runner/mod.ts";
+import { cleanupActions } from "./cleanup-local.ts";
 import { routeWorkloadLocal } from "./route-workload-local.ts";
 import { convergeFirewall } from "./firewall-local.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
@@ -49,6 +50,7 @@ export function removal(
   workloadActions = routeWorkloadLocal(),
   firewall = convergeFirewall,
 ) {
+  const cleanup = cleanupActions(workloadActions);
   const effectArgs = Args.extend({
     target_node_id: z.number().int().positive(),
   });
@@ -211,12 +213,7 @@ export function removal(
         arguments: effectArgs,
         execute: async (args: EffectArgs, ctx: Context) => {
           const current = await effect(args, ctx);
-          for (const workload of current.workloads) {
-            if (workload.production === true) {
-              await workloadActions.prepareRuntime(workload, ctx.signal);
-            }
-          }
-          return { ready: true };
+          return await cleanup.prepareRuntime(current.workloads, ctx.signal);
         },
       },
       synchronizeEnvironment: {
@@ -229,30 +226,14 @@ export function removal(
             node.node_id === args.target_node_id
           );
           if (!member) throw new Error("Route environment participant missing");
-          const permitted = new Set(member.url_instance_ids);
           await new GatewayOperation(makeHttp(ctx), args).withPrivateMaterial(
             async (material) => {
-              const writes = z.array(
-                z.object({
-                  instance_id: z.number().int().positive(),
-                  name: z.enum([
-                    "instance.write-environment",
-                    "instance.write-directory-url",
-                    "instance.write-development-url",
-                  ]),
-                  input: z.record(z.string(), z.unknown()),
-                }).strict(),
-              ).parse(
+              await cleanup.synchronizeEnvironment(
                 material[
                   current.environment_fields[String(args.target_node_id)]
                 ],
+                member.url_instance_ids,
               );
-              for (const write of writes) {
-                if (!permitted.has(write.instance_id)) {
-                  throw new Error("Route environment owner does not match");
-                }
-                await workloadActions.synchronizeEnvironment([write]);
-              }
             },
           );
           return { ready: true };

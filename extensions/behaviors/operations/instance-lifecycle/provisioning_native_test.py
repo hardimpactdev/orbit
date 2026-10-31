@@ -23,7 +23,12 @@ class ProvisioningNative(NativeTestCase):
         module = self.repo / 'extensions/behaviors/operations/instance-lifecycle/create_root.ts'
         module.write_text('''import {fixtureHttp, fixtureInvoke, fixtureEngineRefused} from "./provisioning_native_fixture.ts";
 import {provisioningRoot} from "./provisioning_root.ts";
-const root = provisioningRoot("instance.create", () => fixtureHttp, fixtureInvoke);
+const root = provisioningRoot("instance.create", () => fixtureHttp, fixtureInvoke, undefined, {
+ local: (mode, input) => {
+  if (mode !== "project") throw new Error("Unexpected native VP effect");
+  return fixtureInvoke({name: "tool.read-vp-project", input, pin: "", sudo: false, mutates: false, deadlineMs: 120000});
+ }
+});
 function available() { if (fixtureEngineRefused()) throw new Error("Family bundle refused before first callback"); }
 export const behavior = {...root, methods: {...root.methods,
 stage: {...root.methods.stage, execute: (...args: Parameters<typeof root.methods.stage.execute>) => {
@@ -46,6 +51,7 @@ fail: {...root.methods.fail, execute: (...args: Parameters<typeof root.methods.f
     def test_create_has_one_native_root_and_no_child_endpoints(self):
         checkout = '/srv/apps/proof/test'
         plan = {'instance_id': 11, 'project_id': 1, 'node_id': 9, 'node_user': 'orbit',
+                'platform': 'linux', 'architecture': 'x86_64', 'vp_materialize': {'user': 'orbit'},
                 'environment': 'development', 'user': 'orbit', 'checkout': checkout, 'application': checkout,
                 'agent_sha256': 'a' * 64, 'project_type': 'node-package', 'entry_point': 'artisan',
                 'skip_profile': False, 'php_versions': ['8.5'], 'already_active': False, 'retained_source': None,

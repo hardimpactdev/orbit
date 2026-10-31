@@ -1,4 +1,5 @@
-import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
+import { fixtureHttp } from "./removal_metrics_native_fixture.ts";
+export { fixtureHttp };
 import {
   nodeRemovalLocalActions,
   type RemovalActionDependencies,
@@ -6,10 +7,6 @@ import {
 import { removeNodeRoutes, restoreNodeRoutes } from "./removal_routes.ts";
 import { caddyProgram } from "../routes/caddy-program.ts";
 const endpoint = Deno.env.get("ORBIT_REMOVAL_HTTP_FIXTURE")!;
-export const fixtureHttp = gatewayHttp(
-  endpoint,
-  "/etc/ssl/certs/ca-certificates.crt",
-);
 export const fixtureLocal = (deps: RemovalActionDependencies) =>
   nodeRemovalLocalActions({
     ...deps,
@@ -33,10 +30,10 @@ export const fixtureLocal = (deps: RemovalActionDependencies) =>
           if (argv[3] !== caddyProgram) {
             throw new Error("Unexpected Route command");
           }
-          return {
+          return Promise.resolve({
             success: true,
             stdout: JSON.stringify({ result: "published" }),
-          };
+          });
         },
         signal,
         {
@@ -72,10 +69,10 @@ export const fixtureLocal = (deps: RemovalActionDependencies) =>
           if (argv[3] !== caddyProgram) {
             throw new Error("Unexpected Route command");
           }
-          return {
+          return Promise.resolve({
             success: true,
             stdout: JSON.stringify({ result: "published" }),
-          };
+          });
         },
         signal,
         {
@@ -119,28 +116,6 @@ export const fixtureRetire = async (
   return { ready: true as const };
 };
 
-export const fixtureMetrics = async (
-  phase: string,
-  node: { node_id: number },
-  _metrics: string,
-  before?: unknown,
-) => {
-  await fetch(endpoint + "/_metrics?phase=" + phase + "&node=" + node.node_id);
-  if (phase === "restore" && !before) throw new Error("Snapshot missing");
-  return phase === "snapshot"
-    ? { node_exporter: {}, cadvisor: {}, service: { config: null }, pools: [] }
-    : {};
-};
-export const fixtureMetricsRuntime = {
-  credential: async () => {
-    await fetch(endpoint + "/_metrics?phase=credentials");
-    return { verified: true };
-  },
-  runtime: async () => {
-    await fetch(endpoint + "/_metrics?phase=runtime");
-    return { changed: true };
-  },
-};
 export const fixtureCertificates = {
   request: async () => {
     await fetch(endpoint + "/_cert?phase=request");
@@ -152,3 +127,29 @@ export const fixtureCertificates = {
   },
   inspect: () => Promise.resolve({ present: true }),
 };
+
+/** Only the final pinned SSH effect is synthetic; root guards and private HTTP are real. */
+export const fixtureHubSystem = () => {
+  throw new Error("The Gateway must never run the hub program locally");
+};
+export const fixtureHubSsh:
+  import("../node-bootstrap/bootstrap_ssh.ts").BootstrapSsh = async (
+    target,
+    identity,
+    _env,
+    argv,
+    stdin,
+  ) => {
+    const response = await fetch(endpoint + "/_hub", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target,
+        identity,
+        argv,
+        input: JSON.parse(stdin!),
+      }),
+    });
+    if (!response.ok) throw new Error("Synthetic hub SSH refused");
+    return JSON.stringify(await response.json());
+  };

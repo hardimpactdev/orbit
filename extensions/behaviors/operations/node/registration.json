@@ -24,8 +24,7 @@
     "node.role_relocate_source",
     "node.role_relocate_target",
     "node.network_converge",
-    "node.network_rollback",
-    "node.wireguard_hub_converge"
+    "node.network_rollback"
   ],
   "workflow": "operation-node"
 }

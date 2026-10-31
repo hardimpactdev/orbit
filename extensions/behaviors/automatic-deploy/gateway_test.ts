@@ -1095,3 +1095,47 @@ for (const { name, fields } of gatewayOrigins) {
     }
   });
 }
+
+Deno.test("native failure Operations with PHP empty-array results remain readable", async () => {
+  const f = fixture();
+  f.intercept((method, path) =>
+    method === "GET" && path === "/api/v1/operations/100"
+      ? {
+        status: 200,
+        body: {
+          data: {
+            ...f.operation,
+            status: "failed",
+            error_code: "operation.native_failed",
+            result: [],
+          },
+        },
+      }
+      : undefined
+  );
+  const row = await f.client.operation(100);
+  assertEquals(row.status, "failed");
+  assertEquals(row.error_code, "operation.native_failed");
+  assertEquals(row.result, {});
+  assertEquals(f.requests.map((r) => r.method), ["GET"]);
+});
+
+Deno.test("nonempty array results cannot invent a deployment receipt", async () => {
+  const f = fixture();
+  f.intercept((method, path) =>
+    method === "GET" && path === "/api/v1/operations/100"
+      ? {
+        status: 200,
+        body: {
+          data: {
+            ...f.operation,
+            status: "failed",
+            result: [{ deployment_id: 999 }],
+          },
+        },
+      }
+      : undefined
+  );
+  await assertRejects(() => f.client.operation(100), PolicyError, "unreadable");
+  assertEquals(f.requests.map((r) => r.method), ["GET"]);
+});

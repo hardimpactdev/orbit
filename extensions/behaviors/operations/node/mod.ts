@@ -12,7 +12,6 @@ import { converge } from "./converge.ts";
 import { bootstrap } from "./bootstrap.ts";
 import { lifecycle } from "./lifecycle.ts";
 import { role } from "./role.ts";
-import { projectWireGuard } from "./wireguard.ts";
 const LifecycleKinds = [
   "node.add",
   "node.network_projection",
@@ -36,7 +35,6 @@ const RoleKinds = [
 const AdditionalKinds = [
   ...LifecycleKinds,
   ...RoleKinds,
-  "node.wireguard_hub_converge",
 ] as const;
 
 import { NodeExecution, PendingEffect } from "./execution.ts";
@@ -262,8 +260,6 @@ export function node(
                 ? await lifecycle(execution)
                 : RoleKinds.includes(operation.kind)
                 ? await role(execution)
-                : operation.kind === "node.wireguard_hub_converge"
-                ? await projectWireGuard(execution)
                 : operation.kind === "node.converge"
                 ? await converge(execution, ctx)
                 : await bootstrap(execution);

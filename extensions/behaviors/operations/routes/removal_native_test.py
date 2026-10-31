@@ -15,7 +15,7 @@ class RemovalNative(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/php')
         route = self.repo / 'extensions/behaviors/operations/routes'
         route.mkdir(parents=True)
-        for name in ['removal.ts', 'removal-local.ts', 'lan.ts', 'removal_native_fixture.ts', 'route-workload-local.ts', 'firewall-local.ts', 'firewall-program.ts', 'local-program.ts']:
+        for name in ['removal.ts', 'cleanup-local.ts', 'removal-local.ts', 'lan.ts', 'removal_native_fixture.ts', 'route-workload-local.ts', 'firewall-local.ts', 'firewall-program.ts', 'local-program.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/routes' / name, route)
         cert = self.repo / 'extensions/behaviors/operations/certificates'
         cert.mkdir()
