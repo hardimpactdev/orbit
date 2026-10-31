@@ -135,10 +135,10 @@ Sources:
 `orbit-node-N` with the matching `node=N` label. A native observation
 checkpoints cancellation before the write. Resume reuses that observation and
 reconciles an uncertain rotation before settlement. Any Gateway cancellation
-requested after observe is ignored by this attempt, including on resume. A native
-abort before invoke still cancels without a Node effect.
-The stable per-Node method lock covers local `agent.configure`, private hash
-storage and bounded projection.
+requested after observe is ignored by this attempt, including on resume. A
+native abort before invoke still cancels without a Node effect. The stable
+per-Node method lock covers local `agent.configure`, private hash storage and
+bounded projection.
 
 Swamp strictly validates the safe input, binary pin and exact Node worker
 configuration before dispatch. The configuration stays unchanged. Recovery
@@ -155,12 +155,11 @@ the original attempt's kernel lease at admission, intent read and hash storage;
 a live configure still holding that lease refuses. The probe uses the owning
 ancestor lease for retained children and releases it immediately. The Gateway
 runs no rekey SSH, agent command, child or wait and holds no execution lease
-across native recovery. Repeating the same attempt
-reuses admission. After a terminal refusal or cancellation, the operator
-supplies another attempt number. Known pre-effect refusals are bounded.
-Configure, worker-readiness, memory and storage errors that may follow rotation
-leave the intent unresolved. Workerless Nodes, including VPN/usexit, refuse
-rekey; no PHP execution path remains.
+across native recovery. Repeating the same attempt reuses admission. After a
+terminal refusal or cancellation, the operator supplies another attempt number.
+Known pre-effect refusals are bounded. Configure, worker-readiness, memory and
+storage errors that may follow rotation leave the intent unresolved. Workerless
+Nodes, including VPN/usexit, refuse rekey; no PHP execution path remains.
 
 `rekey_direct_native_test.py` uses the shared native harness and production
 `gatewayHttp` client, including a secret-bearing failed storage response. It
@@ -223,4 +222,35 @@ the root run and caller. Pass the placed Node as `node_id`, or keep the root
 `node_id` and pass `target_node_id` for the placed Node. The step returns its
 outcome to the native DAG and does not post the parent's result.
 
-Caddy publication runs its filesystem transaction and fixed system commands directly in Swamp. It keeps the host publication lock, validates before activation, preserves manual files, and restores the previous live configuration if reload fails. The Node agent observes; publication does not invoke an agent action.
+## Failure callbacks
+
+Use `Globals` from `operations/_lib/direct.ts`; the polled runner is retired.
+The shared `directOperation` helper records a bounded
+`operation.native_outcome_unknown` failure when an action, private callback or
+result schema throws. It never retries an effect or persists the thrown text.
+
+Each parent DAG also needs a separate root-placed failure job. Add a job with
+`dependsOn: [{job: <owning-job>, condition: {type: failed}}]` and call
+`@nckrtl/operation-failure` version `2026.10.31.1`, method `report`, using the
+same `operation_id`, `kind`, `node_id` and native `run.id`. Repeat the exact
+root target and Node label. The reporter posts only `run_id` to the shared
+failure endpoint; it cannot read secrets, run a domain action, or change a
+committed terminal result. It covers upstream behavior failures, including
+failures before the family's first callback.
+
+Pinned native Swamp has no durable terminal outbox. A failure of the reporter
+itself still requires native retry; this hook is not a crash-safe delivery
+guarantee. Native engine delivery/recovery remains shared platform work.
+
+Swamp runs system commands itself. Do not call an orbit-agent action command;
+the agent only observes health, drift and metrics.
+
+The shared scheduled Gateway discovery workflows and their fixed worker-slot
+models are removed. Old runs and runtime history are not deleted. Family owners
+finish removing their retired runner imports and per-family claim
+implementations as they port their parent kinds; no removed Gateway executor
+endpoint is restored for them. Caddy publication runs its filesystem transaction
+and fixed system commands directly in Swamp. It keeps the host publication lock,
+validates before activation, preserves manual files, and restores the previous
+live configuration if reload fails. The Node agent observes; publication does
+not invoke an agent action.

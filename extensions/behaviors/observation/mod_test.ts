@@ -18,10 +18,7 @@ function fixture() {
     let data: unknown = { status: disabled ? "disabled" : "recorded" };
     if (path.endsWith("/plan")) {
       data = {
-        collection: runId,
-        enabled: !disabled,
-        nodes: [2],
-        probes: [{ node_id: 2, family: "node", kind: "Rows", ids: [2] }],
+        ...(disabled ? { status: "disabled" } : { id: 77 }),
       };
     }
     if (path.includes("/maintenance/")) data = { status: "succeeded" };
@@ -73,22 +70,13 @@ function fixture() {
     },
   };
 }
-Deno.test("behavior persists progress using native Swamp test resources and resumes a lost read", async () => {
+Deno.test("collection admits one native Doctor Operation without Gateway probes or signals", async () => {
   const f = fixture();
-  f.lose("/probes/0");
-  await assertRejects(() =>
-    f.behavior.methods.collect.execute({ runId }, f.context())
-  );
   assertEquals(
-    (await f.behavior.methods.collect.execute({ runId }, f.context())).complete,
-    true,
+    await f.behavior.methods.collect.execute({ runId }, f.context()),
+    { operation_id: 77 },
   );
-  assertEquals(f.calls.filter((path) => path.endsWith("/nodes/2")).length, 1);
-  assertEquals(f.calls.filter((path) => path.endsWith("/probes/0")).length, 2);
-  assertEquals(
-    f.effects.filter((path) => path.endsWith("/probes/0")).length,
-    1,
-  );
+  assertEquals(f.calls, [`/api/v1/observation/collections/${runId}/plan`]);
 });
 Deno.test("a failed housekeeping request leaves independent routines running and resume retries only the missing receipt", async () => {
   const f = fixture();
@@ -100,13 +88,11 @@ Deno.test("a failed housekeeping request leaves independent routines running and
   );
   assertEquals(f.calls.map((path) => path.split("/").at(-1)), [
     "activities",
-    "operations",
     "metrics",
   ]);
   await f.behavior.methods.maintain.execute({ runId }, f.context());
   assertEquals(f.calls.map((path) => path.split("/").at(-1)), [
     "activities",
-    "operations",
     "metrics",
     "activities",
   ]);
@@ -119,8 +105,8 @@ Deno.test("Tasks disabled before a collection returns without probes", async () 
   const f = fixture();
   f.disable();
   assertEquals(
-    (await f.behavior.methods.collect.execute({ runId }, f.context())).complete,
-    true,
+    await f.behavior.methods.collect.execute({ runId }, f.context()),
+    { status: "disabled" },
   );
   assertEquals(f.calls.length, 1);
 });

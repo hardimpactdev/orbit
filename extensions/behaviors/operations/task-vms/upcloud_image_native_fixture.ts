@@ -3,7 +3,7 @@ import { type CloudImage, imageCloud } from "./upcloud_image_api.ts";
 import { cloudRequest } from "./upcloud_sweep.ts";
 import { GatewayOperation } from "../_lib/direct.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
-import type { Globals } from "../../operation-runner/mod.ts";
+import type { Globals } from "../_lib/direct.ts";
 
 const file = () => Deno.cwd() + "/upcloud-image-fixture.json";
 const read = () => JSON.parse(Deno.readTextFileSync(file()));

@@ -2,7 +2,7 @@ import { z } from "npm:zod@4.4.3";
 import { callWorkerModel } from "../../_lib/worker_model.ts";
 import { type ProjectConfigContext } from "../../_lib/project_config.ts";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 import {
   DirectArgs,
   directOperation,
