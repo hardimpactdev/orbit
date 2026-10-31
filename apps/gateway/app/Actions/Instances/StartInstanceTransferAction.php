@@ -6,8 +6,6 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\TransferInstanceData;
-use App\Domain\AppDev\SsrPortAllocator;
-use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceTransferIntent;
@@ -59,10 +57,6 @@ final readonly class StartInstanceTransferAction
             $transfer = $existing ?? $this->reserve($instance, $data);
             $destination = Node::query()->findOrFail($transfer->destination_node_id);
             $source = Node::query()->findOrFail($transfer->source_node_id);
-            app(VitePortAllocator::class)->assign($instance);
-            app(VitePortAllocator::class)->assign($instance, $destination);
-            app(SsrPortAllocator::class)->assign($instance);
-            app(SsrPortAllocator::class)->assign($instance, $destination);
 
             $routePlan = app(NativeRouteTransferPlan::class)->capture($transfer);
             $plan = app(NativeInstanceTransferIntent::class)->capture($transfer);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceTransferAction;
 use App\Data\Instances\TransferInstanceData;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\InstanceTransferRouteEnvironment;
@@ -33,6 +34,7 @@ beforeEach(function (): void {
     app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     config(['swamp.run_token' => 'native-transfer-fixture']);
     $this->mock(AgentCommandRunner::class)->shouldNotReceive('run');
+    $this->mock(VitePortRuntime::class)->shouldNotReceive('selectPort');
     $this->node = Node::query()->create(['name' => 'native-dev', 'public_ssh_host' => '192.0.2.11', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => LifecycleStatus::Active]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $project = Project::query()->create(['name' => 'Native', 'slug' => 'native', 'repository_url' => 'https://example.test/native.git', 'root' => 'public']);
