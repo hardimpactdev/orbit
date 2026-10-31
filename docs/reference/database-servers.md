@@ -28,6 +28,8 @@ Retained Instance removal finishes its database work synchronously with the exis
 
 Managed database creation starts one Node-placed Swamp run directly. The Gateway reserves names and credentials without live probes, and projects the result. Swamp checks live ownership and credentials before creating databases or ACL users. A resume retains the same credentials and never drops existing data.
 
+Clone reservation shares the retained removal lock for its server until the reservation transaction finishes. It checks recorded removal intent inside that transaction before reserving a login.
+
 Managed MySQL clone reset and copy use the direct-only `database.mysql_clone` workflow on the SQL server Node; the existing Instance parent records its one database child. SQLite clone variants retain their current workflow. No clone reset SQL or live inventory probe runs in the Gateway; they have no synchronous execution helper. SQLite seed callers keep their synchronous agent bindings.
 
 For direct kinds, the shared private-material read returns only declared fields to the bound unfinished run on the admitted Node. Swamp keeps those values inside the effect callback. Retained polled kinds resolve stored credentials only for their authorized named commands. Operations and Swamp receipts contain references, never passwords. Removal deletes the managed record only after the Node confirms the effect.
