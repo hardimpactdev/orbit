@@ -15,7 +15,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\TaskVmImageRead;
 use App\Infrastructure\TaskVms\TaskVmInputs;
-use App\Infrastructure\TaskVms\TaskVmSweepRead;
 use App\Infrastructure\TaskVms\TaskVmUpCloudImageRead;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -104,7 +103,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
             'task_vm.prepare_runtime' => $this->runtime($operation),
             'task_vm.image_build' => $this->image($operation),
             'task_vm.upcloud_image_build' => $this->upcloudImage($operation),
-            'task_vm.sweep_host' => $this->sweep($operation),
             default => $this->lifecycle($operation),
         };
         $definition = app(OperationKinds::class)->definition($operation->kind);
@@ -392,26 +390,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
             foreach (ValidatedData::stringList($state['prune_templates']) as $uuid) {
                 $children[] = $this->child('prune-'.$uuid, 'task_vm.upcloud_image_prune_template', $node, $provider('prune-template', ['template_uuid' => $uuid]));
             }
-        }
-
-        return $children;
-    }
-
-    /** @return list<ChildIntent> */
-    private function sweep(Operation $operation): array
-    {
-        $input = $operation->input;
-        $node = ValidatedData::integer($input['node_id']);
-        $common = Arr::only($input, ['node_id', 'provider', 'sweep_id']);
-        $children = [$this->child('observe', 'task_vm.sweep_observe', $node, $common)];
-        $snapshot = app(TaskVmSweepRead::class)->read($operation);
-        foreach ($snapshot['deletions'] as $deletion) {
-            $upcloud = $input['provider'] === 'upcloud';
-            if ($upcloud && $deletion['kind'] === 'server') {
-                $children[] = $this->child('stop-server-'.($deletion['uuid'] ?? $deletion['name']), 'task_vm.sweep_stop_upcloud', $node, [...$common, 'deletion' => $deletion, 'token' => ['$secret' => 'upcloud.api', 'id' => $operation->target_id]]);
-            }
-            $children[] = $this->child('delete-'.$deletion['kind'].'-'.($deletion['uuid'] ?? $deletion['name']), $upcloud ? 'task_vm.sweep_delete_upcloud' : 'task_vm.sweep_delete', $node,
-                [...$common, 'deletion' => $deletion, ...($upcloud ? ['token' => ['$secret' => 'upcloud.api', 'id' => $operation->target_id]] : [])]);
         }
 
         return $children;
