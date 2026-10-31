@@ -31,6 +31,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -250,6 +251,9 @@ it('captures Vite and SSR port intent without Gateway runtime discovery', functi
     $process = native_transfer_process($this);
     $process->update(['runtime_config' => [...$process->runtime_config, 'preset' => 'vp-dev']]);
     $this->instance->update(['vite_port' => 5173, 'ssr_port' => 13714]);
+    foreach (['vite_port_assignments' => 5173, 'ssr_port_assignments' => 13714] as $table => $port) {
+        DB::table($table)->insert(['instance_id' => $this->instance->id, 'node_id' => $this->node->id, 'port' => $port]);
+    }
     $this->transfer->delete();
     $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
     $this->destination->update(['settings' => ['apps' => ['path' => '/srv/apps']]]);
@@ -261,6 +265,11 @@ it('captures Vite and SSR port intent without Gateway runtime discovery', functi
     $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
     app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover'));
     expect($this->instance->fresh()->vite_port)->toBe(5173)->and($this->instance->fresh()->ssr_port)->toBe(13714);
+    app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('retire'));
+    foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
+        expect(DB::table($table)->where('node_id', $this->node->id)->count())->toBe(0)
+            ->and(DB::table($table)->where('node_id', $this->destination->id)->count())->toBe(1);
+    }
 });
 
 it('omits Process installation descriptors from unrelated Route participants', function (): void {

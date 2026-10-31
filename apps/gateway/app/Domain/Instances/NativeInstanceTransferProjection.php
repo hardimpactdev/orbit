@@ -93,6 +93,9 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
                         throw $this->conflict();
                     }
                     $this->routes->retire($snapshot);
+                    foreach (['vite_port_assignments', 'ssr_port_assignments'] as $table) {
+                        DB::table($table)->where('instance_id', $instance->id)->where('node_id', $transfer->source_node_id)->delete();
+                    }
                 } elseif ($checkpoint !== 'cutover') {
                     throw $this->conflict();
                 }
