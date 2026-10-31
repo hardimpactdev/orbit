@@ -25,6 +25,7 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\TaskVm;
+use Closure;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -35,6 +36,17 @@ final readonly class TaskVmEnrollmentIntent
         private NodeAgentSshExecutor $agents, private AgentDelivery $delivery,
         private RecordProcessIntentAction $processes, private SystemdProcessRenderer $systemd,
         private PiConnection $pi, private NodeBootstrapCommandFactory $bootstrap, private ProcessOperationAdmission $admissions) {}
+
+    /** Keep the existing router teardown fence through the outer admission transaction.
+     * @template TReturn
+     *
+     * @param  Closure():TReturn  $admit
+     * @return TReturn
+     */
+    public function admit(Closure $admit): mixed
+    {
+        return app(TaskVmModelAdmission::class)->run($admit);
+    }
 
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array

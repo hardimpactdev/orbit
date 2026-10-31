@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Activities\FinalizeInterruptedActivitiesAction;
 use App\Data\Activities\ActivityData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
@@ -214,7 +215,7 @@ describe('activity record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        $this->artisan('orbit:activity-finalize-interrupted')->assertSuccessful();
+        FinalizeInterruptedActivitiesAction::finalize(Activity::query()->whereKey([$id, $omitted]), Carbon::now());
 
         $activity = Activity::query()->findOrFail($id);
         $events = activity_notice_events();
@@ -313,7 +314,7 @@ describe('activity record events', function (): void {
         activity_notice_reverb_fails();
         Log::spy();
 
-        $this->artisan('orbit:activity-finalize-interrupted')->assertSuccessful();
+        FinalizeInterruptedActivitiesAction::finalize(Activity::query()->whereKey($id), Carbon::now());
 
         expect(Activity::query()->findOrFail($id)->status)->toBe('failed')
             ->and(Activity::query()->findOrFail($id)->error_code)->toBe('activity.interrupted');

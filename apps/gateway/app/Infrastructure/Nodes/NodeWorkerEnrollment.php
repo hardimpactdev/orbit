@@ -53,8 +53,12 @@ final readonly class NodeWorkerEnrollment implements OperationSecretOutputStore,
         if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
             return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'worker_credentials');
         }
+        $footprint = $operation->input['footprint'] ?? null;
+        if ($operation->kind === 'fleet.recipe' && (! is_array($footprint) || ($footprint['node_id'] ?? null) !== $operation->node_id)) {
+            return null;
+        }
 
-        return $operation->kind === 'node.converge' && $operation->target_type === 'node' && $operation->target_id === $operation->node_id ? $operation->node_id : null;
+        return in_array($operation->kind, ['node.converge', 'fleet.recipe'], true) && $operation->target_type === 'node' && $operation->target_id === $operation->node_id ? $operation->node_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue

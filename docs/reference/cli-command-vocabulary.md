@@ -98,11 +98,12 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
 | `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
+| `github` | `sync` | The CLI records an Operation to refresh the [GitHub App installations](/cli/github#orbit-githubappsync). |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `resolve`, `rollback`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `ai-router` | `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `operation` | `cancel` | The CLI asks a running [operation](/reference/operations) to stop. `operation:list` and `operation:show` read operations. |
-| `node` | `converge`, `relocate`, `rename` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
+| `node` | `converge`, `migrate-docker`, `relocate`, `rename` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), runs an explicit [Docker provider migration](/reference/docker-provider-migration), moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |

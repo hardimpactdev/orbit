@@ -158,6 +158,9 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         $field = self::RuntimeFields[$this->source];
         $ownerNodeId = app(DirectOperationPrivateBindings::class)->ownerNode($operation, $field);
+        if ($field === 'model_router' && ($operation->input['model_router_node_id'] ?? null) !== $ownerNodeId) {
+            return null;
+        }
         $expectedNodeId = $field === 'model_router' ? app(ModelKeyIssuer::class)->ownerNodeId() : $vm->node_id;
 
         return $ownerNodeId === $expectedNodeId ? $vm : null;

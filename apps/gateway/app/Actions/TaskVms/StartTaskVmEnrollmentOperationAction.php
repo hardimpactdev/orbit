@@ -19,7 +19,7 @@ final readonly class StartTaskVmEnrollmentOperationAction
 
     public function execute(int $taskVmId): ?Operation
     {
-        return DB::transaction(function () use ($taskVmId): ?Operation {
+        return $this->intent->admit(fn (): ?Operation => DB::transaction(function () use ($taskVmId): ?Operation {
             $vm = TaskVm::query()->find($taskVmId);
             if ($vm?->state !== TaskVmState::Provisioning) {
                 return null;
@@ -34,6 +34,6 @@ final readonly class StartTaskVmEnrollmentOperationAction
             $input = [...$input, ...$this->intent->privateInput($vm, $nodeId)];
 
             return $this->start->execute('task_vm.enroll', 'task_vm', $vm->id, $nodeId, $input, 'task-vm', null);
-        });
+        }));
     }
 }

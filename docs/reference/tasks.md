@@ -174,60 +174,21 @@ Optional provision enrollment remains a shortcut for the initial worker. The dri
 
 #### Check an external group
 
-`tasks:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. It uses the [shared task-operation rules](#provision-an-external-group), including the group target hold and no Gateway retries. It accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`tasks:check <group> --subtask=<id> --phase=baseline|handoff` starts `tasks.check` through `POST /api/v1/task-groups/{group}/check` with `{ subtask, phase }`. The Gateway admits the open group, current child and owned VM, records one check row and starts `operation-task-check`. It accepts the existing idempotency key, CLI, SDK and MCP inputs. Swamp owns execution, cancellation, workspace locking and waits.
 
-A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. The current subtask is the open one with the lowest position; another returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`.
+A workspace is required (`409 tasks.no_workspace`). A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. The VM lifecycle must make the worker ready before a check starts; the Gateway does not resume a VM or poll readiness inside the check.
 
-A parked VM queues its resume first. The operation waits for readiness and for its own check lease, after any implementer turn releases ownership. It starts no check inside a turn's receipt scope. The detached [Project check](#project-check) runs in the workspace. A baseline runs Project setup first; a handoff verifies deliverables. Delayed reads claim the waiting operation, then reconcile the group's workspace lease to record the reading. A busy lease keeps the operation `waiting`. A lost start reply also keeps the operation `waiting`, with its recorded check and lease held until recovery proves the check ended or confirms its stop.
+One native task-workspace step runs setup for a baseline, the Project check and handoff deliverable commands. Commands run as the task account in transient systemd cgroups with bounded output. File evidence comes from the subtask diff. A command marked `fails_on_base` also runs on an isolated archive of its start commit with only the declared paths overlaid. A check that changes its checked tree returns `changed`; failed commands or unmet deliverables return `failed`.
 
-The request stays exactly `{ subtask: positive integer, phase: baseline|handoff }`, with the existing optional idempotency key; Swamp always supplies a key. There is no caller-selected CI switch, check name, branch, or SHA.
+A passing handoff creates its candidate commit in the VM. A Git reference transaction records the candidate under `refs/orbit/check-operations/{operation}` with HEAD, so a lost reply reuses that candidate. A completed local check reuses its bounded VM result. An interrupted local execution is refused and needs a new operation key; it is never blindly dispatched again.
 
-Hosted handoff CI implements the narrow check prerequisite in [ADR 0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations#check), not the wider external review-and-merge contract. External review-and-merge create and topology append still return `tasks.orchestration_unsupported`. Tests use isolated external fixtures whose Project requires CI; they do not change production admission or enable a live Project. Ordinary external groups without this policy keep their existing path.
+The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tree`, redacted `output` and `ci`. Baselines and review-only deliverables are `not_checked`. `head` identifies the checked snapshot before commit; `commit` identifies the candidate that a reviewer or publisher may use. The Gateway projects check and CI metadata without rerunning checks or judging the native evidence.
 
-The result keeps `outcome` (`passed`, `failed`, or `changed`), `deliverables`, `check_id`, `commit`, `head`, `tree`, and redacted `output`, and adds `ci`. Each deliverable result holds its `id`, `outcome` (`passed`, `failed`, or `not_checked`), and `failures`. Baselines and review deliverables use `not_checked`. `head` is the pre-commit check snapshot; **`commit` is the candidate HEAD**, not `head`. The human CLI shows the check outcome and check ID, plus the commit when one exists; its exit status follows the operation status, so consumers must inspect `outcome`.
+For Projects with a handoff check name, Swamp pushes that exact candidate without force to `task-{group}-handoff` and observes the named GitHub Actions check on that SHA. It mints the existing repository installation credentials through the shared private reader, uses them only for trusted Git/GitHub calls and revokes them afterwards. Repository commands receive none of those credentials. No PR opens on the handoff branch. Later Project edits do not change the admitted check name or repository.
 
-For a handoff whose `Project::handoffCheckName()` is non-null, the existing commit step creates one fresh sanitized commit, even for an unchanged checked tree (`allowEmpty: true`), records it on the check, and verifies its tree against the passed tree. The [handoff policy](#handoff-ci) owns message sanitization. The commit and `refs/orbit/check-operations/{operation}` receipt are written in one Git reference transaction. Recovery reads that receipt before checking the old snapshot, so a lost reply cannot create a second candidate. An uncertain remote result retains the workspace fence.
+The native step bounds CI observation to 55 minutes. It reads cancellation intent between observations. A passed exact-head check is eligible; a code failure returns failed check evidence. Unreadable or misconfigured CI returns an infrastructure refusal. Cancellation ends observation, preserves the pushed candidate and does not cancel GitHub workflows. Local cancellation stops the owned cgroup before reporting its terminal result.
 
-Same-operation replay/recovery retains that commit, including after an interrupted reply; it creates no second commit. A newly authorized operation with a new key creates a fresh commit even if the previous workflow was cancelled and the checked tree is unchanged. Baseline and Projects without this policy retain their commit behavior and return `ci: null`. The policy follows `reviewsAndMerges()` today, not an independent caller option.
-
-Two persisted steps follow commit: handoff push, then hosted CI read. Operation state records the required check name and `task-{group}-handoff` branch before push. Recovery reads that same plan; later Project edits cannot change which check must pass for the candidate. Push only the operation's recorded commit, without force, to that handoff branch. Never open a pull request on it, push the task branch, or create another commit for CI.
-
-Reconcile the existing VM push record and remote tip before repeating a push after an interrupted reply. The operation reuses the handoff push, shared GitHub check snapshot, classification and output helpers, without lifecycle callbacks.
-
-`ci` is null for baseline/no-policy, or has this shape. The same evidence is persisted in operation state while waiting; it is not a second check-status schema.
-
-| CI field | Contract |
-| --- | --- |
-| `branch` | The pinned `task-{group}-handoff` branch |
-| `commit` | The exact recorded handoff commit, equal to result `commit` |
-| `check_name` | The required hosted check name pinned before push |
-| `state` | `passed`, `failed`, `pending`, `missing`, or `unreadable` |
-| `fault` | `change`, `infrastructure`, `configuration`, or null |
-| `pushed_at`, `observed_at` | ISO 8601 times, or null before the corresponding push/read |
-| `runs` | Existing `GitHubCheckRun::toArray()` records: `name`, `conclusion`, `url`, `id`, `started_at`, `status`, `head_sha`, `app_slug`, `output_title`, `output_summary`, `check_suite_id` |
-| `suites` | Existing `GitHubCheckSuite::toArray()` records: `id`, `status`, `conclusion`, `app_slug` |
-
-CLI `--json`, the PHP SDK's `OperationResponse::result`, and MCP operation reads carry the same result. No new API, CLI verb, SDK request or MCP input is added. Regenerate OpenAPI, recorded SDK fixtures, MCP tools and web types when their emitted contracts change; generic operation-result schemas can leave those generated bytes unchanged. This documentation prerequisite changes no generated runtime contract.
-
-Run and suite text uses the redacted, bounded [check-output rule](#check-output), not raw logs. Pending, missing or unreadable CI keeps the operation `waiting`, with delayed bounded reads, the group target held, and no worker held. A local pass is not a completed usable candidate while required hosted CI waits. The operation result remains terminal evidence; waiting CI evidence lives in operation state. The operation dispatches one VM push and observes its persisted record; a failed push remains waiting with infrastructure evidence without selecting a retry policy. The orchestrator may cancel and investigate it.
-
-| Hosted CI observation | Operation and check result |
-| --- | --- |
-| Required check passes on the recorded commit | `succeeded`, `outcome: passed` |
-| Code/workflow failure under the shared classification | `succeeded`, `outcome: failed`; check `failed_step: ci`, with redacted failure evidence |
-| Pending, missing, or unreadable | `waiting`; keep the evidence and read again after a delay |
-| Infrastructure/configuration evidence, including no suite after 600 seconds or completed suites classified as configuration because the named job is missing | Report the existing classification while waiting; never silently charge a failed-code budget or start a fixup |
-| Post-check workspace movement | `succeeded`, `outcome: changed`; no usable candidate |
-
-The orchestrator owns the wall-clock budget and may cancel observation and park for assistance. The Gateway posts no reminder, assistance or next turn, and never implicitly merges main. The [handoff CI](#handoff-ci) classification and output helpers are shared. A lost local check keeps the group held and the operation `waiting`; cancel the group to end it.
-
-Only a completed successful `tasks.check` with `outcome: passed`, a handoff `TaskCheck`, non-null commit, checked tree and satisfied deliverables supplies a checked candidate. Its source is the operation ID, check ID, owning child, commit and tree, never a caller-supplied SHA. Reviewer and publish admission share one hosted-CI eligibility predicate. When the Project requires CI, the owning handoff operation must have succeeded with passed CI on that check/commit. A locally passed check alone, including one left by cancelled CI observation, is ineligible for both consumers. This is a narrow consumer guard, not final-review publication gating or supported external review-and-merge admission.
-
-Land this prerequisite without changing admission or orchestration ownership. Swamp adoption and the wider review-and-merge contract are separate. Roll back caller adoption first. Before reverting runtime support, cancel or finish affected operations through the existing operation API and reconcile any started push; uncertain local work stays fenced. Preserve recorded check/commit/CI evidence and the already pushed branch until normal group cleanup. A rollback never weakens candidate eligibility, opens admission, changes a group's orchestration, or cancels GitHub workflows.
-
-A direct `operation:cancel` stops a waiting local check as `tasks:check:cancel` does. Orbit records the cancel request first. An unconfirmed stop returns `502 tasks.check_unreachable`, keeps the operation `waiting`, and retries the stop on its next delayed read. Group cancel and complete end the open operation first. When the VM does not answer, they end it `cancelled` without that 502 and follow the existing [unreachable Node rule](#cancel-a-stuck-task).
-
-For hosted handoff CI, cancel stops a queued push under the existing publish stop rules; a started push must be reconciled before ownership ends. Once only hosted CI waits, cancel ends observation, not GitHub workflows. It does not erase the already pushed branch or check evidence. A cancelled observation cannot supply an eligible candidate even if its local `TaskCheck` remains passed.
+Only a succeeded `tasks.check` with `outcome: passed`, the matching handoff check, commit, tree and passed required CI supplies a checked candidate. Reviewer and publish admission use that recorded result. A locally passed check whose CI observation was cancelled is ineligible. The Gateway never starts a turn or a fixup from a check callback.
 
 #### Run a tracked repository script
 
