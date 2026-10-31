@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/ai-router-source-scripts'
-version: 2026.10.31.1
+version: 2026.10.31.2
 visibility: private
 license: MIT
 description: Fixed collector source retirement action.

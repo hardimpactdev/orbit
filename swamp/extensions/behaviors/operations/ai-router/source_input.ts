@@ -4,12 +4,12 @@ export const SourceIntent = z.object({ retired: z.boolean() }).strict();
 const Output = z.object({ script: z.string(), intent_json: z.string() });
 export const behavior = {
     type: "@nckrtl/ai-router-source-input",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
         input: { schema: Output, lifetime: "infinite", garbageCollection: 10 },
     },
     methods: {
-        prepare: {
+        read: {
             description:
                 "Shape only the fixed source selector and resolve its shipped script",
             arguments: SourceIntent,

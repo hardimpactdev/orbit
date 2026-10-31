@@ -3,7 +3,7 @@ import { behavior, SourceIntent } from "./source_input.ts";
 
 Deno.test("source metadata resolves one shipped script and retains only the boolean intent", async () => {
     const writes: unknown[] = [];
-    const result = await behavior.methods.prepare.execute({ retired: true }, {
+    const result = await behavior.methods.read.execute({ retired: true }, {
         extensionFile: (name) => `/fixture/cache/${name}`,
         writeResource: (spec, name, value) => {
             writes.push({ spec, name, value });

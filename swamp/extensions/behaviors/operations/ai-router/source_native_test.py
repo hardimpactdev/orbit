@@ -27,7 +27,9 @@ def reply(raw):
 
 
 class SourceNative(NativeTestCase):
-    def test_real_command_removes_only_selected_source_and_reports_failure(self):
+    def setUp(self):
+        super().setUp()
+        self.copy_behaviors("operations/node-command")
         self.copy_behaviors("operations/ai-router")
         # Other family files have unrelated dependencies. Load only this contribution.
         family = self.repo / "extensions/behaviors/operations/ai-router"
@@ -53,32 +55,41 @@ class SourceNative(NativeTestCase):
         self.assertEqual(ast.literal_eval(matches[0].value.args[0]), "/var/lib/orbit")
         matches[0].value.args[0] = ast.Constant(str(scratch))
         script.write_text(ast.unparse(ast.fix_missing_locations(tree)))
-        workflow = yaml.safe_load(
-            (ROOT / "workflows/workflow-ai-router-remove-source.yaml").read_text()
-        )
-        for step in workflow["jobs"][0]["steps"]:
-            step.pop("target")
-            step.pop("labels")
-        workflow["jobs"][0]["steps"][1]["task"]["inputs"]["run"] = (
-            'set -eu\n/usr/bin/python3 -I "$ORBIT_AI_SOURCE_SCRIPT"\n'
-        )
-        (self.repo / "workflows/workflow-ai-router-remove-source.yaml").write_text(
-            yaml.safe_dump(workflow)
-        )
-        self.cli("workflow", "validate", "ai-router-remove-source")
-        public = {
+        self.scratch = scratch
+        for suffix in ["", "-ordinary", "-proxy"]:
+            name = "ai-router-remove-source" + suffix
+            workflow = yaml.safe_load(
+                (ROOT / f"workflows/workflow-{name}.yaml").read_text()
+            )
+            for job in workflow["jobs"]:
+                for step in job["steps"]:
+                    step.pop("target")
+                    step.pop("labels")
+            if suffix == "-ordinary":
+                workflow["jobs"][0]["steps"][2]["task"]["inputs"]["run"] = (
+                    'set -eu\n/usr/bin/python3 -I "$ORBIT_AI_SOURCE_SCRIPT"\n'
+                )
+            (self.repo / f"workflows/workflow-{name}.yaml").write_text(
+                yaml.safe_dump(workflow)
+            )
+            self.cli("workflow", "validate", name)
+        self.public = {
             "operation_id": 701,
             "node_id": 14,
             "kind": "ai_router.teardown",
             "intent": {"target_node_id": 17, "retired": False},
             "execution_secrets": {},
         }
+
+    def test_real_command_removes_only_selected_source_and_reports_failure(self):
+        scratch = self.scratch
+        public = self.public
         for expected in [True, False]:
             run = reply(
                 self.cli(
                     "workflow",
                     "run",
-                    "ai-router-remove-source",
+                    "ai-router-remove-source-ordinary",
                     "--input",
                     json.dumps(public),
                 ).stdout
@@ -87,7 +98,7 @@ class SourceNative(NativeTestCase):
             history = reply(self.cli("workflow", "history", "get", run["id"]).stdout)
             self.assertEqual(history["inputs"], public)
             self.assertEqual(
-                json.loads(history["jobs"][0]["steps"][1]["outputs"]["stdout"]),
+                json.loads(history["jobs"][0]["steps"][2]["outputs"]["stdout"]),
                 {"removed": expected},
             )
         self.assertTrue((scratch / "proxycli/collector.py").exists())
@@ -97,7 +108,7 @@ class SourceNative(NativeTestCase):
             self.cli(
                 "workflow",
                 "run",
-                "ai-router-remove-source",
+                "ai-router-remove-source-ordinary",
                 "--input",
                 json.dumps(public),
                 success=False,
@@ -105,6 +116,68 @@ class SourceNative(NativeTestCase):
         )
         self.assertEqual(failed["status"], "failed")
         self.assertTrue((scratch / "unrelated/collector.py").exists())
+
+    def test_public_router_preserves_root_and_selects_ordinary_leaf(self):
+        run = reply(
+            self.cli(
+                "workflow",
+                "run",
+                "ai-router-remove-source",
+                "--input",
+                json.dumps(self.public),
+            ).stdout
+        )
+        self.assertEqual(run["status"], "succeeded")
+        self.assertFalse((self.scratch / "ai-router").exists())
+        history = reply(self.cli("workflow", "history", "get", run["id"]).stdout)
+        self.assertEqual(history["inputs"], self.public)
+        self.assertEqual(
+            next(job for job in history["jobs"] if job["name"] == "proxy")["steps"][0][
+                "status"
+            ],
+            "skipped",
+        )
+
+    def test_proxy_selection_never_executes_the_action_on_the_local_fixture(self):
+        for node in [1, 18]:
+            with self.subTest(node=node):
+                public = {
+                    **self.public,
+                    "intent": {"target_node_id": node, "retired": False},
+                }
+                # Actual native schema validation must reject the unsafe ordinary path.
+                self.cli(
+                    "workflow",
+                    "run",
+                    "ai-router-remove-source-ordinary",
+                    "--input",
+                    json.dumps(public),
+                    success=False,
+                )
+                run = reply(
+                    self.cli(
+                        "workflow",
+                        "run",
+                        "ai-router-remove-source",
+                        "--input",
+                        json.dumps(public),
+                        success=False,
+                    ).stdout
+                )
+                self.assertEqual(run["status"], "failed")
+                history = reply(
+                    self.cli("workflow", "history", "get", run["id"]).stdout
+                )
+                self.assertEqual(
+                    next(job for job in history["jobs"] if job["name"] == "ordinary")[
+                        "steps"
+                    ][0]["status"],
+                    "skipped",
+                )
+                # The real shared runner refuses this non-proxy cgroup before touching
+                # SSH or the action. Its production host checks are not replaced.
+                self.assertTrue((self.scratch / "ai-router/collector.py").exists())
+                self.assertTrue((self.scratch / "unrelated/collector.py").exists())
 
 
 if __name__ == "__main__":

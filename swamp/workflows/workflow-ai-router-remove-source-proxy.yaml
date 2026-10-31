@@ -1,0 +1,93 @@
+id: 190624df-9308-4152-b310-281ddff13216
+name: ai-router-remove-source-proxy
+description: Remove fixed collector source on a logical light Node through the canonical
+  shared asset transport.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      pattern: ^[a-z][a-z0-9_.-]+$
+    intent:
+      type: object
+      properties:
+        target_node_id:
+          type: integer
+          minimum: 1
+          enum:
+          - 1
+          - 18
+        retired:
+          type: boolean
+      required:
+      - target_node_id
+      - retired
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: source
+  steps:
+  - name: proxy-assets
+    target: ${{ "orbit-node-" + string(inputs.intent.target_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-command-assets'
+      behaviorName: ${{ "ai-source-proxy-assets-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs: {}
+  - name: input
+    target: ${{ "orbit-node-" + string(inputs.intent.target_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ai-router-source-input'
+      behaviorName: ${{ "ai-router-source-input-" + string(inputs.operation_id) }}
+      methodName: read
+      inputs:
+        retired: ${{ inputs.intent.retired }}
+  - name: remove
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: input
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.intent.target_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target_node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ai-router-source-remove-" + string(inputs.intent.target_node_id)
+        }}
+      methodName: execute
+      inputs:
+        run: '/usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id
+          "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.input.outputs.script }}"
+          --interpreter python3 --as-root --env ORBIT_AI_SOURCE_INTENT
+
+          '
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.intent.target_node_id) }}
+          ORBIT_AI_SOURCE_INTENT: ${{ steps.input.outputs.intent_json }}
