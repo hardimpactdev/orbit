@@ -115,19 +115,21 @@ jobs:
 
 The second example is a sketch; the pilot fixes the exact syntax. Each action is a step that Swamp shows, can resume and can skip with `guard`.
 
-## Settled pilot points
+## Open points settled by the spike
 
-The `node.bootstrap_probe` pilot uses these native contracts. Its source is the template below. The live canary and Gateway terminal subscription are still pending; a passing isolated fixture is not live proof.
+These answers were proved with synthetic data on a dev worker on Beast, using official Swamp `20261031.063736.0-sha.e459d219`. Serve and worker were separate processes joined through the native remote-only WebSocket dispatch. The SSH executable in the fixture was harmless; this proves native delivery and transport, not a live bootstrap or logical Node 1/18 proxy effect. No secret value was printed.
 
-### Script delivery
+### 1. A remote command step can run a repository script file
 
-A behavior manifest lists the Python files under `additionalFiles`. Swamp includes those bytes in its dispatch fingerprint and ships them to the remote worker cache. The metadata step calls `ctx.extensionFile("scripts/probe_host.py")` and records the cached path with `ctx.writeResource`. The next placed `command/shell` step runs that file. The helper module travels in the same bundle. Neither a shared checkout nor a script embedded in TypeScript is needed.
+A behavior manifest lists each script and its imports under `additionalFiles`. Native dispatch fingerprints and ships them to the worker cache. A public metadata method resolves `ctx.extensionFile("scripts/probe_host.py")` and records the path with `ctx.writeResource`. The next placed `command/shell` step executes that path. Keep metadata and execution on the same worker. Inline `run:` is not the only supported form.
 
-The actual remote-only worker fixture passed on native e459 and the compiled 614ab5ff build. It confirmed the returned script path was inside the worker cache and the built-in shell executed it. Keep each effect in its own step. Asset lookup is public metadata, not an effect runner.
+Proof: native run `4ee4cd98-89c2-43de-8103-0d3746a19306`. The script path was inside the actual worker cache; the built-in shell ran it and retained public outputs. Asset helper modules arrived in the same bundle. Evidence: `evidence/lane11-vault-script-pilot-20261031/remote-script-history.json`.
 
-### Vault environment syntax
+Logical Nodes 1/18 are excluded from this proof. Official e459 runs built-in shell commands locally on their physical worker on 209 and has no supported SSH executor hook. Do not admit built-in shell jobs on those proxy identities until the supported shared transport is approved and proved. Existing TypeScript proxy tests do not cover it; no family SSH fallback is allowed. See `evidence/lane21-workers/official-e459-builtin-proxy-blocker.md`.
 
-Map the entire environment value to `vault.get` inside `task.inputs.env`:
+### 2. A whole vault expression maps to a named environment variable
+
+Use `env` inside `task.inputs`, not workflow inputs or top-level `env`:
 
 ```yaml
 inputs:
@@ -136,31 +138,47 @@ inputs:
     ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
 ```
 
-The workflow input contains only the closed descriptor `{vault, key}`. The Gateway pushes the execution copy on value changes with `swamp vault put --server`, value on stdin. Exact native put authority is separate from workflow resolution authority. Do not grant general vault write or raw secret read to make this work.
+The input descriptor contains only `{vault, key}`. The same remote run proved that the script received the synthetic value and the value stayed out of native history and scratch files. The script gives SSH a mode-0600 temporary identity file, removes the value from the child's environment, and removes the file after use.
 
-### The command-line caveat
+Use the shared Gateway helper `App\Infrastructure\Swamp\SwampCommandStep::executionCopy(vault, key, value)` to obtain the descriptor. It delegates to the native stdin push primitive and retains only a synchronization digest. Official e459 refuses remote vault-put stdin, so that upstream gap and the exact put/resolve policy still block live execution-copy admission. The spike used a scratch vault populated locally. Do not work around the gap with argv, new access, a fork, a published build or a non-official pin. Upstream fixes go through the orchestrator to Nick.
 
-The dev-worker `/proc` test used a synthetic value. Whole-value environment delivery did not put the value in the shell's or script's arguments. Passing that environment value as an argument to a child did expose it in `/proc/<pid>/cmdline`. The environment itself was readable through `/proc`; this transport is not isolation from the worker user.
+### 3. The value is absent from shell argv, but child argv can expose it
 
-The probe writes a mode-0600 temporary SSH identity, passes its path to SSH, removes the value from the child's environment, and removes the file after use. Never expand a secret in `run:`, argv or shell tracing. Native probe run `996e4603-e6b0-42c6-b8a2-e997731a9385` records this synthetic dev proof; it is not the live pilot canary.
+Native dev-worker run `996e4603-e6b0-42c6-b8a2-e997731a9385` checked `/proc`. With whole-value environment delivery, neither shell nor script argv contained the synthetic vault value. An intentionally unsafe child invocation did expose it in the child's command line. The environment itself was readable through `/proc`; environment transport is not isolation from the worker user. Evidence: `evidence/lane11-vault-script-pilot-20261031/argv-probe.json`.
 
-### Terminal outputs
+Never expand secrets into `run:`, command arguments or shell tracing. Scripts pass them to tools through stdin or protected config files.
 
-Native `completed` and `cancelled` events identify the run and its terminal status. A `completed` event can describe a failed run. The event's run metadata does not include step outputs, even with verbose enabled.
+### 4. A terminal event leads to one native history request
 
-The Gateway subscribes to the native terminal event, then makes one `workflow.history.get` request for that run. Native history includes outputs. The pilot selects `jobs[bootstrap].steps[probe-host].outputs.stdout`, parses the public JSON, and gives it to the existing Node bootstrap projector. The declaration fixes the job and step names with `terminal_result: {job: bootstrap, step: probe-host}`. Steps make no Gateway HTTP calls. No family polling, callback, resubmission or receipt is needed.
+The start stream publishes `event.kind = started` with `event.runId`. Official e459 also supports an active-run attachment on a second authenticated socket:
 
-The remote fixture recorded full non-secret inputs and the public probe result in history. A bad host fingerprint failed `scan-host-key` and skipped `probe-host`, including its private vault lookup.
+```json
+{"type":"run.attach","id":"follow","payload":{"runId":"<run-id>","afterSeq":0}}
+```
+
+The response is `run.attached`, followed by sequenced `event` frames on the same request id. A terminal frame has `event.kind = completed` or `cancelled` and `event.run`. A `completed` event can carry `event.run.status = failed`; it is not a success signal. The run metadata does not inline step outputs.
+
+After the terminal event, send one request:
+
+```json
+{"type":"workflow.history.get","id":"result","payload":{"workflowIdOrName":"<run-id>"}}
+```
+
+The response has type `workflow.history.get` and the full run under `payload.data`. Select the named job and step in `jobs[].steps[]`; built-in shell output is in `outputs.stdout`, with `exitCode`, `executedAt`, `command`, `durationMs` and `stderr`. A result step prints one public JSON object. The shared `SwampCommandStep::projectTerminal(Operation, event.run, {job, step})` reads that history once, decodes the selected stdout and calls the existing family projector. The fixed declaration is `terminal_result: {job: bootstrap, step: probe-host}` for this pilot. No family Gateway client, callback, poller or resubmission is needed.
+
+Real official-e459 runs `2ebfa2a6-bb7e-4ad2-8a5b-867095984e93` and `2491206d-0531-442a-b5a5-60b988e989f6` proved success and failure after closing the start socket, attaching a second socket, and making exactly one history request per terminal event. A bad fingerprint failed the public scan and skipped the private probe. Raw sanitized frames and requests are in `terminal-attach-spike-succeeded.json` and `terminal-attach-spike-failed.json` beside the other evidence.
+
+Attachment is active-run only. The native registry removes completed runs; it is not durable replay after completion. The shared event-connection owner must preserve the terminal event and handle this lifecycle. Do not invent `workflow.run.attach`, assume late replay, or add family polling. Gateway subscriber integration and the live bootstrap canary remain separate from this completed transport spike.
 
 ## Template
 
-Use `node.bootstrap_probe` for the next conversion. Preserve its separation between admitted inputs, native steps, outputs and Gateway projection.
+Use `node.bootstrap_probe` as the reference source. The full live pilot is still pending; the spike does not assert live readiness or grant permission.
 
-- [Workflow](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-node-bootstrap-probe.yaml): full intent plus vault/key names; exact placement; native step dependencies.
-- [Manifest and script assets](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap): native `additionalFiles` delivery and metadata-only `script_assets.ts`.
-- [Scripts](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap/scripts): one host-key scan and one pinned SSH probe; no Gateway client.
-- [Gateway admission](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Actions/Nodes/AdmitNodeBootstrapAction.php) and [vault copy primitive](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php): validate and store intent; synchronize the existing secret's execution copy; pass names only.
-- [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projection](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): select the fixed terminal output and record the result without repeating host checks.
-- [Remote native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): actual script delivery, vault environment, history output and failed-scan ordering.
+- [Workflow](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-node-bootstrap-probe.yaml): full public intent, vault/key references, exact placement and native dependencies.
+- [Manifest and metadata](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap): `additionalFiles`, `ctx.extensionFile` and `ctx.writeResource`.
+- [Scripts](https://github.com/hardimpactdev/orbit/tree/main/swamp/extensions/behaviors/operations/node-bootstrap/scripts): one host-key scan and one pinned SSH probe; no embedded TypeScript scripts or Gateway client.
+- [Shared helper](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php): execution-copy references and one terminal history reader/stdout decoder.
+- [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projector](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): fixed result selector and database projection.
+- [Native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): real script delivery, vault environment, history outputs and failed-scan ordering.
 
-Source PRs: [native workflow and scripts](https://github.com/hardimpactdev/orbit-swamp/pull/478) and [Gateway vault-copy primitive](https://github.com/hardimpactdev/orbit/pull/2001). These links identify the source during the monorepo move. Replace this pending status with the merged template, live Operation/run IDs and before/after evidence before declaring the migration resumed.
+Source during relocation: [Swamp pilot 478](https://github.com/hardimpactdev/orbit-swamp/pull/478), its lane24 Orbit port, and [Gateway execution-copy primitive 2001](https://github.com/hardimpactdev/orbit/pull/2001). Add merged template and live Operation/run IDs after the full pilot passes. Preserve rule 5: the GitHub App key and Orbit CA private key stay only in the Gateway; the only step-to-Gateway primitives are scoped token minting and CSR-plus-Operation certificate signing.
