@@ -108,17 +108,16 @@ final class DatabaseConnectionsController extends Controller
         ], 202);
     }
 
+    #[StartsOperation('database.update', secretInputs: ['password'])]
     public function update(
         UpdateDatabaseConnectionRequest $request,
         DatabaseConnection $databaseConnection,
         UpdateDatabaseConnectionAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => DatabaseConnectionData::fromModel(
-                $action->execute($databaseConnection, $request->payload()),
-            )->toArray(),
+            'data' => OperationData::fromModel($action->execute($databaseConnection, $request->payload()))->toArray(),
             'meta' => $this->meta($request),
-        ]);
+        ], 202);
     }
 
     #[StartsOperation('database.destroy')]

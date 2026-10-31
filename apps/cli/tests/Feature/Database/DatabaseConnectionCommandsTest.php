@@ -128,8 +128,7 @@ it('updates supplied fields and requires at least one option', function (): void
         ])
         ->assertExitCode(0);
 
-    expect($mockClient->getLastRequest()?->body()->all())
-        ->toBe(['host' => 'db-internal.example.test']);
+    $mockClient->assertSent(fn ($request): bool => $request instanceof UpdateDatabaseConnectionRequest && $request->body()->all() === ['host' => 'db-internal.example.test']);
 
     $this
         ->artisan('database:update', ['slug' => 'app', '--json' => true])
@@ -547,6 +546,12 @@ function database_cli_display(string $command, array $arguments = []): array
 
 function database_cli_mock(string $request, array $data, int $status = 200): MockClient
 {
+    if ($request === UpdateDatabaseConnectionRequest::class) {
+        $operation = ['id' => 7, 'kind' => 'database.update', 'target_type' => 'database_connection', 'target_id' => 4, 'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['backend' => 'active']];
+        $envelope = ['data' => $operation, 'meta' => ['request_id' => database_cli_request_id()]];
+
+        return MockClient::global([$request => MockResponse::make($envelope, 202), ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)]);
+    }
     if (in_array($request, [QueryDatabaseConnectionRequest::class, ListDatabaseTablesRequest::class, ShowDatabaseSchemaRequest::class, DescribeDatabaseTableRequest::class], true)) {
         $write = ($data['write'] ?? false) === true;
         unset($data['slug'], $data['driver'], $data['write']);

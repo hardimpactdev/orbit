@@ -34,7 +34,6 @@ it('starts one direct managed create with safe typed intent and no Gateway probe
     $operation = Operation::query()->sole();
     expect(app(OperationKinds::class)->definition('database.create'))->not->toHaveKeys(['runs', 'execution', 'completion', 'children']);
     expect($operation->state)->toMatchArray(['swamp_run_id' => $this->runId]);
-    expect($this->admin->statements)->toBe([]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->dbNode->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $input = $this->getJson($path.'?run_id='.$this->runId)->assertOk()->json('data.input');
@@ -59,7 +58,6 @@ it('projects the stored attachment once without Node calls or execution receipts
     $this->postJson($path.'/result', $this->finish)->assertOk();
     $this->assertDatabaseCount('database_connection_targets', 1);
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertConflict();
-    expect($this->admin->statements)->toBe([]);
 });
 
 it('preserves reserved credentials after failure and admits only an identical retry', function (): void {

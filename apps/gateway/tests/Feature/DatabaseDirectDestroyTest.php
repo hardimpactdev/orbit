@@ -28,7 +28,6 @@ it('admits recorded MySQL identity without an execution receipt or PHP probe', f
     expect($prepared->input['owners']->proof)->toBe('proof');
     expect($intent->payload['commands']['database-apply']['protected'])->toBe(['password']);
     expect(array_keys($intent->payload['commands']['database-apply']['input']))->toBe(['password']);
-    expect($this->admin->statements)->toBe([]);
     expect(Operation::query()->count())->toBe(0);
 });
 
@@ -37,7 +36,6 @@ it('refuses system database prefixes before recording an intent', function (): v
         'database' => 'proof', 'test_database' => 'my', 'username' => 'proof']);
     expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]))->toThrow(ResourceOperationException::class, 'System databases');
     expect(DatabaseExecutionIntent::query()->count())->toBe(0);
-    expect($this->admin->statements)->toBe([]);
 });
 
 it('holds create admission while a native owned removal includes the server', function (): void {
@@ -46,7 +44,6 @@ it('holds create admission while a native owned removal includes the server', fu
     expect(fn () => app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server))->toThrow(ResourceOperationException::class, 'removal is unfinished');
     $operation->update(['status' => 'succeeded']);
     app(DatabaseDestroySafety::class)->assertAcceptsCreates($this->server);
-    expect($this->admin->statements)->toBe([]);
 });
 
 it('refuses destruction while creation on the same server is unfinished', function (): void {
@@ -54,7 +51,6 @@ it('refuses destruction while creation on the same server is unfinished', functi
     Operation::query()->create(['kind' => 'database.create', 'target_type' => 'database_server', 'target_id' => $this->server->id, 'node_id' => $this->dbNode->id, 'status' => 'queued', 'input' => []]);
     expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection]))->toThrow(ResourceOperationException::class, 'creation is unfinished');
     $this->assertDatabaseCount('database_execution_intents', 0);
-    expect($this->admin->statements)->toBe([]);
 });
 
 it('refuses system database names before recording a destroy', function (string $name): void {

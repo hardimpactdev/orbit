@@ -8,7 +8,6 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController}.php
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
   - apps/gateway/{app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
-  - apps/agent/src/commands/sqlite_query*.rs
   - apps/gateway/app/Domain/Instances/DatabaseClone/**
 ---
 
@@ -73,7 +72,7 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 
 User creation takes `username`, `password`, optional `read_only`, and optional `replication` (strict booleans, default false). List returns the recorded `replication` attribute without passwords. Create returns an Operation and updates the recorded user after its command succeeds. [Logical replication users](/reference/database-servers#logical-replication-users) defines PostgreSQL grants, WAL requirements, and publication ownership.
 
-`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the pinned SQL admin command with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
+`database_user.create` starts its Swamp workflow directly after admission. The Node worker runs the fixed native SQL action with sudo. PostgreSQL WAL and foreign-role checks run there before changing the login. Those failures appear on the Operation; request validation still rejects unsupported drivers, unsafe names and a username already owned by a connection.
 
 SQL and passwords stay in the encrypted database intent and reach only the shared run-bound private-material callback. Public intent contains the driver, container, username, admitted digest and validation flags. The Gateway projects the recorded user after native success, without a command relay or execution receipt. This direct-only kind has no polled fallback; rollback reverts its cutover PR.
 
@@ -81,15 +80,17 @@ Native resume retries a failed terminal projection from its saved safe outcome w
 
 Deletion returns `database_connection.required_by_ai_router` (409) while [AI router setup](/reference/ai-router#follow-the-cache-connection) uses the connection. This guard stays active when the extension switch is off; teardown releases it.
 
-A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. Processes that explicitly depend on a connection follow a separate contract: a connection update rebuilds their connection-derived environment and reconverges them in place, keeping the Process ID and desired state. The [ai-router collector](/reference/ai-router#follow-the-cache-connection) follows its configured cache connection this way; it needs no manual reattachment.
+A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
-A validated connection change is stored before dependent runtimes converge and is not rolled back on a runtime failure. Retrying an identical update still checks and repairs stale dependents, even when no connection field changes. See [Connection persistence and retry recovery](/reference/ai-router#connection-persistence-and-retry-recovery) for lost responses, crashes, partial completion, and retry limits.
+Updates to a configured AI-router cache connection return `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
 
 ## Inspect a registered connection
 
 Query, tables, schema, and describe accept only a registered slug. The request never supplies its own host, path, user, or password. Every inspection returns HTTP 202 with one `database.read` Operation. The CLI follows that Operation and displays its native result. `--json` returns the terminal Operation with the inspection under `result`.
 
-A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a read-only transaction on the Gateway Node's Swamp worker. SQLite opens the existing file read-only, enables query-only mode, and denies mutation, attachment, and extension functions through its authorizer. A read cannot create a missing SQLite file. Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls. Use explicit write permission for statements outside this read subset.
+A query takes `sql`, at most 16,384 characters, and `write`. A stacked statement returns `database.sql_multiple_statements`. Without `write: true`, statements classified as writes return `database.write_required`. MySQL and PostgreSQL reads run inside a read-only transaction on the Gateway Node's Swamp worker. SQLite opens the existing file read-only, enables query-only mode, and denies mutation, attachment, and extension functions through its authorizer. A read cannot create a missing SQLite file.
+
+Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a fixed set of pure functions. They refuse comments, backslash escapes, dollar quoting, file export clauses, transaction controls and other function calls. Use explicit write permission for statements outside this read subset.
 
 `write: true` starts a `database.write` Operation whose result holds the affected `row_count` and `truncated`, without result rows. Read queries return `columns`, at most 500 `rows`, `row_count`, and `truncated` when rows or bytes exceed the native output bound. For a read, `row_count` counts returned rows. The private callback removes the stored password and credential-shaped text before saving any result resource.
 
@@ -131,7 +132,7 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
-Development SQLite copies run through the [Node agent’s](/reference/node-agent#commands) `instance.copy-sqlite` command. A same-Node copy stays on that Node. A cross-Node copy exports a snapshot, streams it through the Gateway with `instance.read-sqlite-snapshot` and `instance.receive-sqlite-snapshot`, and verifies its size and digest before installation. Rust tests own WAL consistency, writer locks, file modes, and temporary-file cleanup; Gateway tests cover the requested operations and public errors.
+Development SQLite copies run directly in Swamp. A same-Node copy stays on that Node. A cross-Node copy writes a native file artifact; the target reads its exact version and verifies its size and digest before installation. Native tests cover WAL consistency, writer locks, file modes and temporary-file cleanup. Gateway tests cover admission and bounded record changes.
 
 ## Test databases
 
@@ -206,11 +207,11 @@ A test run with `RefreshDatabase` empties the database it uses. A separate test 
 
 ### One result shape for every SQL driver
 
-The Gateway reaches mysql and pgsql through PDO. A SQLite file exists only on its Node, so the agent uses its embedded SQLite library and returns the same result shape. The Gateway retains owner selection, write authorization, and redaction. This removes the hidden CLI execution path and its PHP dependency. A `sqlite3` subprocess would add another output format and parser. Opening the Node file from the Gateway is impossible.
+Swamp runs fixed PDO programs for MySQL and PostgreSQL on the Gateway Node worker. SQLite uses a fixed native program on the file’s Node under its admitted owner. Both return the same bounded result shape. The Gateway records owner selection and write authorization at admission; Swamp owns execution and result redaction.
 
 ### Secrets stay off the command line
 
-The SQL, the path, and the token travel on protected standard input, so they never show in a process list. SSH from the Gateway is the authorization boundary for the hidden command, and WireGuard membership is the boundary for the fleet. The token does not add protection by default.
+SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
 
 ## Direct SQLite cleanup
 

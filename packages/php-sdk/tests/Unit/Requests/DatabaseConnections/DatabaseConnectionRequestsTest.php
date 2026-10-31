@@ -164,6 +164,19 @@ describe('database connection requests', function (): void {
             ]);
     });
 
+    it('returns the update Operation and forwards its idempotency key', function (): void {
+        $request = new UpdateDatabaseConnectionRequest('app', hasPassword: true, password: DATABASE_CONNECTION_SDK_SECRET, idempotencyKey: 'retry-update');
+        $connector = new GatewayConnector('https://gateway.example.test', '/tmp/orbit-ca.pem');
+        $connector->withMockClient(new MockClient([
+            UpdateDatabaseConnectionRequest::class => MockResponse::make(['data' => [
+                'id' => 7, 'kind' => 'database.update', 'target_type' => 'database_connection', 'target_id' => 4,
+                'status' => 'queued', 'sequence' => 1, 'input' => [], 'result' => null,
+            ], 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 202),
+        ]));
+        expect($request->headers()->get('Idempotency-Key'))->toBe('retry-update')
+            ->and($connector->send($request)->dtoOrFail())->toBeInstanceOf(OperationResponse::class);
+    });
+
     it('omits an absent add prefix and encodes hostname selectors', function (): void {
         $withoutPrefix = new AddInstanceDatabaseRequest(12, 'app');
 

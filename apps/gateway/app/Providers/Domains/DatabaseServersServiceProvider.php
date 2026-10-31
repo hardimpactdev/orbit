@@ -10,20 +10,13 @@ use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\DatabaseServers\PostgresConnectionUpdateHook;
 use App\Domain\DatabaseServers\ValkeyConnectionUpdateHook;
-use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessRemovalGuard;
-use App\Infrastructure\DatabaseServers\PredisValkeyServerAdmin;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
 
 final class DatabaseServersServiceProvider extends ServiceProvider
 {
-    /** @var array<class-string, class-string> */
-    public array $bindings = [
-        ValkeyServerAdmin::class => PredisValkeyServerAdmin::class,
-    ];
-
     public function boot(): void
     {
         $this->app->afterResolving(Schedule::class, static function (Schedule $schedule): void {

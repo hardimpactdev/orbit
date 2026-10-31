@@ -50,7 +50,6 @@ it('records MySQL source and reserved owner without SQL plans, live probes or ch
     expect($intent->payload['projection'])->not->toHaveKey('children');
     expect(DatabaseExecutionIntent::query()->count())->toBe(1);
     expect(Operation::query()->count())->toBe(0);
-    expect($this->admin->sql())->toBe('');
 });
 
 it('records one SQLite clone DAG with immutable source and target participants', function (bool $crossNode): void {

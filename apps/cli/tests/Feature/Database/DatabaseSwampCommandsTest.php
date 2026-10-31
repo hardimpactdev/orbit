@@ -13,6 +13,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
@@ -44,6 +45,7 @@ it('follows database Operations and forwards the start key without reading a del
         (new Filesystem)->deleteDirectory($home);
     }
 })->with([
+    'connection-update' => ['database:update', ['slug' => 'throwaway', '--host' => '192.0.2.80'], UpdateDatabaseConnectionRequest::class],
     'server-create' => ['database:server:create', ['slug' => 'dev-db', '--node' => '7'], CreateDatabaseServerRequest::class],
     'server-close' => ['database:server:close', ['slug' => 'dev-db'], CloseDatabaseServerRequest::class],
     'server-destroy' => ['database:server:destroy', ['slug' => 'dev-db', '--force' => true], DestroyDatabaseServerRequest::class],

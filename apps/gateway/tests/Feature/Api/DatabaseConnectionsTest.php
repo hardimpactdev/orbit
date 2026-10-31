@@ -31,6 +31,10 @@ beforeEach(function (): void {
     ]);
     $this->node = $this->markAsGateway($node);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-connection-update', 'runId' => 'e1589ed9-996b-4c9c-aa75-7749ef519210']]];
+    app()->instance(WebSocketClient::class, $socket);
 });
 
 it('selects a production home only on the registered Node and at a path boundary', function (string $path, bool $sameNode, bool $sudo): void {
@@ -139,10 +143,12 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
         'host' => 'db-internal.example.test',
     ]);
 
-    $update
-        ->assertOk()
-        ->assertJsonPath('data.host', 'db-internal.example.test')
-        ->assertJsonPath('data.has_password', true);
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
+    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
+        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
+    ])->assertOk();
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->host)->toBe('db-internal.example.test');
 
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)
         ->toBe(DATABASE_CONNECTION_SECRET);
@@ -275,10 +281,13 @@ it('updates a password independently and clears an optional node association', f
         'password' => $nextSecret,
     ]);
 
-    $update
-        ->assertOk()
-        ->assertJsonPath('data.node_id', null)
-        ->assertJsonPath('data.has_password', true);
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)->toBe(DATABASE_CONNECTION_SECRET);
+    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
+        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
+    ])->assertOk();
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->node_id)->toBeNull();
 
     expect($update->getContent())->not->toContain($nextSecret, DATABASE_CONNECTION_SECRET);
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)->toBe($nextSecret);

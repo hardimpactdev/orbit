@@ -32,7 +32,6 @@ it('records one owned intent with placed work and no Gateway child operation', f
     expect($intent->payload['projection'])->not->toHaveKey('children');
     expect(DatabaseExecutionIntent::query()->count())->toBe(1);
     expect(Operation::query()->count())->toBe(0);
-    expect($this->admin->statements)->toBe([]);
 });
 
 it('admits an empty owned set as a native no-op', function (): void {
