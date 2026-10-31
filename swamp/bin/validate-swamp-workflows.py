@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -14,6 +15,7 @@ def main():
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    args.report.unlink(missing_ok=True)
     source = Path("extensions/behaviors/node-worker/install.ts").read_text()
     pin = re.search(r'export const Swamp = \{\s*version: "([\w.-]+)",\s*sha256: "([a-f0-9]{64})",\s*bytes: (\d+)', source)
     if not pin:
@@ -40,12 +42,26 @@ def main():
             candidate.replace(binary)
         finally:
             candidate.unlink(missing_ok=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("SWAMP_SERVER", "SWAMP_SERVE", "SWAMP_REPO", "SWAMP_CA", "SWAMP_EXTENSIONS"))}
-    env.update(SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
-    actual = subprocess.run([str(binary), "--version"], capture_output=True, text=True, env=env, check=True)
-    if version not in actual.stdout:
-        raise SystemExit("Installed runtime version mismatch")
-    result = subprocess.run([str(binary), "workflow", "validate", "--json"], capture_output=True, text=True, env=env)
+    # Validation must never use the developer/runner account or its credential files.
+    with tempfile.TemporaryDirectory(prefix="swamp-validate-no-auth-") as config:
+        env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": config,
+               "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": config, "SWAMP_CONFIG_DIR": config,
+               "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}
+        actual = subprocess.run([str(binary), "--version"], capture_output=True, text=True, env=env, check=True)
+        if version not in actual.stdout:
+            raise SystemExit("Installed runtime version mismatch")
+        result = subprocess.run([str(binary), "workflow", "validate", "--json"], capture_output=True, text=True, env=env, check=False)
+    if result.returncode:
+        try:
+            error = json.loads(result.stderr)
+        except (ValueError, TypeError):
+            error = {}
+        if error.get("code") == "auth_gate_blocked" and error.get("reason", {}).get("kind") == "no_credential":
+            args.report.write_text(json.dumps({"schema_version": 1, "runtime": version,
+                "status": "auth_unavailable", "validation_ran": False, "workflows_validated": 0,
+                "reason": "official CLI startup account gate blocks before local extension/schema validation"}, indent=2) + "\n")
+            print("SWAMP AUTH UNAVAILABLE: official CLI startup account gate; local extension/schema workflow validation NOT RUN")
+            raise SystemExit(78)
     # Native auto-resolution may emit JSON events before the final validation object.
     start = result.stdout.find('{\n  "workflows"')
     if start < 0:
@@ -55,7 +71,7 @@ def main():
     expected = sum(p.endswith((".yaml", ".yml")) for p in tracked)
     rows = report.get("workflows", [])
     passed = sum(row.get("passed") is True for row in rows)
-    args.report.write_text(json.dumps({"schema_version": 1, "runtime": version, "workflows_total": expected, "workflows_validated": len(rows), "workflows_passing": passed}, indent=2) + "\n")
+    args.report.write_text(json.dumps({"schema_version": 1, "runtime": version, "status": "validated", "validation_ran": True, "workflows_total": expected, "workflows_validated": len(rows), "workflows_passing": passed}, indent=2) + "\n")
     print(f"WORKFLOW-VALIDATE workflows_passing={passed}/{expected} runtime={version}")
     if result.returncode or len(rows) != expected or passed != expected:
         print(result.stdout)
