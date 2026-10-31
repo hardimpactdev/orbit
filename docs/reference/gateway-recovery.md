@@ -485,6 +485,8 @@ Only the Gateway release runner has a bounded self-recovery exception: after an 
 
 An explicit rollback uses the running release's handoff code against the stable Gateway path. It does not execute a retained target's older handoff implementation, which may still require Swamp for unchanged Caddy configuration. Forward deploys keep using the target release's handoff code.
 
+The handoff command's exit status determines success. The caller validates only the stable envelope (`succeeded` and the report object), then records the target's report. It does not impose its own version's Caddy or scheduler report fields on the target release. Release815 exposed this boundary: the older runner rejected `caddy: unchanged` after the new serve phase had already completed successfully. Changes to this caller contract must reach a verified release before a target depends on them.
+
 The scheduler phase:
 
 1. moves the scheduler to the new release without cutting off a scheduled command;
