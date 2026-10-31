@@ -165,14 +165,11 @@ for (const path of await files(`${root}/workflows`)) {
     if (
       node && task.type === "assert" &&
       (typeof task.expr !== "string" ||
-        [task.expr, value.guard].some((v) =>
-          typeof v === "string" && v.includes("(")
-        ) ||
         typeof task.message === "string" &&
           task.message.includes("${{"))
     ) {
       errors.push(
-        `Node assertions must use data-only predicates and static messages: ${path}`,
+        `Node assertions must use string expressions and static messages: ${path}`,
       );
     }
     if (

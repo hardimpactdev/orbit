@@ -147,6 +147,12 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
+Native assertion expressions and guards use Swamp CEL, including grouping,
+`has()` and collection macros such as `all()`. Workflow validation owns CEL
+syntax; the Node placement lint does not impose a separate expression subset.
+Assertions still require a string expression, static messages and matching
+Node placement.
+
 Legacy Gateway HTTP over proxy Nodes 1/18 lives in
 `operations/_lib/node-proxy-http.ts`. Its retained caller uses pinned SSH curl
 on the effect Node with the caller's CA file and timeout. Command lowers import
