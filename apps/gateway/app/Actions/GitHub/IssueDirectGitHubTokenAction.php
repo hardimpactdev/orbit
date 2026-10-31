@@ -13,6 +13,7 @@ use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Models\Activity;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 final readonly class IssueDirectGitHubTokenAction
@@ -22,15 +23,7 @@ final readonly class IssueDirectGitHubTokenAction
     /** @return array{grant: GitHubTokenGrant, credential: GitHubAccessToken} */
     public function handle(Operation $operation, int $callerNodeId, string $runId): array
     {
-        $operation->refresh();
-        $this->direct->assertRun($operation, $runId);
-        $grant = $this->direct->githubTokenGrant($operation);
-        if ($operation->node_id !== $callerNodeId) {
-            throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for the Operation Node.', 403);
-        }
-        if ($operation->status->terminal() || $operation->cancel_requested_at !== null) {
-            throw new ResourceOperationException('operation.github_token_forbidden', 'This intent no longer permits a GitHub credential.', 409);
-        }
+        $grant = $this->authorize($operation, $callerNodeId, $runId);
         $credentials = $this->store->credentials();
         if ($credentials === null) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'Repository credential unavailable.', 403);
@@ -40,6 +33,16 @@ final readonly class IssueDirectGitHubTokenAction
         } catch (ResourceOperationException $exception) {
             $status = $exception->status;
             throw new ResourceOperationException($status === 403 ? 'operation.github_token_forbidden' : 'operation.github_token_unavailable', 'Repository credential unavailable.', $status);
+        }
+        try {
+            if ($this->authorize($operation, $callerNodeId, $runId) != $grant) {
+                throw new ResourceOperationException('operation.github_token_forbidden', 'The admitted GitHub grant changed during minting.', 409);
+            }
+        } catch (\Throwable $exception) {
+            if (! $this->github->revokeInstallationToken($credential)) {
+                Log::warning('operation.github_token_revoke_failed');
+            }
+            throw $exception;
         }
         Activity::query()->create([
             'request_id' => $operation->request_id ?? (string) Str::uuid(),
@@ -51,5 +54,20 @@ final readonly class IssueDirectGitHubTokenAction
         ]);
 
         return ['grant' => $grant, 'credential' => $credential];
+    }
+
+    private function authorize(Operation $operation, int $callerNodeId, string $runId): GitHubTokenGrant
+    {
+        $operation->refresh();
+        $this->direct->assertRun($operation, $runId);
+        $grant = $this->direct->githubTokenGrant($operation);
+        if ($operation->node_id !== $callerNodeId) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for the Operation Node.', 403);
+        }
+        if ($operation->status->terminal() || $operation->cancel_requested_at !== null) {
+            throw new ResourceOperationException('operation.github_token_forbidden', 'This intent no longer permits a GitHub credential.', 409);
+        }
+
+        return $grant;
     }
 }

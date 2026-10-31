@@ -98,3 +98,24 @@ it('refuses a removed polled creation writer before storing a row', function ():
     $this->assertDatabaseCount('processes', 0);
     $this->assertDatabaseCount('operations', 0);
 });
+
+it('captures the real first-visit systemd input with a boolean activation flag', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'node', 'target_id' => $this->node->id,
+        'name' => 'native-first-visit', 'runtime' => 'systemd',
+        'command' => ['/usr/bin/sleep', 'infinity'], 'start' => true,
+    ])->assertAccepted();
+    $operation = Operation::query()->sole();
+    expect($operation->input['activation_pending'])->toBeFalse();
+    $input = $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$operation->state['swamp_run_id'])
+        ->assertOk()->assertJsonPath('data.input.installation.activation_pending', false)->json('data.input');
+    expect($input['installation']['content_hash'])->toBe($operation->input['content_hash']);
+    foreach (['control', 'installation'] as $section) {
+        $input[$section]['process_id'] = 12;
+        $input[$section]['agent_sha256'] = str_repeat('a', 64);
+        $input[$section]['name'] = 'orbit-process-12-native-first-visit.service';
+    }
+    $input['installation']['content_hash'] = str_repeat('b', 64);
+    $fixture = json_decode(file_get_contents(base_path('tests/Fixtures/Processes/create-admitted-input.json')), true, flags: JSON_THROW_ON_ERROR);
+    expect($input)->toBe($fixture);
+});

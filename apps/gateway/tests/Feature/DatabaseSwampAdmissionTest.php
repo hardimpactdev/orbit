@@ -45,8 +45,6 @@ function databaseAdmissionServer(Node $node, string $driver = 'mysql'): Database
 }
 
 beforeEach(function (): void {
-    config(['swamp.run_token' => 'fake.token']);
-    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         $this->markTestSkipped('Database execution awaits Kit B and I enforcement.');
     }
@@ -79,8 +77,8 @@ it('records PostgreSQL intent with a protected owner and locale', function (): v
     $connection = DatabaseConnection::query()->sole();
     expect($connection->database_server_id)->toBe($server->id);
     expect($response->getContent())->not->toContain($connection->password, 'SCRAM-SHA-256', $server->root_password);
-    $input = DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply']['input'];
-    expect($input)->toMatchArray(['driver' => 'pgsql', 'locale' => 'C.UTF-8', 'databases' => ['throwaway']])->not->toHaveKey('sql');
+    expect(DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply']['input']['sql'])
+        ->toContain('LOCALE_PROVIDER builtin', 'NOCREATEDB', 'OWNER', 'REVOKE ALL ON DATABASE');
 });
 
 it('admits reader grants without executing SQL or exposing passwords', function (): void {
@@ -124,17 +122,20 @@ it('keeps registration and reads in Orbit', function (): void {
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('admits a protected SQLite write with a nonresumable effect', function (): void {
+it('admits a protected SQLite write without a Gateway execution path', function (): void {
     $node = databaseAdmissionNode($this);
     DatabaseConnection::query()->create(['slug' => 'throwaway', 'driver' => 'sqlite', 'node_id' => $node->id, 'path' => '/tmp/throwaway.sqlite']);
 
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-write', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->postJson('/api/v1/database-connections/throwaway/query', ['sql' => 'CREATE TABLE sample (id integer)', 'write' => true])
         ->assertAccepted()->assertJsonPath('data.kind', 'database.write');
 
     $command = DatabaseExecutionIntent::query()->sole()->payload['commands']['database-apply'];
     expect($command['name'])->toBe('database.write-sqlite');
-    expect($command['resumable'])->toBeFalse();
-    expect(Operation::query()->sole()->input)->not->toHaveKey('sql');
+    expect(Operation::query()->sole()->input['sql'])->toBe(['$secret' => 'database.intent', 'id' => DatabaseExecutionIntent::query()->sole()->id]);
 });
 
 it('admits removal of a failed server with no Process through a proven Gateway read', function (): void {

@@ -17,6 +17,23 @@ beforeEach(fn () => $this->prepareServerDatabaseFixtures());
 
 describe('database:create --server', function (): void {
 
+    it('refuses a database or user name that the server already has', function (): void {
+        $this->admin->rows = ["SCHEMA_NAME = 'dlf_leden'" => ['dlf_leden']];
+
+        $this->postJson('/api/v1/database-connections', ['slug' => 'dlf-leden', 'server' => 'beast-mysql'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'database.name_conflict');
+
+        $this->admin->rows = ["WHERE User = 'dlf_leden'" => ['dlf_leden']];
+
+        $this->postJson('/api/v1/database-connections', ['slug' => 'dlf-leden', 'server' => 'beast-mysql'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'database.name_conflict');
+
+        expect(DatabaseConnection::query()->exists())->toBeFalse()
+            ->and($this->admin->sql())->not->toContain('CREATE DATABASE');
+    });
+
     it('refuses a database whose name falls under another database\'s test databases', function (): void {
         $this->postJson('/api/v1/database-connections', [
             'slug' => 'shop',
@@ -125,6 +142,18 @@ it('refuses changing a managed PostgreSQL locale after creation', function (): v
 
 describe('PostgreSQL test pool repair', function (): void {
 
+    it('refuses a foreign owner before issuing any managed grants or creation', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+        $this->postJson('/api/v1/database-connections', $request)->assertAccepted();
+        $this->admin->rows = ['SELECT rolname' => ['dlf_feature_x'], 'AND pg_get_userbyid' => ['app_test_test_2']];
+        $this->admin->statements = [];
+
+        $this->postJson('/api/v1/database-connections', $request)->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+
+        expect($this->admin->sql())->not->toContain('CREATE', 'ALTER', 'GRANT', 'REVOKE', 'DROP');
+    });
+
     it('refuses a different pool retry with 409 before running SQL', function (array $change): void {
         $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
         $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
@@ -133,6 +162,14 @@ describe('PostgreSQL test pool repair', function (): void {
         $this->postJson('/api/v1/database-connections', [...$request, ...$change])->assertConflict()->assertJsonPath('error.code', 'database.slug_conflict');
         expect($this->admin->sql())->toBe('');
     })->with(['count' => [['test_processes' => 3]], 'default count' => [['test_processes' => 8]], 'locale' => [['locale' => 'C']]]);
+    it('refuses a missing managed role with 409 without creating databases or a role', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $request = ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2];
+        $this->postJson('/api/v1/database-connections', $request)->assertAccepted();
+        $this->admin->statements = [];
+        $this->postJson('/api/v1/database-connections', $request)->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->not->toContain('CREATE', 'ALTER', 'DROP');
+    });
 
 });
 
@@ -162,6 +199,15 @@ describe('managed PostgreSQL test databases', function (): void {
         $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'driver' => 'pgsql', 'host' => 'db.example.test', 'database' => 'app', 'username' => 'app', 'password' => 'fixture', 'test_processes' => 2])
             ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['test_processes']]]);
         expect($this->admin->sql())->toBe('');
+    });
+
+    it('refuses a live worker name collision with 409 before creating objects', function (): void {
+        $this->server->update(['driver' => 'pgsql', 'tag' => '18']);
+        $this->admin->rows["'app_test_test_2'"] = ['app_test_test_2'];
+        $this->postJson('/api/v1/database-connections', ['slug' => 'app', 'server' => $this->server->slug, 'instance_id' => $this->instance->id, 'test_processes' => 2])
+            ->assertConflict()->assertJsonPath('error.code', 'database.name_conflict');
+        expect($this->admin->sql())->not->toContain('CREATE DATABASE', 'CREATE ROLE', 'DROP DATABASE');
+        $this->assertDatabaseMissing('database_connections', ['slug' => 'app']);
     });
 
     it('refuses a registered primary database that overlaps a planned worker with 409', function (): void {
