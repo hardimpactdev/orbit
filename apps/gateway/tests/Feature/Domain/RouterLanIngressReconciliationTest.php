@@ -19,12 +19,10 @@ use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\FakeRouterLanIngressReconciler;
-use Tests\Support\FakeToolManagerMaterializer;
 
 it('expands Router LAN access before Cluster attachment becomes authoritative', function (): void {
     [$cluster, $member, $reconciler] = router_lan_reconciliation_cluster();
@@ -249,7 +247,6 @@ function router_lan_reconciliation_cluster(): array
 
 function router_lan_provision_fakes(): void
 {
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
     {
         public function converge(Node $node, NodeRole $assignment): void {}

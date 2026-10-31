@@ -42,7 +42,6 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Cluster;
@@ -57,7 +56,6 @@ use Illuminate\Support\Str;
 use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouteRemovalProjector;
-use Tests\Support\FakeToolManagerMaterializer;
 use Tests\Support\RouteForeignChildKinds;
 
 function ensure_active_app_dev_role(Node $node): void
@@ -2112,7 +2110,6 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
     {
         public function converge(Node $node): void {}
     });
-    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->zeroOrMoreTimes()->withNoArgs();
     app()->instance(MetricsFleetReconciler::class, $metrics);

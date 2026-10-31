@@ -12,14 +12,12 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
 use Tests\Support\FakeRoutePublicationSocket;
-use Tests\Support\FakeToolManagerMaterializer;
 
 function fake_storage_preparer(): NodeStorageRootPreparer
 {
@@ -33,7 +31,6 @@ function fake_storage_preparer(): NodeStorageRootPreparer
 
 describe('node storage settings', function (): void {
     beforeEach(function (): void {
-        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
         {
             public function converge(Node $node, NodeRole $assignment): void {}
