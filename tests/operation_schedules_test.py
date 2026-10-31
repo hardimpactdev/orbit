@@ -49,6 +49,8 @@ class OperationSchedulesTest(NativeTestCase):
         import re
         for path in ROOT.glob('workflows/workflow-operation-*.yaml'):
             workflow = yaml.safe_load(path.read_text())
+            if not workflow.get('trigger', {}).get('schedule'):
+                continue
             name = workflow['jobs'][1]['steps'][0]['task']['behaviorName']
             prefix = re.fullmatch(r'\$\{\{ "([^"]+)" \+ string\(self.work.slot\) \}\}', name)
             self.assertIsNotNone(prefix, name)
@@ -74,6 +76,8 @@ class OperationSchedulesTest(NativeTestCase):
         for path in ROOT.glob('workflows/workflow-operation-*.yaml'):
             workflow = yaml.safe_load(path.read_text())
             self.assertIn('@swamp/workflow-summary', workflow['reports']['skip'])
+            if not workflow.get('trigger', {}).get('schedule'):
+                continue
             discover = workflow['jobs'][0]['steps'][0]['task']
             execute = workflow['jobs'][1]['steps'][0]['task']
             prefix = execute['behaviorName'].split('"')[1]
@@ -96,11 +100,11 @@ class OperationSchedulesTest(NativeTestCase):
         self.copy_behaviors('automatic-deploy', 'operation-runner')
         discovery = extensions / 'operation-runner/mod.ts'
         discovery.write_text(discovery.read_text().replace('...operationDiscovery()', '''...operationDiscovery(() => async () => ({status:200,body:{data:{kinds:[
-{kind:"fleet.cli_converge",claimable:4,oldest_at:null}]}}}))'''))
-        folder = extensions / 'operations/fleet'
+{kind:"certificate.converge",claimable:4,oldest_at:null}]}}}))'''))
+        folder = extensions / 'operations/certificates'
         folder.mkdir(parents=True)
         (folder / 'mod.ts').write_text('''import {z} from "npm:zod@4.4.3";
-export const behavior={type:"@nckrtl/operation-fleet",version:"2026.10.30.1",
+export const behavior={type:"@nckrtl/operation-certificates",version:"2026.10.30.1",
 resources:{receipt:{description:"Parallel claim proof",schema:z.object({worker:z.string()}),lifetime:"1d",garbageCollection:1}},
 methods:{execute:{description:"Require four concurrent invocations",arguments:z.object({kind:z.string(),worker:z.string()}),execute:async(args,ctx)=>{
 await Deno.mkdir("entered",{recursive:true});
@@ -113,11 +117,11 @@ await new Promise(r=>setTimeout(r,20));
 }
 return {dataHandles:[await ctx.writeResource("receipt","proof",{worker:args.worker})]};}}}};
 ''')
-        source = (ROOT / 'workflows/workflow-operation-fleet.yaml').read_text()
+        source = (ROOT / 'workflows/workflow-operation-certificates.yaml').read_text()
         source = '\n'.join(line for line in source.splitlines() if not line.startswith('labels:')) + '\n'
-        (repo / 'workflows/workflow-operation-fleet.yaml').write_text(source)
+        (repo / 'workflows/workflow-operation-certificates.yaml').write_text(source)
         self.native_timeout = 40
-        self.cli('workflow', 'run', 'operation-fleet')
+        self.cli('workflow', 'run', 'operation-certificates')
         workers = [p.read_text() for p in (repo / 'entered').iterdir()]
         self.assertEqual(len(set(workers)), 4)
         self.assertEqual({w.rsplit(':', 1)[1] for w in workers}, {'0', '1', '2', '3'})
@@ -131,6 +135,8 @@ return {dataHandles:[await ctx.writeResource("receipt","proof",{worker:args.work
             self.assertFalse(seen.intersection(registration['kinds']))
             seen.update(registration['kinds'])
             workflow = yaml.safe_load((ROOT / f'workflows/workflow-{registration["workflow"]}.yaml').read_text())
+            if not workflow.get('trigger', {}).get('schedule'):
+                continue
             with self.subTest(family=workflow['name']):
                 self.assertTrue(workflow['autoResume'])
                 self.assertEqual(workflow['queueTimeout'], 60)
@@ -172,22 +178,22 @@ return {dataHandles:[await ctx.writeResource("receipt","proof",{worker:args.work
         self.copy_behaviors('automatic-deploy', 'operation-runner')
         discovery = extensions / 'operation-runner/mod.ts'
         discovery.write_text(discovery.read_text().replace('...operationDiscovery()', '''...operationDiscovery(() => async () => ({ status:200, body:{data:{kinds:[
-{kind:"fleet.cli_converge",claimable:1,oldest_at:null},{kind:"database.create",claimable:1,oldest_at:null}]}} }))'''))
+{kind:"certificate.converge",claimable:1,oldest_at:null},{kind:"database.create",claimable:1,oldest_at:null}]}} }))'''))
         if block_discovery:
             with discovery.open('a') as source:
-                source.write('\nconst discover=behavior.methods.discover.execute;\nbehavior.methods.discover.execute=async(args,ctx)=>{\nawait Deno.writeTextFile(args.family+"-discover-started","yes");\nif(args.family==="operation-fleet")await Deno.writeTextFile("parent-running","yes");\nconst other=args.family==="operation-fleet"?"operation-database":"operation-fleet";\nfor(let i=0;;i++){\ntry{await Deno.stat(other+"-discover-started");break}catch(e){if(!(e instanceof Deno.errors.NotFound))throw e}\nif(i>=500){await Deno.writeTextFile("discovery-failed","yes");throw new Error("discovery_blocked_sibling");}\nawait new Promise(r=>setTimeout(r,20));\n}\nreturn await discover(args,ctx);\n};\n')
+                source.write('\nconst discover=behavior.methods.discover.execute;\nbehavior.methods.discover.execute=async(args,ctx)=>{\nawait Deno.writeTextFile(args.family+"-discover-started","yes");\nif(args.family==="operation-certificates")await Deno.writeTextFile("parent-running","yes");\nconst other=args.family==="operation-certificates"?"operation-database":"operation-certificates";\nfor(let i=0;;i++){\ntry{await Deno.stat(other+"-discover-started");break}catch(e){if(!(e instanceof Deno.errors.NotFound))throw e}\nif(i>=500){await Deno.writeTextFile("discovery-failed","yes");throw new Error("discovery_blocked_sibling");}\nawait new Promise(r=>setTimeout(r,20));\n}\nreturn await discover(args,ctx);\n};\n')
         probe = '''import {z} from "npm:zod@4.4.3";
 export const behavior={type:"@nckrtl/operation-FAMILY",version:"2026.10.30.1",
 resources:{receipt:{description:"Scheduler isolation proof",schema:z.object({done:z.boolean()}),lifetime:"1d",garbageCollection:1}},
 methods:{execute:{description:"Local test barrier",arguments:z.object({kind:z.string(),worker:z.string()}),execute:async(_args,ctx)=>{
 const exists=async(p)=>{try{await Deno.stat(p);return true}catch(e){if(e instanceof Deno.errors.NotFound)return false;throw e}};
-if("FAMILY"==="fleet")await Deno.writeTextFile("parent-running","yes");
-const awaited="FAMILY"==="fleet"?"child-completed":"parent-running";
+if("FAMILY"==="certificates")await Deno.writeTextFile("parent-running","yes");
+const awaited="FAMILY"==="certificates"?"child-completed":"parent-running";
 for(let i=0;!await exists(awaited);i++){if(i>=500){await Deno.writeTextFile("execution-failed","yes");throw new Error("family_dispatch_blocked");}await new Promise(r=>setTimeout(r,20))}
-await Deno.writeTextFile("FAMILY"==="fleet"?"parent-completed":"child-completed",String(Date.now()));
+await Deno.writeTextFile("FAMILY"==="certificates"?"parent-completed":"child-completed",String(Date.now()));
 return {dataHandles:[await ctx.writeResource("receipt","proof",{done:true})]};}}}};
 '''
-        for family in ('fleet', 'database'):
+        for family in ('certificates', 'database'):
             folder = extensions / f'operations/{family}'
             folder.mkdir(parents=True)
             (folder / 'mod.ts').write_text(probe.replace('FAMILY', family))
@@ -197,7 +203,7 @@ return {dataHandles:[await ctx.writeResource("receipt","proof",{done:true})]};}}
             (repo / f'workflows/workflow-operation-{family}.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
         env = {k: v for k, v in os.environ.items() if not k.startswith('SWAMP_SERVER_') and k not in ('SWAMP_SERVE_URL', 'SWAMP_REPO_DIR')}
         env.update(SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
-        for family in ('fleet', 'database'):
+        for family in ('certificates', 'database'):
             self.native_timeout = 20
             self.cli('workflow', 'validate', 'operation-' + family)
         with socket.socket() as sock:

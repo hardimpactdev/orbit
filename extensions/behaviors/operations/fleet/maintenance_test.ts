@@ -11,7 +11,6 @@ class MaintenanceFixture {
   loseAdmission = false;
   failPr = false;
   dnsDigest = "a".repeat(64);
-  prWriter = "direct";
   baseRevision = "b".repeat(40);
   recipeRevision = "b".repeat(64);
   servingRevision = "c".repeat(64);
@@ -26,7 +25,6 @@ class MaintenanceFixture {
   recipeIntents = new Map<string, number>();
   targets = [{
     node_id: 3,
-    window: true,
     attempts: 0,
     running: false,
     finished_at: null as string | null,
@@ -62,7 +60,6 @@ class MaintenanceFixture {
       if (this.failPr) throw new Error("fleet.github_unavailable");
       data = {
         status: "ready",
-        writer: this.prWriter,
         recipe_revision: this.recipeRevision,
         base_revision: this.baseRevision,
         serving_recipe_revision: this.servingRevision,
@@ -220,21 +217,27 @@ Deno.test("failed hourly work retries with a fresh key; success does not", async
   assertEquals(writes[0].key === writes[1].key, false);
 });
 
-Deno.test("direct recipe maintenance queries only every five minutes and waits for the owning writer", async () => {
+Deno.test("recipe PR maintenance queries every five minutes without writer options", async () => {
   const f = new MaintenanceFixture();
-  f.prWriter = "polled";
   await f.tick("2026-10-28T02:00:00Z");
-  assertEquals(f.writes("/api/v1/fleet/recipe-pr").length, 0);
+  assertEquals(f.writes("/api/v1/fleet/recipe-pr").length, 2);
   const before =
     f.calls.filter((call) => call.path.endsWith("/recipe-pr/plan")).length;
-  f.prWriter = "direct";
   await f.tick("2026-10-28T02:01:00Z");
   assertEquals(
     f.calls.filter((call) => call.path.endsWith("/recipe-pr/plan")).length,
     before,
   );
   await f.tick("2026-10-28T02:05:00Z");
-  assertEquals(f.writes("/api/v1/fleet/recipe-pr").length, 2);
+  assertEquals(f.writes("/api/v1/fleet/recipe-pr").length, 4);
+});
+Deno.test("rollout admission needs no window field and leaves the maintenance window to its native DAG", async () => {
+  const f = new MaintenanceFixture();
+  await f.tick("2026-10-28T12:00:00Z");
+  assertEquals(
+    f.writes("/api/v1/fleet/nodes/3/rollout").map((call) => call.body),
+    [{ rollout_id: 5 }],
+  );
 });
 
 const candidate = (checks = "passed") => ({

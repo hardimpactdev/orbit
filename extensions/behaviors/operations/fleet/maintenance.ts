@@ -14,7 +14,7 @@ const Admission = z.object({
   attempt: z.number().int().nonnegative(),
   generation: z.string().optional(),
 });
-export const MaintenanceReceipt = Admission;
+export const MaintenanceIntent = Admission;
 export async function maintenance(
   args: { tick: string },
   ctx: Context,
@@ -257,14 +257,13 @@ export async function maintenance(
           node_id: z.number(),
           attempts: z.number(),
           finished_at: z.string().nullable().optional(),
-          window: z.boolean(),
           running: z.boolean(),
         }),
       ).default([]),
     }).parse(await request("GET", "/api/v1/fleet/rollout/plan"));
     // Pending Nodes precede catch-up retries; a busy or unreachable Node does not starve later ones.
     const target = rollout.targets.filter((t) =>
-      t.window && !t.running && (t.attempts === 0 || !t.finished_at ||
+      !t.running && (t.attempts === 0 || !t.finished_at ||
         new Date(t.finished_at).getTime() <= at.getTime() - 300_000)
     ).sort((a, b) =>
       a.attempts - b.attempts
