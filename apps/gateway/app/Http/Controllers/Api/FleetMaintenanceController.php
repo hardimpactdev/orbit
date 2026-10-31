@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\AdmitFleetCliAction;
+use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\AdmitRecipePrAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Fleet\PeerDnsTargetsAction;
@@ -45,7 +45,8 @@ final class FleetMaintenanceController extends Controller
     #[StartsOperation('fleet.rollout')]
     public function rollout(AdmitFleetReleaseRequest $request, AdmitFleetRolloutAction $action): JsonResponse
     {
-        $operation = $action->execute($request->validated('rollout_id'), $request->validated('node_ids'));
+        $operation = $action->execute($request->validated('rollout_id') === null ? null : $request->integer('rollout_id'),
+            $request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }
@@ -53,7 +54,7 @@ final class FleetMaintenanceController extends Controller
     #[StartsOperation('fleet.cli_converge')]
     public function cli(AdmitFleetReleaseRequest $request, AdmitFleetCliAction $action): JsonResponse
     {
-        $operation = $action->fleet($request->validated('node_ids'));
+        $operation = $action->fleet($request->validated('node_ids') === null ? null : ValidatedData::integerList($request->validated('node_ids')));
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202);
     }

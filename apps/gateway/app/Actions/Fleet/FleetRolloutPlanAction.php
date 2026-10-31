@@ -18,7 +18,7 @@ final readonly class FleetRolloutPlanAction
     public function __construct(private DesiredFleetState $desired, private FleetRolloutPlanner $planner,
         private FleetRolloutMembership $membership, private FleetReleaseLag $lag, private FleetServingRelease $serving) {}
 
-    /** @return array<string,mixed> */
+    /** @return array{status:string,rollout?:int,commit?:string,targets?:list<array{node_id:int,row_id:int,attempts:int,finished_at:?string}>} */
     public function execute(): array
     {
         if (! config('fleet.rollout')) {

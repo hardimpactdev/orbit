@@ -13,8 +13,6 @@ use LogicException;
 
 /**
  * Hydrates only declared, target-owned references. Holds no values between requests.
- *
- * @phpstan-import-type RunInput from SwampOperationExecutor
  */
 final readonly class OperationSecrets
 {
@@ -46,39 +44,6 @@ final readonly class OperationSecrets
         }
 
         return ['input' => $input, 'values' => $values];
-    }
-
-    /**
-     * Read only a declared existing connection credential, never payload hydration or minting.
-     *
-     * @param  RunInput  $run
-     */
-    public function connection(Operation $operation, array $run, string $parameter): OperationSecretValue
-    {
-        $spec = app(OperationExecutionContract::class)->authorizeRun($operation, $run);
-        $name = $spec['secrets'][$parameter] ?? null;
-        if ($name === null) {
-            $this->refuse();
-        }
-        $input = [];
-        Arr::set($input, $parameter, Arr::get($run['input'], $parameter));
-        $reference = $this->references($operation, $input, [$parameter => $name])[$parameter];
-        $source = $this->source($name);
-        if (! $source instanceof OperationConnectionSecretSource) {
-            $this->refuse();
-        }
-        try {
-            $value = $source->resolveConnection($operation, $reference['id']);
-            if ($value->requiresRedaction() && $value->strings() === []) {
-                $this->refuse();
-            }
-
-            return $value;
-        } catch (ResourceOperationException $exception) {
-            throw self::refusal($exception);
-        } catch (\Throwable) {
-            $this->refuse();
-        }
     }
 
     /** @param array<string, mixed> $input

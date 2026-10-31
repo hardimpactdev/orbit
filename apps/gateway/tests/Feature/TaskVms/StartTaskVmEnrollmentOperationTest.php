@@ -94,8 +94,6 @@ it('records one host-placed enrollment root and starts its native DAG without ch
     Queue::assertNothingPushed();
 })->with(['incus', 'upcloud']);
 
-
-
 it('ignores absent or terminal VMs without recording another intent', function (): void {
     expect(app(StartTaskVmEnrollmentOperationAction::class)->execute(PHP_INT_MAX))->toBeNull();
     $vm = standaloneEnrollmentVm();

@@ -8,22 +8,13 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
-use Illuminate\Support\Arr;
 use Throwable;
 
 /** Extracts transient outputs into existing family-owned encrypted records using their registered owner checks and record writes. */
 final readonly class OperationSecretOutputs
 {
     /** @param iterable<OperationSecretOutputStore> $stores */
-    public function __construct(#[Tag(OperationSecretOutputStore::class)] private iterable $stores, private OperationKinds $kinds) {}
-
-    /** @return list<array{name:string,secret:true,store:string}> */
-    private function fields(Operation $operation): array
-    {
-        $definition = $this->kinds->definition($operation->kind);
-
-        return is_array($definition) ? self::declarations($definition['result_fields']) : [];
-    }
+    public function __construct(#[Tag(OperationSecretOutputStore::class)] private iterable $stores) {}
 
     /** @param list<string|array<string,mixed>> $fields
      * @return list<array{name:string,secret:true,store:string}>
@@ -38,53 +29,6 @@ final readonly class OperationSecretOutputs
         }
 
         return $outputs;
-    }
-
-    /** @return list<string> Public declaration paths, never values. */
-    public function paths(Operation $operation): array
-    {
-        return array_column($this->fields($operation), 'name');
-    }
-
-    public function authorize(Operation $operation): void
-    {
-        foreach ($this->fields($operation) as $field) {
-            $this->owner($operation, $this->store($field['store']));
-        }
-    }
-
-    /** @param array<string,mixed> $result
-     * @return array{result:array<string,mixed>,values:list<string>}
-     */
-    public function extract(Operation $operation, #[\SensitiveParameter] array $result): array
-    {
-        $values = [];
-        $bytes = 0;
-        foreach ($this->fields($operation) as $field) {
-            $entry = self::atPath($result, $field['name']);
-            if (! $entry['found']) {
-                continue;
-            }
-            $value = $entry['value'];
-            if ($value === ['$secret_output' => true]) {
-                throw new ResourceOperationException('operation.execution_uncertain', 'The target confirms an output but its value was not stored.', 409);
-            }
-            try {
-                $bytes += strlen(json_encode($value, JSON_THROW_ON_ERROR));
-                if ($bytes > OperationResultFields::MaximumResultBytes) {
-                    $this->refuse();
-                }
-                $reference = $this->write($operation, $field['store'], $value);
-            } catch (ResourceOperationException $exception) {
-                throw OperationSecrets::refusal($exception);
-            } catch (Throwable) {
-                $this->refuse();
-            }
-            $values = [...$values, ...new OperationSecretValue($value)->strings()];
-            Arr::set($result, $field['name'], $reference);
-        }
-
-        return ['result' => $result, 'values' => $values];
     }
 
     /** Write one transient output through its registered owner store. No Operation state or receipt.

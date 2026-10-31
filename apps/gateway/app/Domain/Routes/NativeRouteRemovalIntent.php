@@ -81,9 +81,7 @@ final readonly class NativeRouteRemovalIntent
             if (in_array($node->id, $excludedEffectNodeIds, true)) {
                 continue;
             }
-            if (! isset($nodes[$node->id])) {
-                $nodes[$node->id] = $this->memberForNode($node);
-            }
+            $nodes[$node->id] ??= $this->memberForNode($node);
             $nodes[$node->id]['shared_php'] = true;
         }
         ksort($nodes);

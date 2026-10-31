@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorObservations;
 use App\Domain\Doctor\DoctorProjection;
-use App\Infrastructure\AgentView\AgentChannelState;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Operation;
 
@@ -49,4 +48,3 @@ it('keeps another Nodes observations out of a participants public input', functi
     expect($view['nodes'][0])->not->toHaveKey('observations')
         ->and((array) $view['nodes'][1]['observations']['units'])->toBe(['systemd:orbit-process-41-worker' => 'active']);
 });
-

@@ -54,6 +54,16 @@ final readonly class UpdateClusterAction
         $tldChanging = $data->tldProvided && $proposedTld !== $current->tld;
         $selectionChanging = $data->tldProvided || $stateChanging;
 
+        if ($stateChanging || $tldChanging) {
+            foreach ($this->routeReconciler()->activePrivatePlacementChanges(
+                clusterOverrides: [$clusterId => ['tld' => $proposedTld, 'state' => $proposedState]],
+            ) as $change) {
+                if ($change['route']->isAnalyticsTracking()) {
+                    $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+                }
+            }
+        }
+
         if ($tldChanging && ! $stateChanging) {
             $this->tldScope->assertClusterTldAvailable($current, $proposedTld, $proposedState);
             $this->assertActiveRouterIfRequired($current, $proposedTld, $proposedState);

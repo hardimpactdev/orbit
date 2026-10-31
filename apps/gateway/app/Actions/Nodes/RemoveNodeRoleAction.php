@@ -26,9 +26,6 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerScopeLock;
-use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -43,7 +40,6 @@ final readonly class RemoveNodeRoleAction
         private NodeRoleDependentCleaner $cleaner,
         private RoleBaselineConverger $baselines,
         private RoleRegistry $registry,
-        private ToolManagerScopeLock $managerScope,
         private NodeReachabilityProbe $reachability,
         private NodeSideResidue $residue,
         private NodeRoleFirewallManager $firewall,
@@ -105,10 +101,6 @@ final readonly class RemoveNodeRoleAction
             default => null,
         };
 
-        if ($this->isAppRole($role)) {
-            return $this->announceUpdated($node, $this->removeAppRole($node, $role, $purgeData, $degradation));
-        }
-
         return $this->announceUpdated($node, $this->removeClaimedRole($node, $role, $purgeData, $degradation));
     }
 
@@ -152,38 +144,6 @@ final readonly class RemoveNodeRoleAction
         }
 
         return true;
-    }
-
-    private function removeAppRole(
-        Node $node,
-        RoleName $role,
-        bool $purgeData,
-        ?ExporterDegradationReason $degradation,
-    ): NodeRoleRemovalOutcome {
-        try {
-            return $this->managerScope->run(
-                $node->id,
-                ToolManagerName::Vp,
-                fn (): NodeRoleRemovalOutcome => $this->managerScope->run(
-                    $node->id,
-                    ToolManagerName::Composer,
-                    fn (): NodeRoleRemovalOutcome => $this->removeClaimedRole(
-                        $node,
-                        $role,
-                        $purgeData,
-                        $degradation,
-                    ),
-                ),
-            );
-        } catch (ToolManagerScopeLockException $exception) {
-            throw new NodeRoleOperationException(
-                step: 'tool-manager-lock',
-                errorCode: 'node_role.remove_failed',
-                underlyingErrorCode: 'node_role.tool_manager_locked',
-                message: "Tool manager state is busy on node [{$node->name}].",
-                previous: $exception,
-            );
-        }
     }
 
     /**
@@ -326,11 +286,6 @@ final readonly class RemoveNodeRoleAction
             result: $exception->result,
             previous: $exception,
         );
-    }
-
-    private function isAppRole(RoleName $role): bool
-    {
-        return $role === RoleName::AppDev || $role === RoleName::AppProd;
     }
 
     private function routeGuard(): RouteRemovalGuard

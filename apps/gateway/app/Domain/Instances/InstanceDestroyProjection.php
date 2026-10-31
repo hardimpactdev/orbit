@@ -85,9 +85,7 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
             return $view;
         }
         $current = $this->input($operation);
-        $select = static function (mixed $rows) use ($local): array {
-            return array_map(static fn (array $row): array => ['nodes' => $local($row['nodes']), 'dns' => $local($row['dns'])], InstanceLifecycleInput::members(['members' => $rows]));
-        };
+        $select = (static fn (mixed $rows): array => array_map(static fn (array $row): array => ['nodes' => $local($row['nodes']), 'dns' => $local($row['dns'])], InstanceLifecycleInput::members(['members' => $rows])));
         $view['publication_node_id'] = $callerNodeId;
         $view['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($callerNodeId));
         $view['withdrawal_publications'] = $select($current['withdrawal_publications'] ?? []);

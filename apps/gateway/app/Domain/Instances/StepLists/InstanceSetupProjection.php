@@ -64,7 +64,7 @@ final readonly class InstanceSetupProjection implements DirectOperationProjectio
 
         return DB::transaction(function () use ($operation, $data, $result, $code): Operation {
             $terminal = $operation->refresh()->status->terminal();
-            $projected = $this->direct->project($operation, $data, $result, 'lifecycle');
+            $projected = $this->direct->project($operation, $data, $result);
             if (! $terminal) {
                 app(InstanceSetupState::class)->project($projected, $projected->status, $code);
             }

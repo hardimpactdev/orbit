@@ -21,7 +21,6 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileComponent;
-use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\MachineArchitecture;
@@ -45,8 +44,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
-use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
@@ -57,7 +54,6 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
-use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -67,7 +63,6 @@ final readonly class ProvisionNodeAction
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
-        private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
@@ -341,7 +336,7 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId, $data): void {
+            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId): void {
                 $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
                 if ($node->exists) {
                     $this->routeReconciler()->reconcile(
@@ -352,10 +347,6 @@ final readonly class ProvisionNodeAction
                     );
                 }
                 $node->save();
-                if ($data->taskVmId !== null) {
-                    // Before any convergence, so the rollout and the CLI install already see a task VM Node.
-                    TaskVm::query()->whereKey($data->taskVmId)->update(['node_id' => $node->id]);
-                }
             });
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
@@ -376,7 +367,6 @@ final readonly class ProvisionNodeAction
                     $data->expectedSshHostFingerprint,
                     function () use ($node, $managedUser, $data): void {
                         $node->user = $managedUser;
-                        $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data);
                     },
                     $rolelessOperator,
@@ -392,8 +382,6 @@ final readonly class ProvisionNodeAction
                 );
                 $clock->step('node-converge');
                 $node->user = $managedUser;
-                $this->toolManagers->converge($node, ToolManagerName::Apt);
-                $clock->step('apt-tool-manager');
                 $this->convergeRoles($node, $data);
                 $clock->step('roles');
             }
@@ -500,13 +488,9 @@ final readonly class ProvisionNodeAction
         // exporter selection only ever considers active nodes. The node is
         // active here, so every provisioning outcome reconciles: a role-bearing
         // node becomes a selected exporter, and a roleless node picks up an
-        // explicit preference it kept from an earlier registration. A task VM
-        // Node never hosts an exporter, so its enrollment changes nothing that
-        // Metrics owns and skips the fleet-wide reconcile.
+        // explicit preference it kept from an earlier registration.
         try {
-            if ($data->taskVmId === null) {
-                $this->metrics->reconcile();
-            }
+            $this->metrics->reconcile();
         } catch (Throwable $exception) {
             if ($exception instanceof MetricsFleetReconcileException) {
                 if ($exception->component !== MetricsReconcileComponent::Runtime) {
@@ -566,11 +550,7 @@ final readonly class ProvisionNodeAction
         };
 
         try {
-            if ($data->taskVmId === null) {
-                $converge();
-            } else {
-                app(MetricsReconcileDeferral::class)->during($converge);
-            }
+            $converge();
         } catch (NodeRoleOperationException $exception) {
             throw new NodeProvisioningException(
                 step: "role:{$exception->step}",

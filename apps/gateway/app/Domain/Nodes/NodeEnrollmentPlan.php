@@ -16,7 +16,7 @@ final readonly class NodeEnrollmentPlan
     public function __construct(private NodeEnrollmentRoutes $routes) {}
 
     /** @param array<string,mixed> $input
-     * @param  array{route_changes:list<array{route_id:int,domain:string,node_id:int}>,roles:list<string>,settings_provided:bool,task_vm_id:?int}  $intent
+     * @param  array{route_changes:list<array{route_id:int,domain:string,node_id:int}>,roles:list<string>,settings_provided:bool}  $intent
      * @return list<array<string,mixed>>
      */
     public function build(Node $node, array $input, array $intent): array
@@ -68,12 +68,10 @@ final readonly class NodeEnrollmentPlan
                 }
             }
             if ($input['mode'] === 'linux') {
-                if ($intent['task_vm_id'] === null) {
-                    $metrics = Node::query()->where('status', LifecycleStatus::Active)
-                        ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->first();
-                    if ($metrics !== null) {
-                        $steps[] = $this->child('add-metrics', 'metrics.reconcile', $metrics->id, optional: true);
-                    }
+                $metrics = Node::query()->where('status', LifecycleStatus::Active)
+                    ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->first();
+                if ($metrics !== null) {
+                    $steps[] = $this->child('add-metrics', 'metrics.reconcile', $metrics->id, optional: true);
                 }
             }
             $steps[] = $this->child('add-cli', 'fleet.cli_converge', $node->id, optional: true);

@@ -10,7 +10,6 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
-use App\Domain\Operations\OperationCompletion;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -19,7 +18,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /** Stores validated settings only after the executor proves the filesystem check. */
-final readonly class NodeSettingsOperationCompletion implements OperationCompletion
+final readonly class NodeSettingsOperationCompletion
 {
     public function __construct(private NodeSettingsNormalizer $normalizer, private RecordEventBroadcaster $broadcaster) {}
 

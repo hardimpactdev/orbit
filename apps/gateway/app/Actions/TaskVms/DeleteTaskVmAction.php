@@ -10,7 +10,7 @@ use App\Models\TaskVm;
 /** The synchronous Task cleanup caller must compose VM removal in its own native root. */
 final readonly class DeleteTaskVmAction
 {
-    public function execute(TaskVm $vm): void
+    public function execute(TaskVm $vm): never
     {
         throw new ResourceOperationException('operation.kind_unavailable', 'Task VM removal requires its owning native parent.', 409,
             details: ['task_vm_id' => $vm->id]);
