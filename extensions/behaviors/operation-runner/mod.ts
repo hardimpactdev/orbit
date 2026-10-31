@@ -52,6 +52,12 @@ export const Operation = z.object({
     z.record(z.string(), z.unknown()),
   ),
 });
+// Child admission returns identity/status metadata, including for direct children
+// that intentionally have no polled execution contract or step results.
+const ChildAdmissionMetadata = Operation.omit({
+  execution_context: true,
+  step_results: true,
+});
 export const ChildReceipt = z.object({
   id: z.number().int().positive(),
   key: z.string(),
@@ -161,8 +167,8 @@ export class Executor {
     parentId: number,
     worker: string,
     key: string,
-  ): Promise<ClaimedOperation> {
-    return Operation.parse(
+  ): Promise<z.infer<typeof ChildAdmissionMetadata>> {
+    return ChildAdmissionMetadata.parse(
       await this.post(`${parentId}/children`, { worker, key }),
     );
   }

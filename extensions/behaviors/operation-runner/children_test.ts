@@ -36,6 +36,38 @@ Deno.test("child admission sends only the server-recorded key and preserves stam
   }]);
 });
 
+Deno.test("child admission accepts direct metadata without inventing polled execution fields", async () => {
+  const { step_results: _steps, ...direct } = operation(2);
+  const http: Http = () =>
+    Promise.resolve({ status: 202, body: { data: direct } });
+  const child = await new Executor(http).child(1, "parent-worker", "apply");
+  assertEquals(child.id, 2);
+  assertEquals(child.parent_operation_id, 1);
+  assertEquals(child.child_key, "apply");
+  assertEquals(child.input, {});
+  assertEquals("step_results" in child, false);
+  assertEquals("execution_context" in child, false);
+  // Claimed polled work still requires its recorded execution fields.
+  assertEquals(Operation.safeParse(direct).success, false);
+});
+
+Deno.test("direct terminal child metadata preserves null results and terminal status", async () => {
+  for (const status of ["succeeded", "failed", "cancelled"]) {
+    const { step_results: _steps, ...direct } = operation(2, status);
+    const executor = new Executor(() =>
+      Promise.resolve({
+        status: 200,
+        body: { data: { ...direct, result: null } },
+      })
+    );
+    const child = await executor.child(1, "parent-worker", "apply");
+    assertEquals(child.status, status);
+    assertEquals(child.result, null);
+    assertEquals("step_results" in child, false);
+    assertEquals("execution_context" in child, false);
+  }
+});
+
 Deno.test("exact child claim sends operation_id and has no pending-work fallback", async () => {
   const http: Http = (_method, _path, body) => {
     assertEquals(body, {
@@ -161,7 +193,7 @@ Deno.test("waiting parent is dispatched again only when read-only discovery repo
   assertEquals(Operation.parse(operation(1)).node_id, null);
 });
 
-Deno.test("child and claim accept empty public maps in descriptor and completion context", async () => {
+Deno.test("claim normalizes execution context while child exposes only admission metadata", async () => {
   const value = {
     ...operation(2),
     execution_context: {
@@ -181,8 +213,13 @@ Deno.test("child and claim accept empty public maps in descriptor and completion
     Promise.resolve({ status: 200, body: { data: value } });
   const executor = new Executor(http);
   const child = await executor.child(1, "parent", "apply");
-  assertEquals(child.execution_context.descriptors[0].input, {});
-  assertEquals(child.execution_context.result, {});
+  assertEquals("execution_context" in child, false);
+  assertEquals("step_results" in child, false);
+  assertEquals(
+    (await executor.claim("test.child", "child", 2))
+      ?.execution_context.descriptors[0].input,
+    {},
+  );
   assertEquals(
     (await executor.claim("test.child", "child", 2))?.execution_context.result,
     {},

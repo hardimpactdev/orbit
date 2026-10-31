@@ -3,7 +3,11 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 import { RouteParentStages, RouteWaiting } from "./parents.ts";
 import { RouteRefusal } from "./lifecycle.ts";
 
-function fixture(status = "queued", error_code: string | null = null) {
+function fixture(
+  status = "queued",
+  error_code: string | null = null,
+  directChild = false,
+) {
   const calls: {
     method: string;
     path: string;
@@ -45,7 +49,9 @@ function fixture(status = "queued", error_code: string | null = null) {
               input: {},
               status: path.endsWith("/wait") ? "waiting" : "queued",
               cancel_requested: false,
-              step_results: {},
+              ...(directChild && path.endsWith("/children")
+                ? {}
+                : { step_results: {} }),
               parent_operation_id: 17,
               child_key: "dns-published.node-17",
             }
@@ -115,6 +121,22 @@ Deno.test("re-entry reuses keyed child admission and commits only its proven ter
     f.calls.filter((c) => c.body.key === "stage-commit.dns-published").length,
     1,
   );
+});
+Deno.test("a Route parent accepts a direct DNS child receipt without polled execution fields", async () => {
+  const f = fixture("queued", null, true);
+  await assertRejects(() => f.stages().run("dns-published"), RouteWaiting);
+  assertEquals(f.waits, [["dns-published.node-17"]]);
+  assertEquals(
+    f.calls.some((c) => c.body.key === "stage-commit.dns-published"),
+    false,
+  );
+  f.setStatus("succeeded");
+  await f.stages().run("dns-published");
+  assertEquals(
+    f.calls.filter((c) => c.body.key === "stage-commit.dns-published").length,
+    1,
+  );
+  assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
 });
 Deno.test("a failed own child supplies a fixed refusal for the Route rollback policy", async () => {
   const f = fixture("failed", "private_dns.activation_failed");
