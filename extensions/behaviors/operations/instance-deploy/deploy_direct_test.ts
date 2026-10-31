@@ -65,7 +65,7 @@ async function fixture() {
         status: 200,
         body: {
           data: {
-            git_read: { github_token: "private-git-token" },
+            git_read: "private-git-token",
             vp_materialize: { user: "nckrtl" },
           },
         },
@@ -300,7 +300,7 @@ Deno.test("verification refuses a different checked-out commit after app scripts
   );
 });
 
-Deno.test("pending Route composition cannot be silently skipped by the unpublished root", async () => {
+Deno.test("a pending Route repair is refused before source effects", async () => {
   const f = await fixture();
   f.input.deployment.projection_route_id = 42;
   await assertRejects(
@@ -308,7 +308,7 @@ Deno.test("pending Route composition cannot be silently skipped by the unpublish
       deployDirect({ http: () => f.http, invoke: f.invoke }).methods.run
         .execute(f.args, f.ctx),
     Error,
-    "deployment.projection_unavailable",
+    "deployment.projection_pending",
   );
   assertEquals(f.calls, []);
   assertEquals(f.commands, []);
@@ -452,4 +452,15 @@ Deno.test("optional command failure counts a warning without exposing output", a
   assertEquals((f.posts.at(-1)?.result as { warnings: number }).warnings, 1);
   assertEquals(f.posts.at(-1)?.status, "succeeded");
   assertEquals(JSON.stringify(f.posts).includes("private warning"), false);
+});
+
+Deno.test("final checkout inspection uses the configured account without sudo", async () => {
+  const f = await fixture();
+  await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+    .methods.run.execute(f.args, f.ctx);
+  const inspect = f.calls.find((call) =>
+    call.name === "instance.inspect-development-source"
+  );
+  assertEquals(inspect?.sudo, false);
+  assertEquals(inspect?.mutates, false);
 });

@@ -35,7 +35,7 @@ type Ports = {
   now?: () => number;
 };
 
-/** Unpublished root while complete production and publication composition is in progress. */
+/** Native development deploy; the admitted environment selects its configured Node account. */
 export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
   return {
@@ -139,9 +139,9 @@ export function deployDirect(ports: Ports = {}) {
               result: {},
             });
             await check();
-            // Publication must be composed before this root can replace the whole kind.
+            // The existing independent repair owner settles publication before admission.
             if (d.projection_route_id !== null) {
-              throw new Refused("deployment.projection_unavailable");
+              throw new Refused("deployment.projection_pending");
             }
             const source = await prepareDeploySource(input, deadline, {
               invoke: ports.invoke,
@@ -149,10 +149,11 @@ export function deployDirect(ports: Ports = {}) {
               now,
               git: (use) =>
                 gateway.withPrivateMaterial(async (material) => {
-                  await use(
-                    z.object({ github_token: z.string().nullable() }).strict()
-                      .parse(material.git_read),
-                  );
+                  await use({
+                    github_token: z.string().nullable().parse(
+                      material.git_read,
+                    ),
+                  });
                 }),
             }, ctx.signal);
             if ("error_code" in source) {
@@ -267,7 +268,7 @@ export function deployDirect(ports: Ports = {}) {
                 group: account.group,
                 verify_origin: true,
                 require_idle: true,
-              }, true),
+              }, false),
             );
             result.commit = checked.commit;
           } catch (error) {
@@ -295,3 +296,5 @@ export function deployDirect(ports: Ports = {}) {
     },
   };
 }
+
+export const behavior = deployDirect();
