@@ -20,3 +20,10 @@ dispatch and terminal-output details.
 Keep operational control flow in native workflow steps. Preserve private
 distribution and the project's approval settings. A configuration change grants
 no new credential, worker or production authority.
+
+The retained shared native launcher uses Node 209's monorepo Swamp repository,
+`/home/orbit/apps/orbit-monorepo-staging/checkout/swamp`. The shared
+`SWAMP_REPOSITORY` constant supplies the working directory, launcher script,
+local CLI repository argument and group discovery path. Project maintenance
+and worker-model callers use that same repository. The frozen `orbit-swamp`
+checkout is not a fallback.
