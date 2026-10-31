@@ -11,7 +11,9 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Collection;
 
-/** Stored removal inventory. Swamp owns placement, ordering and all effects. */
+/** Stored removal inventory. Swamp owns placement, ordering and all effects.
+ * @phpstan-type RemovalMember array{node_id:int,user:string,home:string,agent_sha256:string,certificate_scopes:list<string>,lan_route_ids:list<int>,shared_php:bool,production_instance_ids:list<int>,url_instance_ids:list<int>,ingress_firewall:bool}
+ */
 final readonly class NativeRouteRemovalIntent
 {
     public function __construct(private ManagedUserAccountResolver $accounts, private AgentDelivery $agents, private RouteRemovalState $removal) {}
@@ -69,10 +71,7 @@ final readonly class NativeRouteRemovalIntent
         }
         foreach ($alwaysPhpNodes as $node) {
             if (! isset($nodes[$node->id])) {
-                $account = $this->accounts->resolve($node);
-                $nodes[$node->id] = ['node_id' => $node->id, 'user' => $account->user, 'home' => $account->home,
-                    'agent_sha256' => $this->agents->pin($node), 'certificate_scopes' => [], 'lan_route_ids' => [],
-                    'shared_php' => true, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
+                $nodes[$node->id] = $this->memberForNode($node);
             }
             $nodes[$node->id]['shared_php'] = true;
         }
@@ -83,25 +82,27 @@ final readonly class NativeRouteRemovalIntent
             'dns_node_ids' => $routes->isEmpty() ? [] : PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all()];
     }
 
-    /** @return array<string,mixed> */
+    /** @return RemovalMember */
+    private function memberForNode(Node $node): array
+    {
+        $account = $this->accounts->resolve($node);
+
+        return ['node_id' => $node->id, 'user' => $account->user, 'home' => $account->home,
+            'agent_sha256' => $this->agents->pin($node), 'certificate_scopes' => [], 'lan_route_ids' => [],
+            'shared_php' => false, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
+    }
+
+    /** @return array{route_id:int,replacement_of:?int,nodes:list<RemovalMember>} */
     private function inventory(Route $route): array
     {
-        $route->loadMissing(['targets.instance.node', 'node', 'transitionNode', 'generationBasisNode',
+        $route->loadMissing(['targets.instance.node', 'customProxy.node', 'node', 'transitionNode', 'generationBasisNode',
             'cluster.routerAssignment.node', 'cluster.ingressAssignment.node',
             'transitionCluster.routerAssignment.node', 'transitionCluster.ingressAssignment.node']);
         $replacement = $route->isUnactivatedReplacement();
         $nodes = [];
-        $add = function (?Node $node) use (&$nodes): void {
-            if ($node !== null && ! isset($nodes[$node->id])) {
-                $account = $this->accounts->resolve($node);
-                $nodes[$node->id] = ['node_id' => $node->id, 'user' => $account->user, 'home' => $account->home,
-                    'agent_sha256' => $this->agents->pin($node), 'certificate_scopes' => [], 'lan_route_ids' => [],
-                    'shared_php' => false, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
-            }
-        };
         foreach ($route->targets as $target) {
             $instance = $target->instance;
-            $add($instance->node);
+            $nodes[$instance->node_id] ??= $this->memberForNode($instance->node);
             $node = &$nodes[$instance->node_id];
             $node['shared_php'] = ! $instance->placedOnAppProd() || $node['shared_php'];
             $node['lan_route_ids'][] = $route->id;
@@ -120,9 +121,9 @@ final readonly class NativeRouteRemovalIntent
             }
             unset($node);
         }
-        foreach ([$route->node, $route->transitionNode, $route->generationBasisNode] as $node) {
-            $add($node);
+        foreach ([$route->node, $route->customProxy?->node, $route->transitionNode, $route->generationBasisNode] as $node) {
             if ($node !== null) {
+                $nodes[$node->id] ??= $this->memberForNode($node);
                 $nodes[$node->id]['lan_route_ids'][] = $route->id;
                 if ($route->isCustomProxy()) {
                     $nodes[$node->id]['certificate_scopes'][] = "route-{$route->id}";
@@ -132,15 +133,15 @@ final readonly class NativeRouteRemovalIntent
             }
         }
         foreach ([$route->cluster?->routerAssignment?->node, $route->transitionCluster?->routerAssignment?->node] as $node) {
-            $add($node);
             if ($node !== null) {
+                $nodes[$node->id] ??= $this->memberForNode($node);
                 $nodes[$node->id]['certificate_scopes'] = [...$nodes[$node->id]['certificate_scopes'], "route-{$route->id}-router", "route-{$route->id}-router-hostname-change"];
             }
         }
         if ($route->publication === RoutePublication::Public) {
             foreach ([$route->cluster?->ingressAssignment?->node, $route->transitionCluster?->ingressAssignment?->node] as $node) {
-                $add($node);
                 if ($node !== null) {
+                    $nodes[$node->id] ??= $this->memberForNode($node);
                     $nodes[$node->id]['ingress_firewall'] = true;
                     $nodes[$node->id]['certificate_scopes'][] = "route-{$route->id}-ingress";
                 }

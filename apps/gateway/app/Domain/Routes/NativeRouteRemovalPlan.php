@@ -23,6 +23,7 @@ final readonly class NativeRouteRemovalPlan
             static fn (Builder $query): Builder => $query->whereKey($routeIds),
             static fn (Builder $query): Builder => $query->where(static fn (Builder $query): Builder => $query
                 ->where('node_id', $node->id)->orWhere('transition_node_id', $node->id)->orWhere('generation_basis_node_id', $node->id)
+                ->orWhereHas('customProxy', static fn (Builder $query): Builder => $query->where('node_id', $node->id))
                 ->orWhereHas('targets.instance', static fn (Builder $query): Builder => $query->where('node_id', $node->id))))
             ->orderBy('id')->get();
 
@@ -32,7 +33,7 @@ final readonly class NativeRouteRemovalPlan
     /** Record the parent's desired withdrawal in its admission transaction.
      * Rows and associations remain attached until final success projection.
      *
-     * @param  array<string,mixed>  $snapshot
+     * @param  array{routes:list<array{route_id:int}>}  $snapshot
      */
     public function recordWithdrawal(array $snapshot): void
     {

@@ -119,6 +119,8 @@ it('captures Node-owned Route rows then withdraws publication without deleting t
     $plan = app(NativeRouteRemovalPlan::class);
     $snapshot = $plan->captureForNode($node);
     expect(array_column($snapshot['routes'], 'route_id'))->toBe([$routes[0]->id])
+        ->and(array_column($snapshot['nodes'], 'node_id'))->toBe([$node->id])
+        ->and($snapshot['nodes'][0]['certificate_scopes'])->toBe(["route-{$routes[0]->id}"])
         ->and($routes[0]->fresh()->sites_published)->toBeTrue();
     $plan->recordWithdrawal($snapshot);
     expect($routes[0]->fresh()->sites_published)->toBeFalse()
