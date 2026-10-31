@@ -1,14 +1,11 @@
 # Integration Operations
 
 The Gateway records intent and validates commands. This family executes Reverb
-registry changes, AI router, Metrics, and integration work for Node role
-changes. Conn and Vault use their separate direct workflows.
+AI router and integration work for Node role changes. Conn, Vault, Analytics,
+Metrics and WebSocket registry kinds use their separate native workflows.
 
-`registration.json` lists the polled kinds and contains no analytics kinds.
-Analytics enable, disable, and update each use their one placed native workflow.
-Analytics role kinds are unavailable until ported. Family discovery skips a kind
-while its required Gateway capability is unavailable. Metrics list contracts
-need C. No family implements a substitute for these shared contracts.
+`registration.json` contains no Metrics or Analytics kinds. Their former polled
+registrations are removed. Each ported parent uses one native DAG.
 
 `mod.ts` receives a kind and worker identity, claims one Operation on that
 placed worker, and saves its assignment before effects. A retry stays bound to
@@ -37,12 +34,7 @@ remain available.
 
 AI router Route removal follows a proven healthy collector. A refused takeover
 before publication restores the recorded Route and republishes it before
-reporting failure. Metrics captures its fleet once, snapshots before mutation,
-and restores from those exact same-parent snapshots when a later stage fails.
-The serving exporter snapshot records `metrics-cancellation-boundary`. After
-cancellation, only declared restore children may run. Service Caddy restoration
-uses `metrics.service_caddy_restore {restore_key}` after the matching service
-restore settles. The cancelled parent performs no further effects.
+reporting failure.
 
 Secrets enter retained remote effects only after Gateway hydration. Conn and
 Vault use the shared direct private-material and secret-output routes. See
@@ -53,32 +45,21 @@ only admits pending registration cleanup intent; it performs no revocation.
 Focused checks:
 
 ```sh
-deno test --allow-read --allow-write --allow-env extensions/behaviors/operations/integrations/mod_test.ts extensions/behaviors/operations/integrations/pipeline_test.ts extensions/behaviors/operations/integrations/metrics_test.ts
+deno test --allow-read --allow-write --allow-env extensions/behaviors/operations/integrations/pipeline_test.ts
 python3 extensions/behaviors/operations/vault/collection_test.py
-python3 extensions/behaviors/operations/integrations/native_test.py
 deno fmt --check extensions/behaviors/operations/integrations
 deno lint extensions/behaviors/operations/integrations
 deno check extensions/behaviors/operations/integrations/mod.ts
 ```
 
-The native tests use a disposable repository and a file-backed Gateway fixture.
-They resume a lost target reply and a lost completion reply in a new Swamp
-process. Live proof must wait for paired deployment and use an
-orchestrator-selected harmless dev target. Preserve Hauzer and Mealou's running
-realtime processes throughout rollout.
-
 The Vault collection program and its tests now live in the Vault direct family.
 The Gateway remote-program catalog no longer includes `vault.collection`.
 
-Route parents request `metrics.reconcile {}` on the active Metrics Node. The
-Gateway captures the fleet and admits that exact child once. Its placed workflow
-uses `metrics.receipt` after proven exporter, service and runtime children.
-Service Caddy publication and restoration run only when the admitted Node has
-`caddy: true` (Orbit-managed Caddy). Nodes without managed Caddy still receive
-exporter and service monitoring; their unrelated Caddy Processes stay untouched.
-Reconciliation keeps Metrics publication in place: it does no certificate or
-private DNS work. Retained Gateway callers keep their synchronous fleet
-implementation.
+Metrics uses one native `operation-metrics-fleet` DAG. Its placed jobs own
+exporter, service, Caddy and runtime work, with native step outputs for
+recovery. The former Metrics polled registrations, leaf dispatcher, child
+Operations and receipt tests are deleted. See
+[Metrics fleet](../../../../docs/metrics-fleet-native.md).
 
 All four WebSocket registry kinds use the direct `operation-websocket-registry`
 workflow. Its control-plane worker reads only the admitted registry UUID, epoch

@@ -18,6 +18,9 @@ class NativeTestCase(unittest.TestCase):
         self.repo = Path(self.temp.name)
         shutil.copy(ROOT / '.swamp.yaml', self.repo)
         (self.repo / 'workflows').mkdir()
+        support = self.repo / 'tests/_support'
+        support.mkdir(parents=True)
+        shutil.copy(ROOT / 'tests/_support/native_direct.ts', support)
         self.native_env = {}
         self.secrets = ()
 

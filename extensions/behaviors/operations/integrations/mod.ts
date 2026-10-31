@@ -6,10 +6,9 @@ import {
   Globals,
   Operation,
 } from "../../operation-runner/mod.ts";
-import { pipeline, runEffect } from "./pipeline.ts";
+import { pipeline } from "./pipeline.ts";
 import { maintainConn } from "../conn/maintenance.ts";
-import { metricsFleet } from "./metrics.ts";
-import { Completion, invocation } from "./contract.ts";
+import { Completion } from "./contract.ts";
 
 /** Runs only an admitted integration effect; credentials are resolved by the Gateway. */
 export function integrations(
@@ -148,7 +147,7 @@ export function integrations(
             try {
               if (
                 (operation.kind === "ai_router.collector_converge" ||
-                  /^(metrics|websocket)\.role_(converge|remove)$/
+                  /^websocket\.role_(converge|remove)$/
                     .test(operation.kind)) &&
                 operation.input.flow === undefined
               ) {
@@ -182,27 +181,6 @@ export function integrations(
                   }),
                 );
               }
-              if (
-                operation.input.preference_only !== true && [
-                  "metrics.role_converge",
-                  "metrics.role_remove",
-                  "metrics.enable",
-                  "metrics.disable",
-                  "metrics.reconcile",
-                  "metrics.exporter_enable",
-                  "metrics.exporter_disable",
-                ].includes(operation.kind)
-              ) {
-                return await metricsFleet(
-                  operation,
-                  executor,
-                  args.worker,
-                  ctx,
-                  () => {
-                    if (leaseError) throw leaseError;
-                  },
-                );
-              }
               const refreshInputs = operation.input.flow === undefined;
               if (refreshInputs) {
                 const descriptors = operation.execution_context!.descriptors;
@@ -231,89 +209,7 @@ export function integrations(
               clearInterval(timer);
             }
           }
-          const effect = invocation(operation.kind, operation.input);
-          const runKey = effect.step;
-          let heartbeatError: unknown;
-          const timer = setInterval(() => {
-            executor.post(`${path}/heartbeat`, { worker: args.worker }).catch(
-              (error) => {
-                heartbeatError = error;
-              },
-            );
-          }, 30_000);
-          try {
-            const previous = operation.step_results[effect.step];
-            const started = operation.steps.some((step) =>
-              step.name === effect.step
-            );
-            let completion: z.infer<typeof Completion>;
-            if (
-              operation.cancel_requested && previous === undefined && !started
-            ) {
-              completion = {
-                status: "cancelled",
-                result: {},
-                error_code: null,
-              };
-            } else {
-              let result: Record<string, unknown>;
-              if (previous !== undefined) {
-                result = effect.parseResult(previous);
-                if (!effect.error(result) && !effect.prove(result)) {
-                  throw new Error("integration.outcome_unproven");
-                }
-              } else {
-                await executor.post(`${path}/step`, {
-                  worker: args.worker,
-                  key: `${effect.step}:start`,
-                  name: effect.step,
-                  status: "running",
-                  output: `${effect.step}\n`,
-                });
-                result = effect.parseResult(
-                  await runEffect(executor, operation.id, args.worker, {
-                    key: runKey,
-                    transport: effect.transport,
-                    name: effect.name,
-                    input: effect.input,
-                  }, started),
-                );
-                if (heartbeatError) throw heartbeatError;
-                const error = effect.error(result);
-                if (!error && !effect.prove(result)) {
-                  throw new Error("integration.outcome_unproven");
-                }
-                await executor.post(`${path}/step`, {
-                  worker: args.worker,
-                  key: `${effect.step}:finish`,
-                  name: effect.step,
-                  status: error ? "failed" : "succeeded",
-                  result,
-                  error_code: error,
-                  output: error ? `${error}\n` : `${effect.step} applied\n`,
-                });
-              }
-              const error = effect.error(result);
-              completion = {
-                status: error === "operation.cancelled"
-                  ? "cancelled"
-                  : error
-                  ? "failed"
-                  : "succeeded",
-                result,
-                error_code: error,
-              };
-            }
-            return await finish(
-              executor,
-              operation,
-              args.worker,
-              ctx,
-              completion,
-            );
-          } finally {
-            clearInterval(timer);
-          }
+          throw new Error("integration.kind_invalid");
         },
       },
     },

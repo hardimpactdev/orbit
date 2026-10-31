@@ -1,0 +1,218 @@
+id: a02d5140-0af9-4049-b8d9-56032384330d
+name: operation-metrics-fleet
+description: One native Metrics DAG. Workerless fleet participants fail explicitly.
+concurrency: 1
+vaults: []
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [metrics.reconcile, metrics.exporter_enable, metrics.exporter_disable]}
+  required:
+  - operation_id
+  - node_id
+  - kind
+jobs:
+- name: admission
+  steps:
+  - name: capture
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    writes: false
+    task: &root_task
+      type: behavior
+      behaviorType: '@nckrtl/metrics-fleet-direct'
+      behaviorName: ${{ "metrics-fleet-root-" + string(inputs.node_id) }}
+      methodName: capture
+      inputs: &root_args
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+- name: availability
+  dependsOn:
+  - {job: admission, condition: {type: succeeded}}
+  steps:
+  - name: workers
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    task:
+      type: assert
+      expr: steps.capture.outputs.available
+      message: metrics.no_worker
+      severity: high
+- name: snapshot_job
+  dependsOn:
+  - {job: availability, condition: {type: succeeded}}
+  steps:
+  - &node_step
+    name: snapshot
+    forEach:
+      item: id
+      in: ${{ steps.capture.outputs.ids }}
+    target: ${{ "orbit-node-" + string(self.id) }}
+    labels: {node: '${{ string(self.id) }}'}
+    writes: false
+    task: &local_task
+      type: behavior
+      behaviorType: '@nckrtl/metrics-fleet-direct'
+      behaviorName: ${{ "metrics-fleet-node-" + string(self.id) }}
+      methodName: stage
+      inputs: &id001
+        <<: *root_args
+        phase: snapshot
+        node: ${{ steps.capture.outputs.plan.fleet.filter(n, n.node_id == self.id)[0] }}
+        metrics_address: ${{ steps.capture.outputs.plan.metrics_address }}
+
+- name: apply_job
+  dependsOn:
+  - {job: snapshot_job, condition: {type: succeeded}}
+  steps:
+  - <<: *node_step
+    name: apply
+    writes: true
+    task:
+      <<: *local_task
+      inputs:
+        <<: *id001
+        phase: apply
+
+  - name: apply_proven
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    forEach:
+      item: key
+      in: ${{ steps.capture.outputs.keys }}
+    dependsOn:
+    - {step: apply, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps["apply-" + self.key].outputs.ok
+      message: metrics.apply_failed
+      severity: high
+- name: service_job
+  dependsOn:
+  - {job: apply_job, condition: {type: succeeded}}
+  steps:
+  - <<: *node_step
+    name: service
+    writes: true
+    task:
+      <<: *local_task
+      inputs:
+        <<: *id001
+        phase: service
+
+  - name: service_proven
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    forEach:
+      item: key
+      in: ${{ steps.capture.outputs.keys }}
+    dependsOn:
+    - {step: service, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps["service-" + self.key].outputs.ok
+      message: metrics.service_failed
+      severity: high
+- name: caddy_job
+  dependsOn:
+  - {job: service_job, condition: {type: succeeded}}
+  steps:
+  - <<: *node_step
+    name: caddy
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication'
+      behaviorName: ${{ "route-publication-node-" + string(self.id) }}
+      methodName: publishCaddy
+      inputs:
+        <<: *root_args
+        target_node_id: ${{ self.id }}
+    guard: ${{ !steps.capture.outputs.plan.fleet.filter(n, n.node_id == self.id)[0].caddy_managed }}
+
+- name: verify_job
+  dependsOn:
+  - {job: caddy_job, condition: {type: succeeded}}
+  steps:
+  - <<: *node_step
+    name: verify
+    task:
+      <<: *local_task
+      inputs:
+        <<: *id001
+        phase: verify
+
+- name: commit
+  dependsOn:
+  - {job: verify_job, condition: {type: succeeded}}
+  - {job: availability, condition: {type: succeeded}}
+  steps:
+  - name: runtime
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    writes: true
+    task:
+      <<: *root_task
+      methodName: runtime
+      inputs:
+        <<: *root_args
+        node: ${{ steps.capture.outputs.plan.fleet.filter(n,n.node_id == inputs.node_id)[0] }}
+
+  - name: runtime_proven
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    dependsOn:
+    - {step: runtime, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps.runtime.outputs.ok
+      message: metrics.runtime_failed
+      severity: high
+- name: restore_job
+  dependsOn:
+  - {job: commit, condition: {type: always}}
+  steps:
+  - <<: *node_step
+    name: restore
+    writes: true
+    task:
+      <<: *local_task
+      inputs:
+        <<: *id001
+        phase: restore
+        snapshot: ${{ steps["snapshot-" + string(self.id)].outputs }}
+    guard: ${{ !(!("runtime" in steps) || steps.runtime.status == "skipped" || ("outputs" in steps.runtime && !steps.runtime.outputs.committed)) || !("apply-" + string(self.id)
+      in steps && "outputs" in steps["apply-" + string(self.id)]) || ("service-" + string(self.id) in steps && steps["service-" + string(self.id)].status == "failed"
+      && !("outputs" in steps["service-" + string(self.id)])) || ("caddy-" + string(self.id) in steps && steps["caddy-" + string(self.id)].status == "failed" && !("outputs"
+      in steps["caddy-" + string(self.id)])) }}
+- name: projection
+  dependsOn:
+  - {job: restore_job, condition: {type: always}}
+  steps:
+  - name: finish
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    task:
+      <<: *root_task
+      methodName: finish
+      inputs:
+        <<: *root_args
+        steps: ${{ steps }}
+
+- name: capture_failure
+  dependsOn:
+  - {job: admission, condition: {type: failed}}
+  steps:
+  - name: report_capture_failure
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "operation-failure-node-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        <<: *root_args
