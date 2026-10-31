@@ -10,9 +10,15 @@ use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
+use App\Domain\Nodes\NodeSshAccessProjection;
 use App\Domain\Nodes\NodeWireGuardHubProjection;
 
-return ['node.wireguard_hub_converge' => [
+return ['node.ssh_access_converge' => [
+    'workflow' => 'operation-node-ssh-access-converge',
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'ssh_access', 'step' => 'result'],
+    'projection' => NodeSshAccessProjection::class,
+], 'node.wireguard_hub_converge' => [
     'workflow' => 'operation-node-wireguard-hub-converge',
     'projection' => NodeWireGuardHubProjection::class,
     'private_material' => ['configuration' => 'node.vpn_configuration'],

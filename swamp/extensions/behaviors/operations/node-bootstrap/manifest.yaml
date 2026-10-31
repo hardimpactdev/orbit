@@ -6,3 +6,6 @@ license: MIT
 description: Public result projection for the official SSH bootstrap probe.
 behaviors:
   - operations/node-bootstrap/probe_result.ts
+  - operations/node-bootstrap/ssh_access.ts
+additionalFiles:
+  - scripts/bootstrap_authorized_key.py

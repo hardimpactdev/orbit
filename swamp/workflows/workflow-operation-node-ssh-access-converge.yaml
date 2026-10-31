@@ -1,0 +1,136 @@
+id: d672c246-33c1-4fc7-b8b4-ae37f4885b1e
+name: operation-node-ssh-access-converge
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+    node_id:
+      type: integer
+    kind:
+      type: string
+      enum:
+      - node.ssh_access_converge
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        bootstrap_identity:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^bootstrap-identity-node-14$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - bootstrap_identity
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: ssh_access
+  target: orbit-node-209
+  labels:
+    node: '209'
+  steps:
+  - name: authorize_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-ssh-access'
+      behaviorName: authorize-assets
+      methodName: read
+      inputs:
+        user: ${{ inputs.intent.target.user }}
+        public_key: ${{ inputs.intent.public_key }}
+  - name: authorize
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: true
+    dependsOn:
+    - step: authorize_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-access-" + string(inputs.node_id) + "-bootstrap"
+        }}
+      methodName: script
+      globalArgs:
+        name: ${{ "node-ssh-access-" + string(inputs.node_id) + "-bootstrap" }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.target.user }}
+          port: ${{ inputs.intent.target.port }}
+          hostKeys: ${{ inputs.intent.target.host_keys }}
+          identityContent: ${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault,
+            inputs.execution_secrets.bootstrap_identity.key) }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.target.host }}
+      inputs:
+        hosts: name:target
+        interpreter: python3
+        sudo: true
+        script: ${{ steps["authorize_assets"].outputs.script_body }}
+  - name: verify-own-key
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: authorize
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-access-" + string(inputs.node_id) + "-own" }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "node-ssh-access-" + string(inputs.node_id) + "-own" }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.target.user }}
+          port: ${{ inputs.intent.target.port }}
+          hostKeys: ${{ inputs.intent.target.host_keys }}
+          identityFile: ${{ inputs.intent.identity_file }}
+          identitiesOnly: true
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.target.host }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/true
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: verify-own-key
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-ssh-access'
+      behaviorName: ssh-access-result
+      methodName: result
+      inputs:
+        verification: ${{ steps["verify-own-key"].outputs }}
