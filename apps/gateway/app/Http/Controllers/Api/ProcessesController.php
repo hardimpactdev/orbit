@@ -53,6 +53,11 @@ final class ProcessesController extends Controller
     public function store(StoreProcessRequest $request, CreateProcessAction $action): JsonResponse
     {
         $data = $request->payload();
+        if ($this->safety->requiresSynchronous($this->targets->resolve($data->targetType, $data->targetId)->node)) {
+            $result = $action->execute($data);
+
+            return $this->processResponse($request, $result['process'], $result['created'] ? 201 : 200);
+        }
 
         return $this->operationResponse($request, $action->admit($data, $this->caller($request), $request->attributes->getString('orbit.request_id')));
     }

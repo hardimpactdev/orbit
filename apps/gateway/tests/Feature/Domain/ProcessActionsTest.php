@@ -168,19 +168,6 @@ function recordOnlyNodeProcessData(Node $node): AddProcessData
     );
 }
 
-it('refuses arbitrary intent at every fixed bootstrap entry point', function (string $method): void {
-    $data = recordOnlyNodeProcessData($this->node);
-    $action = app(CreateProcessAction::class);
-
-    expect(fn () => $action->{$method}($data))->toThrow(function (ResourceOperationException $error): void {
-        expect($error->errorCode)->toBe('process.bootstrap_invalid');
-    });
-
-    $this->assertDatabaseCount('processes', 0);
-    $this->assertDatabaseCount('operations', 0);
-    expect($this->runtime->converged)->toBeEmpty();
-})->with(['bootstrapCollector', 'bootstrapPlausible', 'bootstrapPi', 'bootstrapHorizon']);
-
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
@@ -196,10 +183,10 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         restartPolicy: 'on-failure',
         start: false,
     );
-    $action = app(RecordProcessIntentAction::class);
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
 
-    $first = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
-    $second = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    $first = $action->execute($data);
+    $second = $action->execute($data);
     $process = $first['process'];
 
     expect($first['created'])
@@ -218,9 +205,12 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         ->and($process->desired_state->value)
         ->toBe('stopped')
         ->and($process->status)
-        ->toBe(LifecycleStatus::Provisioning)
+        ->toBe(LifecycleStatus::Active)
         ->and($this->runtime->converged)
-        ->toBeEmpty()
+        ->toBe([
+            ['id' => $process->id, 'desired_state' => 'stopped'],
+            ['id' => $process->id, 'desired_state' => 'stopped'],
+        ])
         ->and($this->runtime->started)
         ->toBeEmpty();
 });
@@ -243,7 +233,7 @@ it('preserves the desired state when an existing process is added again', functi
         start: false,
     );
 
-    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
     expect($result['created'])
         ->toBeFalse()
@@ -254,7 +244,7 @@ it('preserves the desired state when an existing process is added again', functi
 });
 
 it('canonicalizes Docker environment maps before persistence and idempotency comparison', function (): void {
-    $action = app(RecordProcessIntentAction::class);
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -284,8 +274,8 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
         start: false,
     );
 
-    $created = $action->execute($first, $this->targets->resolve($first->targetType, $first->targetId));
-    $readded = $action->execute($sameWithDifferentOrder, $this->targets->resolve($sameWithDifferentOrder->targetType, $sameWithDifferentOrder->targetId));
+    $created = $action->execute($first);
+    $readded = $action->execute($sameWithDifferentOrder);
 
     expect($created['process']->runtime_config['environment'])
         ->toBe(['ALPHA' => 'first', 'APP_KEY' => 'secret', 'ZEBRA' => 'last'])
@@ -296,7 +286,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
 });
 
 it('canonicalizes systemd environment maps before persistence and idempotency comparison', function (): void {
-    $action = app(RecordProcessIntentAction::class);
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -326,8 +316,8 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         start: false,
     );
 
-    $created = $action->execute($first, $this->targets->resolve($first->targetType, $first->targetId));
-    $readded = $action->execute($sameWithDifferentOrder, $this->targets->resolve($sameWithDifferentOrder->targetType, $sameWithDifferentOrder->targetId));
+    $created = $action->execute($first);
+    $readded = $action->execute($sameWithDifferentOrder);
 
     expect($created['process']->runtime_config)
         ->toBe([
@@ -345,7 +335,7 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         ->toBe(1);
 });
 
-it('refuses arbitrary Docker intent at the closed Plausible bootstrap boundary without leaking secrets', function (): void {
+it('keeps Docker environment values out of action exception traces', function (): void {
     $sensitiveValue = 'action-boundary-secret';
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
@@ -368,17 +358,17 @@ it('refuses arbitrary Docker intent at the closed Plausible bootstrap boundary w
     );
 
     try {
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->bootstrapPlausible($data);
-    } catch (ResourceOperationException $exception) {
+        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    } catch (ProcessOperationException $exception) {
         expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
 
         return;
     }
 
-    $this->fail('Expected the closed bootstrap boundary to refuse.');
+    $this->fail('Expected Docker convergence to fail.');
 });
 
-it('records desired-running Docker intent with explicit configuration without executing it', function (): void {
+it('adds and starts one Docker container process with explicit configuration', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -394,7 +384,7 @@ it('records desired-running Docker intent with explicit configuration without ex
         start: true,
     );
 
-    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     $process = $result['process'];
 
     expect($process->owner)
@@ -410,7 +400,7 @@ it('records desired-running Docker intent with explicit configuration without ex
         ->and($process->desired_state->value)
         ->toBe('running')
         ->and($this->runtime->converged)
-        ->toBeEmpty()
+        ->toBe([['id' => $process->id, 'desired_state' => 'running']])
         ->and($this->runtime->started)
         ->toBeEmpty();
 });
@@ -444,7 +434,7 @@ it('refuses a new desired-running production process before admission when no re
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
-    )->admit($data))->toThrow(function (ResourceOperationException $exception): void {
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.release_unavailable');
     });
 
@@ -503,7 +493,7 @@ it('refuses an idempotent desired-running production add without changing its re
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
-    )->admit($data))->toThrow(function (ResourceOperationException $exception): void {
+    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.release_unavailable');
     });
 
@@ -515,7 +505,7 @@ it('refuses an idempotent desired-running production add without changing its re
         ->toBeEmpty();
 });
 
-it('records matching failed intent without claiming runtime recovery', function (): void {
+it('retains a failed desired-running process definition and clears recovery state on retry', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -530,21 +520,40 @@ it('records matching failed intent without claiming runtime recovery', function 
         restartPolicy: 'unless-stopped',
         start: true,
     );
-    $action = app(RecordProcessIntentAction::class);
-    $first = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId))['process'];
-    expect($first)->status->toBe(LifecycleStatus::Provisioning);
-    $first->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'start', 'error_code' => 'process.start_failed']);
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $this->runtime->startFailure = new ProcessOperationException(
+        step: 'start',
+        errorCode: 'process.start_failed',
+        message: 'The replacement did not start; the previous container was restored.',
+    );
 
-    $retry = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    expect(fn () => $action->execute($data))
+        ->toThrow(ProcessOperationException::class, 'previous container was restored');
 
-    expect($retry['process'])->id->toBe($first->id)->desired_state->toBe(DesiredProcessState::Running)
-        ->status->toBe(LifecycleStatus::Failed)->error_code->toBe('process.start_failed');
-    expect($retry['created'])->toBeFalse();
-    expect($this->runtime->converged)->toBeEmpty();
+    $failed = Process::query()->sole();
+
+    expect($failed)
+        ->desired_state->toBe(DesiredProcessState::Running)
+        ->status->toBe(LifecycleStatus::Failed)
+        ->failed_step->toBe('start')
+        ->error_code->toBe('process.start_failed');
+
+    $this->runtime->startFailure = null;
+    $retryResult = $action->execute($data);
+    $retried = $retryResult['process'];
+
+    expect($retried)
+        ->id->toBe($failed->id)
+        ->desired_state->toBe(DesiredProcessState::Running)
+        ->status->toBe(LifecycleStatus::Active)
+        ->failed_step->toBeNull()
+        ->error_code->toBeNull()->and($retryResult['created'])->toBeFalse()->and(Process::query()->count())->toBe(
+            1,
+        )->and($this->runtime->started)->toBeEmpty();
 });
 
 it('rejects a conflicting process definition with the same owner and name', function (): void {
-    $action = app(RecordProcessIntentAction::class);
+    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $initial = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -573,9 +582,9 @@ it('rejects a conflicting process definition with the same owner and name', func
         restartPolicy: 'always',
         start: true,
     );
-    $action->execute($initial, $this->targets->resolve($initial->targetType, $initial->targetId));
+    $action->execute($initial);
 
-    expect(fn () => $action->execute($changed, $this->targets->resolve($changed->targetType, $changed->targetId)))
+    expect(fn () => $action->execute($changed))
         ->toThrow(ResourceOperationException::class, 'already exists with different configuration');
 });
 
@@ -658,7 +667,7 @@ it('rejects process targets on non-Linux nodes before runtime execution', functi
     );
 
     try {
-        app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
             ->toBe('process.platform_unsupported')
@@ -908,7 +917,7 @@ it('leaves a removing process unmarked when remove loses the runtime owner', fun
     }
 });
 
-it('preserves failed projection when identical intent is recorded again', function (): void {
+it('refreshes the surviving process identity when an identical add retries under the runtime owner', function (): void {
     $process = process_actions_record($this->instance);
     $process->update([
         'desired_state' => DesiredProcessState::Running,
@@ -931,7 +940,7 @@ it('preserves failed projection when identical intent is recorded again', functi
         start: false,
     );
 
-    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
 
     expect($result['created'])
         ->toBeFalse()
@@ -940,16 +949,16 @@ it('preserves failed projection when identical intent is recorded again', functi
         ->and($result['process']->desired_state)
         ->toBe(DesiredProcessState::Running)
         ->and($result['process']->status)
-        ->toBe(LifecycleStatus::Failed)
+        ->toBe(LifecycleStatus::Active)
         ->and($result['process']->failed_step)
-        ->toBe('start')
+        ->toBeNull()
         ->and($result['process']->error_code)
-        ->toBe('process.start_failed')
+        ->toBeNull()
         ->and(Process::query()->count())
         ->toBe(1);
 });
 
-it('does not rewrite existing intent while another owner holds its runtime lease', function (): void {
+it('does not rewrite an existing process when an identical add loses the runtime owner', function (): void {
     $process = process_actions_record($this->instance);
     $process->update([
         'desired_state' => DesiredProcessState::Running,
@@ -962,7 +971,7 @@ it('does not rewrite existing intent while another owner holds its runtime lease
     expect($lock->get())->toBeTrue();
 
     try {
-        $result = app(RecordProcessIntentAction::class)->execute(
+        expect(fn () => new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
             new AddProcessData(
                 targetType: ProcessTargetType::Instance,
                 targetId: $this->instance->id,
@@ -977,9 +986,7 @@ it('does not rewrite existing intent while another owner holds its runtime lease
                 restartPolicy: 'always',
                 start: false,
             ),
-            $this->targets->forAdmission($this->instance),
-        );
-        expect($result['created'])->toBeFalse();
+        ))->toThrow(ProcessOperationException::class);
 
         expect($process->refresh()->getRawOriginal())
             ->toBe($original)

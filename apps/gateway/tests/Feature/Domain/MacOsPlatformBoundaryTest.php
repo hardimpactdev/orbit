@@ -69,7 +69,7 @@ it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall chan
             expect($exception->errorCode)->toBe('metrics.platform_unsupported')
                 ->and($exception->status)->toBe(422);
         });
-    expect(fn () => app(CreateProcessAction::class)->admit(new AddProcessData(
+    expect(fn () => app(CreateProcessAction::class)->execute(new AddProcessData(
         targetType: ProcessTargetType::Node,
         targetId: $node->id,
         name: 'queue',

@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
@@ -67,34 +66,32 @@ it('records lifecycle intent without marking an unexecuted effect successful', f
     Queue::assertNothingPushed();
 })->with(['start', 'restart']);
 
-it('starts creation directly without the old admission lease or claim contract', function (): void {
-    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class)->shouldNotReceive('run')->getMock());
-    app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
+it('rolls back competing intent before it changes a Process specification', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    $process = Process::query()->sole();
+    $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:2'])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect($process->refresh()->runtime_config['image'])->toBe('example:1');
+});
+
+it('reads a Process receipt before its first effect and rejects readiness without proof', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->state['process_control_writer'])->toBe('direct')->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')->and($operation->lock_key)->toBeNull();
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.create', 'worker' => 'old'])->assertUnprocessable();
+    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $executor->accessibleNodes()->attach($this->node);
+    config(['dependency_detection.services_node_id' => $executor->id]);
+    $this->withServerVariables(['REMOTE_ADDR' => $executor->wireguard_ip]);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.create', 'worker' => 'process-worker'])->assertOk();
+    $path = '/api/v1/operation-executor/'.$operation->id;
+    $this->getJson($path.'/receipts/process-converge-container')->assertOk()->assertJsonPath('data.state', 'unknown');
+    $this->postJson($path.'/run', ['worker' => 'process-worker', 'key' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready', 'input' => ['process_id' => $operation->target_id]])->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
+    expect($operation->refresh()->state['executor_runs']['runtime-ready']['result'])->toBeNull();
 });
 
-it('returns only admitted public installation input and binds private bytes to the current definition', function (): void {
-    $this->postJson('/api/v1/processes', [...$this->payload, 'environment' => ['PASSWORD' => 'create-private-value']])->assertAccepted();
+it('can finish proof after cancellation once its native effect is proven', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $operation = Operation::query()->sole();
-    config(['dependency_detection.services_node_id' => $this->node->id]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $query = '?run_id='.$operation->state['swamp_run_id'];
-    $response = $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $operation->target_id)
-        ->assertJsonMissingPath('data.input.installation.definition')->assertJsonMissingPath('data.input.installation.content');
-    expect($response->getContent())->not->toContain('create-private-value');
-    $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'create-private-value');
-    $process = Process::query()->sole();
-    $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:changed']]);
-    $this->getJson($path.'/private-material'.$query)->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-});
-
-it('refuses a removed polled creation writer before storing a row', function (): void {
-    config(['swamp.direct_writers' => ['process.create' => 'polled']]);
-    $this->postJson('/api/v1/processes', $this->payload)->assertServiceUnavailable()->assertJsonPath('error.code', 'operation.writer_invalid');
-    $this->assertDatabaseCount('processes', 0);
-    $this->assertDatabaseCount('operations', 0);
+    $operation->update(['cancel_requested_at' => now(), 'state' => ['executor_runs' => ['process-converge-container' => ['transport' => 'agent', 'name' => 'process.converge-container', 'result' => ['state' => 'inactive']]]]]);
+    expect(app(OperationExecutionContract::class)->cancellationAllowsRun($operation))->toBeTrue();
+    $operation->state = ['executor_runs' => ['process-converge-container' => ['transport' => 'agent', 'name' => 'process.converge-container', 'result' => null]]];
+    expect(app(OperationExecutionContract::class)->cancellationAllowsRun($operation))->toBeFalse();
 });

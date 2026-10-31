@@ -65,11 +65,7 @@ final class InstanceRuntimeTestParent implements OperationCompletion, OperationF
 }
 
 beforeEach(function (): void {
-    $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'shared.scoped.fixture']);
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'runtime-node', 'architecture' => 'x86_64', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']));
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'runtime-node', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']));
     $this->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Runtime proof', 'slug' => 'runtime-proof', 'repository_url' => 'https://example.test/runtime.git']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'environment' => 'production',
@@ -190,7 +186,7 @@ function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
         $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'old', 'operation_id' => $operation->id])->assertUnprocessable();
         $response = $test->postJson('/api/v1/direct-operations/'.$operation->id.'/result', [
             'run_id' => $runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z',
-            'result' => ['ready' => true, 'state' => $operation->input['desired'] === 'stopped' ? 'inactive' : 'active'],
+            'result' => ['ready' => true, 'state' => 'active'],
         ]);
         $response->assertOk();
 
@@ -199,7 +195,10 @@ function runtimeExecuteLeaf(TestCase $test, Operation $operation): void
     $worker = 'leaf-'.$operation->id;
     $test->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => $worker, 'operation_id' => $operation->id])->assertOk();
     $path = '/api/v1/operation-executor/'.$operation->id;
-    $names = ['schedule-install'];
+    $names = match ($operation->kind) {
+        'process.create' => ['process-stage-unit', 'process-activate-unit', 'process-status', 'runtime-ready'],
+        default => ['schedule-install'],
+    };
     $result = [];
     foreach ($names as $name) {
         $context = app(OperationExecutionContract::class)->context($operation->refresh());
