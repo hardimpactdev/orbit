@@ -63,6 +63,56 @@ const shell =
   /#!.*\b(?:ba|da|z|k)?sh\b|(?:^|\n)\s*(?:set\s+-|sudo\s|systemctl\s|apt-get\s|export\s+[A-Z_]+=)|\b(?:then|fi|esac)\s*(?:\n|$)/;
 const lines = (s: string) => s.trim() ? s.trim().split(/\r?\n/).length : 0;
 
+// These are the only execution primitives a Swamp step may call.
+export const GATEWAY_PRIMITIVES = [
+  "/api/v1/direct-operations/{operation_id}/github-token",
+  "/api/v1/direct-operations/{operation_id}/certificates/sign",
+] as const;
+export function isGatewayPrimitive(
+  method: string | undefined,
+  url: string | undefined,
+): boolean {
+  if (method !== "POST" || !url || /[?#\\]/.test(url)) return false;
+  const path = url.replace(/^<gateway-origin>/, "").replace(
+    /^https?:\/\/[^/]+/,
+    "",
+  );
+  return GATEWAY_PRIMITIVES.some((route) => {
+    const pattern = route.split("{operation_id}").map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    ).join("(?:[1-9][0-9]*|\\{operation_id\\})");
+    return new RegExp(`^${pattern}$`).test(path);
+  });
+}
+
+export function gatewayShellFindings(file: string, source: string): Finding[] {
+  const findings: Finding[] = [];
+  const gatewayContext = /gateway|\/api\/v1\//i.test(source);
+  for (const line of source.replace(/\\\r?\n/g, " ").split("\n")) {
+    if (/^\s*#/.test(line) || !/\b(?:curl|wget)\s/.test(line)) continue;
+    const urls = [...line.matchAll(/https?:\/\/[^\s'"`]+/g)].map((match) =>
+      match[0]
+    );
+    const gatewayUrls = urls.filter((url) => /gateway|\/api\/v1\//i.test(url));
+    if (!gatewayUrls.length && (!gatewayContext || urls.length)) continue;
+    const method =
+      /(?:-X\s*|--request(?:=|\s+))['"]?([A-Z]+)/.exec(line)?.[1] ?? "GET";
+    const targets = gatewayUrls.length ? gatewayUrls : [undefined];
+    for (const url of targets) {
+      if (!isGatewayPrimitive(method, url)) {
+        findings.push({
+          file,
+          rule: "gateway-http",
+          count: 1,
+          line: 1,
+          evidence: [`${method} ${url ?? "<unknown>"}`],
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 export function analyzeTs(
   file: string,
   source: string,
@@ -71,19 +121,6 @@ export function analyzeTs(
 ): Analysis {
   const result = empty();
   const root = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-  if (
-    file.startsWith("extensions/behaviors/") &&
-    /\bGatewayOperation\b|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|\/api\/v1\/operations/
-      .test(source)
-  ) {
-    result.findings.push({
-      file,
-      rule: "gateway-http",
-      count: 1,
-      line: 1,
-      evidence: [],
-    });
-  }
   const bindings = new Map<string, ts.Expression>();
   const aliases = new Map<string, string>();
   const scripts = new Map<number, string>();
@@ -226,6 +263,156 @@ export function analyzeTs(
       }
     }
   };
+  // Endpoint exceptions apply to concrete calls, never to an entire client or file.
+  const gatewayValue = (
+    node: ts.Node | undefined,
+    seen = new Set<string>(),
+  ): string | undefined => {
+    if (!node) return;
+    if (
+      ts.isIdentifier(node) && bindings.has(node.text) && !seen.has(node.text)
+    ) {
+      return gatewayValue(
+        bindings.get(node.text),
+        new Set([...seen, node.text]),
+      );
+    }
+    if (/^(?:[\w]+\.)*(?:gatewayUrl|gateway_url)$/.test(node.getText(root))) {
+      return "<gateway-origin>";
+    }
+    if (/^(?:[\w]+\.)*(?:operation_id|operationId)$/.test(node.getText(root))) {
+      return "{operation_id}";
+    }
+    if (ts.isTemplateExpression(node)) {
+      const spans = node.templateSpans.map((span) =>
+        gatewayValue(span.expression, seen)
+      );
+      if (spans.some((span) => span === undefined)) return;
+      return node.head.text +
+        node.templateSpans.map((span, i) => spans[i] + span.literal.text).join(
+          "",
+        );
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      const left = gatewayValue(node.left, seen),
+        right = gatewayValue(node.right, seen);
+      return left === undefined || right === undefined
+        ? undefined
+        : left + right;
+    }
+    if (ts.isNewExpression(node) && name(node.expression) === "URL") {
+      return gatewayValue(node.arguments?.[0], seen);
+    }
+    return value(node, seen);
+  };
+  const legacyGatewayMarker =
+    /\bGatewayOperation\b|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|\/api\/v1\/operations/
+      .test(source);
+  const gatewayMarker =
+    /\bGatewayOperation\b|GatewayClient|makeHttp|gatewayHttp|gatewayRequest|directOperation|withPrivateMaterial|gatewayUrl|gateway_url|gateway\.orbit|\/api\/v1\//
+      .test(source);
+  const gatewayCalls: { node: ts.Node; method?: string; path?: string }[] = [];
+  visit(root, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    let target: ts.Expression = node.expression;
+    const seen = new Set<string>();
+    while (
+      ts.isIdentifier(target) && bindings.has(target.text) &&
+      !seen.has(target.text)
+    ) {
+      seen.add(target.text);
+      target = bindings.get(target.text)!;
+    }
+    while (
+      ts.isParenthesizedExpression(target) || ts.isAsExpression(target) ||
+      ts.isNonNullExpression(target)
+    ) target = target.expression;
+    const called = ts.isElementAccessExpression(target)
+        ? (value(target.argumentExpression) ?? "")
+        : name(target),
+      args = [...node.arguments];
+    const property = (
+      node: ts.Node | undefined,
+      key: string,
+    ): ts.Expression | undefined => {
+      if (node && ts.isIdentifier(node)) node = bindings.get(node.text);
+      if (
+        !node || !ts.isObjectLiteralExpression(node) ||
+        node.properties.some((p) => ts.isSpreadAssignment(p))
+      ) return;
+      const matches = node.properties.filter((p) =>
+        ts.isPropertyAssignment(p) &&
+        p.name.getText(root).replace(/^['"]|['"]$/g, "") === key
+      );
+      const entry = matches.length === 1 ? matches[0] : undefined;
+      return entry && ts.isPropertyAssignment(entry)
+        ? entry.initializer
+        : undefined;
+    };
+    let method: string | undefined, path: string | undefined, request = false;
+    if (called === "fetch") {
+      request = true;
+      path = gatewayValue(args[0]);
+      method = args[1] ? value(property(args[1], "method")) : "GET";
+    } else if (
+      /^(?:http|gatewayHttp|gatewayRequest|proxyGatewayRequest)$/.test(
+        called ?? "",
+      )
+    ) {
+      request = true;
+      method = value(args[0]);
+      path = gatewayValue(args[1]);
+    } else if (
+      ts.isPropertyAccessExpression(target) &&
+      /^(?:get|post|put|patch|delete|call|request|read|result|failure|fail|primitive|report|withPrivateMaterial)$/
+        .test(called) &&
+      /http|gateway|client|^g$/i.test(target.expression.getText(root))
+    ) {
+      request = true;
+      if (["call", "request"].includes(called)) {
+        method = value(args[0]);
+        path = gatewayValue(args[1]);
+      } else if (/^(?:get|post|put|patch|delete)$/.test(called)) {
+        method = called.toUpperCase();
+        path = gatewayValue(args[0]);
+      }
+    }
+    const knownExternal = path && /^https?:\/\//.test(path) &&
+      !/gateway|\/api\/v1\//i.test(path);
+    if (
+      request && !knownExternal &&
+      (gatewayMarker || /\/api\/v1\//.test(path ?? ""))
+    ) {
+      gatewayCalls.push({ node, method, path });
+    }
+  });
+  const forbiddenGateway = gatewayCalls.filter((call) =>
+    !isGatewayPrimitive(call.method, call.path)
+  );
+  if (
+    file.startsWith("extensions/behaviors/") &&
+    (forbiddenGateway.length ||
+      /\bGatewayOperation\b|GatewayClient|directOperation|withPrivateMaterial/
+        .test(source) ||
+      (legacyGatewayMarker ||
+          gatewayMarker &&
+            /\bfetch\b|\/api\/v1\/|gateway\.orbit/.test(source)) &&
+        !gatewayCalls.length)
+  ) {
+    const denied = forbiddenGateway.map((call) =>
+      `${call.method ?? "<unknown>"} ${call.path ?? "<unknown>"}`
+    );
+    result.findings.push({
+      file,
+      rule: "gateway-http",
+      count: Math.max(1, forbiddenGateway.length),
+      line: 1,
+      evidence: [...new Set(denied)].sort(),
+    });
+  }
   const strings = (node: ts.Node): string[] => {
     const out: string[] = [], pending = [node], visited = new Set<ts.Node>();
     while (pending.length && visited.size < 10000) {
@@ -520,6 +707,7 @@ export function analyzeTs(
     ) add(root, "secret-argv");
   }
   for (const text of scriptLeaves.values()) {
+    result.findings.push(...gatewayShellFindings(file, text));
     const controlSites = text.match(
       /\b(?:while\s+(?:True|true|:)|time\.sleep\s*\(|sleep\s+\d|flock\s*\(|LOCK_EX|O_EXCL|lockfile|for\s+\w*(?:attempt|retry)\w*\s+in)/g,
     ) ?? [];
@@ -601,6 +789,7 @@ export function analyzeYaml(file: string, source: string): Analysis {
           .test(value)
       ) add("secret-argv");
       if (path.at(-1) === "run") {
+        result.findings.push(...gatewayShellFindings(file, value));
         const scripts =
           value.match(/(?:^|[\s"'])scripts\/[A-Za-z0-9_./-]+\.(?:py|sh)\b/g) ??
             [];
@@ -697,6 +886,7 @@ export function analyzeScript(file: string, source: string): Analysis {
   if (file.endsWith(".py")) return result; // Python is parsed by the AST helper, never regexed as executable text.
   const add = (rule: string, count = 1) =>
     result.findings.push({ file, rule, count, line: 1, evidence: [] });
+  result.findings.push(...gatewayShellFindings(file, source));
   const withoutComments = source.split("\n").filter((l) => !/^\s*#/.test(l))
     .join("\n");
   if (/set\s+-(?:\w*x\w*|o\s+xtrace)\b/.test(withoutComments)) {
@@ -913,7 +1103,11 @@ async function toolFindings(sources: Map<string, string>): Promise<Finding[]> {
       const [file, source, language] = files[cursor++];
       const shell = language === "sh";
       if (!shell) {
-        const python = await run(["python3", pythonAnalyzer], source);
+        const python = await run([
+          "python3",
+          pythonAnalyzer,
+          JSON.stringify(GATEWAY_PRIMITIVES),
+        ], source);
         if (!python.success) throw new Error("Python source analysis failed");
         for (const item of JSON.parse(python.text)) {
           findings.push({
@@ -921,7 +1115,7 @@ async function toolFindings(sources: Map<string, string>): Promise<Finding[]> {
             rule: item.rule,
             count: item.count,
             line: item.line,
-            evidence: [],
+            evidence: item.evidence ?? [],
           });
         }
       }
