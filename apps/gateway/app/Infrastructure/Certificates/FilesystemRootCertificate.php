@@ -8,7 +8,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use Closure;
 use RuntimeException;
 
-/** Public trust data for admission and API reads. CA signing belongs to Swamp. */
+/** Public trust data for admission and API reads. The Gateway alone retains CA signing custody. */
 final readonly class FilesystemRootCertificate implements LeafCertificateSigner
 {
     /** @var Closure(): int */

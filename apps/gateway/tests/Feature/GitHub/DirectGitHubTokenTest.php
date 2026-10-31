@@ -170,10 +170,33 @@ it('refuses caller-selected repository scope and transport on the shared private
     [['url' => 'https://other.test']],
 ]);
 
-it('has no separate GitHub token POST route', function (): void {
-    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', $this->body)->assertNotFound();
+it('mints through the narrow POST route using the existing admitted grant', function (): void {
+    Http::fake(['*/installation' => Http::response(['id' => 7]), '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => $this->reply['repositories']])]);
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', $this->body)
+        ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('data.github.token', 'ephemeral-sentinel')
+        ->assertJsonPath('data.github.repository', 'hardimpactdev/orbit');
+});
+
+it('refuses caller-selected grant fields on the narrow POST route', function (): void {
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token',
+        [...$this->body, 'repository' => 'foreign/repository'])->assertUnprocessable();
     Http::assertNothingSent();
 });
+
+it('binds the narrow POST mint to the authenticated Operation Node', function (): void {
+    $this->operation->update(['node_id' => $this->gateway->id]);
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', $this->body)->assertForbidden();
+    Http::assertNothingSent();
+});
+
+it('keeps the admitted credential owner boundary on the dedicated POST route', function (?array $reference): void {
+    $this->operation->update(['input' => [...$this->operation->input, 'github' => $reference]]);
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', $this->body)
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.github_token_forbidden');
+    Http::assertNothingSent();
+})->with([[null], [['$secret' => 'github.installation', 'id' => 999999]]]);
 
 it('refuses a missing or foreign admitted credential reference before minting', function (string $change): void {
     $input = $this->operation->input;
