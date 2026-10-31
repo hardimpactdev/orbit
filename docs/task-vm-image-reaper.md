@@ -1,6 +1,6 @@
 # Leaked image builders
 
-The native `task-vm-image-reaper` schedule runs every 30 minutes. Its read-only discovery step selects active Nodes with recorded Task VM host settings. Each host sweep runs on that Node's exact worker target and string Node label, under one stable native behavior instance per host. It adds no Gateway code, credential, worker or host timer.
+The native `task-vm-image-reaper` schedule runs every 30 minutes. Its read-only discovery step runs on the existing `swamp209-migration-a` worker with the `migration` pool and Node `209` labels, and selects active Nodes with recorded Task VM host settings. Each host sweep runs on that Node's exact worker target and string Node label, under one stable native behavior instance per host. It adds no Gateway code, credential, worker or host timer.
 
 The sweep considers only `tvm-image-<build>` VMs, including attempt, builder and smoke suffixes, in the host's recorded Incus project and root pool. The VM must be more than two hours old. Normal `tvm-*` guests, images, custom seed volumes, explicit `operator_owned` reservations and other projects are untouched. Queued, running and waiting `task_vm.image_build` Operations protect every VM for their build, including cancellation requests that have not settled. An unavailable, malformed or full 50-row operation response prevents cleanup.
 
