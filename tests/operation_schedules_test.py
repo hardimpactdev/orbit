@@ -17,6 +17,24 @@ SWAMP = os.environ.get('SWAMP_BIN', 'swamp')
 
 
 class OperationSchedulesTest(NativeTestCase):
+    def test_direct_kinds_are_not_dispatched_by_polled_schedules(self):
+        direct = set()
+        workflows = [yaml.safe_load(path.read_text())
+                     for path in ROOT.glob('workflows/workflow-operation-*.yaml')]
+        for path in ROOT.glob('extensions/behaviors/operations/*/registration.json'):
+            registration = json.loads(path.read_text())
+            workflow = yaml.safe_load((ROOT / f'workflows/workflow-{registration["workflow"]}.yaml').read_text())
+            if not workflow.get('trigger', {}).get('schedule'):
+                direct.update(registration['kinds'])
+        for workflow in workflows:
+            if not workflow.get('trigger', {}).get('schedule'):
+                continue
+            for job in workflow['jobs']:
+                for step in job['steps']:
+                    kinds = step.get('task', {}).get('inputs', {}).get('kinds', [])
+                    with self.subTest(workflow=workflow['name']):
+                        self.assertFalse(direct.intersection(kinds))
+
     def test_every_resolved_behavior_name_fits_swamp_limit(self):
         # Swamp rejects definition names over 64 characters at run time, not at load.
         import re

@@ -20,6 +20,9 @@ The job targets `orbit-node-<node_id>` with the matching Node label. It cannot
 use another Node or a local execution fallback. The active Gateway must have its
 configured Node worker before pairing creation takes over.
 
+The workflow reads the Node's installed public CA at
+`/usr/local/share/ca-certificates/orbit-root.crt` for Gateway HTTPS.
+
 The native behavior and checkpoint are keyed per Operation. An uncertain issue
 without a saved credential fails instead of creating another link. A stored
 credential recovers a lost completion without issuing again. The approved
@@ -37,3 +40,6 @@ whole scratch tree and captured logs for private values. Record old/new
 native-start and first-projection timings without private bytes. Injected Http
 fixtures are regression evidence and do not satisfy this canary requirement.
 No shared source merge implies family activation or runtime readiness.
+
+Scheduled integrations discovery excludes pairing creation; its only executor
+is the direct Conn workflow.
