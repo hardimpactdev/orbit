@@ -24,6 +24,13 @@ final class SwampRunSubscriber
     /** @var array<string,int> */
     private array $requests = [];
 
+    /** @var array<int,array{status:?string,next:float,backoff:float}> */
+    private array $pending = [];
+
+    private float $connectionBackoff = 0.0;
+
+    private float $connectedAt = 0.0;
+
     private bool $started = false;
 
     private float $nextConnection = 0.0;
@@ -59,7 +66,7 @@ final class SwampRunSubscriber
             if ($request !== null) {
                 unset($this->requests[$request]);
             }
-            unset($this->following[$operationId]);
+            unset($this->following[$operationId], $this->pending[$operationId]);
 
             return;
         }
@@ -73,6 +80,7 @@ final class SwampRunSubscriber
         if ($old !== null) {
             unset($this->requests[$old]);
         }
+        unset($this->pending[$operationId]);
         $this->following[$operationId] = ['run' => $run, 'workflow' => $definition['workflow'], 'request' => null, 'attached' => false];
     }
 
@@ -95,9 +103,10 @@ final class SwampRunSubscriber
                     return;
                 }
                 $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5);
+                $this->connectedAt = ($this->clock)();
             }
             foreach ($this->following as $operationId => $entry) {
-                if ($entry['request'] !== null) {
+                if ($entry['request'] !== null || isset($this->pending[$operationId])) {
                     continue;
                 }
                 $id = bin2hex(random_bytes(16));
@@ -110,14 +119,27 @@ final class SwampRunSubscriber
             }
             if (! $this->socket->isConnected()) {
                 $this->close();
-                $this->nextConnection = ($this->clock)() + 1.0;
+                $this->scheduleReconnect();
+            } elseif (($this->clock)() - $this->connectedAt >= 60.0) {
+                $this->connectionBackoff = 0.0;
             }
         } catch (Throwable $exception) {
             // Remote frames and exception text can contain inputs. Log identity and type only.
             $this->log->warning('The native terminal observer connection is unavailable.', ['exception_type' => $exception::class]);
             $this->close();
-            $this->nextConnection = ($this->clock)() + 1.0;
+            $this->scheduleReconnect();
         }
+        foreach ($this->pending as $operationId => $delivery) {
+            if (($this->clock)() >= $delivery['next']) {
+                $this->project($operationId, $delivery['status']);
+            }
+        }
+    }
+
+    private function scheduleReconnect(): void
+    {
+        $this->connectionBackoff = min(60.0, max(1.0, $this->connectionBackoff * 2));
+        $this->nextConnection = ($this->clock)() + $this->connectionBackoff;
     }
 
     public function close(): void
@@ -135,7 +157,7 @@ final class SwampRunSubscriber
     {
         $id = $message['id'] ?? null;
         $operationId = is_string($id) ? ($this->requests[$id] ?? null) : null;
-        if ($operationId === null) {
+        if ($operationId === null || isset($this->pending[$operationId])) {
             return;
         }
         $entry = $this->following[$operationId];
@@ -179,8 +201,17 @@ final class SwampRunSubscriber
     private function project(int $operationId, ?string $status): void
     {
         $entry = $this->following[$operationId];
-        ProjectSwampTerminal::dispatchSync($operationId, $entry['run'], $status);
-        unset($this->following[$operationId]);
+        try {
+            ProjectSwampTerminal::dispatchSync($operationId, $entry['run'], $status);
+        } catch (Throwable $exception) {
+            // Keep the terminal notice without tearing down the unrelated event connection.
+            $backoff = min(60.0, max(5.0, ($this->pending[$operationId]['backoff'] ?? 0.0) * 2));
+            $this->pending[$operationId] = ['status' => $status, 'next' => ($this->clock)() + $backoff, 'backoff' => $backoff];
+            $this->log->warning('The native terminal projection is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+
+            return;
+        }
+        unset($this->following[$operationId], $this->pending[$operationId]);
         if ($entry['request'] !== null) {
             unset($this->requests[$entry['request']]);
         }
