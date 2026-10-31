@@ -37,6 +37,6 @@ final readonly class NodeAgentRekeyProjection implements DirectOperationProjecti
             throw new ResourceOperationException('operation.result_invalid', 'Only a bounded native recovery outcome is accepted.', 422);
         }
 
-        return app(DirectOperation::class)->project($operation, $data, $result, 'node-agent-rekey');
+        return app(DirectOperation::class)->project($operation, $data, $result);
     }
 }

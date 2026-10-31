@@ -6,7 +6,6 @@ use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecrets;
@@ -208,7 +207,7 @@ it('preserves whitespace and empty strings in private output JSON', function ():
             $this->received = $value;
         }
     };
-    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$store], app(OperationKinds::class)));
+    app()->instance(OperationSecretOutputs::class, new OperationSecretOutputs([$store]));
     $reflection = new ReflectionClass(DirectOperation::class);
     $definitions = $reflection->getProperty('definitions')->getValue(app(DirectOperation::class));
     $definitions['conn.pairing_create']['secret_outputs'] = ['credential' => 'fixture.structured'];

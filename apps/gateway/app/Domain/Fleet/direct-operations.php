@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\DockerMigrationProjection;
+use App\Domain\Fleet\FleetReleaseProjection;
 use App\Domain\Fleet\PeerDnsProjection;
 use App\Domain\Fleet\RecipeDirectProjection;
 use App\Domain\Fleet\RecipePrProjection;
-use App\Domain\Fleet\FleetReleaseProjection;
 
 return [
     'fleet.recipe' => [

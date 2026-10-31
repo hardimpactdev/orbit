@@ -30,7 +30,7 @@ final readonly class CliConvergePlan
         return $reason;
     }
 
-    /** @return array<string, mixed> */
+    /** @return array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string} */
     public function input(Node $node): array
     {
         $input = ['user' => $node->user, 'release' => null, 'profile' => '', 'skip_reason' => $this->exclusion($node), 'plan_error' => null];

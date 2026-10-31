@@ -1,7 +1,0 @@
-<?php
-
-declare(strict_types=1);
-
-use App\Infrastructure\Nodes\ManagedAgentInstallOperationTransport;
-
-return ['node-agent' => ManagedAgentInstallOperationTransport::class];

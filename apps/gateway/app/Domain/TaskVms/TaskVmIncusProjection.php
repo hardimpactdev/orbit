@@ -45,6 +45,6 @@ final readonly class TaskVmIncusProjection implements DirectOperationProjection
             throw new ResourceOperationException('operation.result_invalid', 'The Incus action needs a bounded successful result or refusal.', 422);
         }
 
-        return app(DirectOperation::class)->project($operation, $data, $result, str_replace('_', '-', substr($operation->kind, strlen('task_vm.'))));
+        return app(DirectOperation::class)->project($operation, $data, $result);
     }
 }

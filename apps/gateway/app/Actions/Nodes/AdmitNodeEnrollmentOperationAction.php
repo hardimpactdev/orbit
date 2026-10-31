@@ -11,7 +11,6 @@ use App\Domain\Nodes\NodeEnrollmentPolicy;
 use App\Domain\Nodes\NodeEnrollmentRoutes;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
-use App\Domain\Nodes\NodeTaskVmLifecycleOwnership;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
@@ -23,7 +22,6 @@ use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
@@ -60,9 +58,6 @@ final readonly class AdmitNodeEnrollmentOperationAction
         if ($node->exists && app(ProcessSwampSafety::class)->requiresSynchronous($node)) {
             throw new ResourceOperationException('node.executor_dependency', 'Executor Nodes require synchronous enrollment recovery.', 409);
         }
-        if ($data->taskVmId !== null || $this->idempotency->parent !== null) {
-            app(NodeTaskVmLifecycleOwnership::class)->enrollment($node, $data);
-        }
         $spec = $this->policy->prepare($node, $data);
         $existed = $node->exists;
         $prior = $existed ? $node->only(self::IdentityFields) : null;
@@ -84,12 +79,12 @@ final readonly class AdmitNodeEnrollmentOperationAction
             'bootstrap_user' => $spec['bootstrap_user'], 'bootstrap_fingerprint' => $spec['fingerprint'],
             'bootstrap_identity' => ['$secret' => 'node.bootstrap_ssh_identity', 'id' => $node->id],
             'agent_pins' => array_map(static fn (array $artifact): string => $artifact['sha256'], $this->delivery->artifacts()),
-            'roleless_operator' => $spec['roleless_operator'], 'skip_bootstrap' => $data->taskVmId !== null,
+            'roleless_operator' => $spec['roleless_operator'], 'skip_bootstrap' => false,
             'bootstrap_command' => $spec['mode'] === 'linux' ? $this->bootstrap->input($render, $spec['managed_user'], $spec['roleless_operator']) : [],
             'bootstrap_firewall' => $spec['mode'] === 'linux' && ! $node->roles()->exists() ? $this->firewall->publicSsh($render, true) : null];
         $intent = ['id' => $node->id, 'existed' => $existed, 'prior_state' => $prior, 'candidate' => $candidate,
             'route_changes' => $changes, 'roles' => array_map(static fn ($role): string => $role->value, $data->roles),
-            'task_vm_id' => $data->taskVmId, 'settings_provided' => $data->settingsProvided, 'settings' => $data->settings?->toArray()];
+            'settings_provided' => $data->settingsProvided, 'settings' => $data->settings?->toArray()];
         $steps = $this->plan->build($node, $input, $intent);
         $intents = [];
         foreach ($steps as $step) {
@@ -103,13 +98,7 @@ final readonly class AdmitNodeEnrollmentOperationAction
                 '_node_failure_result' => ['id' => $node->id, 'name' => $node->name, 'enrolled' => false]], 'operator', $requestId);
         if ($operation->wasRecentlyCreated) {
             $this->store->change($operation, ['state' => [...($operation->state ?? []), 'enrollment_intent' => $intent, 'child_intents' => $intents]]);
-            if ($data->taskVmId !== null) {
-                $taskVm = TaskVm::query()->lockForUpdate()->findOrFail($data->taskVmId);
-                if ($taskVm->node_id !== null && $taskVm->node_id !== $node->id) {
-                    throw new ResourceOperationException('node.task_vm_conflict', 'The task VM already owns another Node.', 409);
-                }
-                $taskVm->update(['node_id' => $node->id]);
-            }
+
         }
 
         return $operation;

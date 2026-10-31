@@ -9,6 +9,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentStep;
+use App\Infrastructure\Certificates\GatewayLeafCertificateSigner;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Instance;
 use App\Models\Node;
@@ -162,7 +163,7 @@ final readonly class RemoteAppDevCertificateManager
 
         AgentStep::run($this->agents, $node, 'certificate.publish-leaf', [
             ...$leaf,
-            'certificate' => $this->signer->sign($domain, StoredValue::string($request['request'] ?? null)),
+            'certificate' => app(GatewayLeafCertificateSigner::class)->sign($domain, StoredValue::string($request['request'] ?? null), $rootCertificate),
             'root_certificate' => $rootCertificate,
         ], 'certificate-publish', 'app-dev.certificate_publish_failed', 'App development');
     }

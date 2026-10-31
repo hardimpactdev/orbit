@@ -54,8 +54,11 @@ final readonly class GatewayReleaseAgentDelivery implements GatewayReleaseAgent
     {
         $sha = $this->commit($revision);
         $frozen = $this->frozenManifest ?? @file_get_contents(resource_path('agent/frozen-manifest.json'));
-        $pin = is_string($frozen) ? json_decode($frozen, true) : null;
-        $url = is_array($pin) ? ($pin['artifacts']['linux-x86_64']['url'] ?? null) : null;
+        if (! is_string($frozen)) {
+            throw $this->invalid($sha, 'The frozen agent manifest is unavailable.');
+        }
+        $pin = json_decode($frozen, true);
+        $url = data_get($pin, 'artifacts.linux-x86_64.url');
         if (! is_string($url) || preg_match('#\A'.preg_quote(rtrim($this->repository, '/'), '#').'/releases/download/(cli-v0\.[1-9][0-9]*\.0)/orbit-agent-linux-x86_64\z#D', $url, $match) !== 1) {
             throw $this->invalid($sha, 'The frozen agent manifest has no fixed published release.');
         }

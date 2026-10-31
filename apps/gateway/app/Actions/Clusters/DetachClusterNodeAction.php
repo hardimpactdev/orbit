@@ -32,6 +32,12 @@ final readonly class DetachClusterNodeAction
         $node->refresh();
         $cluster->refresh();
 
+        foreach ($this->routeReconciler()->membershipChanges(nodeOverrides: [$node->id => ['cluster_id' => null]]) as $change) {
+            if ($change['route']->isAnalyticsTracking()) {
+                $this->convergeRoute()->assertConvergible($change['route'], $change['domain'], allowGenerated: true);
+            }
+        }
+
         $this->lanIngress()->expand(
             nodeOverrides: [$node->id => ['cluster_id' => null]],
             clusterIds: [$cluster->id],
