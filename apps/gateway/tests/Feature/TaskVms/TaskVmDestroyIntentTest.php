@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmDestroyAction;
+use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -11,6 +12,7 @@ use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -18,6 +20,7 @@ use App\Models\Task;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
@@ -208,3 +211,35 @@ it('refuses a public cleanup view after the captured Node identity changes', fun
 
     expect(fn () => app(TaskVmDestroyProjection::class)->publicInput($operation, $this->host->id))->toThrow(ResourceOperationException::class);
 });
+
+it('routes the normal lifecycle entry to one direct destroy root without changing VM state', function (): void {
+    $before = $this->vm->fresh()->getRawOriginal();
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-vm-destroy', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'destroy-fixture-token']);
+    $operation = app(StartTaskVmLifecycleOperationAction::class)->execute($this->vm->id, 'destroy');
+
+    expect($operation?->kind)->toBe('task_vm.destroy');
+    expect($operation?->input['task_vm_id'])->toBe($this->vm->id);
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-task-vm-destroy');
+    expect(app(StartTaskVmLifecycleOperationAction::class)->execute($this->vm->id, 'destroy')?->id)->toBe($operation?->id);
+    expect(Operation::query()->where('target_type', 'task_vm')->where('target_id', $this->vm->id)->count())->toBe(1);
+    expect($this->vm->fresh()->getRawOriginal())->toBe($before);
+});
+
+it('projects native terminal status with only its bounded VM changes', function (string $status): void {
+    $operation = savedDestroyIntent();
+    $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $operation->update(['state' => ['swamp_run_id' => $run]]);
+    $data = ['run_id' => $run, 'status' => $status, 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
+        'error_code' => $status === 'failed' ? 'task_vm.destroy_failed' : null,
+        'result' => $status === 'succeeded' ? ['task_vm_id' => $this->vm->id, 'removal_id' => $operation->input['removal_id'], 'removed' => true] : []];
+
+    app(TaskVmDestroyProjection::class)->apply($operation, $data);
+    app(TaskVmDestroyProjection::class)->apply($operation->fresh(), $data);
+
+    expect($operation->fresh()->status->value)->toBe($status);
+    expect($this->vm->fresh()->state->value)->toBe($status === 'succeeded' ? 'destroyed' : 'failed');
+    expect($this->vm->fresh()->pi_token)->toBe($status === 'succeeded' ? null : 'private-pi-token');
+})->with(['succeeded', 'failed', 'cancelled']);

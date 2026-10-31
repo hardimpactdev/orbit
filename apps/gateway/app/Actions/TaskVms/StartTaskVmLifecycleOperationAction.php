@@ -7,7 +7,6 @@ namespace App\Actions\TaskVms;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmCapabilities;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -27,12 +26,6 @@ final readonly class StartTaskVmLifecycleOperationAction
     {
         if ($verb === 'destroy') {
             return app(StartTaskVmDestroyAction::class)->execute($taskVmId);
-        }
-        TaskVmCapabilities::require('children');
-        TaskVmCapabilities::require('receipts');
-        if (in_array($verb, ['provision', 'enroll'], true)) {
-            TaskVmCapabilities::requireComposition('task_vm.'.$verb, ['node.add']);
-            TaskVmCapabilities::requireComposition('task_vm.prepare_runtime', ['process.create']);
         }
         if (! in_array($verb, ['provision', 'enroll', 'resume'], true)) {
             throw new TaskVmException('task_vm.invalid_effect', 'The task VM lifecycle intent is not supported.');

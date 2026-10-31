@@ -33,7 +33,7 @@ final readonly class TaskVmDestroyIntent
             : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
         $location = $vm->provider === TaskVmProviderKind::Incus ? $this->settings->host($host->id) : null;
         $gateway = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
-        $issuerId = $vm->node_id === null ? $host->id : filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
+        $issuerId = $vm->node_id === null && $vm->group_id === null && ! $vm->worker_stop_required ? $host->id : filter_var(config('dependency_detection.services_node_id'), FILTER_VALIDATE_INT);
         if (! is_int($issuerId) || ! Node::query()->whereKey($issuerId)->where('status', LifecycleStatus::Active)->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'The existing worker issuer is unavailable.', 409);
         }
