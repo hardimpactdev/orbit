@@ -17,6 +17,8 @@ export async function fixtureHttp(
 export function fixtureRegister() {
   return Promise.resolve({
     registered: true,
+    php_version: null,
+    laravel: false,
     branch: "feature",
     commit: "a".repeat(40),
     detached: false,

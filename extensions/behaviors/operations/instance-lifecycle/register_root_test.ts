@@ -4,6 +4,8 @@ import type { NodeCall } from "../_lib/node-agent.ts";
 const input = {
   instance_id: 3,
   project_id: 2,
+  project_type: "node-package",
+  php_versions: ["8.5", "8.4"],
   checkout: "/srv/apps/proof/feature",
   application: "/srv/apps/proof/feature",
   repository_identity: "github.com/example/proof",
@@ -38,6 +40,9 @@ function fixture(change: Record<string, unknown> = {}, refusal?: string) {
         return Promise
           .resolve({ rows: [{ ...source, ...change }] });
       }
+      if (call.name === "instance.inspect-development-profile") {
+        return Promise.resolve({ kind: "none" });
+      }
       return Promise.resolve(
         refusal ? { error_code: refusal } : { identities: [] },
       );
@@ -48,6 +53,8 @@ Deno.test("registration inspects and adopts only its admitted local checkout bef
   const f = fixture();
   assertEquals(await registerCheckout(input, f.invoke), {
     registered: true,
+    php_version: null,
+    laravel: false,
     branch: source.branch,
     commit: source.commit,
     detached: false,
@@ -59,14 +66,15 @@ Deno.test("registration inspects and adopts only its admitted local checkout bef
   assertEquals(f.calls.map((v) => [v.name, v.sudo, v.mutates]), [
     ["account.lookup", false, false],
     ["instance.inspect-registration-source", false, false],
+    ["instance.inspect-development-profile", false, false],
     ["instance.relocate-registration-source", false, true],
     ["instance.relocate-registration-source", false, true],
   ]);
-  assertEquals(f.calls.slice(2).map((v) => v.input.operation), [
+  assertEquals(f.calls.slice(3).map((v) => v.input.operation), [
     "adopt",
     "adopt-finalize",
   ]);
-  const member = (f.calls[2].input.members as Record<string, unknown>[])[0];
+  const member = (f.calls[3].input.members as Record<string, unknown>[])[0];
   assertEquals(member.source, member.destination);
   assertEquals(member.digest, source.source_digest);
 });
@@ -97,7 +105,7 @@ Deno.test("registration stops on adoption refusal without reporting completion o
   assertEquals(await registerCheckout(input, f.invoke), {
     error_code: "instance.registration_invalid",
   });
-  assertEquals(f.calls.length, 3);
+  assertEquals(f.calls.length, 4);
 });
 Deno.test("registration rejects malformed source output before mutation", async () => {
   const f = fixture({ source_digest: "not-a-digest" });
@@ -155,6 +163,8 @@ Deno.test("registration adopts real dirty source in place and keeps private byte
     });
     assert("registered" in result);
     assertEquals(result.registered, true);
+    assertEquals(result.laravel, false);
+    assertEquals(result.php_version, null);
     assertEquals(result.commit, commit);
     assertEquals(result.branch, "feature");
     assertEquals(JSON.stringify(result).includes("retain-me"), false);
@@ -182,4 +192,41 @@ Deno.test("registration adopts real dirty source in place and keeps private byte
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("registration refuses unsafe application metadata before adoption", async () => {
+  const f = fixture();
+  await assertRejects(() =>
+    registerCheckout(
+      input,
+      (call) =>
+        call.name === "instance.inspect-development-profile"
+          ? Promise.resolve({ kind: "unsafe" })
+          : f.invoke(call),
+    )
+  );
+  assert(f.calls.every((call) => !call.mutates));
+});
+
+Deno.test("registration returns the observed PHP and Laravel profile without raw metadata", async () => {
+  const f = fixture();
+  const result = await registerCheckout(
+    input,
+    (call) =>
+      call.name === "instance.inspect-development-profile"
+        ? Promise.resolve({
+          kind: "composer",
+          composer: btoa(
+            JSON.stringify({
+              require: { php: "^8.4", "laravel/framework": "^13.0" },
+            }),
+          ),
+          entry_point: "regular",
+        })
+        : f.invoke(call),
+  );
+  assert("registered" in result);
+  assertEquals(result.php_version, "8.5");
+  assertEquals(result.laravel, true);
+  assert(!JSON.stringify(result).includes("composer"));
 });

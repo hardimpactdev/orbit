@@ -8,6 +8,7 @@ import {
 } from "../_lib/direct.ts";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { runLocalSource } from "./source_system.ts";
+import { classifyProvisioningProfile } from "./provisioning_source.ts";
 import { repositoryIdentity } from "./source_identity.ts";
 
 const Args = DirectArgs.extend({
@@ -26,6 +27,8 @@ const Input = z.object({
   checkout: Path,
   application: Path,
   repository_identity: z.string().min(1),
+  project_type: z.enum(["monorepo", "laravel-package", "node-package"]),
+  php_versions: z.array(z.string().regex(/^\d+\.\d+$/)).min(1),
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).refine((v) =>
     v !== "root"
   ),
@@ -49,6 +52,8 @@ const Row = z.object({
 const Result = z.union([
   z.object({
     registered: z.literal(true),
+    php_version: z.string().nullable(),
+    laravel: z.boolean(),
     branch: z.string().nullable(),
     commit: z.string(),
     detached: z.boolean(),
@@ -118,6 +123,15 @@ export async function registerCheckout(
   } catch {
     return { error_code: "instance.source_identity_invalid" };
   }
+  const inspectedProfile = input.project_type === "monorepo"
+    ? { kind: "none" }
+    : await call("instance.inspect-development-profile", {
+      application: input.application,
+      owner: input.user,
+      entry_point: "artisan",
+    });
+  if ("error_code" in inspectedProfile) return Refusal.parse(inspectedProfile);
+  const profile = classifyProvisioningProfile(inspectedProfile, input);
   const members = [{
     id: input.instance_id,
     source: input.checkout,
@@ -143,6 +157,7 @@ export async function registerCheckout(
   }
   return {
     registered: true as const,
+    ...profile,
     branch: source.branch,
     commit: source.commit,
     detached: source.detached,
@@ -161,7 +176,7 @@ export function registerRoot(
 ) {
   return {
     type: "@nckrtl/instance-register",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
       execute: {

@@ -13,13 +13,8 @@ from native_harness import NativeTestCase
 class NativeRegister(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operations/_lib')
-        family = 'extensions/behaviors/operations/instance-lifecycle'
-        target = self.repo / family
-        target.mkdir(parents=True)
-        for name in ('register_root.ts', 'source_identity.ts', 'source_system.ts', 'register_native_fixture.ts'):
-            (target / name).write_bytes((ROOT / family / name).read_bytes())
-        (self.repo / 'extensions/behaviors/operations/failure.ts').write_bytes((ROOT / 'extensions/behaviors/operations/failure.ts').read_bytes())
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations')
+        target = self.repo / 'extensions/behaviors/operations/instance-lifecycle'
         module = target / 'register_root.ts'
         module.write_text('import {fixtureHttp,fixtureRegister} from "./register_native_fixture.ts";\n' + module.read_text().replace('registerRoot();', 'registerRoot(() => fixtureHttp, fixtureRegister);'))
         source = ROOT / 'workflows/workflow-operation-instance-register.yaml'
@@ -43,6 +38,8 @@ class NativeRegister(NativeTestCase):
         state = json.loads(self.state_path.read_text())
         self.assertEqual(state['operation']['status'], 'succeeded')
         self.assertTrue(state['operation']['result']['registered'])
+        self.assertFalse(state['operation']['result']['laravel'])
+        self.assertIsNone(state['operation']['result']['php_version'])
         self.assertEqual(state['operation']['result']['branch'], 'feature')
         roots = {c['body']['run_id'] for c in state['calls'] if c['method'] == 'POST'}
         self.assertEqual(len(roots), 1)

@@ -17,3 +17,5 @@ SWAMP_BIN=/usr/local/bin/swamp python3 -m unittest extensions/behaviors/operatio
 ```
 
 The shared source and production-home tests exercise real Git, local ownership, path checks, and production layout changes. The DAG harness substitutes only those effects and Gateway I/O; it preserves step order, expressions, failure branches, and the native root identity.
+
+A candidate must have a recorded source profile before clone admission. Native registration uses the shared classifier to return only `php_version` and `laravel`, alongside its Git identity. The Gateway stores those fields, so clone can copy stored environment values through the existing owner checks. Unsafe metadata refuses registration before adoption. A non-PHP checkout records `php_version: null` and `laravel: false`.
