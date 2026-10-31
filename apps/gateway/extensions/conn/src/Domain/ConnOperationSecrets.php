@@ -36,7 +36,7 @@ final readonly class ConnOperationSecrets implements OperationSecretSource
         if ($this->ownerId($operation) !== $id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Conn session does not belong to this Operation.', 422);
         }
-        if ($operation->kind === 'conn.pairing_create' && ! ConnPairing::query()->whereKey($operation->target_id)->where('conn_environment_id', $id)->where('node_id', $operation->input['caller_node_id'])->exists()) {
+        if ($operation->kind === 'conn.pairing_create' && ! ConnPairing::query()->whereKey($operation->target_id)->where('conn_environment_id', $id)->where('node_id', $operation->input['caller_node_id'])->whereNull('revoked_at')->exists()) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The pairing has another environment owner.', 422);
         }
         if ($operation->kind === 'conn.pairing_revoke' && $operation->target_id !== ($operation->input['subject_node_id'] ?? null)) {
