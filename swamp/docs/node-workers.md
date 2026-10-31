@@ -10,9 +10,9 @@ sudo. Production actions select `orbit-app-<ProjectID>` from admitted intent;
 development actions use the configured Node account. Package work stays under
 the separate sandbox account without sudo.
 
-vpn1 (Node 1) and usexit18 (Node 18) use the SSH proxy workers on 209. Their
-pinned SSH identities stay on 209. Do not install a local worker on either light
-Node or route another Node's effects through an unrelated worker.
+vpn1 (Node 1) and usexit18 (Node 18) use the official `@swamp/ssh` extension
+from the normal Node209 control worker. Their approved key and pinned host keys
+stay on 209. Do not install a local worker on either light Node.
 
 Use the native worker queue timeout, concurrency and token defaults unless the
 execution plan records a measured exception. Credential values are not workflow
@@ -37,3 +37,17 @@ certificate-sign primitives in the binding guide. Their transport uses the
 caller's explicitly configured public CA path on the owning Node; it does not
 substitute an agent configuration path or add an identity header. The GitHub App
 key and Orbit CA private key never leave the Gateway or enter a Swamp vault.
+
+## Official SSH actions for light Nodes
+
+Place VPN1 and usexit18 SSH steps on the normal Node209 control worker. Use the
+official `@swamp/ssh` model's `exec` or `script` method with the approved existing
+key, pinned `hostKeys` and `sudo: true` when the action needs root. The `script`
+method sends its body over stdin. No custom transport or logical Node1/18 proxy
+worker is needed. Forward environment values only through the extension's
+documented SSH `AcceptEnv` and sudo `env_keep` support.
+
+The Node lint also recognizes the official `@swamp/cfgmgmt/directory` and
+`@swamp/cfgmgmt/file` types for file publication (`apply`). Their methods retain
+the official package behavior and defaults; no extension namespace wildcard is
+needed.

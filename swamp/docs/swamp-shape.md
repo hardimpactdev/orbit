@@ -8,6 +8,13 @@ Decided by Nick, 2026-10-31.
 
 Swamp does all operational work, the way Swamp is designed to be used, with Swamp defaults. The Gateway keeps state, the API/CLI/MCP, validation and intent records, and it projects results. orbit-agent only observes. If your code makes Swamp a thin wrapper around a hidden program, it is wrong, even if it is green.
 
+## Use what Swamp provides first (Nick, 2026-10-31)
+
+Before you build any mechanism, check Swamp core (https://swamp-club.com/manual) and the official extensions (https://github.com/swamp-club/swamp-extensions: ssh, vault, datastore, git, container-image, cfgmgmt, workflows, and others). If Swamp or an official extension does it, use that, with its defaults. Don't build custom wrappers, transports, supervisors, protocols or channels.
+- Don't over-engineer for edge cases. All Orbit Nodes are trusted, so extra custody, placement or identity hardening beyond Swamp's defaults is not needed.
+- Example: steps on vpn1 and usexit18 use the official `@swamp/ssh` extension (exec/script methods, pinned hostKeys, the approved 209 key, sudo where root is needed) from a normal 209 control worker. They don't use a custom SSH runner.
+- A PR that adds a mechanism must say which core feature or official extension it checked, and why that doesn't fit.
+
 ## The shape
 
 1. **The Gateway starts a run with the full intent as inputs.**
@@ -58,6 +65,8 @@ Swamp does all operational work, the way Swamp is designed to be used, with Swam
   - secrets not from `vault.get`;
   - step callbacks to the Gateway for intent;
   - agent action calls.
+
+- Review checklist: does Swamp core or an official extension (swamp-club/swamp-extensions) already provide this mechanism? If yes, the PR uses it with its defaults; a custom wrapper, transport, supervisor, protocol or channel is a defect.
 
 Existing violations are on a grandfather list that may only shrink.
 

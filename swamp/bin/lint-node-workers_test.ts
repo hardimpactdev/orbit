@@ -214,3 +214,94 @@ Deno.test("third-party behavior types remain refused", async () => {
   assertEquals(result.success, false);
   assertStringIncludes(result.diagnostic, "not third-party extensions");
 });
+
+Deno.test("official SSH methods are accepted directly without a local adapter", async () => {
+  for (const methodName of ["exec", "script"]) {
+    const result = await check({
+      type: "behavior",
+      behaviorType: "@swamp/ssh",
+      behaviorName: "node-light-ssh",
+      methodName,
+      inputs: { hosts: "name:vpn1", script: "id -u" },
+    });
+    assertEquals(result.success, true, result.diagnostic);
+  }
+});
+
+Deno.test("official file and directory apply methods need no local adapter", async () => {
+  for (
+    const behaviorType of ["@swamp/cfgmgmt/directory", "@swamp/cfgmgmt/file"]
+  ) {
+    const result = await check({
+      type: "behavior",
+      behaviorType,
+      behaviorName: "publication-fixture",
+      methodName: "apply",
+      inputs: {},
+    });
+    assertEquals(result.success, true, result.diagnostic);
+  }
+});
+
+Deno.test("the reviewed HTTP source extraction retains its exact raw adapter path", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    for (
+      const path of [
+        "models",
+        "workflows",
+        "extensions/behaviors/operations/_lib",
+      ]
+    ) await Deno.mkdir(root + "/" + path, { recursive: true });
+    const base = root + "/extensions/behaviors/operations/_lib/";
+    await Deno.writeTextFile(
+      base + "node-command-process.ts",
+      "export const commandOutput=()=>{};",
+    );
+    const source =
+      'import {commandOutput} from "./node-command-process.ts"; export const behavior={type:"@fixture/http"}; export const execute=()=>commandOutput();';
+    for (
+      const [name, allowed] of [["node-proxy-http.ts", true], [
+        "node-proxy-http-other.ts",
+        false,
+      ]] as const
+    ) {
+      await Deno.writeTextFile(base + name, source);
+      await Deno.writeTextFile(
+        root + "/workflows/fixture.yaml",
+        stringify({
+          jobs: [{
+            steps: [{
+              name: "http",
+              target: "orbit-node-1",
+              labels: { node: "1" },
+              task: {
+                type: "behavior",
+                behaviorType: "@fixture/http",
+                methodName: "execute",
+              },
+            }],
+          }],
+        }),
+      );
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "--allow-read",
+          import.meta.resolve("./lint-node-workers.ts"),
+          root,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(
+        result.success,
+        allowed,
+        new TextDecoder().decode(result.stderr),
+      );
+      await Deno.remove(base + name);
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
