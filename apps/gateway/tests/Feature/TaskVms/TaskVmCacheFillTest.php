@@ -167,3 +167,20 @@ it('does not count another hosts stale version as a fully replicated archive', f
     $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [...$this->outcome, 'result' => cacheBatch(['archive' => $hash])])->assertOk();
     expect($snapshot->fresh()->fill_pending)->toBeTrue();
 });
+
+it('refuses a late running batch after each terminal outcome without changing inventory', function (string $status): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    $path = '/api/v1/direct-operations/'.$op->id.'/result';
+    $terminal = [...$this->outcome, 'status' => $status, 'finished_at' => '2026-10-31T00:00:01.000Z',
+        'result' => $status === 'succeeded' ? ['ready' => true] : []];
+    if ($status === 'failed') {
+        $terminal['error_code'] = 'task_vm.package_cache_failed';
+        $terminal['result'] = ['error_code' => 'task_vm.package_cache_failed'];
+    }
+    $this->postJson($path, $terminal)->assertOk();
+    $before = $op->fresh()->getAttributes();
+    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch(['archive' => 'sha256-'.str_repeat('a', 64)])])
+        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_conflict');
+    expect($op->fresh()->getAttributes())->toBe($before);
+    $this->assertDatabaseCount('package_cache_entries', 0);
+})->with(['succeeded', 'failed', 'cancelled']);
