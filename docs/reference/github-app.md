@@ -22,6 +22,16 @@ The App is public on GitHub, so any GitHub account can install it. An installati
 
 The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
 
+## Execution boundary
+
+GitHub App registration and installation refresh execute as native Swamp workflows. The Gateway validates the browser state, records intent, holds the encrypted App key, and projects public state. Its only execution primitive is token minting. Instance and Project dependency pages already read published Swamp resources; they do not start scans or inspect Nodes.
+
+The manifest callback admits one `github.app_register` Operation and returns HTTP 202. Its one-time code is encrypted in the Gateway and is available only through the declared private-material field `registration_code` to the bound Gateway-Node workflow. The native workflow exchanges the code with GitHub. It stores `{app_id, slug, name, owner, owner_type, url, private_key}` through the shared `app_credentials` secret output. The existing App key stays encrypted in `GitHubAppStore`; no code or key enters public input, result, logs or Swamp resources. Replaying the browser callback cannot admit another exchange. The operation result contains only `registered: true`.
+
+`POST /api/v1/github/app/sync` admits `github.app_sync`. The native workflow reads a newly minted short-lived App JWT through the declared `app_token` private field and lists installations at GitHub. The Gateway signs the JWT locally with its retained App key and makes no upstream request. This exposes a **new credential type to the exact Gateway-Node worker**: an App JWT can exercise App-level GitHub authority during its lifetime. It is not a repository installation token and cannot be narrowed to installation listing by GitHub. This credential boundary requires its own access review before release. The key itself is never exported for refresh.
+
+App install/show are state-only. They return the last projected installation observation with `installations_status` (`unknown`, `current`, or `stale`) and `observed_at`. An empty list with `unknown` is not evidence of no installations. Observations become stale after five minutes. While registration is admitted and credentials are not stored, show returns `status: pending`. No HTTP request polls or waits for execution. Destroy removes only local App state; GitHub still requires the owner to delete its registration in the browser.
+
 ## Services dependency credentials
 
 Only the configured Services peer can call `POST /api/v1/projects/{project}/dependency-read-token` with `{}`. It also needs Gateway access. The Gateway resolves the Project repository and its existing GitHub App installation, then returns one fresh repository-scoped installation token with `contents: read` and `pull_requests: read`, plus GitHub's implicit metadata read. Other source-access modes and hosts are refused. There is no CLI-login or anonymous fallback.
@@ -78,9 +88,9 @@ Run [`orbit github:app:install`](/cli/github#orbit-githubappinstall) from a mach
 | First run on a Gateway | Registers the App on GitHub, then opens the install page. |
 | Each next run | Opens the install page for another account or organization. |
 
-Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration. The Gateway exchanges the code for the App ID, slug, and private key. A registration expires after one hour.
+Registration takes one confirmation in the browser. The Gateway serves a page that posts the App's manifest to GitHub. GitHub shows the App name, and you confirm. GitHub App names are unique across GitHub, so GitHub asks for another name when the name is taken. GitHub then redirects the browser to the Gateway with a one-time code and the `state` value that ties it to this registration. The callback admits the native registration workflow and returns its Operation with HTTP 202. Swamp exchanges the code for the App ID, slug, and private key, then stores credentials through the declared private output. A registration expires after one hour.
 
-On the install page, choose the account or organization and all or selected repositories. The Gateway lists the App's installations on GitHub each time it needs them. So a new installation, a changed repository selection, and an uninstall take effect on the next read.
+On the install page, choose the account or organization and all or selected repositories. Run the App sync endpoint after changing installations. Install and show read the last projected observation and explicitly report its age and certainty.
 
 ## Read branch protection
 

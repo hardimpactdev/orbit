@@ -29,16 +29,6 @@ final readonly class CachedGitHubApi implements GitHubApi
 
     public function __construct(private GitHubApi $github, private GitHubTokenCache $tokens) {}
 
-    public function convertManifest(#[SensitiveParameter] string $code): GitHubAppCredentials
-    {
-        return $this->github->convertManifest($code);
-    }
-
-    public function installations(GitHubAppCredentials $credentials): array
-    {
-        return $this->github->installations($credentials);
-    }
-
     public function repositoryInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): ?int
     {
         return $this->tokens->installation($credentials->appId, $repository, fn (): ?int => $this->github->repositoryInstallation($credentials, $repository));
