@@ -84,6 +84,13 @@ it('serves disjoint server passwords through the real shared controller for each
         $this->getJson($path)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
             ->assertExactJsonStructure(['data' => [$field => ['passwords' => [$id]]], 'meta' => ['request_id']])
             ->assertJsonPath('data.'.$field.'.passwords.'.$id, $own)->assertDontSee($foreign);
+        if (! $lifecycle) {
+            $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertOk()
+                ->assertJsonCount(1, 'data.input.servers')
+                ->assertJsonPath('data.input.servers.0.server_id', (int) $id)
+                ->assertJsonPath('data.cancel_requested', false)
+                ->assertDontSee($own)->assertDontSee($foreign);
+        }
         if ($lifecycle) {
             $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertOk()
                 ->assertJsonCount(1, 'data.input.direct_destroy.database.servers')
@@ -97,6 +104,16 @@ it('serves disjoint server passwords through the real shared controller for each
     }
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->getJson($path)->assertForbidden();
+    if (! $lifecycle) {
+        $publicPath = '/api/v1/direct-operations/'.$operation->id.'?run_id='.$run;
+        $this->getJson($publicPath)->assertForbidden();
+        $this->withServerVariables(['REMOTE_ADDR' => $first->wireguard_ip]);
+        $operation->update(['cancel_requested_at' => now()]);
+        $this->getJson($publicPath)->assertOk()->assertJsonPath('data.cancel_requested', true);
+        $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $run])->assertForbidden();
+        $operation->update(['status' => 'cancelled']);
+        $this->getJson($publicPath)->assertConflict();
+    }
     request()->setUserResolver(static fn () => null);
     expect(fn () => app(DatabaseIntentSource::class)->resolve($operation, $intent->id, '', $field))->toThrow(ResourceOperationException::class);
     expect(json_encode($operation->fresh()->toArray()))->not->toContain('private-first-server', 'private-second-server');

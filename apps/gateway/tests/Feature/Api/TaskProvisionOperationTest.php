@@ -29,6 +29,7 @@ use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
@@ -183,4 +184,34 @@ it('retains confirmed VM readiness when workspace preparation fails later', func
         'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:01:00.000Z',
         'error_code' => 'tasks.provision_failed', 'result' => ['failed_step' => 'workspace']]);
     expect($this->vm->fresh()->state)->toBe(TaskVmState::Ready)->and($this->group->fresh()->status->value)->toBe('failed');
+});
+
+it('refuses missing current recipe images without admission and permits the same key once an image is ready', function (): void {
+    $this->vm->delete();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    $beforeNodes = Node::query()->count();
+    $before = $this->group->fresh()->getRawOriginal();
+    $key = 'native-provision-image-not-ready';
+
+    $response = $this->withHeader('Idempotency-Key', $key)
+        ->postJson('/api/v1/task-groups/'.$this->group->id.'/provision', [])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.capacity_unavailable')
+        ->assertJsonPath('error.details.reason', 'capacity');
+
+    expect($response->json('error.message'))->toContain('waiting for recipe', 'images on provision-host')
+        ->and($response->headers->get('X-Orbit-Request-Id'))->not->toBeEmpty()
+        ->and($this->group->fresh()->getRawOriginal())->toBe($before)
+        ->and(TaskVm::query()->where('group_id', $this->group->id)->exists())->toBeFalse()
+        ->and(Instance::query()->where('task_workspace_owner_id', $this->group->id)->exists())->toBeFalse()
+        ->and(Operation::query()->where('target_type', 'task_group')->where('target_id', $this->group->id)->exists())->toBeFalse()
+        ->and(Node::query()->count())->toBe($beforeNodes)
+        ->and($this->socket->sent)->toBe([]);
+
+    TaskVmRecipeImages::ready($this->host->id);
+    $this->postJson('/api/v1/task-groups/'.$this->group->id.'/provision', [])->assertAccepted();
+    expect(Operation::query()->where('kind', 'tasks.provision')->sole()->idempotency_key)->toBe($key)
+        ->and(TaskVm::query()->where('group_id', $this->group->id)->count())->toBe(1)
+        ->and(Instance::query()->where('task_workspace_owner_id', $this->group->id)->count())->toBe(1)
+        ->and(count($this->socket->sent))->toBe(1);
+
 });

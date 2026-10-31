@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\DirectOperationPublicView;
@@ -14,7 +15,6 @@ use App\Http\Requests\Operations\DirectOperationRequest;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 final class DirectOperationsController extends Controller
@@ -47,20 +47,9 @@ final class DirectOperationsController extends Controller
     }
 
     /** Native failed-dependency callback: bounded failure only, no domain effects or material. */
-    public function failure(DirectOperationRequest $request, Operation $operation, DirectOperation $direct): JsonResponse
+    public function failure(DirectOperationRequest $request, Operation $operation, FailNativeOperationAction $failure): JsonResponse
     {
-        DB::transaction(function () use ($request, $operation, $direct): void {
-            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            $direct->assertRun($operation, ValidatedData::string($request->validated('run_id')));
-            if ($operation->status->terminal()) {
-                return;
-            }
-            $direct->project($operation, [
-                'run_id' => $request->validated('run_id'), 'status' => 'failed',
-                'started_at' => ($operation->started_at ?? $operation->created_at ?? now())->toISOString(),
-                'finished_at' => now()->toISOString(), 'error_code' => 'operation.native_failed',
-            ], []);
-        });
+        $operation = $failure->execute($operation, ValidatedData::string($request->validated('run_id')));
 
         return $this->respond($request, ['id' => $operation->id, 'status' => $operation->status->value])->header('Cache-Control', 'no-store');
     }

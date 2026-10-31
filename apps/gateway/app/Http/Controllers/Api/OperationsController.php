@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ListOperationsAction;
+use App\Actions\Operations\ReadOperationAction;
 use App\Data\Operations\OperationData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -40,9 +41,9 @@ final class OperationsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
-    public function show(ShowOperationRequest $request, Operation $operation): JsonResponse
+    public function show(ShowOperationRequest $request, Operation $operation, ReadOperationAction $read): JsonResponse
     {
-        return $this->respond($request, OperationData::fromModel($operation, $operation->caller_node_name)->toArray());
+        return $this->respond($request, OperationData::fromModel($read->execute($operation), $operation->caller_node_name)->toArray());
     }
 
     #[RequiresNodeAccess(ServingNode::OperationOwning)]
