@@ -1,13 +1,11 @@
 """Publish the public signature using only the key already on this Node."""
 
-import base64
 import grp
-import hashlib
 import json
 import os
 import shutil
 
-from local import CADDY, account, current_link, directory, emit, openssl, valid
+from local import CADDY, account, current_link, directory, emit, valid, write_signature
 
 
 def publish(leaf):
@@ -20,27 +18,9 @@ def publish(leaf):
     # Resume a publication interrupted after the user pair was committed.
     source = published if published.is_dir() else candidate
     signed = json.loads(os.environ["ORBIT_CERTIFICATE_SIGNED"])
-    certificate = base64.b64decode(signed["certificate_base64"], validate=True)
-    ca = base64.b64decode(signed["root_certificate_base64"], validate=True)
-    if hashlib.sha256(ca).hexdigest() != leaf["root_hash"]:
-        raise ValueError("certificate.root_mismatch")
-    for name, content in (("cert.pem", certificate), ("root.pem", ca)):
-        path = source / name
-        path.write_bytes(content)
-        path.chmod(0o644)
-        os.chown(path, user.pw_uid, user.pw_gid)
-    openssl(
-        "verify",
-        "-CAfile",
-        source / "root.pem",
-        "-verify_hostname",
-        leaf["domain"],
-        source / "cert.pem",
-    )
-    if openssl("pkey", "-in", source / "key.pem", "-pubout") != openssl(
-        "x509", "-in", source / "cert.pem", "-noout", "-pubkey"
-    ):
-        raise ValueError("certificate.key_mismatch")
+    write_signature(source, leaf, signed)
+    for name in ("cert.pem", "root.pem"):
+        os.chown(source / name, user.pw_uid, user.pw_gid)
     if source == candidate:
         candidate.rename(published)
     current_link(root, version)

@@ -14,4 +14,6 @@ additionalFiles:
 - scripts/remove.py
 - scripts/inspect.py
 - scripts/trust.py
-- scripts/role_policy.py
+- scripts/role_paths.py
+- scripts/role_request.py
+- scripts/role_publish.py

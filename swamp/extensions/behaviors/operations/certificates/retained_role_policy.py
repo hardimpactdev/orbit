@@ -1,19 +1,19 @@
-"""Canonical fixed role certificate policy; native control flow stays in the workflow."""
+"""Guarded helper policy for retained local callers; never shipped to native role actions."""
 
 # BEGIN HOST
 import base64
 import ctypes
 import grp
 import hashlib
-import json
 import os
 import re
 import secrets
 import shutil
 import stat
 import subprocess
-import sys
 from pathlib import Path
+
+from role_paths import KEY_ROOT, role_paths
 
 ROOT = Path("/etc/caddy")
 
@@ -229,27 +229,6 @@ def certificate_candidate(current, payload, gid):
 # BEGIN ACTIONS
 """Fixed role CSR and public certificate publication; private keys stay on this Node."""
 
-KEY_ROOT = Path("/var/lib/orbit/role-certificates")
-
-
-def role_paths(data):
-    role = data["scope"].removeprefix("role-")
-    if role not in ("gateway", "metrics", "websocket", "analytics"):
-        raise CertificateRefusal("certificate.role_input_invalid")
-    if not re.fullmatch("[a-f0-9]{16}", data["version"]) or not re.fullmatch(
-        "[a-f0-9]{64}", data["root_hash"]
-    ):
-        raise CertificateRefusal("certificate.role_input_invalid")
-    if len(data["domain"]) > 253 or not re.fullmatch(
-        r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?",
-        data["domain"],
-    ):
-        raise CertificateRefusal("certificate.role_input_invalid")
-    directory = (
-        "/etc/caddy/orbit-" + ("" if role == "gateway" else role + "-") + "cert-current"
-    )
-    return role, certificate_scope(directory), directory
-
 
 def role_checked(*args):
     result = command("/usr/bin/openssl", *args)
@@ -336,7 +315,7 @@ def role_request(data, allow_current=True):
     }
 
 
-def role_publish(data, finalize=True):
+def role_publish(data, publish_pair):
     role, current, directory = role_paths(data)
     if not certificate_parents():
         raise CertificateRefusal("caddy.certificate_unsafe")
@@ -385,7 +364,7 @@ def role_publish(data, finalize=True):
     ) or not certificate_valid(cert, key):
         raise CertificateRefusal("certificate.role_signature_mismatch")
     # The key is read only inside this fixed Node-local transaction.
-    role_certificate(
+    publish_pair(
         dict(
             operation="install",
             directory=directory,
@@ -397,105 +376,8 @@ def role_publish(data, finalize=True):
             service="caddy",
         )
     )
-    if finalize:
-        shutil.rmtree(workspace)
+    shutil.rmtree(workspace)
     return {"applied": True}
 
 
 # END ACTIONS
-ROLE_ACTION_INPUT = None
-
-
-def role_previous(data):
-    _, current, _ = role_paths(data)
-    return current.with_name(current.name + ".previous")
-
-
-def role_certificate(payload):
-    current = certificate_scope(payload["directory"])
-    gid = grp.getgrnam("caddy").gr_gid
-    previous = previous_pair(current, gid)
-    values = certificate_values(payload)
-    if previous is not None and set(previous) - {"root-ca.pem"} != set(values) - {
-        "root-ca.pem"
-    }:
-        raise CertificateRefusal("caddy.certificate_unsafe")
-    saved = role_previous(ROLE_ACTION_INPUT)
-    pending = exists(saved)
-    candidate = certificate_candidate(current, payload, gid)
-    try:
-        if pending:
-            if exists(current):
-                exchange_pair(candidate, current)
-            else:
-                candidate.rename(current)
-        elif previous is None:
-            # An empty directory captures prior absence, without publishing private material.
-            saved.mkdir(mode=0o700)
-            candidate.rename(current)
-        else:
-            exchange_pair(candidate, current)
-            try:
-                candidate.rename(saved)
-            except OSError:
-                exchange_pair(candidate, current)
-                raise
-    finally:
-        if exists(candidate):
-            remove(candidate)
-    return {"changed": True}
-
-
-def role_restore(data):
-    _, current, _ = role_paths(data)
-    saved = role_previous(data)
-    if exists(saved):
-        if any(saved.iterdir()):
-            exchange_pair(saved, current)
-            remove(saved)
-        else:
-            remove(current)
-            saved.rmdir()
-    return {"restored": True}
-
-
-def role_finish(data):
-    _, current, _ = role_paths(data)
-    if not role_valid(current, data):
-        raise CertificateRefusal("certificate.role_not_current")
-    saved = role_previous(data)
-    if exists(saved):
-        remove(saved)
-    workspace = KEY_ROOT / data["scope"] / data["version"]
-    if exists(workspace):
-        shutil.rmtree(workspace)
-    return {"applied": True}
-
-
-def native_main():
-    try:
-        data = ROLE_ACTION_INPUT
-        action = data["operation"]
-        if action == "request":
-            result = role_request(data, allow_current=not exists(role_previous(data)))
-        elif action == "publish":
-            result = role_publish(data, finalize=False)
-        elif action == "restore":
-            result = role_restore(data)
-        elif action == "finish":
-            result = role_finish(data)
-        else:
-            raise CertificateRefusal("certificate.role_input_invalid")
-    except CertificateRefusal as error:
-        result = {"error_code": str(error)}
-    except Refusal:
-        result = {"error_code": "certificate.role_failed"}
-    except Exception:
-        result = {"error_code": "certificate.role_failed"}
-    print(json.dumps(result))
-    if "error_code" in result:
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    native_main()

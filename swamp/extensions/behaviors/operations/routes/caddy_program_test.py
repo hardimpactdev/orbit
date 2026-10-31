@@ -7,7 +7,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-source = (Path(__file__).parent.parent / 'certificates/scripts/role_policy.py').read_text().split('# END HOST')[0] + Path(__file__).with_name('caddy-program.ts').read_text().split('String.raw`', 1)[1].rsplit('`;', 1)[0]
+source = (Path(__file__).parent.parent / 'certificates/retained_role_policy.py').read_text().split('# BEGIN HOST\n')[1].split('# END HOST')[0].replace('from role_paths import KEY_ROOT, role_paths\n','') + Path(__file__).with_name('caddy-program.ts').read_text().split('String.raw`', 1)[1].rsplit('`;', 1)[0]
 module = types.ModuleType('native_caddy')
 exec(compile(source, 'caddy-program.ts', 'exec'), module.__dict__)
 
