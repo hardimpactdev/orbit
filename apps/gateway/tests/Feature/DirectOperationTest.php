@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -310,3 +311,14 @@ it('leaves bound terminal running and cancellation-requested intents alone durin
     'running' => [['status' => OperationStatus::Running]],
     'cancellation requested' => [fn (): array => ['cancel_requested_at' => now()]],
 ]);
+
+it('commits the direct start tag with admission before any submission and rolls both back together', function (): void {
+    config(['swamp.direct_writers' => ['route.caddy_converge' => 'direct']]);
+    DB::beginTransaction();
+    $op = app(OperationStore::class)->create('route.caddy_converge', 'node_route_projection', $this->operation->node_id, $this->operation->node_id, [], 'test', null);
+    expect($op->fresh()->state['swamp_start_key'])->toBe('operation:'.$op->id);
+    expect($op->state)->not->toHaveKey('swamp_run_id');
+    $id = $op->id;
+    DB::rollBack();
+    expect(Operation::query()->find($id))->toBeNull();
+});

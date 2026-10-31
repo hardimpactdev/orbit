@@ -8,7 +8,9 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecretOutputs;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -16,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -141,4 +144,41 @@ it('preserves whitespace and empty strings in private output JSON', function ():
     $raw = ['spaces' => '  exact bytes  ', 'nested' => ['empty' => '']];
     $this->postJson($this->path.'/secret-output', ['run_id' => $this->run, 'outputs' => ['credential' => $raw]])->assertOk();
     expect($store->received)->toBe($raw);
+});
+
+it('requires exact native identity before an unbound private read and keeps the admitted Node boundary', function (): void {
+    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
+        'workflowName' => 'operation-private-test', 'runId' => $this->run, 'status' => 'running',
+        'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
+    ]]]]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.fixture.token']);
+    $before = $this->operation->fresh()->getAttributes();
+    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.environment.admin_session', 'shared-private-admin-sentinel');
+    expect($socket->sent)->toHaveCount(1);
+    expect($this->operation->fresh()->getAttributes())->toBe($before);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
+    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertForbidden();
+    expect($socket->sent)->toHaveCount(1);
+    expect(json_encode(Activity::query()->get()->toArray()))->not->toContain('shared-private-admin-sentinel', 'private.fixture.token');
+});
+
+it('refuses a private output when another native run binds after early authorization', function (): void {
+    $this->operation->update(['state' => ['private_writer' => 'direct', 'swamp_start_key' => 'operation:'.$this->operation->id]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'workflow.run.search', 'id' => $message['id'], 'payload' => ['total' => 1, 'data' => ['results' => [[
+        'workflowName' => 'operation-private-test', 'runId' => $this->run, 'status' => 'running',
+        'tags' => ['orbit_start_key' => 'operation:'.$this->operation->id],
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
+    ]]]]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.fixture.token']);
+    app(DirectOperation::class)->assertRun($this->operation, $this->run);
+    $this->operation->update(['state' => [...$this->operation->state, 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']]);
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->write($this->operation, ['credential' => 'must-not-store'], $this->run))->toThrow(ResourceOperationException::class, 'another Swamp run');
+    expect($this->pairing->fresh()->credential)->toBeNull();
+    expect($socket->sent)->toHaveCount(1);
 });
