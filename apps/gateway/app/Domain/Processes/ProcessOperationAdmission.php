@@ -50,21 +50,19 @@ final readonly class ProcessOperationAdmission
     }
 
     /** @return array<string, mixed> */
-    public function inputFor(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null): array
+    public function inputFor(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?ProcessTarget $target = null): array
     {
-        $target = match ($verb) {
+        $admittedTarget = $target;
+        $target ??= match ($verb) {
             'destroy' => $this->targets->forRemoval($process),
             'start', 'restart' => $this->targets->forStart($process),
             default => $this->targets->forInstallation($process),
         };
-        if (! in_array($verb, ['create', 'stop', 'destroy'], true)) {
-            app(ProcessSwampSafety::class)->assertAllowed($target->node);
-        }
         if ($process->isVpDev() && in_array($verb, ['create', 'update', 'start', 'restart'], true)) {
             $instance = $target->instance;
             if ($instance !== null) {
                 app(VitePortAllocator::class)->assign($instance, recheck: true);
-                $target = $this->targets->forInstallation($process);
+                $target = $admittedTarget ?? $this->targets->forInstallation($process);
             }
         }
         $systemd = $process->runtime === ProcessRuntime::Systemd;
