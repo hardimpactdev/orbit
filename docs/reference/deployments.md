@@ -152,7 +152,7 @@ Deploy-step and branch changes need an access grant to the Instance's Node. The 
 
 ### Vite store prerequisite
 
-Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the parent Swamp root composes its native Vite+ preparation to prepare the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. The Gateway reads and validates runtime requirements and resolves protected registry settings only in memory. Swamp executes the bound prerequisite before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
+Before a JavaScript step (`npm-build`, or a command using `vp`, Node, npm/npx, pnpm, Yarn, Bun, Vite, or Corepack), the parent Swamp root composes its native Vite+ preparation to prepare the [Project environment in the vp store](/reference/tools#project-environments-in-the-vite-store) when the Project declares `vite-plus`. Swamp reads and validates runtime requirements and keeps protected registry settings in local memory. Swamp executes the bound prerequisite before the application command, as the store owner. It records desired versions before installing missing content and verifies the result before allowing the step to start. It does not run package install scripts as the store owner.
 
 The default JavaScript deploy runs `vp install --frozen-lockfile` followed by `vp run build`, through `vp env exec` with recorded exact Node and package-manager versions as the Instance user. That execution reads the shared store but never writes it. A data migration replaces stored legacy default steps containing hard-coded Node and npm paths; runtime execution does not rewrite commands. Customized commands keep their flags, shell operators, and additional build scripts, including SSR builds.
 
@@ -668,9 +668,9 @@ The production deploy parent composes PHP installation, environment synchronizat
 
 ## Served web-root preparation
 
-`instance.prepare_served_web_roots` uses the polled Swamp deployment workflow. The Route parent admits the Instance and Node, and the Gateway validates ownership before supplying the existing `instance.prepare-served-web-roots` input. A primary-root Route needs no Node action. Preparation of an additional root must finish with its bound receipt before the Route becomes active.
+The owning native Route or deployment DAG prepares served web roots on the admitted Instance Node. Swamp validates the selected release and root directories, links the environment and grants Caddy access before publication. A primary-root Route needs no additional root preparation.
 
-This kind has no direct workflow declaration. A stale per-kind direct-writer setting cannot start a second workflow. Its complete native cutover must replace the current dispatch and execution path in the same change.
+PHP runtime preparation, served web roots and Vite+ environments are steps of their parent DAGs. They have no standalone `instance.prepare_*` kinds, Gateway child executors or execution receipts. Instance create and clone use the same native Vite+ installer as deploy: the admitted platform, architecture and public recipe select the manager, local manifests select exact runtime pins, and protected registry settings stay on the worker.
 
 ## Swamp setup and teardown steps
 

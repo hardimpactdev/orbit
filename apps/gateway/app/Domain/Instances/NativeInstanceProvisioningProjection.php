@@ -7,9 +7,11 @@ namespace App\Domain\Instances;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
+use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\VpEnvironment;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -60,12 +62,14 @@ final readonly class NativeInstanceProvisioningProjection implements DirectOpera
                     }
                     $instance->update(['environment_owned_keys' => array_values(array_unique($result['keys']))]);
                 } elseif ($status === 'running' && ($result['phase'] ?? null) === 'vp') {
-                    if (array_diff(array_keys($result), ['phase', 'environment']) !== [] || ! array_key_exists('environment', $result)
-                        || ! (is_array($result['environment']) || $result['environment'] === null)) {
+                    if (array_diff(array_keys($result), ['phase', 'environment', 'runtime_status']) !== [] || ! array_key_exists('environment', $result)
+                        || ! (is_array($result['environment']) || $result['environment'] === null)
+                        || ! in_array($result['runtime_status'] ?? null, ['checking', 'active', 'failed'], true)) {
                         $this->invalid();
                     }
                     if (is_array($result['environment'])) {
-                        $instance->update(['vp_environment' => [...$result['environment'], 'status' => 'verified', 'checkout_path' => $instance->checkout_path]]);
+                        app(InstanceVpEnvironmentMaterial::class)->recordReference($instance, $instance->checkout_path,
+                            VpEnvironment::fromArray($result['environment']), ValidatedData::string($result['runtime_status']));
                     }
                 } elseif ($status === 'succeeded') {
                     $expected = ['instance_id' => $instance->id, 'ready' => true,

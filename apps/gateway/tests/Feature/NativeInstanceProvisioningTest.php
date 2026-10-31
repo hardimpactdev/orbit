@@ -38,7 +38,10 @@ it('records a complete immutable development source and setup plan without execu
     $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
 
     expect($plan)->toMatchArray(['instance_id' => $this->instance->id, 'node_id' => $this->node->id,
-        'node_user' => 'orbit', 'user' => 'orbit', 'environment' => 'development', 'already_active' => false])
+        'node_user' => 'orbit', 'user' => 'orbit', 'environment' => 'development', 'already_active' => false,
+        'platform' => 'linux', 'architecture' => 'x86_64'])
+        ->and($plan['vp_materialize']['user'])->toBe('orbit')
+        ->and($plan['vp_materialize']['architecture'])->toBe('amd64')
         ->and($plan['source'])->toMatchArray(['prepare_id' => $this->instance->source_prepare_id, 'checkout' => $this->instance->checkout_path])
         ->and($plan['setup']['execution']['user'])->toBe('orbit')
         ->and($plan['setup']['steps'][0])->toBe(['name' => 'prepare', 'command_digest' => hash('sha256', 'printf private-setup-program'), 'timeout_seconds' => 30])
@@ -149,4 +152,24 @@ it('projects native source and success without Gateway step receipts', function 
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
         ->and($this->instance->first_setup_pending)->toBeFalse()
         ->and($operation->refresh()->status->value)->toBe('succeeded');
+});
+
+it('retains native VP checking pins before installation and records the final runtime status', function (): void {
+    $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
+        'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '0.3.3', 'node_version' => '24.22.0',
+        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null];
+    $projection = app(NativeInstanceProvisioningProjection::class);
+    $callback = ['run_id' => $run, 'status' => 'running', 'started_at' => now()->toIso8601String(),
+        'error_code' => null, 'result' => ['phase' => 'vp', 'environment' => $runtime, 'runtime_status' => 'checking']];
+
+    $projection->apply($operation, $callback);
+
+    expect($this->instance->refresh()->getAttribute('vp_environment'))->toMatchArray([
+        ...$runtime, 'status' => 'checking', 'checkout_path' => $this->instance->checkout_path]);
+    $projection->apply($operation, [...$callback, 'result' => [...$callback['result'], 'runtime_status' => 'active']]);
+    expect($this->instance->refresh()->getAttribute('vp_environment')['status'])->toBe('active')
+        ->and($this->instance->getAttribute('vp_environment')['previous'])->toBeNull();
 });
