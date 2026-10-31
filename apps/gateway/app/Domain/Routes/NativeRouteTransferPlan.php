@@ -190,12 +190,22 @@ final readonly class NativeRouteTransferPlan
             $sites = app(DevelopmentSiteRepository::class)->forNode($node);
             $retire['certificate_scopes'] = array_values(array_filter(ValidatedData::stringList($retire['certificate_scopes']), fn (string $scope): bool => ! $sites->contains(fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))));
         }
+        $rollbackLeaves = array_values(array_filter(RouteExecutionProof::objects($target['live_certificates']), static fn (array $leaf): bool => $leaf['node_id'] === $nodeId));
+        $rollback = null;
+        if ($rollbackLeaves !== []) {
+            $sites = app(DevelopmentSiteRepository::class)->forNode($node);
+            $rollback = ['node_id' => $nodeId, 'user' => ValidatedData::string($rollbackLeaves[0]['user']),
+                'agent_sha256' => ValidatedData::string($rollbackLeaves[0]['agent_sha256']),
+                'certificate_scopes' => array_values(array_unique(array_map(static fn (array $leaf): string => ValidatedData::string($leaf['scope']),
+                    array_values(array_filter($rollbackLeaves, static fn (array $leaf): bool => ! $sites->contains(static fn (DevelopmentSite $site): bool => $site->loadsCertificate(ValidatedData::string($leaf['scope'])))))))),
+                'lan_route_ids' => [], 'shared_php' => false, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
+        }
         $artifacts = app(NativeRoutePublicationInput::class)->forNode($node);
 
         return [...$artifacts, 'participant_node_id' => $nodeId, 'target' => $target, 'workloads' => $workloads,
             'publication' => ['node_id' => $nodeId, 'caddy_publication' => $artifacts['caddy_publication'], 'php' => $artifacts['php_publication'], 'dns' => $artifacts['private_dns_publication']],
             'environment_fields' => $operation->input['environment_fields'] ?? [], 'probes' => [], 'firewall' => null,
-            'route_transfer' => $snapshot, 'route_retire' => $retire];
+            'route_transfer' => $snapshot, 'route_retire' => $retire, 'route_rollback' => $rollback];
     }
 
     /** Existing URL material only, after the parent records authoritative placement.

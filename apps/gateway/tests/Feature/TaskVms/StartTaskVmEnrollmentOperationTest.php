@@ -32,7 +32,7 @@ function standaloneEnrollmentVm(): TaskVm
     $host->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     TaskVmSettingsBuilder::bind(['devClusterId' => null, 'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('a', 64), 'piModels' => ['test-model'], 'hosts' => [TaskVmSettingsBuilder::host($host->id)]]);
     $issuer = Node::query()->create(['name' => 'issuer', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
-    $hub = Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $hub = Node::query()->create(['name' => 'vpn', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
     $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     config(['dependency_detection.services_node_id' => $issuer->id]);
     $keys = Mockery::mock(ModelKeyIssuer::class);
@@ -93,6 +93,8 @@ it('records one host-placed enrollment root and starts its native DAG without ch
     expect($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id, 'kind' => 'task_vm.enroll', 'node_id' => $executionNodeId]);
     Queue::assertNothingPushed();
 })->with(['incus', 'upcloud']);
+
+
 
 it('ignores absent or terminal VMs without recording another intent', function (): void {
     expect(app(StartTaskVmEnrollmentOperationAction::class)->execute(PHP_INT_MAX))->toBeNull();

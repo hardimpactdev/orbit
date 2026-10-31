@@ -8,11 +8,14 @@ use App\Domain\Instances\InstanceCloneProjection;
 use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
-use App\Domain\Instances\InstanceTransferDiscardProjection;
 use App\Domain\Instances\NativeInstanceProvisioningProjection;
+use App\Domain\Instances\NativeInstanceTransferProjection;
 use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
+    'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'projection' => NativeInstanceTransferProjection::class,
+        'private_material' => ['source_installations' => 'instance.transfer_processes', 'destination_installations' => 'instance.transfer_processes',
+            'source_route_environment' => 'instance.transfer_route_environment', 'destination_route_environment' => 'instance.transfer_route_environment']],
     'instance.clone' => ['workflow' => 'operation-instance-clone', 'projection' => InstanceCloneProjection::class,
         'private_material' => ['git_read' => 'instance.lifecycle_git', 'environment_material' => 'instance.environment_sync']],
     'instance.create' => ['workflow' => 'operation-instance-create', 'projection' => NativeInstanceProvisioningProjection::class,
@@ -41,11 +44,5 @@ return [
         'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'instance_step_writer',
         'projection' => InstanceSetupProjection::class,
-    ],
-    'instance.transfer_discard' => [
-        'workflow' => 'operation-instance-lifecycle-direct',
-        'writer_config' => 'swamp.direct_writers',
-        'writer_state' => 'instance_lifecycle_writer',
-        'projection' => InstanceTransferDiscardProjection::class,
     ],
 ];

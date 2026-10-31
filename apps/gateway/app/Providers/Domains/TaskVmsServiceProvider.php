@@ -6,6 +6,7 @@ namespace App\Providers\Domains;
 
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
+use App\Domain\TaskVms\TaskVmModelAdmission;
 use App\Infrastructure\TaskVms\TaskVmEnrollmentMaterialSource;
 use App\Infrastructure\TaskVms\TaskVmImageArtifactSource;
 use App\Infrastructure\TaskVms\TaskVmImageBootstrapStore;
@@ -17,8 +18,9 @@ final class TaskVmsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->scoped(TaskVmModelAdmission::class);
         $this->app->tag(TaskVmImageArtifactSource::class, OperationSecretSource::class);
-        foreach (['installation', 'enrollment_network', 'first_visit'] as $field) {
+        foreach (['installation', 'first_visit'] as $field) {
             $name = 'task-vm.enrollment.'.$field;
             $this->app->bind($name, static fn (): TaskVmEnrollmentMaterialSource => new TaskVmEnrollmentMaterialSource($field));
             $this->app->tag($name, OperationSecretSource::class);

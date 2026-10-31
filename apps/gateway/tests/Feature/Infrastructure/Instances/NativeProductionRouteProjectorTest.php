@@ -2,16 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\CreateRouteAction;
-use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
-use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -40,49 +36,6 @@ use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\RouteProjectionAgentAnswers;
-
-it('creates an Instance Route with the native production projector on a separate Router', function (): void {
-    [$source, $oldRoute] = orb199_production_route_models(workloadLan: '10.10.0.10', routerLan: '10.10.0.20');
-    $oldRoute->targets()->delete();
-    $oldRoute->delete();
-    $source->delete();
-    $instance = Instance::query()->create([
-        'project_id' => $source->project_id,
-        'node_id' => $source->node_id,
-        'name' => 'created',
-        'environment' => 'production',
-        'checkout_path' => $source->checkout_path,
-        'root' => 'public',
-        'branch' => 'main',
-        'starting_commit' => str_repeat('a', 40),
-        'selected_php_version' => '8.5',
-        'production_user' => $source->production_user,
-        'production_home' => $source->production_home,
-        'production_php_service' => $source->production_php_service,
-        'production_php_pool' => $source->production_php_pool,
-        'production_php_socket' => $source->production_php_socket,
-        'status' => InstanceState::Active,
-    ]);
-    [$projector, $agents] = orb199_production_route_projector();
-    app()->instance(ProductionRouteProjector::class, $projector);
-    app()->instance(ProductionCloneRouteProjector::class, $projector);
-
-    $route = app(CreateRouteAction::class)->executeForRouteCreate(new CreateRouteData(
-        domain: 'created.prod.orbit',
-        publication: RoutePublication::Private,
-        instanceId: $instance->id,
-    ))['route'];
-
-    $calls = collect($agents->calls);
-    $routerCertificateIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'certificate.publish-leaf' && $call['input']['scope'] === "route-{$route->id}-router");
-    $routerSiteIndex = $calls->search(static fn (array $call): bool => $call['command'] === 'caddy.publish' && str_contains($call['input']['content'], "route-{$route->id}-router/current/cert.pem"));
-    expect($route->status)->toBe(RouteStatus::Active)
-        ->and($route->targets->sole()->instance_id)->toBe($instance->id)
-        ->and($routerCertificateIndex)->not->toBeFalse()
-        ->and($routerSiteIndex)->not->toBeFalse()
-        ->and($routerCertificateIndex)->toBeLessThan($routerSiteIndex)
-        ->and(orb199_route_checks($agents))->toBe(['firewall.route-lan', 'route.verify-certificate']);
-});
 
 it('refuses to project production without its dedicated PHP-FPM service', function (): void {
     [$instance, $route] = orb199_production_route_models(

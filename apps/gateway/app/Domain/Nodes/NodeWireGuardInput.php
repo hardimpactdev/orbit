@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmEnrollmentOwner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
@@ -13,7 +14,7 @@ use App\Models\TaskVm;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
-/** Public hub participant admission with fixed effect ownership and execution placement. */
+/** Public hub participant admission. The exact hub worker owns the native effect. */
 final readonly class NodeWireGuardInput
 {
     /** @return array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:int|null,agent_sha256:string} */
@@ -22,7 +23,7 @@ final readonly class NodeWireGuardInput
         $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->sole();
         if ($hub->status !== LifecycleStatus::Active
             || ($excludedNodeId !== null && $excludedNodeId !== $context->id)) {
-            throw new ResourceOperationException('node.network_unsupported', 'Hub publication requires its recorded active VPN Node.', 422);
+            throw new ResourceOperationException('node.network_unsupported', 'The hub requires its exact active Node worker.', 422);
         }
 
         return ['schema_version' => 1, 'executor_node_id' => $hub->id, 'hub_id' => $hub->id,
@@ -95,7 +96,8 @@ final readonly class NodeWireGuardInput
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
             || ! in_array($operation->kind, ['node.add', 'node.remove', 'node.removal_restore',
-                'node.network_converge', 'node.wireguard_hub_converge', 'task_vm.destroy'], true)
+                'node.network_converge', 'node.wireguard_hub_converge', 'task_vm.destroy',
+                'task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)
             || ! array_key_exists('excluded_node_id', $snapshot)
             || ($snapshot['excluded_node_id'] !== null && $snapshot['excluded_node_id'] !== $snapshot['context_node_id'])
             || ! is_string($snapshot['agent_sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $snapshot['agent_sha256']) !== 1) {
@@ -111,10 +113,12 @@ final readonly class NodeWireGuardInput
         $participants = $operation->input['participant_node_ids'] ?? [];
         $bindings = $operation->input['private_bindings'] ?? [];
         $binding = is_array($bindings) ? ($bindings['configuration'] ?? null) : null;
+        $taskVmKind = in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true);
+        $vm = $taskVmKind ? TaskVmEnrollmentOwner::owned($operation) : null;
         $taskVmContext = $operation->kind === 'task_vm.destroy'
-            && $operation->target_type === 'task_vm'
-            && TaskVm::query()->whereKey($operation->target_id)->where('node_id', $snapshot['context_node_id'])->exists();
-        $contextMatches = $operation->kind === 'task_vm.destroy'
+            ? $operation->target_type === 'task_vm' && TaskVm::query()->whereKey($operation->target_id)->where('node_id', $snapshot['context_node_id'])->exists()
+            : $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;
+        $contextMatches = $taskVmKind || $operation->kind === 'task_vm.destroy'
             ? $taskVmContext
             : $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
         if ($snapshot['executor_node_id'] !== $snapshot['hub_id']

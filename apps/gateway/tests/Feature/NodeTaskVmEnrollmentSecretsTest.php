@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Models\Operation;
 use App\Models\Project;
@@ -20,7 +21,7 @@ final readonly class NodeTaskVmSecretFixtureProjection implements DirectOperatio
 {
     public function input(Operation $operation): array
     {
-        if (($operation->input['execution_node_id'] ?? null) !== $operation->node_id) {
+        if (($operation->input[$operation->kind === 'task_vm.prepare_runtime' ? 'guest_node_id' : 'execution_node_id'] ?? null) !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The family refuses its changed execution root.', 422);
         }
 
@@ -39,14 +40,16 @@ beforeEach(function (): void {
     $this->issuer = FleetFixtures::node('custody-issuer');
     $this->vm = TaskVm::query()->create(['node_id' => $this->guest->id, 'host_node_id' => $this->host->id,
         'name' => $this->guest->name, 'wireguard_ip' => $this->guest->wireguard_ip, 'provider' => 'incus', 'state' => 'provisioning']);
-    $contribution = new readonly class implements DirectOperationContribution
+    $contribution = new readonly class(app(DirectOperation::class)->definitions()) implements DirectOperationContribution
     {
+        public function __construct(private array $known) {}
+
         public function definitions(): array
         {
-            return array_fill_keys(['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'],
+            return array_diff_key(array_fill_keys(['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'],
                 ['workflow' => 'operation-task-vm-enroll', 'projection' => NodeTaskVmSecretFixtureProjection::class,
                     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
-                    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials']]);
+                    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials']]), $this->known);
         }
     };
     app()->instance(DirectOperation::class, new DirectOperation([$contribution]));
@@ -65,6 +68,17 @@ beforeEach(function (): void {
 
 it('keeps nullable initial material and protected outputs on the actual guest', function (string $kind): void {
     $this->operation->kind = $kind;
+    if ($kind === 'task_vm.provision') {
+        $vm = $this->vm;
+        $this->operation->input = [...$this->operation->input,
+            'node_id' => $this->host->id, 'host_node_id' => $this->host->id,
+            'name' => $vm->name, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'wireguard_ip' => $vm->wireguard_ip, 'image_fingerprint' => $vm->image_fingerprint,
+            'recipe_identity' => $vm->recipe_identity, 'enrollment' => []];
+    }
+    if ($kind === 'task_vm.prepare_runtime') {
+        $this->operation->node_id = $this->guest->id;
+    }
     if ($kind === 'tasks.provision') {
         $project = Project::query()->create(['slug' => 'custody-project', 'name' => 'Custody', 'repository_url' => 'https://github.com/example/custody.git']);
         $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Custody', 'brief' => 'Custody', 'status' => 'backlog']);
@@ -108,4 +122,20 @@ it('denies foreign output owners invalid pairs terminal and undeclared kinds', f
     $this->operation->kind = 'task_vm.destroy';
     expect(fn () => $source->store($this->operation, $this->guest->id, $this->credentials))->toThrow(ResourceOperationException::class);
     expect(Cache::get('nodes:worker-enrollment:operation:'.$this->operation->id))->toBeNull();
+});
+
+it('refuses an agent hash write after its held Gateway Node lock is lost', function (): void {
+    $locks = new NodeLocks(Cache::store('array'));
+    app()->instance(NodeLocks::class, $locks);
+    $lock = $locks->lock('native-hash-owner', 600);
+    expect($lock->get())->toBeTrue();
+    $this->travel(601)->seconds();
+
+    try {
+        expect(fn () => app(NodeAgentHashSource::class)->store($this->operation, $this->guest->id, str_repeat('c', 64)))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.lock_lost'));
+        expect($this->guest->fresh()->agent_secret_hash)->toBeNull();
+    } finally {
+        $lock->release();
+    }
 });

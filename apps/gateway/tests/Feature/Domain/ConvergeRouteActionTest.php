@@ -1457,8 +1457,7 @@ function route_untargeted_removal_route(): Route
         'starting_commit' => str_repeat('a', 40),
         'status' => InstanceState::Active,
     ]);
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        projectId: $project->id,
+    $route = app(CreateRouteAction::class)->reserveForRouteCreate(new CreateRouteData(
         domain: 'untargeted.example.test',
         publication: RoutePublication::Private,
         instanceId: $instance->id,

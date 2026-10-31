@@ -26,11 +26,12 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
     public function input(Operation $operation): array
     {
         if (! in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime'], true)
-            || $operation->target_type !== 'task_vm' || ($operation->input['task_vm_id'] ?? null) !== $operation->target_id) {
+            || $operation->target_type !== 'task_vm' || ($operation->input['task_vm_id'] ?? null) !== $operation->target_id
+            || ($operation->input[$operation->kind === 'task_vm.prepare_runtime' ? 'guest_node_id' : 'execution_node_id'] ?? null) !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Enrollment requires its admitted VM intent.', 422);
         }
 
-        return [...Arr::only($operation->input, ['task_vm_id', 'guest_node_id', 'execution_node_id', 'provider', 'name', 'user', 'agent_sha256', 'agent_artifact_url', 'agent', 'bootstrap', 'vm', 'node', 'runtime', 'pi_url', 'network', 'gateway_node_id', 'issuer_node_id', 'model_router_node_id', 'model_origin']), 'wireguard_public_key' => Node::query()->whereKey($operation->input['guest_node_id'])->value('wireguard_public_key')];
+        return [...Arr::only($operation->input, ['task_vm_id', 'guest_node_id', 'execution_node_id', 'provider', 'name', 'user', 'agent_sha256', 'agent_artifact_url', 'agent', 'bootstrap', 'vm', 'node', 'runtime', 'pi_url', 'network', 'gateway_node_id', 'issuer_node_id', 'model_router_node_id', 'model_origin', '_wireguard']), 'wireguard_public_key' => Node::query()->whereKey($operation->input['guest_node_id'])->value('wireguard_public_key')];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void

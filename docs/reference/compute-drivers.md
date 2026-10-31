@@ -106,7 +106,7 @@ A profile's effective set is the union of `common` and its own list, sorted by t
 
 The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261022.021804.0-sha.983e2929`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
 
-Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. A [provision enrollment](/reference/tasks#optional-swamp-worker) starts the worker after workspace setup; an ordinary provision starts none. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
+Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. Native VM enrollment starts its exact Node worker before Pi preparation. The separate [Task worker](/reference/tasks#optional-swamp-worker) serves group work after workspace setup. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
 
 ### Role and base tool sets
 
@@ -412,13 +412,13 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 ### From claim to workspace
 
-A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
+A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.
 
-1. A keyed provision operation reserves a group. `AllocateTaskVmAction` decides the VM's [size](#size-by-declared-topology). It records a new `provisioning` row, and queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. Its disk is a ZFS clone of the image. On beast, the launch takes under a second. Cloud-init is done about 10 seconds later.
-3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address, and its ed25519 host key fingerprint from the host through `incus`. Enrollment [trusts the image](#skip-what-the-image-holds) for the `app-dev` software.
-4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
-5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
+1. Placement records the VM's [size](#size-by-declared-topology) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
+2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
+3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
+4. Native steps publish the network and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
+5. The shared router behavior issues the model key under its native lock. The guest prepares Pi through the Process lower. Confirmed native success marks the VM ready.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#execution-ownership) on the VM's Node. It is a normal Instance `task-<group id>`. A routed workspace gets the private Route `task-<id>.<project>.<dev-tld>`.
 7. The claim starts the baseline check. Then the same claim projects the Route.
 
@@ -1384,7 +1384,9 @@ Swamp renders cloud-init from the staged pair and the admitted Gateway public ke
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
+
+Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Model-key steps use the stable router behavior shared with teardown. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
 
 ### Build the UpCloud template
 
@@ -1554,3 +1556,7 @@ Task group responses report `vm_power` separately from task status. For a [task 
 Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. A task VM with `preview` is never [parked](#park-and-resume). Setting `preview` does not start a VM that is already parked. The next work for the group starts it.
 
 Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent.
+
+The former lifecycle and standalone Incus admissions for Task VMs return `operation.kind_unavailable` (409) before reading a host or recording an Operation. Standalone enrollment uses `StartTaskVmEnrollmentOperationAction`; provision parents compose the same native lower steps directly. The old enrollment job and runtime transport/contract registrations are removed. Private material for the model router requires the admitted top-level router Node to equal the private binding owner and the configured issuer owner.
+
+Admission holds the existing model-router teardown lock through its outer database transaction, including the router-ready check and model-key reservation. Teardown sees every committed reservation before it can disable the router. This admission fence does not replace the shared native behavior lock that serializes API-key list changes.
