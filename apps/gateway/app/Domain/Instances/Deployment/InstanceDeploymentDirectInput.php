@@ -37,7 +37,8 @@ final readonly class InstanceDeploymentDirectInput
 
         return ['instance_id' => $instance->id, 'project_id' => $instance->project_id,
             'deployment' => $admitted, 'commit' => InstanceDeploymentIntent::commit($operation),
-            'release_name' => InstanceDeploymentIntent::releaseName($operation)];
+            'release_name' => InstanceDeploymentIntent::releaseName($operation),
+            'timeout_seconds' => InstanceDeploymentBudget::seconds($operation)];
     }
 
     private function changed(): ResourceOperationException

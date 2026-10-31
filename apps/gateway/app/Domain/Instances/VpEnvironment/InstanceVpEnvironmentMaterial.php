@@ -115,6 +115,12 @@ final readonly class InstanceVpEnvironmentMaterial
     public function reference(Operation $operation, VpEnvironment $environment, string $status): void
     {
         [$instance, , $path] = $this->target($operation);
+        $this->recordReference($instance, $path, $environment, $status);
+    }
+
+    /** Store public pins for a checkout already validated by its owning parent. Performs no runtime action. */
+    public function recordReference(Instance $instance, string $path, VpEnvironment $environment, string $status): void
+    {
         DB::transaction(function () use ($instance, $path, $environment, $status): void {
             DB::table('nodes')->where('id', $instance->node_id)->update(['id' => $instance->node_id]);
             $previous = $this->checkoutReferences($instance->refresh()->getAttribute('vp_environment'), $instance->checkout_path);

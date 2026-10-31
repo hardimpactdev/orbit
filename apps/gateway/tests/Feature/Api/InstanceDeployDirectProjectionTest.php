@@ -8,13 +8,14 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Projects\DevelopmentDeployStep;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use Tests\TestCase;
 
-function native_deploy_projection_fixture(TestCase $test, bool $production = false): array
+function native_deploy_projection_fixture(TestCase $test, bool $production = false, bool $vp = false): array
 {
     app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
     {
@@ -31,6 +32,9 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
             'production_home' => '/home/orbit-app-'.$instance->project_id]);
     } else {
         $instance = dev935_instance();
+        if ($vp) {
+            dev935_steps($instance, [new DevelopmentDeployStep('install', 'vp install', 60, true)]);
+        }
         $gateway = Node::query()->create(['name' => 'native-deploy-gateway', 'public_ssh_host' => '192.0.2.115',
             'wireguard_ip' => '10.44.0.115', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
         NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => 'active']);
@@ -107,3 +111,36 @@ it('refuses a wrong native binding before history starts', function (): void {
         ->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
     expect(InstanceDeployment::query()->count())->toBe(0)->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
+
+it('records public Vite runtime references from its actual development parent without children', function (): void {
+    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this, vp: true);
+    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '1.4.0', 'node_version' => '24.22.0',
+        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'checking'];
+
+    $this->postJson($path.'/result', [...$body, 'result' => ['vp_environment' => $runtime]])->assertOk();
+    $runtime['status'] = 'active';
+    $this->postJson($path.'/result', [...$body, 'result' => ['vp_environment' => $runtime]])->assertOk();
+
+    expect($instance->fresh()->vp_environment)->toMatchArray([...$runtime, 'checkout_path' => $instance->checkout_path])
+        ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('refuses malformed or private runtime reference fields before recording any state', function (string $change): void {
+    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this, vp: true);
+    $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '1.4.0', 'node_version' => '24.22.0',
+        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'checking'];
+    match ($change) {
+        'private field' => $runtime['npmrc'] = 'private registry token',
+        'foreign path' => $runtime['checkout_path'] = '/foreign',
+        'invalid status' => $runtime['status'] = 'installed',
+        'invalid version' => $runtime['node_version'] = 'latest',
+        'unsafe store' => $runtime['store'] = '/opt/../foreign',
+    };
+
+    $this->postJson($path.'/result', [...$body, 'result' => ['vp_environment' => $runtime]])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.result_invalid');
+
+    expect($instance->fresh()->vp_environment)->toBeNull()->and(InstanceDeployment::query()->count())->toBe(0)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
+})->with(['private field', 'foreign path', 'invalid status', 'invalid version', 'unsafe store']);

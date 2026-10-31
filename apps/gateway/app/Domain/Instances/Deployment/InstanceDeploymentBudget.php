@@ -11,14 +11,19 @@ use App\Models\Operation;
 /** A restart cannot reset the admitted deployment's total time budget. */
 final readonly class InstanceDeploymentBudget
 {
+    public static function seconds(Operation $operation): int
+    {
+        $intent = InstanceDeploymentIntent::admitted($operation);
+
+        return min(OperationRunner::DeadlineSeconds, DeploymentDeadline::InfrastructureSeconds
+            + array_sum(array_column($intent['steps'], 'timeout_seconds')));
+    }
+
     public function remaining(Operation $operation): int
     {
         $started = $operation->started_at ?? throw new ResourceOperationException('operation.completion_unproven', 'Claim the deployment before preparing effects.', 409);
-        $intent = InstanceDeploymentIntent::admitted($operation);
-        $seconds = min(OperationRunner::DeadlineSeconds, DeploymentDeadline::InfrastructureSeconds
-            + array_sum(array_column($intent['steps'], 'timeout_seconds')));
 
-        return max(0, $started->getTimestamp() + $seconds - now()->getTimestamp());
+        return max(0, $started->getTimestamp() + self::seconds($operation) - now()->getTimestamp());
     }
 
     public function requireRemaining(Operation $operation): int
