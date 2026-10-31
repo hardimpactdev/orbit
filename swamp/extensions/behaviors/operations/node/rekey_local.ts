@@ -1,6 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
-import { DirectOperationCancelled } from "../_lib/direct.ts";
+import { DirectOperationCancelled } from "../_lib/direct-input.ts";
 import { Path, Sha } from "./converge_direct_contract.ts";
 
 export const AgentRekeyInput = z.object({

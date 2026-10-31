@@ -99,16 +99,21 @@ export function footprintActions(deps: LocalDependencies) {
         : { stage, ok: true, binary_changed: result.changed };
     }
     if (stage === "agent") {
-      const result = await configureNodeAgent(
-        Agent.parse(payload),
-        snapshot.agent_sha256,
-        binaryChanged,
-        (action) => gateway.withPrivateMaterial(action),
-        deps.system ?? localSystemCommand,
-        deps.account,
-        signal,
-        deps.installWorker,
-      );
+      const input = Agent.parse(payload);
+      let result: Awaited<ReturnType<typeof configureNodeAgent>> | undefined;
+      await gateway.withPrivateMaterial(async (material) => {
+        result = await configureNodeAgent(
+          input,
+          snapshot.agent_sha256,
+          binaryChanged,
+          material,
+          deps.system ?? localSystemCommand,
+          deps.account,
+          signal,
+          deps.installWorker,
+        );
+      });
+      if (!result) throw new Error("Agent configuration has no proven safe result");
       return result.error_code
         ? refused(result.error_code)
         : entry(result.changed);
