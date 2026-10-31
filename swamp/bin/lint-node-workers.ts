@@ -4,6 +4,35 @@ import { dirname, resolve } from "node:path";
 type Map = Record<string, unknown>;
 const object = (v: unknown): Map =>
   v && typeof v === "object" && !Array.isArray(v) ? v as Map : {};
+// Official builtin shells execute on the physical worker. Dynamic selectors
+// must prove that their required public Node input cannot select a proxy.
+function nativeShellStaysOnNode(workflow: Map, target: unknown): boolean {
+  if (typeof target !== "string") return false;
+  const literal = /^orbit-node-([1-9][0-9]*)$/.exec(target);
+  if (literal) return !["1", "18"].includes(literal[1]);
+  const expression =
+    /^\$\{\{ "orbit-node-" \+ string\(inputs\.([a-z_]+)\) \}\}$/.exec(
+      target,
+    );
+  if (!expression) return false;
+  const inputs = object(workflow.inputs), name = expression[1];
+  const schema = object(object(inputs.properties)[name]);
+  if (
+    !Array.isArray(inputs.required) || !inputs.required.includes(name) ||
+    schema.type !== "integer"
+  ) return false;
+  if (Array.isArray(schema.enum)) {
+    return schema.enum.length > 0 &&
+      schema.enum.every((v) =>
+        Number.isSafeInteger(v) && Number(v) > 0 &&
+        ![1, 18].includes(Number(v))
+      );
+  }
+  const negated = object(schema.not), excluded = negated.enum;
+  return Object.keys(negated).length === 1 && Array.isArray(excluded) &&
+    excluded.includes(1) &&
+    excluded.includes(18);
+}
 async function files(root: string): Promise<string[]> {
   const found: string[] = [];
   for await (const entry of Deno.readDir(root)) {
@@ -84,7 +113,9 @@ async function reviewed(path: string) {
     )
   ) {
     const dependency = match[1];
-    if (/^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)) {
+    if (
+      /^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)
+    ) {
       errors.push(
         `Node host APIs must use the shared command runner or local refusal: ${path}`,
       );
@@ -141,13 +172,16 @@ for (const path of await files(`${root}/workflows`)) {
         );
       }
       if (typeof placement.target === "string") {
-        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(placement.target);
+        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(
+          placement.target,
+        );
         const expression = placement.target.includes("orbit-node-")
           ? /string\((.+)\)\s*\}\}$/s.exec(placement.target)
           : null;
         if (
           literal && labels.node !== literal[1] ||
-          expression && labels.node !== "${{ string(" + expression[1] + ") }}"
+          expression &&
+            labels.node !== "${{ string(" + expression[1] + ") }}"
         ) errors.push(`Node target and label disagree: ${path}`);
       }
     }
@@ -158,7 +192,8 @@ for (const path of await files(`${root}/workflows`)) {
         [task.expr, value.guard].some((v) =>
           typeof v === "string" && v.includes("(")
         ) ||
-        typeof task.message === "string" && task.message.includes("${{"))
+        typeof task.message === "string" &&
+          task.message.includes("${{"))
     ) {
       errors.push(
         `Node assertions must use data-only predicates and static messages: ${path}`,
@@ -170,7 +205,13 @@ for (const path of await files(`${root}/workflows`)) {
     ) {
       const type = task.behaviorType ?? task.modelType ??
         models.get(String(task.modelIdOrName));
-      if (typeof type !== "string" || !sources.has(type)) {
+      if (type === "command/shell") {
+        if (!nativeShellStaysOnNode(workflow, placement.target)) {
+          errors.push(
+            `Builtin shell has no supported logical proxy transport: ${path}`,
+          );
+        }
+      } else if (typeof type !== "string" || !sources.has(type)) {
         errors.push(
           `Node workers may run only reviewed local behaviors, not third-party extensions: ${path} (${
             String(type)

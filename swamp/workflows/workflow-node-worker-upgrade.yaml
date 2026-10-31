@@ -1,0 +1,461 @@
+id: 59cda522-b2ca-426f-85fc-9e6568b683a8
+name: node-worker-upgrade
+description: Upgrade only existing native workers through visible one-action steps; preserve credentials and configuration.
+vaults: []
+inputs:
+  type: object
+  properties:
+    node_id:
+      type: integer
+      minimum: 1
+      not:
+        enum:
+        - 1
+        - 18
+    user:
+      type: string
+      pattern: ^[a-z_][a-z0-9_-]{0,31}$
+      not:
+        enum:
+        - root
+        - orbit-swamp-package
+    artifact:
+      type: object
+      properties:
+        version:
+          type: string
+          pattern: ^[0-9]{8}\.[0-9]{6}\.0-sha\.[0-9a-f]{8}$
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        bytes:
+          type: integer
+          minimum: 1
+      required:
+      - version
+      - sha256
+      - bytes
+      additionalProperties: false
+    expected_current_sha256:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+    expected_unit_sha256:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+    worker_units:
+      type: array
+      minItems: 1
+      maxItems: 3
+      uniqueItems: true
+      items:
+        type: string
+        enum:
+        - orbit-node-worker.service
+        - orbit-node-proxy-worker-1.service
+        - orbit-node-proxy-worker-18.service
+  required:
+  - node_id
+  - user
+  - artifact
+  - expected_current_sha256
+  - expected_unit_sha256
+  - worker_units
+  additionalProperties: false
+jobs:
+- name: worker
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: inspect
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-inspect-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n /usr/bin/python3 - "$NODE_ID" "$WORKER_USER" "$EXPECTED_SHA256" "$EXPECTED_UNIT_SHA256" "$ARTIFACT_BYTES" "$UNIT_NAMES" <<'PYTHON'
+          import hashlib
+          import os
+          import pathlib
+          import pwd
+          import stat
+          import subprocess
+          import sys
+          import tomllib
+
+          node, user, expected, unit_sha, artifact_bytes, unit_names = sys.argv[1:]
+          node = int(node)
+          if node in (1, 18) or user in ('root', 'orbit-swamp-package'):
+              raise SystemExit('Local worker upgrade placement refused')
+
+          def custody(path, mode, directory=False):
+              info = os.lstat(path)
+              kind = stat.S_ISDIR if directory else stat.S_ISREG
+              if info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != mode or not kind(info.st_mode):
+                  raise SystemExit('Existing worker custody differs: ' + str(path))
+              return info
+
+          for path in ('/etc', '/etc/orbit', '/etc/orbit/agent', '/etc/systemd', '/etc/systemd/system', '/usr', '/usr/local', '/usr/local/bin'):
+              info = os.lstat(path)
+              if info.st_uid != 0 or info.st_gid != 0 or not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o022:
+                  raise SystemExit('Unsafe parent directory')
+          custody('/etc/orbit/agent/config.toml', 0o644)
+          config = tomllib.loads(pathlib.Path('/etc/orbit/agent/config.toml').read_text())
+          if config.get('swamp_worker') != {'node_id': node, 'user': user}:
+              raise SystemExit('Root-owned Node identity differs')
+          account = pwd.getpwnam(user)
+          if account.pw_uid <= 0 or account.pw_gid <= 0:
+              raise SystemExit('Configured worker user is not an ordinary account')
+          caller = os.environ.get('SUDO_UID')
+          if caller != str(account.pw_uid):
+              raise SystemExit('Executing worker user differs')
+          custody('/etc/orbit/swamp-worker', 0o700, True)
+          for name in ('enrollment', 'server'):
+              custody('/etc/orbit/swamp-worker/' + name + '.token', 0o600)
+          units = unit_names.split()
+          expected_units = ['orbit-node-worker.service']
+          for logical in (1, 18):
+              proxy = 'orbit-node-proxy-worker-' + str(logical) + '.service'
+              if node == 209 and os.path.lexists('/etc/systemd/system/' + proxy):
+                  expected_units.append(proxy)
+          if sorted(units) != sorted(expected_units) or len(units) != len(set(units)):
+              raise SystemExit('Existing worker restart scope differs')
+          for name in units:
+              path = '/etc/systemd/system/' + name
+              custody(path, 0o644)
+              state = subprocess.check_output(['/usr/bin/systemctl', 'show', name, '-p', 'UnitFileState', '-p', 'ActiveState', '-p', 'SubState', '-p', 'User', '-p', 'FragmentPath', '-p', 'DropInPaths'], text=True, timeout=8)
+              properties = dict(row.split('=', 1) for row in state.splitlines() if '=' in row)
+              wanted = {'UnitFileState': 'enabled', 'ActiveState': 'active', 'SubState': 'running', 'User': user, 'FragmentPath': path, 'DropInPaths': ''}
+              if properties != wanted:
+                  raise SystemExit('Existing unit identity or state differs')
+          path = '/etc/systemd/system/orbit-node-worker.service'
+          if hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest() != unit_sha:
+              raise SystemExit('Existing unit digest differs')
+          binary = '/usr/local/bin/swamp'
+          info = custody(binary, 0o755)
+          state = subprocess.check_output(['/usr/bin/systemctl', 'show', 'orbit-node-worker.service', '-p', 'MainPID', '--value'], text=True, timeout=8)
+          pid = int(state.strip())
+          exe = '/proc/' + str(pid) + '/exe'
+          if pid <= 0 or os.readlink(exe) != binary:
+              raise SystemExit('Running worker executable differs')
+          running = os.stat(exe)
+          if (info.st_dev, info.st_ino, info.st_size) != (running.st_dev, running.st_ino, running.st_size):
+              raise SystemExit('Installed and running executable differ')
+          with open(binary, 'rb') as stream:
+              digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+          if digest != expected:
+              raise SystemExit('Expected current binary digest differs')
+          cgroup = pathlib.Path('/proc/' + str(os.getppid()) + '/cgroup').read_text().strip()
+          if cgroup != '0::/system.slice/orbit-node-worker.service':
+              raise SystemExit('Upgrade did not execute in the persistent worker cgroup')
+          rows = [row.split() for row in pathlib.Path('/proc/meminfo').read_text().splitlines() if row.startswith('MemAvailable:')]
+          if len(rows) != 1 or len(rows[0]) != 3 or rows[0][2] != 'kB' or int(rows[0][1]) * 1024 < int(artifact_bytes) + 256 * 1024 * 1024:
+              raise SystemExit('Available worker memory is below the installer floor')
+          sys.stdout.write(digest)
+          PYTHON
+        env:
+          NODE_ID: ${{ string(inputs.node_id) }}
+          WORKER_USER: ${{ inputs.user }}
+          ARTIFACT_BYTES: ${{ string(inputs.artifact.bytes) }}
+          EXPECTED_SHA256: ${{ inputs.expected_current_sha256 }}
+          EXPECTED_UNIT_SHA256: ${{ inputs.expected_unit_sha256 }}
+          UNIT_NAMES: ${{ inputs.worker_units.join(" ") }}
+  - name: stage
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-stage-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n /usr/bin/mktemp -d -p /usr/local/bin .orbit-swamp-XXXXXXXX
+        env: {}
+  - name: download
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: stage
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-download-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          stage=$(printf '%s' "$STAGE_RAW")
+          case "$stage" in /usr/local/bin/.orbit-swamp-????????) ;; *) exit 1 ;; esac
+
+          sudo -n /usr/bin/curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 300 \
+            --output "$stage/swamp" \
+            "https://github.com/swamp-club/swamp/releases/download/v$ARTIFACT_VERSION/swamp-linux-x86_64"
+        env:
+          ARTIFACT_VERSION: ${{ inputs.artifact.version }}
+          STAGE_RAW: ${{ steps.stage.outputs.stdout }}
+  - name: verify-artifact
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: download
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-verify-artifact-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          stage=$(printf '%s' "$STAGE_RAW")
+          case "$stage" in /usr/local/bin/.orbit-swamp-????????) ;; *) exit 1 ;; esac
+
+          sudo -n /usr/bin/python3 - "$stage/swamp" "$ARTIFACT_SHA256" "$ARTIFACT_BYTES" <<'PYTHON'
+          import hashlib
+          import os
+          import stat
+          import sys
+
+          path, expected, size = sys.argv[1:]
+          info = os.lstat(path)
+          if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or info.st_size != int(size):
+              raise SystemExit('Staged artifact custody or size differs')
+          with open(path, 'rb') as stream:
+              if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
+                  raise SystemExit('Staged artifact digest differs')
+          PYTHON
+        env:
+          ARTIFACT_SHA256: ${{ inputs.artifact.sha256 }}
+          ARTIFACT_BYTES: ${{ string(inputs.artifact.bytes) }}
+          STAGE_RAW: ${{ steps.stage.outputs.stdout }}
+  - name: executable-mode
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: verify-artifact
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-executable-mode-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          stage=$(printf '%s' "$STAGE_RAW")
+          case "$stage" in /usr/local/bin/.orbit-swamp-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/chmod 0755 -- "$stage/swamp"
+        env:
+          STAGE_RAW: ${{ steps.stage.outputs.stdout }}
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: executable-mode
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-publish-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          stage=$(printf '%s' "$STAGE_RAW")
+          case "$stage" in /usr/local/bin/.orbit-swamp-????????) ;; *) exit 1 ;; esac
+
+          sudo -n /usr/bin/python3 - "$stage/swamp" "$EXPECTED_SHA256" "$ARTIFACT_SHA256" "$EXPECTED_UNIT_SHA256" "$ARTIFACT_BYTES" <<'PYTHON'
+          import hashlib
+          import os
+          import stat
+          import sys
+
+          staged, previous, expected, unit_sha, size = sys.argv[1:]
+          binary = '/usr/local/bin/swamp'
+          def digest(path):
+              info = os.lstat(path)
+              if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or info.st_mode & 0o022:
+                  raise SystemExit('Publication custody changed')
+              with open(path, 'rb') as stream:
+                  return info, hashlib.file_digest(stream, 'sha256').hexdigest()
+          if digest('/etc/systemd/system/orbit-node-worker.service')[1] != unit_sha:
+              raise SystemExit('Publication unit changed')
+          info, current = digest(binary)
+          # Native resume can retry after atomic publication succeeded but its reply was lost.
+          if current == expected:
+              if info.st_size != int(size) or stat.S_IMODE(info.st_mode) != 0o755:
+                  raise SystemExit('Published artifact metadata differs')
+              raise SystemExit(0)
+          if current != previous:
+              raise SystemExit('Publication input changed')
+          info, staged_digest = digest(staged)
+          if staged_digest != expected or info.st_size != int(size) or stat.S_IMODE(info.st_mode) != 0o755:
+              raise SystemExit('Publication artifact changed')
+          os.replace(staged, binary)
+          PYTHON
+        env:
+          ARTIFACT_SHA256: ${{ inputs.artifact.sha256 }}
+          ARTIFACT_BYTES: ${{ string(inputs.artifact.bytes) }}
+          EXPECTED_SHA256: ${{ inputs.expected_current_sha256 }}
+          EXPECTED_UNIT_SHA256: ${{ inputs.expected_unit_sha256 }}
+          STAGE_RAW: ${{ steps.stage.outputs.stdout }}
+  - name: cleanup-stage
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-cleanup-stage-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          stage=$(printf '%s' "$STAGE_RAW")
+          case "$stage" in /usr/local/bin/.orbit-swamp-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/rm -rf -- "$stage"
+        env:
+          STAGE_RAW: ${{ steps.stage.outputs.stdout }}
+  - name: restart
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+    guard: ${{ steps.inspect.outputs.stdout == inputs.artifact.sha256 }}
+    forEach:
+      item: unit
+      in: ${{ inputs.worker_units }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-restart-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          case "$UNIT_NAME" in
+            orbit-node-worker.service|orbit-node-proxy-worker-1.service|orbit-node-proxy-worker-18.service) ;;
+            *) exit 1 ;;
+          esac
+          sudo -n /usr/bin/systemctl restart --no-block "$UNIT_NAME"
+        env:
+          UNIT_NAME: ${{ self.unit }}
+  - name: verify-installed
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+    - step: restart
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: cleanup-stage
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-verify-installed-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -n /usr/bin/python3 - "$ARTIFACT_SHA256" "$ARTIFACT_BYTES" <<'PYTHON'
+          import hashlib
+          import os
+          import stat
+          import sys
+
+          expected, size = sys.argv[1:]
+          info = os.lstat('/usr/local/bin/swamp')
+          if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) != 0o755 or info.st_size != int(size):
+              raise SystemExit('Installed artifact custody or size differs')
+          with open('/usr/local/bin/swamp', 'rb') as stream:
+              if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
+                  raise SystemExit('Installed artifact digest differs')
+          PYTHON
+        env:
+          ARTIFACT_SHA256: ${{ inputs.artifact.sha256 }}
+          ARTIFACT_BYTES: ${{ string(inputs.artifact.bytes) }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: verify-installed
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "worker-upgrade-result-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          /usr/bin/python3 - "$NODE_ID" "$WORKER_USER" "$ARTIFACT_VERSION" "$ARTIFACT_SHA256" "$BEFORE_SHA256" <<'PYTHON'
+          import json
+          import sys
+
+          node, user, version, digest, before = sys.argv[1:]
+          print(json.dumps({'node_id': int(node), 'user': user, 'configured': True, 'changed': before != digest, 'installed_version': version, 'installed_sha256': digest, 'reconnection_proven': False}))
+          PYTHON
+        env:
+          NODE_ID: ${{ string(inputs.node_id) }}
+          WORKER_USER: ${{ inputs.user }}
+          ARTIFACT_VERSION: ${{ inputs.artifact.version }}
+          ARTIFACT_SHA256: ${{ inputs.artifact.sha256 }}
+          BEFORE_SHA256: ${{ steps.inspect.outputs.stdout }}
