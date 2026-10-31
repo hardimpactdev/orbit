@@ -19,7 +19,6 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
-use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
@@ -31,7 +30,6 @@ use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
-use App\Infrastructure\Nodes\NodeOperationAgentInstaller;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
@@ -67,7 +65,6 @@ final class NodesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->bind(NodeOperationAgentInstaller::class, NativeAgentCommandRunner::class);
         $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
         $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
