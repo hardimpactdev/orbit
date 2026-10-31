@@ -39,18 +39,15 @@ final readonly class ProcessOperationExecution implements OperationFamilyChildre
                 $add('vite-stop', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop']);
             }
             $add('vite-environment', 'vite.set-traffic', ValidatedData::object($plan['environment']));
-            if ($input['desired'] === 'running' || in_array($verb, ['start', 'restart'], true)) {
+            if ($input['desired'] === 'running' || $verb === 'restart') {
                 for ($check = 0; $check < 60; $check++) {
                     $add('vite-ready-'.$check, 'vite.check-listener', ValidatedData::object($plan['listener']), required: false);
                 }
                 $add('vite-stop-unready', 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => 'stop'], required: false);
             }
-            if ($verb === 'start') {
-                $add('vite-awake', 'vite.set-traffic', ValidatedData::object($plan['awake']));
-            }
         }
-        if (in_array($verb, ['start', 'restart'], true)) {
-            $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], $verb !== 'restart');
+        if ($verb === 'restart') {
+            $add('process-'.$verb, 'process.control', [...$artifact, 'on_demand' => $input['on_demand'], 'operation' => $verb], false);
         } elseif (in_array($verb, ['create', 'update'], true)) {
             if (isset($input['retired_runtime'])) {
                 $add('process-remove-retired', 'process.remove', ['process_id' => $input['process_id'], 'runtime' => $input['retired_runtime'], 'name' => $input['retired_name'], 'vite' => null]);

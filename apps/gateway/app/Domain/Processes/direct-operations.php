@@ -14,5 +14,6 @@ $control = [
 
 return [
     'process.destroy' => [...$control, 'writer_scope' => []],
+    'process.start' => [...$control, 'writer_scope' => []],
     'process.stop' => [...$control, 'writer_scope' => []],
 ];

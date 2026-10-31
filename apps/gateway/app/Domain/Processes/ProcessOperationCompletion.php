@@ -87,11 +87,8 @@ final readonly class ProcessOperationCompletion implements OperationCompletion
             if ($verb === 'restart') {
                 $required['vite-stop'] = 'process.control';
             }
-            if ($verb === 'start') {
-                $required['vite-awake'] = 'vite.set-traffic';
-            }
             app(OperationChildren::class)->requireSucceeded($operation, 'vite-caddy');
-            if ($operation->input['desired'] === 'running' || in_array($verb, ['start', 'restart'], true)) {
+            if ($operation->input['desired'] === 'running' || $verb === 'restart') {
                 $ready = array_find(array_keys($steps), static fn ($key): bool => str_starts_with($key, 'vite-ready-') && is_array($steps[$key]) && ($steps[$key]['ready'] ?? false) === true && ($steps[$key]['owned'] ?? false) === true);
                 if ($ready === null) {
                     throw new ResourceOperationException('operation.completion_unproven', 'An owned Vite listener must be proven ready.', 409);
