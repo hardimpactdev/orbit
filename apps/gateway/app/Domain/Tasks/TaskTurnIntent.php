@@ -8,6 +8,8 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Infrastructure\Tasks\Pi\PiModel;
 use App\Models\AgentThread;
@@ -37,11 +39,12 @@ final readonly class TaskTurnIntent
             }
             $group->load('taskable', 'project');
             $instance = $group->taskable;
+            $vm = TaskVm::forGroup($group);
             if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
                 throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
             }
             if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
-                || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === '') {
+                || ! $vm instanceof TaskVm || $vm->node_id !== $instance->node_id || $instance->checkout_path === '') {
                 throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
             }
             $task = $group->tasks()->findOrFail($data->subtask);
@@ -79,6 +82,10 @@ final readonly class TaskTurnIntent
                 }
                 $analysis = ['input' => $evidence->input, 'result' => $evidence->result];
             }
+            if (! is_string($vm->pi_token) || strlen($vm->pi_token) < 32) {
+                throw new ResourceOperationException('tasks.pi_credential_unavailable', 'The task VM Pi credential is unavailable.', 409);
+            }
+            $piToken = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-vm-pi-token-'.$vm->id, $vm->pi_token);
             $thread ??= AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
                 'driver' => 'pi', 'runtime_key' => 'node:'.$instance->node_id, 'external_id' => (string) Str::uuid(),
@@ -89,10 +96,12 @@ final readonly class TaskTurnIntent
 
             return $this->start->execute('tasks.turn', 'task_group', $group->id, $instance->node_id, [
                 ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+                'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'checkout_path' => $instance->checkout_path, 'thread_id' => $thread->id, 'session_id' => $thread->external_id, 'new_session' => $data->thread === 'new',
                 'model' => $model, 'effort' => $thread->effort, 'pi_port' => app(PiConnection::class)->port(),
                 'pi_host' => $instance->node->wireguard_ip, 'candidate' => $candidate,
                 'deliverables' => $task->deliverables ?? [], 'analysis_evidence' => $analysis,
+                'execution_secrets' => ['pi_token' => $piToken],
             ], $caller, $request);
         });
     }

@@ -1,14 +1,13 @@
-import { turnBehavior } from "./turn.ts";
+import { Globals } from "../_lib/direct.ts";
 import { publishMethod } from "./publish.ts";
 import { checkMethod } from "./check.ts";
 
-/** One model and native write lock per VM, shared by every task workspace effect. */
+/** Retained check and publish consumers; turn uses its own native workflow. */
 export const behavior = {
-    ...turnBehavior,
+    globalArguments: Globals,
     type: "@nckrtl/task-workspace",
-    version: "2026.10.31.5",
+    version: "2026.10.31.7",
     methods: {
-        ...turnBehavior.methods,
         check: checkMethod,
         publish: publishMethod,
     },

@@ -1,43 +1,487 @@
 id: d98239bb-4a95-4873-a3e1-6f7c5bdb76ab
 name: operation-task-turn
-description: Pi writes or reviews code in the admitted task VM, under one native run.
-vaults: []
+description: Run admitted Pi turns from Node 209 with official SSH workspace actions and public terminal projection.
+vaults:
+- orbit-control-inputs
 inputs:
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.turn] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.turn
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        pi_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-vm-pi-token-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - pi_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  type: object
+  additionalProperties: false
 jobs:
-  - name: turn
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: pi
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/task-workspace"
-          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
-          methodName: execute
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: failure
-    dependsOn: [{ job: turn, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "task-turn-failure-" + string(inputs.node_id) }}'
-          methodName: report
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: turn
+  steps:
+  - name: prepare
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+      behaviorName: ${{ "task-turn-prepare-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  - name: prepare_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-task-turn-" + run.id }}
+    guard: ${{ steps.prepare.outputs.error_code != null }}
+  - name: copy_assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.prepare.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-turn-" + run.id + "/" }}
+        recursive: true
+        direction: to
+  - name: snapshot_before
+    target: orbit-node-209
+    dependsOn:
+    - step: copy_assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    labels:
+      node: '209'
+  - name: candidate
+    target: orbit-node-209
+    dependsOn:
+    - step: snapshot_before
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/candidate.py" }}
+        - ${{ steps.snapshot_before.outputs.stdout }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    labels:
+      node: '209'
+  - name: candidate_result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: candidate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      behaviorName: ${{ "task-turn-candidate-result-" + string(inputs.operation_id) }}
+      methodName: candidate
+      inputs:
+        value: ${{ steps.candidate.outputs.stdout }}
+  - name: receipt_prepare
+    target: orbit-node-209
+    dependsOn:
+    - step: candidate_result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_prepare.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    labels:
+      node: '209'
+    guard: ${{ !steps.candidate_result.outputs.admitted }}
+  - name: session_create
+    target: orbit-node-209
+    dependsOn:
+    - step: receipt_prepare
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_BODY: ${{ steps.prepare.outputs.create_json }}
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/session_create.py" }}
+      behaviorName: ${{ "task-turn-session_create-" + string(inputs.operation_id) }}
+    guard: ${{ !inputs.intent.new_session }}
+    labels:
+      node: '209'
+  - name: message_send
+    target: orbit-node-209
+    dependsOn:
+    - step: receipt_prepare
+      condition:
+        type: succeeded
+    - step: session_create
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_PI_BODY: ${{ steps.prepare.outputs.send_json }}
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/message_send.py" }}
+      behaviorName: ${{ "task-turn-message_send-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  - name: observe
+    target: orbit-node-209
+    dependsOn:
+    - step: message_send
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/observe.py" }}
+        timeout: 1800000
+      behaviorName: ${{ "task-turn-observe-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  - name: snapshot_after
+    target: orbit-node-209
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    labels:
+      node: '209'
+  - name: receipt_read
+    target: orbit-node-209
+    dependsOn:
+    - step: snapshot_after
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/receipt_read.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    labels:
+      node: '209'
+  - name: difference
+    target: orbit-node-209
+    dependsOn:
+    - step: receipt_read
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/difference.py" }}
+        - ${{ steps.snapshot_before.outputs.stdout }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    guard: ${{ inputs.intent.role == "implementer" }}
+    labels:
+      node: '209'
+  - name: interrupt
+    target: orbit-node-209
+    dependsOn:
+    - step: observe
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_TURN_INPUT: ${{ steps.prepare.outputs.intent_json }}
+          ORBIT_PI_TOKEN: ${{ vault.get(inputs.execution_secrets.pi_token.vault, inputs.execution_secrets.pi_token.key) }}
+          ORBIT_PI_URL: ${{ steps.prepare.outputs.pi_url }}
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/interrupt.py" }}
+      behaviorName: ${{ "task-turn-interrupt-" + string(inputs.operation_id) }}
+    guard: ${{ (has(steps.observe) && steps.observe.status == "succeeded") || !has(steps.message_send) || steps.message_send.status != "succeeded" }}
+    labels:
+      node: '209'
+  - name: restore
+    target: orbit-node-209
+    dependsOn:
+    - step: difference
+      condition:
+        type: always
+    - step: interrupt
+      condition:
+        type: always
+    - step: candidate
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-turn-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-turn-" + run.id + "/scripts/restore.py" }}
+        stdin: ${{ steps.prepare.outputs.intent_json }}
+    guard: ${{ inputs.intent.role != "reviewer" || !has(steps.candidate_result) || !has(steps.candidate_result.outputs) || !steps.candidate_result.outputs.admitted
+      }}
+    labels:
+      node: '209'
+  - name: shape_result
+    target: orbit-node-209
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: snapshot_before
+      condition:
+        type: always
+    - step: candidate
+      condition:
+        type: always
+    - step: observe
+      condition:
+        type: always
+    - step: snapshot_after
+      condition:
+        type: always
+    - step: receipt_read
+      condition:
+        type: always
+    - step: difference
+      condition:
+        type: always
+    - step: interrupt
+      condition:
+        type: always
+    - step: restore
+      condition:
+        type: always
+    - step: candidate_result
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-turn-data'
+      methodName: result
+      inputs:
+        input: ${{ inputs.intent }}
+        before: '${{ has(steps.snapshot_before) && has(steps.snapshot_before.outputs) && has(steps.snapshot_before.outputs.stdout) ? steps.snapshot_before.outputs.stdout
+          : "" }}'
+        after: '${{ has(steps.snapshot_after) && has(steps.snapshot_after.outputs) && has(steps.snapshot_after.outputs.stdout) ? steps.snapshot_after.outputs.stdout
+          : "" }}'
+        terminal: '${{ has(steps.observe) && has(steps.observe.outputs) && has(steps.observe.outputs.stdout) ? steps.observe.outputs.stdout : "" }}'
+        receipt: '${{ has(steps.receipt_read) && has(steps.receipt_read.outputs) && has(steps.receipt_read.outputs.stdout) ? steps.receipt_read.outputs.stdout
+          : "" }}'
+        difference: '${{ has(steps.difference) && has(steps.difference.outputs) && has(steps.difference.outputs.stdout) ? steps.difference.outputs.stdout
+          : "" }}'
+        restored: '${{ has(steps.restore) && has(steps.restore.outputs) && has(steps.restore.outputs.stdout) ? steps.restore.outputs.stdout : "" }}'
+        failure: ${{ !has(steps.candidate) || steps.candidate.status != "succeeded" || !has(steps.observe) || steps.observe.status != "succeeded" || !has(steps.receipt_read)
+          || steps.receipt_read.status != "succeeded" || (inputs.intent.role == "reviewer" && (!has(steps.restore) || steps.restore.status != "succeeded"))
+          || (inputs.intent.role != "implementer" && (!has(steps.difference) || steps.difference.status != "succeeded")) }}
+        failure_code: '${{ has(steps.prepare.outputs) && steps.prepare.outputs.error_code != null ? steps.prepare.outputs.error_code : (has(steps.candidate_result)
+          && has(steps.candidate_result.outputs) ? steps.candidate_result.outputs.error_code : null) }}'
+      behaviorName: ${{ "task-turn-shape_result-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: shape_result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$ORBIT_RESULT"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+      behaviorName: ${{ "task-turn-result-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  - name: outcome
+    target: orbit-node-209
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/outcome.py" }}
+      behaviorName: ${{ "task-turn-outcome-" + string(inputs.operation_id) }}
+    labels:
+      node: '209'
+  target: orbit-node-209
+  labels:
+    node: '209'
