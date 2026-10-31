@@ -18,16 +18,20 @@ function nativeShellStaysOnNode(workflow: Map, target: unknown): boolean {
       !["1", "18"].includes(constant[1]);
   }
   const expression =
-    /^\$\{\{ "orbit-node-" \+ string\(inputs\.([a-z_]+)\) \}\}$/.exec(
-      target,
-    );
+    /^\$\{\{ "orbit-node-" \+ string\(inputs\.([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*)\) \}\}$/
+      .exec(
+        target,
+      );
   if (!expression) return false;
-  const inputs = object(workflow.inputs), name = expression[1];
-  const schema = object(object(inputs.properties)[name]);
-  if (
-    !Array.isArray(inputs.required) || !inputs.required.includes(name) ||
-    schema.type !== "integer"
-  ) return false;
+  let schema = object(workflow.inputs);
+  for (const [depth, name] of expression[1].split(".").entries()) {
+    if (
+      depth > 0 && schema.type !== "object" ||
+      !Array.isArray(schema.required) || !schema.required.includes(name)
+    ) return false;
+    schema = object(object(schema.properties)[name]);
+  }
+  if (schema.type !== "integer") return false;
   if (Array.isArray(schema.enum)) {
     return schema.enum.length > 0 &&
       schema.enum.every((v) =>

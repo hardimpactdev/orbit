@@ -477,3 +477,113 @@ Deno.test("logical proxy builtins require the shared asset, exact envelope and s
     await Deno.remove(root, { recursive: true });
   }
 });
+
+Deno.test("nested selectors need a required object chain and explicit nonproxy leaf policy", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    for (const folder of ["models", "workflows", "extensions/behaviors"]) {
+      await Deno.mkdir(root + "/" + folder, { recursive: true });
+    }
+    const workflow = {
+      inputs: {
+        type: "object",
+        required: ["intent"],
+        properties: {
+          intent: {
+            type: "object",
+            required: ["target_node_id"],
+            properties: {
+              target_node_id: {
+                type: "integer",
+                minimum: 1,
+                not: { enum: [1, 18] },
+              },
+            },
+          },
+        },
+      },
+      jobs: [{
+        name: "source",
+        steps: [{
+          name: "remove",
+          target: '${{ "orbit-node-" + string(inputs.intent.target_node_id) }}',
+          labels: { node: "${{ string(inputs.intent.target_node_id) }}" },
+          task: {
+            type: "behavior",
+            behaviorType: "command/shell",
+            methodName: "execute",
+            inputs: { run: "printf public" },
+          },
+        }],
+      }],
+    };
+    const cases: [string, (w: typeof workflow) => void, boolean][] = [
+      ["required nested integer excludes proxies", () => {}, true],
+      ["missing family exclusion", (w) => {
+        w.inputs.properties.intent.properties.target_node_id.not.enum = [];
+      }, false],
+      ["only one proxy excluded", (w) => {
+        w.inputs.properties.intent.properties.target_node_id.not.enum = [1];
+      }, false],
+      ["optional parent", (w) => {
+        w.inputs.required = [];
+      }, false],
+      ["optional leaf", (w) => {
+        w.inputs.properties.intent.required = [];
+      }, false],
+      ["parent not object", (w) => {
+        w.inputs.properties.intent.type = "string";
+      }, false],
+      ["leaf not integer", (w) => {
+        w.inputs.properties.intent.properties.target_node_id.type = "string";
+      }, false],
+      ["ineffective negation", (w) => {
+        Object.assign(
+          w.inputs.properties.intent.properties.target_node_id.not,
+          { type: "string" },
+        );
+      }, false],
+      ["explicit ordinary enum", (w) => {
+        Object.assign(w.inputs.properties.intent.properties.target_node_id, {
+          enum: [9, 14, 209],
+        });
+      }, true],
+      ["enum admits proxy", (w) => {
+        Object.assign(w.inputs.properties.intent.properties.target_node_id, {
+          enum: [1, 14],
+        });
+      }, false],
+      ["unproved selector expression", (w) => {
+        w.jobs[0].steps[0].target =
+          '${{ "orbit-node-" + string(inputs.intent.target_node_id + 0) }}';
+        w.jobs[0].steps[0].labels.node =
+          "${{ string(inputs.intent.target_node_id + 0) }}";
+      }, false],
+    ];
+    for (const [name, mutate, allowed] of cases) {
+      const candidate = structuredClone(workflow);
+      mutate(candidate);
+      await Deno.writeTextFile(
+        root + "/workflows/fixture.yaml",
+        stringify(candidate),
+      );
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "--allow-read",
+          import.meta.resolve("./lint-node-workers.ts"),
+          root,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(
+        result.success,
+        allowed,
+        name + ": " + new TextDecoder().decode(result.stderr),
+      );
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
