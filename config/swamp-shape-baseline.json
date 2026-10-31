@@ -389,14 +389,6 @@
     },
     {
       "file": "extensions/behaviors/node-worker/rotation.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/node-worker/rotation.ts",
       "rule": "gateway-http",
       "count": 2,
       "evidence": [
