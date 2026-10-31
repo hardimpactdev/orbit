@@ -89,7 +89,9 @@ Horizon runs as the Gateway Node's [Process](/reference/processes-and-schedules)
 
 The serving phase of a release's [runtime handoff](/reference/gateway-recovery#runtime-handoff) records the fixed Horizon Process and admits `process.horizon_handoff` on the Gateway Node. The handoff records `horizon=submitted` and `horizon_operation_id`; this is admission, not a readiness claim.
 
-The native run receives the complete non-secret intent as workflow inputs. Placed `command/shell` steps inspect, stage, validate, publish and reload the unit, then enable and hand it over. Scripts are inline in each step. No step reads intent or reports results to the Gateway; the shared terminal-run adapter projects the bounded final output. An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
+The native run receives the complete non-secret intent as workflow inputs. Placed `command/shell` steps inspect, stage, validate, publish and reload the unit, then enable and hand it over. Scripts are inline in each step. No step reads intent or reports results to the Gateway; the shared terminal-run adapter projects the bounded final output.
+
+An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
 
 Horizon uses cached application configuration. This parent adds no private-material field, and refuses managed environment overrides instead of exposing them in the public unit. The Gateway never removes the Process. After emptying `ORBIT_GATEWAY_QUEUE_CONNECTION`, destroy it with `orbit process:destroy <id>`.
 
