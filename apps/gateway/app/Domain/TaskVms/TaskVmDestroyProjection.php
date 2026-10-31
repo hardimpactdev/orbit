@@ -6,6 +6,7 @@ namespace App\Domain\TaskVms;
 
 use App\Domain\Nodes\NodeRemovalPublicInput;
 use App\Domain\Nodes\NodeRemovalRecords;
+use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
@@ -25,7 +26,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
 
     public function input(Operation $operation): array
     {
-        return $this->intent->input($operation);
+        return $this->view($operation, $operation->node_id);
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -47,11 +48,23 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
-        if ($callerNodeId === ($operation->input['gateway_node_id'] ?? null) || $callerNodeId === ($operation->input['issuer_node_id'] ?? null)) {
-            return $this->intent->input($operation);
-        }
 
-        return $this->publicNodes->participant(ValidatedData::object($operation->input['node_removal']), Node::query()->findOrFail($callerNodeId));
+        return $this->view($operation, $callerNodeId);
+    }
+
+    /** @return array<string,mixed> */
+    private function view(Operation $operation, ?int $callerNodeId): array
+    {
+        $input = $this->intent->input($operation);
+        $input['_wireguard'] = NodeWireGuardInput::bound($operation);
+        $snapshot = $input['node_removal'] === null ? null : ValidatedData::object($input['node_removal']);
+        $participants = $snapshot['participants'] ?? [];
+        $member = is_array($participants) && array_any($participants, static fn (mixed $row): bool => is_array($row) && ($row['node_id'] ?? null) === $callerNodeId);
+        $input['node_cleanup_participant'] = $snapshot !== null && $member
+            ? $this->publicNodes->participant($snapshot, Node::query()->findOrFail($callerNodeId),
+                restoring: ($operation->state['node_cleanup_restoring'] ?? false) === true) : null;
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -65,7 +78,14 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $vm = $this->intent->owned($operation, lock: true);
             $status = OperationStatus::from(ValidatedData::string($data['status']));
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
-            if ($status === OperationStatus::Running && ($result['node_cleanup_started'] ?? false) === true && $vm->node_id !== null) {
+            if ($status === OperationStatus::Running && ($result['node_cleanup_restoring'] ?? false) === true && $vm->node_id !== null) {
+                $snapshot = ValidatedData::object($operation->input['node_removal']);
+                Node::query()->findOrFail($vm->node_id)->update(['status' => LifecycleStatus::from(ValidatedData::string($snapshot['prior_status']))]);
+                $projected->update(['state' => [...($projected->state ?? []), 'node_cleanup_restoring' => true]]);
+                if ($operation->input['_wireguard'] !== null) {
+                    NodeWireGuardInput::beginRestoration($projected);
+                }
+            } elseif ($status === OperationStatus::Running && ($result['node_cleanup_started'] ?? false) === true && $vm->node_id !== null) {
                 Node::query()->findOrFail($vm->node_id)->update(['status' => LifecycleStatus::Removing]);
                 $vm->update(['state' => TaskVmState::Destroying]);
             }

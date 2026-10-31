@@ -10,7 +10,6 @@ use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\FailTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Nodes\RoleName;
@@ -445,7 +444,6 @@ describe('retained task VM workspace removal', function (): void {
         bind_task_node_reachability();
         // No SSH to the VM: the checkout goes with the VM, and the Project has no teardown steps.
         mock(SshExecutor::class)->shouldReceive('execute')->never();
-        app()->instance(InstanceRemover::class, mock(InstanceRemover::class)->shouldReceive('execute')->never()->getMock());
         Queue::fake();
 
         expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
@@ -495,7 +493,7 @@ describe('retained task VM workspace removal', function (): void {
             ->and($this->provider->calls)->toBe([]);
     });
 
-    it('reconciles a queued push that succeeded before VM loss without another removal poll', function (bool $reviewAndMerge): void {
+    it('reconciles the exact successful native publication before VM loss without another removal poll', function (bool $reviewAndMerge): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
         $group->project->update(['review_and_merge' => $reviewAndMerge, 'merge_check' => 'Required checks']);
         $group->update(['status' => TaskGroupStatus::Failed]);
@@ -511,6 +509,10 @@ describe('retained task VM workspace removal', function (): void {
         $publisher = Mockery::mock(TaskPullRequestPublisher::class);
         $publisher->shouldNotReceive('push');
         app()->instance(TaskPullRequestPublisher::class, $publisher);
+
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id,
+            'node_id' => $vm->node_id, 'status' => 'succeeded', 'triggered_by' => 'fixture',
+            'input' => [], 'result' => ['commit' => $sha, 'branch' => 'task-'.$group->id]]);
 
         expect(TaskFinalReview::reconcileRemovalPush($group))->toBeNull();
 

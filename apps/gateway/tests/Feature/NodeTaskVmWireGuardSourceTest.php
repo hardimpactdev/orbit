@@ -11,6 +11,7 @@ use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
+use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -18,6 +19,7 @@ use App\Models\Operation;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
+use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
     FleetFixtures::bind();
@@ -125,7 +127,11 @@ it('serves hub SSH material only to the immutable Gateway reader through the sha
     $keys->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
     app()->instance(SshKeyProvider::class, $keys);
     $operation = $this->operation;
+    $this->vm->update(['provider' => 'incus', 'host_node_id' => $this->gateway->id]);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($this->gateway->id)]]);
+    config(['dependency_detection.services_node_id' => $this->gateway->id, 'swamp_workers.nodes' => [$this->hub->id]]);
     $operation->kind = 'task_vm.destroy';
+    $operation->input = app(TaskVmDestroyIntent::class)->capture($this->vm->fresh());
     $operation->save();
     $path = '/api/v1/direct-operations/'.$operation->id;
     $query = '?run_id='.$operation->state['swamp_run_id'];

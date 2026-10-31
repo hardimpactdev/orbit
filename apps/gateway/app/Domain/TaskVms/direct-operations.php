@@ -20,7 +20,7 @@ return ['task_vm.resume' => [
 ], 'task_vm.destroy' => [
     'workflow' => 'operation-task-vm-destroy',
     'projection' => TaskVmDestroyProjection::class,
-    'private_material' => ['upcloud_token' => 'upcloud.api', 'model_key' => 'task_vm.model_key', 'model_router' => 'task_vm.model_router'],
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'model_key' => 'task_vm.model_key', 'model_router' => 'task_vm.model_router', 'configuration' => 'node.vpn_configuration'],
 ], 'task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',
     'projection' => TaskVmProvisionProjection::class,

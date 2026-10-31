@@ -24,8 +24,7 @@ it('captures the exact deleted TaskVM and all serving participant owners without
 
     expect($snapshot)->toMatchArray(['schema_version' => 1, 'node_id' => $source->id, 'task_vm_id' => $vm->id, 'machine_deleted' => true, 'offline' => true, 'metrics' => null]);
     expect($snapshot['participants'])->toBe([
-        ['node_id' => $hub->id, 'peer' => true, 'residue' => true, 'dns' => true],
-        ['node_id' => $other->id, 'peer' => true, 'residue' => true, 'dns' => false],
+        ['node_id' => $hub->id, 'peer' => false, 'routes' => false, 'residue' => false, 'dns' => true],
     ]);
     $this->assertModelExists($source);
 });

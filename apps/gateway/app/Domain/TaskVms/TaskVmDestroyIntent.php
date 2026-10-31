@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Nodes\NodeRemovalInput;
+use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -41,7 +44,16 @@ final readonly class TaskVmDestroyIntent
         }
         $routerId = $vm->model_key === null ? null : $this->modelKeys->ownerNodeId();
         $nodeRemoval = $vm->node_id === null ? null : $this->nodes->deletedTaskVm($vm, Node::query()->findOrFail($vm->node_id));
+        $cleanup = $nodeRemoval === null ? null : app(NodeRemovalInput::class)->capture($nodeRemoval, $gateway);
+        $nodeRemoval = $cleanup === null ? null : ValidatedData::object($cleanup['snapshot']);
         $cleanupNodeIds = $nodeRemoval === null ? [] : $this->cleanupNodeIds($nodeRemoval);
+        if (Node::query()->whereKey($cleanupNodeIds)->get()->contains(static fn (Node $node): bool => ! app(NodeWorkerRollout::class)->allows($node))
+            || ($cleanup !== null && ($cleanup['metrics_fleet'] !== null || $cleanup['restore_metrics_fleet'] !== null))) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Every required Node cleanup effect needs its native executor and contributor.', 409);
+        }
+        $wireguard = $nodeRemoval === null || $nodeRemoval['hub_id'] === null ? null
+            : app(NodeWireGuardInput::class)->captureForTaskVm(Node::query()->findOrFail($vm->node_id), $gateway, $vm->node_id);
+        $hubId = $wireguard['hub_id'] ?? null;
 
         $input = ['removal_id' => (string) Str::uuid(), 'task_vm_id' => $vm->id, 'node_id' => $host->id,
             'guest_node_id' => $vm->node_id, 'group_id' => $vm->group_id, 'name' => $vm->name,
@@ -52,16 +64,22 @@ final readonly class TaskVmDestroyIntent
             'worker_stop_required' => (bool) $vm->worker_stop_required, 'model_key_required' => $vm->model_key !== null,
             'workspace_ids' => $this->workspaces($vm), 'route_ids' => $this->routes($vm),
             'node_removal' => $nodeRemoval,
+            '_wireguard' => $wireguard, '_wireguard_restore' => $wireguard === null ? null : NodeWireGuardInput::restorationSnapshot($wireguard),
             'node_placements' => array_map(static fn (int $nodeId): array => ['effect_node_id' => $nodeId, 'execution_node_id' => $nodeId, 'transport' => 'local'], $cleanupNodeIds),
             'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr],
             'pool' => $location?->pool,
-            'participant_node_ids' => array_values(array_unique(array_filter([$host->id, $vm->node_id, $gateway->id, $issuerId, $routerId, ...$cleanupNodeIds]))),
+            'participant_node_ids' => array_values(array_unique(array_filter([$host->id, $vm->node_id, $gateway->id, $issuerId, $routerId, $hubId, ...$cleanupNodeIds]))),
             'private_bindings' => [
-                ...($vm->model_key === null ? [] : [
-                    'model_key' => ['owner_node_id' => $vm->node_id, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
-                    'model_router' => ['owner_node_id' => $routerId, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
-                ]),
+                'configuration' => $hubId === null ? ['owner_node_id' => $gateway->id, 'read_node_ids' => [], 'write_node_ids' => []]
+                    : ['owner_node_id' => $hubId, 'read_node_ids' => [$gateway->id], 'write_node_ids' => []],
+                'upcloud_token' => ['owner_node_id' => $host->id,
+                    'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []],
+                'model_key' => ['owner_node_id' => $vm->node_id ?? $host->id,
+                    'read_node_ids' => $vm->model_key === null ? [] : [$gateway->id], 'write_node_ids' => []],
+                'model_router' => ['owner_node_id' => $routerId ?? $host->id,
+                    'read_node_ids' => $vm->model_key === null ? [] : [$gateway->id], 'write_node_ids' => []],
             ],
+            ...($hubId === null ? [] : ['configuration' => ['$secret' => 'node.vpn_configuration', 'id' => $hubId]]),
             ...($vm->model_key === null ? [] : ['model_key' => ['$secret' => 'task_vm.model_key', 'id' => $vm->id], 'model_router' => ['$secret' => 'task_vm.model_router', 'id' => $vm->id]]),
             ...($vm->provider === TaskVmProviderKind::UpCloud ? ['upcloud_token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]] : [])];
         $this->available($input);
@@ -105,7 +123,7 @@ final readonly class TaskVmDestroyIntent
     public function available(array $input): void
     {
         $nodeRemoval = $input['node_removal'] === null ? null : ValidatedData::object($input['node_removal']);
-        if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && $nodeRemoval['route_ids'] !== [])) {
+        if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && ($nodeRemoval['route_ids'] !== [] || $nodeRemoval['metrics'] !== null))) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Same-root workspace and Route cleanup participants are not installed.', 409);
         }
     }
@@ -117,7 +135,7 @@ final readonly class TaskVmDestroyIntent
             $this->owned($operation);
         }
 
-        return Arr::except($operation->input, ['upcloud_token', 'model_key', 'model_router', 'private_bindings']);
+        return Arr::except($operation->input, ['upcloud_token', 'model_key', 'model_router', 'configuration', 'private_bindings']);
     }
 
     private function preserved(TaskVm $vm): void
@@ -137,9 +155,6 @@ final readonly class TaskVmDestroyIntent
             throw new LogicException('The Node cleanup capture must include every participant.');
         }
         $ids = array_map(static fn (mixed $row): int => ValidatedData::integer(ValidatedData::object($row)['node_id']), $participants);
-        if ($snapshot['hub_id'] !== null) {
-            $ids[] = ValidatedData::integer($snapshot['hub_id']);
-        }
 
         return array_values(array_unique($ids));
     }
