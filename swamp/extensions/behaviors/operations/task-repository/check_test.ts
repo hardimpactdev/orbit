@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { candidateResult, ciResult } from "./check.ts";
+import { candidateResult, ciResult, setupResult } from "./check.ts";
 const commit = "a".repeat(40), start = "2026-10-31T22:00:00Z";
 const input = {
     group_id: 1,
@@ -99,4 +99,14 @@ Deno.test("the hosted CI window starts at push after long local execution", () =
         runs: [{ ...run, status: "in_progress", conclusion: null }],
     }, "2026-10-31T22:01:00Z");
     assertEquals(value.pending, true);
+});
+
+Deno.test("missing setup output is a failed preparation", () => {
+    const setup = setupResult({
+        ...input,
+        phase: "baseline",
+        setup: [{ name: "prepare", command: "true", timeout_seconds: 30 }],
+    }, {});
+    assertEquals(setup.passed, false);
+    assertEquals(setup.exit_code, 255);
 });

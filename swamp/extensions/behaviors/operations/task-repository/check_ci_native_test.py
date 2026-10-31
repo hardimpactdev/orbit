@@ -6,10 +6,10 @@ import unittest
 
 import yaml
 from publication_actions_test import TOKEN
-from publication_native_test import ROOT, NativePublication
+from publication_native_test import ROOT, NativePublicationFixture
 
 
-class NativeCheckCI(NativePublication):
+class NativeCheckCI(NativePublicationFixture):
     def setUp(self):
         super().setUp()
         self.inputs["kind"] = "tasks.check"
@@ -119,9 +119,14 @@ class NativeCheckCI(NativePublication):
                 step.pop("labels", None)
         return flow
 
-    def execute(self, name, inputs=None):
+    def execute(self, name, inputs=None, success=True):
         reply = self.cli(
-            "workflow", "run", name, "--stdin", input=json.dumps(inputs or {})
+            "workflow",
+            "run",
+            name,
+            "--stdin",
+            input=json.dumps(inputs or {}),
+            success=success,
         )
         # Native SSH guards can produce public notices before the final JSON object.
         decoder = json.JSONDecoder()
@@ -160,6 +165,9 @@ class NativeCheckCI(NativePublication):
         root, admitted = self.execute("task-check-fixture", self.inputs)
         self.assertTrue(admitted["pending"])
         self.assertEqual(self.server.mints, 1)
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "DELETE"]), 1
+        )
         self.inputs["intent"]["commit"] = admitted["commit"]
         self.reading()
         _, pending = self.execute("task-check-ci")
@@ -180,11 +188,29 @@ class NativeCheckCI(NativePublication):
         self.assertEqual(row["result"]["ci"]["state"], "passed")
         self.assertEqual(row["result"]["commit"], admitted["commit"])
         self.assertNotIn("summary", json.dumps(completed))
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "DELETE"]), 2
+        )
         _, idle = self.execute("task-check-ci")
         self.assertEqual(idle, {"checks": []})
         self.assertEqual(
             len([call for call in self.server.calls if call[0] == "GET"]), 2
         )
+
+    def test_failed_push_revokes_both_tokens_without_leaving_pending_ci(self):
+        hook = self.remote / "hooks/pre-receive"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+        _, result = self.execute("task-check-fixture", self.inputs, success=False)
+        self.assertFalse(result["pending"])
+        self.assertEqual(result["error_code"], "tasks.push_failed")
+        self.assertEqual(self.server.mints, 1)
+        self.assertEqual(
+            len([call for call in self.server.calls if call[0] == "DELETE"]), 2
+        )
+        _, idle = self.execute("task-check-ci")
+        self.assertEqual(idle, {"checks": []})
+        self.assertFalse([call for call in self.server.calls if call[0] == "GET"])
 
 
 if __name__ == "__main__":

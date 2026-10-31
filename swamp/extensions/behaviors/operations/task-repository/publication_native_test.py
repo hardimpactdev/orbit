@@ -21,7 +21,7 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
-class NativePublication(harness.NativeTestCase):
+class NativePublicationFixture(harness.NativeTestCase):
     native_timeout = 90
 
     def setUp(self):
@@ -230,6 +230,8 @@ subprocess.run=run
             )["outputs"]["stdout"]
         )
 
+
+class NativePublication(NativePublicationFixture):
     def test_native_publication_uses_official_ssh_and_records_pr(self):
         run = self.run_workflow()
         self.assertEqual(run["status"], "succeeded")

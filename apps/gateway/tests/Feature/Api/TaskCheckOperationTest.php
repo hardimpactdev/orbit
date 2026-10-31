@@ -216,6 +216,36 @@ it('rejects mismatched pending observations before applying requested cancellati
         ->and(TaskCheck::findOrFail($operation->input['check_id'])->status->value)->toBe('running');
 })->with([false, true]);
 
+it('projects native scheduled observations through the shared reader without replacing the admitted root', function (): void {
+    [$group, $task] = native_check_group();
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $operation = native_check_start($group, $task, 'handoff');
+    $sha = str_repeat('a', 40);
+    $result = ['group_id' => $group->id, 'subtask' => $task->id, 'phase' => 'handoff', 'pending' => true,
+        'outcome' => 'passed', 'check_id' => $operation->input['check_id'], 'commit' => $sha,
+        'head' => str_repeat('b', 40), 'tree' => str_repeat('c', 40),
+        'ci' => ['repository' => 'acme/turn', 'state' => 'pending', 'fault' => null, 'branch' => 'task-'.$group->id.'-handoff',
+            'commit' => $sha, 'check_name' => 'Required checks']];
+    native_check_finish($operation, $result);
+    $declaration = app(DirectOperation::class)->definition('tasks.check')['scheduled_result'];
+    $scheduledRun = 'b075eb23-7ac4-4487-80d1-57a038a92676';
+    $result['pending'] = false;
+    $result['ci']['state'] = 'passed';
+    $row = ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.check',
+        'root_run_id' => $this->run, 'status' => 'succeeded', 'result' => $result];
+    $history = ['id' => $scheduledRun, 'workflowId' => $declaration['workflow_id'], 'workflowName' => 'task-check-ci',
+        'status' => 'succeeded', 'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
+        'jobs' => [['name' => 'checks', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode(['checks' => [$row]], JSON_THROW_ON_ERROR)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    $before = count($this->socket->sent);
+    app(SwampCommandStep::class)->projectScheduledTerminal($declaration['workflow_id'], ['id' => $scheduledRun, 'status' => 'succeeded']);
+    expect(count($this->socket->sent))->toBe($before + 1)
+        ->and($operation->refresh()->status->value)->toBe('succeeded')
+        ->and($operation->state['swamp_run_id'])->toBe($this->run)
+        ->and($operation->state['swamp_scheduled_result']['run_id'])->toBe($scheduledRun)
+        ->and(app(TaskCheckedCandidate::class)->eligible($group->refresh(), TaskCheck::findOrFail($operation->input['check_id'])))->toBeTrue();
+});
+
 it('mints fresh scoped execution copies through the existing mint endpoint after the candidate step', function (): void {
     [$group, $task] = native_check_group();
     $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);

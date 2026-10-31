@@ -699,6 +699,26 @@ jobs:
       condition:
         type: succeeded
     guard: ${{ !steps.finish.outputs.pending }}
+  - name: revoke_unused_read
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-revoke-unused-read-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.checks_token.vault, inputs.execution_secrets.checks_token.key) }}
+    dependsOn:
+    - step: finish
+      condition:
+        type: succeeded
+    guard: ${{ steps.finish.outputs.pending || !has(steps.mint_result.outputs.minted) || !steps.mint_result.outputs.minted }}
+    allowFailure: true
   - name: result
     target: orbit-node-209
     task:

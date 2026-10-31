@@ -38,7 +38,7 @@ export function setupResult(
     const failed = observations.find((item) => item.exit_code !== 0);
     return {
         passed: !failed,
-        exit_code: failed?.exit_code ?? 0,
+        exit_code: failed ? (failed.exit_code ?? 255) : 0,
         failed_step: failed?.name ?? null,
         output: observations.map((item) => item.output ?? "").join("").slice(
             -16384,
