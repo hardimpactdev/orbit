@@ -10,7 +10,11 @@ use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
-return ['task_vm.destroy' => [
+return ['task_vm.resume' => [
+    'workflow' => 'operation-task-vm-resume',
+    'projection' => TaskVmResumeProjection::class,
+    'private_material' => ['pi_token' => 'task_vm.pi_token', 'upcloud_token' => 'upcloud.api'],
+], 'task_vm.destroy' => [
     'workflow' => 'operation-task-vm-destroy',
     'projection' => \App\Domain\TaskVms\TaskVmDestroyProjection::class,
     'private_material' => ['upcloud_token' => 'upcloud.api', 'model_key' => 'task_vm.model_key', 'model_router' => 'task_vm.model_router'],

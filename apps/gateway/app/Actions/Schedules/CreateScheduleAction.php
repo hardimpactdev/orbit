@@ -5,15 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Schedules;
 
 use App\Data\Schedules\AddScheduleData;
-use App\Data\Schedules\ScheduleData;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationAdmission;
-use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Schedules\ScheduleSpecificationValidator;
 use App\Domain\Schedules\ScheduleTarget;
 use App\Domain\Schedules\ScheduleTargetResolver;
@@ -32,71 +26,7 @@ final readonly class CreateScheduleAction
     public function __construct(
         private ScheduleSpecificationValidator $validator,
         private ScheduleTargetResolver $targets,
-        private ScheduleRuntimeManager $runtime,
-        private ProcessAdmissionLock $admissions,
-        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
-
-    /** @return array{schedule: Schedule, created: bool} */
-    public function execute(#[SensitiveParameter] AddScheduleData $data): array
-    {
-        $this->validator->validate($data);
-        $this->targets->resolve($data->targetType, $data->targetId);
-        $ownerIds = $data->targetType === ScheduleTargetType::Instance ? [$data->targetId] : [];
-
-        try {
-            return $this->admissions->run($ownerIds, fn (): array => $this->executeOwned($data));
-        } catch (ResourceOperationException $exception) {
-            if ($exception->errorCode !== 'process.operation_busy') {
-                throw $exception;
-            }
-
-            throw new ResourceOperationException(
-                ScheduleErrorCode::StateInvalid->value,
-                'Another target operation is active. Retry the Schedule request.',
-                409,
-                $exception,
-            );
-        }
-    }
-
-    /** @return array{schedule: Schedule, created: bool} */
-    private function executeOwned(#[SensitiveParameter] AddScheduleData $data): array
-    {
-        $admission = $this->reserveAdmission($data);
-
-        $schedule = $admission['schedule'];
-
-        try {
-            $this->runtime->install($schedule);
-        } catch (ScheduleOperationException $exception) {
-            $schedule->update([
-                'status' => LifecycleStatus::Failed,
-                'failed_step' => $exception->step,
-                'error_code' => $exception->errorCode,
-            ]);
-
-            throw $exception;
-        }
-
-        $schedule->update([
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
-        $result = $schedule->refresh();
-
-        if ($admission['created']) {
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-                RecordEventType::ScheduleCreated,
-                $result->id,
-                ScheduleData::fromModel($result)->toArray(),
-            );
-        }
-
-        return ['schedule' => $result, 'created' => $admission['created']];
-    }
 
     private function matches(Schedule $schedule, #[SensitiveParameter] AddScheduleData $data): bool
     {
@@ -113,16 +43,8 @@ final readonly class CreateScheduleAction
     {
         $this->validator->validate($data);
         $this->targets->resolve($data->targetType, $data->targetId);
-        $ownerIds = $data->targetType === ScheduleTargetType::Instance ? [$data->targetId] : [];
 
-        try {
-            return $this->admissions->run($ownerIds, fn (): Operation => DB::transaction(fn (): Operation => $this->admitOwned($data, $caller, $requestId)));
-        } catch (ResourceOperationException $exception) {
-            if ($exception->errorCode !== 'process.operation_busy') {
-                throw $exception;
-            }
-            throw new ResourceOperationException(ScheduleErrorCode::StateInvalid->value, 'Another target operation is active. Retry the Schedule request.', 409, $exception);
-        }
+        return DB::transaction(fn (): Operation => $this->admitOwned($data, $caller, $requestId));
     }
 
     /** @return array{schedule: Schedule, created: bool} */

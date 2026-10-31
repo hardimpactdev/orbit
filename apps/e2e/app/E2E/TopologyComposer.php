@@ -24,7 +24,7 @@ final readonly class TopologyComposer
     public function __construct(
         private IncusHost $host,
         private TopologyGuestPreparer $guests,
-        private TopologyNodePrograms $programs,
+        private TopologyNodeRecipe $recipes,
     ) {}
 
     /** @param (Closure(string, float): void)|null $progress hears each step and its seconds */
@@ -40,17 +40,11 @@ final readonly class TopologyComposer
             $this->guests->placeGatewayEnvironment($target);
             $this->guests->exposeOrbitCli($target);
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['prerequisites']);
-            $rendered = $this->programs->for($target->recipe->node('gateway'), $this->architectures(['gateway' => $gateway])['gateway']);
-            // The programs call the pinned agent, so it goes in first (ADR 0225).
+            $rendered = $this->recipes->for($target->recipe->node('gateway'), $this->architectures(['gateway' => $gateway])['gateway']);
+            // Deliver the frozen observer; native product workflows perform the effects.
             $agent = $this->host->exec($gateway, new GuestCommand(['install', '-D', '-m', '0755', '-o', 'root', '-g', 'root', '--', $rendered['agent']['path'], '/usr/local/bin/orbit-agent'], 60));
             if (! $agent->successful()) {
                 throw new RuntimeException('The pinned agent could not be installed on the Gateway: '.trim($agent->stderr));
-            }
-            foreach ($rendered['programs'] as $program) {
-                $result = $this->host->exec($gateway, GuestCommand::asOrbitUser($program['arguments'], self::STEP_SECONDS, $program['input']));
-                if (! $result->successful()) {
-                    throw new RuntimeException('Gateway convergence program ['.$program['name'].'] failed.');
-                }
             }
             $this->run('bootstrap.gateway', $gateway, 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
         });
