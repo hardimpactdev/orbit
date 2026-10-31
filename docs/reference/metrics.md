@@ -237,3 +237,13 @@ The Metrics owner compares complete before and after captures through `MetricsRo
 The comparison retains every selected Node, including Nodes 1 and 18. It includes Node identity, addresses, exporter selection, Caddy/FPM flags, hosts, Instance and pool plans, and public runtime files. Worker availability, executable delivery, Ingress publication capability and the reason for an unchanged selection do not change desired monitoring configuration. The native publisher still rebuilds managed Ingress Nodes when desired Caddy monitoring is false, so an old scrape site can be removed.
 
 Adding or removing a CI runner or database role while Shark retains app-dev leaves this projection unchanged. The role owner must capture both sides around its admitted intent; it cannot supply a reduced Node list or substitute its own equality rule. An unported owning root refuses the change when reconciliation is required.
+
+### Native commands and retained observations
+
+Exporter enable and disable return HTTP 202 with the `metrics.exporter_enable` or `metrics.exporter_disable` Operation. Credential reset returns its `metrics.credentials_reset` Operation. The CLI follows each root to its native terminal result. A password reset does not return the password; read credentials separately after success.
+
+Metrics enable and disable use the owning `node.role_add` and `node.role_remove` admission paths and return HTTP 202 with that Operation. They do not call PHP role executors. Until those Node roots are registered, they return `operation.kind_unavailable`.
+
+Swamp runs exporter packages, systemd, UFW, PHP monitoring, Docker and credential effects directly through the canonical Node command transport. Nodes 1 and 18 use that same placement contract through their SSH proxy workers. The agent is frozen at its published pin. Existing `metrics.node-exporter` observation with `action.operation=actual`, `metrics.runtime-health`, and `metrics.credentials` verification remain read-only Gateway observations.
+
+`MetricsFleetCapture::captureRetiring(Node)` supplies the complete desired fleet for an owning Node retirement. It disables the retiring member without removing other members. When that Node owns Metrics and no surviving Metrics assignment exists, it disables the whole desired fleet. The parent owns unreachable-target residue and publication cleanup; the capture proves no host effects. The native lower functions can be composed as steps in that parent's one root.

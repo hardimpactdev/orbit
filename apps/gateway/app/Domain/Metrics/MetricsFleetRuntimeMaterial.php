@@ -31,7 +31,7 @@ final readonly class MetricsFleetRuntimeMaterial implements OperationSecretSourc
 
     public function ownerId(Operation $operation): ?int
     {
-        return $operation->target_type === 'metrics' && $operation->kind === 'metrics.reconcile' && $operation->target_id === $operation->node_id ? $operation->node_id : null;
+        return $operation->target_type === 'metrics' && in_array($operation->kind, ['metrics.reconcile', 'metrics.exporter_enable', 'metrics.exporter_disable'], true) && $operation->target_id === $operation->node_id ? $operation->node_id : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue

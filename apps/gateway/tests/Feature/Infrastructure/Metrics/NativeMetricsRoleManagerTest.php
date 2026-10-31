@@ -2,83 +2,73 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsCadvisorLifecycle;
-use App\Domain\Metrics\MetricsExporterLifecycle;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsPublicationCleanup;
-use App\Domain\Metrics\MetricsPublicationManager;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
-use App\Domain\Metrics\ServiceMetricsLifecycle;
-use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
-use Tests\Support\FakeNodeRoleFirewallManager;
+use Tests\Support\FakeAgentCommandRunner;
+
+it('refuses removal without a Metrics assignment', function (): void {
+    expect(fn () => app(NativeMetricsRoleManager::class)->remove(true, false))
+        ->toThrow(RoleAssignmentException::class, 'Metrics is not assigned.');
+    $this->assertDatabaseCount('operations', 0);
+});
 
 it('fails closed before removal when Metrics assignments drift', function (): void {
-    foreach (['metrics-a', 'metrics-b'] as $name) {
-        $node = Node::query()->create([
-            'name' => $name,
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'architecture' => 'x86_64',
-            'public_ssh_host' => '192.0.2.'.(Node::query()->count() + 20),
-            'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
-        ]);
-        $node->roles()->create([
-            'role' => RoleName::Metrics,
-            'status' => LifecycleStatus::Active,
-        ]);
-    }
+    metricsRoleManagerNode('metrics-a', '10.44.0.3');
+    metricsRoleManagerNode('metrics-b', '10.44.0.4');
 
     expect(fn () => app(NativeMetricsRoleManager::class)->remove(true, false))
         ->toThrow(RoleAssignmentException::class, 'Metrics role assignment drift detected.');
+    $this->assertDatabaseCount('operations', 0);
+    expect(Node::query()->whereHas('roles')->count())->toBe(2);
 });
 
-it('reports the publication as cleaned when one active Gateway removes Metrics', function (): void {
-    $metrics = metricsRoleManagerNode('metrics', '10.44.0.3');
-    metricsRoleManagerNode('gateway', '10.44.0.1', RoleName::Gateway);
-    metricsRoleManagerStubBaselines();
+it('refuses a second Metrics assignment before recording intent', function (): void {
+    metricsRoleManagerNode('metrics', '10.44.0.3');
+    $target = metricsRoleManagerNode('target', '10.44.0.4', false);
 
-    $result = app(NativeMetricsRoleManager::class)->remove(true, false);
-
-    expect($result->nodeId)
-        ->toBe($metrics->id)
-        ->and($result->status)
-        ->toBe('removed')
-        ->and($result->publication)
-        ->toBe(MetricsPublicationCleanup::Cleaned)
-        ->and($result->toArray()['publication'])
-        ->toBe('cleaned');
+    expect(fn () => app(NativeMetricsRoleManager::class)->enable($target->id))
+        ->toThrow(RoleAssignmentException::class, 'The metrics role is already assigned');
+    $this->assertDatabaseCount('operations', 0);
+    expect($target->roles()->count())->toBe(0);
 });
 
-it('reports the publication as un-cleaned when no single active Gateway remains', function (
-    int $gatewayCount,
-): void {
-    $metrics = metricsRoleManagerNode('metrics', '10.44.0.3');
+it('rejects an unsupported platform before recording role intent', function (): void {
+    $node = metricsRoleManagerNode('mac', '10.44.0.3', false);
+    $node->update(['platform' => 'macos']);
 
-    for ($index = 1; $index <= $gatewayCount; $index++) {
-        metricsRoleManagerNode("gateway-{$index}", "10.44.0.{$index}", RoleName::Gateway);
-    }
-    metricsRoleManagerStubBaselines();
+    expect(fn () => app(NativeMetricsRoleManager::class)->enable($node->id))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('metrics.platform_unsupported'));
+    $this->assertDatabaseCount('operations', 0);
+    expect($node->roles()->count())->toBe(0);
+});
 
-    $result = app(NativeMetricsRoleManager::class)->remove(true, false);
+it('refuses an unavailable native role kind without legacy effects or intent changes', function (bool $remove): void {
+    $node = metricsRoleManagerNode('metrics', '10.44.0.3', $remove);
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, []);
+    app()->instance(DirectOperation::class, $direct);
+    $before = $node->roles()->get()->toArray();
 
-    expect($result->nodeId)
-        ->toBe($metrics->id)
-        ->and($result->status)
-        ->toBe('removed')
-        ->and($result->publication)
-        ->toBe(MetricsPublicationCleanup::Uncleaned)
-        ->and($result->toArray()['publication'])
-        ->toBe('uncleaned');
-})->with([0, 2]);
+    expect(fn () => $remove
+        ? app(NativeMetricsRoleManager::class)->remove(true, true)
+        : app(NativeMetricsRoleManager::class)->enable($node->id))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('operation.kind_unavailable'));
 
-function metricsRoleManagerNode(string $name, string $address, RoleName $role = RoleName::Metrics): Node
+    $this->assertDatabaseCount('operations', 0);
+    expect($node->roles()->get()->toArray())->toBe($before);
+    expect($agents->calls)->toBe([]);
+})->with(['enable' => false, 'remove' => true]);
+
+function metricsRoleManagerNode(string $name, string $address, bool $assigned = true): Node
 {
     $node = Node::query()->create([
         'name' => $name,
@@ -89,75 +79,9 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
         'wireguard_ip' => $address,
         'ssh_host_fingerprint' => 'SHA256:managed',
     ]);
-    $node->roles()->create([
-        'role' => $role,
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    return $node;
-}
-
-it('omits the publication key from mutations that do not touch it', function (): void {
-    metricsRoleManagerNode('gateway', '10.44.0.1', RoleName::Gateway);
-    $node = metricsRoleManagerNode('worker', '10.44.0.4', RoleName::AppProd);
-    metricsRoleManagerStubBaselines();
-
-    $result = app(NativeMetricsRoleManager::class)->enableExporter($node->id);
-
-    expect($result->publication)
-        ->toBeNull()
-        ->and($result->toArray())
-        ->not->toHaveKey('publication');
-});
-
-it('refuses ineligible exporter enablement before preference or fleet work', function (): void {
-    $node = metricsRoleManagerNode('unmanaged', '10.44.0.5', RoleName::AppProd);
-    $node->roles()->delete();
-    $node->update(['ssh_host_fingerprint' => null]);
-    $fleet = Mockery::mock(MetricsFleetReconciler::class);
-    $fleet->shouldNotReceive('reconcile');
-    app()->instance(MetricsFleetReconciler::class, $fleet);
-
-    try {
-        app(NativeMetricsRoleManager::class)->enableExporter($node->id);
-        $this->fail('Expected exporter enablement to be refused.');
-    } catch (ResourceOperationException $exception) {
-        expect($exception->errorCode)
-            ->toBe('metrics.exporter_node_ineligible')
-            ->and($exception->status)
-            ->toBe(409);
+    if ($assigned) {
+        $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     }
 
-    expect(app(ExporterPreferenceRepository::class)->get($node->id))->toBeNull();
-});
-
-/**
- * Stubs the Metrics baseline's remote collaborators, not the baseline.
- *
- * The disable response reports what the baseline recorded, so the real
- * MetricsRoleBaseline has to run for these tests to prove anything.
- */
-function metricsRoleManagerStubBaselines(): void
-{
-    $services = Mockery::mock(ServiceMetricsLifecycle::class);
-    $services->shouldReceive('remove')->zeroOrMoreTimes();
-    app()->instance(ServiceMetricsLifecycle::class, $services);
-    app()->instance(
-        MetricsRuntimeLifecycle::class,
-        Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
-    );
-    app()->instance(
-        MetricsExporterLifecycle::class,
-        Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
-    );
-    app()->instance(
-        MetricsCadvisorLifecycle::class,
-        Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
-    );
-    app()->instance(
-        MetricsPublicationManager::class,
-        Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
-    );
-    app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing());
-    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    return $node;
 }

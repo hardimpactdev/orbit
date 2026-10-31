@@ -18,9 +18,10 @@ final readonly class AgentMetricsHostObserver implements MetricsHostObserver
     public function actual(Node $node, Node $metricsNode): string
     {
         try {
-            $data = $this->agents->run($node, 'metrics.exporter-state', [
+            $data = $this->agents->run($node, 'metrics.node-exporter', [
                 'address' => $node->wireguard_ip,
                 'metrics_address' => $metricsNode->wireguard_ip,
+                'action' => ['operation' => 'actual'],
             ], $this->deadline->cap(60.0));
 
             return in_array($data['actual'] ?? null, ['active', 'inactive', 'drift', 'unknown'], true)

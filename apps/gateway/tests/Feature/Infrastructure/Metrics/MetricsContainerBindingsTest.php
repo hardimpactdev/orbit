@@ -2,28 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialRuntime;
-use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
-use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsFirewallExpectationProvider;
+use App\Domain\Metrics\AdmitMetricsFleetAction;
+use App\Domain\Metrics\MetricsHostObserver;
 use App\Domain\Metrics\MetricsRoleManager;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
-use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 
-it('resolves every Metrics production boundary and role baseline', function (): void {
+it('resolves retained Metrics state observation and native admission boundaries', function (): void {
     expect([
         app(MetricsCredentialManager::class),
         app(MetricsCredentialRuntime::class),
-        app(MetricsRuntimeLifecycle::class),
-        app(MetricsExporterLifecycle::class),
         app(MetricsExporterProjection::class),
-        app(MetricsCadvisorLifecycle::class),
-        app(MetricsPublicationManager::class),
+        app(MetricsFirewallExpectationProvider::class),
+        app(MetricsHostObserver::class),
+        app(AdmitMetricsFleetAction::class),
         app(MetricsRoleManager::class),
         app(MetricsStatusReader::class),
-        app(MetricsRoleBaseline::class),
     ])->each->toBeObject();
 });

@@ -24,6 +24,4 @@ interface MetricsCredentialManager
      * separate verification round trip first.
      */
     public function storedCredentials(): MetricsCredentialsData;
-
-    public function reset(): MetricsCredentialsData;
 }

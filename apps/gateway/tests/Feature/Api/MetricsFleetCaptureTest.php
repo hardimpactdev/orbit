@@ -129,3 +129,36 @@ it('captures provisioning and removing Metrics assignments for one native role r
     MetricsFleetCapture::assertDigest($removing);
     expect(Operation::query()->count())->toBe(0);
 });
+
+it('captures complete retirement intent without dropping VPN or USExit or changing role state', function (): void {
+    $plan = app(MetricsFleetCapture::class)->captureRetiring($this->nodes[13]);
+    expect(array_column($plan['fleet'], 'node_id'))->toBe([1, 9, 13, 18]);
+    $members = array_column($plan['fleet'], null, 'node_id');
+    expect($members[13]['selected'])->toBeFalse()->and($members[13]['fpm'])->toBeFalse()
+        ->and($members[1]['selected'])->toBeTrue()->and($members[18]['selected'])->toBeTrue()
+        ->and($this->nodes[13]->roles()->where('role', 'app-dev')->value('status')->value)->toBe('active')
+        ->and(Operation::query()->count())->toBe(0);
+    expect($plan['runtime_files']['/etc/orbit/metrics/prometheus.yml'])->not->toContain('10.44.0.13:9100');
+    MetricsFleetCapture::assertDigest($plan);
+});
+
+it('withdraws the entire desired fleet when the retiring Node owns Metrics', function (): void {
+    $plan = app(MetricsFleetCapture::class)->captureRetiring($this->nodes[9]);
+    expect(array_column($plan['fleet'], 'node_id'))->toBe([1, 9, 13, 18]);
+    expect(array_column($plan['fleet'], 'selected'))->each->toBeFalse();
+    MetricsFleetCapture::assertDigest($plan);
+});
+
+it('captures surviving cleanup for an offline Metrics owner without claiming target effects', function (): void {
+    $this->nodes[9]->update(['status' => 'failed']);
+    $plan = app(MetricsFleetCapture::class)->captureRetiring($this->nodes[9]);
+    expect(array_column($plan['fleet'], 'node_id'))->toBe([1, 13, 18]);
+    expect(array_column($plan['fleet'], 'selected'))->each->toBeFalse();
+    expect(Operation::query()->count())->toBe(0);
+    MetricsFleetCapture::assertDigest($plan);
+});
+
+it('reports no Metrics contribution when retirement has no Metrics assignment', function (): void {
+    $this->nodes[9]->roles()->delete();
+    expect(app(MetricsFleetCapture::class)->captureRetiring($this->nodes[13]))->toBeNull();
+});

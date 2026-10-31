@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Metrics;
 
+use App\Commands\Integrations\FollowsIntegrationOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class EnableMetricsCommand extends MetricsCommand
 {
+    use FollowsIntegrationOperations;
+
     #[\Override]
     protected $signature = 'metrics:enable {node? : Node ID or name} {--json : Return machine-readable JSON}';
 
@@ -40,14 +42,7 @@ final class EnableMetricsCommand extends MetricsCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress(
-            $connector,
-            new EnableMetricsRequest($nodeId),
-            MetricsMutationResponse::class,
-            ['Enable Metrics', 'Enabling Metrics', 'Enabled Metrics'],
-        );
-
-        return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+        return $this->integrationOperation($connector, $repository, new EnableMetricsRequest($nodeId), 'Enable Metrics');
     }
 
     private function promptForNode(GatewayConnector $connector): ?int

@@ -17,9 +17,6 @@ it('sends credential input through the typed runner and exposes only its result'
     $node = new Node(['name' => 'metrics', 'wireguard_ip' => '10.44.0.3']);
     expect($commands->verify($node, 'active-secret'))->toBeFalse();
     expect($agents->calls[0]['input'])->toBe(['address' => '10.44.0.3', 'action' => ['operation' => 'verify', 'password' => 'active-secret']]);
-    $agents->answer('metrics.credentials', ['changed' => true]);
-    $commands->apply($node, 'active-secret', 'pending-secret');
-    expect($agents->calls[1]['input']['action'])->toBe(['operation' => 'apply', 'active_password' => 'active-secret', 'pending_password' => 'pending-secret']);
 });
 
 it('refuses malformed runtime results', function (): void {
@@ -29,7 +26,7 @@ it('refuses malformed runtime results', function (): void {
 });
 
 it('keeps Metrics container execution and transaction decisions in the agent', function (): void {
-    foreach (['MetricsRuntimeCommands', 'NativeMetricsContainerRuntime'] as $name) {
+    foreach (['MetricsRuntimeCommands'] as $name) {
         $source = file_get_contents(app_path('Infrastructure/Metrics/'.$name.'.php'));
         expect($source)->not->toContain('SshExecutor', 'RemoteCommand', 'ProcessRunner', 'docker', 'snapshotConfiguration', 'restoreConfiguration', '<<<');
     }

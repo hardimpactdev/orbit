@@ -108,7 +108,6 @@ it('records and starts one native root without executing or awaiting the fleet i
     expect($socket->sent)->toHaveCount(1);
 });
 
-
 it('serves only fresh admitted Caddy public input to a foreign Node and keeps mutations private', function (): void {
     $gateway = $this->markAsGateway(Node::query()->forceCreate(['id' => 14, 'name' => 'gateway', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14']));
     $participant = Node::query()->forceCreate(['id' => 13, 'name' => 'shark', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.13', 'wireguard_ip' => '10.44.0.13']);
@@ -128,8 +127,9 @@ it('serves only fresh admitted Caddy public input to a foreign Node and keeps mu
     $this->getJson($path.'?run_id='.$this->run)->assertForbidden();
 });
 
-it('refuses a concurrent credential reset before admitting a fleet run', function (): void {
+it('records a terminal native admission failure when submission is unconfigured', function (): void {
     $this->operation->update(['kind' => 'metrics.credentials_reset', 'status' => OperationStatus::Running]);
-    expect(fn () => app(AdmitMetricsFleetAction::class)->execute())->toThrow(ResourceOperationException::class, 'A Metrics fleet change has not ended.');
-    expect(Operation::query()->count())->toBe(1);
+    expect(fn () => app(AdmitMetricsFleetAction::class)->execute())->toThrow(ResourceOperationException::class, 'The native workflow start is not configured.');
+    expect(Operation::query()->count())->toBe(2);
+    expect(Operation::query()->latest('id')->firstOrFail()->status)->toBe(OperationStatus::Failed);
 });

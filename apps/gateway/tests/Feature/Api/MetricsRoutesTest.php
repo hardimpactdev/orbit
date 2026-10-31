@@ -3,22 +3,35 @@
 declare(strict_types=1);
 
 use App\Data\Metrics\MetricsCredentialsData;
-use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
+use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\MetricsController;
 use App\Models\Activity;
 use App\Models\Node;
+use App\Models\Operation;
 use Illuminate\Routing\Route;
+
+beforeEach(function (): void {
+    $definitions = app(DirectOperation::class)->definitions();
+    foreach (['node.role_add', 'node.role_remove'] as $kind) {
+        $definitions[$kind] = ['workflow' => str_replace('.', '-', $kind), 'projection' => NodeConvergeProjection::class];
+    }
+    $reflection = new ReflectionClass(DirectOperation::class);
+    $direct = $reflection->newInstanceWithoutConstructor();
+    $reflection->getProperty('definitions')->setValue($direct, $definitions);
+    app()->instance(DirectOperation::class, $direct);
+});
 
 it('exposes the eight focused metrics routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
@@ -232,31 +245,36 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($gateway);
+    $enable = metricsRouteRoleOperation($target, 'node.role_add');
+    $remove = metricsRouteRoleOperation($target, 'node.role_remove');
     $manager = Mockery::mock(MetricsRoleManager::class);
     $manager
         ->shouldReceive('enable')
         ->once()
         ->with($target->id)
-        ->andReturn(new MetricsMutationData($target->id, 'active'));
+        ->andReturn($enable);
     $manager
         ->shouldReceive('remove')
         ->once()
         ->with(true, true)
-        ->andReturn(new MetricsMutationData($target->id, 'removed', MetricsPublicationCleanup::Uncleaned));
+        ->andReturn($remove);
     app()->instance(MetricsRoleManager::class, $manager);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/metrics', ['node_id' => $target->id])
-        ->assertCreated()
-        ->assertJsonPath('data.status', 'active');
+        ->assertAccepted()
+        ->assertJsonPath('data.id', $enable->id)
+        ->assertJsonPath('data.kind', 'node.role_add')
+        ->assertJsonPath('data.status', 'queued');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
-        ->assertOk()
-        ->assertJsonPath('data.status', 'removed')
-        ->assertJsonPath('data.publication', 'uncleaned');
+        ->assertAccepted()
+        ->assertJsonPath('data.id', $remove->id)
+        ->assertJsonPath('data.kind', 'node.role_remove')
+        ->assertJsonPath('data.status', 'queued');
 
     expect(Activity::query()->orderBy('id')->pluck('command')->all())
         ->toBe(['metrics:enable', 'metrics:disable']);
@@ -296,7 +314,7 @@ it('marks credentials responses as non-cacheable', function (string $method, str
     $this->markAsGateway($gateway);
     $manager = Mockery::mock(MetricsCredentialManager::class);
     $manager
-        ->shouldReceive($method === 'GET' ? 'credentials' : 'reset')
+        ->shouldReceive('credentials')
         ->once()
         ->andReturn(new MetricsCredentialsData('https://metrics', 'user', 'sentinel'));
     app()->instance(MetricsCredentialManager::class, $manager);
@@ -312,7 +330,6 @@ it('marks credentials responses as non-cacheable', function (string $method, str
         ->assertJsonPath('data.password', 'sentinel');
 })->with([
     'show' => ['GET', '/api/v1/metrics/credentials'],
-    'reset' => ['POST', '/api/v1/metrics/credentials/reset'],
 ]);
 
 it('refuses to disable the exporter on the Metrics node with a stable error code', function (): void {
@@ -396,3 +413,10 @@ it('refuses a second Metrics claim through the generic role route with a stable 
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'validation.failed');
 });
+
+function metricsRouteRoleOperation(Node $node, string $kind): Operation
+{
+    return Operation::query()->create(['kind' => $kind, 'target_type' => 'node', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+        'input' => ['role' => 'metrics'], 'state' => []]);
+}
