@@ -142,6 +142,7 @@ class ShapeGate(unittest.TestCase):
             (swamp / "workflows").mkdir()
             source = swamp / "extensions/behaviors/old.ts"
             source.write_text("export const behavior={type:'@example/old'};\nawait delay(10);\n")
+            (source.parent / "gateway.ts").write_text("await fetch('https://gateway.orbit/api/v1/nodes');\nawait fetch('https://gateway.orbit/api/v1/operations');\n")
             (swamp / "config/agent-command-kinds.json").write_text('{"agent.status":"observer","cli.install":"action"}')
             (swamp / "workflows/clean.yaml").write_text("name: clean\njobs:\n- steps:\n  - task: {type: behavior, behaviorType: command/shell, inputs: {run: 'true'}}\n")
             git("add", ".")
@@ -152,6 +153,9 @@ class ShapeGate(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stderr)
             metrics = json.loads(p.stdout.splitlines()[0])
             self.assertEqual(metrics["workflows"]["clean"], 1)
+            summaries = [line for line in p.stdout.splitlines() if line.startswith("SHAPE-GATE ")]
+            self.assertEqual(summaries, ["SHAPE-GATE workflows_passing=1/1 grandfathered=2 embedded_lines=0 custom_loops=1 gateway_client_files=1"])
+            self.assertEqual(metrics["gateway_client_files"], 1)
             git("add", ".")
             git("commit", "--quiet", "-m", "record explicit baseline")
             self.assertEqual(gate().returncode, 0)
