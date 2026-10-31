@@ -66,6 +66,7 @@ class ShapeGate(unittest.TestCase):
         self.assertEqual(scan(source), [])
         self.assertEqual(scan(source.replace('fcntl.LOCK_EX)', 'fcntl.LOCK_EX|fcntl.LOCK_NB)')), [])
         self.assertEqual(scan(source.replace('orbit-firewall', 'orbit-self-update')), [])
+        self.assertEqual(scan(source.replace('orbit-firewall', 'orbit-wireguard-peer')), [])
         self.assertEqual(scan("from pathlib import Path\nimport fcntl\nROOT=Path('/run/orbit')\nlock=ROOT/'project-documents'/'execution.lock'\nwith lock.open('r+b') as held:\n    fcntl.flock(held,fcntl.LOCK_EX|fcntl.LOCK_NB)\n"), [])
         self.assertEqual(scan("import os,fcntl\nlock='/run/lock/orbit-self-update.lock'\nfd=os.open(lock,os.O_RDWR)\nwith os.fdopen(fd,'r+b') as held:\n    fcntl.flock(held,fcntl.LOCK_EX)\n"), [])
         for variant in [

@@ -47,8 +47,8 @@ managers. Later assignments cannot replace the command evaluated at an earlier
 subprocess call.
 
 Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
-only proven file descriptors for the canonical UFW, observer self-update and
-documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
+only proven file descriptors for the canonical UFW, observer self-update,
+WireGuard peer config and documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
 and with bindings, and accepts exclusive acquisition (optionally nonblocking)
 or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
 loops remain findings. Naming a tool in a comment grants no exception. Python
