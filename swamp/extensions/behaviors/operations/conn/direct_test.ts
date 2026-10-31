@@ -178,7 +178,7 @@ Deno.test("Conn stored credential recovers a lost projection without issuing aga
   assertEquals(f.effects.length, 1);
 });
 for (
-  const kind of ["conn.pairing_revoke", "conn.gateway_sessions_revoke"] as const
+  const kind of ["conn.gateway_sessions_revoke"] as const
 ) {
   Deno.test(`${kind} preserves current admin and unrelated sessions`, async () => {
     const f = fixture();
@@ -195,9 +195,7 @@ for (
     );
     assertEquals(
       f.effects.map((e) => (e as { body: unknown }).body),
-      kind === "conn.pairing_revoke"
-        ? [{ sessionId: "owned" }, { id: "link-1" }]
-        : [{ sessionId: "owned" }],
+      [{ sessionId: "owned" }],
     );
   });
 }
@@ -205,7 +203,7 @@ Deno.test("Conn malformed inspection fails without a revoke or leaked diagnostic
   const f = fixture();
   assertEquals(
     await executeConn(
-      { ...identity, kind: "conn.pairing_revoke" },
+      { ...identity, kind: "conn.gateway_sessions_revoke" },
       f.ctx,
       f.gateway,
       () => Promise.resolve({ credential: "pairing-secret-sentinel" }),
@@ -229,7 +227,7 @@ Deno.test("Conn changed session owner refuses before revoke", async () => {
   };
   assertEquals(
     await executeConn(
-      { ...identity, kind: "conn.pairing_revoke" },
+      { ...identity, kind: "conn.gateway_sessions_revoke" },
       f.ctx,
       f.gateway,
       t3,
@@ -290,7 +288,7 @@ Deno.test("Conn admin-session rotation mid-revoke stops before an effect", async
   };
   assertEquals(
     await executeConn(
-      { ...identity, kind: "conn.pairing_revoke" },
+      { ...identity, kind: "conn.gateway_sessions_revoke" },
       f.ctx,
       f.gateway,
       t3,
@@ -307,7 +305,7 @@ Deno.test("Conn unadmitted link is refused before link revocation", async () => 
   f.input.links = [];
   assertEquals(
     await executeConn(
-      { ...identity, kind: "conn.pairing_revoke" },
+      { ...identity, kind: "conn.gateway_sessions_revoke" },
       f.ctx,
       f.gateway,
       f.t3,
@@ -331,7 +329,7 @@ Deno.test("Conn admin rotation during the final inspection cannot revoke the new
   };
   assertEquals(
     await executeConn(
-      { ...identity, kind: "conn.pairing_revoke" },
+      { ...identity, kind: "conn.gateway_sessions_revoke" },
       f.ctx,
       f.gateway,
       t3,

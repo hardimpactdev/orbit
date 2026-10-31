@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Orbit\Extensions\Conn\Actions\RegisterConnEnvironmentAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -21,9 +22,12 @@ final readonly class ConnDirectResult implements DirectOperationResultHook
 {
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'conn.pairing_revoke') {
+            return Arr::only($operation->input, ['intent', 'execution_secrets']);
+        }
         $ids = ValidatedData::integerList($operation->input['pairing_ids'] ?? []);
         $pairings = ConnPairing::query()->whereIn('id', $ids)->where('conn_environment_id', $operation->input['conn_environment_id'])
-            ->where('node_id', $operation->kind === 'conn.pairing_revoke' ? $operation->target_id : $operation->input['caller_node_id'] ?? null)->get();
+            ->where('node_id', $operation->input['caller_node_id'] ?? null)->get();
         if ($pairings->count() !== count($ids)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The admitted pairing owner changed.', 422);
         }

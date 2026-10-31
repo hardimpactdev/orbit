@@ -1,0 +1,3 @@
+additionalFiles:
+  - scripts/list_sessions.py
+  - scripts/revoke.py
