@@ -41,8 +41,8 @@ print('public file action accepted')
                         'hostKeys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}}]}
         workflow = {'id': str(uuid.uuid4()), 'name': 'worker-assets-fixture', 'jobs': [{'name': 'bootstrap', 'steps': [
             {'name': 'assets', 'task': {'type': 'behavior', 'behaviorType': '@nckrtl/node-worker-assets',
-                                      'behaviorName': 'worker-assets-212', 'methodName': 'read',
-                                      'inputs': {'node_id': 212, 'user': 'orbit'}}},
+                                      'behaviorName': 'worker-assets-209', 'methodName': 'read',
+                                      'inputs': {'node_id': 209, 'user': 'orbit'}}},
             {'name': 'publish-checker', 'dependsOn': [{'step': 'assets', 'condition': {'type': 'succeeded'}}],
              'task': {'type': 'behavior', 'behaviorType': '@swamp/ssh', 'behaviorName': 'worker-assets-fixture',
                       'methodName': 'exec', 'globalArgs': globals_,
@@ -60,7 +60,7 @@ print('public file action accepted')
         self.assertEqual(captured.read_text(), output['checker'])
         self.assertIn('MINIMUM_MEMORY_BYTES = 674311096', output['checker'])
         self.assertIn('ExecStartPre=+/usr/local/libexec/orbit-node-worker-check', output['unit'])
-        self.assertNotIn('proxy-ssh-identity', output['unit'])
+        self.assertIn('LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519', output['unit'])
         self.assertTrue(all(s['status'] == 'succeeded' for s in run['jobs'][0]['steps']))
 
 

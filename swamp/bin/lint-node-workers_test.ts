@@ -282,6 +282,27 @@ Deno.test("official file and directory apply methods need no local adapter", asy
   }
 });
 
+Deno.test("official systemd apply and restart methods need no local adapter", async () => {
+  for (const methodName of ["apply", "restart"]) {
+    const result = await check({
+      type: "behavior",
+      behaviorType: "@swamp/cfgmgmt/systemd",
+      behaviorName: "publication-service-fixture",
+      methodName,
+      inputs: {},
+    });
+    assertEquals(result.success, true, result.diagnostic);
+  }
+  const foreign = await check({
+    type: "behavior",
+    behaviorType: "@swamp/cfgmgmt/not-an-official-model",
+    behaviorName: "foreign-fixture",
+    methodName: "apply",
+    inputs: {},
+  });
+  assertEquals(foreign.success, false);
+});
+
 Deno.test("the reviewed HTTP source extraction retains its exact raw adapter path", async () => {
   const root = await Deno.makeTempDir();
   try {

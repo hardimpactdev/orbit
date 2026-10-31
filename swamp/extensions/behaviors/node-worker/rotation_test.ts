@@ -4,6 +4,7 @@ import {
   convergeWorker,
   due,
   type Native,
+  native,
   plan,
 } from "./rotation.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
@@ -153,4 +154,51 @@ Deno.test("old week-long access tokens and invalid timestamps are due for bounde
   };
   assertEquals(due(token, now), true);
   assertEquals(due({ ...token, createdAt: "invalid" }, now), true);
+});
+
+Deno.test("native token reads use the monorepo root for both cwd and repo-dir", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(Deno, "Command")!;
+  const calls: Deno.CommandOptions[] = [];
+  const output = {
+    success: true,
+    code: 0,
+    signal: null,
+    stdout: new TextEncoder().encode("[]"),
+    stderr: new Uint8Array(),
+  };
+  class FixtureCommand {
+    constructor(
+      readonly command: string | URL,
+      readonly options?: Deno.CommandOptions,
+    ) {}
+    outputSync() {
+      assertEquals(this.command, "/usr/bin/timeout");
+      return output;
+    }
+    output() {
+      assertEquals(this.command, "/home/orbit/.local/bin/swamp");
+      calls.push(this.options!);
+      return Promise.resolve(output);
+    }
+  }
+  Object.defineProperty(Deno, "Command", {
+    value: FixtureCommand,
+    configurable: true,
+  });
+  try {
+    assertEquals(await native(["worker", "token", "list"]), []);
+    assertEquals(calls.length, 1);
+    const repository = "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp";
+    assertEquals(calls[0].cwd, repository);
+    assertEquals(calls[0].args, [
+      "worker",
+      "token",
+      "list",
+      "--repo-dir",
+      repository,
+      "--json",
+    ]);
+  } finally {
+    Object.defineProperty(Deno, "Command", descriptor);
+  }
 });

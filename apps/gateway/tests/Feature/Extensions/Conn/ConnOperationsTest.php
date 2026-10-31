@@ -27,7 +27,13 @@ beforeEach(function (): void {
     $this->environment = ConnEnvironment::query()->create(['environment_id' => 'conn-h-proof', 'label' => 'dev', 'node_id' => $this->services->id,
         'url' => 'http://dev.test', 'admin_session' => 'fixture-admin-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $socket->reply = static function (array $request): array {
+        if ($request['type'] === 'vault.put') {
+            return [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        return [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    };
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);

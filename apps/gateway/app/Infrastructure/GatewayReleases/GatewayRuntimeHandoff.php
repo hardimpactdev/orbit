@@ -254,8 +254,15 @@ final readonly class GatewayRuntimeHandoff
             $deadline = ($this->clock)() + 600 * 1_000_000_000;
             while (($remaining = ($deadline - ($this->clock)()) / 1_000_000_000) > 0) {
                 if (($this->swampHealthy)(min(5, $remaining))) {
-                    // A second refusal with healthy serve is a real failure, not another wait cycle.
-                    return $start();
+                    try {
+                        return $start();
+                    } catch (ResourceOperationException $retry) {
+                        // No frame was sent when connect is unavailable; keep the original deadline.
+                        if ($retry->errorCode !== 'swamp.start_unavailable') {
+                            throw $retry;
+                        }
+                        $exception = $retry;
+                    }
                 }
                 $remaining = ($deadline - ($this->clock)()) / 1_000_000_000;
                 if ($remaining > 0) {

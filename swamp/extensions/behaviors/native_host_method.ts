@@ -5,7 +5,8 @@ import {
 import { z } from "npm:zod@4";
 import { PackageTargetSchema } from "./_lib/package_target_schema.ts";
 
-export const SWAMP_REPOSITORY = "/home/orbit/apps/orbit-swamp/default";
+export const SWAMP_REPOSITORY =
+  "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp";
 const HOME = "/home/orbit";
 const targets = {
   project_scan: ["@nckrtl/dependency-scanner", "scan", 300],

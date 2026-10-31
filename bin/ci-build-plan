@@ -17,6 +17,8 @@ def select(paths, main=False):
     for path in paths:
         if path.startswith('swamp/'):
             jobs['swamp'] = True
+            if path == 'swamp/config/gateway-workflow-grants.json':
+                jobs['api-reference'] = True
             continue
         if '/' not in path and path.endswith(('.md', '.mdx')):
             jobs['docs'] = True

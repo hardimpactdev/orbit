@@ -34,6 +34,24 @@ separately in the JSON report. This is not a general permission
 to transfer allowances on rename. The support lower must reach the comparison
 base before the extraction, so the frozen checker enforces the same contract.
 
+## Gateway workflow grant intent
+
+The required Gateway boot check compares the loaded `DirectOperation` registry,
+including extension contributions, with `config/gateway-workflow-grants.json`.
+Each declared workflow needs one exact entry for `user:orbit-gateway` with both
+`run` and `read`. Missing actions or workflows fail CI. Wildcards, other
+principals or actions, duplicate entries and retired declaration entries fail.
+Update the declaration and expected policy together. The check also runs when
+only this manifest changes; other Swamp-only changes keep their existing scope.
+
+This manifest is intended source policy, seeded from owner-approved public grant
+metadata and reconciled against current declarations. It is not evidence that a
+live grant is installed. In particular, historical run-only grants do not prove
+read access. Before Gateway uptake, the live grant owner must verify the exact
+registered workflow and the installed Gateway principal with native
+`access.can-i`. CI reads source files only; it never applies grants, contacts
+Swamp access APIs or handles Swamp credentials.
+
 ## Review checklist
 
 - Before adding a mechanism, check [Swamp core](https://swamp-club.com/manual) and the [official extensions](https://github.com/swamp-club/swamp-extensions), including ssh, vault, datastore, git, container-image, cfgmgmt and workflows. Use the provided feature and its defaults when it fits. A PR that adds a mechanism must name what it checked and explain why it does not fit.
@@ -87,7 +105,11 @@ recognition. Existing command-env checks remain in place.
 Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression at
 `task.inputs.stdin`. This applies only to workflow `behavior` tasks with
 `behaviorType: '@swamp/ssh'` or `model_method` tasks with
-`modelType: '@swamp/ssh'`, and literal `methodName: exec`. The existing closed
+`modelType: '@swamp/ssh'`, and literal `methodName: exec`. The effective placement
+must select Node 209 with `target: orbit-node-209` or labels `{node: '209'}`.
+Placement fields inherit independently through workflow, job and step, as core
+defines them; a step override or an empty labels map takes precedence. The native
+scheduler selects by target before labels. The existing closed
 `execution_secrets` descriptor schema still applies. The official
 [`ExecArgsSchema`](https://github.com/swamp-club/swamp-extensions/blob/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh/extensions/models/_lib/schemas.ts)
 provides native stdin; `runExec` in `_lib/operations.ts` passes it to the process
@@ -96,6 +118,12 @@ channel is needed. Public stdin remains valid. Other methods, extension types,
 fields, nested stdin values, concatenation and argv/script interpolation remain
 outside this recognition. Node 209 hosts the worker; official SSH reaches the
 target Node with the approved identity, pinned host keys and sudo when needed.
+Whole vault values in official `exec`/`script` `task.inputs.env` use this same
+209 placement scope; existing core command-env checks stay in place. This does
+not configure SSH server env forwarding. The pinned official `script` method
+uses stdin for its public script body and has no separate stdin argument. Use
+`exec` to run a shipped script when it needs a vault value on stdin; private
+values do not belong in argv or the script body.
 
 Each embedded operational program has a 20-line threshold before grandfathering.
 Independent short strings are not combined to cross it. Script metrics count each
@@ -107,9 +135,11 @@ polling, retries and lock calls are counted separately.
 
 The approved Route private DNS grace is the sole sleep exception. It matches only
 `workflows/workflow-route-dns-grace.yaml`, job `grace`, step
-`wait-private-dns-ttl`, target `orbit-node-209`, labels `{node: '209'}`, and the
-exact `command/shell` behavior `route-dns-grace.execute` with the sole input
-`run: /usr/bin/sleep 31`. The workflow contains one job and one step. This covers
+`wait-private-dns-ttl`, placed with step labels `{node: '209'}` or target
+`orbit-node-209` (or both with matching values), and the exact `command/shell`
+behavior `route-dns-grace.execute` with the sole input
+`run: /usr/bin/sleep 31`. Inherited targets still apply; a foreign target cannot
+qualify through 209 labels. The workflow contains one job and one step. This covers
 the existing 30-second private DNS TTL after replacement publication and before
 old Caddy sites, certificate scopes and LAN allowances retire, including restore.
 Core and the official workflows extension provide no native delay. The binding
@@ -280,3 +310,5 @@ Python command provenance uses lexical scope and statement order. Global or
 nonlocal declarations, walrus assignments and deleted bindings prevent a claim
 that a captured command is fixed. Unresolved executable control remains unknown
 and cannot gain a clean classification.
+
+The Node-worker lint recognizes the exact official `@swamp/ssh`, `@swamp/cfgmgmt/file`, `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/systemd` types. The systemd model provides native `apply` and `restart` used by publication workflows. This is not an extension-namespace wildcard; other unknown types still fail.

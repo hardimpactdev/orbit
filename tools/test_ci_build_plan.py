@@ -11,6 +11,12 @@ loader.exec_module(plan)
 
 
 class BuildPlanTest(unittest.TestCase):
+    def test_gateway_grant_manifest_runs_the_required_gateway_boot_check(self):
+        paths = ['swamp/config/gateway-workflow-grants.json']
+        for main in (False, True):
+            self.assertEqual({'swamp', 'api-reference'}, self.selected(paths, main))
+            self.assertFalse(plan.select(paths, main)['gateway_release'])
+
     def selected(self, paths, main=False):
         return {k for k, v in plan.select(paths, main)['jobs'].items() if v}
 

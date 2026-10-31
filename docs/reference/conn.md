@@ -210,7 +210,13 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ## Session cleanup
 
-Swamp reads and revokes each admitted device session and pairing link directly. Before each effect it checks that the admin session and admitted link are current, then rechecks session ownership. It preserves the current admin and other client labels. The Gateway projects successful completion onto only the admitted pairings. Gateway session cleanup runs the same direct behavior for its fixed Gateway client label.
+Pairing revocation captures its exact pairing IDs, client labels, link IDs and T3 URL at admission. All native steps run on Node 209. The Gateway sends the existing admin session through the shared execution-copy helper; workflow input holds only the vault and key names. Swamp reads the T3 session list, selects the admitted labels, checks each selected session again, and revokes each session and pairing link in a separate native step. It preserves the current admin and every other label. A failed read is a failure, never an empty inventory. The fixed terminal result projects only the admitted pairings.
+
+Steps make no Gateway calls.
+
+### Gateway session cleanup
+
+Gateway session cleanup retains its existing direct behavior and current-registration checks for the fixed Gateway client label. It is separate from pairing revocation.
 
 Registration keeps its normal response after it validates and stores the new encrypted admin session. It records a cleanup revision. Swamp checks pending revisions each minute and admits `conn.gateway_sessions_revoke` through the Gateway-authorized cleanup endpoint. Cleanup keeps the current admin session and other client labels.
 
@@ -218,7 +224,7 @@ Registration keeps its normal response after it validates and stores the new enc
 
 ## Pairing Operations
 
-Pairing creation returns HTTP 202 with an Operation. The Gateway validates and records intent, starts the native Swamp workflow and returns without waiting. Revocation also returns an Operation. Swamp reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation and Gateway session cleanup run directly in Swamp.
+Pairing creation returns HTTP 202 with an Operation. The Gateway validates and records intent, starts the native Swamp workflow and returns without waiting. Revocation also returns an Operation. Pairing creation reads the stored environment session through the shared private-material endpoint after the Gateway checks its run, Node and owner. Pairing revocation uses the captured public intent and a vault descriptor described above. It writes the one-time credential through the shared secret-output endpoint to the existing encrypted pairing record, then projects only safe metadata. Pairing revocation and Gateway session cleanup run directly in Swamp.
 
 After the Operation succeeds, the calling Node reads `GET /api/v1/conn/environments/{environment}/pairings/{pairing}` to receive its pairing URL. Read the URL once and open it immediately. The owner-checked read clears the encrypted credential; a second read, an expired pairing, or a read before completion returns HTTP 409. Another Node cannot read that credential. Listing pairings never includes it. Revocation removes it. A Gateway restart in the uncertain issue window never mints a second pairing link automatically; the Operation fails with `conn.pairing_outcome_unknown`, and an explicit new create uses a new pairing identity.
 
@@ -232,16 +238,27 @@ Conn callers follow their own pairing Operations at `GET /api/v1/conn/operations
 
 Conn owner-checked Operation reads expose the generic [executor health](/reference/operations#executor-health) assistance. The Gateway checks all Swamp work every minute, even while Conn is disabled; this observation never runs or cancels a pairing effect.
 
-A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. An invalid JSON response is `conn.response_invalid`; it never proves an empty session list or successful cleanup. The registration revision stays pending until a new registration or an explicit operator cleanup retry.
+A failed session-list read ends the revocation Operation with its safe `conn.*` error code before any revoke call. Native pairing revocation reports `conn.revocation_failed`; its native report identifies the failed action. The retained legacy kinds use `conn.response_invalid` for invalid JSON. No failed read proves an empty session list or successful cleanup. The registration revision stays pending until a new registration or an explicit operator cleanup retry.
 
 ## Direct Swamp writer
 
-`conn.pairing_create`, `conn.pairing_revoke` and `conn.gateway_sessions_revoke` start `operation-conn-direct` through fixed direct declarations. Swamp performs their effects and the Gateway records their public metadata. Rollback reverts the owning PR.
+`conn.pairing_revoke` starts `operation-conn-pairing-revoke` with full public intent and the shared terminal selector. `conn.pairing_create` and `conn.gateway_sessions_revoke` retain `operation-conn-direct` through their fixed direct declarations. Swamp performs their effects and the Gateway records their public metadata. Rollback reverts the owning PR.
 
-Swamp calls T3 directly. The Gateway serves shared run-bound private input, stores the one-time output through the existing encrypted credential store and projects safe metadata. No credential enters Operation input, results or step output. Activity records no request body on either shared private path. The PHP issue command, pairing HTTP relay and their receipt tests are removed.
+Swamp calls T3 directly. For the retained pairing-create and Gateway-cleanup kinds, the Gateway serves shared run-bound private input, stores the one-time output through the existing encrypted credential store and projects safe metadata. No credential enters Operation input, results or step output. Activity records no request body on either shared private path. The PHP issue command, pairing HTTP relay and their receipt tests are removed.
 
-The native issue checkpoint is scoped to the Operation. A resume with a stored credential projects its metadata; an uncertain issue without a saved credential refuses with `conn.pairing_outcome_unknown`. The owner-only pairing read returns the URL once. The worker uses the configured Node identity; no root socket or family credential route is added.
+The native issue checkpoint is scoped to the Operation. A resume with a stored credential projects its metadata; an uncertain issue without a saved credential refuses with `conn.pairing_outcome_unknown`. The owner-only pairing read returns the URL once. The retained pairing behavior uses the configured Node identity; no root socket or family credential route is added.
 
 A direct pairing exposes only an `issue_started` boolean from the recorded issue timestamp. A worker that loses its native checkpoint refuses an already started issue instead of minting a second link; a stored credential still recovers completion.
 
 When a terminal result repeats, Conn returns the recorded result even after the pairing credential has been consumed or revoked. Conn projects bounded public metadata without a Kit execution contract. Native dispatch failures record a safe failure without changing pairing or cleanup state.
+
+
+### Native pairing revocation
+
+Swamp core command steps, child workflows and native `forEach` supply the execution. Official SSH, cfgmgmt, datastore and cloud-vault extensions were checked at `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`; they do not implement T3 session APIs. Each command uses Python's standard HTTPS client for one existing T3 request. There is no custom transport, authentication protocol, Gateway relay or runtime restart. Since this is an API integration, no worker or SSH step runs on the subject Node.
+
+A child workflow orders each fresh session read before its ownership check and one revoke request. A missing session is already absent; a changed label or a session that became current refuses.
+
+Native failure and resume use the original captured pairing set. Resume from the failed action, such as `link`, to retain the original session selection. Starting again at `assets` can change the expanded session list, which the pinned native runner refuses; a new selection needs a new Operation. A terminal Gateway Operation stays terminal; a manual native resume does not change it. Revocation requests are idempotent; resuming may read the list again and does not mint credentials.
+
+The public terminal result contains only `backend` and `revoked_sessions`, or a bounded `conn.*` error code. The admin token, server response bodies and other client data never enter stdout or workflow resources.

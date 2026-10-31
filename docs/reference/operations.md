@@ -535,11 +535,17 @@ A repeated request after the reset, another assistance code, a terminal Operatio
 
 Families declare fixed workflows in their own `direct-operations.php`. `DirectOperation` records the per-kind writer choice at admission. `StartSwampRun` submits the committed intent through native `workflow.run` and records its run ID. Every family uses the one `ORBIT_SWAMP_RUN_TOKEN` credential. The immutable Operation ID supplies the stable `orbit_start_key` runtime tag. Connection and reply budgets follow the native client's 15-second connection and 30-second request defaults.
 
+The required CI registry check also requires an exact `run` and `read` intent for every declared workflow in `swamp/config/gateway-workflow-grants.json`, under `user:orbit-gateway`. This public manifest describes expected policy, not installed permissions. The live grant owner verifies the registered workflow and the installed Gateway token with native `access.can-i` before uptake. CI never applies grants or reads credentials. See the [Swamp shape gate](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape-gate.md#gateway-workflow-grant-intent).
+
 New admission stores `state.swamp_start = {key: 'operation:' + id, workflow: admittedDefinition.workflow}` in the same transaction that creates the Operation, before submission after commit. It preserves unrelated state. A replay or admission fence keeps its recorded row unchanged. This public receipt records the admitted start identity; it does not bind a native run or establish a status. Only native evidence can establish `state.swamp_run_id`.
 
 If the start response is lost, the same call reads native history once for that key and workflow. A matching run with the exact admitted inputs supplies the run ID. Only a confirmed empty result permits one immediate resubmission with the same key and inputs. A failed or cancelled native run, or an unreadable, malformed or ambiguous history response, leaves `swamp.start_uncertain`; it never permits another submission. A native refusal ends that submission call without resubmission.
 
 An authorized replay of the original POST with the same Idempotency-Key and input performs history-first recovery of that same queued, unbound intent. It never admits another Operation or submits before checking history. An intent never submits again after it binds a run, ends, or receives a cancellation request. A read never starts or resumes execution. Recovery runs in that request after any admission transaction commits; a failed history read leaves the intent uncertain again.
+
+### Execution-copy failures
+
+The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. A failed push returns `swamp.vault_sync_unavailable`. The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
 
 ### Recover a terminal native result
 

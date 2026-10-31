@@ -1471,8 +1471,10 @@ export function analyzeYaml(
     const labels = object(step.labels), task = object(step.task);
     const inputs = object(task.inputs);
     return step.name === "wait-private-dns-ttl" &&
-      step.target === "orbit-node-209" &&
-      Object.keys(labels).join() === "node" && labels.node === "209" &&
+      (step.target !== undefined || step.labels !== undefined) &&
+      worker209(path) &&
+      (step.labels === undefined ||
+        Object.keys(labels).join() === "node" && labels.node === "209") &&
       Object.keys(task).sort().join() ===
         "behaviorName,behaviorType,inputs,methodName,type" &&
       task.type === "behavior" && task.behaviorType === "command/shell" &&
@@ -1495,6 +1497,20 @@ export function analyzeYaml(
         task.type === "model_method" && task.modelType === "@swamp/ssh"
       ? task
       : undefined;
+  };
+  const worker209 = (path: string[]) => {
+    const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+    const job = object(jobs[Number(path[1])]);
+    const steps = Array.isArray(job.steps) ? job.steps : [];
+    const step = object(steps[Number(path[3])]);
+    // Core merges each placement field independently: step, job, workflow.
+    const scopes = [step, job, data];
+    const target = scopes.find((scope) => scope.target !== undefined)?.target;
+    const labels = scopes.find((scope) => scope.labels !== undefined)?.labels;
+    // The native scheduler uses target before considering labels.
+    return target !== undefined
+      ? target === "orbit-node-209"
+      : object(labels).node === "209";
   };
   // Official @swamp/ssh 2026.10.23.1 consumes these transport fields natively.
   const sshIdentity = (path: string[]) => {
@@ -1529,19 +1545,25 @@ export function analyzeYaml(
   };
   const walk = (value: unknown, path: string[]) => {
     const nativeIdentity = sshIdentity(path);
+    const sshTask = officialSshTask(path);
+    const sshDelivery = sshTask &&
+      (sshTask.methodName === "exec" || sshTask.methodName === "script") &&
+      worker209(path);
     const nativeStdin = path.length === 7 && path[5] === "inputs" &&
-      path[6] === "stdin" && officialSshTask(path)?.methodName === "exec";
+      path[6] === "stdin" && sshTask?.methodName === "exec" && sshDelivery;
     if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
     if (typeof value === "string") {
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
         path.at(-3) === "inputs" && path.at(-4) === "task";
+      const vaultEnv = envValue &&
+        (!sshTask || sshDelivery && wholeVault(value));
       if (
         envValue && secret(path.at(-1) ?? "") &&
         !/^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(value)
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !((nativeIdentity || nativeStdin) && wholeVault(value)) && !(envValue &&
+        !((nativeIdentity || nativeStdin) && wholeVault(value)) && !(vaultEnv &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&
