@@ -158,6 +158,10 @@ The serving Node reaches Plausible over WireGuard. While the analytics role conv
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 
+Disable captures the public Caddy and private DNS changes before dispatch. All steps run on Node 209 and use official SSH to the admitted hosts. The workflow withdraws the tracking Caddy sections, publishes private DNS, waits for the canonical DNS grace, and removes unused Router certificates. Caddy composition preserves unrelated sections. Certificate removal checks the current adapted Caddy configuration before deletion.
+
+A failure keeps the tracking records and site binding for diagnosis; native resume repairs host effects without reviving a terminal Gateway Operation. Only successful terminal projection deletes the captured tracking records and binding. Disable does not call Plausible or need its credentials.
+
 ## Instance page panel
 
 The Orbit web Instance page shows live visitors, visitors for Plausible's day, 7 days, and 30 days, and the top ten pages. It shows the panel when the analytics role is active and the Instance has a tracking host. The Plausible site is the Instance's own domain. When the Gateway cannot read the Stats API, the panel says so and shows no counts. See [Instance analytics stats](/reference/instance-analytics-stats).
@@ -200,7 +204,7 @@ Only the Router receives an Orbit certificate; public Ingress uses automatic pub
 
 The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
 
-Enable and disable return an accepted Operation. Every effect step requires its admitted Node worker. Light-box DNS steps keep the admitted owner and use its configured Node 209 proxy worker; the workflow does not choose a different Node or skip DNS. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
+Enable and disable return an accepted Operation. DNS publication keeps the admitted owner; the workflow does not choose another Node or skip DNS. Disable uses official SSH from Node 209 for each admitted host. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
 
 ### Stats read on the Gateway
 
