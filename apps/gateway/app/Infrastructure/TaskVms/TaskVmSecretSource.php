@@ -55,7 +55,8 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
                 return null;
             }
         } elseif ($operation->target_type === 'task_vm_sweep') {
-            if (($operation->input['provider'] ?? null) !== 'upcloud' || $operation->node_id !== $id) {
+            if ($operation->kind !== 'task_vm.sweep_host' || ($operation->input['provider'] ?? null) !== 'upcloud'
+                || ($operation->input['node_id'] ?? null) !== $id || $operation->node_id !== $id) {
                 return null;
             }
         } elseif ($operation->target_type === 'task_vm_cache' && ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || ($operation->input['host_node_id'] ?? null) !== $id)) {

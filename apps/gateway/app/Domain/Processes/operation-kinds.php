@@ -14,7 +14,7 @@ return (static function (): array {
     }
     $kinds = [];
     $artifact = ['process_id', 'runtime', 'name'];
-    foreach (['create', 'update', 'start', 'restart'] as $verb) {
+    foreach (['create', 'update', 'restart'] as $verb) {
         $runs = [];
         if (in_array($verb, ['create', 'update'], true)) {
             $runs[] = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => ['process_id'], 'input_values' => ['vite' => null], 'bind' => ['runtime' => 'input.retired_runtime', 'name' => 'input.retired_name']];
@@ -44,6 +44,8 @@ return (static function (): array {
             'completion_contract' => ['step' => 'runtime-ready', 'transport' => 'gateway', 'name' => 'process.runtime_ready', 'result' => ['ready' => true]],
             'result_fields' => ['state', 'staged', 'previous', 'backup_left', 'available', 'owned', 'ready', 'error_code']];
     }
+
+    $kinds['process.start'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
 
     $kinds['process.stop'] = ['executor' => 'swamp', 'result_fields' => ['ready', 'state', 'error_code']];
     $kinds['process.destroy'] = ['executor' => 'swamp', 'admission' => ProcessRuntimeChildAdmission::class, 'result_fields' => ['ready', 'error_code']];

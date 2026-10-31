@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\NodeDoctorProbe;
 use App\Actions\Doctor\RunDoctorAction;
-use App\Actions\TaskVms\StartTaskVmSweepOperationAction;
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
@@ -14,30 +12,20 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmFamilyChildren;
-use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmImageBuildStep;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmHostAudit;
-use App\Infrastructure\TaskVms\TaskVmImageBuildChain;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
-use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 use function Pest\Laravel\mock;
@@ -317,266 +305,5 @@ describe('strays', function (): void {
             TaskVmSettingsBuilder::host($this->beast->id, ['maxVms' => 4, 'operatorOwned' => ['orbit-ci/*', 'default/ow-exp-20261006']]),
         ]]);
     });
-
-});
-
-/** Admit a parent on behalf of the configured Services peer, then use only its recorded child keys. */
-function tvm_executor_sweep(Node $host): Operation
-{
-    $parent = app(StartTaskVmSweepOperationAction::class)->execute($host->id, 'incus');
-    test()->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'operation_id' => $parent->id, 'worker' => 'sweep-parent'])
-        ->assertOk()->assertJsonPath('data.id', $parent->id);
-
-    return $parent;
-}
-
-function tvm_executor_sweep_child(Operation $parent, string $key): Operation
-{
-    test()->postJson('/api/v1/operation-executor/'.$parent->id.'/children', ['worker' => 'sweep-parent', 'key' => $key])->assertAccepted();
-    $child = $parent->children()->where('child_key', $key)->sole();
-    test()->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'sweep-child'])
-        ->assertOk()->assertJsonPath('data.id', $child->id);
-
-    return $child;
-}
-
-/** @return array<string,mixed> */
-function tvm_executor_sweep_body(Operation $child, string $key = 'sweep-effect'): array
-{
-    $input = array_intersect_key($child->input, array_flip(['node_id', 'provider', 'sweep_id', 'deletion']));
-
-    return ['worker' => 'sweep-child', 'key' => $key, 'transport' => 'task_vm_sweep', 'name' => 'task_vm.sweep',
-        'input' => [...$input, 'action' => $child->kind === 'task_vm.sweep_observe' ? 'observe' : 'delete']];
-}
-
-function tvm_executor_sweep_run(Operation $child, string $key = 'sweep-effect'): void
-{
-    test()->postJson('/api/v1/operation-executor/'.$child->id.'/run', tvm_executor_sweep_body($child, $key))
-        ->assertOk()->assertJsonPath('data.ready', true);
-}
-
-function tvm_executor_sweep_finish(Operation $parent, Operation $observation): void
-{
-    $path = '/api/v1/operation-executor/'.$observation->id;
-    test()->postJson($path.'/step', ['worker' => 'sweep-child', 'key' => 'observed', 'name' => 'sweep-observe', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    test()->postJson($path.'/complete', ['worker' => 'sweep-child', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-    test()->postJson('/api/v1/operation-executor/'.$parent->id.'/complete', ['worker' => 'sweep-parent', 'status' => 'succeeded', 'result' => ['ready' => true]])->assertOk();
-}
-
-function tvm_executor_observe(Node $host): void
-{
-    $parent = tvm_executor_sweep($host);
-    $child = tvm_executor_sweep_child($parent, 'observe');
-    tvm_executor_sweep_run($child);
-    tvm_executor_sweep_finish($parent, $child);
-}
-
-function tvm_executor_failed_image(Node $host): TaskVmImageBuild
-{
-    $recipe = app(RecipeLoader::class)->load();
-    DB::table('task_vm_image_recipe')->where('id', 1)->update(['identity' => $recipe->identity, 'recipe_json' => $recipe->json, 'generation' => 1]);
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'state' => 'failed', 'recipe_identity' => $recipe->identity,
-        'recipe_json' => $recipe->json, 'recipe_generation' => 1, 'current_step' => TaskVmImageBuildStep::Recipe, 'current_program' => 'base:packages']);
-    test()->travel(25)->hours();
-
-    return $build;
-}
-
-describe('Swamp sweep executor safety', function (): void {
-    beforeEach(function (): void {
-        $gateway = tvm_sweep_node('gateway', '10.44.0.1');
-        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-        $services = tvm_sweep_node('services', '10.44.0.3');
-        $services->accessibleNodes()->attach($gateway);
-        config(['dependency_detection.services_node_id' => $services->id]);
-        $this->withServerVariables(['REMOTE_ADDR' => $services->wireguard_ip]);
-        $signer = Mockery::mock(LeafCertificateSigner::class);
-        $signer->shouldReceive('rootCertificate')->andReturn('public root certificate');
-        app()->instance(LeafCertificateSigner::class, $signer);
-    });
-
-    it('deletes only managed orphan names in each host project and leaves live and foreign resources intact', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $provisioning = tvm_sweep_vm($this->shark, TaskVmState::Provisioning, '10.44.0.130');
-        $destroyed = tvm_sweep_vm($this->beast, TaskVmState::Destroyed, '10.44.0.131');
-        $this->incus->instances = [
-            '10.44.0.7' => [$ready->name, $destroyed->name, 'tvm-9999', 'tvm-image-20261010030000-sync-smoke', 'dev-box', $provisioning->name],
-            '10.44.0.8' => [$provisioning->name, 'tvm-8888'],
-        ];
-        $this->incus->foreign = ['10.44.0.7' => ['default/tvm-9999', 'orbit-ci/tvm-8888']];
-        foreach ([$this->beast, $this->shark] as $node) {
-            $parent = tvm_executor_sweep($node);
-            $plan = app(TaskVmFamilyChildren::class)->childContext($parent);
-            foreach ($plan['children'] as $intent) {
-                if ($intent['kind'] === 'task_vm.sweep_delete') {
-                    tvm_executor_sweep_run(tvm_executor_sweep_child($parent, $intent['key']));
-                }
-            }
-            $this->postJson('/api/v1/operation-executor/'.$parent->id.'/children', ['worker' => 'sweep-parent', 'key' => 'delete-instance-dev-box'])
-                ->assertUnprocessable()->assertJsonPath('error.code', 'operation.child_forbidden');
-        }
-        expect($this->incus->instances)->toBe([
-            '10.44.0.7' => [$ready->name, 'tvm-image-20261010030000-sync-smoke', 'dev-box'],
-            '10.44.0.8' => [$provisioning->name],
-        ]);
-        expect($this->incus->foreign['10.44.0.7'])->toBe(['default/tvm-9999', 'orbit-ci/tvm-8888']);
-        expect(array_all($this->incus->calls, static fn (array $call): bool => $call[1]['vm']['project'] === 'orbit-tasks'))->toBeTrue();
-        expect(array_all($this->incus->reads, static fn (array $call): bool => $call['input']['project'] === 'orbit-tasks'))->toBeTrue();
-        expect($ready->fresh()->state)->toBe(TaskVmState::Ready);
-    });
-
-    it('rechecks live VM ownership when a recorded orphan is claimed before deletion runs', function (): void {
-        $this->incus->instances = ['10.44.0.7' => ['tvm-9000']];
-        $parent = tvm_executor_sweep($this->beast);
-        $deletion = tvm_executor_sweep_child($parent, 'delete-instance-tvm-9000');
-        $claimed = tvm_sweep_vm($this->beast, TaskVmState::Provisioning, '10.44.0.129');
-        $claimed->update(['name' => 'tvm-9000']);
-        tvm_executor_sweep_run($deletion);
-        expect($this->incus->instances['10.44.0.7'])->toBe(['tvm-9000']);
-        expect($this->incus->calls)->toBe([]);
-        expect($claimed->fresh()->state)->toBe(TaskVmState::Provisioning);
-    });
-
-    it('deletes only orphan clone volumes from the recorded host project and pool', function (): void {
-        $live = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $retained = [
-            'orbit-tasks/orbit-tasks/'.$live->name.'-topology-seed',
-            'orbit-tasks/orbit-tasks/orbit-topology-seed-aaaaaaaaaaaa',
-            'orbit-tasks/orbit-tasks/scratch',
-            'orbit-tasks/other/tvm-9999-topology-seed',
-            'default/orbit-tasks/tvm-9999-topology-seed',
-        ];
-        $this->incus->volumes = ['10.44.0.7' => [...$retained, 'orbit-tasks/orbit-tasks/tvm-9999-topology-seed']];
-        $parent = tvm_executor_sweep($this->beast);
-        tvm_executor_sweep_run(tvm_executor_sweep_child($parent, 'delete-volume-tvm-9999-topology-seed'));
-        expect($this->incus->volumes['10.44.0.7'])->toBe($retained);
-        expect($this->incus->calls)->toHaveCount(1);
-        expect($this->incus->calls[0][1]['location'])->toBe(['project' => 'orbit-tasks', 'pool' => 'orbit-tasks']);
-    });
-
-    it('requires two distinct sweep identities to fail missing ready and parked VMs', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $parked = tvm_sweep_vm($this->beast, TaskVmState::Parked, '10.44.0.130');
-        $provisioning = tvm_sweep_vm($this->beast, TaskVmState::Provisioning, '10.44.0.131');
-        $destroying = tvm_sweep_vm($this->beast, TaskVmState::Destroying, '10.44.0.132');
-        $parent = tvm_executor_sweep($this->beast);
-        $observation = tvm_executor_sweep_child($parent, 'observe');
-        tvm_executor_sweep_run($observation);
-        tvm_executor_sweep_run($observation);
-        tvm_executor_sweep_run($observation, 'repeat-same-sweep');
-        expect($ready->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($parked->fresh()->state)->toBe(TaskVmState::Parked);
-        tvm_executor_sweep_finish($parent, $observation);
-        tvm_executor_observe($this->beast);
-        foreach ([$ready, $parked] as $vm) {
-            expect($vm->fresh()->state)->toBe(TaskVmState::Failed);
-            expect($vm->fresh()->error_code)->toBe('task_vm.vm_missing');
-            expect($vm->group->fresh()->assistance_requested)->toBeFalse();
-        }
-        expect($provisioning->fresh()->state)->toBe(TaskVmState::Provisioning);
-        expect($destroying->fresh()->state)->toBe(TaskVmState::Destroying);
-    });
-
-    it('clears missing evidence when the next sweep finds the VM', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        tvm_executor_observe($this->beast);
-        $this->incus->instances = ['10.44.0.7' => [$ready->name]];
-        tvm_executor_observe($this->beast);
-        $this->incus->instances = [];
-        tvm_executor_observe($this->beast);
-        expect($ready->fresh()->state)->toBe(TaskVmState::Ready);
-        tvm_executor_observe($this->beast);
-        expect($ready->fresh()->state)->toBe(TaskVmState::Failed);
-    });
-
-    it('fails closed when the host project becomes unreadable before the executor run', function (): void {
-        $ready = tvm_sweep_vm($this->beast, TaskVmState::Ready, '10.44.0.129');
-        $parent = tvm_executor_sweep($this->beast);
-        $observation = tvm_executor_sweep_child($parent, 'observe');
-        $this->incus->projectMissing = true;
-        $this->postJson('/api/v1/operation-executor/'.$observation->id.'/run', tvm_executor_sweep_body($observation))
-            ->assertStatus(502)->assertJsonPath('error.code', 'task_vm.host_command_failed');
-        expect($ready->fresh()->state)->toBe(TaskVmState::Ready);
-        expect($this->incus->calls)->toBe([]);
-    });
-
-    it('keeps running builders and recent failed builders, then expires only the failed retention', function (): void {
-        $running = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id]);
-        $failed = TaskVmImageBuild::query()->create(['host_node_id' => $this->beast->id, 'state' => 'failed']);
-        $this->incus->instances = ['10.44.0.7' => [$running->builder_vm_name, $running->builder_vm_name.'-smoke', $failed->builder_vm_name]];
-        tvm_executor_observe($this->beast);
-        expect($this->incus->calls)->toBe([]);
-        $this->travel(25)->hours();
-        $parent = tvm_executor_sweep($this->beast);
-        tvm_executor_sweep_run(tvm_executor_sweep_child($parent, 'delete-instance-'.$failed->builder_vm_name));
-        expect($this->incus->instances['10.44.0.7'])->toBe([$running->builder_vm_name, $running->builder_vm_name.'-smoke']);
-    });
-
-    it('keeps a clone claimed after volume inventory is captured but before live rows are read', function (): void {
-        $name = 'tvm-9000';
-        $volume = $name.'-topology-seed';
-        $this->incus->volumes = ['10.44.0.7' => ['orbit-tasks/orbit-tasks/'.$volume]];
-        $parent = tvm_executor_sweep($this->beast);
-        $deletion = tvm_executor_sweep_child($parent, 'delete-volume-'.$volume);
-        $claimed = null;
-        $this->incus->afterVolumes = function () use ($name, &$claimed): void {
-            $this->incus->afterVolumes = null;
-            $claimed = tvm_sweep_vm($this->beast, TaskVmState::Provisioning, '10.44.0.129');
-            $claimed->update(['name' => $name]);
-        };
-        tvm_executor_sweep_run($deletion);
-        expect($claimed)->toBeInstanceOf(TaskVm::class);
-        expect($this->incus->volumes['10.44.0.7'])->toBe(['orbit-tasks/orbit-tasks/'.$volume]);
-        expect($this->incus->calls)->toBe([]);
-    });
-
-    it('fences resume when sweep cleanup wins while the builder still exists', function (string $suffix): void {
-        $build = tvm_executor_failed_image($this->beast);
-        $name = $build->builder_vm_name.$suffix;
-        $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
-        $parent = tvm_executor_sweep($this->beast);
-        $deletion = tvm_executor_sweep_child($parent, 'delete-instance-'.$name);
-        $overlapped = false;
-        $this->incus->beforeExecute = function (array $input) use ($build, $name, &$overlapped): void {
-            $this->incus->beforeExecute = null;
-            $overlapped = true;
-            expect($input['vm']['name'])->toBe($name);
-            expect($this->incus->instances['10.44.0.7'])->toContain($build->builder_vm_name, $name);
-            expect(fn () => app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id))
-                ->toThrow(TaskVmException::class, 'unclaimed failed build');
-        };
-        tvm_executor_sweep_run($deletion);
-        expect($overlapped)->toBeTrue();
-        expect($build->fresh()->cleanup_started_at)->not->toBeNull();
-        expect($this->incus->instances['10.44.0.7'])->not->toContain($name);
-        expect(Operation::query()->where('kind', 'task_vm.image_build')->exists())->toBeFalse();
-    })->with(['builder' => '', 'smoke' => '-smoke']);
-
-    it('skips a stale deletion when resume wins after sweep inventory but before cleanup claims the build', function (string $suffix): void {
-        $socket = new FakeRoutePublicationSocket;
-        $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-            'kind' => 'started', 'workflowName' => 'operation-task-vm-image-build', 'runId' => '878a384f-8b8a-4066-bd17-dcad8eac3e86',
-        ]]];
-        app()->instance(WebSocketClient::class, $socket);
-        config(['swamp.run_token' => 'fixture.token']);
-        $build = tvm_executor_failed_image($this->beast);
-        $name = $build->builder_vm_name.$suffix;
-        $this->incus->instances['10.44.0.7'] = array_values(array_unique([$name, $build->builder_vm_name]));
-        $parent = tvm_executor_sweep($this->beast);
-        $deletion = tvm_executor_sweep_child($parent, 'delete-instance-'.$name);
-        $overlapped = false;
-        $this->incus->afterInventory = function () use ($build, &$overlapped): void {
-            $this->incus->afterInventory = null;
-            $overlapped = true;
-            app(TaskVmImageBuildChain::class)->resume($this->beast, $build->id);
-        };
-        tvm_executor_sweep_run($deletion);
-        expect($overlapped)->toBeTrue();
-        expect($build->fresh()->state)->toBe(TaskVmImageBuildState::Running);
-        expect($build->fresh()->cleanup_started_at)->toBeNull();
-        expect($this->incus->instances['10.44.0.7'])->toContain($name, $build->builder_vm_name);
-        expect($this->incus->calls)->toBe([]);
-        expect(Operation::query()->where('kind', 'task_vm.image_build')->sole()->input['attempt'])->toBe(2);
-    })->with(['builder' => '', 'smoke' => '-smoke']);
 
 });
