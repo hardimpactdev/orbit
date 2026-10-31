@@ -5,14 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Instances\DevelopmentSourceAccess;
-use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -27,22 +22,17 @@ use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 final readonly class SetRouteTargetAction
 {
     public function __construct(
-        private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
-        private DevelopmentSourceAccess $sourceAccess,
-        private DevelopmentProjectionOperationLock $projections,
         private ?RecordEventBroadcaster $broadcaster = null,
-        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    /** Admission defers source access and Metrics to its recorded children. */
-    public function execute(Route $route, int $instanceId, bool $grantSourceAccess = true): Route
+    /** Pure association intent. The caller owns environment admission; Swamp owns host work. */
+    public function execute(Route $route, int $instanceId): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -60,15 +50,7 @@ final readonly class SetRouteTargetAction
             ->values()
             ->all();
         $expectedTargetIds = array_values($expectedTargetIds);
-        // The projection owner is taken before the Route is read, so contention returns before any
-        // write. A source-access failure comes after the commit: the stored target is still
-        // announced, and the failure is reported afterwards.
-        [$result, $accessFailure] = $this->environmentOperations->run(
-            [...$expectedTargetIds, $instanceId],
-            fn (): array => $this->projections->run(
-                fn (): array => $this->executeOwned($route, $instanceId, $expectedTargetIds, $grantSourceAccess),
-            ),
-        );
+        $result = $this->executeOwned($route, $instanceId, $expectedTargetIds);
 
         DB::afterCommit(fn () => ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::RouteUpdated,
@@ -76,25 +58,16 @@ final readonly class SetRouteTargetAction
             RouteData::fromModel($result)->toArray(),
         ));
 
-        if ($grantSourceAccess) {
-            $this->metrics?->reconcile();
-        }
-
-        if ($accessFailure instanceof Throwable) {
-            throw $accessFailure;
-        }
-
         return $result;
     }
 
     /**
      * @param  list<int>  $expectedTargetIds
-     * @return array{Route, ?Throwable}
      */
-    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds, bool $grantSourceAccess): array
+    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): Route
     {
         try {
-            $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
+            return DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $target = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instanceId);
                 $currentTargetIds = $locked
@@ -210,47 +183,5 @@ final readonly class SetRouteTargetAction
             );
         }
 
-        if (! $grantSourceAccess) {
-            return [$updated, null];
-        }
-
-        try {
-            $this->grantSourceAccess($updated, $instanceId);
-        } catch (RuntimeConvergenceException $exception) {
-            return [$updated, new RuntimeConvergenceException(
-                step: $exception->step,
-                errorCode: $exception->errorCode,
-                message: "{$exception->getMessage()} The Route target is stored. Set the same target on Route [{$updated->domain}] again to grant the access.",
-                previous: $exception,
-                result: $exception->result,
-            )];
-        } catch (Throwable $exception) {
-            return [$updated, $exception];
-        }
-
-        return [$updated, null];
-    }
-
-    /**
-     * Setting a target does not build Caddy, but the next build on the target's Node serves the
-     * Route's published sites with it. Route convergence on that Node walks only its own checkout,
-     * so the new target's Web root is made readable here, after the commit and under the caller's
-     * projection owner. A retry of the same target on a Route that is not active grants again, so
-     * it repairs a failed grant. An active Route only accepts its current target, as a no-op, and
-     * its convergence already granted that access.
-     */
-    private function grantSourceAccess(Route $route, int $instanceId): void
-    {
-        if ($route->status === RouteStatus::Active) {
-            return;
-        }
-
-        $target = Instance::query()->with('node')->findOrFail($instanceId);
-
-        if (! $target->placedOnAppDev()) {
-            return;
-        }
-
-        $this->sourceAccess->grant($target);
     }
 }

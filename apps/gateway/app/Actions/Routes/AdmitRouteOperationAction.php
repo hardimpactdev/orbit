@@ -146,7 +146,7 @@ final readonly class AdmitRouteOperationAction
 
         return $this->owned([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), $instanceId], function () use ($route, $instanceId, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
-            $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId, grantSourceAccess: false);
+            $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId);
 
             return $this->start('route.target_set', $updated, ['mode' => 'target', 'instance_id' => $instanceId, 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });
