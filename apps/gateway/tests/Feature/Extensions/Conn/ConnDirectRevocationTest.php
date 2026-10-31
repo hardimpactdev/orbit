@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\Http;
@@ -17,7 +15,7 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
 });
 
-function directConnRevocation(object $test, string $kind = 'conn.pairing_revoke'): void
+function directConnRevocation(object $test, string $kind = 'conn.gateway_sessions_revoke'): void
 {
     Http::preventStrayRequests();
     $test->caller = Node::query()->create(['name' => 'phone', 'status' => 'active', 'platform' => 'ios', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2']);
@@ -37,39 +35,6 @@ function directConnRevocation(object $test, string $kind = 'conn.pairing_revoke'
     $test->path = '/api/v1/direct-operations/'.$test->operation->id;
     $test->withServerVariables(['REMOTE_ADDR' => $test->gateway->wireguard_ip]);
 }
-
-it('admits revocation directly with only owned labels and links and no legacy claim', function (): void {
-    directConnRevocation($this);
-
-    $this->getJson($this->path.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.labels', ['phone'])->assertJsonPath('data.input.links', ['phone-link']);
-    $this->getJson($this->path.'/private-material?run_id='.$this->run)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.environment.admin_session', 'private-revoke-admin');
-
-    expect(app(DirectOperation::class)->writer('conn.pairing_revoke'))->toBe('direct');
-    expect(app(OperationKinds::class)->definition('conn.pairing_revoke'))->not->toHaveKeys(['runs', 'completion', 'execution', 'completion_contract']);
-    expect($this->operation->fresh()->attempts)->toBe(0);
-    expect($this->operation->fresh()->lock_key)->toBeNull();
-    Http::assertNothingSent();
-});
-
-it('projects successful revocation only onto the admitted pairings without secret state', function (): void {
-    directConnRevocation($this);
-
-    $this->postJson($this->path.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => ['backend' => 'revoked', 'revoked_sessions' => 1]])->assertOk();
-
-    expect($this->pairing->fresh()->revoked_at)->not->toBeNull();
-    expect($this->pairing->fresh()->credential)->toBeNull();
-    expect($this->foreign->fresh()->credential)->toBe('private-other');
-    expect(json_encode([$this->operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('private-revoke-admin')->not->toContain('private-pairing')->not->toContain('private-other');
-    Http::assertNothingSent();
-});
-
-it('refuses a foreign run, a changed pairing owner without changing admitted revocation', function (): void {
-    directConnRevocation($this);
-    $this->getJson($this->path.'/private-material?run_id=20e8138a-cf7f-4c6c-85fd-ff561b575ac8')->assertConflict();
-    $this->pairing->update(['node_id' => $this->other->id]);
-    $this->getJson($this->path.'?run_id='.$this->run)->assertUnprocessable();
-    Http::assertNothingSent();
-});
 
 it('binds Gateway cleanup to its registration revision and refuses stale private input with 409', function (): void {
     directConnRevocation($this, 'conn.gateway_sessions_revoke');

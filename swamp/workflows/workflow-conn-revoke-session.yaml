@@ -1,0 +1,163 @@
+id: b9c5c8cd-b526-4179-9872-f4fa2dd00939
+name: conn-revoke-session
+description: Observe one captured session, check its owner, then revoke it.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - conn.pairing_revoke
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        links:
+          type: array
+          items:
+            type: string
+      required:
+      - url
+      - labels
+      - links
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        admin_session:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^conn-pairing-revoke-[a-f0-9-]+$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - admin_session
+      additionalProperties: false
+    session_id:
+      type: string
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - session_id
+  additionalProperties: false
+jobs:
+- name: session
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: &id001
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-assets" }}
+      methodName: assets
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: inspect
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-inspect" }}
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.list_script }}"
+
+          '
+        env:
+          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
+            inputs.execution_secrets.admin_session.key) }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: authorize
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-authorize" }}
+      methodName: authorize
+      inputs:
+        stdout: ${{ steps.inspect.outputs.stdout }}
+        session_id: ${{ inputs.session_id }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: revoke
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-revoke" }}
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.revoke_script }}"
+
+          '
+        env:
+          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
+            inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_REVOKE: ${{ steps.authorize.outputs.input_json }}
+    dependsOn:
+    - step: authorize
+      condition:
+        type: succeeded
+    guard: ${{ steps.authorize.outputs.absent }}
+  - name: finish
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-finish" }}
+      methodName: finish
+      inputs:
+        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status
+          == "skipped") }}
+        results: '${{ "revoke" in steps && steps.revoke.status == "succeeded" ? [steps.revoke.outputs.stdout]
+          : [] }}'
+        child: true
+    dependsOn:
+    - step: revoke
+      condition:
+        type: always
