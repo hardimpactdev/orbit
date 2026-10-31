@@ -3,8 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
-use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Certificates\FilesystemRootCertificate;
 use App\Models\Activity;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -64,8 +63,7 @@ it('returns only the current public root CA with request correlation', function 
 it('does not serve an expired root CA', function (): void {
     [$directory, $orbitHome] = root_ca_endpoint_certificate();
     $invalidRequestId = 'not-a-uuid';
-    app()->instance(LeafCertificateSigner::class, new OpenSslLeafCertificateSigner(
-        new NativeProcessRunner,
+    app()->instance(LeafCertificateSigner::class, new FilesystemRootCertificate(
         $orbitHome,
         static fn (): int => PHP_INT_MAX,
     ));
@@ -134,3 +132,13 @@ function root_ca_endpoint_certificate(): array
 
     return [$directory, $orbitHome, (string) file_get_contents($ca.'/root.pem')];
 }
+
+it('reads public trust data without a Gateway CA private key', function (): void {
+    [$directory, $orbitHome, $certificate] = root_ca_endpoint_certificate();
+    unlink($orbitHome.'/ca/root.key');
+    try {
+        expect(new FilesystemRootCertificate($orbitHome)->rootCertificate())->toBe($certificate);
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
+    }
+});

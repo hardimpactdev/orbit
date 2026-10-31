@@ -6,6 +6,8 @@ namespace App\Providers\Domains;
 
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GitHubInstallationSecretSource;
+use App\Domain\Operations\OperationSecretSource;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Infrastructure\GitHub\CachedGitHubApi;
@@ -24,6 +26,7 @@ final class SourceControlServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([GitHubInstallationSecretSource::class], OperationSecretSource::class);
         // The automatic deployment tick reads branch heads every minute, so its reads keep their GitHub credentials.
         $this->app->bind(
             RemoteBranchHeads::class,

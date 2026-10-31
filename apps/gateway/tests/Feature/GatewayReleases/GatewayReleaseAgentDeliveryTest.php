@@ -60,6 +60,7 @@ beforeEach(function (): void {
 
             return $this->installs;
         },
+        frozenManifest: json_encode($this->manifest),
     );
     // The release CI publishes: its provenance signs exactly the manifest and SHA256SUMS it serves, unless a test
     // passes another bundle response.
@@ -88,7 +89,7 @@ it('finds the commit by its release tag and verifies the Gateway binary without 
     $fetched = ($this->delivery)()->fetch('aaaaaaa', $this->gateway);
 
     expect($fetched)->toBe(['sha' => $this->sha, 'manifest' => json_encode($this->manifest)])
-        ->and($this->listings)->toBe([['git', 'ls-remote', '--tags', '--refs', 'https://github.com/hardimpactdev/orbit', 'refs/tags/cli-v*']])
+        ->and($this->listings)->toBe([['git', 'ls-remote', '--refs', 'https://github.com/hardimpactdev/orbit', 'refs/tags/cli-v*', 'refs/heads/*']])
         ->and(hash_file('sha256', $this->base.'/home/agent-artifacts/'.$this->manifest['artifacts']['linux-x86_64']['sha256']))->toBe($this->manifest['artifacts']['linux-x86_64']['sha256'])
         ->and(glob($this->base.'/home/agent-artifacts/*'))->toHaveCount(1)
         ->and(is_dir($this->base.'/releases'))->toBeFalse();
@@ -137,14 +138,26 @@ it('waits when the provenance bundle cannot be downloaded', function (): void {
         ->and(file_exists($this->base.'/home/agent-artifacts'))->toBeFalse();
 });
 
-it('refuses while the commit has no published release, so a later attempt can find it', function (): void {
+it('prepares an unpublished Gateway commit with the frozen published agent without listing release tags', function (): void {
     $this->tags = str_repeat('c', 40)."\trefs/tags/cli-v0.6899.0\n";
+    ($this->publish)();
 
-    $error = release_failure(fn () => ($this->delivery)()->fetch($this->sha, $this->gateway));
+    $delivery = ($this->delivery)()->fetch($this->sha, $this->gateway);
 
-    expect($error->errorCode)->toBe('gateway.release_agent_delivery_unavailable')->and($error->step)->toBe('agent-delivery')
-        ->and(file_exists($this->base))->toBeFalse();
-    Http::assertNothingSent();
+    expect($delivery['sha'])->toBe($this->sha)
+        ->and(json_decode($delivery['manifest'], true)['commit'])->toBe($this->manifest['commit'])
+        ->and($this->listings)->toBe([]);
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'cli-v0.6899.0'));
+});
+
+it('keeps exactly the same frozen agent when another Gateway commit ships', function (): void {
+    ($this->publish)();
+    $first = ($this->delivery)()->fetch($this->sha, $this->gateway);
+    $next = ($this->delivery)()->fetch(str_repeat('d', 40), $this->gateway);
+
+    expect($next['sha'])->toBe(str_repeat('d', 40))
+        ->and($next['manifest'])->toBe($first['manifest'])
+        ->and($this->listings)->toBe([]);
 });
 
 it('refuses a manifest that does not match the release or its SHA256SUMS', function (string $fault): void {

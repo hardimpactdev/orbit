@@ -3,7 +3,6 @@ title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
   - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/AnalyticsRoleBaseline.php
   - apps/gateway/app/Actions/Routes/ConvergeAnalyticsTrackingPlacementAction.php
   - apps/gateway/resources/analytics/**
   - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**
@@ -17,7 +16,7 @@ The `analytics` role runs Plausible Community Edition for the fleet. An Instance
 
 Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
 
-The Gateway publishes and removes Analytics certificates through the shared [Node agent](/reference/node-agent#commands) Caddy commands. The agent also runs the HTTP readiness probe; the Gateway owns placement and publication intent.
+The Gateway records Analytics intent and projects results. Each supported operation starts one native Swamp DAG. Swamp owns Plausible API calls, container updates, certificates, Caddy, firewall rules and private DNS publication through placed jobs. The Gateway has no Analytics executor or polled writer. Unported role lifecycle operations return `operation.kind_unavailable`.
 
 ## Prepare the database Processes
 
@@ -53,7 +52,7 @@ Assignment refuses a storage Process that does not fit:
 | `analytics.storage_port_missing` | The Process does not publish port 5432 or 8123. |
 | `process.wireguard_ip_missing` | The Process's Node has no WireGuard address. |
 
-The role then converges in this order.
+The Analytics footprint requires these resources. Role convergence is unavailable until its native Node workflow is registered; the Gateway does not run a PHP baseline.
 
 | Step | Result |
 | --- | --- |
@@ -62,9 +61,9 @@ The role then converges in this order.
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-The Gateway waits for Plausible with the agent's `http.await-healthy`: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
+Swamp waits for Plausible with the canonical Process readiness check: up to 90 requests to `/api/health` on the Node's WireGuard address, 2 seconds apart. The command takes only an `http://` or `https://` URL. It refuses any other URL with `http.url_invalid` before it runs curl.
 
-Plausible creates and migrates its PostgreSQL database each time it starts. Its Process runs the compiled `plausible` agent service from a read-only bind of the installed static Linux agent. The service runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` steps in order, then replaces itself with `/entrypoint.sh run`. A failed step stops startup. It keeps the image's non-root account and forwards stop signals during initialization. Agent installation restarts running managed containers that use a registered compiled service and that read-only binary mount, so the next start uses the new pin. Stopped containers stay stopped.
+Swamp runs the image's fixed `/entrypoint.sh db createdb` and `/entrypoint.sh db migrate` commands in order before replacing the server container. A failed initialization stops the update while the old server remains in place. The server container runs only `/entrypoint.sh run` as the image's normal account. It has no agent binary mount, initialization wrapper or agent service.
 
 The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
@@ -72,13 +71,13 @@ You can read the logs of `plausible` and restart it like any other Process. You 
 
 The current lifecycle identifies Plausible by its Node and the name `plausible`, not a persisted owning-role claim. A convergence with different configuration can remove that named Process through the internal owning-role path before recreating it; role removal and unreachable forget also select by name. Do not use an unrelated Process with that name on an Analytics Node. The [ownership proposal](/decisions/0210-give-each-extension-its-own-code-boundary#explicit-process-ownership-before-extraction) replaces this unsafe selection with explicit ownership; it is not implemented by this documentation change.
 
-`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
+`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit provisions Instance sites through the native analytics enable workflow. The operator owns the Plausible management account and API credentials. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
 
 ## ClickHouse configuration
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The role calls `analytics.configure-clickhouse` on the Node that runs the ClickHouse Process. The Rust agent carries Plausible's four files and publishes them as root with mode `0644`. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The Gateway mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
+The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The native footprint mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
 
 | Host file | Container path |
 | --- | --- |
@@ -111,11 +110,11 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 ### Update Plausible
 
-`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp asks the Node agent to change the existing Plausible container image and check health under its existing Process lock, preserving its Process identity, environment, ports and mounts. The agent keeps the rollback container until readiness passes and restores it before releasing the lock when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
+`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp runs the canonical Process system component on the admitted Node. It changes the container image and checks health, preserving its Process identity, environment, ports and application mounts. It removes the agent startup wrapper and binary mount. The Process component keeps the rollback container until readiness passes and restores it when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
 
-A repeated version checks health without replacing the container. Start a stopped Plausible Process before updating it. The agent refuses a stale replacement under its Process lock; the Gateway also refuses a stale success projection.
+A repeated version checks health without replacing an unchanged container. The first update replaces a container that still uses the agent startup wrapper, even when its version is unchanged. Start a stopped Plausible Process before updating it. The canonical Swamp Process component refuses a stale replacement and owns health checks and rollback. The Gateway records its result without validating execution receipts.
 
-The shared map of writers selects this direct-only kind. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach only the local agent's protected stdin; they never enter workflow arguments, resources, results or logs.
+The Analytics direct declaration registers its workflow and projection. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach Docker only through the canonical system component's protected stdin; they never enter workflow arguments, resources, results or logs.
 
 This update declares no secret-output store and generates no credentials. No runtime vault copy is required.
 
@@ -155,7 +154,7 @@ The host answers two paths and nothing else:
 
 The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
 
-`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project.
+`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. The native enable workflow creates or converges the Plausible site, timezone and requested goals. Add the script tag to the Project. Disable detaches the site binding and removes the tracking hosts; it preserves Plausible event history.
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 
@@ -193,9 +192,15 @@ General path proxying on any Route is rejected, because nothing else needs it an
 
 The fleet does not have to own its public edge. A tracking host mirrors the Instance's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the Instance's own domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
 
-### The operator owns the Plausible site
+### Native workflows manage sites
 
-Orbit publishes the tracking endpoint, but the operator creates the site in Plausible and adds the script to the Project. Creating Plausible accounts or sites and injecting markup are rejected, because Orbit does not manage Plausible accounts and the Project owns its markup.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, managed account homes and participant Nodes. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests.
+
+Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
+
+The Gateway projects these checkpoints, clears retiring placements and saves the site binding after successful completion. It does not check execution receipts. Only the owning Analytics Node reads the declared protected Plausible credentials. The Project owns its markup.
+
+Enable and disable return an accepted Operation. Every effect step requires its admitted Node worker. A workerless DNS owner is unsupported; these workflows do not skip DNS or use an SSH fallback. Container version updates target only the Analytics Node and use the existing protected runtime environment source.
 
 ### Stats read on the Gateway
 

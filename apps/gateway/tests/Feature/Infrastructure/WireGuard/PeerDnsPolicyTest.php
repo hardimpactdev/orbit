@@ -2,10 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\NodeDoctorProbe;
-use App\Domain\Doctor\DoctorIssueKind;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Fleet\NodeFootprintArtifact;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -64,27 +60,6 @@ it('accepts the Orbit domain limit and refuses one more without truncating', fun
 
     expect(fn () => app(PeerDnsPolicy::class)->domains())->toThrow(NodeProvisioningException::class);
 });
-
-it('reports live and persisted resolver drift and failed private answers', function (string $fault, bool $policy, bool $answers): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $peer->fault = $fault;
-
-    expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => $policy, 'uplink' => true]);
-
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
-    expect(in_array('node.private_dns_policy_mismatch', $codes, true))->toBe(! $policy)
-        ->and(in_array('node.private_dns_unreachable', $codes, true))->toBe(! $answers);
-})->with([
-    'healthy split DNS' => ['', true, true],
-    'old route-all hook' => ['hook', false, true],
-    'stale live domains' => ['domains', false, true],
-    'stale saved domains' => ['saved', false, true],
-    'wrong live server' => ['server', false, true],
-    'default route enabled' => ['default', false, true],
-    'server down' => ['answer', true, false],
-    'wrong private answer' => ['wrong-answer', true, false],
-]);
 
 it('verifies uncached private and public lookups on separate resolver links', function (string $fault, int $exit): void {
     [$node, $peer] = peer_dns_inspection_fixture();
@@ -166,26 +141,6 @@ it('excludes the Gateway after VPN moves to another Node', function (): void {
         ->and(app(PeerDnsFootprintArtifact::class)->applies($node))->toBeFalse();
 });
 
-it('reports SSH inspection failure as unverifiable without attempting repair', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $peer->fault = 'ssh';
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->summary, 'DNS')));
-
-    expect($dnsIssues)->toHaveCount(1)
-        ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
-        ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
-});
-
-it('checks public resolution in Doctor including global DNS answers', function (string $fault, bool $failed): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $peer->fault = $fault;
-
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
-    expect(in_array('node.public_dns_unreachable', $codes, true))->toBe($failed);
-})->with([['public-fails', true], ['public-over-vpn', true], ['global', false], ['', false]]);
-
 it('refuses invalid names and overflow at each namespace write boundary without saving', function (string $kind): void {
     $node = Node::query()->create(['name' => 'prod', 'public_ssh_host' => '192.0.2.3']);
     $candidate = match ($kind) {
@@ -227,27 +182,6 @@ it('refuses removal of a covering namespace when its descendants exceed the cap'
     expect(app(PeerDnsPolicy::class)->domains())->toBe(['example.test', 'orbit']);
 })->with(['node', 'cluster', 'route']);
 
-it('chooses a public Doctor probe outside private Route suffixes', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    Route::query()->create(['kind' => RouteKind::CustomProxy, 'node_id' => $node->id, 'domain' => 'example.com', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]);
-
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
-    expect($codes)->not->toContain('node.private_dns_unreachable', 'node.public_dns_unreachable', 'node.inspection_failed');
-    expect($peer->agents->calls[array_key_last($peer->agents->calls)]['input']['names'])->toBe(['gateway.orbit', 'example.net']);
-});
-
-it('reports a lookup transport failure as unverifiable', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $peer->fault = 'query-ssh';
-
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    $dnsIssues = array_values(array_filter($report->issues, static fn ($issue): bool => str_contains($issue->summary, 'DNS')));
-    expect($dnsIssues)->toHaveCount(1)
-        ->and($dnsIssues[0]->code)->toBe('node.inspection_failed')
-        ->and($dnsIssues[0]->kind)->toBe(DoctorIssueKind::Unverifiable);
-});
-
 it('inspects the complete maximum namespace without truncating the snapshot', function (): void {
     [$node, $peer] = peer_dns_inspection_fixture();
     $rows = [];
@@ -260,13 +194,6 @@ it('inspects the complete maximum namespace without truncating the snapshot', fu
     sort($peer->domains, SORT_STRING);
 
     expect(app(PeerDnsInspector::class)->inspect($node))->toBe(['policy' => true, 'uplink' => true]);
-});
-
-it('names missing uplink DNS in Doctor', function (): void {
-    [$node, $peer] = peer_dns_inspection_fixture();
-    $peer->fault = 'uplink-missing';
-    $report = app(NodeDoctorProbe::class)->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
-    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))->toContain('node.private_dns_uplink_missing');
 });
 
 it('allows nonincreasing teardown and TLD rollback when stored namespace already exceeds the cap', function (string $kind): void {

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
-use App\Models\OperationStep;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Carbon;
@@ -15,7 +15,7 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>}> */
+    /** @var array<string, array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -29,15 +29,18 @@ final readonly class DirectOperation
         foreach ($families as $family) {
             foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'result_hook']) !== []
-                    || array_diff(['workflow', 'writer_config', 'writer_state', 'projection'], array_keys($definition)) !== []
-                    || array_any(array_intersect_key($definition, array_flip(['workflow', 'writer_config', 'writer_state'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
+                    || array_diff(array_keys($definition), ['workflow', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'result_hook']) !== []
+                    || array_diff(['workflow', 'projection'], array_keys($definition)) !== []
+                    || array_any(array_intersect_key($definition, array_flip(['workflow'])), static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $value) !== 1)
                     || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
                     || ! self::validSecretMap($definition['private_material'] ?? []) || ! self::validSecretMap($definition['secret_outputs'] ?? [])
                     || (isset($definition['result_hook']) && ! is_a($definition['result_hook'], DirectOperationResultHook::class, true))
                     || ! is_a($definition['projection'], DirectOperationProjection::class, true)
                     || (isset($definition['primitive']) && ! is_a($definition['primitive'], DirectOperationPrimitive::class, true))) {
                     throw new LogicException('A direct Operation needs one fixed family declaration.');
+                }
+                if (isset($definition['github_token'])) {
+                    GitHubTokenGrant::from($definition['github_token']);
                 }
                 $definitions[$kind] = $definition;
             }
@@ -53,53 +56,32 @@ final readonly class DirectOperation
 
     public static function owns(Operation $operation): bool
     {
-        $definition = app(self::class)->definition($operation->kind);
-
-        return $definition !== null && ($operation->state[$definition['writer_state']] ?? 'polled') === 'direct';
+        return app(self::class)->definition($operation->kind) !== null;
     }
 
-    /** @param array<string, mixed> $input Safe admitted input, never worker data. */
-    public function writer(string $kind, array $input = [], ?int $nodeId = null): ?string
+    /** @param array<string, mixed> $input */
+    public function writer(string $kind, array $input = [], ?int $nodeId = null): string
     {
-        $definition = $this->definition($kind);
-        if ($definition === null) {
-            return $this->requireWriter($kind, null);
-        }
-        $writers = config($definition['writer_config'], []);
-        $default = app(OperationKinds::class)->directOnly($kind) ? 'direct' : 'polled';
-        $writer = is_array($writers) ? ($writers[$kind] ?? $default) : null;
-        if (! in_array($writer, ['polled', 'direct'], true)) {
-            throw new ResourceOperationException('operation.writer_invalid', 'Select polled or direct for the Swamp writer.', 503);
+        if ($this->definition($kind) === null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This kind has no native Swamp workflow.', 503);
         }
 
-        $admitted = [...$input, 'node_id' => $nodeId, 'parent_operation_id' => app(OperationIdempotency::class)->parent?->id];
-        foreach ($definition['writer_scope'] ?? [] as $field => $value) {
-            if (! array_key_exists($field, $admitted) || $admitted[$field] !== $value) {
-                return $this->requireWriter($kind, 'polled');
-            }
-        }
-
-        return $this->requireWriter($kind, $writer);
-    }
-
-    private function requireWriter(string $kind, ?string $writer): ?string
-    {
-        if ($writer !== 'direct' && app(OperationKinds::class)->directOnly($kind)) {
-            throw new ResourceOperationException('operation.writer_invalid', 'This kind requires its direct Swamp writer.', 503);
-        }
-
-        return $writer;
+        return 'direct';
     }
 
     /** @return array<string, string> */
     public function stamp(string $kind, ?string $writer): array
     {
-        $definition = $this->definition($kind);
-
-        return $definition === null || $writer === null ? [] : [$definition['writer_state'] => $writer];
+        return [];
     }
 
-    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>}|null */
+    /** @return array<string,array<string,mixed>> */
+    public function definitions(): array
+    {
+        return $this->definitions;
+    }
+
+    /** @return array{workflow: string, writer_config: string, writer_state: string, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
@@ -136,13 +118,24 @@ final readonly class DirectOperation
         return app($primitive);
     }
 
+    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
+    {
+        $this->projection($operation);
+        $grant = $this->definitions[$operation->kind]['github_token'] ?? null;
+        if ($grant === null) {
+            throw new ResourceOperationException('operation.github_token_forbidden', 'This intent declares no GitHub credential.', 403);
+        }
+
+        return GitHubTokenGrant::from($grant);
+    }
+
     /**
      * Project a family-validated, redacted result. No completion proof or execution decision.
      *
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $result
      */
-    public function project(Operation $operation, array $data, array $result, string $stepName): Operation
+    public function project(Operation $operation, array $data, array $result): Operation
     {
         $operation->refresh();
         if (! self::owns($operation)) {
@@ -158,21 +151,12 @@ final readonly class DirectOperation
 
             return $operation;
         }
-        $step = $operation->steps()->where('name', $stepName)->first() ?? new OperationStep([
-            'operation_id' => $operation->id, 'position' => 1, 'name' => $stepName, 'resumable' => true,
-        ]);
         $startedAt = Carbon::parse(ValidatedData::string($data['started_at']));
         $finishedAt = $status->terminal() ? Carbon::parse(ValidatedData::string($data['finished_at'] ?? '')) : null;
-        $state = $operation->state ?? [];
-        if ($status === OperationStatus::Succeeded) {
-            $state['steps'] = [...ValidatedData::object($state['steps'] ?? []), $stepName => $result];
-        }
         app(OperationStore::class)->change($operation, [
             'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
-            'current_step' => $status->terminal() ? null : $stepName, 'failed_step' => $status === OperationStatus::Failed ? $stepName : null,
-            'error_code' => $code, 'result' => $status->terminal() ? $result : null, 'state' => $state,
-        ], $step, [
-            'status' => OperationStepStatus::from($status->value), 'started_at' => $startedAt, 'finished_at' => $finishedAt, 'error_code' => $code,
+            'lock_key' => $status->terminal() ? null : $operation->lock_key,
+            'current_step' => null, 'failed_step' => null, 'error_code' => $code, 'result' => $result,
         ]);
 
         return $operation->refresh();

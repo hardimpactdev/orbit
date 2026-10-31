@@ -53,7 +53,7 @@ Only the active PHP version’s `/etc/php/<version>/cli` configuration is copied
 
 Every package command belongs to the calling native host service's lifetime. Cancellation stops the entire package cgroup, including `setsid` descendants. Before staging, export or removal, the root launcher stops and verifies the previous package cgroup. File transfer uses directory descriptors and rejects symlinks, magic links and hard links. The dedicated UID has no supplementary groups or sudo rule. The managed `orbit` administrator still needs its existing root command authority; it never runs package code.
 
-The native package-boundary CI job runs the real delivered agent on systemd. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
+The package-boundary tests run the delivered agent on systemd when invoked locally. It creates synthetic protected files, proves their host-side existence, and checks their denial in the package root and through the host process alias. It also checks actual sudo denial, missing prerequisites, the private-PID guard, timed cgroup termination and cancellation of detached descendants. Missing test prerequisites fail the job; this suite is not opt-in.
 
 Persistent Node workers are installed by `agent.configure` from the admitted Node footprint. They run as the Node's configured user with its existing sudo, use native enrollment and a persistent systemd unit, and keep a stable private cache. Task VM workers retain `swamp.start-worker` and `swamp.stop-worker`. See [per-Node workers](/reference/node-provisioning#per-node-swamp-worker) for enrollment, placement and activation.
 
@@ -169,6 +169,10 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
+During the Swamp migration, CI never builds the agent. Gateway releases and desired fleet state use the frozen `cli-v0.7261.0` delivery. Its `orbit-agent contract` output is stored beside the frozen delivery manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway call sites and agent descriptors against it on every CI run. The same contract checks calls in orbit-swamp. Missing commands must move to native Swamp code; changing the Rust registry does not change the frozen delivery.
+
+`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
+
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
@@ -230,7 +234,7 @@ Every root command that runs `apt-get` or `dpkg` holds the shared `packages` res
 
 A command name is `<namespace>.<action>`, and an error code is `<namespace>.<reason>`. A namespace is singular, as in the CLI: `instance.inspect-release` refuses with `instance.release_invalid`. An action can name a collection, such as `incus.images`. Four namespaces end in `s` but are not plurals: the mass nouns `analytics` and `metrics`, the product `incus`, and the extension slug `documents`. The Gateway Node's start-hook drop-in runs `orbit-agent service documents.prepare-cleanup`, so that name stays with the extension slug. Service entry points are not commands: `schedules-run` and `schedules-complete` are written into every Schedule's units on its Node, so they keep their names. A Rust test refuses any other namespace whose last word ends in one `s`; `process` ends in two.
 
-Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. The Gateway reads privileges and bounds from that file. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file` in `apps/agent`.
+Rust defines each command: its input, output, error codes, bound, privilege, and whether it mutates. `apps/agent/contract/commands.json` is written from those definitions, and a Rust test fails when the file is stale. During the freeze, the Gateway reads privileges and bounds from `apps/gateway/resources/agent/frozen-commands.json`, captured from the published binary. `ORBIT_AGENT_CONTRACT` can select a different contract file; a relative path resolves from the Gateway directory. Rewrite the file with `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- contract_file` in `apps/agent`.
 
 `apps/agent/contract/schemas.json` holds the JSON Schema of each command's input and output, derived from the same Rust types. `ORBIT_AGENT_WRITE_CONTRACT=1 cargo test --lib -- schemas_file` rewrites it. Rust tests keep every input object closed to unknown fields in the schema, and decode a generated input of every command with an unknown field at each level to prove the real decoder refuses it.
 
@@ -305,7 +309,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 
@@ -414,11 +418,17 @@ Swamp `agent.configure` returns its new hash only in the first live response. Th
 php artisan orbit:node-agent-rekey <node-id> <operation-id>
 ```
 
-Use the `node.converge` ID that owns the uncertain `footprint-agent` run. This command runs synchronously on the Gateway, including for Services and executor workers, and needs no live Swamp worker. Swamp configuration holds the same Node agent lock through secret hydration, remote configuration and encrypted hash projection, so retained synchronous convergence cannot replace its secret meanwhile. Recovery requires its existing managed Linux Node, original configuration, started configure run with no result, and retained Node target hold. It takes the shared Operation attempt lease and Node agent lock. An active effect or different owner refuses recovery.
+Use the `node.converge` ID that owns the uncertain `footprint-agent` run. Recovery requires an active Linux Node with its own selected worker, the original started configure run with no result, and the original Node hold. The original attempt's kernel lease must be free: a slow configure that still holds it is not uncertain recovery work. The Gateway probes that existing lease at admission, intent read and private hash storage; it holds no execution lease across native recovery.
 
-The command starts a fresh unkeyed configure with that recorded configuration and a null previous hash. It encrypts the returned hash and records only the Node ID and recovery time. It prints no secret and leaves the original receipt uncertain. Cancel the old Operation through the normal API and start a fresh converge after recovery.
+Finished, foreign or superseded Operations cannot authorize recovery. An existing parent-owned receipt keeps its original ownership check; recovery creates no child. The command only records a `node.agent_rekey` intent. It never runs SSH, an agent command, a child Operation or a Gateway wait. Workerless Nodes, including VPN and usexit, refuse rekey; there is no PHP execution path.
 
-If this recovery response is also lost, run the explicit operator command again. Repeating an acknowledged recovery is a no-op. A terminal or superseded Operation cannot authorize recovery; start a fresh normal converge after the target is free.
+Swamp validates the admitted configuration and pin on the exact Node worker. The original configuration must keep that Node's existing worker enabled under its configured account. Recovery passes `worker_credentials: null`, so it preserves and validates existing root-owned credential files. It never replays an enrollment reference or mints credentials. Swamp holds its stable per-Node method lock through configure and private hash storage. The hash stays inside the effect callback and protected private-output request. Arguments, resources, results and error text contain no hash.
+
+Observe the returned Operation through the normal API. Acknowledgement does not prove recovery. The default `--attempt=1` is an idempotent request identity; repeat it after a lost admission reply. After a terminal refusal or cancellation, supply another positive attempt number to request a new recovery. Swamp observes cancellation before its effect checkpoint. A later Gateway cancellation request is ignored by this attempt, including a resume, so rotation can reconcile and store its hash before settlement. A native abort before invoke still cancels without a Node effect.
+
+Invalid safe input is a bounded pre-effect refusal. Configure, memory, worker-readiness or storage errors that may follow rotation remain unresolved. No PHP retry or completion marker changes the original uncertain receipt.
+
+Only a succeeded recovery proves encrypted hash storage. Cancel the original uncertain Operation, then start a fresh converge. A successful converge is not a recovery source. A positive canary uses a disposable x86_64 Node with its own worker: start a retained converge, stop that worker during `footprint-agent` configure, wait until the original attempt releases its lease, then run recovery and verify agent authentication with the stored hash. Do not interrupt a production Node to create this condition or use a successful Operation to force rotation.
 
 ## Gateway view
 
@@ -499,7 +509,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Each Gateway release pins one agent build: the delivery in its commit's [release](#releases). CI builds the Linux and macOS artifacts when `apps/agent` differs from the last published delivery. Otherwise it reuses that delivery after checking provenance and binary digests. The manifest names the last commit that changed `apps/agent` or a compiled extension. A delivery job checks that their source commits and versions agree, verifies each binary digest, and combines them into one `manifest.json`:
+Every Gateway release uses the frozen `cli-v0.7261.0` agent delivery. CI builds no agent on any event. The frozen manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {
@@ -515,7 +525,7 @@ Each Gateway release pins one agent build: the delivery in its commit's [release
 
 The Gateway reads it from `apps/agent/delivery/manifest.json` in its checkout, or from the path in `ORBIT_AGENT_DELIVERY`. Git does not track the file. The Gateway picks a Node's artifact by its platform and recorded architecture. It uses the file beside the manifest when it exists, and otherwise downloads the URL once into `ORBIT_HOME/agent-artifacts/<sha256>`. It checks the SHA-256 before every use. An existing local artifact with the wrong digest refuses; only an absent local file uses the published URL. `apps/agent/scripts/build-delivery` writes the same layout for CI and for a topology.
 
-[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the manifest from the commit's published release, in PHP and without the agent. It first verifies the release's [provenance](/reference/gateway-recovery#release-provenance): a Sigstore bundle that proves the release workflow on `main` signed the manifest and `SHA256SUMS`. It then checks every digest against `SHA256SUMS` before any agent command.
+[Preparing a Gateway release](/reference/gateway-recovery#prepare-a-release) takes the frozen manifest from its fixed published release, in PHP and without the agent. It first verifies the release's [provenance](/reference/gateway-recovery#release-provenance): a Sigstore bundle that proves the release workflow on `main` signed the manifest and `SHA256SUMS`. It then checks every digest against `SHA256SUMS` before any agent command.
 
 Prepare then writes the manifest into the release and installs the pin on the Gateway's own Node; for a release the Gateway already holds, that also comes before any agent command. Preparation, including adoption, refuses without it. The release's private configuration cache selects this checkout's manifest, so a shared environment override cannot keep the previous release's pin. Repeating preparation verifies the existing manifest.
 
@@ -562,7 +572,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, merge the agent change and release the Gateway. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
+During the freeze, Gateway releases keep the same agent pin. After the Swamp port, one final agent release will remove its action commands. Every Node then gets the new pin from the Gateway on its next command, through [install on mismatch](#install-on-mismatch). The [fleet rollout](/reference/gateway-recovery#fleet-rollout) sends `cli.self-update` to each Node of the rollout set, one at a time, so that command installs the pin first. `orbit self-update` itself replaces only the CLI.
 
 The rollout leaves out the Gateway's own Node. [Prepare](/reference/gateway-recovery#prepare-a-release) installs the release's pin there, and the [runtime handoff](/reference/gateway-recovery#gateway-node-agent) installs it again through the local transport.
 
@@ -599,7 +609,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every managed Linux Node.
+Doctor checks the agent in the `node` family on every managed Linux Node. Doctor reads existing continuous unit and Docker observations through the Gateway. Swamp performs domain reads directly and never starts a request-time agent helper. The agent remains frozen at its last published pin during the port; its old command definitions stay until the final observer-only cleanup.
 
 | Issue code | Meaning |
 | --- | --- |

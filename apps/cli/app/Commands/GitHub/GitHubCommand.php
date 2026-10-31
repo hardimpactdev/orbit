@@ -23,6 +23,7 @@ abstract class GitHubCommand extends GatewayCommand
     protected function writeApp(GitHubAppResponse $app, string $title): void
     {
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($title, [
+            'Status' => $app->status,
             'Name' => $app->name,
             'Slug' => $app->slug,
             'App ID' => $app->appId,
@@ -30,6 +31,10 @@ abstract class GitHubCommand extends GatewayCommand
             'URL' => $app->url,
         ]));
 
+        $this->writeHumanMessage('Installation observation: '.$app->installationsStatus.'.');
+        if ($app->observedAt !== null) {
+            $this->writeHumanMessage('Observed at: '.$app->observedAt.'.');
+        }
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Account', 'Type', 'Repositories', 'Suspended'],
             array_map(static fn (array $row): array => [
@@ -38,7 +43,7 @@ abstract class GitHubCommand extends GatewayCommand
                 $row['repositories'],
                 $row['suspended'] ? 'yes' : 'no',
             ], $app->installations),
-            'No installations.',
+            $app->installationsStatus === 'unknown' ? 'Installations are unknown. Run github:app:sync to refresh them.' : 'No installations were observed.',
         ));
     }
 }

@@ -13,6 +13,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -31,7 +32,6 @@ use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\Instance;
 use App\Models\Node;
@@ -168,6 +168,19 @@ function recordOnlyNodeProcessData(Node $node): AddProcessData
     );
 }
 
+it('refuses arbitrary intent at every fixed bootstrap entry point', function (string $method): void {
+    $data = recordOnlyNodeProcessData($this->node);
+    $action = app(CreateProcessAction::class);
+
+    expect(fn () => $action->{$method}($data))->toThrow(function (ResourceOperationException $error): void {
+        expect($error->errorCode)->toBe('process.bootstrap_invalid');
+    });
+
+    $this->assertDatabaseCount('processes', 0);
+    $this->assertDatabaseCount('operations', 0);
+    expect($this->runtime->converged)->toBeEmpty();
+})->with(['bootstrapCollector', 'bootstrapPi', 'bootstrapHorizon']);
+
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
@@ -183,10 +196,10 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         restartPolicy: 'on-failure',
         start: false,
     );
-    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = app(RecordProcessIntentAction::class);
 
-    $first = $action->execute($data);
-    $second = $action->execute($data);
+    $first = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
+    $second = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
     $process = $first['process'];
 
     expect($first['created'])
@@ -205,12 +218,9 @@ it('adds a stopped systemd process idempotently with the target defaults', funct
         ->and($process->desired_state->value)
         ->toBe('stopped')
         ->and($process->status)
-        ->toBe(LifecycleStatus::Active)
+        ->toBe(LifecycleStatus::Provisioning)
         ->and($this->runtime->converged)
-        ->toBe([
-            ['id' => $process->id, 'desired_state' => 'stopped'],
-            ['id' => $process->id, 'desired_state' => 'stopped'],
-        ])
+        ->toBeEmpty()
         ->and($this->runtime->started)
         ->toBeEmpty();
 });
@@ -233,7 +243,7 @@ it('preserves the desired state when an existing process is added again', functi
         start: false,
     );
 
-    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
 
     expect($result['created'])
         ->toBeFalse()
@@ -244,7 +254,7 @@ it('preserves the desired state when an existing process is added again', functi
 });
 
 it('canonicalizes Docker environment maps before persistence and idempotency comparison', function (): void {
-    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = app(RecordProcessIntentAction::class);
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -274,8 +284,8 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
         start: false,
     );
 
-    $created = $action->execute($first);
-    $readded = $action->execute($sameWithDifferentOrder);
+    $created = $action->execute($first, $this->targets->resolve($first->targetType, $first->targetId));
+    $readded = $action->execute($sameWithDifferentOrder, $this->targets->resolve($sameWithDifferentOrder->targetType, $sameWithDifferentOrder->targetId));
 
     expect($created['process']->runtime_config['environment'])
         ->toBe(['ALPHA' => 'first', 'APP_KEY' => 'secret', 'ZEBRA' => 'last'])
@@ -286,7 +296,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
 });
 
 it('canonicalizes systemd environment maps before persistence and idempotency comparison', function (): void {
-    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = app(RecordProcessIntentAction::class);
     $first = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -316,8 +326,8 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         start: false,
     );
 
-    $created = $action->execute($first);
-    $readded = $action->execute($sameWithDifferentOrder);
+    $created = $action->execute($first, $this->targets->resolve($first->targetType, $first->targetId));
+    $readded = $action->execute($sameWithDifferentOrder, $this->targets->resolve($sameWithDifferentOrder->targetType, $sameWithDifferentOrder->targetId));
 
     expect($created['process']->runtime_config)
         ->toBe([
@@ -335,40 +345,7 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         ->toBe(1);
 });
 
-it('keeps Docker environment values out of action exception traces', function (): void {
-    $sensitiveValue = 'action-boundary-secret';
-    $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
-        targetId: $this->instance->id,
-        name: 'worker',
-        runtime: ProcessRuntime::Docker,
-        command: ['php', 'artisan', 'queue:work'],
-        image: 'php:8.5-cli',
-        workingDirectory: '/app',
-        environment: ['APP_KEY' => $sensitiveValue],
-        ports: [],
-        volumes: [],
-        restartPolicy: 'unless-stopped',
-        start: false,
-    );
-    $this->runtime->startFailure = new ProcessOperationException(
-        step: 'create-container',
-        errorCode: 'process.docker_converge_failed',
-        message: 'Docker convergence failed.',
-    );
-
-    try {
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
-    } catch (ProcessOperationException $exception) {
-        expect(json_encode($exception->getTrace(), JSON_THROW_ON_ERROR))->not->toContain($sensitiveValue);
-
-        return;
-    }
-
-    $this->fail('Expected Docker convergence to fail.');
-});
-
-it('adds and starts one Docker container process with explicit configuration', function (): void {
+it('records desired-running Docker intent with explicit configuration without executing it', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -384,7 +361,7 @@ it('adds and starts one Docker container process with explicit configuration', f
         start: true,
     );
 
-    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
     $process = $result['process'];
 
     expect($process->owner)
@@ -400,7 +377,7 @@ it('adds and starts one Docker container process with explicit configuration', f
         ->and($process->desired_state->value)
         ->toBe('running')
         ->and($this->runtime->converged)
-        ->toBe([['id' => $process->id, 'desired_state' => 'running']])
+        ->toBeEmpty()
         ->and($this->runtime->started)
         ->toBeEmpty();
 });
@@ -434,7 +411,7 @@ it('refuses a new desired-running production process before admission when no re
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
-    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+    )->admit($data))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.release_unavailable');
     });
 
@@ -493,7 +470,7 @@ it('refuses an idempotent desired-running production add without changing its re
         $this->targets,
         $this->runtime,
         app(ProcessAdmissionLock::class),
-    )->execute($data))->toThrow(function (ResourceOperationException $exception): void {
+    )->admit($data))->toThrow(function (ResourceOperationException $exception): void {
         expect($exception->errorCode)->toBe('process.release_unavailable');
     });
 
@@ -505,7 +482,7 @@ it('refuses an idempotent desired-running production add without changing its re
         ->toBeEmpty();
 });
 
-it('retains a failed desired-running process definition and clears recovery state on retry', function (): void {
+it('records matching failed intent without claiming runtime recovery', function (): void {
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -520,40 +497,21 @@ it('retains a failed desired-running process definition and clears recovery stat
         restartPolicy: 'unless-stopped',
         start: true,
     );
-    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
-    $this->runtime->startFailure = new ProcessOperationException(
-        step: 'start',
-        errorCode: 'process.start_failed',
-        message: 'The replacement did not start; the previous container was restored.',
-    );
+    $action = app(RecordProcessIntentAction::class);
+    $first = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId))['process'];
+    expect($first)->status->toBe(LifecycleStatus::Provisioning);
+    $first->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'start', 'error_code' => 'process.start_failed']);
 
-    expect(fn () => $action->execute($data))
-        ->toThrow(ProcessOperationException::class, 'previous container was restored');
+    $retry = $action->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
 
-    $failed = Process::query()->sole();
-
-    expect($failed)
-        ->desired_state->toBe(DesiredProcessState::Running)
-        ->status->toBe(LifecycleStatus::Failed)
-        ->failed_step->toBe('start')
-        ->error_code->toBe('process.start_failed');
-
-    $this->runtime->startFailure = null;
-    $retryResult = $action->execute($data);
-    $retried = $retryResult['process'];
-
-    expect($retried)
-        ->id->toBe($failed->id)
-        ->desired_state->toBe(DesiredProcessState::Running)
-        ->status->toBe(LifecycleStatus::Active)
-        ->failed_step->toBeNull()
-        ->error_code->toBeNull()->and($retryResult['created'])->toBeFalse()->and(Process::query()->count())->toBe(
-            1,
-        )->and($this->runtime->started)->toBeEmpty();
+    expect($retry['process'])->id->toBe($first->id)->desired_state->toBe(DesiredProcessState::Running)
+        ->status->toBe(LifecycleStatus::Failed)->error_code->toBe('process.start_failed');
+    expect($retry['created'])->toBeFalse();
+    expect($this->runtime->converged)->toBeEmpty();
 });
 
 it('rejects a conflicting process definition with the same owner and name', function (): void {
-    $action = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $action = app(RecordProcessIntentAction::class);
     $initial = new AddProcessData(
         targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
@@ -582,9 +540,9 @@ it('rejects a conflicting process definition with the same owner and name', func
         restartPolicy: 'always',
         start: true,
     );
-    $action->execute($initial);
+    $action->execute($initial, $this->targets->resolve($initial->targetType, $initial->targetId));
 
-    expect(fn () => $action->execute($changed))
+    expect(fn () => $action->execute($changed, $this->targets->resolve($changed->targetType, $changed->targetId)))
         ->toThrow(ResourceOperationException::class, 'already exists with different configuration');
 });
 
@@ -667,7 +625,7 @@ it('rejects process targets on non-Linux nodes before runtime execution', functi
     );
 
     try {
-        new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+        app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
             ->toBe('process.platform_unsupported')
@@ -917,7 +875,7 @@ it('leaves a removing process unmarked when remove loses the runtime owner', fun
     }
 });
 
-it('refreshes the surviving process identity when an identical add retries under the runtime owner', function (): void {
+it('preserves failed projection when identical intent is recorded again', function (): void {
     $process = process_actions_record($this->instance);
     $process->update([
         'desired_state' => DesiredProcessState::Running,
@@ -940,7 +898,7 @@ it('refreshes the surviving process identity when an identical add retries under
         start: false,
     );
 
-    $result = new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute($data);
+    $result = app(RecordProcessIntentAction::class)->execute($data, $this->targets->resolve($data->targetType, $data->targetId));
 
     expect($result['created'])
         ->toBeFalse()
@@ -949,16 +907,16 @@ it('refreshes the surviving process identity when an identical add retries under
         ->and($result['process']->desired_state)
         ->toBe(DesiredProcessState::Running)
         ->and($result['process']->status)
-        ->toBe(LifecycleStatus::Active)
+        ->toBe(LifecycleStatus::Failed)
         ->and($result['process']->failed_step)
-        ->toBeNull()
+        ->toBe('start')
         ->and($result['process']->error_code)
-        ->toBeNull()
+        ->toBe('process.start_failed')
         ->and(Process::query()->count())
         ->toBe(1);
 });
 
-it('does not rewrite an existing process when an identical add loses the runtime owner', function (): void {
+it('does not rewrite existing intent while another owner holds its runtime lease', function (): void {
     $process = process_actions_record($this->instance);
     $process->update([
         'desired_state' => DesiredProcessState::Running,
@@ -971,7 +929,7 @@ it('does not rewrite an existing process when an identical add loses the runtime
     expect($lock->get())->toBeTrue();
 
     try {
-        expect(fn () => new CreateProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
+        $result = app(RecordProcessIntentAction::class)->execute(
             new AddProcessData(
                 targetType: ProcessTargetType::Instance,
                 targetId: $this->instance->id,
@@ -986,7 +944,9 @@ it('does not rewrite an existing process when an identical add loses the runtime
                 restartPolicy: 'always',
                 start: false,
             ),
-        ))->toThrow(ProcessOperationException::class);
+            $this->targets->forAdmission($this->instance),
+        );
+        expect($result['created'])->toBeFalse();
 
         expect($process->refresh()->getRawOriginal())
             ->toBe($original)
@@ -1243,49 +1203,24 @@ final class ProcessActionsFakeAdmissionLock implements ProcessAdmissionLock
     }
 }
 
-describe('the analytics role\'s plausible Process', function (): void {
+describe('the analytics role\'s Process ownership', function (): void {
     beforeEach(function (): void {
         $storage = analytics_storage_processes();
         $this->storageProcesses = $storage;
-        $this->connection = AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']);
-        $this->lifecycle = app(NativePlausibleRuntimeLifecycle::class);
-        $this->assignAnalytics = function () use ($storage): void {
-            $this->node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
-            app(AnalyticsRoleSettingsRepository::class)->store(
-                $this->node,
-                new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
-            );
-        };
-    });
-
-    it('creates a running Node-targeted Docker Process, and converges it again without replacing it', function (): void {
-        $first = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        $second = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-
-        expect($first->name)->toBe('plausible')
-            ->and($first->owner_type)->toBe(Node::class)
-            ->and($first->owner_id)->toBe($this->node->id)
-            ->and($first->runtime)->toBe(ProcessRuntime::Docker)
-            ->and($first->desired_state)->toBe(DesiredProcessState::Running)
-            ->and($first->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.2.1')
-            ->and($second->id)->toBe($first->id)
-            ->and($this->runtime->removed)->toBe([]);
-    });
-
-    it('replaces the Process when the pinned version changes', function (): void {
-        $first = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        $second = $this->lifecycle->converge($this->node, '3.3.0', $this->connection, str_repeat('k', 64));
-
-        expect($this->runtime->removed)->toBe([$first->id])
-            ->and($second->id)->not->toBe($first->id)
-            ->and($second->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
-            ->and(Process::query()->where('name', 'plausible')->count())->toBe(1);
+        $connection = AnalyticsStorageConnection::from($storage['postgres'], $storage['clickhouse']);
+        $this->plausible = app(RecordProcessIntentAction::class)->execute(
+            PlausibleProcess::data($this->node, '3.2.1', $connection, str_repeat('k', 64)),
+            $this->targets->forNodeAdmission($this->node),
+        )['process'];
+        $this->node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+        app(AnalyticsRoleSettingsRepository::class)->store(
+            $this->node,
+            new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
+        );
     });
 
     it('refuses an operator who removes a Process the assigned role needs', function (string $which): void {
-        $plausible = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        ($this->assignAnalytics)();
-        $process = ['plausible' => $plausible, 'postgres' => $this->storageProcesses['postgres'], 'clickhouse' => $this->storageProcesses['clickhouse']][$which];
+        $process = ['plausible' => $this->plausible, 'postgres' => $this->storageProcesses['postgres'], 'clickhouse' => $this->storageProcesses['clickhouse']][$which];
 
         expect(fn () => app(DestroyProcessAction::class)->execute($process))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('process.required_by_analytics')->and($exception->status)->toBe(409));
@@ -1293,23 +1228,11 @@ describe('the analytics role\'s plausible Process', function (): void {
             ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
     })->with(['plausible', 'postgres', 'clickhouse']);
 
-    it('lets the role remove its own Process, and lets an operator remove the storage once the role is gone', function (): void {
-        $plausible = $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-        ($this->assignAnalytics)();
-
-        $this->lifecycle->remove($this->node);
+    it('lets the owner remove its Process and an operator remove storage after the role is gone', function (): void {
+        app(DestroyProcessAction::class)->execute($this->plausible, removedByOwningRole: true);
         $this->node->roles()->delete();
         app(DestroyProcessAction::class)->execute($this->storageProcesses['postgres']);
 
-        expect($this->runtime->removed)->toBe([$plausible->id, $this->storageProcesses['postgres']->id]);
-    });
-
-    it('forgets the record of a node it cannot reach without touching the runtime', function (): void {
-        $this->lifecycle->converge($this->node, '3.2.1', $this->connection, str_repeat('k', 64));
-
-        $this->lifecycle->forget($this->node);
-
-        expect(Process::query()->where('name', 'plausible')->exists())->toBeFalse()
-            ->and($this->runtime->removed)->toBe([]);
+        expect($this->runtime->removed)->toBe([$this->plausible->id, $this->storageProcesses['postgres']->id]);
     });
 });

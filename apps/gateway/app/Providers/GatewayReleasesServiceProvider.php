@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Actions\Operations\StartOperationAction;
 use App\Console\Commands\AbandonGatewayReleaseCommand;
 use App\Console\Commands\AdoptGatewayReleaseCommand;
 use App\Console\Commands\AutomaticGatewayReleaseCommand;
@@ -47,7 +48,6 @@ use App\Infrastructure\AgentCommands\AgentContract;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentTransports;
 use App\Infrastructure\AgentCommands\NativeAgentCommandRunner;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
@@ -144,7 +144,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
         $this->app->bind(
             GatewayRuntimeHandoff::class,
             static fn (Application $app): GatewayRuntimeHandoff => new GatewayRuntimeHandoff(
-                builds: $app->make(NodeCaddyBuilds::class),
+                operations: $app->make(StartOperationAction::class),
                 fpmRenderer: $app->make(GatewayFpmConfigRenderer::class),
                 fpm: $app->make(NativeGatewayFpmConverger::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),

@@ -58,7 +58,7 @@ final readonly class AnalyticsRuntimeEnvironmentSource implements OperationSecre
         $environment = ValidatedData::stringMap($process->runtime_config['environment'] ?? []);
         ksort($environment);
         $digest = hash('sha256', json_encode($environment, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        $expected = data_get($operation->state, 'runtime_plan.environment_sha256');
+        $expected = $operation->input['environment_sha256'] ?? null;
         if (! is_string($expected) || ! hash_equals($expected, $digest)) {
             $this->refuse();
         }

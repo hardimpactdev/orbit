@@ -51,25 +51,6 @@ final readonly class PredisValkeyServerAdmin implements ValkeyServerAdmin
         return (int) $count;
     }
 
-    public function adoptionConfiguration(DatabaseServer $server): array
-    {
-        $keys = ['dir', 'appendonly', 'appenddirname', 'appendfilename', 'dbfilename', 'databases'];
-        $reply = $this->connected($server, true, fn (Client $client): mixed => $this->command($server, $client, ['CONFIG', 'GET', ...$keys]));
-        if (! is_array($reply) || count($reply) !== count($keys) * 2) {
-            throw $this->failed($server);
-        }
-
-        $configuration = [];
-        foreach (array_chunk($reply, 2) as [$key, $value]) {
-            if (! is_string($key) || ! is_string($value) || ! in_array($key, $keys, true) || array_key_exists($key, $configuration)) {
-                throw $this->failed($server);
-            }
-            $configuration[$key] = $value;
-        }
-
-        return $configuration;
-    }
-
     public function userExists(DatabaseServer $server, string $username): bool
     {
         return $this->connected(

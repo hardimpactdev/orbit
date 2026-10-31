@@ -38,7 +38,7 @@ final readonly class StartTaskVmLifecycleOperationAction
         if ($verb === 'destroy') {
             TaskVmCapabilities::requireComposition('task_vm.destroy', ['node.remove']);
         }
-        if (! in_array($verb, ['provision', 'enroll', 'resume', 'park', 'destroy'], true)) {
+        if (! in_array($verb, ['provision', 'enroll', 'resume', 'destroy'], true)) {
             throw new TaskVmException('task_vm.invalid_effect', 'The task VM lifecycle intent is not supported.');
         }
 
@@ -95,7 +95,7 @@ final readonly class StartTaskVmLifecycleOperationAction
                     'network' => $host->network, 'pool' => $host->pool, 'topology' => $resources->testNodes > 0];
                 $input['delete'] = ['kind' => 'delete', 'pool' => $host->pool];
             }
-            if (in_array($verb, ['park', 'resume'], true)) {
+            if ($verb === 'resume') {
                 $vm->update(['stop_confirmed_at' => null, ...TaskVm::ForgetTopology]);
             }
 

@@ -4,29 +4,18 @@ declare(strict_types=1);
 
 use App\Domain\Analytics\AnalyticsStatsDriver;
 use App\Domain\Analytics\AnalyticsStatsRead;
-use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Project;
 use Tests\Support\FakeAnalyticsStatsDriver;
-use Tests\Support\FakeAnalyticsTrackingRouteProjector;
-use Tests\Support\FakePublicRouteEdgeProjector;
-use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
     $this->driver = new FakeAnalyticsStatsDriver;
     app()->instance(AnalyticsStatsDriver::class, $this->driver);
-    app()->instance(AnalyticsTrackingRouteProjector::class, new FakeAnalyticsTrackingRouteProjector);
-    app()->instance(PublicRouteEdgeProjector::class, new FakePublicRouteEdgeProjector);
-    app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
-    app()->instance(DevelopmentProjectionOperationLock::class, new InstanceAnalyticsProjectionOwner);
 
     $this->gateway = Node::query()->create([
         'name' => 'gateway',
@@ -64,7 +53,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('hides the report when tracking is enabled but the analytics role is not active', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
         $this->driver->healthy = false;
 
         $this->getJson($this->url)
@@ -75,7 +64,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('returns live visitors, period counts, and top pages for the instance domain', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
 
         $this->getJson($this->url)
             ->assertOk()
@@ -100,7 +89,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('returns a readable false report with no visitor numbers when the driver cannot read stats', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
         $this->driver->read = AnalyticsStatsRead::failed(
             'shop.example.com',
             'analytics.stats_key_missing',
@@ -123,7 +112,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('maps the Project instance domain, not a client-supplied site', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
 
         $this->getJson($this->url.'?site_id=other.example.com')->assertOk();
 

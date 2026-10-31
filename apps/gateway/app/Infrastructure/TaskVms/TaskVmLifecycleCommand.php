@@ -39,7 +39,6 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
         return match ($input['action'] ?? null) {
             'prepare-enrollment' => app(PrepareTaskVmEnrollmentAction::class)->execute($operation, $vm),
             'enroll' => $this->enroll($operation, $vm),
-            'stopped' => $this->stopped($vm),
             'destroying' => $this->destroying($operation, $vm),
             'forget-workspaces' => $this->forgetWorkspaces($operation, $vm),
             'forget' => $this->forget($operation, $vm),
@@ -66,20 +65,6 @@ final readonly class TaskVmLifecycleCommand implements OperationTransport
         $this->runtime->materialize($vm);
 
         return ['ready' => true, 'node_id' => $vm->node_id];
-    }
-
-    /** @return array{ready: bool} */
-    private function stopped(TaskVm $vm): array
-    {
-        $state = $this->provider->observe($vm);
-        if ($state === null) {
-            throw new TaskVmException('task_vm.vm_missing', 'The task VM is missing; its workspace was not confirmed parked.');
-        }
-        if (! $state->settled || $state->running) {
-            throw new TaskVmException($state->settled ? 'task_vm.park_failed' : 'task_vm.not_settled', 'The task VM was not confirmed stopped.');
-        }
-
-        return ['ready' => true];
     }
 
     /** @return array{ready: bool} */

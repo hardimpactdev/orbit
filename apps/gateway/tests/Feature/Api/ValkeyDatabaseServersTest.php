@@ -10,12 +10,15 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeValkeyAclAgent;
 use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -41,9 +44,14 @@ beforeEach(function (): void {
     ]);
     $this->gateway = $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-server-create', 'runId' => Str::uuid()->toString()]]];
+    app()->instance(WebSocketClient::class, $socket);
 
     $this->dbNode = Node::query()->create([
         'name' => 'beast',
+        'architecture' => 'amd64',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.80',
@@ -180,53 +188,22 @@ describe('database:server:create --process --connection', function (): void {
         ]);
     });
 
-    it('refuses adoption that would replace persistence, database indexes, or default authentication', function (string $field, string $value): void {
-        if ($field === 'passwords') {
-            $this->valkey->users['default'] = new ValkeyAclUser('default', ValkeyAclUser::ADMIN_RULES, [hash('sha256', 'queue-secret'), hash('sha256', $value)]);
-        } else {
-            $this->valkey->configuration[$field] = $value;
-        }
-        $before = $this->process->refresh()->getAttributes();
-
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()
-            ->assertJsonPath('error.code', 'database.server_adoption_refused');
-
-        expect(DatabaseServer::query()->exists())->toBeFalse()
-            ->and($this->process->refresh()->getAttributes())->toBe($before)
-            ->and($this->connection->refresh()->database_server_id)->toBeNull()
-            ->and($this->programs->runs)->toBe([])
-            ->and($this->runtime->restarted)->toBe([]);
-    })->with([
-        'working directory' => ['dir', '/data/custom'],
-        'RDB-only persistence' => ['appendonly', 'no'],
-        'append directory' => ['appenddirname', 'custom-aof'],
-        'append filename' => ['appendfilename', 'custom.aof'],
-        'snapshot filename' => ['dbfilename', 'custom.rdb'],
-        'database count' => ['databases', '32'],
-        'extra password' => ['passwords', 'second-secret'],
-    ]);
-
-    it('refuses adoption that would overwrite existing ACL users', function (): void {
-        $this->valkey->users['queue'] = new ValkeyAclUser('queue', 'on ~queue:* -@all +@list', []);
-        $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()->assertJsonPath('error.code', 'database.server_adoption_refused');
-        expect($this->programs->runs)->toBe([])->and(DatabaseServer::query()->exists())->toBeFalse();
-    });
-
-    it('refuses concurrent provisioning before any remote mutation', function (): void {
-        $lock = Cache::lock('database-server:provision:services-valkey', 900);
-        $lock->get();
-        try {
-            $this->postJson('/api/v1/database-servers', $this->adoption)->assertConflict()->assertJsonPath('error.code', 'database.server_in_use');
-            expect($this->programs->runs)->toBe([])->and(DatabaseServer::query()->exists())->toBeFalse();
-        } finally {
-            $lock->release();
-        }
+    it('requires Node-side checks on first adoption even when the command already has aclfile', function (): void {
+        $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'command' => ['valkey-server', '--aclfile', '/data/users.acl']]]);
+        $response = $this->postJson('/api/v1/database-servers', $this->adoption)->assertAccepted();
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
+        expect($operation->input['validate_existing'])->toBeTrue();
+        expect($this->programs->runs)->toBe([]);
+        expect($this->valkey->calls)->toBe([]);
     });
 
     it('refuses another Process for an adopted slug', function (): void {
         $this->postJson('/api/v1/database-servers', $this->adoption)->assertAccepted();
 
-        $this->postJson('/api/v1/database-servers', [...$this->adoption, 'process_id' => $this->process->id + 1])
+        $other = $this->process->replicate();
+        $other->name = 'replacement';
+        $other->save();
+        $this->postJson('/api/v1/database-servers', [...$this->adoption, 'process_id' => $other->id])
             ->assertConflict()
             ->assertJsonPath('error.code', 'database.server_slug_conflict');
     });
@@ -304,30 +281,10 @@ describe('database:server:create --process --connection', function (): void {
         'a connection to another port' => [function (): void {
             $this->connection->update(['port' => 6380]);
         }, 'Database connection [services-valkey] does not point to 10.44.0.80:6379.'],
-        'a connection without a password' => [function (): void {
-            $this->connection->update(['password' => null]);
-        }, 'The password of Database connection [services-valkey] does not log in as default.'],
         'a connection with an ACL user' => [function (): void {
             $this->connection->update(['username' => 'queue']);
-        }, 'The password of Database connection [services-valkey] does not log in as default.'],
-        'a password that does not log in' => [function (): void {
-            $this->valkey->passwords['10.44.0.80:6379'] = 'rotated-secret';
-        }, 'The password of Database connection [services-valkey] does not log in as default.'],
+        }, 'Adoption requires the default-user connection.'],
     ]);
-});
-
-describe('database:server:create on an active Valkey server', function (): void {
-    it('refuses a repair while another server Operation holds the target', function (): void {
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))->assertAccepted();
-        DatabaseServer::query()->sole()->update(['status' => LifecycleStatus::Active]);
-
-        $this->postJson('/api/v1/database-servers', valkey_server_request($this->dbNode))
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'operation.target_busy');
-
-        expect($this->valkey->calls)->toBe(['login 10.44.0.80:6379'])
-            ->and($this->programs->runs)->toBe([]);
-    });
 });
 
 describe('database:server:close boundary', function (): void {

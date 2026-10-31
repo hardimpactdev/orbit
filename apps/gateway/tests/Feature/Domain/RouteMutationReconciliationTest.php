@@ -8,9 +8,9 @@ use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Routes\AdmitClusterRouterOperationAction;
 use App\Actions\Routes\AdmitRouteOperationAction;
-use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
+use App\Actions\Routes\RouteTargetState;
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
@@ -85,22 +85,6 @@ beforeEach(function (): void {
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
 });
 
-it('broadcasts a cleared Route target before a metrics reconcile failure', function (): void {
-    Event::fake();
-    $route = reconciliation_route($this->orbitApp, 'clear-before-reconcile.test', $this->node);
-    $this->target->update(['status' => InstanceState::Reserved]);
-    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
-    app()->instance(MetricsFleetReconciler::class, $metrics);
-
-    expect(fn () => app(ClearRouteTargetAction::class)->execute($route))
-        ->toThrow(RuntimeException::class, 'metrics unavailable');
-
-    Event::assertDispatched(RecordBroadcast::class);
-    expect($route->refresh()->targets)->toBeEmpty();
-});
-
 it('broadcasts a changed Route target before a metrics reconcile failure', function (): void {
     Event::fake();
     $route = reconciliation_route($this->orbitApp, 'set-before-reconcile.test', $this->node);
@@ -135,7 +119,7 @@ it('reports association conflicts before active Route reconciliation refusals', 
 
     foreach ([
         fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
-        fn () => app(ClearRouteTargetAction::class)->execute($route),
+        fn () => app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all()),
         fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {
@@ -262,7 +246,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     $retainedTarget = reconciliation_instance($this->orbitApp, $this->node, 'retained');
     $retained = app(CreateRouteAction::class)->ensureForInstance($retainedTarget, null);
     $retainedTarget->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($retained);
+    app(RouteTargetState::class)->clear($retained, $retained->targets()->orderBy('instance_id')->pluck('instance_id')->all());
 
     $cluster = reconciliation_active_cluster('production', 'cluster.test');
     $firstNode = reconciliation_node('production-one', null);
@@ -329,7 +313,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
 it('uses provisioning baseline overrides to select retained generated Routes', function (): void {
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->node->update(['tld' => 'next.test']);
 
     app(RouteMutationReconciler::class)->reconcile(baselineNodeOverrides: [
@@ -401,7 +385,7 @@ it('reconciles a zero-target generated Route from its retained basis', function 
     $this->node->update(['cluster_id' => $cluster->id, 'tld' => null]);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $owner = new RouteReconciliationClusterRouterOperationLock;
     app()->instance(ClusterRouterOperationLock::class, $owner);
     Route::updating(static function (Route $updating) use ($owner): void {
@@ -471,7 +455,7 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     $observed = [];
     bind_route_reconciliation_provisioning(function (Node $node) use (&$observed): void {
@@ -566,7 +550,7 @@ it('preserves Node and Route state when the last app-dev TLD has no active fallb
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     $nodeBefore = $this->node->fresh()->getAttributes();
     $routeBefore = $route->fresh(['targets'])->toArray();
@@ -595,7 +579,7 @@ it('keeps the Cluster TLD when a retained basis Node TLD is cleared', function (
     ensure_active_app_dev_role($this->node);
     $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $this->target->update(['status' => InstanceState::Reserved]);
-    app(ClearRouteTargetAction::class)->execute($route);
+    app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
     $this->target->delete();
     bind_route_reconciliation_provisioning();
 

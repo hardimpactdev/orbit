@@ -71,7 +71,7 @@ final readonly class AutomaticDeployAlerts
             $deployment->failed_step ?? 'unknown',
             $deployment->error_code ?? 'unknown',
             AutomaticDeployFailure::isTransient($deployment)
-                ? sprintf('The commit is tried again after a backoff, %d times at most, until a new commit or a manual deployment.', AutomaticDeployHistory::MaxAttempts)
+                ? 'Automatic retries follow the deployment retry policy.'
                 : 'The commit does not deploy automatically again until a new commit or a manual deployment.',
         ));
     }

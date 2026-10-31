@@ -2,19 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Actions\Doctor\RouteDoctorProbe;
 use App\Domain\AppDev\AppDevPhpFpmManager;
-use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Doctor\CustomProxyRouteInspector;
-use App\Domain\Doctor\DoctorInspectionScope;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\Doctor\NodeStateInspector;
-use App\Domain\Doctor\PublicRouteEdgeInspector;
-use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -32,7 +23,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
@@ -41,12 +31,9 @@ use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
-use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
-use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
@@ -57,11 +44,9 @@ use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Routes\RouteRemovalResidueCleaner;
 use App\Models\Cluster;
-use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
@@ -773,67 +758,6 @@ final readonly class CertificateOrderReachability implements NodeReachabilityPro
     }
 }
 
-it('withdraws a public Process site on the Ingress and reconciles its firewall without touching the Process Node', function (bool $offline, bool $lan, bool $blocked): void {
-    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
-    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
-    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
-    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:80/tcp']], 'status' => 'active']);
-    if ($lan) {
-        $this->beast->update(['lan_ip' => '10.0.0.6']);
-        $ingress->update(['lan_ip' => '10.0.0.4']);
-        $process->update(['runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp', '10.0.0.6:8095:8080/tcp']]]);
-        FirewallRule::query()->create(['node_id' => $this->beast->id, 'name' => 'sync-ingress', 'action' => 'allow', 'source' => '10.0.0.4', 'port' => '8095', 'protocol' => 'tcp', 'status' => 'active']);
-        $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape("orbit:node:{$this->beast->id}:firewall:sync-ingress", '8095', '10.0.0.4', protocol: 'tcp')];
-    }
-    $creationFirewall = new FakeNodeRoleFirewallManager;
-    app()->instance(NodeRoleFirewallManager::class, $creationFirewall);
-    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
-    $body = ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'];
-    if ($blocked) {
-        $allowed = $this->nodes->firewallShapes['10.44.0.7'];
-        // The Database listener's rule does not permit this Process port.
-        $this->nodes->firewallShapes['10.44.0.7'] = [certificate_order_firewall_shape('orbit:rule-123', '5434', '10.0.0.4', protocol: 'tcp')];
-        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'failed')->assertJsonPath('data.error_code', 'route.upstream_firewall_mismatch');
-        $failed = Route::query()->where('domain', 'sync.example.com')->sole();
-        expect($failed->failed_step)->toBe('public-edge-verified');
-        $observation = app(NativeCustomProxyRouteInspector::class)->inspect($failed->customProxy);
-        expect($observation->firewallMatches)->toBeFalse();
-        app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
-        $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
-        $scope = new DoctorInspectionScope([$ingress->id => $context, $this->beast->id => new DoctorNodeContext($this->beast, $context->inspection)]);
-        $issues = app(RouteDoctorProbe::class)->inspect($context->withScope($scope));
-        expect(array_map(static fn ($issue) => $issue->code, $issues->issues))->toContain('route.firewall_mismatch');
-        $this->nodes->firewallShapes['10.44.0.7'] = $allowed;
-    }
-    $response = $this->postJson('/api/v1/routes', $body);
-    $response = $response->completeRoute()->assertOk();
-    $id = $response->json('data.id');
-    // A failed verification also reconciles the Ingress during rollback.
-    expect(array_column($this->routeSwamp->agents->calls, 'command'))->toContain('firewall.rules');
-    expect($this->nodes->forwarding)->toBe([['10.44.0.4', $lan ? '10.0.0.6' : '10.44.0.7', '8095']]);
-    expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue();
-    $firewall = Mockery::mock(NodeRoleFirewallManager::class)->shouldIgnoreMissing();
-    app()->instance(NodeRoleFirewallManager::class, $firewall);
-    $route = Route::query()->findOrFail($id);
-    $acting = app(RouteRemovalProjector::class)->nodes($route);
-    expect(array_map(fn ($target) => $target->node->id, $acting))->toBe([$ingress->id]);
-    if ($offline) {
-        $this->nodes->down = ['10.44.0.4'];
-        $this->deleteJson('/api/v1/routes/'.$id, ['offline' => true])->completeRoute()->assertOk()
-            ->assertJsonPath('data.result.retained_on_nodes.0.node_id', $ingress->id);
-        expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue()
-            ->and(RouteRemovalResidue::query()->exists())->toBeTrue();
-        $this->nodes->down = [];
-        app(RouteRemovalResidueCleaner::class)->clean($ingress);
-        expect(RouteRemovalResidue::query()->exists())->toBeFalse();
-    } else {
-        $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();
-    }
-    expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeFalse()
-        ->and($this->nodes->removedWhileNamed)->toBeEmpty()
-        ->and(Process::query()->whereKey($process->id)->exists())->toBeTrue();
-})->with([[false, false, false], [true, false, false], [false, true, false], [true, true, true]]);
-
 it('retains a public Process activation when its HTTP listener is unreachable and retries it', function (): void {
     $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
     $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
@@ -851,42 +775,6 @@ it('retains a public Process activation when its HTTP listener is unreachable an
     $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)->assertJsonPath('data.status', 'active');
 });
 
-it('limits native public Process Doctor firewall reads to selected authorized Nodes', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
-    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
-    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
-    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp']], 'status' => 'active']);
-    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
-    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
-    app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
-    $routeId = $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])
-        ->completeRoute()->assertOk()->json('data.id');
-    $caller = certificate_order_node('limited-caller', 90, RoleName::AppDev);
-    $caller->accessibleNodes()->attach($ingress->id);
-    $inspector = Mockery::mock(NodeStateInspector::class);
-    $inspector->shouldReceive('inspect')->andReturn(new NodeInspectionData(true, 'linux', 'x86_64', true));
-    app()->instance(NodeStateInspector::class, $inspector);
-    $this->nodes->firewallReads = [];
-    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip]);
-    $this->getJson('/api/v1/routes/'.$routeId)->assertForbidden();
-    $report = $this->postJson('/api/v1/doctor', ['families' => ['route']])->assertOk();
-    expect($this->nodes->firewallReads)->toBeEmpty();
-    $report->assertJsonPath('data.nodes.0.families.0.checked', 0)
-        ->assertJsonPath('data.nodes.0.families.0.issues', []);
-
-    $caller->accessibleNodes()->attach($this->beast->id);
-    $this->getJson('/api/v1/routes/'.$routeId)->assertOk();
-    $this->postJson('/api/v1/doctor', ['node_id' => $ingress->id, 'families' => ['route']])->assertOk()
-        ->assertJsonPath('data.nodes.0.families.0.checked', 0)
-        ->assertJsonPath('data.nodes.0.families.0.issues', []);
-    expect($this->nodes->firewallReads)->toBeEmpty();
-
-    $report = $this->postJson('/api/v1/doctor', ['families' => ['route']])->assertOk();
-    $edge = collect($report->json('data.nodes'))->firstWhere('node_id', $ingress->id);
-    expect($edge['families'][0]['checked'])->toBe(1)
-        ->and($this->nodes->firewallReads)->toContain($this->beast->wireguard_ip);
-});
-
 /** @return array<string, mixed> */
 function certificate_order_firewall_shape(string $comment, string $port = 'any', string $source = 'any', string $destination = 'any', ?string $interface = null, string $protocol = 'any'): array
 {
@@ -894,64 +782,3 @@ function certificate_order_firewall_shape(string $comment, string $port = 'any',
         'destination' => $destination, 'port' => $port, 'protocol' => $protocol,
         'in_interface' => $interface, 'out_interface' => null, 'family' => 'v4'];
 }
-
-it('checks public Process Route DNS through Orbit instead of the Ingress system resolver', function (string $address, int $flags, bool $truncated, array $codes): void {
-    $cluster = Cluster::query()->create(['name' => 'process-edge', 'state' => ClusterState::Active]);
-    $ingress = certificate_order_node('process-ingress', 4, RoleName::Router, $cluster);
-    $ingress->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Ingress, 'status' => LifecycleStatus::Active]);
-    $process = $this->beast->processes()->create(['name' => 'sync', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:8095:8080/tcp']], 'status' => 'active']);
-    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
-    app()->instance(PublicRouteEdgeProjector::class, app(NativePublicRouteEdgeProjector::class));
-    app()->instance(CustomProxyRouteInspector::class, app(NativeCustomProxyRouteInspector::class));
-    $this->postJson('/api/v1/routes', ['domain' => 'sync.example.com', 'ingress_node_id' => $ingress->id, 'process_id' => $process->id, 'publication' => 'public'])->completeRoute()->assertOk();
-    $edge = Mockery::mock(PublicRouteEdgeInspector::class);
-    $edge->shouldReceive('inspect')->once()->andReturn(new PublicRouteEdgeObservation(true, true, true, true));
-    app()->instance(PublicRouteEdgeInspector::class, $edge);
-    app(VpnSettings::class)->configure('10.44.0.0/24', dnsServer: '10.44.0.1');
-    $server = stream_socket_server('udp://127.0.0.1:0', $error, $message, STREAM_SERVER_BIND);
-    expect($server)->toBeResource();
-    stream_set_timeout($server, 1);
-    $endpoint = stream_socket_get_name($server, false);
-    $port = (int) substr($endpoint, strrpos($endpoint, ':') + 1);
-    $queries = [];
-    app()->bind(SocketPrivateDnsUpstream::class, function ($app, array $parameters) use ($server, $port, $address, $flags, $truncated, &$queries): SocketPrivateDnsUpstream {
-        expect($parameters['host'])->toBe('10.44.0.1')
-            ->and($parameters['port'])->toBe(53);
-
-        return new SocketPrivateDnsUpstream('127.0.0.1', $port, 1.0,
-            waitForSocket: static function ($socket, bool $write, float $timeout) use ($server, $address, $flags, $truncated, &$queries): bool {
-                if ($write) {
-                    return true;
-                }
-                $request = stream_socket_recvfrom($server, 65535, 0, $peer);
-                $codec = new PrivateDnsMessageCodec;
-                $query = $codec->decodeQuestion($request);
-                $queries[] = $query->question->normalizedName();
-                $response = $codec->encodeAnswer($query, PrivateDnsAnswer::a($address));
-                $response = substr_replace($response, pack('n', $flags), 2, 2);
-                stream_socket_sendto($server, $truncated ? substr($response, 0, -1) : $response, 0, $peer);
-                $read = [$socket];
-                $writeable = $except = [];
-
-                return stream_select($read, $writeable, $except, 1) === 1;
-            });
-    });
-    $context = new DoctorNodeContext($ingress, new NodeInspectionData(true, null, null, null));
-    $scope = new DoctorInspectionScope([$ingress->id => $context, $this->beast->id => new DoctorNodeContext($this->beast, $context->inspection)]);
-
-    try {
-        $report = app(RouteDoctorProbe::class)->inspect($context->withScope($scope));
-
-        expect($report->checked)->toBe(1)
-            ->and(array_map(static fn ($issue) => $issue->code, $report->issues))->toBe($codes)
-            ->and($queries)->toBe(['sync.example.com'])
-            ->and(app(AgentCommandRunner::class)->commands())->not->toContain('doctor.resolve-route-dns');
-    } finally {
-        fclose($server);
-    }
-})->with([
-    'managed record is correct while system DNS returns Cloudflare' => ['10.44.0.4', 0x8400, false, []],
-    'managed record points at the Process Node instead of the Ingress' => ['10.44.0.7', 0x8400, false, ['route.dns_mismatch']],
-    'resolver returns SERVFAIL' => ['10.44.0.4', 0x8002, false, ['route.inspection_failed']],
-    'query output is truncated' => ['10.44.0.4', 0x8400, true, ['route.inspection_failed']],
-]);

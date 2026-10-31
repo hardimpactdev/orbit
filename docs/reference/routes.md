@@ -20,7 +20,7 @@ The Gateway validates Route changes and records intent as an Operation. Swamp ex
 
 Domain, publication and web-root updates use the Route admission action. They return an Operation before execution. Instance rename records its own Operation and composes the Route update. Neither path uses a synchronous Route update executor.
 
-Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. It validates and reloads Caddy locally with sudo, then reports the result. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
+Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
 Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds retain their existing executor until their owning conversion.
 
@@ -328,7 +328,7 @@ This preparation walks only the Instance's checkout and served checkouts nested 
 
 #### Caddy access
 
-The agent publishes development TLS leaves under `/etc/caddy/orbit-certificates/<scope>`. It creates the shared `orbit-certificates` directory on first publication. That directory, the scope directory, its `versions` directory, and each certificate version belong to `root:caddy` with mode `0750`. Caddy can traverse the complete path to the certificate and its group-readable private key.
+Swamp publishes development TLS leaves under `/etc/caddy/orbit-certificates/<scope>`. It creates the shared `orbit-certificates` directory on first publication. That directory, the scope directory, its `versions` directory, and each certificate version belong to `root:caddy` with mode `0750`. Caddy can traverse the complete path to the certificate and its group-readable private key.
 
 Caddy runs as its own user and must reach each development site's web root, also when the [apps root](/reference/node-settings#derive-the-effective-root) lies outside the managed user's home. The same preparation runs for a [task VM](/reference/compute-drivers#task-vms) workspace that has a Route. The Node agent's `instance.grant-development-caddy-access` runs it. Its ACL tools run as the managed user, in this order:
 
@@ -353,6 +353,8 @@ Private DNS points the Route domain and the Cluster TLD at the Router. [Private 
 Router Caddy forwards Orbit CA HTTPS to the workload Node and keeps the domain as the HTTP `Host` value and the TLS server name. The Router and the workload Node get separate private keys. The Router uses the workload Node's LAN address when the Node has one, and its WireGuard address otherwise. A configured LAN address that does not answer fails publication. Orbit never falls back to WireGuard, also not per target in a pool.
 
 The Gateway sends the Route ID and the two LAN addresses to `firewall.route-lan`. The agent owns the TCP 443 allowance and its `orbit:route-<id>-lan` comment. Repeated convergence keeps an existing matching rule. Removal deletes every numbered rule with that exact comment, highest number first, and verifies absence under the same firewall lock. An inactive firewall stays inactive; convergence checks its stored rule, and removal leaves its stored rules unchanged.
+
+`route.lan_remove` starts `operation-route-lan-remove` directly on its admitted Node worker. The Gateway captures the Route ID and agent pin only after its sites are withdrawn and its workload placement is verified. Swamp runs the fixed local removal command with sudo and requires its absence check. The kind has no polled discovery, Gateway run contract or PHP executor. DNS publication keeps its current path.
 
 Before publication, `route.verify-certificate` checks the admitted workload or Router endpoint from the control worker. It connects to the selected address on port 443, sends the Route domain as TLS SNI, and requires a chain trusted by the control worker. This preserves the existing OpenSSL chain check; it does not add a separate hostname check. The Gateway records the validated placement and public error mapping; Swamp drives the activation order. Router replacement uses the same commands.
 
@@ -509,7 +511,11 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
 | `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router drops its site |
 
-Swamp executes `certificate.converge` and `certificate.remove` on one recorded Node and certificate scope. A leaf request returns only a public CSR. The Gateway signs it, then resolves protected certificate references at publication. Completion requires the request, signing, publication and inspection receipts, or proof that the current leaf was inspected. Removal refuses a scope still used by a stored Caddy site. Lost replies recover the original sanitized target receipt without generating another key.
+Swamp executes `certificate.converge` and `certificate.remove` as separate native workflows on the exact admitted Node worker. Admission records the scope, account, domain, version and root hash. Fixed Swamp system actions keep the leaf key on its Node and return only a public CSR. They do not invoke agent action commands.
+
+A placed control step on Node 209 reads the existing CA from its approved Swamp vault entry and signs public CSRs in memory. Separate native steps request, sign, publish and inspect the leaf. The Gateway has no certificate signing primitive or CSR checkpoint. Removal admits only a scope that no stored Caddy site uses, then removes and inspects it locally. Native Swamp locks and retries own execution.
+
+Route workflows reuse these local steps inside their parent run; they create no certificate child Operation. Gateway result projection stores only the bounded status and presence result.
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 
@@ -758,6 +764,8 @@ A child `route.destroy` request uses `{route_id, offline: false}`. The shared ch
 
 Each parent prepares exact `{stage, key}` child entries. Child-phase and residue result lists allow at most 4,096 entries and use the shared kit's string and whole-result limits. Opening a phase makes only those children eligible. A commit checks each child's stamped parent, admission snapshot and successful result through the shared child proof. Final proof checks the required phases and children again. The parent completion must match that recorded result.
 
+`route.target_unset` clears eligible Project Route associations and records its intent atomically. It starts `operation-route-target-unset` directly on the admitted Node. Swamp confirms the stored empty target set and projects the result. It has no publication, Metrics, child Operation, executor claim or polled writer. Active Instance and replacement guards still apply.
+
 Target changes broadcast `route.updated` only after the admission transaction commits. A refused preparation leaves the target unchanged and emits no `route.updated` event.
 
 Admission prepares the complete forward and rollback plan in its state transaction. Every child must be registered and declared before the transaction commits. A missing child or shared capability returns `operation.kind_unavailable` with no reserved Route, replacement, role or runnable Operation. Retained Instance rename callers keep the synchronous Route update executor; HTTP and CLI Route updates admit Operations.
@@ -766,7 +774,7 @@ A single target binding grants development source access when the Route is not a
 
 A target pool prepares workload certificates under temporary scopes before it changes associations. Gateway-recorded preparation selects those private sites for Caddy. The old associations stay authoritative during preparation. After association commit, environment synchronization and live certificate publication finish before Router publication and authorized Instance removal. A refusal before commit withdraws prepared Caddy sites before removing their certificates. A committed change recovers forward from the saved database proof. A retry keeps that proof until its own database phase commits. Failed Operations preserve the Route phase and error code for the next request. A completed rollback cannot be reported as successful publication.
 
-Cluster Router parents use `node.role_converge` with `{assignment_id}` for the recorded candidate and `node.role_remove` with `{role: router, purge_data: false, offline: false}` for obsolete assignments. The Node family proves those effects. The Cluster parent keeps the candidate provisioning until certificate, workload and Caddy preparation succeed.
+Cluster Router set and unset each start one native `operation-cluster-router` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent. Placed steps install the pinned Caddy package and role prerequisites, reconcile Router and workload firewall rules, publish certificates and Caddy, select the Router, publish private DNS and retire the old baseline after DNS expiry. Swamp runs the system commands directly. The Gateway records Router selection and cleanup checkpoints; it creates no child Operations and checks no execution receipts.
 
 It commits the new Router before publishing private DNS from that stored selection. A DNS failure after this commit recovers forward. A failed restoration before commit keeps the candidate serving until DNS restoration and the cache wait are proven. The old Router keeps serving until Swamp waits for the DNS grace period and the Gateway confirms it elapsed. Assignment rows are deleted only after their removal children succeed. A fully withdrawn candidate repeats preparation before it serves again.
 

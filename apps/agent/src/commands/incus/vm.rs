@@ -17,6 +17,7 @@ pub struct Location {
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
 pub struct Observation {
     running: bool,
+    settled: bool,
     address: Option<Ipv4Addr>,
     image_fingerprint: Option<String>,
 }
@@ -164,6 +165,7 @@ fn observe(host: &mut impl Host, input: &Location) -> Result<Option<Observation>
     }
     Ok(Some(Observation {
         running: status == Some("Running"),
+        settled: true,
         address: addresses.first().copied(),
         image_fingerprint: fingerprint,
     }))

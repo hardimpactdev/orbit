@@ -2,33 +2,46 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Monolog\Formatter\LineFormatter;
-use Monolog\Handler\TestHandler;
-use Monolog\Logger;
-use Monolog\LogRecord;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
-use Psr\Log\LoggerInterface;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => (string) Str::uuid(),
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
+        }
+    });
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
 
@@ -36,6 +49,7 @@ beforeEach(function (): void {
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
         'user' => 'orbit',
@@ -80,10 +94,12 @@ describe('ProcessUser', function (): void {
 
     it('stores the named account, defaults to its passwd home, and renders User', function (): void {
         $this->agents->answer('account.lookup', $this->nobody);
-        $this->postJson('/api/v1/processes', $this->userPayload)->assertCreated()
-            ->assertJsonPath('data.user', 'nobody')
-            ->assertJsonPath('data.runtime_config.user', 'nobody')
-            ->assertJsonPath('data.working_directory', '/nonexistent');
+        $this->postJson('/api/v1/processes', $this->userPayload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+        $this->getJson('/api/v1/processes')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.user', 'nobody')
+            ->assertJsonPath('data.0.runtime_config.user', 'nobody')
+            ->assertJsonPath('data.0.working_directory', '/nonexistent');
         expect($this->agents->calls)->toBe([['node' => $this->node->name, 'command' => 'account.lookup', 'input' => ['user' => 'nobody']]]);
         $process = Process::query()->sole();
         $target = app(ProcessTargetResolver::class)->forProcess($process);
@@ -102,7 +118,8 @@ describe('ProcessUser', function (): void {
             'params' => ['name' => 'process-create', 'arguments' => $this->userPayload],
         ])->assertOk()->assertJsonPath('result.isError', false);
         $document = json_decode($response->json('result.content.0.text'), true, flags: JSON_THROW_ON_ERROR);
-        expect($document['data']['user'])->toBe('nobody')->and($document['data']['working_directory'])->toBe('/nonexistent');
+        expect($document['operation']['kind'])->toBe('process.create');
+        expect(Process::query()->sole())->working_directory->toBe('/nonexistent')->runtime_config->toHaveKey('user', 'nobody');
     });
 
     it('does not leak an agent failure or persist the Process', function (): void {
@@ -115,8 +132,11 @@ describe('ProcessUser', function (): void {
     it('honors an explicit directory and includes the account in identity matching', function (): void {
         $this->agents->answer('account.lookup', $this->nobody);
         $payload = [...$this->userPayload, 'working_directory' => '/srv/worker'];
-        $this->postJson('/api/v1/processes', $payload)->assertCreated()->assertJsonPath('data.working_directory', '/srv/worker');
-        $this->postJson('/api/v1/processes', $payload)->assertOk();
+        $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+        $this->getJson('/api/v1/processes')->assertOk()
+            ->assertJsonCount(1, 'data')->assertJsonPath('data.0.working_directory', '/srv/worker');
+        Operation::query()->sole()->update(['status' => 'succeeded', 'finished_at' => now()]);
+        $this->postJson('/api/v1/processes', $payload)->assertAccepted();
         $process = Process::query()->sole();
         $process->update(['runtime_config' => [...$process->runtime_config, 'user' => 'other-worker']]);
         $this->postJson('/api/v1/processes', $payload)->assertConflict()->assertJsonPath('error.code', 'process.name_taken');
@@ -126,9 +146,11 @@ describe('ProcessUser', function (): void {
     it('retains the derived account when omitted', function (): void {
         $payload = $this->userPayload;
         unset($payload['user']);
-        $this->postJson('/api/v1/processes', $payload)->assertCreated()
-            ->assertJsonPath('data.user', null)->assertJsonPath('data.working_directory', '/home/orbit')
-            ->assertJsonMissingPath('data.runtime_config.user');
+        $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+        $this->getJson('/api/v1/processes')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.user', null)->assertJsonPath('data.0.working_directory', '/home/orbit')
+            ->assertJsonMissingPath('data.0.runtime_config.user');
         $process = Process::query()->sole();
         expect(new SystemdProcessRenderer()->render($process, app(ProcessTargetResolver::class)->forProcess($process)))
             ->toContain('User=orbit')
@@ -181,15 +203,17 @@ it('adds and lists a systemd process through the minimal API contract', function
     ]);
 
     $response
-        ->assertCreated()
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
         ->assertHeader('X-Orbit-Request-Id')
-        ->assertJsonPath('data.target_type', 'instance')
-        ->assertJsonPath('data.target_id', $this->instance->id)
-        ->assertJsonPath('data.runtime', 'systemd')
-        ->assertJsonPath('data.desired_state', 'running')
-        ->assertJsonPath('data.keep_alive', false)
-        ->assertJsonPath('data.runtime_status', 'running')
-        ->assertJsonMissingPath('data.node_id')
+        ->assertJsonPath('data.0.target_type', 'instance')
+        ->assertJsonPath('data.0.target_id', $this->instance->id)
+        ->assertJsonPath('data.0.runtime', 'systemd')
+        ->assertJsonPath('data.0.desired_state', 'running')
+        ->assertJsonPath('data.0.keep_alive', false)
+        ->assertJsonPath('data.0.runtime_status', 'running')
+        ->assertJsonMissingPath('data.0.node_id')
         ->assertJsonStructure(['meta' => ['request_id']]);
     $process = Process::query()->sole();
 
@@ -220,8 +244,10 @@ it('records the processes of one App instance', function (): void {
             'command' => $command,
             'restart_policy' => $policy,
             'start' => true,
-        ])->assertCreated();
+        ])->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     }
+
+    Process::query()->update(['status' => LifecycleStatus::Active]);
 
     record_fixture(
         $this->withHeader('X-Orbit-Request-Id', fixture_request_id())->getJson('/api/v1/processes?target_type=instance&target_id='.$this->instance->id)->assertOk()->assertJsonCount(2, 'data'),
@@ -243,9 +269,11 @@ it('stores keep-alive independently of restart policy', function (): void {
             'keep_alive' => true,
             'start' => true,
         ])
-        ->assertCreated()
-        ->assertJsonPath('data.keep_alive', true)
-        ->assertJsonPath('data.restart_policy', 'never');
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.keep_alive', true)
+        ->assertJsonPath('data.0.restart_policy', 'never');
 
     expect(Process::query()->sole()->keep_alive)->toBeTrue();
 });
@@ -262,13 +290,15 @@ it('adds and lists a Node-targeted Docker process', function (): void {
     ]);
 
     $response
-        ->assertCreated()
-        ->assertJsonPath('data.target_type', 'node')
-        ->assertJsonPath('data.target_id', $this->node->id)
-        ->assertJsonPath('data.name', 'postgres')
-        ->assertJsonPath('data.runtime', 'docker')
-        ->assertJsonPath('data.working_directory', null)
-        ->assertJsonMissingPath('data.node_id');
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.target_type', 'node')
+        ->assertJsonPath('data.0.target_id', $this->node->id)
+        ->assertJsonPath('data.0.name', 'postgres')
+        ->assertJsonPath('data.0.runtime', 'docker')
+        ->assertJsonPath('data.0.working_directory', null)
+        ->assertJsonMissingPath('data.0.node_id');
 
     $this->assertDatabaseHas('activity_log', [
         'command' => 'process:create',
@@ -301,10 +331,12 @@ it('adds a Node-targeted systemd process without an Instance environment file', 
     ]);
 
     $response
-        ->assertCreated()
-        ->assertJsonPath('data.target_type', 'node')
-        ->assertJsonPath('data.working_directory', '/home/orbit')
-        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/log-shipper']);
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.target_type', 'node')
+        ->assertJsonPath('data.0.working_directory', '/home/orbit')
+        ->assertJsonPath('data.0.runtime_config.command', ['/usr/local/bin/log-shipper']);
 
     $process = Process::query()->sole();
 
@@ -353,8 +385,10 @@ it('redacts Docker environment values from process responses without changing pe
     ]);
 
     $response
-        ->assertCreated()
-        ->assertJsonPath('data.runtime_config.environment', [
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.runtime_config.environment', [
             'APP_ENV' => '[REDACTED]',
             'APP_KEY' => '[REDACTED]',
             'DATABASE_URL' => '[REDACTED]',
@@ -400,78 +434,18 @@ it('redacts Docker environment values from process responses without changing pe
         ->not->toContain('postgres://orbit:password@example.test/orbit');
 });
 
-it('keeps Docker environment values out of production exception diagnostics', function (): void {
-    $sensitiveValue = 'api-boundary-secret';
-    $this->runtime->failConverge = true;
-    $logHandler = new TestHandler;
-    $logHandler->setFormatter(new LineFormatter(includeStacktraces: true));
-    app()->instance(LoggerInterface::class, new Logger('testing', [$logHandler]));
-
-    $response = $this
-        ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-        ->postJson('/api/v1/processes', [
-            'target_type' => 'instance',
-            'target_id' => $this->instance->id,
-            'name' => 'worker',
-            'runtime' => 'docker',
-            'image' => 'php:8.5-cli',
-            'command' => ['php', 'artisan', 'queue:work'],
-            'environment' => ['APP_KEY' => $sensitiveValue],
-        ])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'process.docker_converge_failed')
-        ->assertJsonPath('error.message', 'Docker convergence failed.');
-    $activity = Activity::query()->where('command', 'process:create')->sole();
-    $activityProperties = json_encode($activity->properties, JSON_THROW_ON_ERROR);
-    $exception = $this->runtime->lastConvergeFailure;
-
-    expect(ini_get('zend.exception_ignore_args'))
-        ->toBe('1')
-        ->and($exception)
-        ->toBeInstanceOf(ProcessOperationException::class)
-        ->and($exception?->getMessage())
-        ->toBe('Docker convergence failed.')
-        ->and($exception?->getPrevious()?->getMessage())
-        ->toBe('Runtime adapter failed.');
-
-    $appOwnedTrace = array_values(array_filter(
-        $exception?->getTrace() ?? [],
-        static function (array $frame): bool {
-            $file = $frame['file'] ?? null;
-
-            return
-                is_string($file)
-                && (
-                    str_starts_with($file, base_path('app').DIRECTORY_SEPARATOR)
-                    || str_starts_with($file, base_path('bootstrap').DIRECTORY_SEPARATOR)
-                );
-        },
-    ));
-
-    expect($appOwnedTrace)->not->toBeEmpty();
-
-    foreach ($appOwnedTrace as $frame) {
-        expect($frame)->not->toHaveKey('args');
-    }
-
-    $appOwnedSerializedTrace = json_encode($appOwnedTrace, JSON_THROW_ON_ERROR);
-    $formattedLogs = implode('', array_map(
-        static fn (LogRecord $record): string => is_string($record->formatted) ? $record->formatted : '',
-        $logHandler->getRecords(),
-    ));
-    $exceptionDiagnostics = json_encode([
-        'message' => $exception?->getMessage(),
-        'previous' => $exception?->getPrevious()?->getMessage(),
-    ], JSON_THROW_ON_ERROR);
-
-    expect(data_get(target: $activity->properties, key: 'input.environment.APP_KEY'))
-        ->toBe('[REDACTED]')
-        ->and($response->getContent())
-        ->not->toContain($sensitiveValue)->and($activityProperties)
-        ->not->toContain($sensitiveValue)->and($formattedLogs)
-        ->not->toContain($sensitiveValue)->and($exceptionDiagnostics)
-        ->not->toContain($sensitiveValue)->and($appOwnedSerializedTrace)
-        ->not->toContain($sensitiveValue);
+it('keeps Docker environment values out of admission failure diagnostics', function (): void {
+    $secret = 'api-boundary-secret';
+    config(['swamp.run_token' => '']);
+    $response = $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'worker',
+        'runtime' => 'docker', 'image' => 'php:8.5-cli', 'command' => ['php', 'artisan', 'queue:work'],
+        'environment' => ['APP_KEY' => $secret],
+    ])->assertServiceUnavailable();
+    expect($response->getContent())->not->toContain($secret);
+    expect(json_encode(Activity::query()->get()->toArray(), JSON_THROW_ON_ERROR))->not->toContain($secret);
+    expect($this->runtime->convergedProcessIds)->toBeEmpty();
+    $this->assertDatabaseCount('processes', 1);
 });
 
 it('normalizes associative Docker ports before building the process payload', function (): void {
@@ -483,7 +457,7 @@ it('normalizes associative Docker ports before building the process payload', fu
         'image' => 'busybox:1',
         'command' => ['sleep', 'infinity'],
         'ports' => ['http' => '8080:80'],
-    ])->assertCreated();
+    ])->assertAccepted()->assertJsonPath('data.kind', 'process.create');
 
     expect(Process::query()->sole()->runtime_config['ports'])->toBe(['8080:80']);
 });
@@ -880,13 +854,16 @@ function processes_api_record(Instance $instance): Process
 
 it('creates an explicit Vite preset without raw runtime input and preserves desired state on retry', function (): void {
     $payload = ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true];
-    $this->postJson('/api/v1/processes', $payload)->assertCreated()
-        ->assertJsonPath('data.runtime_config.preset', 'vp-dev')
-        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/vp', 'dev', '--host=127.0.0.1', '--port=${ORBIT_DEV_SERVER_PORT}', '--strictPort', '--base=/__orbit/vite/'])
-        ->assertJsonPath('data.restart_policy', 'on-failure')
-        ->assertJsonPath('data.desired_state', 'running');
+    $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.runtime_config.preset', 'vp-dev')
+        ->assertJsonPath('data.0.runtime_config.command', ['/usr/local/bin/vp', 'dev', '--host=127.0.0.1', '--port=${ORBIT_DEV_SERVER_PORT}', '--strictPort', '--base=/__orbit/vite/'])
+        ->assertJsonPath('data.0.restart_policy', 'on-failure')
+        ->assertJsonPath('data.0.desired_state', 'running');
+    Operation::query()->sole()->update(['status' => 'succeeded', 'finished_at' => now()]);
     $payload['start'] = false;
-    $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.desired_state', 'running');
+    $this->postJson('/api/v1/processes', $payload)->assertAccepted()->assertJsonPath('data.input.desired', 'running');
     $payload['name'] = 'another';
     $this->postJson('/api/v1/processes', $payload)->assertConflict()->assertJsonPath('error.code', 'process.preset_exists');
 });
@@ -899,7 +876,9 @@ it('rejects custom runtime fields on a preset even when explicitly empty', funct
 it('resolves an exact development Route domain for process creation', function (): void {
     $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id, 'domain' => 'vite.orbit.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
-    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertCreated()->assertJsonPath('data.target_id', $this->instance->id)->assertJsonPath('data.desired_state', 'stopped');
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertAccepted()->assertJsonPath('data.kind', 'process.create');
+    $this->getJson('/api/v1/processes')->assertOk()
+        ->assertJsonCount(1, 'data')->assertJsonPath('data.0.target_id', $this->instance->id)->assertJsonPath('data.0.desired_state', 'stopped');
 });
 
 it('keeps ordinary handmade annotation Process commands supported', function (): void {
@@ -910,9 +889,9 @@ it('keeps ordinary handmade annotation Process commands supported', function ():
         'runtime' => 'systemd',
         'command' => ['/usr/bin/node', '/home/orbit/annotator/serve.mjs'],
         'working_directory' => '/home/orbit/annotator',
-    ])->assertCreated();
+    ])->assertAccepted()->assertJsonPath('data.kind', 'process.create');
 
-    $process = Process::query()->findOrFail($response->json('data.id'));
+    $process = Process::query()->findOrFail($response->json('data.target_id'));
     $unit = new SystemdProcessRenderer()->render($process, app(ProcessTargetResolver::class)->forInspection($process));
     expect($unit)->toContain('ExecStart="/usr/bin/node" "/home/orbit/annotator/serve.mjs"');
 });

@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Data/Tools/**
   - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
-  - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
+  - apps/gateway/app/Actions/Doctor/Intent/RuntimeDoctorIntent.php
 ---
 
 # Tools
@@ -22,23 +22,15 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 [Importing workspace CI caches](/reference/instance-setup#import-ci-main-caches) restores private test and analysis data, not Tools or packages. It does not call a Tool Manager, fill a package download cache, or install a missing dependency. The Project's setup steps must install dependencies before importing these caches.
 
-## Execution and receipts
+## Native execution
 
-Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates requests, records intent and the target Node, and keeps the API and managed Tool records. Swamp executes the existing typed agent commands and records their steps. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
+Install, update, remove, and adopt return HTTP 202 with an [Operation](/reference/operations). The Gateway validates the request, records immutable intent and the target Node, and starts one native Swamp workflow. CLI writes follow the Operation. List, show, scan, manager list, and Doctor keep their read paths.
 
-Each operation admits only the selected manager's named commands and exact recorded input. The Gateway takes the Node from the Operation, verifies successful run and step receipts before completion, and retains only declared, redacted scalar result leaves. Swamp saves completion intent before posting it and reuses effect keys after a lost reply. Package-manager output and credentials are never part of a receipt.
+Swamp owns manager convergence, candidate constraints, adoption, exact removal, retries and cancellation. Its worker runs fixed system commands directly, using sudo where required and the exact admitted Node account for account-owned scopes. Tool writes never invoke agent actions. The agent retains read-only observations for scan and Doctor. It uses fixed system commands on the admitted Node's exact worker. Package-manager output and credentials never enter public results. The Gateway projects only bounded version, outcome and error fields into the selected Tool and manager records. It does not check execution receipts or repeat native completion policy.
 
-Gateway package manager adapters keep package validation, version normalization and read-only inspection. Candidate selection, adoption probes and removal planning execute only through the Swamp workflow's named commands. Their Gateway interfaces expose no execution methods for those steps. Command activity records admission before any package runs; a managed Tool is created only after verified completion.
+Node and Instance workflows compose manager prerequisites as native steps in their own root DAG. They do not create `tool.manager_converge` child Operations. Project runtime environments belong to the Instances family.
 
-Node enrollment, role operations, and Instance Vite+ environment preparation can request a `tool.manager_converge` child with the exact intent `{manager: string, image_provides_manager: bool}`. Instance preparation requests `manager: "vp"` and `image_provides_manager: false`; it does not assume that an image supplies the manager. The Tools admission adapter loads the Node from the server-owned child intent's `node_id` and uses the normal manager admission action to record recipe and completion inputs. The child targets `node_tools` with that Node's ID; its transport Node is the same ID. The shared child primitive records ancestry. Successful completion proves the manager's `version`; it returns no binary path or project environment identifier. Project runtime environments belong to the Instances family.
-
-The family spec compiles its fixed command allowlist, completion variants, result fields, and required kit capabilities through `OperationFamilySpec`. Swamp consumes the admitted descriptors for names and input. It keeps one execution policy implementation for candidate constraints, adoption, exact removal, and final package state. The Gateway keeps admission, exact target and input bindings, native schemas, redaction, receipt identity, and intent projection. It does not repeat that package policy in its execution hooks. This boundary trusts the configured Swamp executor as part of the control plane.
-
-The Gateway refuses a successful remove result with an installed version, or a successful install, update, or adoption result without one, before projecting Tool or manager state.
-
-The errors and outcomes below describe the completed Operation. Input, ownership and platform refusals still happen before admission. Scan returns its discovery report directly and creates no Tool intent.
-
-When the shared executor lacks Kit B child admission (`children`) or Kit C result schemas (`list_of`), Tools write kinds remain unregistered. Package writes and manager convergence refuse admission with `operation.kind_unavailable` (HTTP 503), without recording an Operation or running a Node command. Tool reads remain available.
+Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 
@@ -64,7 +56,7 @@ On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Lin
 
 A task VM's base image runs the Linux `vp` and `composer` materialization programs at build time. Its enrollment trusts the image and does not run those programs. Explicit Tool installs and updates do not use this enrollment skip and still run their manager commands. It still reads the manager version as usual. Every other Node runs the programs at enrollment. See [Skip what the image holds](/reference/compute-drivers#skip-what-the-image-holds).
 
-Linux Homebrew scope checks and first-use setup use `tool.inspect-homebrew-scope` and `tool.materialize-homebrew`. The agent checks the parent, repository, official origin, clean worktree, and executable link before changes. Setup uses fixed package prerequisites and the pinned Homebrew revision and version tag. It preserves a conflicting prefix and leaves an owned failed setup available for retry.
+Linux Homebrew scope checks and first-use setup use `tool.inspect-homebrew-scope` and `tool.materialize-homebrew`. Swamp checks the parent, repository, official origin, clean worktree, and executable link before changes. Setup uses fixed package prerequisites and the pinned Homebrew revision and version tag. It preserves a conflicting prefix and leaves an owned failed setup available for retry.
 
 On macOS, `tool.inspect-homebrew-scope` reads the enrolled account from the native account database and returns its home and one verified prefix. It checks `/opt/homebrew`, `/usr/local`, `$HOME/homebrew`, and `$HOME/.homebrew`. A conflicting candidate or more than one valid candidate refuses the whole inspection. The command runs as the enrolled account and changes no files or Homebrew revision. Formula and cask operations use this same scope result.
 
@@ -76,9 +68,9 @@ The `tool.homebrew-cask-*` commands own cask metadata, installed versions, disco
 
 Composer package operations use typed `tool.composer-*` commands. The agent runs the fixed shared-scope arguments, validates Composer output, and resolves an explicit dry-run no-op from one installed inventory. The Gateway keeps version constraints and adoption policy.
 
-The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. `tool.materialize-composer` installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
+The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
-The `tool.materialize-vp` agent command installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. Enrollment sends the same typed command and pins.
+Native Swamp manager convergence installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. Enrollment composes the same native manager action with the admitted candidate account and recipe pins.
 
 Managed-account recipe commands run from that account's home directory, including JavaScript installation, inventory, launcher checks, and image verification. They change directory after switching accounts and set `VP_HOME` to the resolved store. A caller's working directory cannot select workspace configuration or prevent the account from running a tool.
 
@@ -352,7 +344,7 @@ A candidate outside the range records the Tool as `failed` with `tool.version_co
 
 ## Homebrew formulae
 
-The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. `tool.homebrew-formula-candidate` reads the formula's metadata on the Node. The agent requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. `tool.homebrew-formula-install` and `tool.homebrew-formula-update` check that metadata again under the shared Homebrew mutation lock and force bottle use. `tool.homebrew-formula-remove` removes only the named formula. These commands refuse protected packages and accept no executable, environment, tap, or manager options. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. `tool.homebrew-formula-candidate` reads the formula's metadata on the Node. Swamp requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. `tool.homebrew-formula-install` and `tool.homebrew-formula-update` check that metadata again under the shared Homebrew mutation lock and force bottle use. `tool.homebrew-formula-remove` removes only the named formula. These commands refuse protected packages and accept no executable, environment, tap, or manager options. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
 
 Orbit never runs a Homebrew developer command. That includes `brew ruby` and `brew irb`. A developer command writes `homebrew.devcmdrun` into the user's Homebrew git config and changes how a later `brew update` behaves. Orbit does not set `HOMEBREW_DEVELOPER` or `HOMEBREW_DEV_CMD_RUN`.
 
@@ -461,9 +453,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-An admitted Tool Operation holds `node_tools:<node id>` until it ends. This serializes package and manager changes on that Node, including the shared Homebrew prefix. Another start returns `operation.target_busy`. The agent retains its native package-manager locks. Scan does not hold the Operation target. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
-
-`operation.target_busy` means another Tool Operation holds the Node. It does not mean a dpkg lock is busy. [The dpkg lock](#the-dpkg-lock) says which apt commands wait for one.
+Swamp serializes Tool mutations through the stable `tools-node-<node_id>` behavior identity. The Node agent retains the package manager's native locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). The Gateway records no Tool target hold. Scan does not acquire an Operation lock.
 
 ## Check removal with Doctor
 
@@ -471,15 +461,10 @@ The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the No
 
 ## Direct Swamp execution
 
-When `tool.adopt` selects the direct writer, it also requires the admitted Tool status `installed`, read from an existing managed Tool row. New ownership and failed-Tool adoption retries keep the polled writer. The selected writer is stamped once; changing the writer map or declaration does not reselect an existing or replayed intent.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, remove, adopt and manager convergence all run on the admitted Node's exact `orbit-node-<id>` worker with its matching Node label. There is no migration-pool fallback or polled writer.
 
-Tools declares `tool.install`, `tool.update`, `tool.remove`, `tool.adopt` and `tool.manager_converge` on the [shared direct Operation boundary](/reference/operations#direct-swamp-starts). `ORBIT_SWAMP_DIRECT_WRITERS` is a JSON map keyed by exact kind and defaults to `{}`. An absent entry keeps the previous Swamp writer. A `direct` entry records immutable `tool_writer` state and starts `operation-tool-direct` through `StartSwampRun` with the one `ORBIT_SWAMP_RUN_TOKEN`. The Gateway records safe package, manager, enrolled account and recipe intent; the Node worker executes policy and returns a bounded inventory projection. No Tool relay, family credential or Gateway primitive is declared.
+Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Read-only scan and Doctor probes stay in Orbit.
 
-APT `tool.manager_converge` and `tool.adopt` admit direct root intents on Node 209 when their exact kind entry is `direct`. The declaration's literal `writer_scope` limits admission to that proven manager and Node. Other managers, Nodes and privileged kinds stay polled. Existing callers that admit manager children also stay polled. The chosen writer is immutable; reverting either entry to `polled` changes new intents only. The public kinds and API stay the same.
-
-The loaded workflow uses Node 209's `pool=migration` workers and fixed unprivileged APT version/inventory commands. A stable behavior identity serializes the Node's manager scopes. The Gateway start response binds the root run ID before worker reads. Real APT manager convergence and adoption of an existing package passed canaries before takeover.
-
-Production verification precedes deletion of replaced execution helpers. Synchronous manager-version and selected-package relay methods with no production callers are removed; bulk inventory and the live Vite+ Doctor probe remain. Other actions wait for their own proof and approved privilege boundary; parent lanes move legacy manager children into native DAG steps. Shared executor core remains with the boundary lane.
 
 ## Why it works this way
 

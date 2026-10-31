@@ -3,15 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
-use App\Actions\Doctor\DatabaseServerDoctorProbe;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerProcess;
 use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Domain\DatabaseServers\ValkeyAclUser;
 use App\Domain\DatabaseServers\ValkeyServerAdmin;
-use App\Domain\Doctor\DoctorNodeContext;
-use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -198,28 +195,6 @@ describe('a Valkey Database server in Docker', function (): void {
 
         expect($default->rules)->toBe(ValkeyAclUser::ADMIN_RULES)
             ->and($default->hasOnlyPassword($this->password))->toBeTrue();
-    });
-
-    it('reports the recorded users as healthy through Doctor, with the exact rules that Valkey lists', function (): void {
-        valkey_docker_user($this->server, 'gateway-queue', ['orbit-gateway:*', 'orbit-gateway-horizon:*'],
-            ['@connection', '@transaction', '@keyspace', '@string', '@list', '@hash', '@set', '@sortedset', 'eval', 'time']);
-        valkey_docker_user($this->server, 'collector', ['orbit:ai-router:*'], ['@connection', '@string', '@keyspace', 'eval']);
-        $context = new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true));
-
-        expect(ValkeyAcl::changes($this->server->refresh(), $this->admin->aclUsers($this->server)))->toBe(['set' => [], 'delete' => []])
-            ->and(app(DatabaseServerDoctorProbe::class)->inspect($context)->issues)->toBe([]);
-
-        valkey_docker_client($this->server, 'default', $this->password)->executeRaw(['ACL', 'SETUSER', 'collector', '+get']);
-
-        expect(array_map(static fn ($issue): string => $issue->code, app(DatabaseServerDoctorProbe::class)->inspect($context)->issues))
-            ->toBe(['database_server.acl_mismatch']);
-    });
-
-    it('reads the effective persistence and database settings before adoption', function (): void {
-        expect($this->admin->adoptionConfiguration($this->server))->toMatchArray([
-            'dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir',
-            'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16',
-        ]);
     });
 
     it('reports the live database count and accepts only indexes below it', function (): void {

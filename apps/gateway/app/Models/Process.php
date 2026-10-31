@@ -34,6 +34,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  */
 final class Process extends Model
 {
+    /** @var array<string, mixed> */
+    #[\Override]
+    protected $attributes = ['systemd_activation_pending' => false];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
