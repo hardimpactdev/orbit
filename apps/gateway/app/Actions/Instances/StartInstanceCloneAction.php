@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CloneInstanceData;
 use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Nodes\RoleName;
@@ -95,6 +96,9 @@ final readonly class StartInstanceCloneAction
         if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
             || $node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
             throw $this->conflict('instance.clone_candidate_inactive', 'The candidate is not active.');
+        }
+        if (! is_bool($candidate->source_is_laravel)) {
+            new InstanceSourceProfileGuard()->refuseMissing();
         }
         if ($candidate->placedOnAppDev()) {
             $base = $candidate->checkout_path;
