@@ -36,7 +36,7 @@ it('records Process intent without dispatch or exposing environment bytes', func
         ->assertAccepted()->assertJsonPath('data.kind', 'process.create');
     $operation = Operation::query()->sole();
     expect($operation->node_id)->toBe($this->node->id)
-        ->and($operation->input['environment'])->toBe(['$secret' => 'process.environment', 'id' => Process::query()->sole()->id])
+        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => Process::query()->sole()->id])
         ->and(json_encode($operation->toArray()))->not->toContain($secret)
         ->and($response->getContent())->not->toContain($secret)
         ->and(Process::query()->sole()->status->value)->toBe('provisioning');
@@ -118,4 +118,31 @@ it('captures the real first-visit systemd input with a boolean activation flag',
     $input['installation']['content_hash'] = str_repeat('b', 64);
     $fixture = json_decode(file_get_contents(base_path('tests/Fixtures/Processes/create-admitted-input.json')), true, flags: JSON_THROW_ON_ERROR);
     expect($input)->toBe($fixture);
+});
+
+it('starts update directly without an admission lease and keeps private definition bytes out of its input', function (): void {
+    $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $process->update(['status' => 'active']);
+    app()->instance(ProcessRuntimeLease::class, Mockery::mock(ProcessRuntimeLease::class)->shouldNotReceive('run')->getMock());
+    app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
+
+    $this->patchJson('/api/v1/processes/'.$process->id, ['environment' => ['PASSWORD' => 'update-private-value']])->assertAccepted()->assertJsonPath('data.kind', 'process.update');
+
+    $operation = Operation::query()->where('kind', 'process.update')->sole();
+    expect($operation->state['process_control_writer'])->toBe('direct')
+        ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => $process->id])
+        ->and($operation->input)->not->toHaveKeys(['environment', 'command', 'content', 'image'])
+        ->and(json_encode($operation->toArray()))->not->toContain('update-private-value');
+    config(['dependency_detection.services_node_id' => $this->node->id]);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $query = '?run_id='.$operation->state['swamp_run_id'];
+    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $process->id)
+        ->assertJsonMissingPath('data.input.installation.definition');
+    $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'update-private-value');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.update', 'worker' => 'old'])->assertUnprocessable();
+    Queue::assertNothingPushed();
 });

@@ -13,6 +13,7 @@ $control = [
 ];
 
 return [
+    'process.update' => [...$control, 'writer_scope' => [], 'private_material' => ['installation' => 'process.installation']],
     'process.create' => [...$control, 'writer_scope' => [], 'private_material' => ['installation' => 'process.installation']],
     'process.destroy' => [...$control, 'writer_scope' => []],
     'process.restart' => [...$control, 'writer_scope' => []],
