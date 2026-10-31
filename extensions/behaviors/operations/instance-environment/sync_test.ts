@@ -7,8 +7,10 @@ import {
   type EnvironmentInvoke,
   EnvironmentRefusal,
   refreshEnvironmentRuntime,
+  type RuntimeActions,
   synchronizeEnvironment,
 } from "./sync.ts";
+import { instanceActions } from "../processes-schedules/instance.ts";
 import { environmentRoot } from "./mod.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 const plan = {
@@ -17,7 +19,6 @@ const plan = {
   environment: "development",
   base: "/fast/apps/example/default",
   user: "nckrtl",
-  agent_sha256: "a".repeat(64),
   maximum: 1048576,
   required_capacity: 2097152,
   preserve_workload_keys: true,
@@ -184,31 +185,6 @@ Deno.test("late private callback cannot invoke a Node action", async () => {
   );
   assertEquals(f.calls.length, 0);
 });
-Deno.test("production refresh refuses a substituted account before commands", async () => {
-  const f = fixture();
-  await assertRejects(() =>
-    refreshEnvironmentRuntime({
-      ...plan,
-      environment: "production",
-      runtime: {
-        config: {
-          user: "other",
-          home: plan.base,
-          version: "8.5",
-          application: plan.base,
-        },
-        php: {
-          user: plan.user,
-          home: plan.base,
-          version: "8.5",
-          marker: "owned",
-          deadline_seconds: 30,
-        },
-        processes: [],
-      },
-    }, f.f.invoke), EnvironmentRefusal);
-  assertEquals(f.calls.length, 0);
-});
 Deno.test("native environment root projects only bounded outcome without children or executor RPC", async () => {
   const calls: string[] = [];
   const args = {
@@ -261,9 +237,8 @@ Deno.test("native environment root projects only bounded outcome without childre
   ]);
 });
 
-Deno.test("unported production Process restart refuses before environment read or writes", async () => {
-  const f = fixture();
-  const production = {
+function production() {
+  return {
     ...plan,
     environment: "production",
     runtime: {
@@ -271,7 +246,7 @@ Deno.test("unported production Process restart refuses before environment read o
         user: plan.user,
         home: plan.base,
         version: "8.5",
-        application: plan.base,
+        application: plan.base + "/current",
       },
       php: {
         user: plan.user,
@@ -281,79 +256,197 @@ Deno.test("unported production Process restart refuses before environment read o
         deadline_seconds: 30,
       },
       processes: [{
-        process_id: 4,
-        agent_sha256: plan.agent_sha256,
-        runtime: "systemd",
-        name: "orbit-process-4-web.service",
-        on_demand: false,
-        vite: null,
+        id: 4,
+        input: {
+          process_id: 4,
+          agent_sha256: "a".repeat(64),
+          runtime: "systemd",
+          name: "orbit-process-4-worker.service",
+          on_demand: false,
+          vite: null,
+        },
       }],
     },
   };
-  const failure = await assertRejects(
-    () => synchronizeEnvironment(production, f.use, f.f.invoke),
-    EnvironmentRefusal,
-  );
-  assertEquals(failure.code, "operation.kind_unavailable");
-  assertEquals(failure.stage, "runtime");
-  await assertRejects(
-    () => refreshEnvironmentRuntime(production, f.f.invoke),
-    EnvironmentRefusal,
-  );
-  assertEquals(f.calls, []);
-});
-
-Deno.test("unported PHP cache refresh refuses before private access without Processes", async () => {
-  let privateReads = 0, effects = 0;
-  const failure = await assertRejects(
-    () =>
-      synchronizeEnvironment({
-        ...plan,
-        environment: "production",
-        runtime: {
-          config: {
-            user: plan.user,
-            home: plan.base,
-            version: "8.5",
-            application: plan.base,
-          },
-          php: {
-            user: plan.user,
-            home: plan.base,
-            version: "8.5",
-            marker: "owned",
-            deadline_seconds: 30,
-          },
-          processes: [],
-        },
-      }, () => {
-        privateReads++;
-        return Promise.resolve();
-      }, () => {
-        effects++;
-        return Promise.resolve({});
-      }),
-    EnvironmentRefusal,
-  );
-  assertEquals(failure.code, "operation.kind_unavailable");
-  assertEquals([privateReads, effects], [0, 0]);
-});
-Deno.test("a callback abandoned during inspection cannot start a later environment write", async () => {
-  let inspected!: (value: Record<string, unknown>) => void;
-  let pending!: Promise<void>;
+}
+function runtimeFixture() {
   const calls: string[] = [];
-  const result = synchronizeEnvironment(plan, (callback) => {
-    pending = callback({ environment_material: material });
-    pending.catch(() => {});
-    return Promise.resolve();
-  }, (action) => {
-    calls.push(action.name);
-    return new Promise((resolve) => {
-      inspected = resolve;
-    });
+  const f = {
+    calls,
+    config: "config_cached" as
+      | "config_cached"
+      | "config_uncached"
+      | "no_current_release",
+    fail: "",
+  };
+  const actions: RuntimeActions = {
+    config: () => {
+      calls.push("config");
+      return f.fail === "config"
+        ? Promise.reject(new Error("synthetic-secret"))
+        : Promise.resolve({ outcome: f.config });
+    },
+    php: () => {
+      calls.push("php");
+      return f.fail === "php"
+        ? Promise.reject(new Error("synthetic-secret"))
+        : Promise.resolve({ complete: true });
+    },
+    processes: instanceActions((name, input) => {
+      calls.push(
+        name + (name === "process.control" ? ":" + input.operation : ""),
+      );
+      return Promise.resolve(
+        f.fail === "process"
+          ? { error_code: "process.control_failed" }
+          : { state: "active" },
+      );
+    }),
+  };
+  return { f, actions };
+}
+Deno.test("production config, OPcache and canonical Process restart execute in order", async () => {
+  const { f, actions } = runtimeFixture();
+  assertEquals(await refreshEnvironmentRuntime(production(), actions), {
+    runtime_refresh: "config_cache_and_opcache_refreshed",
+    restarted_process_ids: [4],
   });
-  await assertRejects(() => result, EnvironmentRefusal);
-  inspected({ preflight: { state: "ok" }, existing: { state: "missing" } });
-  await assertRejects(() => pending);
-  assertEquals(calls, ["instance.inspect-environment-sync"]);
+  assertEquals(f.calls, [
+    "config",
+    "php",
+    "process.control:restart",
+    "process.status",
+  ]);
+});
+Deno.test("uncached production stays uncached while OPcache and Processes refresh", async () => {
+  const { f, actions } = runtimeFixture();
+  f.config = "config_uncached";
+  assertEquals(
+    (await refreshEnvironmentRuntime(production(), actions)).runtime_refresh,
+    "opcache_refreshed_config_uncached",
+  );
+  assertEquals(f.calls, [
+    "config",
+    "php",
+    "process.control:restart",
+    "process.status",
+  ]);
+});
+Deno.test("missing production release skips OPcache and Process changes", async () => {
+  const { f, actions } = runtimeFixture();
+  f.config = "no_current_release";
+  assertEquals(await refreshEnvironmentRuntime(production(), actions), {
+    runtime_refresh: "skipped_no_current_release",
+    restarted_process_ids: [],
+  });
+  assertEquals(f.calls, ["config"]);
+});
+Deno.test("runtime failure stops later effects and never exposes application output", async () => {
+  for (
+    const [stage, code, calls] of [
+      ["config", "env.config_cache_refresh_failed", ["config"]],
+      ["php", "env.php_runtime_refresh_failed", ["config", "php"]],
+      ["process", "env.runtime_refresh_failed", [
+        "config",
+        "php",
+        "process.control:restart",
+      ]],
+    ] as const
+  ) {
+    const { f, actions } = runtimeFixture();
+    f.fail = stage;
+    const error = await assertRejects(
+      () => refreshEnvironmentRuntime(production(), actions),
+      EnvironmentRefusal,
+    );
+    assertEquals(error.code, code);
+    assertEquals(f.calls, [...calls]);
+    assertFalse(error.message.includes("synthetic-secret"));
+  }
+});
+Deno.test("a production Process restart does not require a PHP runtime", async () => {
+  const { f, actions } = runtimeFixture();
+  const input = production();
+  assertEquals(
+    await refreshEnvironmentRuntime({
+      ...input,
+      runtime: { ...input.runtime, config: null, php: null },
+    }, actions),
+    {
+      runtime_refresh: "skipped_no_php_version",
+      restarted_process_ids: [4],
+    },
+  );
+  assertEquals(f.calls, ["process.control:restart", "process.status"]);
+});
+Deno.test("substituted runtime ownership refuses before private environment access", async () => {
+  const input = production();
+  let reads = 0;
+  await assertRejects(() =>
+    synchronizeEnvironment({
+      ...input,
+      runtime: {
+        ...input.runtime,
+        config: { ...input.runtime.config, user: "other" },
+      },
+    }, () => {
+      reads++;
+      return Promise.resolve();
+    })
+  );
+  assertEquals(reads, 0);
+});
+Deno.test("production runtime failure after file writes reports a failed root and bounded stage", async () => {
+  const callbacks: Record<string, unknown>[] = [];
+  const input = production();
+  const http: Http = (_method, path, body) => {
+    if (path.endsWith("/result")) {
+      callbacks.push(body as Record<string, unknown>);
+    }
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          id: 17,
+          kind: "instance.sync_environment",
+          node_id: 9,
+          status: "queued",
+          cancel_requested: false,
+          input: { instance_id: 31, direct_environment: input },
+          result: null,
+        },
+      },
+    });
+  };
+  const { f, actions } = runtimeFixture();
+  f.fail = "config";
+  let written = false;
+  const root = environmentRoot(
+    () => http,
+    () => {
+      written = true;
+      return Promise.resolve({ changed: true, keys: ["API_TOKEN"] });
+    },
+    (raw, _actions, signal) => refreshEnvironmentRuntime(raw, actions, signal),
+  );
+  await assertRejects(
+    () =>
+      root.methods.apply.execute({
+        operation_id: 17,
+        kind: "instance.sync_environment",
+        node_id: 9,
+        run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+      }, {
+        globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/unused" },
+      }),
+    Error,
+    "env.config_cache_refresh_failed",
+  );
+  assertEquals(written, true);
+  assertEquals(callbacks.at(-1)?.error_code, "env.config_cache_refresh_failed");
+  assertEquals(callbacks.at(-1)?.result, {
+    error_code: "env.config_cache_refresh_failed",
+    failed_step: "config_cache",
+  });
+  assertEquals(f.calls, ["config"]);
 });

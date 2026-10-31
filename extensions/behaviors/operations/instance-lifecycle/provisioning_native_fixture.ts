@@ -40,7 +40,6 @@ export const fixtureHttp: Http = (method, path, body) => {
         environment: plan.environment,
         user: plan.user,
         base: plan.application,
-        agent_sha256: plan.agent_sha256,
         maximum: 1048576,
         required_capacity: 2097152,
         preserve_workload_keys: false,

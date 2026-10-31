@@ -6,7 +6,10 @@ import {
 } from "./local.ts";
 export type { EnvironmentInvoke } from "./local.ts";
 import type { GatewayOperation } from "../_lib/direct.ts";
-import { Input as ProcessInput } from "../processes-schedules/process-input.ts";
+import { instanceActions } from "../processes-schedules/instance.ts";
+import { StartInput } from "../processes-schedules/start.ts";
+import { refreshProductionCache } from "../php/runtime_local.ts";
+import { ConfigCacheInput, refreshConfigCache } from "./runtime_cache.ts";
 
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
 const Key = z.string().regex(/^[A-Za-z_][A-Za-z0-9_.]*$/).max(255);
@@ -18,29 +21,49 @@ export const EnvironmentPlan = z.object({
   environment: z.enum(["development", "production"]),
   base: Path,
   user: Account,
-  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   maximum: z.literal(1048576),
   required_capacity: z.number().int().min(1048576),
   preserve_workload_keys: z.boolean(),
   runtime: z.object({
-    config: z.object({
-      user: Account,
-      home: Path,
-      version: z.string(),
-      application: Path,
-    }).strict(),
+    config: ConfigCacheInput.nullable(),
     php: z.object({
       user: Account,
       home: Path,
-      version: z.string(),
+      version: z.string().regex(/^[0-9]+\.[0-9]+$/),
       marker: z.string(),
       deadline_seconds: z.literal(30),
-    }).strict(),
-    processes: z.array(ProcessInput).max(4096),
+    }).strict().nullable(),
+    processes: z.array(
+      z.object({
+        id: z.number().int().positive(),
+        input: StartInput,
+      }).strict(),
+    ).max(4096),
   }).strict().nullable(),
-}).strict().refine((plan) =>
-  plan.environment === "production" || plan.runtime === null
-);
+}).strict().superRefine((plan, ctx) => {
+  const runtime = plan.runtime;
+  if (runtime === null) return;
+  if (
+    plan.environment !== "production" ||
+    (runtime.config === null) !== (runtime.php === null) ||
+    (runtime.config !== null && (runtime.config.user !== plan.user ||
+      runtime.config.home !== plan.base || runtime.php!.user !== plan.user ||
+      runtime.php!.home !== plan.base ||
+      runtime.config.version !== runtime.php!.version)) ||
+    new Set(runtime.processes.map((member) => member.id)).size !==
+      runtime.processes.length ||
+    runtime.processes.some((member) =>
+      member.id !== member.input.process_id ||
+      member.input.vite !== null || member.input.vite_plan !== undefined
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Environment runtime placement differs",
+    });
+  }
+});
+
 const Material = z.object({
   content: z.string(),
   keys: z.array(Key).max(16384),
@@ -56,14 +79,6 @@ export class EnvironmentRefusal extends Error {
     super("Instance environment action refused");
   }
 }
-/** Production runtime refresh waits for the PHP owner's native lower action. */
-function supportedPlan(raw: unknown) {
-  const plan = EnvironmentPlan.parse(raw);
-  if (plan.runtime !== null) {
-    throw new EnvironmentRefusal("operation.kind_unavailable", "runtime");
-  }
-  return plan;
-}
 type Use = Pick<GatewayOperation, "withPrivateMaterial">["withPrivateMaterial"];
 
 /** Callback-local bytes only. Native outputs contain key names and bounded outcomes. */
@@ -73,7 +88,7 @@ export async function synchronizeEnvironment(
   invoke: EnvironmentInvoke = invokeLocalEnvironment,
   signal?: AbortSignal,
 ) {
-  const plan = supportedPlan(raw);
+  const plan = EnvironmentPlan.parse(raw);
   let accepting = true, attempted = false;
   let output: Record<string, unknown> | undefined;
   let stage = "material";
@@ -227,26 +242,93 @@ export async function synchronizeEnvironment(
   return output;
 }
 
-/** Development needs no runtime refresh. Unsupported production refresh refuses before writes. */
+export type RuntimeActions = {
+  config: typeof refreshConfigCache;
+  php: typeof refreshProductionCache;
+  processes: ReturnType<typeof instanceActions>;
+};
+const runtimeActions: RuntimeActions = {
+  config: refreshConfigCache,
+  php: refreshProductionCache,
+  processes: instanceActions(),
+};
+
+/** Reuse the PHP and Process owners inside the environment root; no child admission. */
 export async function refreshEnvironmentRuntime(
   raw: unknown,
-  _invoke: EnvironmentInvoke = invokeLocalEnvironment,
-  _signal?: AbortSignal,
+  actions: RuntimeActions = runtimeActions,
+  signal?: AbortSignal,
 ) {
-  await Promise.resolve();
-  const plan = supportedPlan(raw);
-  const runtime = plan.runtime;
+  const plan = EnvironmentPlan.parse(raw);
   if (plan.environment !== "production") {
     return {
       runtime_refresh: "skipped_development",
       restarted_process_ids: [],
     };
   }
+  const runtime = plan.runtime;
   if (runtime === null) {
     return {
       runtime_refresh: "skipped_no_php_version",
       restarted_process_ids: [],
     };
   }
-  throw new EnvironmentRefusal("operation.kind_unavailable", "runtime");
+  let runtimeRefresh = "skipped_no_php_version";
+  if (runtime.config !== null && runtime.php !== null) {
+    let config;
+    try {
+      config = await actions.config(runtime.config, signal);
+    } catch {
+      throw new EnvironmentRefusal(
+        "env.config_cache_refresh_failed",
+        "config_cache",
+      );
+    }
+    if (config.outcome === "no_current_release") {
+      return {
+        runtime_refresh: "skipped_no_current_release",
+        restarted_process_ids: [],
+      };
+    }
+    try {
+      await actions.php(runtime.php, signal);
+    } catch {
+      throw new EnvironmentRefusal(
+        "env.php_runtime_refresh_failed",
+        "php_runtime",
+      );
+    }
+    runtimeRefresh = config.outcome === "config_cached"
+      ? "config_cache_and_opcache_refreshed"
+      : "opcache_refreshed_config_uncached";
+  }
+  const restarted: number[] = [];
+  try {
+    const prepared = await actions.processes.prepare(
+      "process.restart_instance",
+      runtime.processes,
+      signal,
+    );
+    if (!prepared.proceed) throw new Error();
+    for (const member of runtime.processes) {
+      const result = await actions.processes.apply(
+        "process.restart_instance",
+        member,
+        {
+          withPrivateMaterial: () =>
+            Promise.reject(new Error("Unexpected restart material request")),
+        },
+        "skipped",
+        signal,
+      );
+      if ("error_code" in result) throw new Error();
+      restarted.push(member.id);
+    }
+  } catch {
+    throw new EnvironmentRefusal(
+      "env.runtime_refresh_failed",
+      "process_restart",
+    );
+  }
+  return { runtime_refresh: runtimeRefresh, restarted_process_ids: restarted };
 }
