@@ -5,7 +5,6 @@ import {
 } from "../integrations/websocket_runtime_system.ts";
 import { readRoleAccount } from "./role_baseline_system.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
-import type { GatewayOperation } from "../_lib/direct.ts";
 
 const AccountName = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Path = z.string().regex(/^(\/[A-Za-z0-9._-]+)+$/).refine((path) =>
@@ -31,7 +30,7 @@ type Outcome = { completed: true } | { error_code: string };
 /** The canonical native Reverb lower owns release preparation, activation and recovery. */
 export async function installWebSocketRuntime(
   raw: unknown,
-  privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
+  material: Record<string, unknown>,
   signal?: AbortSignal,
   transport: SystemTransport = localSystemCommand,
   runtime: WebSocketRuntimeActions = websocketRuntimeSystem(transport),
@@ -42,33 +41,30 @@ export async function installWebSocketRuntime(
   if (found === null) {
     return { error_code: "websocket.runtime_account_missing" };
   }
-  let outcome: Outcome | undefined;
   let effectStarted = false;
   try {
-    await privateMaterial.withPrivateMaterial(async (material) => {
-      const environment = z.string().min(1).max(1048576).parse(
-        material.websocket_environment,
-      );
-      signal?.throwIfAborted();
-      effectStarted = true;
-      const reply = await runtime.converge({
-        user: found.user,
-        group: found.group,
-        install_path: plan.install_path,
-        repository: plan.repository,
-        ref: plan.ref,
-        port: plan.port,
-        environment,
-        unit: webSocketUnit(
-          plan.install_path,
-          found.user,
-          found.group,
-          plan.port,
-        ),
-      }, signal);
-      z.object({ release: Path }).strict().parse(reply);
-      outcome = { completed: true };
-    });
+    const environment = z.string().min(1).max(1048576).parse(
+      material.websocket_environment,
+    );
+    signal?.throwIfAborted();
+    effectStarted = true;
+    const reply = await runtime.converge({
+      user: found.user,
+      group: found.group,
+      install_path: plan.install_path,
+      repository: plan.repository,
+      ref: plan.ref,
+      port: plan.port,
+      environment,
+      unit: webSocketUnit(
+        plan.install_path,
+        found.user,
+        found.group,
+        plan.port,
+      ),
+    }, signal);
+    z.object({ release: Path }).strict().parse(reply);
+    return { completed: true };
   } catch (error) {
     if (
       error instanceof WebSocketRuntimeError &&
@@ -81,10 +77,6 @@ export async function installWebSocketRuntime(
     }
     throw new Error("Private WebSocket installation did not complete");
   }
-  if (outcome === undefined) {
-    throw new Error("The WebSocket runtime outcome is uncertain");
-  }
-  return outcome;
 }
 
 /** Source teardown never needs a source secret, and never purges data during relocation. */
