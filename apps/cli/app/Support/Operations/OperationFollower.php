@@ -19,8 +19,7 @@ use Throwable;
  * Follows one operation until it changes (docs/reference/operations.md#follow-an-operation-over-reverb). While the
  * operation's channel is subscribed, an `operation.updated` event with a newer sequence starts a read, and the
  * follower also reads every 15 seconds in case an event was lost. Without Reverb, or while the socket is down, it
- * reads every `poll_after_seconds`. Each read asks only for the steps after the last sequence it saw. Each
- * `client-output` line that the Node agent publishes while a deploy step runs goes to `$onOutput`.
+ * reads every `poll_after_seconds`. Each read fetches the current parent record.
  */
 final class OperationFollower
 {
@@ -42,20 +41,18 @@ final class OperationFollower
     private ?CarbonImmutable $lastReadAt = null;
 
     /**
-     * @param  Closure(int): OperationResponse  $read  reads the operation with the steps after this sequence
-     * @param  (Closure(OperationOutputLine): void)|null  $onOutput
+     * @param  Closure(): OperationResponse  $read  reads the current parent Operation
      */
     public function __construct(
         private readonly Closure $read,
         private readonly ?RealtimeSubscriber $subscriber,
-        private readonly ?Closure $onOutput = null,
     ) {
         $this->subscriber?->connect();
     }
 
     /**
      * Waits until the operation changes after `$current`, and returns the read that saw the change. The read carries
-     * only the steps that changed.
+     * the current parent record.
      *
      * @throws GatewayApiException after too many failed reads
      */
@@ -69,7 +66,7 @@ final class OperationFollower
 
             if ($this->due($current, $live)) {
                 try {
-                    $read = ($this->read)($this->sequence);
+                    $read = ($this->read)();
                     $failures = 0;
                 } catch (GatewayApiException $exception) {
                     if (++$failures >= self::TransientReads) {
@@ -114,8 +111,7 @@ final class OperationFollower
     }
 
     /**
-     * Takes the newest sequence the channel announced, hands on the live output lines, and tells whether the channel
-     * is subscribed.
+     * Takes the newest announced parent sequence and reports whether the channel is subscribed.
      */
     private function drainEvents(): bool
     {
@@ -124,23 +120,13 @@ final class OperationFollower
         }
 
         try {
-            foreach ($this->subscriber->pollDecoded(static function (string $name, mixed $payload): RealtimeEvent|OperationOutputLine|null {
-                if ($name === 'client-output') {
-                    return OperationOutputLine::fromPayload($payload);
+            foreach ($this->subscriber->pollDecoded(static function (string $name, mixed $payload): ?RealtimeEvent {
+                if ($name !== 'operation.updated') {
+                    return null;
                 }
 
-                $event = RealtimeEvent::fromChannelPayload($name, $payload);
-
-                return $event->type === 'operation.updated' ? $event : null;
+                return RealtimeEvent::fromChannelPayload($name, $payload);
             }) as $event) {
-                if ($event instanceof OperationOutputLine) {
-                    if ($this->onOutput !== null) {
-                        ($this->onOutput)($event);
-                    }
-
-                    continue;
-                }
-
                 $sequence = $event->data['sequence'] ?? null;
 
                 if (is_int($sequence)) {
