@@ -16,6 +16,11 @@ return [
         'private_material' => ['environment_material' => 'instance.environment_sync'],
     ],
     'instance.register' => ['workflow' => 'operation-instance-register', 'projection' => InstanceRegisterResult::class],
+    'instance.destroy' => [
+        'workflow' => 'operation-instance-destroy',
+        'projection' => \App\Domain\Instances\InstanceDestroyProjection::class,
+        'private_material' => ['git_read' => 'instance.lifecycle_git', 'teardown' => 'instance.destroy_teardown', 'php' => 'instance.destroy_php'],
+    ],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
