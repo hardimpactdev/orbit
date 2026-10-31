@@ -6,7 +6,7 @@ Node209 alone runs Serve and all Swamp workers. Run every target Node action, in
 
 Use registry package `@swamp/ssh@2026.10.23.1`, model version `2026.10.20.1`. The [official source](https://github.com/swamp-club/swamp-extensions/tree/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh) and the [live canary workflow](../workflows/workflow-node-proxy-canary.yaml) own the API and working example. Normal installation uses `swamp extension pull @swamp/ssh@2026.10.23.1`.
 
-Every step targets `orbit-node-209` with label `node: '209'`. Keep the affected Node in the admitted intent and select its host explicitly. Use the family's stable executing model name for `behaviorName`; the name below is an example, not a deployed administrative model. Stored models put the map under `globalArguments`. Workflow overrides put the **complete** `name`, `transport` and `hosts` map under `task.globalArgs`; `step.globalArgs` is invalid and existing model globals alone do not satisfy native validation of a dynamic model reference.
+Use one placement selector per scope: `target: orbit-node-209` or `labels: {node: '209'}`. A step can inherit its job's Node209 placement. Do not set both selectors on the same scope. Keep the affected Node in the admitted intent and select its host explicitly. Use the family's stable executing model name for `behaviorName`; the name below is an example, not a deployed administrative model. Stored models put the map under `globalArguments`. Workflow overrides put the **complete** `name`, `transport` and `hosts` map under `task.globalArgs`; `step.globalArgs` is invalid and existing model globals alone do not satisfy native validation of a dynamic model reference.
 
 ```yaml
 id: 3b938de9-c4c5-48ca-99cd-8191572f4a0a
@@ -20,11 +20,9 @@ inputs:
 jobs:
 - name: inspect
   target: orbit-node-209
-  labels: {node: '209'}
   steps:
   - name: hostname
     target: orbit-node-209
-    labels: {node: '209'}
     writes: true
     task:
       type: behavior
@@ -53,7 +51,6 @@ jobs:
         argv: [/usr/bin/hostname]
   - name: read-root-file
     target: orbit-node-209
-    labels: {node: '209'}
     writes: true
     dependsOn: [{step: hostname, condition: {type: succeeded}}]
     task:

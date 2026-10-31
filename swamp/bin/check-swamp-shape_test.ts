@@ -193,6 +193,25 @@ Deno.test("official SSH vault stdin and env require a 209 worker and closed exec
   delete inherited.jobs[0].target;
   inherited.target = "orbit-node-209";
   assertEquals(analyzeYaml(file, JSON.stringify(inherited)).findings, []);
+  for (const scope of ["workflow", "job", "step"]) {
+    const changed = JSON.parse(source);
+    delete changed.jobs[0].target;
+    const placement = scope === "workflow"
+      ? changed
+      : scope === "job"
+      ? changed.jobs[0]
+      : changed.jobs[0].steps[0];
+    placement.target = "orbit-node-209";
+    placement.labels = { node: "209" };
+    assertEquals(analyzeYaml(file, JSON.stringify(changed)).findings, []);
+    placement.labels.node = "18";
+    assert(
+      analyzeYaml(file, JSON.stringify(changed)).findings.some((
+        finding,
+      ) => finding.rule === "vault-placement"),
+      `${scope}: conflicting selectors cannot prove Node 209`,
+    );
+  }
   const scriptEnv = JSON.parse(source);
   scriptEnv.jobs[0].steps[0].task.methodName = "script";
   scriptEnv.jobs[0].steps[0].task.inputs = {
@@ -244,7 +263,11 @@ Deno.test("official SSH vault stdin and env require a 209 worker and closed exec
   );
   overridden.jobs[0].steps[0].target = "orbit-node-209";
   overridden.jobs[0].labels = { node: "18" };
-  assertEquals(analyzeYaml(file, JSON.stringify(overridden)).findings, []);
+  assert(
+    analyzeYaml(file, JSON.stringify(overridden)).findings.some((finding) =>
+      finding.rule === "vault-placement"
+    ),
+  );
   labelled.jobs[0].steps[0].labels = {};
   assert(
     analyzeYaml(file, JSON.stringify(labelled)).findings.some((f) =>

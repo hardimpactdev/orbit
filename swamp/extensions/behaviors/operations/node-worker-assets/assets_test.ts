@@ -61,3 +61,33 @@ Deno.test("Node209 alone retains its approved proxy identity in shared unit poli
         "LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519",
     );
 });
+
+Deno.test("known-hosts script metadata is fixed209 and written as a native resource", async () => {
+    const writes: unknown[] = [];
+    const result = await behavior.methods.known_hosts.execute(
+        { node_id: 209 },
+        {
+            extensionFile: (path) => new URL(path, import.meta.url).pathname,
+            writeResource: (...args) => Promise.resolve(writes.push(args)),
+        },
+    );
+    assertEquals(writes, [["known_hosts_script", "script", result]]);
+    assertStringIncludes(result.script_path, "/scripts/write_known_hosts.py");
+    for (
+        const input of [{ node_id: 9 }, {
+            node_id: 209,
+            private_key: "refused",
+        }]
+    ) {
+        await assertRejects(() =>
+            behavior.methods.known_hosts.execute(input, {
+                extensionFile: () => {
+                    throw new Error("must not read assets");
+                },
+                writeResource: () => {
+                    throw new Error("must not write resources");
+                },
+            })
+        );
+    }
+});
