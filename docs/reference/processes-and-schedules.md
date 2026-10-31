@@ -340,7 +340,11 @@ Leaf Process kinds use the direct native workflow only. Their completion project
 
 ## Direct Process controls
 
-`process.stop` uses `operation-process-stop` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions disable systemd boot start, stop the runtime, and verify its stopped state on the admitted target. The approved existing 209 identity and captured host-key pins select that connection. Successful execution removes its run directory; Python runs with `-B` so it creates no root-owned bytecode files. Stop installs no target worker or Swamp binary and mints no worker token. Docker skips the boot-policy step. Stop needs no Vite traffic preparation, private material, Gateway callback or agent digest. The shared terminal subscriber projects the verified state. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
+`process.stop` uses `operation-process-stop` for every systemd and Docker Process, including Vite Processes. The Gateway submits the complete public control descriptor and binds the native run ID. The workflow resolves the shared shipped Process scripts on a 209 worker and copies them to a run directory through official `@swamp/ssh`. Separate official SSH actions disable systemd boot start, stop the runtime, and verify its stopped state on the admitted target. The approved existing 209 identity and captured host-key pins select that connection. 
+
+Successful execution removes its run directory; Python runs with `-B` so it creates no root-owned bytecode files. Stop installs no target worker or Swamp binary and mints no worker token.
+
+Docker skips the boot-policy step. Stop needs no Vite traffic preparation, private material, Gateway callback or agent digest. The shared terminal subscriber projects the verified state. Admission takes no Gateway runtime lease or target hold. Hibernation keeps its separate stop-only behavior because it preserves boot policy and desired-running state.
 
 Schedule enable, manual run and destroy use their [direct Schedule workflow](/reference/schedules#direct-swamp-control). The landed direct kinds have no polled discovery or executor registration.
 
