@@ -11,7 +11,7 @@ export const DeploySourceInput = z.object({
   instance_id: z.number().int().positive(),
   node_id: z.number().int().positive().optional(),
   platform: z.enum(["linux", "macos"]).optional(),
-  architecture: z.enum(["amd64", "arm64"]).optional(),
+  architecture: z.enum(["x86_64", "arm64"]).optional(),
   project_id: z.number().int().positive(),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   commit: Commit.nullable(),

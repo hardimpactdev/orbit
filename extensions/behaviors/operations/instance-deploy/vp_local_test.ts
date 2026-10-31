@@ -61,7 +61,7 @@ async function setup() {
   const options = {
     user: userInfo().username,
     platform: "linux" as const,
-    architecture: "amd64" as const,
+    architecture: "x86_64" as const,
     deadline: Date.now() + 60000,
     fixture: {
       home,

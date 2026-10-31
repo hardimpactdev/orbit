@@ -9,7 +9,7 @@ import { vpRequirements, VpRuntime } from "./vp_requirements.ts";
 const Input = z.object({
   node_id: z.number().int().positive(),
   platform: z.enum(["linux", "macos"]),
-  architecture: z.enum(["amd64", "arm64"]),
+  architecture: z.enum(["x86_64", "arm64"]),
   path: z.string().startsWith("/").max(4096),
   user: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/),
   node_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,63}$/),
