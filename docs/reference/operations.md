@@ -547,7 +547,7 @@ After a kind cuts over and removes its previous executor, its `operation-kinds.p
 
 A parent still on the previous executor may admit a direct child through the child's owning admission hook. The child response includes normal Operation, parent and child identity. It omits the old execution context, lease and wait metadata. Replaying that child admission returns the same child without resolving a deleted execution contract.
 
-Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
+Cancelling a queued or running Operation with no `swamp_run_id` and zero attempts records `cancelled` immediately and releases its target hold, including an existing cancellation request. A bound run or an Operation with previous attempts only records `cancel_requested_at`; Swamp owns stopping and projecting its terminal result. A terminal Operation stays unchanged. Cancellation does not walk native children.
 
 A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
@@ -565,7 +565,7 @@ Direct workers authenticate as active WireGuard peers. Direct requests authorize
 
 Only the root Node may send result, failure or primitive requests. Other Gateway APIs keep their Node access checks. Participation never grants general access to the Gateway or another Node.
 
-Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase without remote diagnostics or credentials.
+Only an authenticated native start response or an exact native history match can bind `swamp_run_id`. Read, result and primitive requests refuse until it is recorded, and cannot bind or replace it. A bound intent returns without another submission. Each family canary proves start-response and first-read ordering. Structured `Swamp direct start` logs record duration, outcome and failure phase. `Swamp direct start refused` records the workflow and the remote error type, code and bounded message after credential and secret-pattern redaction. Remote diagnostics stay out of Operation results and API errors.
 
 Read input comes only from the projection hook, never automatically from raw intent. Primitive calls accept only the run ID; the hook selects its command and input from admitted state. Existing Route publication URLs reach the same shared controller during the Swamp rollout.
 
