@@ -298,7 +298,7 @@ final readonly class InstanceLifecycleChildren
             }
         }
         foreach (['environment-sync' => ['instance.sync_environment'], 'vp-environment' => ['instance.prepare_vp_environment'],
-            'route-converge' => ['route.converge'], 'database' => ['database.create', 'database.clone'],
+            'route-converge' => ['route.converge'], 'database' => ['database.create', 'database.clone', 'database.mysql_clone'],
             'database-environment-sync' => ['instance.sync_environment']] as $key => $kinds) {
             if (! $parent->children()->where('child_key', $key)->exists()) {
                 continue;

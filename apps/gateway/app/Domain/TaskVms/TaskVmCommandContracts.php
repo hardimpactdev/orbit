@@ -90,7 +90,7 @@ final class TaskVmCommandContracts
         $kinds = ['task_vm.lifecycle_intent' => ['executor' => 'swamp', 'result_fields' => ['ready']]];
         $schema = static fn (string $action): array => ['type' => 'object', 'additionalProperties' => false,
             'required' => ['action', 'task_vm_id'], 'properties' => ['action' => ['const' => $action], 'task_vm_id' => ['type' => 'integer', 'minimum' => 1]]];
-        foreach (['prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'confirm_stopped' => 'stopped', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
+        foreach (['prepare_enrollment' => 'prepare-enrollment', 'enroll_node' => 'enroll', 'mark_destroying' => 'destroying', 'forget_workspaces' => 'forget-workspaces', 'destroy_records' => 'forget'] as $verb => $action) {
             $kinds['task_vm.'.$verb] = ['executor' => 'swamp', 'completion' => TaskVmEffectCompletion::class,
                 'runs' => [['transport' => 'task_vm_lifecycle', 'name' => 'task_vm.lifecycle', 'input_fields' => ['task_vm_id'],
                     'input_values' => ['action' => $action], 'input_schema' => $schema($action)]],
@@ -111,21 +111,17 @@ final class TaskVmCommandContracts
             'runs' => [['transport' => 'agent', 'name' => 'swamp.stop-worker', 'input_fields' => [], 'input_values' => []]],
             'completion_contract' => ['step' => 'stop-worker', 'transport' => 'agent', 'name' => 'swamp.stop-worker', 'result' => ['stopped' => true]],
             'result_fields' => ['stopped', 'error_code']];
-        foreach (['provision', 'enroll', 'resume', 'park', 'destroy'] as $verb) {
+        foreach (['provision', 'enroll', 'resume', 'destroy'] as $verb) {
             $children = [];
             foreach (['incus', 'upcloud'] as $provider) {
                 $effects = ['task_vm.lifecycle_intent', ...match ($verb) {
                     'provision' => ['task_vm.'.$provider.'_create', 'task_vm.prepare_enrollment', 'task_vm.enroll_node', 'task_vm.prepare_runtime'],
                     'enroll' => ['task_vm.prepare_enrollment', 'task_vm.enroll_node', 'task_vm.prepare_runtime'],
                     'resume' => ['task_vm.'.$provider.'_start', 'task_vm.runtime_confirm'],
-                    'park' => ['task_vm.'.$provider.'_stop', 'task_vm.confirm_stopped'],
                     default => ['task_vm.'.$provider.'_delete', 'task_vm.mark_destroying', 'task_vm.forget_workspaces', 'task_vm.destroy_records'],
                 }];
                 if ($provider === 'upcloud' && $verb === 'provision') {
                     $effects[] = 'task_vm.upcloud_start';
-                }
-                if ($provider === 'upcloud' && $verb === 'park') {
-                    $effects[] = 'task_vm.upcloud_hard_stop';
                 }
                 foreach ([...$effects, ...($verb === 'destroy' ? ['task_vm.resume', 'task_vm.stop_worker', 'task_vm.'.$provider.'_stop', ...($provider === 'upcloud' ? ['task_vm.upcloud_hard_stop'] : []), 'task_vm.model_revoke'] : [])] as $kind) {
                     $from = match (true) {

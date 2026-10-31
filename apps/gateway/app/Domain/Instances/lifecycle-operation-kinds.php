@@ -46,7 +46,7 @@ return (static function (): array {
         'transfer' => [$agent('instance.transfer-source', [], false)],
     ];
     $children = [
-        'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'instance.destroy'],
+        'create' => ['instance.sync_environment', 'instance.prepare_vp_environment', 'instance.run_steps', 'route.converge', 'database.create', 'database.clone', 'database.mysql_clone', 'instance.destroy'],
         'rename' => ['route.update'],
         'clone' => ['instance.sync_environment', 'database.sqlite_seed', 'process.install_instance_definitions', 'schedule.install_instance_definitions', 'route.converge'],
         'register' => ['route.converge', 'instance.run_steps'],

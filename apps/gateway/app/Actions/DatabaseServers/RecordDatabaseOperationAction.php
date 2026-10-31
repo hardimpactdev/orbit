@@ -40,7 +40,9 @@ final readonly class RecordDatabaseOperationAction
 
         $input = $prepared->input;
         if (app(OperationKinds::class)->directOnly($prepared->kind)) {
-            $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($prepared->nodeId));
+            if ($prepared->kind !== 'database.create' || ($input['driver'] ?? null) !== 'redis') {
+                $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($prepared->nodeId));
+            }
             foreach (array_keys(app(DirectOperation::class)->definition($prepared->kind)['private_material'] ?? []) as $parameter) {
                 Arr::set($input, $parameter, ['$secret' => 'database.intent', 'id' => $input['intent_id']]);
             }
