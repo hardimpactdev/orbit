@@ -40,6 +40,27 @@ class ShapeGate(unittest.TestCase):
             self.assertNotEqual(variant, script, "Mutation must change the actual formatted source")
             self.assertTrue(any(row["rule"] == "gateway-http" for row in scan(variant)))
 
+    def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
+        inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
+        def scan(source):
+            result = subprocess.run([DENO, "eval", f"import {{agentPythonFindings}} from '{ROOT.as_uri()}/bin/check-swamp-shape.ts';console.log(JSON.stringify(agentPythonFindings('fixture.py',await new Response(Deno.stdin.readable).text(),{inventory})));"], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        for source in [
+            "from pathlib import Path\nPath('/usr/local/bin/orbit-agent').read_bytes()\n",
+            "import subprocess\nsubprocess.run(['sha256sum','/usr/local/bin/orbit-agent'])\n",
+            "import subprocess\nsubprocess.run(['systemctl','restart','orbit-agent.service'])\n",
+            "import subprocess\nsubprocess.run(['ssh','host','sudo systemctl is-active orbit-agent.service'])\n",
+            "import subprocess\nsubprocess.run(['/usr/local/bin/orbit-agent','command','agent.status'])\n",
+        ]:
+            self.assertFalse(any(row["rule"].startswith("agent-") for row in scan(source)), source)
+        for source in [
+            "import subprocess\nsubprocess.run(['/usr/local/bin/orbit-agent','command','cli.install'])\n",
+            "import subprocess\ncmd=['sudo','-n','/usr/local/bin/orbit-agent','command','cli.install']\nsubprocess.run(cmd)\n",
+            "from subprocess import run as execute\nexecute(['ssh','-o','StrictHostKeyChecking=yes','--','host','sudo orbit-agent command cli.install'])\n",
+            "import os\nos.system('orbit-agent command cli.install')\n",
+        ]:
+            self.assertTrue(any(row["rule"] == "agent-action" for row in scan(source)), source)
+
     def test_gate_preserves_ratchet_and_metrics_when_run_from_swamp_subtree(self):
         with tempfile.TemporaryDirectory(prefix="shape-gate-") as scratch:
             root = Path(scratch)

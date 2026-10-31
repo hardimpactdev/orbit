@@ -46,10 +46,35 @@ class ImportBaseTest(unittest.TestCase):
                 os.chdir(root)
                 # Both the import PR and its first main push compare against the pre-import Orbit base.
                 self.assertEqual(source, plan.swamp_comparison_base(orbit, imported))
+                output = root / '.git/selector-output'
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', orbit, '--head', imported, '--swamp-base',
+                     '--github-output', str(output)],
+                    cwd=root, timeout=60))
+                self.assertEqual(source, result['swamp_base_ref'])
+                outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                self.assertEqual(source, outputs['swamp_base_ref'])
+                self.assertEqual(result['jobs'], json.loads(outputs['jobs']))
                 (root / 'swamp/workflow.yaml').write_text('name: next\n')
                 git('add', '.')
                 git('commit', '-m', 'A later Swamp change')
                 self.assertEqual(imported, plan.swamp_comparison_base(imported, 'HEAD'))
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', imported, '--swamp-base'],
+                    cwd=root, timeout=60))
+                self.assertEqual(imported, result['swamp_base_ref'])
+                # Deleting the marker cannot pin an existing Swamp tree to the original import source.
+                git('rm', 'swamp/.swamp.yaml')
+                git('commit', '-m', 'Remove the Swamp marker')
+                without_marker = git('rev-parse', 'HEAD')
+                (root / 'swamp/workflow.yaml').write_text('name: changed\n')
+                git('add', '.')
+                git('commit', '-m', 'A change after marker removal')
+                self.assertEqual(without_marker, plan.swamp_comparison_base(without_marker, 'HEAD'))
+                result = json.loads(subprocess.check_output(
+                    ['python3', loader.path, '--base', without_marker, '--swamp-base'],
+                    cwd=root, timeout=60))
+                self.assertEqual(without_marker, result['swamp_base_ref'])
                 # Ordinary job scopes work with a shallow checkout; only the central selector resolves history.
                 shallow = root / 'shallow'
                 git('clone', '--depth=1', root.as_uri(), str(shallow))

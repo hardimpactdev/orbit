@@ -6,11 +6,7 @@ import {
   Globals as SharedGlobals,
 } from "../_lib/direct.ts";
 import { certificateActions } from "./actions.ts";
-import {
-  type CertificateCaVault,
-  signCertificateBatch,
-  SigningLeaf,
-} from "./signing.ts";
+import { signCertificateBatch, SigningLeaf } from "./signing.ts";
 import { RoleLeaf } from "./role-input.ts";
 import { roleCertificateActions } from "./role-actions.ts";
 import {
@@ -23,11 +19,7 @@ import {
   Signed,
 } from "./input.ts";
 
-const Globals = SharedGlobals.extend({
-  vaultName: z.string().min(1).optional(),
-  secretKey: z.string().min(1).optional(),
-  caAuthority: z.string().meta({ sensitive: true }).optional(),
-});
+const Globals = SharedGlobals;
 const Args = DirectArgs.extend({
   node_id: z.number().int().positive(),
   target_node_id: z.number().int().positive().optional(),
@@ -40,7 +32,6 @@ const InputResult = z.record(z.string(), z.unknown());
 type Context = {
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
-  vaultService?: CertificateCaVault["vaultService"];
   writeResource: (
     spec: string,
     name: string,
@@ -75,22 +66,15 @@ export function certificates(
   makeHttp: (ctx: Context) => Http = (ctx) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   actions = certificateActions(),
-  signBatch = signCertificateBatch,
+  signBatch: (
+    leaves: unknown,
+    requests: unknown,
+    response: unknown,
+  ) =>
+    | ReturnType<typeof signCertificateBatch>
+    | Promise<ReturnType<typeof signCertificateBatch>> = signCertificateBatch,
   roleActions = roleCertificateActions(),
 ) {
-  const custody = (ctx: Context): CertificateCaVault => {
-    if (
-      !ctx.vaultService || !ctx.globalArgs.vaultName ||
-      !ctx.globalArgs.secretKey
-    ) {
-      throw new Error("certificate.ca_custody_unconfigured");
-    }
-    return {
-      vaultService: ctx.vaultService,
-      vaultName: ctx.globalArgs.vaultName,
-      secretKey: ctx.globalArgs.secretKey,
-    };
-  };
   const output = async (ctx: Context, spec: string, value: unknown) => ({
     dataHandles: [await ctx.writeResource(spec, spec, { [spec]: value })],
   });
@@ -112,9 +96,18 @@ export function certificates(
   });
   return {
     type: "@nckrtl/certificates",
-    version: "2026.10.31.3",
+    version: "2026.10.31.4",
     globalArguments: Globals,
     resources: {
+      signingInput: {
+        schema: z.object({
+          mode: z.string(),
+          requests_json: z.string(),
+          leaf_json: z.string(),
+        }),
+        lifetime: "1d",
+        garbageCollection: 10,
+      },
       requests: {
         schema: z.object({ requests: z.array(RequestRecord).max(256) }),
         lifetime: "1d",
@@ -158,6 +151,54 @@ export function certificates(
       },
     },
     methods: {
+      prepareSign: {
+        description: "Shape public signing inputs for the placed HTTP command",
+        arguments: Args.extend({ leaf: SigningLeaf, request: Request }),
+        execute: async (
+          args: ArgsType & {
+            leaf: z.infer<typeof SigningLeaf>;
+            request: z.infer<typeof Request>;
+          },
+          ctx: Context,
+        ) => {
+          const value = {
+            mode: "single",
+            requests_json: JSON.stringify(args.request),
+            leaf_json: JSON.stringify(args.leaf),
+          };
+          await ctx.writeResource(
+            "signingInput",
+            `input-${args.run_id}`,
+            value,
+          );
+          return value;
+        },
+      },
+      prepareSignBatch: {
+        description:
+          "Shape public participant requests for the placed HTTP command",
+        arguments: Args.extend({
+          leaves: z.array(SigningLeaf).max(256),
+          requests: z.array(z.array(RequestRecord).max(256)).max(256),
+          restoring: z.boolean().optional(),
+        }),
+        execute: async (
+          args: ArgsType & { requests: unknown[][] },
+          ctx: Context,
+        ) => {
+          const value = {
+            mode: "batch",
+            requests_json: JSON.stringify(args.requests),
+            leaf_json: "{}",
+          };
+          await ctx.writeResource(
+            "signingInput",
+            `input-${args.run_id}`,
+            value,
+          );
+          return value;
+        },
+      },
       roleRequest: {
         description:
           "Prepare a fixed role pair key locally and return only its public CSR",
@@ -228,9 +269,10 @@ export function certificates(
       },
       signBatch: {
         description:
-          "Sign admitted public leaf requests in the control worker using Swamp vault custody",
+          "Decode the public Gateway signing response from the placed command step",
         arguments: Args.extend({
           restoring: z.boolean().optional(),
+          native_stdout: z.string().max(16_777_216),
           leaves: z.array(SigningLeaf).max(256),
           requests: z.array(z.array(RequestRecord).max(256)).max(
             256,
@@ -239,33 +281,18 @@ export function certificates(
         execute: async (
           args: z.infer<typeof Args> & {
             restoring?: boolean;
+            native_stdout: string;
             leaves: z.infer<typeof SigningLeaf>[];
             requests: z.infer<typeof RequestRecord>[][];
           },
           ctx: Context,
         ) => {
-          if (args.restoring) {
-            const current = z.object({
-              id: z.literal(args.operation_id),
-              node_id: z.literal(args.node_id),
-              kind: z.literal("node.remove"),
-              status: z.enum(["queued", "running"]),
-              result: z.object({ restoring: z.literal(true) }),
-            })
-              .parse(await new GatewayOperation(makeHttp(ctx), args).read());
-            if (!current.result.restoring) {
-              throw new Error("operation.execution_forbidden");
-            }
-          }
           const requests = args.requests.flat();
-          const batch = requests.every((request) => request.state === "current")
-            ? { certificates: [] }
-            : await signBatch(
-              args.leaves,
-              requests,
-              custody(ctx),
-              args.restoring ? undefined : ctx.signal,
-            );
+          const batch = await signBatch(
+            args.leaves,
+            requests,
+            args.native_stdout,
+          );
           return {
             dataHandles: [
               await ctx.writeResource(
@@ -279,12 +306,17 @@ export function certificates(
       },
       sign: {
         description:
-          "Sign one public request in the control worker without exporting CA material",
-        arguments: Args.extend({ leaf: SigningLeaf, request: Request }),
+          "Decode one public Gateway signature without accessing CA material",
+        arguments: Args.extend({
+          leaf: SigningLeaf,
+          request: Request,
+          native_stdout: z.string().max(16_777_216),
+        }),
         execute: async (
           args: z.infer<typeof Args> & {
             leaf: z.infer<typeof SigningLeaf>;
             request: z.infer<typeof Request>;
+            native_stdout: string;
           },
           ctx: Context,
         ) => {
@@ -299,8 +331,7 @@ export function certificates(
                 scope: args.leaf.scope,
                 ...args.request,
               }],
-              custody(ctx),
-              ctx.signal,
+              args.native_stdout,
             );
             const match = batch.certificates.find((cert) =>
               cert.node_id === args.leaf.node_id &&

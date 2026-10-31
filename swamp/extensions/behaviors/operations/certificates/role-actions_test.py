@@ -16,11 +16,14 @@ class RoleActionsTest(unittest.TestCase):
         self.ns['ROOT']=self.root/'caddy';self.ns['ROOT'].mkdir();self.ns['OWNER_UID']=os.getuid();self.ns['KEY_ROOT']=self.root/'orbit'/'role-certificates'
         self.ns['grp']=types.SimpleNamespace(getgrnam=lambda _:types.SimpleNamespace(gr_gid=os.getgid()))
         self.reloads=[];self.ns['certificate_active']=lambda:True;self.ns['certificate_reload']=lambda:self.reloads.append(True) or True
-        self.signer={'__name__':'fixture'};exec(program(HERE/'signing.ts'),self.signer)
         self.leaf=dict(node_id=9,scope='role-gateway',domain='gateway.test',version='0123456789abcdef',root_hash=hashlib.sha256(self.ca['certificate'].encode()).hexdigest())
     def request(self):return self.ns['role_request'](self.leaf)
     def signed(self,request):
-        return self.signer['sign'](dict(ca=self.ca,leaves=[self.leaf],requests=[dict(node_id=9,scope=self.leaf['scope'],**request)]))['certificates'][0]
+        csr=self.root/'request.pem';csr.write_bytes(base64.b64decode(request['request_base64']))
+        extensions=self.root/'leaf.cnf';extensions.write_text('basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:'+self.leaf['domain']+'\n')
+        certificate=subprocess.run(['openssl','x509','-req','-in',str(csr),'-CA',str(self.ca_path/'ca.pem'),'-CAkey',str(self.ca_path/'ca.key'),'-set_serial','1','-days','397','-sha256','-extfile',str(extensions)],capture_output=True,check=True).stdout
+        return dict(node_id=9,scope=self.leaf['scope'],certificate_base64=base64.b64encode(certificate).decode(),root_certificate_base64=base64.b64encode(self.ca['certificate'].encode()).decode())
+
     def publish(self,request,signed):return self.ns['role_publish'](dict(self.leaf,request=request,signed=signed))
     def current(self):return self.ns['role_paths'](self.leaf)[1]
     def test_all_fixed_role_paths_keep_private_keys_local_and_use_one_canonical_ca_policy(self):
