@@ -233,4 +233,6 @@ SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO
 
 ### Instance-owned removal
 
-Removing an Instance records one `database.destroy_owned` intent. One native Swamp DAG removes its databases on their admitted Nodes and its SQLite files on the Instance Node. Each server is a placed workflow step. The Gateway creates no child Operations and performs no remote SQL or file removal. It deletes the owned connection records only after the whole native DAG succeeds. Attached databases that the Instance does not own stay.
+`database.destroy_owned` records the owned set once. One native Swamp DAG removes its databases on their admitted Nodes and its SQLite files on the Instance Node. Instance removal composes the same lower actions inside its parent run. Each server is a placed workflow step. The Gateway creates no child Operations and performs no remote SQL or file removal. It deletes the owned connection records only after the whole native DAG succeeds. Attached databases that the Instance does not own stay. Each placed step reads its admitted public descriptor and current cancellation state. A resumed projection uses saved outcomes without repeating removals.
+
+SQLite export, seed and abandon use native source and target steps in one run. Only their admitted source and target Nodes may read the public descriptors; only the root Node may record the result. Cancellation stops new work. Cleanup runs after started work, before the terminal result, and a missing native outcome records failure.

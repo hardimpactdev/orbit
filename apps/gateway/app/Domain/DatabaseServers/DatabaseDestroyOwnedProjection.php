@@ -8,17 +8,39 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-final readonly class DatabaseDestroyOwnedProjection implements DirectOperationProjection
+final readonly class DatabaseDestroyOwnedProjection implements DirectOperationProjection, DirectOperationPublicView
 {
     public function input(Operation $operation): array
     {
         return array_intersect_key($operation->input, array_flip(['servers', 'sqlite']));
+    }
+
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        $this->publicInput($operation, $callerNodeId);
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        $input = [];
+        foreach (['servers', 'sqlite'] as $field) {
+            $rows = $operation->input[$field] ?? [];
+            $input[$field] = is_array($rows) ? array_values(array_filter($rows,
+                static fn (mixed $row): bool => is_array($row) && ($row['node_id'] ?? null) === $callerNodeId)) : [];
+        }
+        if ($input['servers'] === [] && $input['sqlite'] === []) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'This Node has no admitted database removal.', 403);
+        }
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation
