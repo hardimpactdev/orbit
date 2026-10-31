@@ -174,15 +174,17 @@ retained Gateway client and therefore keeps that dependency in the shape audit.
 
 The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 `Swamp Deno tests`. The reusable workflow splits every Operations test file
-across eight parallel jobs with Deno's native `--shard` and directory flags.
-Four general shards exclude the three slow database effect files
-(`local_sql_effect_test.ts`, `read_effect_test.ts`, `server_create_effect_test.ts`)
+across ten parallel jobs with Deno's native `--shard` and directory flags.
+Four general shards exclude the five slow database effect files
+(`local_sql_effect_test.ts`, `read_effect_test.ts`, `server_create_effect_test.ts`,
+`create_effect_test.ts`, `write_effect_test.ts`)
 and `process-commands/`. Each effect file and the Process directory has its own
 job. New files enter the general shards automatically.
 Each shard keeps `--parallel -A` and `DENO_JOBS=4`, runs the same
 prerequisite checks and receives no validation credentials. All shards run even
-when one fails. The single `Swamp Deno tests` aggregate always runs and succeeds
-only when the complete matrix succeeds; failed, cancelled or skipped shards fail
+when one fails. The single `Swamp Deno tests` aggregate always runs on
+`ubuntu-slim` and succeeds only when the complete matrix succeeds; failed,
+cancelled or skipped shards fail
 the aggregate. The root `Required checks` continues to require this reusable
 workflow.
 

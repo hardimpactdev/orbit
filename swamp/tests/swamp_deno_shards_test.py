@@ -38,8 +38,9 @@ class DenoShards(unittest.TestCase):
                 for index in range(9):
                     identifier = group * 9 + index
                     name = f"{index:02}_test.ts"
-                    if group == 1 and index < 3:
-                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server_create_effect_test.ts")[index]
+                    if group == 1 and index < 5:
+                        name = ("local_sql_effect_test.ts", "read_effect_test.ts", "server_create_effect_test.ts",
+                                "create_effect_test.ts", "write_effect_test.ts")[index]
                     (directory / name).write_text(
                         f'Deno.test("module {identifier}", () => console.log("COVERED_FILE_{identifier}"));\n')
             binary = root / "bin"
