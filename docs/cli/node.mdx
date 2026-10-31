@@ -474,3 +474,22 @@ The WireGuard hub and private DNS stay on their original Node. `vpn` is protecte
 ### Rename is its own verb
 
 A rename changes one identity field and does not touch WireGuard. Removing and adding the Node again would delete its WireGuard peer and records. `node:update` is rejected as a name, because update means a partial field patch.
+
+
+## orbit node:network:converge
+
+Converge a Node's WireGuard peer and publish the current peer list on the VPN hub.
+The Gateway captures the Node's saved network policy and admits one native Swamp
+Operation. The CLI follows that Operation to its terminal result.
+
+```bash
+orbit node:network:converge <node> [--idempotency-key=KEY] [--json]
+```
+
+`node` accepts an ID or exact Node name. Reuse `--idempotency-key` to retry the
+same admission. This command accepts no credentials, scripts, pins, or placement
+options. It requires an active managed peer selected for worker rollout. The VPN
+hub uses its exact logical worker; it never runs on another Node as a fallback.
+A failed publication restores the saved peer configuration and resolver policy.
+An interrupted publication restores its transaction baseline before reapplying
+the complete desired configuration and DNS policy.

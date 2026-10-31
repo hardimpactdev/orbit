@@ -5,17 +5,17 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeNetworkParticipantInput;
 use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeWireGuardInput;
-use App\Domain\Nodes\NodeWireGuardProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Cluster;
 use App\Models\Operation;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
 function nativeNetworkFixture(): array
@@ -31,25 +31,7 @@ function nativeNetworkFixture(): array
     $context = FleetFixtures::node('native-peer', [RoleName::CiRunner]);
     $context->update(['wireguard_public_key' => base64_encode(str_repeat('c', 32)), 'tld' => 'departing.test']);
     config(['swamp_workers.nodes' => []]);
-    $current = app(DirectOperation::class);
-    $extra = [];
-    foreach (['node.network_converge' => NodeNetworkProjection::class, 'node.wireguard_hub_converge' => NodeWireGuardProjection::class] as $kind => $projection) {
-        if ($current->definition($kind) === null) {
-            $extra[$kind] = ['workflow' => str_replace(['.', '_'], '-', 'operation-'.$kind), 'projection' => $projection, 'private_material' => ['configuration' => 'node.vpn_configuration']];
-        }
-    }
-    if ($extra !== []) {
-        $contribution = new readonly class($extra) implements DirectOperationContribution
-        {
-            public function __construct(private array $definitions) {}
-
-            public function definitions(): array
-            {
-                return $this->definitions;
-            }
-        };
-        app()->instance(DirectOperation::class, new DirectOperation([$contribution]));
-    }
+    expect(app(DirectOperation::class)->definition('node.network_converge'))->not->toBeNull();
     $snapshot = app(NodeWireGuardInput::class)->capture($context, $context->id);
     $input = ['_wireguard' => $snapshot, 'configuration' => ['$secret' => 'node.vpn_configuration', 'id' => $hub->id], 'participant_node_ids' => [$context->id, $hub->id],
         'private_bindings' => ['configuration' => ['owner_node_id' => $hub->id, 'read_node_ids' => [$hub->id], 'write_node_ids' => []]]];
@@ -156,3 +138,63 @@ it('does not grant the VPN source to deleted child and rollback kinds', function
     expect(NodeWireGuardInput::bound($operation))->toBeNull();
     expect($source->ownerId($operation))->toBeNull();
 })->with(['node.enrollment_restore', 'node.network_rollback', 'node.wireguard_key']);
+
+it('admits one idempotent public network root with immutable participants', function (): void {
+    [$existing, $peer, $hub] = nativeNetworkFixture();
+    $existing->delete();
+    $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
+    config(['swamp_workers.nodes' => [$peer->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])->withHeader('Idempotency-Key', 'native-network-root');
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-node-network-converge', 'runId' => 'ff3b7992-7376-4ac7-a49f-ed45bedc8de5',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fake.run.token']);
+    $path = "/api/v1/nodes/{$peer->id}/network/converge";
+    $first = $this->post($path, [], ['Accept' => 'application/json'])->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.network_converge');
+    $this->post($path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
+    $operation = Operation::query()->sole();
+    expect($operation->node_id)->toBe($peer->id);
+    expect($operation->input['participant_node_ids'])->toBe([$peer->id, $hub->id]);
+    expect($operation->input['private_bindings']['configuration'])->toBe([
+        'owner_node_id' => $hub->id, 'read_node_ids' => [$hub->id], 'write_node_ids' => [],
+    ]);
+    expect($operation->input['_network']['existing_key'])->toBe($peer->wireguard_public_key);
+    expect($operation->request_id)->not->toBeNull();
+    expect($operation->parent_operation_id)->toBeNull();
+    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-node-network-converge');
+});
+
+it('refuses foreign public network callers before intent', function (): void {
+    [$existing, $peer] = nativeNetworkFixture();
+    $existing->delete();
+    FleetFixtures::node('native-gateway', [RoleName::Gateway]);
+    $foreign = FleetFixtures::node('native-foreign');
+    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip]);
+    $this->post("/api/v1/nodes/{$peer->id}/network/converge", [], ['Accept' => 'application/json'])->assertForbidden();
+    expect(Operation::query()->exists())->toBeFalse();
+});
+
+it('refuses public network programs credentials and caller placement before intent', function (string $field): void {
+    [$existing, $peer] = nativeNetworkFixture();
+    $existing->delete();
+    $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
+    config(['swamp_workers.nodes' => [$peer->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $this->postJson("/api/v1/nodes/{$peer->id}/network/converge", [$field => 'untrusted'])->assertUnprocessable();
+    expect(Operation::query()->exists())->toBeFalse();
+})->with(['program', 'configuration', 'worker_credentials', 'participant_node_ids']);
+
+it('refuses an unselected public network target before intent', function (): void {
+    [$existing, $peer] = nativeNetworkFixture();
+    $existing->delete();
+    $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
+    config(['swamp_workers.nodes' => [$gateway->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    $this->post("/api/v1/nodes/{$peer->id}/network/converge", [], ['Accept' => 'application/json'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'node.network_unsupported');
+    expect(Operation::query()->exists())->toBeFalse();
+});

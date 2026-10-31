@@ -19,7 +19,7 @@ final readonly class StartNodeNetworkOperationAction
 {
     public function __construct(private StartOperationAction $operations, private NodeNetworkInput $network, private NodeWireGuardInput $hub) {}
 
-    public function execute(Node $node, bool $rolelessOperator = false): Operation
+    public function execute(Node $node, bool $rolelessOperator = false, ?string $requestId = null): Operation
     {
         if ($node->status !== LifecycleStatus::Active || ! app(NodeWorkerRollout::class)->allows($node)
             || $node->roles()->where('role', RoleName::Vpn)->exists()) {
@@ -35,6 +35,6 @@ final readonly class StartNodeNetworkOperationAction
                 'participant_node_ids' => array_values(array_unique([$node->id, $hubId, $executor])),
                 'private_bindings' => [
                     'configuration' => ['owner_node_id' => $hubId, 'read_node_ids' => [$executor], 'write_node_ids' => []],
-                ]], 'node-network', null);
+                ]], 'node-network', $requestId);
     }
 }
