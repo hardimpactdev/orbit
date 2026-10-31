@@ -15,7 +15,6 @@ import { bootstrapSystem } from "./bootstrap_ssh.ts";
 import { convergeFirewall } from "../routes/firewall-local.ts";
 
 const Kind = z.enum([
-  "node.bootstrap_probe",
   "node.bootstrap_install",
   "node.bootstrap_host",
   "node.bootstrap_verify",
@@ -80,9 +79,6 @@ export async function applyBootstrap(
     public_key: observed.host_public_key,
     host_key_fingerprint: input.target.fingerprint,
   };
-  if (kind === "node.bootstrap_probe") {
-    return Result.parse({ ...common, probed: true });
-  }
   if (kind === "node.bootstrap_install") {
     return Result.parse({
       ...common,

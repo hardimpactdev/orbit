@@ -179,7 +179,6 @@ for ($connection = 1; $connection <= $connections; $connection++) {
         } elseif ($request['type'] === 'workflow.history.get') {
             fwrite($client, text(['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $run]]));
         }
-        readFrame($client);
         fclose($client);
 
         continue;

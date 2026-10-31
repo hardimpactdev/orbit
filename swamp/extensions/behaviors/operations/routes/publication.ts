@@ -131,37 +131,6 @@ export function publication(
           );
         },
       },
-      convergeCaddy: {
-        description:
-          "Publish and project a Caddy Operation on its admitted Node",
-        arguments: DirectArgs.extend({
-          kind: z.literal("route.caddy_converge"),
-          node_id: z.number().int().positive(),
-        }),
-        execute: async (
-          args: z.infer<typeof DirectArgs> & { node_id: number },
-          ctx: Context,
-        ) => {
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
-          return await directOperation(
-            args,
-            gateway,
-            (input) =>
-              applyCaddy(
-                boundCaddy(input.caddy_publication, args.node_id),
-                invoke,
-                ctx.signal,
-              ),
-            (result) => {
-              if (
-                result.error_code === undefined && result.ready !== true
-              ) throw new Error("Caddy has no successful publication");
-              return result;
-            },
-            ctx.signal,
-          );
-        },
-      },
       publishFirewall: {
         description:
           "Read and apply the participant's current ingress firewall rules",

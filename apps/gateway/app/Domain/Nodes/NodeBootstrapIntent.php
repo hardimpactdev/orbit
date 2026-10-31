@@ -69,7 +69,9 @@ final readonly class NodeBootstrapIntent
         return ['schema_version' => 1, 'node_id' => $node->id, 'platform' => $candidate->platform,
             'target' => ['node_id' => $node->id, 'host' => $candidate->public_ssh_host, 'port' => $candidate->public_ssh_port,
                 'user' => in_array($kind, ['node.bootstrap_verify', 'node.macos_inspect'], true) ? $candidate->user : $bootstrap,
-                'fingerprint' => $fingerprint],
+                'fingerprint' => $fingerprint,
+                ...($kind === 'node.bootstrap_probe' ? ['host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                    ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []] : [])],
             'managed_user' => $candidate->user, 'expected_architecture' => $expected, 'address' => $candidate->wireguard_ip,
             'artifacts' => $artifacts,
             'command' => $candidate->platform === 'linux' ? $this->commands->input($candidate, $candidate->user, $roleless) : null,

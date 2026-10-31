@@ -701,6 +701,8 @@ A pending default Route projection refuses manual deployment with `deployment.pr
 
 Writable native deploy calls share the per-Node model lock. A native active-effect marker prevents a successor from starting while an interrupted root has an unresolved effect. Only the matching root clears it after a settled outcome or the exact runner-absence cancellation check. The Gateway keeps no target hold, lease or drain ledger.
 
+A development start explicitly refused by Swamp before execution does not create deployment history. The next scheduled policy observation releases that failed pending admission and may admit a fresh automatic deployment on a later tick. An uncertain start or a terminal operation without that explicit refusal retains its pending intent until its outcome is known.
+
 Swamp owns development automatic-deploy discovery, branch checks, backoff, retry limits and admission. The existing automatic deployment workflow keeps its minute cadence. Discovery uses the Gateway’s canonical policy eligibility, including ambiguous or inactive role placement. The native deadline is 900 seconds plus the sum of admitted command timeouts, so every accepted Project list fits. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
 
 ## Native production deployment

@@ -1450,7 +1450,54 @@ export function analyzeYaml(
     result.unknown = true;
     return result;
   }
+  // Official @swamp/ssh 2026.10.23.1 marks precisely this transport field
+  // sensitive and consumes it natively. Do not extend this to method inputs.
+  const sshIdentity = (path: string[]) => {
+    let field: string[];
+    if (
+      file.startsWith("models/") && data.type === "@swamp/ssh" &&
+      path[0] === "globalArguments"
+    ) {
+      field = path.slice(1);
+    } else if (
+      file.startsWith("workflows/") && path[0] === "jobs" &&
+      /^\d+$/.test(path[1] ?? "") && path[2] === "steps" &&
+      /^\d+$/.test(path[3] ?? "") && path[4] === "task" &&
+      path[5] === "globalArgs"
+    ) {
+      const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+      const steps = object(jobs[Number(path[1])]).steps;
+      const step = Array.isArray(steps) ? steps[Number(path[3])] : undefined;
+      const task = object(object(step).task);
+      if (
+        !(task.type === "behavior" && task.behaviorType === "@swamp/ssh" ||
+          task.type === "model_method" && task.modelType === "@swamp/ssh")
+      ) return false;
+      field = path.slice(6);
+    } else return false;
+    return field.join(".") === "transport.identityContent" ||
+      field.length === 4 && field[0] === "hosts" && /^\d+$/.test(field[1]) &&
+        field[2] === "transport" && field[3] === "identityContent";
+  };
+  const wholeVault = (value: unknown) => {
+    if (typeof value !== "string") return false;
+    const call = /^\s*\$\{\{\s*vault\.get\(([\s\S]*)\)\s*\}\}\s*$/.exec(value);
+    if (!call) return false;
+    let quote = "", escaped = false, depth = 0;
+    for (const char of call[1]) {
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === quote) quote = "";
+      } else if (char === "'" || char === '"') quote = char;
+      else if (char === "(") depth++;
+      else if (char === ")" && --depth < 0) return false;
+    }
+    return !quote && depth === 0;
+  };
   const walk = (value: unknown, path: string[]) => {
+    const nativeIdentity = sshIdentity(path);
+    if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
     if (typeof value === "string") {
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
         path.at(-3) === "inputs" && path.at(-4) === "task";
@@ -1460,7 +1507,7 @@ export function analyzeYaml(
       ) add("secret-env-source");
       if (
         /vault\.get\s*\(/.test(value) &&
-        !(envValue &&
+        !(nativeIdentity && wholeVault(value)) && !(envValue &&
           /^\s*\$\{\{\s*vault\.get\([\s\S]*\)\s*\}\}\s*$/.test(
             value,
           ) &&
@@ -1541,6 +1588,8 @@ export function analyzeYaml(
       if (
         path[0] === "inputs" && path.at(-1) === "properties" &&
         secret(key) &&
+        // Official cfgmgmt uses this string as a privateKeyPath locator, not key bytes.
+        !(key === "nodeIdentityFile" && object(item).type === "string") &&
         !referenceOnlySchema(item)
       ) {
         add("secret-input");

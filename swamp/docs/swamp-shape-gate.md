@@ -56,13 +56,33 @@ The gate implements Nick's migration policy using these manual references:
   results. Distinct commands are evidence for the multi-action heuristic, not a
   proof of the business meaning of an action.
 - [Vaults](https://swamp-club.com/manual/reference/vaults): resolve private values
-  with `vault.get`. Our pilot restricts them to whole `task.inputs.env` values;
-  argv, shell concatenation and workflow inputs cannot carry them. An explicitly
+  with `vault.get`. Command steps use whole `task.inputs.env` values; the official
+  SSH extension also accepts its native sensitive field described below. Argv,
+  shell concatenation and workflow inputs cannot carry them. An explicitly
   closed empty `execution_secrets` object carries no values. SourceControl's
   `repository_identity` is the established public host/org/repo identifier; this
   exact field name is public, unlike SSH or bootstrap identity material.
+- The official cfgmgmt `nodeIdentityFile` connection input is a public file path,
+  not key content. A workflow schema can declare this exact field as
+  `type: string`; no locator annotation or rename is needed. Package
+  `2026.10.27.1` documents it in the
+  [official connection schema](https://github.com/swamp-club/swamp-extensions/blob/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/cfgmgmt/extensions/models/file.ts).
+  This classification changes only workflow input schema checks. Vault
+  placement, secret environment sources and argv checks still apply.
 - [Data](https://swamp-club.com/manual/reference/data): outputs are persisted.
   Do not write private material to resources, files or logs.
+
+The official `@swamp/ssh` package `2026.10.23.1` (model version `2026.10.20.1`)
+accepts a whole `vault.get(...)` value at `globalArguments.transport.identityContent`
+and `globalArguments.hosts[].transport.identityContent`. Inline workflow tasks
+using this exact type can supply the same fields through `task.globalArgs`.
+These are model global arguments, not per-method transport overrides. The
+[official source](https://github.com/swamp-club/swamp-extensions/tree/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh)
+declares the sensitive fields in `_lib/schemas.ts`; its README describes native
+key delivery and redaction. Use the extension's defaults. The gate grants no
+generic extension or field-name exemption: raw input values, concatenation,
+`identityFile`, method inputs, argv and other extension types remain outside this
+recognition. Existing command-env checks remain in place.
 
 Each embedded operational program has a 20-line threshold before grandfathering.
 Independent short strings are not combined to cross it. Script metrics count each
@@ -146,6 +166,12 @@ The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
 with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
+
+Native assertion expressions and guards use Swamp CEL, including grouping,
+`has()` and collection macros such as `all()`. Workflow validation owns CEL
+syntax; the Node placement lint does not impose a separate expression subset.
+Assertions still require a string expression, static messages and matching
+Node placement.
 
 Legacy Gateway HTTP over proxy Nodes 1/18 lives in
 `operations/_lib/node-proxy-http.ts`. Its retained caller uses pinned SSH curl
