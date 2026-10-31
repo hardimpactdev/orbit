@@ -227,3 +227,18 @@ Deno.test("official SSH methods are accepted directly without a local adapter", 
     assertEquals(result.success, true, result.diagnostic);
   }
 });
+
+Deno.test("official file and directory apply methods need no local adapter", async () => {
+  for (
+    const behaviorType of ["@swamp/cfgmgmt/directory", "@swamp/cfgmgmt/file"]
+  ) {
+    const result = await check({
+      type: "behavior",
+      behaviorType,
+      behaviorName: "publication-fixture",
+      methodName: "apply",
+      inputs: {},
+    });
+    assertEquals(result.success, true, result.diagnostic);
+  }
+});

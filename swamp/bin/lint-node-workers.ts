@@ -182,8 +182,14 @@ for (const path of await files(`${root}/workflows`)) {
             `Native shell steps must use command/shell.execute: ${path}`,
           );
         }
-      } else if (type === "@swamp/ssh") {
-        // Official SSH methods provide remote execution directly.
+      } else if (
+        [
+          "@swamp/ssh",
+          "@swamp/cfgmgmt/directory",
+          "@swamp/cfgmgmt/file",
+        ].includes(String(type))
+      ) {
+        // Official extensions provide these actions directly.
       } else if (typeof type !== "string" || !sources.has(type)) {
         errors.push(
           `Node workers may run only reviewed local behaviors, not third-party extensions: ${path} (${
