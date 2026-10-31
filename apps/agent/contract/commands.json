@@ -34,21 +34,6 @@
   ],
   "commands": [
     {
-      "name": "analytics.configure-clickhouse",
-      "summary": "Publish Plausible's four fixed ClickHouse configuration files.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "analytics.clickhouse_config_unsafe",
-        "analytics.clickhouse_config_failed",
-        "analytics.clickhouse_recovery_failed"
-      ]
-    },
-    {
       "name": "task-vm.start-topology",
       "summary": "Start one bounded topology preparation as the managed account.",
       "mutates": true,
@@ -4322,20 +4307,6 @@
         "caddy.package_invalid",
         "caddy.package_unsafe",
         "caddy.package_failed"
-      ]
-    },
-    {
-      "name": "http.await-healthy",
-      "summary": "Wait until a service answers its health URL.",
-      "mutates": false,
-      "timeout_seconds": 600,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "http.url_invalid",
-        "http.unhealthy"
       ]
     },
     {

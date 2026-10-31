@@ -47,7 +47,9 @@ final readonly class AnalyticsUpdateProjection implements DirectOperationProject
             if ($status === OperationStatus::Succeeded) {
                 $process = Process::query()->findOrFail(ValidatedData::integer($projected->input['process_id']));
                 $version = ValidatedData::string($projected->input['version']);
-                $process->update(['runtime_config' => [...$process->runtime_config, 'image' => PlausibleProcess::IMAGE.':v'.$version],
+                $process->update(['runtime_config' => [...$process->runtime_config, 'image' => PlausibleProcess::IMAGE.':v'.$version,
+                    'command' => $projected->input['after']['command'],
+                    'volumes' => $projected->input['after']['mounts']],
                     'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null]);
                 $this->settings->storeVersion(Node::query()->findOrFail($projected->node_id), $version);
             }

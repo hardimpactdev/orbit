@@ -13,7 +13,6 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -25,7 +24,6 @@ final readonly class AdmitAnalyticsUpdateAction
 {
     public function __construct(
         private StartOperationAction $operations,
-        private AgentDelivery $agents,
         private DockerProcessRenderer $docker,
         private ProcessTargetResolver $targets,
         private AnalyticsRoleSettingsRepository $settings,
@@ -54,12 +52,18 @@ final readonly class AdmitAnalyticsUpdateAction
         $before += ['process_id' => $process->id, 'container' => $this->docker->containerName($process),
             'desired' => 'running', 'spec' => $this->docker->specHash($process, $target)];
         $changed = clone $process;
-        $changed->runtime_config = [...$process->runtime_config, 'image' => PlausibleProcess::IMAGE.':v'.$version];
+        $changed->runtime_config = [...$process->runtime_config, 'image' => PlausibleProcess::IMAGE.':v'.$version,
+            'command' => PlausibleProcess::Startup,
+            'volumes' => array_values(array_filter($process->runtime_config['volumes'] ?? [],
+                static fn (array $volume): bool => ($volume['source'] ?? null) !== '/usr/local/bin/orbit-agent'
+                    && ($volume['target'] ?? null) !== '/usr/local/bin/orbit-agent'))];
+        $after = $this->docker->containerInput($changed, $target);
+        unset($after['environment']);
 
         return $this->operations->execute('analytics.update', 'node', $node->id, $node->id,
-            ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id, 'agent_sha256' => $this->agents->pin($node),
+            ['version' => $version, 'assignment_id' => $assignment->id, 'process_id' => $process->id,
                 'runtime_environment' => ['$secret' => 'analytics.runtime_environment', 'id' => $node->id],
-                'before' => $before, 'after' => [...$before, 'image' => $changed->runtime_config['image'], 'spec' => $this->docker->specHash($changed, $target)],
+                'before' => $before, 'after' => [...$after, 'process_id' => $process->id, 'container' => $before['container'], 'desired' => 'running', 'spec' => $this->docker->specHash($changed, $target)],
                 'environment_sha256' => hash('sha256', json_encode($environment, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
                 'health_url' => 'http://'.$target->node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health',
                 'previous_version' => $this->settings->version($node)],

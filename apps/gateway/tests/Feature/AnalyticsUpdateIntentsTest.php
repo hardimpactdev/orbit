@@ -6,6 +6,7 @@ use App\Actions\Analytics\AdmitAnalyticsUpdateAction;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsRuntimeEnvironmentSource;
 use App\Domain\Analytics\AnalyticsUpdateProjection;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
@@ -32,7 +33,7 @@ beforeEach(function (): void {
         'runtime' => ProcessRuntime::Docker, 'desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Active,
         'restart_policy' => 'unless-stopped', 'runtime_config' => ['image' => 'ghcr.io/plausible/community-edition:v3.2.1',
             'command' => ['/usr/local/bin/orbit-agent', 'service', 'plausible'], 'environment' => $this->environment,
-            'ports' => ['10.44.0.3:8000:8000/tcp'], 'volumes' => []]]);
+            'ports' => ['10.44.0.3:8000:8000/tcp'], 'volumes' => [['source' => '/usr/local/bin/orbit-agent', 'target' => '/usr/local/bin/orbit-agent', 'read_only' => true], ['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]]]]);
     $this->mock(AgentCommandRunner::class)->shouldNotReceive('run');
     config(['swamp.run_token' => 'private.start.fixture', 'orbit.analytics.plausible_version' => '3.2.1']);
     $this->socket = new FakeRoutePublicationSocket;
@@ -58,6 +59,9 @@ it('freezes the safe runtime plan at admission without exposing environment valu
     $operation = app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0');
     $input = app(AnalyticsUpdateProjection::class)->input($operation);
     expect($input['after']['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
+        ->and($input)->not->toHaveKey('agent_sha256')
+        ->and($input['after']['command'])->toBe(PlausibleProcess::Startup)
+        ->and($input['after']['mounts'])->toBe([['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]])
         ->and($input['before']['process_id'])->toBe($this->process->id)
         ->and($input['after']['container'])->toBe($input['before']['container'])
         ->and($input['health_url'])->toBe('http://10.44.0.3:8000/api/health')
@@ -71,6 +75,8 @@ it('projects the exact version only after success and preserves the existing env
         'result' => ['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1']];
     app(AnalyticsUpdateProjection::class)->apply($operation, $body);
     expect($this->process->fresh()->runtime_config['environment'])->toBe($this->environment)
+        ->and($this->process->fresh()->runtime_config['command'])->toBe(PlausibleProcess::Startup)
+        ->and($this->process->fresh()->runtime_config['volumes'])->toBe([['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]])
         ->and(Process::query()->count())->toBe(1)
         ->and(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.3.0');
     app(AnalyticsRoleSettingsRepository::class)->storeVersion($this->node, '3.4.0');

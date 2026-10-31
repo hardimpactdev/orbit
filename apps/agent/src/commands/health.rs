@@ -1,12 +1,8 @@
-//! `http.await-healthy`: waits from the Node until a local service answers its health URL with a 2xx status.
+//! Internal Process readiness helper; Swamp owns public health actions.
 
-use crate::command::{Command, Context, Platform, Privilege};
 use crate::command_errors;
 use serde::{Deserialize, Serialize};
-use std::{
-    process::{Command as Process, Stdio},
-    time::Duration,
-};
+use std::time::Duration;
 
 command_errors! {
     pub enum HealthError {
@@ -31,25 +27,6 @@ pub(super) trait Host {
     /// Runs curl with `arguments` and answers whether it succeeded.
     fn curl(&mut self, arguments: &[&str]) -> bool;
     fn sleep(&mut self, delay: Duration);
-}
-
-struct Native;
-
-impl Host for Native {
-    fn curl(&mut self, arguments: &[&str]) -> bool {
-        // `-q` must come first: it keeps the account's ~/.curlrc out of the check.
-        Process::new("/usr/bin/curl")
-            .arg("-q")
-            .args(arguments)
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-    }
-
-    fn sleep(&mut self, delay: Duration) {
-        std::thread::sleep(delay);
-    }
 }
 
 pub(super) fn valid(url: &str) -> bool {
@@ -82,27 +59,6 @@ pub(super) fn wait(host: &mut impl Host, input: &HealthInput) -> Result<Healthy,
         }
     }
     Err(HealthError::Unhealthy {})
-}
-
-pub struct AwaitHealthy;
-
-impl Command for AwaitHealthy {
-    const NAME: &'static str = "http.await-healthy";
-    const SUMMARY: &'static str = "Wait until a service answers its health URL.";
-    const MUTATES: bool = false;
-    const TIMEOUT: Duration = Duration::from_secs(600);
-    type Input = HealthInput;
-    type Output = Healthy;
-    type Error = HealthError;
-
-    /// An HTTP request needs no identity.
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn run(input: HealthInput, _: &Context) -> Result<Healthy, HealthError> {
-        wait(&mut Native, &input)
-    }
 }
 
 #[cfg(test)]
