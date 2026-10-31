@@ -152,8 +152,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/AgentView/ProcessAgentViewPublisher.php',
         'app/Jobs/RunScheduledCommand.php',
         // Command rendering for image/topology tooling; these classes do not execute the rendered commands.
-        'app/Console/Commands/RenderNodeProgramsCommand.php',
-        'app/Infrastructure/Nodes/NodeEnrollmentPrograms.php',
         'app/Infrastructure/Nodes/RemotePhpPackageManager.php',
         // The source lifecycle supplies the SSH callback to the workspace command runner for Git import.
         'app/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycle.php',

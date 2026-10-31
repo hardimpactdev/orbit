@@ -18,7 +18,8 @@ Route::middleware([
     Route::post('fleet/nodes/{node}/docker-migration', [FleetDockerMigrationController::class, 'store'])->name('fleet:docker:migrate');
     Route::get('fleet/nodes/{node}/visit-policy', [FleetMaintenanceController::class, 'visitPolicy'])->name('fleet:visit:policy');
     Route::get('fleet/rollout/plan', [FleetMaintenanceController::class, 'rolloutPlan'])->name('fleet:rollout:plan');
-    Route::post('fleet/nodes/{node}/rollout', [FleetMaintenanceController::class, 'rolloutNode'])->name('fleet:rollout:node');
+    Route::post('fleet/rollout', [FleetMaintenanceController::class, 'rollout'])->name('fleet:rollout');
+    Route::post('fleet/cli/converge', [FleetMaintenanceController::class, 'cli'])->name('fleet:cli:converge');
     Route::post('fleet/recipe/state', [FleetMaintenanceController::class, 'recipeState'])->name('fleet:recipe:state');
     Route::get('fleet/recipe/plan', [FleetMaintenanceController::class, 'recipePlan'])->name('fleet:recipe:plan');
     Route::get('fleet/recipe-pr/plan', [FleetMaintenanceController::class, 'recipePrPlan'])->name('fleet:recipe-pr:plan');

@@ -19,7 +19,6 @@ use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
@@ -35,7 +34,6 @@ use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
 use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Fleet\StaticCliRelease;
-use App\Infrastructure\Nodes\AgentNodeCliInstaller;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Releases\ReleaseProvenance;
 use Illuminate\Cache\CacheManager;
@@ -67,7 +65,6 @@ final class FleetServiceProvider extends ServiceProvider
                 repositoryOrigin: Config::string('orbit.cli_releases.repository'),
             ),
         );
-        $this->app->bind(NodeCliInstaller::class, AgentNodeCliInstaller::class);
         $this->bindStaticCliRelease();
         $this->app->bind(
             AgentReportedVersions::class,
@@ -98,7 +95,6 @@ final class FleetServiceProvider extends ServiceProvider
             static fn (Application $app): FleetReleaseLag => new FleetReleaseLag(
                 desired: $app->make(DesiredFleetState::class),
                 membership: $app->make(FleetRolloutMembership::class),
-                footprint: $app->make(NodeFootprint::class),
                 versions: $app->make(AgentReportedVersions::class),
                 delivery: $app->make(AgentDelivery::class),
                 enabled: Config::boolean('fleet.rollout'),

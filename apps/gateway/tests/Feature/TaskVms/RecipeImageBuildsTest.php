@@ -18,6 +18,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
@@ -33,7 +34,7 @@ function recipeImageTransport(Node $host): FakeIncusImageHost
     $gateway = Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit']);
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     config(['dependency_detection.services_node_id' => $gateway->id, 'swamp.run_token' => 'fixture.token']);
-    test()->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+    test()->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
         'kind' => 'started', 'workflowName' => 'operation-task-vm-image-build', 'runId' => '878a384f-8b8a-4066-bd17-dcad8eac3e86',
@@ -120,7 +121,7 @@ it('records one immutable Swamp image Operation and reuses unchanged intent', fu
     $operation = Operation::query()->where('kind', 'task_vm.image_build')->sole();
     expect($operation->target_id)->toBe($first->id)->and($operation->node_id)->toBe($host->id);
     expect($operation->input['recipe'])->toBeString();
-    expect($operation->state['task_vm_image_writer'])->toBe('direct');
+    expect($operation->state['swamp_run_id'])->toBe('878a384f-8b8a-4066-bd17-dcad8eac3e86');
     expect($operation->lock_key)->toBeNull();
     expect($operation->parent_operation_id)->toBeNull();
     expect($operation->input['generation'])->toBe($first->recipe_generation);
@@ -147,7 +148,7 @@ it('starts one native image run with bound safe input and rejects the removed ch
     $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86')
         ->assertOk()->assertJsonPath('data.input.host_node_id', $op->node_id)->assertJsonMissingPath('data.input.resume_from')
         ->assertJsonMissingPath('data.input.pi_artifact_file')->assertJsonMissingPath('data.input.pi_artifact.path');
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertStatus(422);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertNotFound();
     expect(app(OperationKinds::class)->definition('task_vm.image_finish_seed'))->toBeNull();
     expect(app(OperationKinds::class)->definition('task_vm.guest_image_start_phase'))->toBeNull();
     $op->update(['state' => ['task_vm_image_writer' => 'direct']]);
@@ -181,7 +182,7 @@ it('refuses foreign runs stale attempts and unbounded native results', function 
         $body['result']['stdout'] = 'raw guest output';
     }
     $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', $body)->assertStatus($change === 'run' ? 409 : 422);
-    expect($op->fresh()->status)->toBe(OperationStatus::Queued);
+    expect($op->fresh()->status)->toBe(OperationStatus::Running);
 })->with(['run', 'attempt', 'output']);
 
 it('projects native failure without starting another Operation', function (): void {
@@ -191,4 +192,20 @@ it('projects native failure without starting another Operation', function (): vo
     ])->assertOk();
     expect(TaskVmImageBuild::query()->sole()->state)->toBe(TaskVmImageBuildState::Failed);
     $this->assertDatabaseCount('operations', 1);
+});
+
+it('keeps superseded and cancelled attempt ownership readable for native cleanup while refusing further work', function (): void {
+    $op = nativeImageOperation();
+    $path = '/api/v1/direct-operations/'.$op->id;
+    $query = '?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86';
+    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.current', true);
+    DB::table('task_vm_image_recipe')->where('id', 1)->increment('generation');
+    $op->update(['cancel_requested_at' => now()]);
+    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.current', false)
+        ->assertJsonPath('data.cancel_requested', true)->assertJsonPath('data.input.build_id', $op->target_id);
+    $this->postJson($path.'/result', nativeImageResult(['phase' => 'launch']))->assertStatus(409)->assertJsonPath('error.code', 'task_vm.image_recipe_superseded');
+    $this->postJson($path.'/result', nativeImageResult([], 'cancelled'))->assertOk();
+    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.status', 'cancelled');
+    TaskVmImageBuild::query()->whereKey($op->target_id)->increment('attempt');
+    $this->getJson($path.$query)->assertStatus(422)->assertJsonPath('error.code', 'operation.execution_forbidden');
 });

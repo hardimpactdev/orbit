@@ -17,7 +17,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
-use App\E2E\TopologyNodePrograms;
+use App\E2E\TopologyNodeRecipe;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
@@ -111,7 +111,7 @@ final class AppServiceProvider extends ServiceProvider
                 self::seconds($app->make(Repository::class), 'e2e.readiness.seconds'),
             ),
         );
-        $this->app->singleton(TopologyNodePrograms::class, fn (): TopologyNodePrograms => new TopologyNodePrograms($repositoryRoot));
+        $this->app->singleton(TopologyNodeRecipe::class, fn (): TopologyNodeRecipe => new TopologyNodeRecipe($repositoryRoot));
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),

@@ -16,13 +16,15 @@ covers:
 
 A Route is a domain that reaches an Instance or a Node service. This page explains the Route record, domain selection, private and public traffic, and the changes that Orbit coordinates or refuses. [`route`](/cli/route) lists the commands.
 
-The Gateway validates Route changes and records intent as an Operation. Swamp executes the Route lifecycle through the shared Operation executor primitives. Each Node effect is a child Operation bound to its own Node. Successful completion requires the recorded child receipts. The Gateway retains Route state, input validation, ownership checks, certificate signing, and read APIs.
+The Gateway validates Route changes and records intent as an Operation. Each available kind runs one native Swamp DAG, with Node effects as placed steps. The Gateway keeps Route state, ownership checks, read APIs and minimal result projection. Kinds whose native conversion is incomplete return `operation.kind_unavailable`; there is no polled fallback. Certificate signing runs in Swamp on the control worker.
 
 Domain, publication and web-root updates use the Route admission action. They return an Operation before execution. Instance rename records its own Operation and composes the Route update. Neither path uses a synchronous Route update executor.
 
 Caddy convergence starts `operation-route-caddy` after intent commits. Its native Node method acquires the canonical publication lock before reading the current public render through the bound Operation GET. Swamp validates the candidate and runs the filesystem swap and Caddy service commands locally with sudo, then reports the result. The Node agent only observes; it does not publish Caddy. The Gateway neither executes Caddy nor exposes a Caddy publication primitive. The shared `swamp.direct_writers` setting accepts only `direct` for this kind; selecting the removed writer refuses admission. Rollback is a revert PR.
 
-Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds retain their existing executor until their owning conversion.
+Route destroy and withdrawal use one native Swamp DAG. Admission captures all current and transition placements, marks desired withdrawal, and retains Route rows and targets. Swamp publishes fresh DNS, Caddy and PHP state on each admitted Node, restores remaining workload URLs and runtime configuration, then removes unused certificate scopes and LAN rules. Only the parent posts the terminal result. The Gateway deletes exactly the captured Route rows after successful destroy; withdrawal keeps them. Offline removal records retained Node cleanup as residue. Explicit provider-absent Nodes are excluded before account resolution while their Route inventory remains complete.
+
+Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.
 
 A Route has one of three kinds. The kind never changes.
 

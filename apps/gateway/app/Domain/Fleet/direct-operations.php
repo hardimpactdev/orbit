@@ -4,13 +4,28 @@ declare(strict_types=1);
 
 use App\Domain\Fleet\DockerMigrationProjection;
 use App\Domain\Fleet\PeerDnsProjection;
+use App\Domain\Fleet\RecipeDirectProjection;
 use App\Domain\Fleet\RecipePrProjection;
+use App\Domain\Fleet\FleetReleaseProjection;
 
 return [
+    'fleet.recipe' => [
+        'workflow' => 'operation-fleet-recipe-direct',
+        'projection' => RecipeDirectProjection::class,
+        'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
+    ],
     'fleet.docker_migrate' => [
         'workflow' => 'operation-fleet-docker-migrate',
         'projection' => DockerMigrationProjection::class,
         'private_material' => ['processes' => 'fleet.docker_processes'],
+    ],
+    'fleet.rollout' => [
+        'workflow' => 'operation-fleet-rollout',
+        'projection' => FleetReleaseProjection::class,
+    ],
+    'fleet.cli_converge' => [
+        'workflow' => 'operation-fleet-cli-converge',
+        'projection' => FleetReleaseProjection::class,
     ],
     'fleet.peer_dns' => [
         'workflow' => 'operation-fleet-peer-dns',

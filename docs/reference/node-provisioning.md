@@ -76,7 +76,7 @@ Existing operator masks remain in place. Convergence skips enabling `logrotate.t
 Task checkout operations require systemd 250 or newer, cgroup v2, and the managed user's passwordless sudo. Missing or unreadable supervision refuses operations and keeps uncertain workspace ownership fenced. See [Workspace lease](/reference/tasks#workspace-lease) for completion receipts and recovery.
 
 
-After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
+The native Node workflow composes the [Orbit CLI publication](#orbit-cli) step on eligible Nodes. Gateway provisioning and role code perform no CLI installation.
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. On failure, `--diagnostics` includes a redacted command-output tail, or the underlying exception messages when no command output exists: at most 40 lines and 4,000 characters. The topology harness uses it to report the prerequisite error. Role firewall intent comes from the shared Node firewall rule catalog. The agent's `firewall.rules` command checks ownership, preserves recovery SSH before enabling UFW, applies desired rules, and removes exact old rules under one firewall lock. Admission calls it over the pinned bootstrap connection; later role work uses the WireGuard connection.
 
@@ -168,7 +168,7 @@ Verify each Node with `orbit doctor --node=<numeric-node-id>`. For a failed role
 
 When a profile includes Node.js, the recipe is its single runtime owner. Convergence verifies the recipe runtime before removing a duplicate `nodejs` APT package. APT simulation must remove only `nodejs`; dependencies are never removed automatically. Convergence validates NodeSource entries, backs them up outside APT source directories, then removes them. Mixed or unexpected entries stop convergence. Profiles without Node.js keep their APT ownership unchanged.
 
-Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` preferences and its keyring. Unexpected preferences or a keyring still used by another source stop convergence. It removes only dangling `/usr/bin/{yarn,yarnpkg,pnpm,pnpx}` links to Corepack, preserving working or unrelated links. Dry runs report `remove_nodejs_package`, `retire_node_source`, `retire_node_config`, and `remove_corepack_links`. APT removal suppresses needrestart; application owners restart affected processes after convergence.
+Convergence also backs up and removes the NodeSource `nodejs` and `nsolid` preferences and its keyring. Unexpected preferences or a keyring still used by another source stop convergence. It removes only dangling `/usr/bin/{yarn,yarnpkg,pnpm,pnpx}` links to Corepack, preserving working or unrelated links. Native preflight reports `remove_nodejs_package`, `retire_node_source`, `retire_node_config`, and `remove_corepack_links`. APT removal suppresses needrestart; application owners restart affected processes after convergence.
 
 Vite+ caches and running processes are separate: update project pins, deploy retained releases, and restart affected services before retiring old cached runtimes.
 
@@ -176,23 +176,21 @@ Recipe Node uses the same [immutable store layout](/reference/tools#project-envi
 
 Older migrated versions remain adopted content. A link is briefly absent between unlink and directory rename; avoid process restarts during migration. Recipe installation refuses unrelated links or differing real content without deleting them.
 
-Recipe HTTP admission requires `automatic: true`; manual convergence stays in artisan. Until kit B, C, I and `node.converge` are installed, nightly recipe maintenance, fleet rollout and manual `node:converge-recipe` have no executor and refuse admission.
+Recipe HTTP admission requires `automatic: true`; manual convergence uses artisan. Both paths admit one `fleet.recipe` Operation and start one native Swamp workflow on the exact Node worker. Footprint, package, PHP and CLI work are steps of that root, with no child Operations.
 
 On the Gateway, run `php artisan node:converge-recipe <node> [--recipe=sha256:<digest>] [--dry-run]`. The target is a Node name or ID. The command uses the repository [machine software recipe](/reference/compute-drivers#machine-software-recipe). An optional full recipe identity guards against running a different version. To select an older version, check out its recipe before running the command; arbitrary Git revisions and remote recipe URLs are not inputs.
 
 The command requires an active managed Ubuntu Node on x86_64. Another architecture fails with `node.recipe_architecture`. It unions the Node's active role profiles, including common tools once. A Node without roles uses `operator`. The service-role profiles match the existing role prerequisite catalog. A prerequisite absent from the recipe, an unsupported artifact, or an incompatible managed Tool constraint stops the operation before package changes. It never installs the base image's development-only tool set on a production Node.
 
-The Gateway sends those pins and the enrolled account to `recipe.inspect`, `recipe.incus-preflight`, and `recipe.apply` through the agent runner. Rust owns package inventory, origin proof, source retirement, verified downloads, runtime installation, and service checks. The applying command holds the package resource lock. It removes its temporary package restart policy on failure or graceful interruption and reserves cleanup time before its command deadline. A command terminated by SIGHUP, SIGINT, or SIGTERM stops the recipe, including an optional command. [Recipe interruption](/reference/node-agent#recipe-interruption) explains how the runner detects the signal.
+The Gateway captures desired pins and the enrolled account without contacting the host. Swamp performs package inventory, origin proof, source retirement, verified downloads, runtime installation and service checks through fixed local system programs. The Node worker runs these programs with sudo. The applying program holds the package resource lock and removes its temporary package restart policy on failure or graceful interruption. The agent remains an observer.
 
-Docker CE refuses both a dry run and application with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
+Native preflight refuses Docker CE with `node.recipe_docker_provider` and reason `docker-provider:docker-ce`. Convergence does not stop containers or replace that provider. Follow the [Docker migration runbook](/reference/docker-provider-migration) during a planned window.
 
 The `ci-runner` role selects its recipe tool set through the same role union as other roles. Roleless Nodes use `operator`. Recorded profiles have no effect.
 
-`--dry-run` reads installed versions and managed Tool intent, then prints JSON with the snapshot, recipe identity, selected tools, recipe versions, observed versions, satisfaction status, and planned changes. An `unsupported_newer` tool includes `refusal: origin:<tool>` and plans no downgrade. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
+`--dry-run` prints desired pins and stored managed Tool intent without contacting the Node. Each selected tool has `installed: null`, `changed: false` and `status: unobserved`. It does not inspect package origins, fetch indexes or simulate an installation. Native preflight performs those host checks after admission. Ubuntu packages use the [version floor and origin checks](/reference/compute-drivers#recipe-schema); Sury PHP builds stay exact.
 
-A dry run changes no host configuration, installed packages, or system APT indexes. Origin verification can fetch authenticated indexes into a temporary directory, which it removes afterward. It takes no remote lock and restarts nothing. Dependencies are resolved from the snapshot during application; the dry-run lists explicit package and tool changes, not an apt dependency simulation. It reads Vite+ metadata and exact cached runtimes directly. An unknown version is `null` and plans an installation; it never invokes a moving runtime shim or an uninitialized Vite+ binary.
-
-Application shares the role-converge lock with Node convergence and fleet rollout. It holds the existing Tool Manager scope locks while applying and checking the recipe. Each binary installer takes the self-update lock for its own replacement; package work and Doctor do not hold that lock. At preflight it repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports, and security sources. It preserves other source content.
+Native steps reuse the canonical Node footprint and CLI convergence actions within the same root. Each installer takes its existing resource lock. At preflight, recipe application repairs only the exact snapshot source file written by earlier Orbit convergence, restoring stock Ubuntu archive, updates, backports and security sources. It preserves other source content.
 
 Every applying run refreshes these Ubuntu pockets through a temporary Ubuntu-only source file, whether or not preflight repaired `ubuntu.sources`. An unrelated third-party source cannot block convergence. A failed Ubuntu refresh still stops convergence. Even a Node configured with a regional mirror must reach `archive.ubuntu.com` and `security.ubuntu.com`.
 
@@ -204,7 +202,7 @@ Every role that runs PHP, `app-dev`, `app-prod`, `websocket`, and `gateway`, nam
 
 Package hooks are prevented from restarting services during installation. Only active services belonging to changed packages restart.
 
-The PHP set is the exception: [`php.install-build`](/reference/compute-drivers#install-the-php-build), the one PHP build installer, installs it. Before any change, convergence runs the installer's plan. Another PHP apt source, or a PHP package of a handled version outside the recipe, refuses the convergence with `node.recipe_php_refused` and names it. A dry run refuses the same way. The container installer uses the `ci-runner` profile to purge extras; host convergence always refuses them.
+The PHP set is the exception: [`php.install-build`](/reference/compute-drivers#install-the-php-build), the one PHP build installer, installs it. Before any change, convergence runs the installer's plan. Another PHP apt source, or a PHP package of a handled version outside the recipe, refuses the convergence with `node.recipe_php_refused` and names it. The desired-only dry run does not perform this host check. The container installer uses the `ci-runner` profile to purge extras; host convergence always refuses them.
 
 After the other tools, convergence runs the installer with PHP-FPM option `all`. It restarts the shared `php<version>-fpm` service and each active dedicated production master, each after `php-fpm -t`. It checks each pool socket with a FastCGI request. A dedicated production master restarts briefly during this step, so each site of the Node does too.
 
@@ -212,7 +210,7 @@ When a check fails, the installer reinstalls the previous build and restarts the
 
 Vite+ keeps its existing global store. The pinned CLI receives its initialization marker before it runs, so it cannot launch an unpinned installer. Images and Node convergence use the same installer. The recipe pins the SHA-256 of `vite-plus-package-lock.json`, which fixes the complete runtime dependency tree. The Gateway cross-checks the lock’s Vite+ integrity against the recipe artifact pin; npm verifies that integrity during installation. There is no separate Vite+ package download. The installer runs `npm ci --ignore-scripts` in a separate directory, then switches only Vite+'s runtime package. It never reuses the old runtime's dependencies or replaces the global tool store.
 
-The command then checks service health, existing managed Tool intent, and the Node and role Doctor families. Service health covers services active before convergence from packages whose dpkg version changed and from pinned recipe packages. Convergence restarts only changed-package services. Systemd propagates those restarts to active `Requires=`, `BindsTo=`, and `PartOf=` dependents. Immediately before restarting, convergence reads `RequiredBy`, `BoundBy`, and `ConsistsOf` and takes their transitive closure through units active at that time. These dependents enter the health set, but are never explicit restart arguments. Dependents of unchanged pinned services remain outside the set.
+Each native effect verifies its own result. Recipe application checks affected service health. Service health covers services active before convergence from packages whose dpkg version changed and from pinned recipe packages. Convergence restarts only changed-package services. Systemd propagates those restarts to active `Requires=`, `BindsTo=`, and `PartOf=` dependents. Immediately before restarting, convergence reads `RequiredBy`, `BoundBy`, and `ConsistsOf` and takes their transitive closure through units active at that time. These dependents enter the health set, but are never explicit restart arguments. Dependents of unchanged pinned services remain outside the set.
 
 After the restart invocation, convergence waits for an owned transient oneshot ordered after every affected unit. The oneshot does not start or repair other units. The client wait uses the existing 600-second command limit. Convergence cancels only its own fence after a timed-out wait and reports cancellation errors. Systemd collects the unit after completion.
 
@@ -220,19 +218,19 @@ Services from unpinned dependency packages, such as `incus.service` or `wg-quick
 
 If a unit fails the active check, convergence accepts a loaded unit that completed successfully (`ActiveState=inactive`, `Result=success`). It also accepts a unit when the shared task-unit proof shows it is not loaded, is inactive, has no cgroup, and has no pending job. A failed state read, any other non-loaded state, or an unsuccessful completion stops convergence.
 
-The fleet verifier checks Node and role requirements with no tolerated preexisting issues. Then `recipe.verify-delivery` takes the self-update lock and checks the installed agent digest and CLI version against the delivery selected before application. Only its passing result supplies the recipe identity to record.
+The final delivery step takes the self-update lock and checks the installed observer digest and managed CLI binary and version against the delivery selected before application. It reads the observer binary without invoking the agent. Only passing delivery verification supplies the recipe identity to record.
 
-An unavailable CLI release refuses before application; a mismatch or busy update lock leaves the last success unchanged and the current attempt unverified. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. Package application is not retried; Doctor uses the fleet verifier’s settling checks.
+An unavailable CLI release refuses before application; a mismatch or busy update lock leaves the last success unchanged and the current attempt unverified. The command stops at the first failure and reports the failed stage with a nonzero exit code. It makes no automatic rollback. An uncertain command fails the native root and leaves the attempt unverified. The shared failure callback settles the Operation without changing domain state. Resuming that terminal root cannot repeat an incomplete effect.
 
-A failed command reports its recipe stage, exit code, and bounded, redacted output in the convergence error. A failure during package installation also reports the attempted packages. APT source validation reports the source or backup path and the reason, including malformed fields, mixed provider entries, and symlinks. These reasons use the same bounded, redacted diagnostic envelope. No automatic retry or rollback runs.
+A typed refusal records its error code and any completed footprint result. Raw command stdout and stderr never enter the public Operation. Native history identifies the failed checkpoint. Package and source checks refuse before mutation when they cannot prove the requested state.
 
 After all checks pass, `settings.machine_recipe` stores the recipe identity in `version`, the snapshot, completion time, and any `newer_than_recipe` packages with installed and recipe versions on the Node record. When fleet convergence holds an Incus change, it stores `partial_version` instead of `version`; the Node has applied only the non-Incus changes. See [Incus holds](/reference/compute-drivers#incus-lts-packages-and-upgrades). `php artisan node:converge-recipe --status` lists the recorded identity for every Node without SSH, including Nodes with no success marker.
 
 Before mutation, the Gateway records `settings.machine_recipe_attempt` with the Operation ID, requested identity and snapshot, start time and `status: unverified`. It preserves `settings.machine_recipe` as the last verified success. A failed, cancelled or interrupted attempt stays unverified, with its terminal outcome and error when known. A crash needs no cleanup to make the Node unverified.
 
-Only application, Doctor and delivery verification together replace the success record and mark the attempt succeeded. Fleet planning never skips an unverified Node because its last verified identity matches the desired recipe. The status command shows both records and a `recipe_verified` flag. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
+Only successful native application and delivery verification replace the success record and mark the attempt succeeded. Fleet planning never skips an unverified Node because its last verified identity matches the desired recipe. The status command shows both records and a `recipe_verified` flag. Node settings unrelated to the recipe stay intact. To recover manually, pin the previous snapshot date and tool pins in a reviewed recipe, then converge the Node again. Snapshot pinning alone does not undo changed third-party tool pins.
 
-This synchronous operation also runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
+The same native parent runs inside [nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance). Maintenance selects and orders Nodes; this operation applies and verifies one Node. [Gateway fleet rollout](/reference/gateway-recovery#recipe-convergence) updates Orbit itself separately.
 
 ### Sandboxed headless Chrome on production Nodes
 
@@ -399,11 +397,9 @@ Completion requires a successful keyed installer step with `outcome: current|app
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI, so the fleet rollout can run [`orbit self-update`](/reference/self-update) there. Provisioning, role converge, and the fleet rollout install it with the same step.
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI. `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets and public profile. Each native step publishes the CLI on its own Node worker. The two light Nodes require lane 21's proxy workers. It never invokes `cli.install` or `cli.self-update` on orbit-agent.
 
-Node workflows request the optional `fleet.cli_converge` child with `{}` and the Node as its target. The Gateway records the current release asset and profile; Swamp invokes pinned `cli.install`. The first workload role may still be converging. Ineligible Nodes and unpublished releases succeed with `outcome: skipped` and a reason. Install errors fail the child; parents verify and acknowledge that failure.
-
-A proven foreign-binary refusal marks the Node as foreign, and a proven successful install clears that mark. The child inherits any parent run constraints.
+`POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Foreign files remain untouched and mark the Node as foreign; a later successful native publication clears the mark. Node workflows may compose the same Swamp publication action directly in their parent run.
 
 | Item | Path or value |
 | --- | --- |
@@ -414,7 +410,7 @@ A proven foreign-binary refusal marks the Node as foreign, and a proven successf
 
 This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
 
-The agent's `cli.install` runs the step, and `cli.inspect` reads the link alone. Both read the link path first and run a found binary as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
+Swamp runs the publication step and inspects the existing link locally. Both read the link path first and run a found binary as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
 
 | Found | Result |
 | --- | --- |
@@ -424,7 +420,7 @@ The agent's `cli.install` runs the step, and `cli.inspect` reads the link alone.
 | An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
 | Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
 
-The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+Swamp takes the Node's update lock, `/run/lock/orbit-self-update.lock`, before it installs, and reads the path again under it, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A self-update that keeps it longer than 300 seconds fails the step with `node.update_busy`. A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
 
 | Code | Meaning |
 | --- | --- |
@@ -438,7 +434,9 @@ The agent takes the Node's update lock, `/run/lock/orbit-self-update.lock`, befo
 
 ## Converge the Orbit footprint
 
-The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. The fleet rollout consumes the same footprint action on each Node. It never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
+The held native conversion of `orbit node:converge <node> [--force]` records one immutable converge intent and starts one native Swamp DAG. The Gateway validates the target, captures safe desired footprint data and projects the bounded result. Swamp owns the Node-local effects, placement, dependencies and recovery. Fleet release rollout updates the observer and CLI separately; it does not run footprint convergence.
+
+Footprint convergence never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances. Unsupported extension artifacts refuse before any Node effect, including when their recorded digest matches; a matching digest does not supply a missing native action.
 
 | Artifact | On which Node | Re-apply |
 | --- | --- | --- |

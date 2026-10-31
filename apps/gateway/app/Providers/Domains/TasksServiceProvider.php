@@ -8,6 +8,7 @@ use App\Actions\Tasks\InstallSwampReaderCredentialAction;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Tasks\DependencyMergeSecret;
 use App\Domain\Tasks\SwampReaderAssistance;
+use App\Domain\Tasks\TaskRepositorySecret;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
@@ -17,7 +18,7 @@ final class TasksServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->tag([DependencyMergeSecret::class], OperationSecretSource::class);
+        $this->app->tag([DependencyMergeSecret::class, TaskRepositorySecret::class], OperationSecretSource::class);
         $this->app->bind(InstallSwampReaderCredentialAction::class, fn ($app): InstallSwampReaderCredentialAction => new InstallSwampReaderCredentialAction(
             $app->make(GatewayReleaseLock::class),
             $app->make(SwampReaderEnvironment::class),
