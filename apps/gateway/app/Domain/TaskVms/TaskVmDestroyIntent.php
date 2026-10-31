@@ -1,0 +1,145 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\TaskVms;
+
+use App\Domain\Nodes\NodeRemovalPlan;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskFinalReview;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Route;
+use App\Models\TaskVm;
+use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
+use LogicException;
+
+/** Records destruction scope. It never reads power, stops a worker or deletes a resource. */
+final readonly class TaskVmDestroyIntent
+{
+    public function __construct(private TaskVmSettings $settings, private AgentDelivery $agents, private NodeRemovalPlan $nodes) {}
+
+    /** @return array<string,mixed> */
+    public function capture(TaskVm $vm): array
+    {
+        $this->preserved($vm);
+        $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id)
+            : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->firstOrFail();
+        $location = $vm->provider === TaskVmProviderKind::Incus ? $this->settings->host($host->id) : null;
+        $nodeRemoval = $vm->node_id === null ? null : $this->nodes->deletedTaskVm($vm, Node::query()->findOrFail($vm->node_id));
+        $cleanupNodeIds = $nodeRemoval === null ? [] : $this->cleanupNodeIds($nodeRemoval);
+
+        $input = ['removal_id' => (string) Str::uuid(), 'task_vm_id' => $vm->id, 'node_id' => $host->id,
+            'guest_node_id' => $vm->node_id, 'group_id' => $vm->group_id, 'name' => $vm->name,
+            'guest_user' => $vm->node?->user, 'model_origin' => $vm->ai_router_origin,
+            'wireguard_ip' => $vm->wireguard_ip, 'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id,
+            'agent_sha256' => $this->agents->pin($host), 'deadline_at' => now()->addSeconds(1500)->timestamp,
+            'worker_stop_required' => (bool) $vm->worker_stop_required, 'model_key_required' => $vm->model_key !== null,
+            'workspace_ids' => $this->workspaces($vm), 'route_ids' => $this->routes($vm),
+            'node_removal' => $nodeRemoval,
+            'node_placements' => array_map(static fn (int $nodeId): array => ['effect_node_id' => $nodeId, 'execution_node_id' => $nodeId, 'transport' => 'local'], $cleanupNodeIds),
+            'vm' => $location === null ? null : ['project' => $location->project, 'name' => $vm->name, 'cidr' => $location->cidr],
+            'pool' => $location?->pool,
+            'participant_node_ids' => array_values(array_unique(array_filter([$host->id, $vm->node_id, ...$cleanupNodeIds]))),
+            ...($vm->provider === TaskVmProviderKind::UpCloud ? ['token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]] : [])];
+        $this->available($input);
+
+        return $input;
+    }
+
+    public function owned(Operation $operation, bool $lock = false): TaskVm
+    {
+        $input = $operation->input;
+        if ($operation->kind !== 'task_vm.destroy' || $operation->target_type !== 'task_vm'
+            || ($input['task_vm_id'] ?? null) !== $operation->target_id || ($input['node_id'] ?? null) !== $operation->node_id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The destruction no longer owns its admitted VM.', 422);
+        }
+
+        return $this->ownedInput($input, $lock);
+    }
+
+    /** The same canonical VM ownership check for a truthful Task parent root.
+     * @param  array<string,mixed>  $input
+     */
+    public function ownedInput(array $input, bool $lock = false): TaskVm
+    {
+        $vm = TaskVm::query()->when($lock, static fn ($q) => $q->lockForUpdate())->findOrFail(ValidatedData::integer($input['task_vm_id']));
+        if (($input['guest_node_id'] ?? null) !== $vm->node_id || ($input['group_id'] ?? null) !== $vm->group_id
+            || ($input['guest_user'] ?? null) !== $vm->node?->user || ($input['model_origin'] ?? null) !== $vm->ai_router_origin
+            || ($input['name'] ?? null) !== $vm->name || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip
+            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['provider_id'] ?? null) !== $vm->provider_id
+            || ($vm->provider === TaskVmProviderKind::Incus && $vm->host_node_id !== ($input['node_id'] ?? null))
+            || ($input['worker_stop_required'] ?? null) !== $vm->worker_stop_required
+            || ($input['model_key_required'] ?? null) !== ($vm->model_key !== null)
+            || ($input['workspace_ids'] ?? null) !== $this->workspaces($vm) || ($input['route_ids'] ?? null) !== $this->routes($vm)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The destruction no longer owns its admitted VM and cleanup scope.', 422);
+        }
+        $this->preserved($vm);
+
+        return $vm;
+    }
+
+    /** @param array<string,mixed> $input */
+    public function available(array $input): void
+    {
+        $nodeRemoval = $input['node_removal'] === null ? null : ValidatedData::object($input['node_removal']);
+        if ($input['workspace_ids'] !== [] || $input['route_ids'] !== [] || ($nodeRemoval !== null && $nodeRemoval['route_ids'] !== [])
+            || $input['worker_stop_required'] || $input['model_key_required']) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Same-root worker, credential and Route cleanup participants are not installed.', 409);
+        }
+    }
+
+    /** @return array<string,mixed> */
+    public function input(Operation $operation): array
+    {
+        if (! $operation->status->terminal()) {
+            $this->owned($operation);
+        }
+
+        return Arr::except($operation->input, ['token']);
+    }
+
+    private function preserved(TaskVm $vm): void
+    {
+        if ($vm->group !== null && TaskFinalReview::unpublishedRemovalCommit($vm->group) !== null) {
+            throw new ResourceOperationException('task_vm.workspace_not_preserved', 'Publish the approved Task work before removing its VM.', 409);
+        }
+    }
+
+    /** @param array<string,mixed> $snapshot
+     * @return list<int>
+     */
+    private function cleanupNodeIds(array $snapshot): array
+    {
+        $participants = $snapshot['participants'];
+        if (! is_array($participants) || ! array_is_list($participants)) {
+            throw new LogicException('The Node cleanup capture must include every participant.');
+        }
+        $ids = array_map(static fn (mixed $row): int => ValidatedData::integer(ValidatedData::object($row)['node_id']), $participants);
+        if ($snapshot['hub_id'] !== null) {
+            $ids[] = ValidatedData::integer($snapshot['hub_id']);
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /** @return list<int> */
+    private function workspaces(TaskVm $vm): array
+    {
+        return $vm->node_id === null ? [] : array_values(Instance::query()->where('node_id', $vm->node_id)->orderBy('id')->get()
+            ->map(static fn (Instance $instance): int => $instance->id)->all());
+    }
+
+    /** @return list<int> */
+    private function routes(TaskVm $vm): array
+    {
+        return $vm->node_id === null ? [] : array_values(Route::query()->whereHas('targets.instance', static fn ($q) => $q->where('node_id', $vm->node_id))->orderBy('id')->get()
+            ->map(static fn (Route $route): int => $route->id)->all());
+    }
+}

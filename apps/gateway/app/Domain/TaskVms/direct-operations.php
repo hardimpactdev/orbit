@@ -9,7 +9,11 @@ use App\Domain\TaskVms\TaskVmPackageCacheProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
-return array_fill_keys(TaskVmIncusProjection::Kinds, [
+return ['task_vm.destroy' => [
+    'workflow' => 'operation-task-vm-destroy',
+    'projection' => \App\Domain\TaskVms\TaskVmDestroyProjection::class,
+    'private_material' => ['token' => 'upcloud.api'],
+]] + array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'task_vm_incus_writer',
