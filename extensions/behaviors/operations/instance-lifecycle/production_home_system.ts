@@ -15,6 +15,7 @@ const Relative = z.string().min(1).max(4096).refine((v) =>
     scalar(part)
   )
 );
+const ProjectRoot = z.union([z.literal("."), Relative]);
 const Repository = z.string().min(1).max(4096).refine((v) =>
   !v.startsWith("-") && scalar(v)
 );
@@ -32,7 +33,7 @@ const GitRead = z.object({
     .nullable(),
 }).strict();
 const Release = Source.extend({
-  relative_root: Relative,
+  relative_root: ProjectRoot,
   application_suffix: z.string().default(""),
   served: z.array(z.unknown()).default([]),
 });
@@ -75,7 +76,7 @@ export function productionHomeInput(call: Pick<NodeCall, "name" | "input">) {
       break;
     case "instance.inspect-production-profile":
       schema = Identity.extend({
-        relative_root: Relative,
+        relative_root: ProjectRoot,
         checkout: Path,
         application: Path,
         entry_point: z.enum(["artisan", "bin/console"]),
@@ -90,7 +91,7 @@ export function productionHomeInput(call: Pick<NodeCall, "name" | "input">) {
       break;
     case "instance.grant-production-caddy-access":
       schema = Home.extend({
-        relative_root: Relative,
+        relative_root: ProjectRoot,
         clone_target: z.boolean(),
       }).strict();
       break;
@@ -259,7 +260,7 @@ def profile(data):
  home=HOME_ROOT+'/'+data['user'];data=dict(data,home=home);account=check_home(data);checkout=data['checkout'];app=data['application']
  unsafe={'kind':'unsafe','composer':None,'entry_point':None}
  try:
-  canonical(checkout);canonical(app);check(app==checkout or app.startswith(checkout+'/'));root=os.path.realpath(checkout+'/'+data['relative_root']);check(root.startswith(checkout+'/'));owned_tree(checkout,account.pw_uid,account.pw_gid)
+  canonical(checkout);canonical(app);check(app==checkout or app.startswith(checkout+'/'));root=os.path.realpath(checkout+'/'+data['relative_root']);check(root==checkout or root.startswith(checkout+'/'));owned_tree(checkout,account.pw_uid,account.pw_gid)
   manifest=metadata(app+'/composer.json');entrypoint=metadata(app+'/'+data['entry_point'])
   if manifest is None:return {'kind':'partial' if entrypoint else 'none','composer':None,'entry_point':None}
   check(stat.S_ISREG(manifest.st_mode) and manifest.st_uid==account.pw_uid);value=read(app+'/composer.json')
@@ -270,7 +271,7 @@ def selected(data):
  if info is None:return None
  check(stat.S_ISLNK(info.st_mode));account=entry(data);check(info.st_uid==account.pw_uid and info.st_gid==account.pw_gid)
  target=os.readlink(current);check(re.fullmatch(r'releases/[A-Za-z0-9][A-Za-z0-9._-]*',target) is not None);release=home+'/'+target;canonical(release);check(os.path.isdir(release))
- link=application(data,release)+'/.env';check(os.path.islink(link) and os.readlink(link)==env_target(data) and os.path.realpath(link)==home+'/.env');root=os.path.realpath(release+'/'+data['relative_root']);check(root.startswith(release+'/'));return target[len('releases/'):]
+ link=application(data,release)+'/.env';check(os.path.islink(link) and os.readlink(link)==env_target(data) and os.path.realpath(link)==home+'/.env');root=os.path.realpath(release+'/'+data['relative_root']);check(root==release or root.startswith(release+'/'));return target[len('releases/'):]
 def clear_current(data):
  if selected(data) is not None:os.unlink(data['home']+'/current')
  return {'current':None}
@@ -281,7 +282,7 @@ def grant_caddy(data):
  elif data['clone_target']:release=home+'/releases/initial'
  ancestors=[];root=None
  if release:
-  canonical(release);root=release+'/'+data['relative_root'];canonical(root);check(os.path.isdir(root))
+  canonical(release);root=release if data['relative_root']=='.' else release+'/'+data['relative_root'];canonical(root);check(os.path.isdir(root))
   for walk,dirs,files in os.walk(root,followlinks=False):
    for name in dirs+files:check(not stat.S_ISLNK(os.lstat(walk+'/'+name).st_mode))
   path=os.path.dirname(root)

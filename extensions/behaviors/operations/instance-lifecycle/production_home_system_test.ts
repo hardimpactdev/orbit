@@ -195,6 +195,37 @@ finally:shutil.rmtree(root)
   assertEquals(atob(result.profile.composer), '{"require":{"php":"^8.4"}}');
 });
 
+Deno.test("production source supports a Project whose application root is the release itself", async () => {
+  assertEquals(
+    await runLocalProductionHome(
+      {
+        name: "instance.inspect-production-profile",
+        input: {
+          project_id: 17,
+          user: identity.user,
+          relative_root: ".",
+          checkout: `${identity.home}/releases/initial`,
+          application: `${identity.home}/releases/initial`,
+          entry_point: "artisan",
+        },
+      },
+      undefined,
+      () => Promise.resolve({ accepted: true }),
+    ),
+    { accepted: true },
+  );
+  const result = await pythonFixture(`${localFixture}
+try:
+ prepare_source(data)
+ resolve(dict(data,relative_root='.',application_suffix='',branch='main',clone_target=True));release=home+'/releases/initial'
+ observed=profile(dict(data,relative_root='.',checkout=release,application=release,entry_point='artisan'))
+ os.symlink('releases/initial',home+'/current')
+ print(json.dumps({'profile':observed['kind'],'current':selected(dict(data,relative_root='.',application_suffix=''))}))
+finally:shutil.rmtree(root)
+`);
+  assertEquals(result, { profile: "composer", current: "initial" });
+});
+
 Deno.test("production replay refuses foreign markers and profile refuses linked metadata", async () => {
   const result = await pythonFixture(`${localFixture}
 try:
