@@ -7,7 +7,12 @@ namespace App\Domain\Operations;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 
-/** Immutable admitted Node custody and field transport; never accepts request selectors. */
+/**
+ * Immutable admitted Node custody and field transport; never accepts request selectors.
+ *
+ * @phpstan-type Binding array{owner_node_id:int,read_node_ids:list<int>,write_node_ids:list<int>}
+ * @phpstan-type Admission array{root:int,participants:list<int>,bindings:array<string,Binding>}
+ */
 final readonly class DirectOperationPrivateBindings
 {
     public function __construct(private DirectOperation $direct) {}
@@ -17,40 +22,52 @@ final readonly class DirectOperationPrivateBindings
      */
     public function assertAdmission(array $input, array $declaredFields, int $rootNodeId): void
     {
-        $participants = $input['participant_node_ids'] ?? [$rootNodeId];
+        $this->admission($input, $declaredFields, $rootNodeId);
+    }
+
+    /** @param array<string,mixed> $input
+     * @param  list<string>  $declaredFields
+     * @return Admission
+     */
+    private function admission(array $input, array $declaredFields, int $rootNodeId): array
+    {
+        $participants = array_key_exists('participant_node_ids', $input) ? $input['participant_node_ids'] : [$rootNodeId];
         if (! $this->nodeIds($participants) || ! in_array($rootNodeId, $participants, true)) {
             $this->invalid();
         }
-        $bindings = $input['private_bindings'] ?? [];
+        $bindings = array_key_exists('private_bindings', $input) ? $input['private_bindings'] : [];
         if (! is_array($bindings) || array_diff(array_keys($bindings), $declaredFields) !== []) {
             $this->invalid();
         }
-        foreach ($bindings as $binding) {
-            if (! is_array($binding) || count($binding) !== 3 || array_diff(['owner_node_id', 'read_node_ids', 'write_node_ids'], array_keys($binding)) !== []
+        $validated = [];
+        foreach ($bindings as $field => $binding) {
+            if (! is_string($field) || ! is_array($binding) || count($binding) !== 3 || array_diff(['owner_node_id', 'read_node_ids', 'write_node_ids'], array_keys($binding)) !== []
                 || ! is_int($binding['owner_node_id']) || ! in_array($binding['owner_node_id'], $participants, true)
                 || ! $this->nodeIds($binding['read_node_ids']) || ! $this->nodeIds($binding['write_node_ids'])
                 || array_diff($binding['read_node_ids'], $participants) !== [] || array_diff($binding['write_node_ids'], $participants) !== []) {
                 $this->invalid();
             }
+            $validated[$field] = ['owner_node_id' => $binding['owner_node_id'], 'read_node_ids' => $binding['read_node_ids'], 'write_node_ids' => $binding['write_node_ids']];
         }
+
+        return ['root' => $rootNodeId, 'participants' => $participants, 'bindings' => $validated];
     }
 
     public function assertParticipant(Operation $operation, int $callerNodeId): void
     {
-        $this->validate($operation);
-        if (! in_array($callerNodeId, $operation->input['participant_node_ids'] ?? [$operation->node_id], true)) {
+        if (! in_array($callerNodeId, $this->validate($operation)['participants'], true)) {
             $this->forbidden();
         }
     }
 
     public function ownerNode(Operation $operation, string $field): int
     {
-        $fields = $this->validate($operation);
-        if (! in_array($field, $fields, true)) {
+        $admission = $this->validate($operation);
+        if (! in_array($field, $this->fields($operation), true)) {
             $this->invalid();
         }
 
-        return $operation->input['private_bindings'][$field]['owner_node_id'] ?? $operation->node_id;
+        return $admission['bindings'][$field]['owner_node_id'] ?? $admission['root'];
     }
 
     /** @param array<string,string> $declarations
@@ -80,21 +97,33 @@ final readonly class DirectOperationPrivateBindings
         }
     }
 
+    /** @param 'read_node_ids'|'write_node_ids' $access */
     private function allows(Operation $operation, string $field, string $access, int $callerNodeId): bool
     {
-        return in_array($callerNodeId, $operation->input['private_bindings'][$field][$access] ?? [$operation->node_id], true);
+        $admission = $this->validate($operation);
+
+        return in_array($callerNodeId, $admission['bindings'][$field][$access] ?? [$admission['root']], true);
+    }
+
+    /** @return Admission */
+    private function validate(Operation $operation): array
+    {
+        if ($operation->node_id === null) {
+            $this->invalid();
+        }
+
+        return $this->admission($operation->input, $this->fields($operation), $operation->node_id);
     }
 
     /** @return list<string> */
-    private function validate(Operation $operation): array
+    private function fields(Operation $operation): array
     {
         $definition = $this->direct->definition($operation->kind);
-        $fields = array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]);
-        $this->assertAdmission($operation->input, array_values($fields), $operation->node_id);
 
-        return array_values($fields);
+        return array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
     }
 
+    /** @phpstan-assert-if-true list<int> $ids */
     private function nodeIds(mixed $ids): bool
     {
         return is_array($ids) && array_is_list($ids) && ! array_any($ids, static fn (mixed $id): bool => ! is_int($id) || $id < 1);
