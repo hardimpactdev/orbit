@@ -57,7 +57,7 @@ final readonly class RetargetNodeAction
             }
             $gateway = $this->gateway->nodeId();
             if ($gateway === null || ! Node::query()->whereKey($gateway)->where('status', LifecycleStatus::Active)->exists()) {
-                throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Retarget requires the active Gateway worker.', 409);
+                throw new ResourceOperationException('node.bootstrap_gateway_unavailable', 'Retarget requires the active Gateway SSH identity owner.', 409);
             }
             $roles = $node->roles()->exists();
             $identity = file_get_contents($this->keys->privateKeyPath());
@@ -74,10 +74,10 @@ final readonly class RetargetNodeAction
                 $intent += ['hub' => $this->hub->capture($node), 'network' => $this->network->capture($node, true)];
             }
 
-            return $this->operations->execute('node.retarget', 'node', $node->id, $gateway,
+            return $this->operations->execute('node.retarget', 'node', $node->id, 209,
                 ['intent' => $intent, 'execution_secrets' => ['identity' => $this->steps->executionCopy(
                     'orbit-control-inputs', 'bootstrap-identity-node-'.$gateway, $identity)],
-                    'participant_node_ids' => array_values(array_unique([$gateway, $node->id, ...($roles ? [] : [ValidatedData::integer(ValidatedData::object($intent['hub'])['hub_id']), 209])]))],
+                    'participant_node_ids' => array_values(array_unique([209, $gateway, $node->id, ...($roles ? [] : [ValidatedData::integer(ValidatedData::object($intent['hub'])['hub_id'])])]))],
                 'operator', request()->attributes->getString('orbit.request_id'));
         });
     }

@@ -24,9 +24,9 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
+target: orbit-node-209
 labels:
-  node: ${{ string(inputs.node_id) }}
+  node: '209'
 jobs:
 - name: hub
   steps:

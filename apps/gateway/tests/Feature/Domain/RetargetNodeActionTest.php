@@ -14,6 +14,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
@@ -24,6 +25,7 @@ beforeEach(function (): void {
     app(GatewayServingHost::class)->remember($this->gateway);
     $this->hub = FleetFixtures::node('retarget-hub', [RoleName::Vpn]);
     $this->peer = FleetFixtures::node('retarget-peer');
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'public_ssh_host' => '192.0.2.209']);
     $this->peer->update(['user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAA',
         'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
     $this->prior = $this->peer->only(['public_ssh_host', 'public_ssh_port', 'wireguard_public_key']);
@@ -48,7 +50,7 @@ beforeEach(function (): void {
 
 it('captures immutable candidate and exact hub context without modifying the current endpoint', function (): void {
     $operation = app(RetargetNodeAction::class)->execute(new RetargetNodeData($this->peer->name, '192.0.2.100', 2222));
-    expect($operation->kind)->toBe('node.retarget')->and($operation->node_id)->toBe($this->gateway->id)
+    expect($operation->kind)->toBe('node.retarget')->and($operation->node_id)->toBe(209)
         ->and($operation->target_id)->toBe($this->peer->id)
         ->and($operation->input['intent']['target']['host'])->toBe('192.0.2.100')
         ->and($operation->input['intent']['hub']['context_node_id'])->toBe($this->peer->id)

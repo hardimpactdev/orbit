@@ -117,8 +117,8 @@ elif args[:2]==['/usr/bin/wg','show']:print('orbit')
             workflow = yaml.safe_load((ROOT / "workflows" / workflow_file).read_text())
             for job in workflow["jobs"]:
                 for step in job["steps"]:
-                    step.pop("target", None)
-                    step.pop("labels", None)
+                    self.assertEqual(step.pop("target"), "orbit-node-209")
+                    self.assertEqual(step.pop("labels"), {"node": "209"})
                     task = step.get("task", {})
                     if task.get("behaviorType") == "@swamp/ssh":
                         globals_ = task["globalArgs"]

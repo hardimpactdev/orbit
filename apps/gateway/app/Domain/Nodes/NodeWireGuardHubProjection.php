@@ -16,7 +16,7 @@ final readonly class NodeWireGuardHubProjection implements DirectOperationProjec
     public function input(Operation $operation): array
     {
         $intent = $operation->input['_hub_inventory'] ?? null;
-        if (! is_array($intent) || $operation->kind !== 'node.wireguard_hub_converge' || $operation->target_type !== 'node' || $operation->node_id !== $operation->target_id || ($intent['hub_id'] ?? null) !== $operation->target_id) {
+        if (! is_array($intent) || $operation->kind !== 'node.wireguard_hub_converge' || $operation->target_type !== 'node' || $operation->node_id !== 209 || ($intent['hub_id'] ?? null) !== $operation->target_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The hub differs from its admitted root.', 422);
         }
 

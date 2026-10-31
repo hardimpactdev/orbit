@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
@@ -17,6 +18,7 @@ beforeEach(function (): void {
     $this->hub = FleetFixtures::node('standalone-hub', [RoleName::Vpn]);
     $this->gateway = $this->markAsGateway(FleetFixtures::node('hub-gateway', [RoleName::Gateway]));
     $this->foreign = FleetFixtures::node('hub-foreign');
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'public_ssh_host' => '192.0.2.209']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run', 'install');
@@ -31,7 +33,7 @@ beforeEach(function (): void {
     file_put_contents($home.'/wireguard/public.key', base64_encode(str_repeat('h', 32)));
 });
 
-it('admits one idempotent root on logical VPN1 without selecting a worker or reading a private key', function (): void {
+it('admits VPN1 work on Node209 without a target worker or reading a private key', function (): void {
     unlink(config('orbit.home').'/wireguard/private.key');
     $path = "/api/v1/nodes/{$this->hub->id}/wireguard-hub/converge";
     $first = $this->withHeader('Idempotency-Key', 'hub-native-once')->post($path, [], ['Accept' => 'application/json'])
@@ -39,15 +41,15 @@ it('admits one idempotent root on logical VPN1 without selecting a worker or rea
         ->assertJsonPath('data.attempts', 0);
     $this->post($path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
     $operation = Operation::query()->sole();
-    expect($this->hub->id)->toBe(1)->and($operation->node_id)->toBe(1)
+    expect($this->hub->id)->toBe(1)->and($operation->node_id)->toBe(209)
         ->and($operation->target_id)->toBe(1)->and($operation->parent_operation_id)->toBeNull()
         ->and($operation->lock_key)->toBeNull()->and($operation->worker)->toBeNull()
-        ->and($operation->input['participant_node_ids'])->toBe([1])
+        ->and($operation->input['participant_node_ids'])->toBe([209, 1])
         ->and($operation->input)->not->toHaveKeys(['configuration', 'private_bindings'])
         ->and($operation->input['_hub_inventory']['hub_id'])->toBe(1);
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->sent[0]['payload'])->toMatchArray(['workflowIdOrName' => 'operation-node-wireguard-hub-converge',
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => 1, 'kind' => 'node.wireguard_hub_converge', 'intent' => $operation->input['_hub_inventory'], 'execution_secrets' => (object) []]]);
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => 209, 'kind' => 'node.wireguard_hub_converge', 'intent' => $operation->input['_hub_inventory'], 'execution_secrets' => (object) []]]);
 });
 
 it('captures complete public inventory once without exposing the hub private configuration', function (): void {
@@ -94,4 +96,12 @@ it('projects bounded native outcomes without mutating peer records and rejects c
     expect($this->foreign->refresh()->getAttributes())->toBe($before);
     $data['result'] = ['projected' => false];
     expect(fn () => $projection->apply($operation, $data))->toThrow(ResourceOperationException::class);
+});
+
+it('admits the active hub without a worker on that target', function (): void {
+    $this->hub->roles()->delete();
+    $this->foreign->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $ack = $this->post("/api/v1/nodes/{$this->foreign->id}/wireguard-hub/converge", [], ['Accept' => 'application/json'])->assertAccepted();
+    $operation = Operation::query()->findOrFail($ack->json('data.id'));
+    expect($operation->node_id)->toBe(209)->and($operation->target_id)->toBe($this->foreign->id);
 });

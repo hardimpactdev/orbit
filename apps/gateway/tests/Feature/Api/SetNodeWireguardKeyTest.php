@@ -8,6 +8,7 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
+use App\Models\Node;
 use App\Models\Operation;
 use Orbit\Sdk\Requests\Nodes\SetNodeWireGuardKeyRequest;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -19,6 +20,7 @@ beforeEach(function (): void {
     $this->hub = FleetFixtures::node('key-hub', [RoleName::Vpn]);
     $this->gateway = $this->markAsGateway(FleetFixtures::node('key-gateway', [RoleName::Gateway]));
     $this->peer = FleetFixtures::node('key-peer');
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp', 'status' => 'active', 'public_ssh_host' => '192.0.2.209']);
     $this->peer->update(['ssh_host_fingerprint' => null, 'wireguard_public_key' => base64_encode(str_repeat('a', 32))]);
     $this->old = $this->peer->wireguard_public_key;
     $this->key = base64_encode(str_repeat('b', 32));
@@ -39,7 +41,7 @@ it('captures the exact prior entry before key mutation and starts only its nativ
     $ack = $this->patchJson("/api/v1/nodes/{$this->peer->id}/wireguard-key", ['wireguard_public_key' => $this->key])->assertAccepted();
     record_fixture($ack, 'nodes/node-wireguard-key/updated', SetNodeWireGuardKeyRequest::class, 'PATCH /api/v1/nodes/{node}/wireguard-key');
     $operation = Operation::query()->findOrFail($ack->json('data.id'));
-    expect($operation->kind)->toBe('node.wireguard_key')
+    expect($operation->kind)->toBe('node.wireguard_key')->and($operation->node_id)->toBe(209)
         ->and($operation->input['hub_intent']['before']['public_key'])->toBe($this->old)
         ->and($operation->input['public_key'])->toBe($this->key)
         ->and($this->peer->refresh()->wireguard_public_key)->toBe($this->old)

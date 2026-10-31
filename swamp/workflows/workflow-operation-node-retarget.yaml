@@ -65,9 +65,9 @@
         {
           "name": "verify_endpoint",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "task": {
             "type": "behavior",
@@ -102,9 +102,9 @@
         },
         {
           "name": "snapshot_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -133,9 +133,9 @@
         {
           "name": "snapshot_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -183,9 +183,9 @@
         },
         {
           "name": "snapshot",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -212,9 +212,9 @@
         },
         {
           "name": "key_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -243,9 +243,9 @@
         {
           "name": "key_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -293,9 +293,9 @@
         },
         {
           "name": "key",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -421,9 +421,9 @@
         },
         {
           "name": "peer_file_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -452,9 +452,9 @@
         {
           "name": "peer_file_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -502,9 +502,9 @@
         },
         {
           "name": "peer_file",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -532,9 +532,9 @@
         {
           "name": "enable_peer",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -586,9 +586,9 @@
         {
           "name": "start_peer",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -639,9 +639,9 @@
         },
         {
           "name": "record_dns_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -670,9 +670,9 @@
         {
           "name": "record_dns_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -720,9 +720,9 @@
         },
         {
           "name": "record_dns",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -750,9 +750,9 @@
         {
           "name": "verify_peer",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -797,9 +797,9 @@
         },
         {
           "name": "restore_peer_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -834,9 +834,9 @@
         {
           "name": "restore_peer_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -884,9 +884,9 @@
         },
         {
           "name": "restore_peer",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -1012,9 +1012,9 @@
         },
         {
           "name": "cleanup_asset",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -1050,9 +1050,9 @@
         {
           "name": "cleanup_command",
           "writes": true,
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -1101,9 +1101,9 @@
         },
         {
           "name": "cleanup",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {
@@ -1131,9 +1131,9 @@
         },
         {
           "name": "terminal",
-          "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+          "target": "orbit-node-209",
           "labels": {
-            "node": "${{ string(inputs.node_id) }}"
+            "node": "209"
           },
           "dependsOn": [
             {

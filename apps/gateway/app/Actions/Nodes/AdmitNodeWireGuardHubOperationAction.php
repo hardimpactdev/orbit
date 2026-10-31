@@ -6,7 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Nodes\NodeRolePlacement;
+use App\Domain\Nodes\NodeWireGuardCommandInput;
 use App\Domain\Nodes\NodeWireGuardInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -21,7 +21,7 @@ final readonly class AdmitNodeWireGuardHubOperationAction
 
     public function execute(Node $node, ?string $requestId = null): Operation
     {
-        if (! app(ManagedNodeEligibility::class)->allows($node) || ! app(NodeRolePlacement::class)->allows($node)
+        if (! app(ManagedNodeEligibility::class)->allows($node)
             || ! $node->roles()->where('role', RoleName::Vpn)->where('status', LifecycleStatus::Active)->exists()) {
             throw new ResourceOperationException('node.network_unsupported', 'Hub convergence requires its exact active managed VPN Node.', 422);
         }
@@ -30,7 +30,7 @@ final readonly class AdmitNodeWireGuardHubOperationAction
             throw new ResourceOperationException('node.network_unsupported', 'Only the current VPN owner can publish the hub.', 422);
         }
 
-        return $this->operations->execute('node.wireguard_hub_converge', 'node', $node->id, $node->id,
-            ['_hub_inventory' => app(\App\Domain\Nodes\NodeWireGuardCommandInput::class)->captureHub($node), 'participant_node_ids' => [$node->id]], 'operator', $requestId);
+        return $this->operations->execute('node.wireguard_hub_converge', 'node', $node->id, 209,
+            ['_hub_inventory' => app(NodeWireGuardCommandInput::class)->captureHub($node), 'participant_node_ids' => array_values(array_unique([209, $node->id]))], 'operator', $requestId);
     }
 }

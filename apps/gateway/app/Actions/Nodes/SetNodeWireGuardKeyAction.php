@@ -48,7 +48,7 @@ final readonly class SetNodeWireGuardKeyAction
             $this->configuration->assertPeerKeyAvailable($node, $publicKey);
             $intent = $this->hub->capture($node);
 
-            return $this->operations->execute('node.wireguard_key', 'node', $node->id, $node->id,
+            return $this->operations->execute('node.wireguard_key', 'node', $node->id, 209,
                 ['hub_intent' => $intent, 'public_key' => $publicKey,
                     'participant_node_ids' => array_values(array_unique([$node->id, ValidatedData::integer($intent['hub_id']), 209]))],
                 'operator', request()->attributes->getString('orbit.request_id'));

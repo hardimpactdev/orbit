@@ -2,10 +2,7 @@ import { hubPeerSteps } from "../node-hub-command/steps.ts";
 import { type PeerAction, peerActionSteps } from "./steps.ts";
 type Step = Record<string, unknown>;
 const e = (s: string) => "${{ " + s + " }}";
-const placement = {
-    target: e('"orbit-node-" + string(inputs.node_id)'),
-    labels: { node: e("string(inputs.node_id)") },
-};
+const placement = { target: "orbit-node-209", labels: { node: "209" } };
 const globals = {
     name: e('"node-retarget-" + string(inputs.intent.node_id)'),
     transport: {
