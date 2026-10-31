@@ -3243,19 +3243,6 @@
       ]
     },
     {
-      "name": "instance.write-environment",
-      "summary": "Replace an Instance's .env, or merge Orbit's keys into .env.testing.",
-      "mutates": true,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "owner",
-        "macos": null
-      },
-      "errors": [
-        "instance.environment_input_invalid"
-      ]
-    },
-    {
       "name": "instance.inspect-development-profile",
       "summary": "Read a development checkout's Composer metadata, refusing a link or another owner.",
       "mutates": false,

@@ -318,7 +318,6 @@ pub fn all() -> Vec<Entry> {
         entry::<instances::CheckPathFree>(),
         entry::<environment::ReadEnvironment>(),
         entry::<environment::InspectEnvironmentSync>(),
-        entry::<environment::WriteEnvironment>(),
         entry::<laravel::InspectProfile>(),
         entry::<laravel::WriteUrl>(),
         entry::<caddy_access::GrantDevelopmentCaddyAccess>(),
