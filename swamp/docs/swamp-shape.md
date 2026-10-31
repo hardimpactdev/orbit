@@ -181,4 +181,20 @@ Use `node.bootstrap_probe` as the reference source. The full live pilot is still
 - [Gateway declaration](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/bootstrap-direct-operations.php) and [projector](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Domain/Nodes/NodeBootstrapProjection.php): fixed result selector and database projection.
 - [Native regression](https://github.com/hardimpactdev/orbit/blob/main/swamp/tests/bootstrap_script_native_test.py): real script delivery, vault environment, history outputs and failed-scan ordering.
 
-Source during relocation: [Orbit pilot 2003](https://github.com/hardimpactdev/orbit/pull/2003), preserved from [Swamp478](https://github.com/hardimpactdev/orbit-swamp/pull/478), and [Gateway shared helper2001](https://github.com/hardimpactdev/orbit/pull/2001), and [shared input and terminal-recovery contract2010](https://github.com/hardimpactdev/orbit/pull/2010). Add merged template and live Operation/run IDs after the full pilot passes. Preserve rule 5: the GitHub App key and Orbit CA private key stay only in the Gateway; the only step-to-Gateway primitives are scoped token minting and CSR-plus-Operation certificate signing.
+Source during relocation: [Orbit pilot 2003](https://github.com/hardimpactdev/orbit/pull/2003), preserved from [Swamp478](https://github.com/hardimpactdev/orbit-swamp/pull/478), [Gateway shared helper2001](https://github.com/hardimpactdev/orbit/pull/2001), and [shared input and terminal-recovery contract2010](https://github.com/hardimpactdev/orbit/pull/2010). Add merged template and live Operation/run IDs after the full pilot passes. Preserve rule 5: the GitHub App key and Orbit CA private key stay only in the Gateway; the only step-to-Gateway primitives are scoped token minting and CSR-plus-Operation certificate signing.
+
+## Pilot comparison
+
+The comparison uses imported baseline `a116589c527f55343626040f6effc8c7f5d8b746`. Count complete production files touched by the probe conversion, excluding tests, documentation and shared contract 2010. Shared bootstrap lowers remain because the other bootstrap kinds still use them. This pilot adds source lines while exposing the actions separately.
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Touched production lines | 333 | 565 |
+| Probe workflow lines | 44 | 76 |
+| Gateway application change | Baseline | +23 net lines |
+| Native step visibility | `bootstrap/apply`; `failure/settle-failure` skipped on success | `bootstrap/assets`, `scan-host-key`, `probe-host` |
+| Recorded step outputs | No public outputs on `apply` | Metadata paths; each shell step's stdout, stderr, exit code and timing |
+| Gateway calls from probe steps | Read intent/private material and post projection | None |
+| Gateway result projection | Family callback | Shared terminal event plus one history read |
+
+The dev-worker histories are `27d27930-753c-48c6-b00e-f715bc1220e3` before and `4ee4cd98-89c2-43de-8103-0d3746a19306` after. Evidence files are `before-history.json`, `remote-script-history.json` and `source-comparison.json` under `evidence/lane11-vault-script-pilot-20261031/`. The comparison describes source and synthetic dev-worker execution; the live Operation and run remain pending.
