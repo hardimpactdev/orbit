@@ -1,12 +1,11 @@
 id: 40402584-b11e-468f-b58e-0d7328a8e62c
 name: operation-database-read
-description: Read one admitted database query or schema on its exact Node and project bounded results.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Read bounded queries and metadata using vault-backed scripts over official SSH from209.
 writes: true
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -18,59 +17,338 @@ inputs:
       type: string
       enum:
       - database.read
+    intent:
+      type: object
+      properties:
+        connection_id:
+          type: integer
+          minimum: 1
+        driver:
+          type: string
+          enum:
+          - mysql
+          - pgsql
+          - sqlite
+        mode:
+          type: string
+          enum:
+          - query
+          - tables
+          - schema
+          - describe
+        table:
+          type: string
+        owner:
+          type: string
+        path:
+          type: string
+        ssh:
+          type: object
+          properties:
+            host:
+              type: string
+            user:
+              type: string
+            host_keys:
+              type: array
+              items:
+                type: string
+              minItems: 1
+          required:
+          - host
+          - user
+          - host_keys
+          additionalProperties: false
+      required:
+      - connection_id
+      - driver
+      - mode
+      - table
+      - ssh
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        database_read:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^database-read-intent-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - database_read
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-- name: server
+- name: read
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-read'
-      behaviorName: ${{ "database-read-" + string(inputs.node_id) }}
-      methodName: apply
+      behaviorType: '@nckrtl/database-read-command-assets'
+      behaviorName: ${{ "database-read-assets-" + run.id }}
+      methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
+        intent: ${{ inputs.intent }}
+  - name: directory
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      globalArgs: &id002
+        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: copy
+    target: orbit-node-209
+    labels: *id001
+    writes: false
+    allowFailure: true
     dependsOn:
-    - step: apply
+    - step: assets
+      condition:
+        type: succeeded
+    - step: directory
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-read'
-      behaviorName: ${{ "database-read-" + string(inputs.node_id) }}
-      methodName: project
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      globalArgs: *id002
+      methodName: copy
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
-  - name: failure-apply
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
+        hosts: name:server
+        src: ${{ steps.assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
+        direction: to
+        recursive: true
+  - name: prepared
+    target: orbit-node-209
+    labels: *id001
+    writes: false
     dependsOn:
-    - step: apply
+    - step: copy
       condition:
-        type: failed
+        type: always
+    task:
+      type: assert
+      expr: steps.directory.outputs.exitCode == 0 && steps.copy.status == "succeeded"
+      severity: high
+      message: Database read command files unavailable.
+  - name: sql
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: false
+    allowFailure: true
+    dependsOn:
+    - step: prepared
+      condition:
+        type: succeeded
     task:
       type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      globalArgs:
+        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+        hosts: name:server
+        timeoutSec: 30
+        argv:
+        - /usr/bin/php
+        - -d
+        - display_errors=0
+        - -d
+        - log_errors=0
+        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) + "/read_pdo.php" }}
+        - ${{ steps.assets.outputs.intent_json }}
+        okExitCodes:
+        - 0
+        - 1
+        stdin: ${{ vault.get(inputs.execution_secrets.database_read.vault, inputs.execution_secrets.database_read.key)
+          }}
+    guard: ${{ inputs.intent.driver == "sqlite" }}
+  - name: sqlite
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: false
+    allowFailure: true
+    dependsOn:
+    - step: prepared
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      globalArgs:
+        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/sudo
+        - -n
+        - -u
+        - '${{ has(inputs.intent.owner) ? inputs.intent.owner : "" }}'
+        - --
+        - /usr/bin/python3
+        - -I
+        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) + "/read_sqlite.py" }}
+        - ${{ steps.assets.outputs.intent_json }}
+        okExitCodes:
+        - 0
+        - 1
+        stdin: ${{ vault.get(inputs.execution_secrets.database_read.vault, inputs.execution_secrets.database_read.key)
+          }}
+    guard: ${{ inputs.intent.driver != "sqlite" }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: assets
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: copy
+      condition:
+        type: always
+    - step: prepared
+      condition:
+        type: always
+    - step: sql
+      condition:
+        type: always
+    - step: sqlite
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-read-command-assets'
+      behaviorName: ${{ "database-read-assets-" + run.id }}
+      methodName: result
+      inputs:
+        stdout: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.stdout)
+          ? steps.sqlite.outputs.stdout : "") : (has(steps.sql.outputs) && has(steps.sql.outputs.stdout) ? steps.sql.outputs.stdout
+          : "") }}'
+        exit_code: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.exitCode)
+          ? steps.sqlite.outputs.exitCode : -1) : (has(steps.sql.outputs) && has(steps.sql.outputs.exitCode) ? steps.sql.outputs.exitCode
+          : -1) }}'
+  - name: cleanup
+    target: orbit-node-209
+    labels: &id003
+      node: '209'
+    guard: ${{ steps.result.outputs.exitCode != 0 }}
+    allowFailure: true
+    writes: true
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "database-read-" + string(inputs.operation_id) }}
+      globalArgs:
+        name: ${{ "database-read-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh.user }}
+          identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity
+        hosts:
+        - name: server
+          address: ${{ inputs.intent.ssh.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh.host_keys }}
+      methodName: exec
+      inputs:
+        hosts: name:server
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-database-read-" + string(inputs.operation_id) }}
+        okExitCodes:
+        - 0
+        - 1
+  - name: accept_result
+    target: orbit-node-209
+    labels: *id003
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    - step: cleanup
+      condition:
+        type: always
+    writes: false
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: Database read did not complete.

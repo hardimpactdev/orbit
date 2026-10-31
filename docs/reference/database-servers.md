@@ -22,6 +22,8 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
+When a read starts, the workflow receives full non-secret intent and vault key names. Its placed steps run on 209 and use official SSH to the admitted Node; the Gateway supplies private material through the shared execution copy. Separate script files enforce read-only access and redact bounded rows before native output. The shared terminal subscriber records the typed result.
+
 Instance lifecycle workflows compose Database actions as placed jobs. They do not create child Operations or wait in the Gateway. Removal refuses system databases (`mysql`, `sys`, `performance_schema`, `information_schema`, `postgres` and names beginning with `template`), including any owned prefix that could match them. The native action checks expanded names before SQL. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
 
 Native workflows read stored credentials through the declared private-material source for the admitted run and Node. Operation history contains no passwords or step receipts. Removal deletes the admitted record after native success.

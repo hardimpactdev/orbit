@@ -355,13 +355,15 @@ Direct turn cancellation uses native Swamp cancellation and official SSH session
 
 `tasks:publish <group> --check=<id> [--title=… --body=…]` starts the native `operation-task-publish` workflow through `POST /api/v1/task-groups/{group}/publish`. The JSON input stays `{ check, pull_request?: { title, body } }`. Supply title and body together. The CLI accepts `--idempotency-key` and `--json`; the PHP SDK and MCP carry the same inputs.
 
-The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit and checked tree in the intent. It performs no Git or GitHub request.
+The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. It mints the existing GitHub installation token for that repository and uses the shared execution-copy helper to supply only its vault descriptor to Swamp.
 
-The VM worker must be ready. One step under the shared task-workspace model lock verifies HEAD and the whole working tree against the checked candidate. A moved candidate fails with `tasks.head_moved` before a push. Swamp obtains the existing repository installation token through shared private material and uses it only in trusted Git/GitHub calls. Repository commands receive no token.
+A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. A moved candidate fails with `tasks.head_moved` before a push. Separate steps export the admitted commit as a Git bundle, copy it through official SSH, and import it into a disposable bare repository on 209. Only the trusted Git/GitHub actions on 209 resolve the vault token; repository commands and the VM receive no token. The workspace path stays in intent, without a new lease or cross-step lock.
 
 Swamp pushes the exact candidate to `task-{id}` without force. An identical remote tip skips the push. A divergent remote tip fails with `tasks.not_fast_forward`; a GitHub workflow-permission refusal fails with `tasks.workflows_permission`. Other transport failures use `tasks.push_failed`. A lost push reply is reconciled by observing the remote tip before another attempt.
 
-Without `pull_request`, publication only pushes. With it, Swamp looks for an open pull request from the admitted branch, updates its title and body when found, or opens one against the admitted default branch. Recovery repeats the lookup before creating a PR. It requests no reviewers and runs no brief coverage. The Gateway projects `pr_url` and the watched PR fields without changing board status or settle metrics.
+Without `pull_request`, publication only pushes. With it, separate steps look for an open pull request from the admitted branch and update its title and body when found, or open one against the admitted default branch. A lost reply fails the operation. A fresh admission obtains a fresh token and repeats the remote-tip and PR lookups before another mutation. An already terminal Operation is not reopened by native resume.
+
+Token revocation and scratch cleanup are separate native steps. Publication requests no reviewers and runs no brief coverage. The Gateway projects the selected terminal stdout into `pr_url` and the watched PR fields without changing board status or settle metrics.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
@@ -750,9 +752,9 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 ## Workspace lease
 
-This section describes the retained lease consumers. Script, analysis and turn operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
+This section describes the retained lease consumers. Script, analysis, turn and publication operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
 
-One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
+One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Candidate and handoff checks, deliverable commands, workspace fast-forwards, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
 A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 
@@ -1216,11 +1218,11 @@ New Projects have no task check until one is configured, regardless of type. Exi
 
 ## Why it works this way
 
-### Publish uses the checked commit and the approval push
+### Publish uses the checked commit and trusted Git
 
-A raw commit would bypass the handoff check. Taking its check ID binds publication to the evidence and the commit recorded together. Reusing the approval push keeps GitHub authority on the Gateway and avoids a second transfer path. The operation holds the group while the queued job runs, so another effect cannot reuse its workspace. An open-pull-request lookup makes a repeated step safe. The orchestrator owns review gates and board states, so publication adds no brief coverage, reviewer request, or settling decision.
+A raw commit would bypass the handoff check. Taking its check ID binds publication to the evidence and the commit recorded together. Exporting that commit through official SSH lets a trusted bare repository on 209 push it without lending the VM a GitHub token or loading its Git configuration. Separate observations check the workspace before export and after push. An open-pull-request lookup lets a new admission reconcile a lost create reply. The orchestrator owns review gates and board states, so publication adds no brief coverage, reviewer request, or settling decision.
 
-A push that started can reach GitHub even after its client stops. Keeping the operation held until its job ends prevents a cancel from claiming that publication stopped. Before start, invalidating the queued record is enough to stop a late job without deleting shared queue data.
+A push that started can reach GitHub even after its client stops. Native cancellation therefore does not prove that the remote branch stayed unchanged. A fresh admission reads the exact destination branch before pushing, skips an identical tip, and never forces a divergent tip. The group's VM workspace path remains part of intent, with no new ownership mechanism.
 
 These reasons explain the design. Check them before you propose a change.
 

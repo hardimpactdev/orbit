@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
+use App\Domain\Tasks\TaskPublishProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -21,7 +23,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 /** @return array{Task, Task} */
 function native_publish_group(string $orchestration = 'external'): array
 {
-    $node = test()->markAsGateway(Node::query()->create(['name' => 'check-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91']));
+    $node = test()->markAsGateway(Node::query()->create(['name' => 'check-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND']));
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'Check', 'slug' => 'check', 'repository_url' => 'https://github.com/acme/turn.git']);
@@ -43,10 +45,16 @@ function native_publish_check(Task $task): TaskCheck
 }
 
 beforeEach(function (): void {
-    config(['swamp.run_token' => 'native-test']);
+    config(['swamp.run_token' => 'native-test', 'swamp.ca_path' => '/public/root.pem', 'swamp.address' => '192.0.2.209']);
+    GitHubTestSupport::storeApp();
+    $github = Mockery::mock(GitHubApi::class);
+    $github->shouldReceive('repositoryInstallation')->andReturn(123);
+    $github->shouldReceive('repositoryPullRequestToken')->andReturn('synthetic-publish-write-token');
+    $github->shouldNotReceive('repositoryChecksToken');
+    app()->instance(GitHubApi::class, $github);
     $this->run = 'a4944b1e-a6d9-4a8b-8ec0-c065b4a50caa';
     $this->socket = new FakeRoutePublicationSocket;
-    $this->socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-publish', 'runId' => $this->run]]];
+    $this->socket->reply = fn (array $message): array => $message['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-publish', 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $this->socket);
 });
 
@@ -65,7 +73,12 @@ it('admits the exact checked candidate and native VM without a push job or lease
     $group->update(['status' => 'cancelled']);
     $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', $input, ['Idempotency-Key' => 'native-publish'])->assertAccepted()->assertJsonPath('data.id', $id);
     Queue::assertNothingPushed();
-    expect(count($this->socket->sent))->toBe(1);
+    expect(count($this->socket->sent))->toBe(2);
+    $public = app(TaskPublishProjection::class)->input($operation);
+    expect($public['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.91')
+        ->and($public['execution_secrets']['github_token']['vault'])->toBe('orbit-control-inputs')
+        ->and(json_encode($public))->not->toContain('synthetic-publish-write-token')
+        ->and($this->socket->sent[1]['payload']['inputs'])->toBe([...$public, 'operation_id' => $id, 'kind' => 'tasks.publish', 'node_id' => $operation->node_id]);
 });
 
 it('refuses a foreign check or an ineligible required-CI result before starting Swamp', function (bool $foreign): void {
@@ -89,25 +102,28 @@ it('projects the native PR metadata once without changing group status', functio
     $url = $withPr ? 'https://github.com/acme/turn/pull/12' : null;
     $result = ['branch' => 'task-'.$group->id, 'commit' => $check->commit_sha, 'pull_request_number' => $withPr ? 12 : null, 'pull_request_url' => $url];
     $body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $result, 'error_code' => null];
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk()->assertJsonPath('data.result', $result);
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk();
+    config(['swamp.read_token' => 'native-reader']);
+    $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
+        'id' => $this->run, 'workflowName' => 'operation-task-publish', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.publish'],
+        'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
+        'jobs' => [['name' => 'publish', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
+    ]]]];
+    $projector = app(SwampCommandStep::class);
+    $operation = Operation::findOrFail($id);
+    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'publish', 'step' => 'result']);
+    $projector->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'publish', 'step' => 'result']);
+    expect($operation->fresh()->result)->toBe($result)
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
     expect($group->fresh()->pr_url)->toBe($url)->and($group->fresh()->watched_pr_url)->toBe($url)->and($group->fresh()->status->value)->toBe('running');
 })->with([false, true]);
 
-it('mints only the existing write token for publish and keeps it out of public input', function (): void {
+it('retires publish private-material reads after the input switch', function (): void {
     [$group, $task] = native_publish_group();
     $group->project->update(['default_branch' => 'main']);
     $check = native_publish_check($task);
-    $id = $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id], ['Idempotency-Key' => 'native-publish'])->assertAccepted()->json('data.id');
-    $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.credentials');
-    GitHubTestSupport::storeApp();
-    $github = Mockery::mock(GitHubApi::class);
-    $github->shouldReceive('repositoryInstallation')->andReturn(123);
-    $github->shouldReceive('repositoryPullRequestToken')->once()->andReturn('fixture-write');
-    $github->shouldNotReceive('repositoryChecksToken');
-    app()->instance(GitHubApi::class, $github);
-    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertOk()
-        ->assertJsonPath('data.credentials.write_token', 'fixture-write')->assertJsonMissingPath('data.credentials.checks_token');
+    $id = $this->postJson('/api/v1/task-groups/'.$group->id.'/publish', ['check' => $check->id])->assertAccepted()->json('data.id');
+    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertUnprocessable();
 });
 
 it('recognizes native publication evidence when preserving approved work for cleanup', function (): void {

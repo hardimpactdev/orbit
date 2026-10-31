@@ -750,20 +750,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/database/read.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/read.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/server_close.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -796,7 +782,7 @@
     {
       "file": "extensions/behaviors/operations/database/sqlite_program.ts",
       "rule": "inline-script",
-      "count": 514,
+      "count": 465,
       "evidence": []
     },
     {
@@ -2365,18 +2351,9 @@
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "GET https://gateway.orbit/api/v1/schedules/<dynamic>/complete"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/schedule-system.ts",
       "rule": "multi-action",
-      "count": 8,
+      "count": 7,
       "evidence": [
-        "/usr/bin/getent",
         "/usr/bin/mktemp",
         "/usr/bin/rm",
         "/usr/bin/stat",
@@ -3271,14 +3248,6 @@
     },
     {
       "file": "extensions/behaviors/operations/tasks/provision.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/publish.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [

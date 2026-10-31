@@ -7,14 +7,18 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
+use Illuminate\Support\Str;
 
 /** Records the exact checked candidate. Swamp owns Git and GitHub effects. */
 final readonly class TaskPublishIntent
@@ -45,11 +49,16 @@ final readonly class TaskPublishIntent
             throw new ResourceOperationException('tasks.publish_failed', 'The Project requires a GitHub repository and valid default branch.', 422);
         }
 
+        $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
+        $token = app(RepositoryPullRequestAccess::class)->token($repository);
+        $copy = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-publish-token-'.Str::uuid(), $token);
+
         return $this->start->execute('tasks.publish', 'task_group', $group->id, $instance->node_id, [
             ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'checkout_path' => $instance->checkout_path, 'commit' => $check->commit_sha, 'tree' => $check->tree_after,
             'repository' => $repository->owner.'/'.$repository->name, 'base' => $base, 'branch' => 'task-'.$group->id,
-            'credentials' => ['$secret' => 'github.task_repository', 'id' => $group->project_id],
+            'ssh_execution' => $ssh,
+            'execution_secrets' => ['github_token' => $copy],
         ], $caller, $request);
     }
 }

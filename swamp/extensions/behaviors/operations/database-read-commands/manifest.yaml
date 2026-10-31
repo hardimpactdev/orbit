@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: '@nckrtl/database-read-command-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Bounded read action files and pure result decoding.
+behaviors:
+  - operations/database-read-commands/assets.ts
+additionalFiles:
+  - scripts/read_policy.php
+  - scripts/read_pdo.php
+  - scripts/read_sqlite.py

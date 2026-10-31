@@ -22,10 +22,24 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
-class ScheduleRunNative(harness.NativeTestCase):
+class ScheduleSshFixture(harness.NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/schedule-run")
+        contract = (
+            self.repo
+            / "extensions/behaviors/operations/processes-schedules/contract.ts"
+        )
+        contract.parent.mkdir(parents=True)
+        shutil.copy(
+            ROOT / "extensions/behaviors/operations/processes-schedules/contract.ts",
+            contract,
+        )
+        shutil.copy(
+            ROOT
+            / "extensions/behaviors/operations/processes-schedules/unit-templates.json",
+            contract.parent,
+        )
         official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
         official.parent.mkdir(parents=True)
         shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/ssh", official)
@@ -125,7 +139,10 @@ raise SystemExit(r.returncode)
                 },
             },
             "execution_secrets": {
-                "command": {"vault": "orbit-control-inputs", "key": "schedule-run-operation-17"}
+                "command": {
+                    "vault": "orbit-control-inputs",
+                    "key": "schedule-run-operation-17",
+                }
             },
         }
         self.cli("vault", "create", "local_encryption", "orbit-control-inputs")
@@ -137,7 +154,11 @@ raise SystemExit(r.returncode)
             command.encode()
         ).hexdigest()
         self.cli(
-            "vault", "put", "orbit-control-inputs", "schedule-run-operation-17", input=command
+            "vault",
+            "put",
+            "orbit-control-inputs",
+            "schedule-run-operation-17",
+            input=command,
         )
 
     def run_schedule(self, success=True):
@@ -168,6 +189,8 @@ raise SystemExit(r.returncode)
         )
         return json.loads(step["outputs"]["stdout"])
 
+
+class ScheduleRunNative(ScheduleSshFixture):
     def test_command_uses_only_stdin_and_journals_output_before_public_success(self):
         run = self.run_schedule()
         self.assertEqual(run["status"], "succeeded")

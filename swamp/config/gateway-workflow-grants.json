@@ -2,6 +2,8 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-publish-token-[a-f0-9-]{36}$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-read-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
@@ -90,6 +92,7 @@
     {"workflow": "operation-route-verification", "actions": ["run", "read"]},
     {"workflow": "operation-schedule-control", "actions": ["run", "read"]},
     {"workflow": "operation-schedule-create", "actions": ["run", "read"]},
+    {"workflow": "operation-schedule-destroy", "actions": ["run", "read"]},
     {"workflow": "operation-schedule-install-instance-definitions", "actions": ["run", "read"]},
     {"workflow": "operation-schedule-run", "actions": ["run", "read"]},
     {"workflow": "operation-task-analyze", "actions": ["run", "read"]},

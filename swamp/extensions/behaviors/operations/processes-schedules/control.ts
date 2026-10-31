@@ -7,24 +7,15 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 import { scheduleSystem } from "./schedule-system.ts";
-import {
-  installSchedule,
-  ScheduleInstallation,
-  withScheduleCommand,
-} from "./installation.ts";
+import { ScheduleInstallation, withScheduleCommand } from "./installation.ts";
 
-const InstallArgs = DirectArgs.extend({
-  kind: z.literal("schedule.create"),
-  node_id: z.number().int().positive(),
-});
-const Kind = z.enum(["schedule.enable", "schedule.destroy"]);
+const Kind = z.literal("schedule.enable");
 const Args = DirectArgs.extend({
   kind: Kind,
   node_id: z.number().int().positive(),
 });
 export const ScheduleIntent = ScheduleInstallation;
-const Removal = ScheduleIntent.extend({ cascade: z.boolean() });
-const Input = z.union([ScheduleIntent, Removal]);
+const Input = ScheduleIntent;
 const Result = z.union([
   z.object({ ready: z.literal(true) }).strict(),
   z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),
@@ -45,25 +36,18 @@ export async function localControl(
     input,
     privateMaterial,
     async (command) => {
-      if (kind === "schedule.destroy") {
-        outcome = await invoke("schedule.remove", {
-          ...Removal.parse(input),
-          command,
-        }, signal);
-      } else {
-        // Replace a verified obsolete runner before activating its public timer.
-        outcome = await invoke(
-          "schedule.install",
-          { ...input, command },
-          signal,
-        );
-        if (outcome.error_code !== undefined) return;
-        outcome = await invoke("schedule.activate", {
-          id: input.id,
-          user: input.user,
-          working_directory: input.working_directory,
-        }, signal);
-      }
+      // Replace a verified obsolete runner before activating its public timer.
+      outcome = await invoke(
+        "schedule.install",
+        { ...input, command },
+        signal,
+      );
+      if (outcome.error_code !== undefined) return;
+      outcome = await invoke("schedule.activate", {
+        id: input.id,
+        user: input.user,
+        working_directory: input.working_directory,
+      }, signal);
     },
   );
   if (resolved !== undefined) return resolved;
@@ -77,32 +61,12 @@ export function scheduleControl(
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   action = localControl,
-  installation = installSchedule,
 ) {
   return {
     type: "@nckrtl/schedule-control",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     methods: {
-      install: {
-        description: "Install one admitted Schedule on its exact Node worker",
-        arguments: InstallArgs,
-        execute: async (args: z.infer<typeof InstallArgs>, ctx: Context) => {
-          const gateway = new GatewayOperation(makeHttp(ctx), args);
-          return await directOperation(
-            args,
-            gateway,
-            (safe) =>
-              installation(
-                ScheduleInstallation.parse(safe),
-                gateway,
-                ctx.signal,
-              ),
-            (result) => Result.parse(result),
-            ctx.signal,
-          );
-        },
-      },
       control: {
         description: "Apply admitted Schedule control on its exact Node worker",
         arguments: Args,
@@ -114,9 +78,7 @@ export function scheduleControl(
             (input) =>
               action(
                 args.kind,
-                args.kind === "schedule.destroy"
-                  ? Removal.parse(input)
-                  : ScheduleIntent.parse(input),
+                ScheduleIntent.parse(input),
                 gateway,
                 ctx.signal,
               ),

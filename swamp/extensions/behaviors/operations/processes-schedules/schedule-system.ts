@@ -1,28 +1,20 @@
 import { z } from "npm:zod@4.4.3";
 import { type SystemCommand, systemCommand } from "./system.ts";
 
-const Account = z.string().regex(/^[a-z_][a-z0-9_-]{0,255}$/);
-const Path = z.string().startsWith("/").max(4096).regex(/^[^\p{Cc}]+$/u);
-const Id = z.string().regex(
-  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
-);
-const Context = z.object({
-  user: Account,
-  group: Account,
-  home: Path,
-  working_directory: Path,
-  shell: Path,
-  login_shell: z.boolean(),
-}).strict();
+import {
+  Account,
+  type Artifacts,
+  Context,
+  Id,
+  legacyScheduleUnits,
+  Path,
+  paths,
+  type PublicInput,
+  PublicInstall,
+  renderScheduleUnits,
+} from "./contract.ts";
+export { renderScheduleUnits } from "./contract.ts";
 const Command = z.string().min(1).max(4096).regex(/^[^\0\r\n]+$/);
-const Digest = z.string().regex(/^[a-f0-9]{64}$/);
-const PublicInstall = Context.extend({
-  id: Id,
-  command_hash: Digest,
-  calendar: z.string().min(1).max(255).regex(/^[\x20-\x7e]+$/),
-  timeout_seconds: z.number().int().min(1).max(86400),
-  desired: z.enum(["enabled", "disabled"]),
-}).strict();
 const Install = PublicInstall.extend({ command: Command.optional() });
 const Target = z.object({ id: Id, user: Account, working_directory: Path })
   .strict();
@@ -43,58 +35,6 @@ class Refused extends Error {
 function refuse(code = "schedule.failed"): never {
   throw new Refused(code);
 }
-const unitValue = (value: string) =>
-  `"${
-    value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")
-      .replaceAll("$", "$$")
-  }"`;
-
-function paths(id: string) {
-  const service = `orbit-schedule-${id}.service`;
-  const timer = `orbit-schedule-${id}.timer`;
-  return {
-    script: `/etc/orbit/schedules/${id}.sh`,
-    callback: `/etc/orbit/schedules/${id}.complete`,
-    service: `/etc/systemd/system/${service}`,
-    timer: `/etc/systemd/system/${timer}`,
-    serviceUnit: service,
-    timerUnit: timer,
-    candidateService: `/etc/orbit/schedule-candidates/${service}`,
-    candidateTimer: `/etc/orbit/schedule-candidates/${timer}`,
-  };
-}
-type PublicInput = z.infer<typeof PublicInstall>;
-type Artifacts = Record<"service" | "timer", string>;
-
-function contextOf(input: z.infer<typeof Context>) {
-  return Context.parse({
-    user: input.user,
-    group: input.group,
-    home: input.home,
-    working_directory: input.working_directory,
-    shell: input.shell,
-    login_shell: input.login_shell,
-  });
-}
-
-/** Public timer units admit an Operation; only Swamp executes the private command. */
-export function renderScheduleUnits(value: PublicInput): Artifacts {
-  const input = PublicInstall.parse(value);
-  const p = paths(input.id);
-  const context = contextOf(input);
-  const service =
-    `[Unit]\nDescription=Orbit Schedule ${input.id}\nX-Orbit-Schedule-ID=${input.id}\nX-Orbit-Command-SHA256=${input.command_hash}\nX-Orbit-Execution-Context=${
-      JSON.stringify(context)
-    }\nX-Orbit-Timeout-Seconds=${input.timeout_seconds}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nUser=${input.user}\nGroup=${input.group}\nWorkingDirectory=${
-      input.working_directory.replaceAll("%", "%%")
-    }\nExecStart=/usr/bin/curl --disable --silent --fail --max-time 10 --proto =https --noproxy "*" --cacert /etc/orbit/agent/ca.pem --request POST --header "Idempotency-Key: \${INVOCATION_ID}" --output /dev/null https://gateway.orbit/api/v1/schedules/${input.id}/run\nTimeoutStartSec=15\n`;
-  const timer =
-    `[Unit]\nDescription=Orbit Schedule timer ${input.id}\nX-Orbit-Schedule-ID=${input.id}\n\n[Timer]\nOnCalendar=${
-      input.calendar.replaceAll("%", "%%")
-    }\nPersistent=true\nUnit=${p.serviceUnit}\n\n[Install]\nWantedBy=timers.target\n`;
-  return { service, timer };
-}
-
 async function commandHash(command: string) {
   const bytes = await crypto.subtle.digest(
     "SHA-256",
@@ -110,49 +50,8 @@ async function commandHash(command: string) {
 function obsoleteArtifacts(
   input: z.infer<typeof Install> & { command: string },
 ) {
-  const p = paths(input.id);
-  const context = contextOf(input);
-  const script =
-    `# X-Orbit-Schedule-ID=${input.id}\n# X-Orbit-Execution-Context=${
-      JSON.stringify(context)
-    }\n${input.command}\n`;
-  const timer = renderScheduleUnits(
-    PublicInstall.parse({
-      ...context,
-      id: input.id,
-      command_hash: input.command_hash,
-      calendar: input.calendar,
-      timeout_seconds: input.timeout_seconds,
-      desired: input.desired,
-    }),
-  ).timer;
-  const quote = (v: string) =>
-    `"${
-      v.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")
-    }"`;
-  const agentService =
-    `[Unit]\nDescription=Orbit Schedule ${input.id}\nX-Orbit-Schedule-ID=${input.id}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nUser=${input.user}\nGroup=${input.group}\nWorkingDirectory=${
-      input.working_directory.replaceAll("%", "%%")
-    }\nEnvironment=${quote(`HOME=${input.home}`)}\nEnvironment=${
-      quote(`SHELL=${input.shell}`)
-    }\nExecStart=/usr/local/bin/orbit-agent service schedules-run ${input.id}\nExecStopPost=+/usr/local/bin/orbit-agent service schedules-complete ${input.id}\nTimeoutStartSec=${input.timeout_seconds}\n`;
-  const callback =
-    `#!/bin/sh\n# X-Orbit-Schedule-ID=${input.id}\nstatus=error\n[ "$SERVICE_RESULT" != success ] || status=success\n/usr/bin/curl --disable --silent --fail --max-time 10 --proto '=https' --noproxy '*' --cacert /etc/orbit/agent/ca.pem --header 'Content-Type: application/json' --data "{\\"status\\":\\"$status\\"}" 'https://gateway.orbit/api/v1/schedules/${input.id}/complete' >/dev/null 2>&1 || :\n`;
-  const environment = [
-    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    `HOME=${input.home}`,
-    `SHELL=${input.shell}`,
-    `USER=${input.user}`,
-    `LOGNAME=${input.user}`,
-  ].map(unitValue).join(" ");
-  const execution = `/usr/bin/env -i ${environment} ${unitValue(input.shell)}${
-    input.login_shell ? " --login" : ""
-  } ${p.script}`;
-  const directService =
-    `[Unit]\nDescription=Orbit Schedule ${input.id}\nX-Orbit-Schedule-ID=${input.id}\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=oneshot\nUser=${input.user}\nGroup=${input.group}\nWorkingDirectory=${
-      input.working_directory.replaceAll("\\", "\\\\").replaceAll("%", "%%")
-    }\nExecStart=${execution}\nExecStopPost=+/bin/sh ${p.callback}\nTimeoutStartSec=${input.timeout_seconds}\n`;
-  return { script, callback, timer, agentService, directService };
+  const old = legacyScheduleUnits(PublicInstall.parse(publicInput(input)));
+  return { ...old, script: old.script_prefix + input.command + "\n" };
 }
 
 type Metadata = {
@@ -198,7 +97,10 @@ class Host {
       refuse();
     }
     const fields = result.stdout.trim().split("|");
-    if (fields.length !== 6 || !fields.slice(1).every((v) => /^\d+$/.test(v))) {
+    if (
+      fields.length !== 6 ||
+      !fields.slice(1).every((v) => /^\d+$/.test(v))
+    ) {
       refuse();
     }
     return {
@@ -266,7 +168,8 @@ class Host {
       .trim().split(":");
     if (
       account[0] !== user || !/^\d+$/.test(account[2] ?? "") ||
-      Number(account[2]) === 0 || (home !== undefined && account[5] !== home) ||
+      Number(account[2]) === 0 ||
+      (home !== undefined && account[5] !== home) ||
       (shell !== undefined && account[6] !== shell)
     ) refuse("schedule.target_unavailable");
     for (const flag of ["-d", "-x"]) {
@@ -281,7 +184,12 @@ class Host {
     }
   }
   async systemctl(...args: string[]) {
-    return (await this.system("/usr/bin/systemctl", args, undefined, 45_000))
+    return (await this.system(
+      "/usr/bin/systemctl",
+      args,
+      undefined,
+      45_000,
+    ))
       .code === 0;
   }
   async state(query: string, unit: string) {
@@ -297,7 +205,9 @@ class Host {
     };
   }
   async settle(unit: string, enabled: boolean) {
-    if (!await this.systemctl(enabled ? "enable" : "disable", "--now", unit)) {
+    if (
+      !await this.systemctl(enabled ? "enable" : "disable", "--now", unit)
+    ) {
       return false;
     }
     const state = await this.timerState(unit);
@@ -307,7 +217,10 @@ class Host {
     unit: string,
     state: { enabled: boolean; active: boolean },
   ) {
-    return await this.systemctl(state.enabled ? "enable" : "disable", unit) &&
+    return await this.systemctl(
+      state.enabled ? "enable" : "disable",
+      unit,
+    ) &&
       await this.systemctl(state.active ? "start" : "stop", unit);
   }
   async write(path: string, content: string, gid: number, mode: number) {
@@ -327,7 +240,11 @@ class Host {
         content,
       );
       await this.checked("/usr/bin/chown", ["0:" + gid, "--", temporary]);
-      await this.checked("/usr/bin/chmod", [mode.toString(8), "--", temporary]);
+      await this.checked("/usr/bin/chmod", [
+        mode.toString(8),
+        "--",
+        temporary,
+      ]);
       await this.checked("/usr/bin/mv", ["-T", "--", temporary, path]);
     } finally {
       await this.system("/usr/bin/rm", ["-f", "--", temporary]);
@@ -353,7 +270,12 @@ async function readArtifacts(host: Host, id: string, gid?: number) {
       0o700,
       `# X-Orbit-Schedule-ID=${id}`,
     ),
-    service: await host.owned(p.service, 0, 0o644, `X-Orbit-Schedule-ID=${id}`),
+    service: await host.owned(
+      p.service,
+      0,
+      0o644,
+      `X-Orbit-Schedule-ID=${id}`,
+    ),
     timer: await host.owned(p.timer, 0, 0o644, `X-Orbit-Schedule-ID=${id}`),
   };
 }
@@ -368,7 +290,9 @@ function installedIntent(
   service: string | null,
   timer: string | null,
 ) {
-  if (service === null || timer === null) refuse("schedule.artifact_conflict");
+  if (service === null || timer === null) {
+    refuse("schedule.artifact_conflict");
+  }
   const field = (text: string, key: string) => {
     const values = text.split("\n").filter((line) =>
       line.startsWith(key + "=")
@@ -446,7 +370,9 @@ async function install(host: Host, input: z.infer<typeof Install>) {
       }
     }
   }
-  if (!obsolete && previous.service !== null && previous.timer !== null) return;
+  if (!obsolete && previous.service !== null && previous.timer !== null) {
+    return;
+  }
   const marker = `X-Orbit-Schedule-ID=${input.id}`;
   for (const candidate of [p.candidateService, p.candidateTimer]) {
     await host.owned(candidate, 0, 0o644, marker);
@@ -510,18 +436,26 @@ async function install(host: Host, input: z.infer<typeof Install>) {
       p.candidateService,
       p.service,
     ]);
-    await host.checked("/usr/bin/mv", ["-T", "--", p.candidateTimer, p.timer]);
+    await host.checked("/usr/bin/mv", [
+      "-T",
+      "--",
+      p.candidateTimer,
+      p.timer,
+    ]);
     if (!await host.systemctl("daemon-reload")) refuse();
     if (obsolete) {
       if (!await host.restoreState(p.timerUnit, state)) refuse();
       const restored = await host.timerState(p.timerUnit);
       if (
-        restored.enabled !== state.enabled || restored.active !== state.active
+        restored.enabled !== state.enabled ||
+        restored.active !== state.active
       ) refuse();
       // Only the exact prior private artifacts validated above can be removed.
       if (previous.script !== null) await host.remove(p.script);
       if (previous.callback !== null) await host.remove(p.callback);
-    } else if (!await host.settle(p.timerUnit, input.desired === "enabled")) {
+    } else if (
+      !await host.settle(p.timerUnit, input.desired === "enabled")
+    ) {
       refuse();
     }
   } catch (error) {
@@ -530,7 +464,9 @@ async function install(host: Host, input: z.infer<typeof Install>) {
         !await host.systemctl("disable", "--now", p.timerUnit) &&
         previous.timer !== null
       ) refuse();
-      for (const key of ["service", "timer", "script", "callback"] as const) {
+      for (
+        const key of ["service", "timer", "script", "callback"] as const
+      ) {
         const content = previous[key];
         if (content === null) await host.remove(p[key]);
         else {await host.write(
@@ -542,7 +478,8 @@ async function install(host: Host, input: z.infer<typeof Install>) {
       }
       if (!await host.systemctl("daemon-reload")) refuse();
       if (
-        previous.timer !== null && !await host.restoreState(p.timerUnit, state)
+        previous.timer !== null &&
+        !await host.restoreState(p.timerUnit, state)
       ) refuse();
     } catch {
       refuse("schedule.rollback_failed");
@@ -560,7 +497,11 @@ async function activate(host: Host, input: z.infer<typeof Target>) {
   if (artifacts.script !== null || artifacts.callback !== null) {
     refuse("schedule.artifact_conflict");
   }
-  const context = installedIntent(input.id, artifacts.service, artifacts.timer);
+  const context = installedIntent(
+    input.id,
+    artifacts.service,
+    artifacts.timer,
+  );
   if (
     context.user !== input.user ||
     context.working_directory !== input.working_directory
@@ -597,7 +538,11 @@ async function remove(host: Host, input: z.infer<typeof Remove>) {
     const expected = renderScheduleUnits(publicInput(installation));
     validateObsolete(installation, previous, expected);
   } else if (previous.service !== null || previous.timer !== null) {
-    const intent = installedIntent(input.id, previous.service, previous.timer);
+    const intent = installedIntent(
+      input.id,
+      previous.service,
+      previous.timer,
+    );
     if (intent.group !== input.group) refuse("schedule.artifact_conflict");
     if ("user" in input) {
       const { cascade: _cascade, ...installation } = input;

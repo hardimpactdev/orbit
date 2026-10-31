@@ -125,3 +125,36 @@ it('refuses a command changed after admission before making another execution co
         ->toThrow(ResourceOperationException::class, 'changed after admission');
     expect($this->socket->sent)->toHaveCount(3);
 });
+
+it('projects the fixed lifecycle result through native history once', function (string $kind, string $status): void {
+    $id = $this->postJson('/api/v1/schedules', $this->payload)->assertAccepted()->json('data.id');
+    $schedule = Schedule::query()->sole();
+    if ($kind === 'schedule.destroy') {
+        Operation::query()->findOrFail($id)->update(['status' => OperationStatus::Succeeded]);
+        $schedule->update(['status' => 'active']);
+        $id = $this->deleteJson('/api/v1/schedules/'.$schedule->id)->assertAccepted()->json('data.id');
+    }
+    $operation = Operation::query()->findOrFail($id);
+    $runId = $operation->state['swamp_run_id'];
+    $code = 'operation.native_failed';
+    config(['swamp.read_token' => 'read.fixture', 'swamp.address' => '127.0.0.1', 'swamp.ca_path' => '/fixture/ca.pem']);
+    $before = count($this->socket->sent);
+    $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $runId, 'workflowName' => str_replace('.', '-', 'operation-'.$kind), 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind],
+        'startedAt' => '2026-10-31T20:00:00Z', 'completedAt' => '2026-10-31T20:00:01Z',
+        'jobs' => [['name' => 'schedule', 'steps' => [['name' => 'result', 'status' => $status === 'succeeded' ? 'succeeded' : 'skipped', 'outputs' => $status === 'succeeded' ? ['stdout' => '{"ready":true}'] : []]]]],
+    ]]]];
+    $step = app(SwampCommandStep::class);
+    $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];
+    $projected = $step->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+    $step->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+    expect($projected->status->value)->toBe($status)
+        ->and(count($this->socket->sent))->toBe($before + 1);
+    if ($kind === 'schedule.destroy' && $status === 'succeeded') {
+        expect($schedule->fresh())->toBeNull();
+    } else {
+        expect($schedule->fresh()->status->value)->toBe($status === 'succeeded' ? 'active' : ($kind === 'schedule.create' ? 'failed' : 'removing'));
+        expect($schedule->fresh()->error_code)->toBe($status === 'succeeded' ? null : $code);
+    }
+})->with([['schedule.create', 'succeeded'], ['schedule.create', 'failed'], ['schedule.destroy', 'succeeded'], ['schedule.destroy', 'failed']]);

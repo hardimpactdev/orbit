@@ -1,43 +1,601 @@
-id: 9baa6e73-cc5c-4c76-a6f3-1cfa64830eb2
+id: dd1ccba6-5339-44da-8040-616a905706a4
 name: operation-task-publish
-description: Publish the checked candidate from the task VM worker.
-vaults: []
+description: Publish the admitted checked commit through official SSH export and scoped Git/GitHub actions on209.
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [tasks.publish] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.publish
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        github_token:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^task-publish-token-[a-f0-9-]{36}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - github_token
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: publish
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: execute
-        writes: true
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/task-workspace"
-          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
-          methodName: publish
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-  - name: failure
-    dependsOn: [{ job: publish, condition: { type: failed } }]
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    steps:
-      - name: report
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/operation-failure"
-          behaviorName: '${{ "task-publish-failure-" + string(inputs.node_id) }}'
-          methodName: report
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+- name: publish
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: prepare
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-prepare-" + string(inputs.operation_id) }}
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
+        node_id: ${{ inputs.node_id }}
+  - name: prepare_remote
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-task-publish-" + run.id }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+  - name: copy_assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ steps.prepare.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-publish-" + run.id + "/" }}
+        recursive: true
+        direction: to
+    dependsOn:
+    - step: prepare_remote
+      condition:
+        type: succeeded
+  - name: snapshot_before
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-publish-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.input_json }}
+    dependsOn:
+    - step: copy_assets
+      condition:
+        type: succeeded
+  - name: verify_before
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-verify_before-" + string(inputs.operation_id) }}
+      methodName: verify
+      inputs:
+        input: ${{ inputs.intent }}
+        value: ${{ steps.snapshot_before.outputs.stdout }}
+    dependsOn:
+    - step: snapshot_before
+      condition:
+        type: succeeded
+  - name: export
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-publish-" + run.id + "/scripts/publish_export.py" }}
+        stdin: ${{ steps.prepare.outputs.input_json }}
+    dependsOn:
+    - step: verify_before
+      condition:
+        type: succeeded
+    guard: ${{ !steps.verify_before.outputs.admitted }}
+  - name: export_result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-export_result-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: ${{ steps.export.outputs.stdout }}
+    dependsOn:
+    - step: export
+      condition:
+        type: succeeded
+  - name: prepare_local
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-prepare_local-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'mkdir -p "$ORBIT_PUBLICATION_ROOT"
+
+          '
+        env:
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+    dependsOn:
+    - step: export_result
+      condition:
+        type: succeeded
+    guard: ${{ !has(steps.export_result.outputs.exported) || !steps.export_result.outputs.exported }}
+  - name: copy_bundle
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        src: ${{ "/tmp/orbit-task-publish-" + run.id + "/candidate.bundle" }}
+        dst: ${{ "/tmp/orbit-task-publish-" + run.id + "-control/candidate.bundle" }}
+        direction: from
+    dependsOn:
+    - step: prepare_local
+      condition:
+        type: succeeded
+  - name: import
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-import-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_import.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+    dependsOn:
+    - step: copy_bundle
+      condition:
+        type: succeeded
+  - name: import_result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-import_result-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: ${{ steps.import.outputs.stdout }}
+    dependsOn:
+    - step: import
+      condition:
+        type: succeeded
+  - name: remote_tip
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-remote_tip-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_tip.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+    dependsOn:
+    - step: import_result
+      condition:
+        type: succeeded
+    guard: ${{ !has(steps.import_result.outputs.imported) || !steps.import_result.outputs.imported }}
+  - name: tip
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-tip-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: ${{ steps.remote_tip.outputs.stdout }}
+    dependsOn:
+    - step: remote_tip
+      condition:
+        type: succeeded
+  - name: push
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-push-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_push.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+    dependsOn:
+    - step: tip
+      condition:
+        type: succeeded
+    guard: ${{ has(steps.tip.outputs.error_code) || steps.tip.outputs.commit == inputs.intent.commit }}
+  - name: push_result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-push_result-" + string(inputs.operation_id) }}
+      methodName: decode
+      inputs:
+        value: '${{ has(steps.push) && has(steps.push.outputs) && has(steps.push.outputs.stdout) ? steps.push.outputs.stdout : "{}" }}'
+    dependsOn:
+    - step: push
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+  - name: snapshot_after
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-publish-" + run.id + "/scripts/snapshot.py" }}
+        stdin: ${{ steps.prepare.outputs.input_json }}
+    dependsOn:
+    - step: push_result
+      condition:
+        type: succeeded
+  - name: verify_after
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-verify_after-" + string(inputs.operation_id) }}
+      methodName: verify
+      inputs:
+        input: ${{ inputs.intent }}
+        value: ${{ steps.snapshot_after.outputs.stdout }}
+    dependsOn:
+    - step: snapshot_after
+      condition:
+        type: succeeded
+  - name: read_pull
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-read_pull-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_pull_read.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+    dependsOn:
+    - step: verify_after
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.pull_request == null || !steps.verify_after.outputs.admitted || !(steps.tip.outputs.commit == inputs.intent.commit || (has(steps.push_result.outputs.pushed)
+      && steps.push_result.outputs.pushed)) }}
+  - name: write_pull
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-write_pull-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_pull_write.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+          ORBIT_EXISTING_PULL: ${{ steps.read_pull.outputs.stdout }}
+    dependsOn:
+    - step: read_pull
+      condition:
+        type: succeeded
+  - name: revoke
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-revoke-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.prepare.outputs.directory + "/publish_revoke.py" }}
+          ORBIT_PUBLICATION_INPUT: ${{ steps.prepare.outputs.input_json }}
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}
+    allowFailure: true
+    dependsOn:
+    - step: write_pull
+      condition:
+        type: always
+    - step: push
+      condition:
+        type: always
+  - name: cleanup_remote
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-publication-ssh-" + string(inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-publish-" + run.id }}
+    allowFailure: true
+    dependsOn:
+    - step: revoke
+      condition:
+        type: always
+  - name: cleanup_local
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-cleanup_local-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'rm -rf -- "$ORBIT_PUBLICATION_ROOT"
+
+          '
+        env:
+          ORBIT_PUBLICATION_ROOT: ${{ "/tmp/orbit-task-publish-" + run.id + "-control" }}
+    allowFailure: true
+    dependsOn:
+    - step: revoke
+      condition:
+        type: always
+  - name: shape_result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publication-shape_result-" + string(inputs.operation_id) }}
+      methodName: result
+      inputs:
+        input: ${{ inputs.intent }}
+        before: '${{ has(steps.snapshot_before) && has(steps.snapshot_before.outputs) && has(steps.snapshot_before.outputs.stdout) ? steps.snapshot_before.outputs.stdout
+          : "" }}'
+        exported: '${{ has(steps.export) && has(steps.export.outputs) && has(steps.export.outputs.stdout) ? steps.export.outputs.stdout : "" }}'
+        imported: '${{ has(steps.import) && has(steps.import.outputs) && has(steps.import.outputs.stdout) ? steps.import.outputs.stdout : "" }}'
+        lookup: '${{ has(steps.read_pull) && has(steps.read_pull.outputs) && has(steps.read_pull.outputs.stdout) ? steps.read_pull.outputs.stdout : "" }}'
+        after: '${{ has(steps.snapshot_after) && has(steps.snapshot_after.outputs) && has(steps.snapshot_after.outputs.stdout) ? steps.snapshot_after.outputs.stdout
+          : "" }}'
+        tip: '${{ has(steps.remote_tip) && has(steps.remote_tip.outputs) && has(steps.remote_tip.outputs.stdout) ? steps.remote_tip.outputs.stdout : ""
+          }}'
+        push: '${{ has(steps.push) && has(steps.push.outputs) && has(steps.push.outputs.stdout) ? steps.push.outputs.stdout : "" }}'
+        pull: '${{ has(steps.write_pull) && has(steps.write_pull.outputs) && has(steps.write_pull.outputs.stdout) ? steps.write_pull.outputs.stdout : ""
+          }}'
+        failure: ${{ !has(steps.verify_before) || !has(steps.verify_before.outputs) || !steps.verify_before.outputs.admitted || !has(steps.verify_after)
+          || !has(steps.verify_after.outputs) || !steps.verify_after.outputs.admitted }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: prepare_remote
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: snapshot_before
+      condition:
+        type: always
+    - step: verify_before
+      condition:
+        type: always
+    - step: export
+      condition:
+        type: always
+    - step: export_result
+      condition:
+        type: always
+    - step: prepare_local
+      condition:
+        type: always
+    - step: copy_bundle
+      condition:
+        type: always
+    - step: import
+      condition:
+        type: always
+    - step: import_result
+      condition:
+        type: always
+    - step: remote_tip
+      condition:
+        type: always
+    - step: tip
+      condition:
+        type: always
+    - step: push
+      condition:
+        type: always
+    - step: push_result
+      condition:
+        type: always
+    - step: snapshot_after
+      condition:
+        type: always
+    - step: verify_after
+      condition:
+        type: always
+    - step: read_pull
+      condition:
+        type: always
+    - step: write_pull
+      condition:
+        type: always
+    - step: revoke
+      condition:
+        type: always
+    - step: cleanup_remote
+      condition:
+        type: always
+    - step: cleanup_local
+      condition:
+        type: always
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-result-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$ORBIT_RESULT"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+    dependsOn:
+    - step: shape_result
+      condition:
+        type: succeeded
+  - name: outcome
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-publication-outcome-" + string(inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -c ''import json, os, sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"]) else 0)''
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
