@@ -7,6 +7,8 @@ use App\Data\Instances\TransferInstanceData;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceTransferProcesses;
+use App\Domain\Instances\InstanceTransferProcessMaterial;
 use App\Domain\Instances\InstanceTransferRouteEnvironment;
 use App\Domain\Instances\NativeInstanceTransferIntent;
 use App\Domain\Instances\NativeInstanceTransferProjection;
@@ -26,6 +28,7 @@ use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -73,13 +76,16 @@ afterEach(function (): void {
 function native_transfer_operation($test): Operation
 {
     $snapshot = app(NativeRouteTransferPlan::class)->capture($test->transfer);
+    $processes = app(InstanceTransferProcesses::class)->capture($test->transfer);
     $plan = ['source_node_id' => $test->node->id, 'destination_node_id' => $test->destination->id];
 
     return Operation::query()->create(['kind' => 'instance.transfer', 'target_type' => 'instance', 'target_id' => $test->instance->id,
         'node_id' => $test->node->id, 'status' => 'running', 'lock_key' => 'native-transfer-proof',
-        'input' => ['instance_id' => $test->instance->id, 'transfer_id' => $test->transfer->id, 'route_transfer' => $snapshot,
+        'input' => ['process_installations' => $processes, 'instance_id' => $test->instance->id, 'transfer_id' => $test->transfer->id, 'route_transfer' => $snapshot,
             'participant_node_ids' => $snapshot['participant_node_ids'], 'direct_transfer' => $plan,
-            'private_bindings' => ['source_route_environment' => ['owner_node_id' => $test->node->id, 'read_node_ids' => [$test->node->id], 'write_node_ids' => []],
+            'private_bindings' => ['source_installations' => ['owner_node_id' => $test->node->id, 'read_node_ids' => [$test->node->id], 'write_node_ids' => []],
+                'destination_installations' => ['owner_node_id' => $test->destination->id, 'read_node_ids' => [$test->destination->id], 'write_node_ids' => []],
+                'source_route_environment' => ['owner_node_id' => $test->node->id, 'read_node_ids' => [$test->node->id], 'write_node_ids' => []],
                 'destination_route_environment' => ['owner_node_id' => $test->destination->id, 'read_node_ids' => [$test->destination->id], 'write_node_ids' => []]]],
         'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 }
@@ -182,3 +188,91 @@ it('rejects malformed or caller-selected transfer authority before mutation', fu
 })->with(['malformed' => ['{"node_id":'], 'array' => ['[]'], 'duplicate' => ['{"node_id":2,"node_id":3}'],
     'path authority' => ['{"node_id":2,"destination_path":"/foreign"}'],
     'secret authority' => ['{"node_id":2,"environment":"private"}'], 'boolean' => ['{"node_id":true}']]);
+
+function native_transfer_process($test): Process
+{
+    return Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $test->instance->id,
+        'name' => 'transfer-worker', 'runtime' => 'systemd', 'working_directory' => '/srv/native/app',
+        'runtime_config' => ['command' => ['/usr/bin/sleep', '300'], 'environment_file' => '/srv/native/app/.env',
+            'environment' => ['TOKEN' => 'transfer-private-value']],
+        'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active']);
+}
+
+it('commits Process paths with Instance placement and hydrates only the actual placement', function (): void {
+    $process = native_transfer_process($this);
+    $operation = native_transfer_operation($this);
+    $source = app(InstanceTransferProcessMaterial::class);
+    expect(json_encode($operation->input))->not->toContain('transfer-private-value');
+    expect($source->resolve($operation, $this->instance->id, '', 'source_installations')->value)
+        ->toHaveKey((string) $process->id);
+    expect(fn () => $source->resolve($operation, $this->instance->id, '', 'destination_installations'))->toThrow(ResourceOperationException::class);
+    app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover'));
+    expect($process->fresh()->working_directory)->toBe('/srv/new-native/app')
+        ->and($process->fresh()->runtime_config['environment_file'])->toBe('/srv/new-native/app/.env');
+    expect($source->resolve($operation->fresh(), $this->instance->id, '', 'destination_installations')->value)
+        ->toHaveKey((string) $process->id);
+    expect(fn () => $source->resolve($operation->fresh(), $this->instance->id, '', 'source_installations'))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses changed Process intent without moving Instance or Route placement', function (): void {
+    $process = native_transfer_process($this);
+    $operation = native_transfer_operation($this);
+    $process->update(['working_directory' => '/srv/native/changed']);
+    expect(fn () => app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover')))->toThrow(ResourceOperationException::class);
+    expect($this->instance->fresh()->node_id)->toBe($this->node->id)
+        ->and($this->transfer->fresh()->cutover_at)->toBeNull()->and($this->extra->fresh()->cluster_id)->toBe($this->cluster->id);
+});
+
+it('rejects foreign Process paths before admitting any transfer mutation', function (): void {
+    $process = native_transfer_process($this);
+    $process->update(['working_directory' => '/srv/native-sibling']);
+    $this->transfer->delete();
+    $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
+    $this->destination->update(['settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $this->destination->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    expect(fn () => app(StartInstanceTransferAction::class)->execute($this->instance, new TransferInstanceData($this->destination->id, null, null)))
+        ->toThrow(ResourceOperationException::class);
+    expect(InstanceTransfer::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(0);
+});
+
+it('keeps Process source material and defaults usable during cancelled pre-cutover recovery', function (): void {
+    $process = native_transfer_process($this);
+    $process->update(['runtime' => 'docker', 'working_directory' => null, 'runtime_config' => ['image' => 'example:1', 'command' => ['sleep', '300'], 'environment_file' => null]]);
+    $operation = native_transfer_operation($this);
+    $operation->update(['cancel_requested_at' => now()]);
+    app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('rollback'));
+    expect($process->fresh()->working_directory)->toBeNull()->and($this->instance->fresh()->node_id)->toBe($this->node->id);
+    expect(app(InstanceTransferProcessMaterial::class)->resolve($operation->fresh(), $this->instance->id, '', 'source_installations')->value)
+        ->toHaveKey((string) $process->id);
+});
+
+it('captures Vite and SSR port intent without Gateway runtime discovery', function (): void {
+    $process = native_transfer_process($this);
+    $process->update(['runtime_config' => [...$process->runtime_config, 'preset' => 'vp-dev']]);
+    $this->instance->update(['vite_port' => 5173, 'ssr_port' => 13714]);
+    $this->transfer->delete();
+    $this->instance->update(['status' => 'active', 'provisioning_step' => 'active']);
+    $this->destination->update(['settings' => ['apps' => ['path' => '/srv/apps']]]);
+    $this->destination->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $operation = app(StartInstanceTransferAction::class)->execute($this->instance, new TransferInstanceData($this->destination->id, null, null));
+    $public = app(NativeInstanceTransferProjection::class)->publicInput($operation, $this->destination->id);
+    expect($public['process_runtime']['ports'])->toBe([5173, 13714])
+        ->and($public['process_runtime']['members'][0]['input']['control']['vite_plan']['listener']['port'])->toBe(5173);
+    $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover'));
+    expect($this->instance->fresh()->vite_port)->toBe(5173)->and($this->instance->fresh()->ssr_port)->toBe(13714);
+});
+
+it('omits Process installation descriptors from unrelated Route participants', function (): void {
+    native_transfer_process($this);
+    $router = Node::query()->create(['name' => 'third-router', 'cluster_id' => $this->cluster->id,
+        'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.22']);
+    $this->node->roles()->where('role', 'router')->delete();
+    $router->roles()->create(['cluster_id' => $this->cluster->id, 'role' => 'router', 'status' => 'active']);
+    $this->transfer->update(['source_router_node_id' => $router->id]);
+    $operation = native_transfer_operation($this);
+    $public = app(NativeInstanceTransferProjection::class)->publicInput($operation, $router->id);
+    expect($public['process_runtime'])->toBe(['node_id' => $router->id, 'field' => null, 'members' => [], 'ports' => []]);
+    expect(fn () => app(InstanceTransferProcessMaterial::class)->resolve($operation, $this->instance->id, '', 'unknown'))
+        ->toThrow(ResourceOperationException::class);
+});

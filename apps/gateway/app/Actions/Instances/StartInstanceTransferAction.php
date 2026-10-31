@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceTransferProcesses;
 use App\Domain\Instances\NativeInstanceTransferIntent;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
@@ -58,17 +59,22 @@ final readonly class StartInstanceTransferAction
             $destination = Node::query()->findOrFail($transfer->destination_node_id);
             $source = Node::query()->findOrFail($transfer->source_node_id);
 
+            $processes = app(InstanceTransferProcesses::class)->capture($transfer);
             $routePlan = app(NativeRouteTransferPlan::class)->capture($transfer);
             $plan = app(NativeInstanceTransferIntent::class)->capture($transfer);
 
             return $this->operations->execute('instance.transfer', 'instance', $instance->id, $transfer->source_node_id, [
-                'direct_transfer' => $plan, 'route_transfer' => $routePlan,
+                'direct_transfer' => $plan, 'route_transfer' => $routePlan, 'process_installations' => $processes,
                 'participant_node_ids' => $routePlan['participant_node_ids'],
                 'environment_fields' => [(string) $source->id => 'source_route_environment', (string) $destination->id => 'destination_route_environment'],
                 'private_bindings' => [
+                    'source_installations' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
+                    'destination_installations' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
                     'source_route_environment' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
                     'destination_route_environment' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
                 ],
+                'source_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
+                'destination_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
                 'source_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
                 'destination_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'transfer_id' => $transfer->id,

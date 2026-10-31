@@ -14,7 +14,8 @@ use App\Domain\Instances\StepLists\InstanceSetupProjection;
 
 return [
     'instance.transfer' => ['workflow' => 'operation-instance-transfer', 'projection' => NativeInstanceTransferProjection::class,
-        'private_material' => ['source_route_environment' => 'instance.transfer_route_environment', 'destination_route_environment' => 'instance.transfer_route_environment']],
+        'private_material' => ['source_installations' => 'instance.transfer_processes', 'destination_installations' => 'instance.transfer_processes',
+            'source_route_environment' => 'instance.transfer_route_environment', 'destination_route_environment' => 'instance.transfer_route_environment']],
     'instance.clone' => ['workflow' => 'operation-instance-clone', 'projection' => InstanceCloneProjection::class,
         'private_material' => ['git_read' => 'instance.lifecycle_git', 'environment_material' => 'instance.environment_sync']],
     'instance.create' => ['workflow' => 'operation-instance-create', 'projection' => NativeInstanceProvisioningProjection::class,

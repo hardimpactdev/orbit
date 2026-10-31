@@ -8,7 +8,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
-use App\Models\Process;
 use App\Models\TaskVm;
 
 /** Captures placement only. Native workers inspect, stop and move the actual source. */
@@ -17,7 +16,6 @@ final readonly class NativeInstanceTransferIntent
     public function assertSupported(Instance $instance, ?string $sqliteSource): void
     {
         if (TaskVm::forNode($instance->node) !== null || $sqliteSource !== null
-            || Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)->exists()
             || $instance->project->scheduleDefinitions()->exists()) {
             throw new ResourceOperationException('operation.kind_unavailable', 'This transfer needs native database, VM or runtime composition that is not available yet.', 503);
         }
