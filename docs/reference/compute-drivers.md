@@ -1059,6 +1059,8 @@ Release handoff queues builds immediately when the deployed recipe identity chan
 
 Each Incus image attempt starts one native Swamp workflow on the exact build-host worker. Native steps own builder launch, guest recipe phases, publication, smoke checks, topology seed, promotion and pruning. The Gateway records immutable input and projects progress; it starts no child Operations. A Gateway-worker step publishes the digest-checked Pi binary as native file data for the build worker. The build worker uses its admitted, pinned agent and passwordless sudo for fixed Incus commands. A failed candidate retains its builder for inspection and leaves the promoted image serving. Revert the cutover PR to roll back the writer.
 
+The worker runs the read-only `image.owner` check as the image's pinned `orbit` UID and GID 1000. Root commands and mutation supervision start as root. Each command keeps the identity its agent contract declares.
+
 Each host records one `task_vm_image_builds` row and one Swamp Operation per attempt. The row stores the full recipe document, identity, desired generation, and the base image location. Steps launch and boot a stock base builder, install snapshot packages and pinned artifacts, prepare boot, clean, publish, and smoke it, and then build its topology seed. The shared base preserves the source image’s DNS configuration, including link DNS for internal names. Topology Nodes use that same base fingerprint for every role.
 
 Incus effects run in the native parent, without child Operations. UpCloud retains its child path until its own cutover. No workspace or Project setup runs and neither package caches nor CI cache refs enter an image.
