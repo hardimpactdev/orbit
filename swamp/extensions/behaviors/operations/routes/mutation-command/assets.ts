@@ -1,6 +1,35 @@
 import { z } from "npm:zod@4.4.3";
 import { mergeDns } from "./dns.ts";
 const Id = z.number().int().positive();
+const LanRule = z.object({
+    model_name: z.string().regex(/^[a-z0-9-]+$/),
+    port: z.number().int().min(1).max(65535),
+    protocol: z.enum(["tcp", "udp"]),
+    source: z.ipv4(),
+    ensure: z.enum(["present", "absent"]),
+}).strict();
+const LanPlan = z.object({
+    node_id: Id,
+    rules: z.array(LanRule),
+    migrate: z.boolean(),
+}).strict();
+function verifyLanRules(
+    plan: z.infer<typeof LanPlan>,
+    outcomes: Record<string, unknown>,
+): void {
+    plan.rules.forEach((rule, index) => {
+        const step = z.object({
+            status: z.literal("succeeded"),
+            outputs: z.object({
+                current: z.object({ ruleExists: z.boolean() }),
+            }),
+        }).parse(outcomes[`apply-${index}`]);
+        if (
+            step.outputs.current.ruleExists !==
+                (rule.ensure === "present")
+        ) throw new Error("firewall.tuple_unproven");
+    });
+}
 const RouteObservation = z.object({
     route_id: Id,
     domain: z.string(),
@@ -28,12 +57,17 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     resources: {
+        lan: { schema: LanPlan, lifetime: "infinite", garbageCollection: 10 },
         ready: {
             lifetime: "infinite",
             garbageCollection: 10,
-            schema: z.object({ ready: z.literal(true) }),
+            schema: z.object({
+                ready: z.literal(true),
+                migrated_node_ids: z.array(Id).optional(),
+                result_json: z.string().optional(),
+            }),
         },
         dns: {
             lifetime: "infinite",
@@ -59,6 +93,7 @@ export const behavior = {
                     RouteObservation.extend({ ready: z.literal(true) }),
                 ),
                 contributions: z.record(z.string(), z.number()),
+                migrated_node_ids: z.array(Id),
             }),
         },
         assets: {
@@ -81,15 +116,75 @@ export const behavior = {
         },
     },
     methods: {
+        lanApplied: {
+            description:
+                "Prove official tuple state before legacy rules can be removed",
+            arguments: z.object({
+                plan: LanPlan,
+                outcomes: z.record(z.string(), z.unknown()),
+            }),
+            execute: async (
+                args: {
+                    plan: z.infer<typeof LanPlan>;
+                    outcomes: Record<string, unknown>;
+                },
+                ctx: Context,
+            ) => {
+                verifyLanRules(args.plan, args.outcomes);
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("ready", "ready", {
+                            ready: true,
+                        }),
+                    ],
+                };
+            },
+        },
         lanResult: {
-            description: "Decode one completed Route LAN action",
+            description:
+                "Verify every official firewall tuple and the optional one-time migration",
+            arguments: z.object({
+                plan: LanPlan,
+                outcomes: z.record(z.string(), z.unknown()),
+            }),
+            execute: async (
+                args: {
+                    plan: z.infer<typeof LanPlan>;
+                    outcomes: Record<string, unknown>;
+                },
+                ctx: Context,
+            ) => {
+                verifyLanRules(args.plan, args.outcomes);
+                if (args.plan.migrate) {
+                    z.object({ status: z.literal("succeeded") }).parse(
+                        args.outcomes["migrate-0"],
+                    );
+                }
+                const result = {
+                    ready: true as const,
+                    migrated_node_ids: args.plan.migrate
+                        ? [args.plan.node_id]
+                        : [],
+                };
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("ready", "ready", {
+                            ...result,
+                            result_json: JSON.stringify(result),
+                        }),
+                    ],
+                };
+            },
+        },
+        lanMigrationResult: {
+            description: "Decode the one-time legacy Route rule cleanup",
             arguments: z.object({ stdout: z.string() }),
             execute: async (args: { stdout: string }, ctx: Context) => {
-                const ready = z.object({ ready: z.literal(true) }).strict()
+                const result = z.object({ ready: z.literal(true) }).strict()
                     .parse(JSON.parse(args.stdout));
                 return {
                     dataHandles: [
-                        await ctx.writeResource("ready", "ready", ready),
+                        await ctx.writeResource("ready", "ready", result),
                     ],
                 };
             },
@@ -132,24 +227,27 @@ export const behavior = {
             }),
         },
         lan: {
-            description:
-                "Resolve one canonical destination-scoped UFW transaction",
-            arguments: z.object({
-                intent: z.object({
-                    node_id: Id,
-                    route_id: Id,
-                    destination: z.ipv4(),
-                    operation: z.enum(["converge", "retire"]),
-                    router: z.ipv4().optional(),
-                    keep: z.array(z.ipv4()).optional(),
-                }).strict(),
+            description: "Read the complete public Node tuple plan",
+            arguments: z.object({ intent: LanPlan }),
+            execute: async (
+                args: { intent: z.infer<typeof LanPlan> },
+                ctx: Context,
+            ) => ({
+                dataHandles: [
+                    await ctx.writeResource("lan", "lan", args.intent),
+                ],
             }),
-            execute: async (args: { intent: unknown }, ctx: Context) => ({
+        },
+        lanMigration: {
+            description:
+                "Resolve the temporary approved old-rule cleanup asset",
+            arguments: z.object({}),
+            execute: async (_args: unknown, ctx: Context) => ({
                 dataHandles: [
                     await ctx.writeResource("assets", "assets", {
                         script: ctx.extensionFile("scripts/route_lan.py"),
                         scripts_directory: ctx.extensionFile("scripts"),
-                        input_json: JSON.stringify(args.intent),
+                        input_json: "{}",
                     }),
                 ],
             }),
@@ -239,7 +337,15 @@ export const behavior = {
                     stage: { routes: z.infer<typeof RouteObservation>[] };
                     mode: string;
                     required: Record<string, number>;
-                    outcomes: Record<string, { status: string }>;
+                    outcomes: Record<
+                        string,
+                        {
+                            status: string;
+                            outputs?: {
+                                result?: { migrated_node_ids?: number[] };
+                            };
+                        }
+                    >;
                 },
                 ctx: Context,
             ) => {
@@ -259,6 +365,17 @@ export const behavior = {
                         ready: true,
                     })),
                     contributions: args.required,
+                    migrated_node_ids: [
+                        ...new Set(
+                            Object.entries(args.outcomes).filter(([name]) =>
+                                Object.keys(args.required).some((prefix) =>
+                                    name.startsWith(prefix + "-")
+                                )
+                            ).flatMap(([, step]) =>
+                                step.outputs?.result?.migrated_node_ids ?? []
+                            ),
+                        ),
+                    ],
                 };
                 return {
                     dataHandles: [

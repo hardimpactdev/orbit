@@ -48,6 +48,7 @@
     {"workflow": "operation-instance-deploy-direct", "actions": ["run", "read"]},
     {"workflow": "operation-instance-destroy", "actions": ["run", "read"]},
     {"workflow": "operation-instance-environment", "actions": ["run", "read"]},
+    {"workflow": "operation-instance-policy-activity", "actions": ["run", "read"]},
     {"workflow": "operation-instance-register", "actions": ["run", "read"]},
     {"workflow": "operation-instance-rename", "actions": ["run", "read"]},
     {"workflow": "operation-instance-setup-direct", "actions": ["run", "read"]},
