@@ -47,7 +47,7 @@ class PiHandler(BaseHTTPRequestHandler):
                         {
                             "state": "done",
                             "turnId": "operation-15",
-                            "usage": {"total": 4},
+                            "usage": getattr(self.server, "usage", {"total": 4}),
                         }
                     )
                     + "\n"
@@ -191,6 +191,7 @@ class TurnActions(unittest.TestCase):
 
     def test_pi_actions_are_separate_and_stream_ignores_another_turn(self):
         server, env = self.pi_server()
+        server.usage = {"total": 4, "provider_key": TOKEN}
         self.run_step(
             "session_create", **env, ORBIT_PI_BODY=json.dumps({"id": "session-14"})
         )
@@ -201,6 +202,9 @@ class TurnActions(unittest.TestCase):
         )
         terminal = self.run_step("observe", **env)
         self.assertEqual(terminal["turnId"], "operation-15")
+        self.assertEqual(terminal["usage"]["total"], 4)
+        self.assertNotIn(TOKEN, json.dumps(terminal))
+        self.assertNotIn("provider_key", terminal["usage"])
         self.assertEqual(len(server.calls), 3)
         self.run_step("interrupt", **env)
         self.assertEqual(server.calls[-1][0], "/sessions/session-14/interrupt")

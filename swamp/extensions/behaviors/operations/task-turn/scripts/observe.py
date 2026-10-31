@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import urllib.request
 
@@ -29,7 +30,26 @@ with opener.open(request, timeout=1800) as response:
             raise SystemExit("tasks.pi_event_too_large")
         event = json.loads(line)
         if event.get("turnId") == key and event.get("state") in ["done", "failed"]:
-            print(json.dumps({k: event[k] for k in ["state", "turnId", "usage"]}))
+            usage = {
+                name: event.get("usage", {}).get(name, 0)
+                for name in [
+                    "input",
+                    "output",
+                    "cacheRead",
+                    "cacheWrite",
+                    "total",
+                    "calls",
+                    "peakContext",
+                ]
+            }
+            if any(
+                type(number) not in (int, float)
+                or not math.isfinite(number)
+                or number < 0
+                for number in usage.values()
+            ):
+                raise SystemExit("tasks.pi_usage_invalid")
+            print(json.dumps({"state": event["state"], "turnId": key, "usage": usage}))
             break
     else:
         raise SystemExit("tasks.pi_completion_unconfirmed")
