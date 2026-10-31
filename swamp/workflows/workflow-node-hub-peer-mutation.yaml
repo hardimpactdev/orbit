@@ -44,7 +44,7 @@ jobs:
           methodName: execute
           inputs:
             run: |
-              exec /usr/bin/python3 -I "${{ steps.transport.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.assets.outputs.script }}" --interpreter python3 --as-root --env ORBIT_HUB_CONTEXT
+              /usr/bin/python3 -I "${{ steps.transport.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps.assets.outputs.script }}" --interpreter python3 --as-root --env ORBIT_HUB_CONTEXT
             env:
               ORBIT_EFFECT_NODE_ID: '${{ string(inputs.intent.hub_id) }}'
               ORBIT_HUB_CONTEXT: '${{ steps.assets.outputs.action_json }}'
