@@ -170,7 +170,7 @@ class FilesystemRollbackTests(unittest.TestCase):
         extra = peer(C, "10.44.0.4", 4)
         intent = {"schema_version": 1, "mode": "inventory", "hub_id": 1, "hub_address": "10.44.0.1/24", "port": 51820,
                   "inventory": [peer(A)], "retiring": [peer(B, "10.44.0.3", 3)]}
-        current = config(peer(B, "10.44.0.3", 3), extra)
+        current = config(peer(A), peer(B, "10.44.0.3", 3), extra)
         result, changed, retained = hub.render_inventory(current, intent)
         self.assertTrue(changed)
         self.assertIn(A, result)
@@ -184,6 +184,15 @@ class FilesystemRollbackTests(unittest.TestCase):
                   "inventory": [peer(A)], "retiring": []}
         with self.assertRaises(hub.Refusal):
             hub.render_inventory(config(peer(B)), intent)
+
+    def test_stale_inventory_cannot_resurrect_a_later_removed_peer(self):
+        intent = {"schema_version": 1, "mode": "inventory", "hub_id": 1, "hub_address": "10.44.0.1/24", "port": 51820,
+                  "inventory": [peer(A)], "retiring": []}
+        removed, _ = hub.render(config(peer(A)), action(peer(A), None))
+        self.assertNotIn(A, removed)
+        with self.assertRaises(hub.Refusal) as error:
+            hub.render_inventory(removed, intent)
+        self.assertEqual(error.exception.code, "wireguard.hub_conflict")
 
 
 if __name__ == "__main__":

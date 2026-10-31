@@ -213,7 +213,7 @@ def render_inventory(text, action):
         result, _ = render(result, {
             "schema_version": 1, "hub_id": action["hub_id"], "hub_address": action["hub_address"], "port": action["port"],
             "context_node_id": row["node_id"], "context_address": row["address"], "restoring": False,
-            "before": row if retiring else None, "after": None if retiring else row,
+            "before": row, "after": None if retiring else row,
         })
     _, _, current = parse_config(result)
     known = {row["public_key"] for row in action["inventory"]}

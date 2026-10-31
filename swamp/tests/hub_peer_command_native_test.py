@@ -54,7 +54,7 @@ class HubCommands(NativeTestCase):
                     step['dependsOn'] = [{'step': 'assets', 'condition': {'type': 'succeeded'}}]
                     step['task']['behaviorType'] = 'command/shell'
                     step['task']['methodName'] = 'execute'
-                    step['task']['inputs'] = {'run': "/usr/bin/python3 - <<'ORBIT_DOMAIN_FIXTURE'\n${{ steps.assets.outputs.script_body }}\nORBIT_DOMAIN_FIXTURE"}
+                    step['task']['inputs'] = {'run': 'printf %s "$ORBIT_PUBLIC_SCRIPT" | /usr/bin/python3 -', 'env': {'ORBIT_PUBLIC_SCRIPT': '${{ steps.assets.outputs.script_body }}'}}
         (self.repo / 'workflows/workflow-node-hub-peer-mutation.yaml').write_text(json.dumps(workflow))
         peer = {'node_id': 2, 'name': 'guest', 'address': '10.44.0.2', 'public_key': key}
         intent = {'schema_version': 1, 'hub_id': 1, 'hub_address': '10.44.0.1/24', 'port': 51820, 'context_node_id': 2,
