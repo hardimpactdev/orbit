@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $tag
  * @property bool $private_endpoints_managed
  * @property int $port
- * @property bool $default_open
+ * @property bool|null $default_open
  * @property string $root_password
  * @property LifecycleStatus $status
  * @property string|null $failed_step
