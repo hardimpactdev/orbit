@@ -97,6 +97,138 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
 );
+Deno.test("official SSH exec accepts whole vault stdin with closed execution descriptors", () => {
+  const vault =
+    "${{ vault.get(inputs.execution_secrets.material.vault, inputs.execution_secrets.material.key) }}";
+  const workflow = {
+    name: "route-environment-write",
+    inputs: {
+      type: "object",
+      additionalProperties: false,
+      required: ["execution_secrets"],
+      properties: {
+        execution_secrets: {
+          type: "object",
+          additionalProperties: false,
+          required: ["material"],
+          properties: {
+            material: {
+              type: "object",
+              additionalProperties: false,
+              required: ["vault", "key"],
+              properties: {
+                vault: { type: "string", enum: ["orbit-control-inputs"] },
+                key: { type: "string", pattern: "^material-[1-9][0-9]*$" },
+              },
+            },
+          },
+        },
+      },
+    },
+    jobs: [{
+      name: "environment",
+      target: "orbit-node-209",
+      steps: [{
+        name: "write",
+        task: {
+          type: "behavior",
+          behaviorType: "@swamp/ssh",
+          behaviorName: "route-environment",
+          methodName: "exec",
+          inputs: {
+            hosts: "name:target",
+            argv: ["python3", "write_environment.py"],
+            sudo: true,
+            stdin: vault,
+          },
+        },
+      }],
+    }],
+  };
+  const file = "workflows/workflow-route-environment-write.yaml";
+  const source = JSON.stringify(workflow);
+  assertEquals(analyzeYaml(file, source).findings, []);
+  assertEquals(
+    analyzeYaml(
+      file,
+      source.replace('"type":"behavior"', '"type":"model_method"')
+        .replace('"behaviorType":', '"modelType":'),
+    ).findings,
+    [],
+  );
+  assertEquals(
+    analyzeYaml(file, source.replace(vault, "public input")).findings,
+    [],
+  );
+  for (const [from, to] of [
+    ['"@swamp/ssh"', '"@example/ssh"'],
+    ['"@swamp/ssh"', '"command/shell"'],
+    ['"@swamp/ssh"', '"@swamp/ssh-extra"'],
+    ['"type":"behavior"', '"type":"workflow"'],
+    ['"methodName":"exec"', '"methodName":"script"'],
+    ['"methodName":"exec"', '"methodName":"copy"'],
+    ['"methodName":"exec"', '"methodName":"${{ inputs.method }}"'],
+    ['"stdin":', '"script":'],
+    ['"stdin":', '"command":'],
+    ['"stdin":', '"other":'],
+  ]) {
+    assert(
+      analyzeYaml(file, source.replace(from, to)).findings.some((f) =>
+        f.rule === "vault-placement"
+      ),
+      `${from} -> ${to}`,
+    );
+  }
+  for (const stdin of [
+    `prefix ${vault}`,
+    `${vault} suffix`,
+    `${vault}${vault}`,
+    "${{ vault.get('vault', 'key') + 'suffix' }}",
+    "${{ vault.get('vault', 'key') || identity() }}",
+    [vault],
+    { value: vault },
+  ]) {
+    const changed = JSON.parse(source);
+    changed.jobs[0].steps[0].task.inputs.stdin = stdin;
+    assert(
+      analyzeYaml(file, JSON.stringify(changed)).findings.some((f) =>
+        f.rule === "vault-placement"
+      ),
+      JSON.stringify(stdin),
+    );
+  }
+  const argv = JSON.parse(source);
+  argv.jobs[0].steps[0].task.inputs.argv.push(vault);
+  const findings = analyzeYaml(file, JSON.stringify(argv)).findings;
+  assert(findings.some((f) => f.rule === "secret-argv"));
+  assert(findings.some((f) => f.rule === "vault-placement"));
+  const globalStdin = JSON.parse(source);
+  globalStdin.jobs[0].steps[0].task.globalArgs = { stdin: vault };
+  assert(
+    analyzeYaml(file, JSON.stringify(globalStdin)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  const stepStdin = JSON.parse(source);
+  stepStdin.jobs[0].steps[0].stdin = vault;
+  assert(
+    analyzeYaml(file, JSON.stringify(stepStdin)).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  assert(
+    analyzeYaml("models/official-ssh.yaml", source).findings.some((f) =>
+      f.rule === "vault-placement"
+    ),
+  );
+  const open = JSON.parse(source);
+  open.inputs.properties.execution_secrets.additionalProperties = true;
+  assert(
+    analyzeYaml(file, JSON.stringify(open)).findings.some((f) =>
+      f.rule === "secret-input"
+    ),
+  );
+});
 Deno.test("official SSH transport identity vault fields are native sensitive inputs", () => {
   assertEquals(
     analyzeYaml("models/official-ssh.yaml", officialSshFixture).findings,
