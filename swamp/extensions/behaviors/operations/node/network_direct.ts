@@ -1,8 +1,4 @@
-import { z } from "npm:zod@4.4.3";
-import {
-    convergeParticipantNetwork,
-    ParticipantNetworkOutcome,
-} from "./network_participant.ts";
+import { convergeParticipantNetwork } from "./network_participant.ts";
 import { type NetworkSystem, runNetworkSystem } from "./network_system.ts";
 
 import { NodeNetworkInputV1, NodeNetworkResultV1 } from "./network_contract.ts";
