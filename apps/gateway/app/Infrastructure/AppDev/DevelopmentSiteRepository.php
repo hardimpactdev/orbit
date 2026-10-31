@@ -12,7 +12,6 @@ use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\ManagedTlsProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteCertificateStaging;
-use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePreparedWorkloads;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicationSites;
@@ -71,6 +70,40 @@ final readonly class DevelopmentSiteRepository
         return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
             collect($this->projectSitesWithRouters($route, $this->routerTransitions->secondRouters())),
         ))->all());
+    }
+
+    /** Render one admitted Route through its owning site policy.
+     * @return list<DevelopmentSite>
+     */
+    public function routeSites(Route $route): array
+    {
+        return array_values($this->withWebSockets($this->withoutDuplicateSecondarySites(
+            collect($this->routeSitesWithRouters($route, $this->routerTransitions->secondRouters())),
+        ))->all());
+    }
+
+    /** @param array<int,list<Node>> $secondRouters
+     * @return list<DevelopmentSite>
+     */
+    private function routeSitesWithRouters(Route $route, array $secondRouters): array
+    {
+        if ($route->isCustomProxy()) {
+            $site = $this->customProxySite($route);
+
+            return $site instanceof DevelopmentSite ? [$site] : [];
+        }
+        if (! $route->isAnalyticsTracking()) {
+            return $this->projectSitesWithRouters($route, $secondRouters);
+        }
+        $router = $route->cluster?->routerAssignment?->node;
+        $sites = [...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router),
+            ...$this->analyticsTrackingTransitionSites($route)];
+        foreach (($route->cluster_id === null ? [] : ($secondRouters[$route->cluster_id] ?? [])) as $secondRouter) {
+            array_push($sites, ...$this->routerScopeSites($route, $secondRouter,
+                $this->analyticsTrackingSites($route, $secondRouter, includeIngress: false)));
+        }
+
+        return $sites;
     }
 
     /** @param array<int,list<Node>> $secondRouters
@@ -186,35 +219,7 @@ final readonly class DevelopmentSiteRepository
 
         $routes = $routeQuery->orderBy('id')->get();
         foreach ($routes as $route) {
-            if ($route->kind === RouteKind::CustomProxy) {
-                $site = $this->customProxySite($route);
-
-                if ($site instanceof DevelopmentSite) {
-                    $sites->push($site);
-                }
-
-                continue;
-            }
-
-            $router = $route->cluster?->routerAssignment?->node;
-            $clusterSecondRouters = is_int($route->cluster_id) ? ($secondRouters[$route->cluster_id] ?? []) : [];
-
-            if ($route->kind === RouteKind::AnalyticsTracking) {
-                $sites->push(...$this->analyticsTrackingSites($route, $route->cluster_id === null ? $route->node : $router));
-                $sites->push(...$this->analyticsTrackingTransitionSites($route));
-
-                foreach ($clusterSecondRouters as $secondRouter) {
-                    $sites->push(...$this->routerScopeSites(
-                        $route,
-                        $secondRouter,
-                        $this->analyticsTrackingSites($route, $secondRouter, includeIngress: false),
-                    ));
-                }
-
-                continue;
-            }
-
-            $sites->push(...$this->projectSitesWithRouters($route, $secondRouters));
+            $sites->push(...$this->routeSitesWithRouters($route, $secondRouters));
         }
 
         foreach (new RoutePreparedWorkloads()->sites($node?->id) as $prepared) {

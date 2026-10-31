@@ -1,0 +1,192 @@
+id: ae3bff71-8b73-4cad-8ef4-e8f206492c43
+name: route-certificate-publish
+description: Canonical leaf request, parent-bound sign, publish, trust and inspect as native actions.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    parent_run_id:
+      type: string
+    restoring:
+      type: boolean
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - parent_run_id
+  - restoring
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: certificate
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.intent.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "route-cert-assets-" + run.id }}
+      methodName: read
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        intent: ${{ inputs.intent }}
+  - name: request
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-request-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED /usr/bin/python3 -B "${{ steps.assets.outputs.request_script }}"'
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: request-info
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "route-cert-request-info-" + run.id }}
+      methodName: decodeRequest
+      inputs:
+        leaf: ${{ inputs.intent }}
+        stdout: ${{ steps.request.outputs.stdout }}
+    dependsOn:
+    - step: request
+      condition:
+        type: succeeded
+  - name: sign
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: orbit-certificate-signing-http
+      methodName: execute
+      inputs:
+        run: "#!/bin/sh\nset -eu\n/usr/bin/python3 - <<'PYTHON'\nimport json\nimport os\nimport re\nimport ssl\nimport sys\nimport urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\n\ntry:\n    operation = os.environ[\"ORBIT_CERTIFICATE_OPERATION_ID\"]\n    run_id = os.environ[\"ORBIT_CERTIFICATE_RUN_ID\"]\n    if not re.fullmatch(r\"[1-9][0-9]*\", operation):\n        raise ValueError(\"Invalid operation\")\n    raw = json.loads(os.environ[\"ORBIT_CERTIFICATE_REQUESTS\"])\n    if os.environ[\"ORBIT_CERTIFICATE_MODE\"] == \"single\":\n        leaf = json.loads(os.environ[\"ORBIT_CERTIFICATE_LEAF\"])\n        raw = [dict(node_id=leaf[\"node_id\"], scope=leaf[\"scope\"], **raw)]\n    else:\n        raw = [record for batch in raw for record in batch]\n    if len(raw) > 256:\n        raise ValueError(\"Too many requests\")\n    requests = [record for record in raw if record.get(\"\
+          state\") == \"request\"]\n    if not requests:\n        print(json.dumps({\"certificates\": []}))\n        sys.exit(0)\n    body = {\"run_id\": run_id, \"requests\": requests}\n    if os.environ.get(\"ORBIT_CERTIFICATE_RESTORING\") == \"true\":\n        body[\"restoring\"] = True\n    payload = json.dumps(body).encode()\n    url = (\n        \"https://gateway.orbit/api/v1/direct-operations/\"\n        + operation\n        + \"/certificates/sign\"\n    )\n    request = urllib.request.Request(\n        url,\n        data=payload,\n        method=\"POST\",\n        headers={\n            \"Content-Type\": \"application/json\",\n            \"Accept\": \"application/json\",\n        },\n    )\n    context = ssl.create_default_context(\n        cafile=\"/usr/local/share/ca-certificates/orbit-managed-root-ca.crt\"\n    )\n    opener = urllib.request.build_opener(\n        NoRedirect(), urllib.request.HTTPSHandler(context=context)\n    )\n    with opener.open(request, timeout=60) as response:\n\
+          \        raw_response = response.read(16_777_217)\n        if len(raw_response) > 16_777_216 or response.status != 200:\n            raise ValueError(\"Invalid signing response\")\n    result = json.loads(raw_response)[\"data\"]\n    print(json.dumps(result))\nexcept Exception:\n    print(json.dumps({\"error_code\": \"app-dev.certificate_sign_failed\"}))\n    sys.exit(1)\nPYTHON\n"
+        env:
+          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
+          ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
+          ORBIT_CERTIFICATE_MODE: single
+          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["request-info"].outputs.request_json }}
+          ORBIT_CERTIFICATE_LEAF: ${{ steps.assets.outputs.input_json }}
+          ORBIT_CERTIFICATE_RESTORING: ${{ string(inputs.restoring) }}
+    dependsOn:
+    - step: request-info
+      condition:
+        type: succeeded
+  - name: signature
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/certificate-script-assets'
+      behaviorName: ${{ "route-cert-signature-" + run.id }}
+      methodName: decodeSigned
+      inputs:
+        leaf: ${{ inputs.intent }}
+        request: ${{ steps["request-info"].outputs.request }}
+        stdout: ${{ steps.sign.outputs.stdout }}
+    dependsOn:
+    - step: sign
+      condition:
+        type: succeeded
+  - name: publish
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-publish-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED /usr/bin/python3 -B "${{ steps.assets.outputs.publish_script }}"'
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+          ORBIT_CERTIFICATE_SIGNED: ${{ steps.signature.outputs.signed_json }}
+    dependsOn:
+    - step: signature
+      condition:
+        type: succeeded
+  - name: trust
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-trust-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED /usr/bin/python3 -B "${{ steps.assets.outputs.trust_script }}"'
+        env:
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: publish
+      condition:
+        type: succeeded
+  - name: inspect
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "route-cert-inspect-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo --preserve-env=ORBIT_CERTIFICATE_INPUT,ORBIT_CERTIFICATE_SIGNED,ORBIT_CERTIFICATE_EXPECT_PRESENT /usr/bin/python3 -B "${{ steps.assets.outputs.inspect_script }}"'
+        env:
+          ORBIT_CERTIFICATE_EXPECT_PRESENT: 'true'
+          ORBIT_CERTIFICATE_INPUT: ${{ steps.assets.outputs.input_json }}
+    dependsOn:
+    - step: trust
+      condition:
+        type: succeeded
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-cert-result-" + run.id }}
+      methodName: certificateResult
+      inputs:
+        leaf: ${{ inputs.intent }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded

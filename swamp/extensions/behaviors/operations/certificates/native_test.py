@@ -56,6 +56,7 @@ class Certificates(harness.NativeTestCase):
         self.home = self.fixture / "home"
         self.home.mkdir()
         scripts = self.repo / "extensions/behaviors/operations/certificates/scripts"
+        shutil.rmtree(scripts / "__pycache__", ignore_errors=True)
         common = scripts / "local.py"
         body = (
             common.read_text()
@@ -103,6 +104,9 @@ args=sys.argv[1:]
 if '-M' in args or '-O' in args: raise SystemExit(0)
 argv=shlex.split(args[-1])
 if argv[:3]==['sudo','-n','--']: argv=argv[3:]
+if argv[:2]==['rm','-rf'] and list(Path(argv[-1]).rglob('*.pyc')):
+    sys.stderr.write('fixture: root Python left bytecode in the shared assets')
+    raise SystemExit(1)
 if any(str(a).endswith('/inspect.py') for a in argv) and Path(FAIL).exists():
     raise SystemExit(1)
 result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Actions\Routes\RouteMutationState;
+use App\Domain\Analytics\AnalyticsRoutePlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketRouteSelection;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -86,6 +87,29 @@ final readonly class NativeRouteMutationPlan
             sort($nodes);
 
             return ['changes' => $rows, 'node_ids' => $nodes, 'certificates' => array_values(array_unique($certificates, SORT_REGULAR))];
+        });
+    }
+
+    /** Record only the native terminal outcome, inside the parent's final database transaction.
+     * @param  array<string,mixed>  $capture
+     * @param  array<string,mixed>  $outcome
+     */
+    public function applyTerminal(array $capture, array $outcome): void
+    {
+        if (($outcome['ready'] ?? false) !== true || ! is_bool($outcome['restored'] ?? null)) {
+            throw $this->conflict();
+        }
+        $batch = ValidatedData::object($capture['batch']);
+        $stages = $outcome['restored'] ? ['rollback', 'rollback-complete']
+            : ['workloads-prepared', 'router-prepared', 'commit', 'dns-published', 'withdraw', 'complete'];
+        DB::transaction(function () use ($batch, $stages, $capture, $outcome): void {
+            foreach ($stages as $stage) {
+                $this->checkpoint($batch, $stage);
+            }
+            $analytics = RouteExecutionProof::objects($capture['analytics_changes']);
+            foreach ($outcome['restored'] ? ['rollback'] : ['certificates_ready', 'public_verified', 'placement_cleanup', 'complete'] as $stage) {
+                app(AnalyticsRoutePlan::class)->checkpointUpdate($analytics, $stage);
+            }
         });
     }
 
