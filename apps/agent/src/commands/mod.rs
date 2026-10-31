@@ -81,7 +81,6 @@ mod php_profile;
 pub mod php_runtime;
 mod php_shared;
 pub mod pi_artifact;
-pub mod pi_runtime;
 pub mod plausible;
 pub mod processes;
 pub mod production;
@@ -238,10 +237,7 @@ pub fn all() -> Vec<Entry> {
         entry::<image_recipe::lifecycle::Begin>(),
         entry::<image_recipe::lifecycle::Retry>(),
         entry::<image_recipe::verify::Verify>(),
-        entry::<pi_artifact::Receive>(),
-        entry::<pi_artifact::Install>(),
         entry::<pi_artifact::Inspect>(),
-        entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),

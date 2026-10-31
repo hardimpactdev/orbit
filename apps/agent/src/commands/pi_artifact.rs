@@ -227,50 +227,5 @@ impl Command for Inspect {
         inspect(&Account::named(&input.user)?, &input.sha256)
     }
 }
-pub struct Receive;
-impl Command for Receive {
-    const NAME: &'static str = "pi.receive-artifact";
-    const SUMMARY: &'static str =
-        "Receive a bounded Pi binary chunk into its fixed verified artifact cache.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = Chunk;
-    type Output = Received;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(input: &Chunk) -> Option<String> {
-        Some(format!("pi-artifact-{}", input.sha256))
-    }
-    fn run(input: Chunk, _: &Context) -> Result<Received, Error> {
-        receive(&Files::system(), &input)
-    }
-}
-pub struct Install;
-impl Command for Install {
-    const NAME: &'static str = "pi.install-artifact";
-    const SUMMARY: &'static str =
-        "Publish the verified Pi binary at the managed account's fixed runtime path.";
-    const MUTATES: bool = true;
-    const RESOURCES: &'static [&'static str] = &["pi-runtime"];
-    const TIMEOUT: Duration = Duration::from_secs(60);
-    type Input = InstallInput;
-    type Output = Installed;
-    type Error = Error;
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Root)
-    }
-    fn target(input: &InstallInput) -> Option<String> {
-        Some(format!("pi-runtime-{}", input.user))
-    }
-    fn run(input: InstallInput, _: &Context) -> Result<Installed, Error> {
-        install(
-            &Files::system(),
-            &Account::named(&input.user)?,
-            &input.sha256,
-        )
-    }
-}
 #[cfg(test)]
 mod tests;
