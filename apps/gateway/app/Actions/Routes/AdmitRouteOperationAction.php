@@ -12,13 +12,13 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Routes\NativeRouteRemovalAdmission;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteExecutionProof;
-use App\Domain\Routes\RouteKitAvailability;
-use App\Domain\Routes\RouteParentCommand;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStatus;
@@ -45,7 +45,7 @@ final readonly class AdmitRouteOperationAction
 
     public function create(CreateRouteData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('route.create');
+        app(DirectOperation::class)->writer('route.create');
 
         return $this->owned($data->instanceId === null ? [] : [$data->instanceId], function () use ($data, $caller, $requestId): Operation {
             $result = $this->create->reserveForRouteCreate($data);
@@ -58,7 +58,7 @@ final readonly class AdmitRouteOperationAction
 
     public function update(Route $route, UpdateRouteData $data, ?Node $caller = null, ?string $requestId = null, bool $allowGenerated = false): Operation
     {
-        RouteKitAvailability::kind('route.update');
+        app(DirectOperation::class)->writer('route.update');
 
         return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $data, $caller, $requestId, $allowGenerated): Operation {
             $route = Route::query()->with('targets.instance.node')->lockForUpdate()->findOrFail($route->id);
@@ -110,7 +110,7 @@ final readonly class AdmitRouteOperationAction
 
     public function setTargets(Route $route, SetRouteTargetsData $proposal, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('route.target_set');
+        app(DirectOperation::class)->writer('route.target_set');
 
         return $this->owned(array_values(array_unique([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), ...$proposal->targetIds, ...array_map(static fn ($d): int => $d->instanceId, $proposal->dispositions)])), function () use ($route, $proposal, $caller, $requestId): Operation {
             $route = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
@@ -141,7 +141,7 @@ final readonly class AdmitRouteOperationAction
 
     public function setTarget(Route $route, int $instanceId, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('route.target_set');
+        app(DirectOperation::class)->writer('route.target_set');
 
         return $this->owned([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), $instanceId], function () use ($route, $instanceId, $caller, $requestId): Operation {
             $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
@@ -175,7 +175,6 @@ final readonly class AdmitRouteOperationAction
 
     public function destroy(Route $route, bool $offline = false, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind('route.destroy');
 
         return $this->owned(array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all()), function () use ($route, $offline, $caller, $requestId): Operation {
             $ids = array_values($route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->all());
@@ -188,14 +187,14 @@ final readonly class AdmitRouteOperationAction
                 $this->removal->assertStandaloneRemovalAllowed($route, false);
             }
 
-            return $this->start('route.destroy', $route, ['mode' => 'destroy', 'offline' => $offline], $caller, $requestId);
+            return app(NativeRouteRemovalAdmission::class)->start('route.destroy', $route, $offline, $caller, $requestId);
         });
     }
 
     /** @param array<string, mixed> $input */
     public function start(string $kind, Route $route, array $input, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        RouteKitAvailability::kind($kind);
+        app(DirectOperation::class)->writer($kind);
         $route->loadMissing(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'customProxy.node']);
         $currentIds = $route->targets->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
         $proposedIds = $this->instanceIds($input['targets'] ?? $currentIds);
@@ -232,7 +231,6 @@ final readonly class AdmitRouteOperationAction
                 'caller_node_id' => $caller?->id, ...$input, 'target_instance_ids' => $proposedIds,
                 'previous_target_instance_ids' => $previousIds, 'removed_instance_ids' => $removedIds, 'instance_placements' => $placements,
                 'detached_instances' => $input['detached_instances'] ?? $this->targets->detachedInstances($removedIds)], 'operator', $requestId);
-        app(RouteParentCommand::class)->run($operation, ['action' => 'prepare']);
 
         return $operation->refresh();
     }
