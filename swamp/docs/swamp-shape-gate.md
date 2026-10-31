@@ -38,6 +38,25 @@ such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools a
 configuration metadata are not agent invocations. Actual executable calls still
 use the observer/action inventory; unresolved commands remain unknown.
 
+Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
+only proven file descriptors for the canonical UFW, observer self-update and
+documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
+and with bindings, and accepts exclusive acquisition (optionally nonblocking)
+or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
+loops remain findings. Naming a tool in a comment grants no exception. Python
+heredocs use this AST rule once rather than a second shell-token lock count.
+
+Rule F can prove a fixed external HTTP origin before a dynamic path suffix.
+The literal prefix must contain a complete authority and its trailing slash;
+unknown origins, partial authorities, reassigned bindings and URL joins that
+could replace the authority remain unresolved. Gateway metadata in a public
+provider input does not make a fixed external API request a Gateway callback.
+
+Static native child workflows resolve by an unambiguous local workflow name or id.
+The coverage graph follows each child and its behavior and script dependencies.
+Missing, dynamic or ambiguous children stay unknown; a child with accepted debt
+does not make its parent clean.
+
 Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
 workflow has known steps and no findings in its own source or reachable local
 behavior dependencies. Static coverage is not a runtime canary. Each run emits
