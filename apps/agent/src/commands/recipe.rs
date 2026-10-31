@@ -205,6 +205,32 @@ impl Files {
         gid: u32,
         replace_link: bool,
     ) -> Result<(), Failure> {
+        self.publish_with(path, mode, uid, gid, replace_link, |file| {
+            file.write_all(content)
+        })
+    }
+    pub fn publish_from(
+        &self,
+        path: &Path,
+        source: &Path,
+        mode: u32,
+        uid: u32,
+        gid: u32,
+        replace_link: bool,
+    ) -> Result<(), Failure> {
+        self.publish_with(path, mode, uid, gid, replace_link, |file| {
+            io::copy(&mut fs::File::open(source)?, file).map(|_| ())
+        })
+    }
+    fn publish_with(
+        &self,
+        path: &Path,
+        mode: u32,
+        uid: u32,
+        gid: u32,
+        replace_link: bool,
+        write: impl FnOnce(&mut fs::File) -> io::Result<()>,
+    ) -> Result<(), Failure> {
         match fs::symlink_metadata(path) {
             Ok(meta) => {
                 if meta.is_symlink() && !replace_link {
@@ -232,7 +258,7 @@ impl Files {
                 .create_new(true)
                 .mode(0o600)
                 .open(&temporary)?;
-            file.write_all(content)?;
+            write(&mut file)?;
             file.set_permissions(fs::Permissions::from_mode(mode))?;
             chown(&temporary, uid, gid)?;
             file.sync_all()?;
@@ -290,6 +316,49 @@ impl Drop for WorkDir {
 #[cfg(test)]
 mod file_tests {
     use super::*;
+
+    #[test]
+    fn streamed_publication_preserves_custody_and_keeps_old_bytes_on_copy_failure() {
+        let work = WorkDir::new().unwrap();
+        let files = Files {
+            root: work.0.clone(),
+            uid: rustix::process::geteuid().as_raw(),
+            gid: rustix::process::getegid().as_raw(),
+        };
+        let source = work.0.join("source");
+        let target = work.0.join("target");
+        let link = work.0.join("link");
+        fs::write(&source, "verified").unwrap();
+        fs::write(&target, "old").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(files
+            .publish_from(&link, &source, 0o755, files.uid, files.gid, false)
+            .is_err());
+        assert!(files
+            .publish_from(&target, &source, 0o755, files.uid + 1, files.gid, false)
+            .is_err());
+        assert!(files
+            .publish_from(&target, &work.0, 0o755, files.uid, files.gid, false)
+            .is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "old");
+        files
+            .publish_from(&target, &source, 0o755, files.uid, files.gid, false)
+            .unwrap();
+        let meta = fs::symlink_metadata(&target).unwrap();
+        assert!(meta.is_file());
+        assert_eq!(
+            (meta.uid(), meta.gid(), meta.mode() & 0o777),
+            (files.uid, files.gid, 0o755)
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "verified");
+        assert_eq!(fs::read_to_string(&source).unwrap(), "verified");
+        assert!(link.is_symlink());
+        assert!(!fs::read_dir(&work.0).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".orbit-recipe-")));
+    }
 
     #[test]
     fn metadata_reports_a_missing_path_as_none_and_never_follows_a_final_link() {
