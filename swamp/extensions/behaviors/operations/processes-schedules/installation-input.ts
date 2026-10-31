@@ -1,19 +1,8 @@
 import { z } from "npm:zod@4.4.3";
+import { RequiredMountPaths } from "./required-mount-paths.ts";
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Runtime = z.enum(["systemd", "docker"]);
-const MountPath = z.string().startsWith("/").refine((path) =>
-    new TextEncoder().encode(path).length <= 4096 &&
-    ![...path].some((char) =>
-        char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127
-    ) &&
-    (path === "/" || !path.endsWith("/")) &&
-    !path.includes("//") &&
-    !path.split("/").some((part) => part === "." || part === "..")
-);
-const RequiredMountPaths = z.array(MountPath).max(64).refine((paths) =>
-    new Set(paths).size === paths.length
-).default([]).optional();
 const Artifact = z.object({ runtime: Runtime, name: z.string() }).strict();
 const Base = z.object({
     process_id: z.number().int().positive(),
@@ -23,7 +12,7 @@ const Base = z.object({
     on_demand: z.boolean(),
     directory: z.string().startsWith("/").max(4096).optional(),
     retired: Artifact.nullable(),
-    required_mount_paths: RequiredMountPaths,
+    required_mount_paths: RequiredMountPaths.default([]).optional(),
 });
 export const ProcessInstallation = z.discriminatedUnion("runtime", [
     Base.extend({

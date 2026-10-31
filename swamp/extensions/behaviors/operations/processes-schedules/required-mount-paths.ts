@@ -3,7 +3,9 @@ import { z } from "npm:zod@4.4.3";
 export const RequiredMountPaths = z.array(
     z.string().startsWith("/").refine((path) =>
         new TextEncoder().encode(path).length <= 4096 &&
-        !/[\x00-\x1f\x7f]/.test(path) && !path.includes("//") &&
+        ![...path].some((char) =>
+            char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127
+        ) && !path.includes("//") &&
         (path === "/" || !path.endsWith("/")) &&
         !path.split("/").some((part) => part === "." || part === "..")
     ),
@@ -13,15 +15,14 @@ export const RequiredMountPaths = z.array(
 export function mountPathDirective(paths: readonly string[]): string | null {
     if (paths.length === 0) return null;
     const escape = (path: string) =>
-        path.replace(
-            /[\x00-\x20"'$%\\\x7f]/g,
-            (character) =>
-                character === "%"
-                    ? "%%"
-                    : `\\x${
-                        character.charCodeAt(0).toString(16).padStart(2, "0")
-                    }`,
-        );
+        [...path].map((character) => {
+            const code = character.charCodeAt(0);
+            if (character === "%") return "%%";
+            return code <= 32 || code === 127 ||
+                    ['"', "'", "$", "\\"].includes(character)
+                ? "\\x" + code.toString(16).padStart(2, "0")
+                : character;
+        }).join("");
     return `RequiresMountsFor=${paths.map(escape).join(" ")}`;
 }
 
