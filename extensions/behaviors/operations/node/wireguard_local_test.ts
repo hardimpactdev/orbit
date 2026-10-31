@@ -168,3 +168,98 @@ Deno.test("hub unknown remote code leaves native execution uncertain", async () 
     "uncertain",
   );
 });
+
+Deno.test("Gateway-placed TaskVM hub lower refuses missing SSH custody before any local command", async () => {
+  const remote = { ...snapshot, executor_node_id: 14 };
+  let effects = 0;
+  await assertRejects(
+    () =>
+      convergeWireGuardHub(
+        remote,
+        { ...material(), snapshot: remote },
+        fakeNetworkSystem(() => {
+          effects++;
+          return Promise.resolve({});
+        }),
+      ),
+    Error,
+    "uncertain",
+  );
+  assertEquals(effects, 0);
+});
+
+Deno.test("Gateway-placed TaskVM hub lower uses only the admitted pinned SSH session", async () => {
+  const remote = { ...snapshot, executor_node_id: 14 };
+  const connection = {
+    target: {
+      node_id: 1,
+      host: "vpn.example.test",
+      port: 22,
+      user: "orbit",
+      fingerprint: "SHA256:" + "A".repeat(43),
+    },
+    identity: "/private/existing-gateway-key",
+  };
+  let effects = 0;
+  let local = 0;
+  const result = await convergeWireGuardHub(
+    remote,
+    { ...material(), snapshot: remote, connection },
+    fakeNetworkSystem(() => {
+      local++;
+      return Promise.resolve({});
+    }),
+    undefined,
+    {
+      environment: {
+        createCelEnvironment: () => {
+          throw new Error("unused fixture");
+        },
+      },
+      ssh: (target, identity, _env, argv, stdin) => {
+        effects++;
+        assertEquals(target, connection.target);
+        assertEquals(identity, connection.identity);
+        assertEquals(argv.slice(0, 4), [
+          "/usr/bin/sudo",
+          "-n",
+          "--",
+          "/usr/bin/python3",
+        ]);
+        assertEquals(argv.some((value) => value.includes(key(1))), false);
+        const data = JSON.parse(stdin!);
+        assertEquals(data.name, "wireguard.project-hub");
+        assertEquals(data.input.config.includes(key(1)), true);
+        assertEquals(data.input.config.includes(key(2)), false);
+        return Promise.resolve("{}");
+      },
+    },
+  );
+  assertEquals(result.status, "succeeded");
+  assertEquals(effects, 1);
+  assertEquals(local, 0);
+  assertEquals(JSON.stringify(result).includes(connection.identity), false);
+});
+
+Deno.test("Gateway-placed TaskVM hub lower never defaults to local execution even with valid private material", async () => {
+  const remote = { ...snapshot, executor_node_id: 14 };
+  await assertRejects(
+    () =>
+      convergeWireGuardHub(remote, {
+        ...material(),
+        snapshot: remote,
+        connection: {
+          target: {
+            node_id: 1,
+            host: "vpn.example.test",
+            port: 22,
+            user: "orbit",
+            fingerprint: "SHA256:" + "A".repeat(43),
+          },
+          identity: "/private/existing-key",
+        },
+      }),
+    Error,
+    "uncertain",
+  );
+});

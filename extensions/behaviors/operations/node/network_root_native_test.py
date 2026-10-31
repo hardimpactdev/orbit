@@ -19,6 +19,7 @@ class NetworkNative(NativeTestCase):
         super().setUp()
         self.secrets = (base64.b64encode(uuid.uuid4().bytes + uuid.uuid4().bytes).decode(),)
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
+        self.copy_behaviors('operations/node-bootstrap')
         ops = self.repo / 'extensions/behaviors/operations'
         routes = ops / 'routes'; routes.mkdir()
         for name in ['firewall-local.ts', 'firewall-program.ts', 'local-program.ts', 'router-lan.ts']:

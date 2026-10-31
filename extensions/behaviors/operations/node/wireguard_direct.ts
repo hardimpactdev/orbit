@@ -4,7 +4,13 @@ import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { DirectArgs, GatewayOperation, Globals } from "../_lib/direct.ts";
 import { runNetworkSystem } from "./network_system.ts";
 import {
+  type BootstrapEnvironment,
+  type BootstrapSsh,
+  bootstrapSsh,
+} from "../node-bootstrap/bootstrap_ssh.ts";
+import {
   convergeWireGuardHub,
+  HubPrivateConfiguration,
   HubPublicationInput,
   HubPublicationOutcome,
 } from "./wireguard_local.ts";
@@ -21,6 +27,7 @@ const ProjectArgs = Args.extend({
   outcome: HubPublicationOutcome,
 });
 type Context = {
+  createCelEnvironment?: BootstrapEnvironment["createCelEnvironment"];
   globalArgs: z.infer<typeof Globals>;
   signal?: AbortSignal;
   writeResource: (
@@ -36,10 +43,11 @@ export function nodeWireGuard(
   makeHttp: (ctx: Context) => Http = (ctx) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   invoke = runNetworkSystem,
+  ssh: BootstrapSsh = bootstrapSsh,
 ) {
   return {
     type: "@nckrtl/node-wireguard-direct",
-    version: "2026.10.31.2",
+    version: "2026.10.31.4",
     globalArguments: Globals,
     resources: {
       admission: {
@@ -108,13 +116,53 @@ export function nodeWireGuard(
         execute: async (raw: z.infer<typeof PublishArgs>, ctx: Context) => {
           const args = PublishArgs.parse(raw);
           const gateway = new GatewayOperation(makeHttp(ctx), args);
+          const guard = async () => {
+            ctx.signal?.throwIfAborted();
+            const current = z.object({
+              id: z.literal(args.operation_id),
+              node_id: z.literal(args.node_id),
+              kind: z.literal(args.kind),
+              status: z.string(),
+              cancel_requested: z.boolean(),
+            }).parse(await gateway.read(ctx.signal));
+            if (current.cancel_requested) {
+              throw new Error("operation.cancelled");
+            }
+            if (["succeeded", "failed", "cancelled"].includes(current.status)) {
+              throw new Error("operation.finished");
+            }
+          };
+          // The behavior instance lock encloses both fresh reads and the effect.
+          await guard();
           let outcome: z.infer<typeof HubPublicationOutcome> | undefined;
           await gateway.withPrivateMaterial(async (material) => {
+            const parsed = HubPrivateConfiguration.safeParse(
+              material.configuration,
+            );
+            if (!parsed.success) throw new Error("The hub material is invalid");
+            if (args.snapshot.executor_node_id !== args.snapshot.hub_id) {
+              const connection = parsed.data.connection;
+              if (
+                !connection || !ctx.createCelEnvironment ||
+                connection.target.node_id !== args.snapshot.hub_id
+              ) {
+                throw new Error("The hub SSH participant is invalid");
+              }
+            }
+            await guard();
             outcome = await action(
               args.snapshot,
-              material.configuration,
+              parsed.data,
               invoke,
               ctx.signal,
+              ctx.createCelEnvironment
+                ? {
+                  environment: {
+                    createCelEnvironment: ctx.createCelEnvironment,
+                  },
+                  ssh,
+                }
+                : undefined,
             );
           });
           if (!outcome) throw new Error("The hub outcome is uncertain");

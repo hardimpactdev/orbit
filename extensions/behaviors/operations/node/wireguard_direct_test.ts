@@ -141,3 +141,133 @@ Deno.test("hub private transport failures remain sanitized", async () => {
   assertEquals(error.message.includes(privateKey), false);
   assertEquals(f.resources.length, 0);
 });
+
+Deno.test("TaskVM shared hub method reads fresh private configuration before its Gateway SSH effect", async () => {
+  const f = fixture();
+  const remote = { ...snapshot, executor_node_id: 14 };
+  let reads = 0;
+  let effects = 0;
+  const http: Http = (_method, path) => {
+    if (!path.includes("private-material")) {
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            id: args.operation_id,
+            kind: "task_vm.enroll",
+            node_id: 14,
+            status: "running",
+            cancel_requested: false,
+          },
+        },
+      });
+    }
+    reads++;
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          configuration: {
+            ...material,
+            snapshot: remote,
+            connection: {
+              target: {
+                node_id: 1,
+                host: "vpn.example.test",
+                port: 22,
+                user: "orbit",
+                fingerprint: "SHA256:" + "A".repeat(43),
+              },
+              identity: "/private/existing-key",
+            },
+            peers: [{
+              node_id: 13,
+              name: "fresh",
+              public_key: "B".repeat(43) + "=",
+              address: "10.44.0.13",
+            }],
+          },
+        },
+      },
+    });
+  };
+  const behavior = nodeWireGuard(
+    undefined,
+    () => http,
+    () => Promise.reject(new Error("must not run locally")),
+    (_target, _identity, _environment, _argv, stdin) => {
+      effects++;
+      assertEquals(reads, 1);
+      assertEquals(JSON.parse(stdin!).input.config.includes("# fresh"), true);
+      return Promise.resolve("{}");
+    },
+  );
+  const ctx = {
+    ...f.ctx,
+    createCelEnvironment: () => {
+      throw new Error("unused fixture");
+    },
+  };
+  const result = await behavior.methods.publish.execute({
+    ...args,
+    kind: "task_vm.enroll",
+    node_id: 14,
+    snapshot: remote,
+  }, ctx);
+  assertEquals(effects, 1);
+  assertEquals(result.status, "succeeded");
+  assertEquals(JSON.stringify(f.resources).includes(privateKey), false);
+  assertEquals(JSON.stringify(f.resources).includes("/private/"), false);
+});
+
+Deno.test("cancelled shared hub publication refuses before its private read or effect", async () => {
+  const f = fixture(true);
+  let privateReads = 0;
+  let effects = 0;
+  const http: Http = (method, path, body) => {
+    if (path.includes("private-material")) privateReads++;
+    return f.http(method, path, body);
+  };
+  const behavior = nodeWireGuard(
+    undefined,
+    () => http,
+    fakeNetworkSystem(() => {
+      effects++;
+      return Promise.resolve({});
+    }),
+  );
+  await assertRejects(
+    () => behavior.methods.publish.execute({ ...args, snapshot }, f.ctx),
+    Error,
+    "operation.cancelled",
+  );
+  assertEquals(privateReads, 0);
+  assertEquals(effects, 0);
+});
+
+Deno.test("cancellation during the hub private read refuses the next effect boundary", async () => {
+  const f = fixture();
+  let cancelled = false;
+  let effects = 0;
+  const http: Http = (method, path, body) => {
+    if (path.includes("private-material")) cancelled = true;
+    if (cancelled && !path.includes("private-material")) {
+      return fixture(true).http(method, path, body);
+    }
+    return f.http(method, path, body);
+  };
+  const behavior = nodeWireGuard(
+    undefined,
+    () => http,
+    fakeNetworkSystem(() => {
+      effects++;
+      return Promise.resolve({});
+    }),
+  );
+  await assertRejects(
+    () => behavior.methods.publish.execute({ ...args, snapshot }, f.ctx),
+    Error,
+    "Private material callback failed",
+  );
+  assertEquals(effects, 0);
+});

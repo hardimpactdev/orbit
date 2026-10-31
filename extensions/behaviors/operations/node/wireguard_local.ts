@@ -1,5 +1,12 @@
 import { z } from "npm:zod@4.4.3";
 import {
+  type BootstrapEnvironment,
+  type BootstrapSsh,
+  bootstrapSsh,
+  bootstrapSystem,
+  BootstrapTarget,
+} from "../node-bootstrap/bootstrap_ssh.ts";
+import {
   networkCommand,
   type NetworkSystem,
   runNetworkSystem,
@@ -17,10 +24,8 @@ export const HubPublicationInput = z.object({
   context_node_id: Id,
   excluded_node_id: Id.nullable(),
   agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-}).strict().refine((value) =>
-  value.executor_node_id === value.hub_id &&
-  (value.excluded_node_id === null ||
-    value.excluded_node_id === value.context_node_id)
+}).strict().refine((value) => (value.excluded_node_id === null ||
+  value.excluded_node_id === value.context_node_id)
 );
 export type HubPublicationInput = z.infer<typeof HubPublicationInput>;
 export const HubPeer = z.object({
@@ -36,6 +41,10 @@ export const HubPrivateConfiguration = z.object({
   port: z.number().int().min(1).max(65535),
   private_key: PublicKey,
   peers: z.array(HubPeer).max(4096),
+  connection: z.object({
+    target: BootstrapTarget,
+    identity: z.string().startsWith("/").max(4096).regex(/^[^\0\r\n]+$/),
+  }).strict().optional(),
 }).strict();
 export const HubPublicationOutcome = z.discriminatedUnion("status", [
   z.object({
@@ -68,6 +77,7 @@ export async function convergeWireGuardHub(
   privateValue: unknown,
   invoke: HubInvoke = runNetworkSystem,
   signal?: AbortSignal,
+  remoteExecution?: { environment: BootstrapEnvironment; ssh?: BootstrapSsh },
 ): Promise<HubPublicationOutcome> {
   // Parse failures may include credential bytes; never propagate Zod diagnostics.
   const input = HubPublicationInput.safeParse(raw);
@@ -77,6 +87,23 @@ export async function convergeWireGuardHub(
   const material = configuration.data;
   if (JSON.stringify(snapshot) !== JSON.stringify(material.snapshot)) {
     throw uncertain();
+  }
+  const remote = snapshot.executor_node_id !== snapshot.hub_id;
+  if (
+    remote !== (material.connection !== undefined) ||
+    (material.connection &&
+      material.connection.target.node_id !== snapshot.hub_id)
+  ) {
+    throw uncertain();
+  }
+  if (remote) {
+    if (!remoteExecution || !material.connection) throw uncertain();
+    invoke = bootstrapSystem(
+      material.connection.target,
+      material.connection.identity,
+      remoteExecution.environment,
+      remoteExecution.ssh ?? bootstrapSsh,
+    );
   }
   const peers = material.peers.filter((peer) =>
     peer.node_id !== snapshot.hub_id &&
