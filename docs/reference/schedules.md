@@ -13,7 +13,7 @@ covers:
 
 # Schedules
 
-A Schedule runs one command on a timer for one Node or one Instance. The Gateway stores the Schedule. The host Node runs it with a native systemd timer, so the timer keeps firing while the Gateway is down. macOS has no systemd timers in this feature. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422) before SSH. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
+A Schedule runs one command on a timer for one Node or one Instance. The Gateway stores the Schedule. A native systemd timer on the host Node admits each run through the Gateway; Swamp executes its command. The timer persists across Gateway outages, but a run needs the Gateway and its selected worker. macOS has no systemd timers in this feature. A Schedule mutation there returns `schedule.platform_unsupported` (HTTP 422) before SSH. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
 An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health, Activity finalization, operation recovery and queue metadata retention. Hourly `problems:file` stays in the Gateway scheduler with its lock.
 
@@ -33,15 +33,13 @@ Swamp requests failed queue job pruning daily, keeping seven days by default. [G
 
 ## Execution
 
-Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through named agent commands. Enable, manual run and destroy start their native workflow directly and the Gateway projects the bounded outcome. Create keeps its current receipt path until their own cutover. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
+Schedule create, enable, run, and destroy record an Operation and return HTTP 202. The Gateway owns validation and Schedule intent. Swamp installs, controls, and removes the timer through direct system commands. Create, enable, manual run and destroy start their native workflow directly and the Gateway projects the bounded outcome. A removal refused with `schedule.run_active` keeps the Schedule in `removing`; retry destroy after that command finishes. An Idempotency-Key replays the original Operation.
 
-The unconverted kinds for one Instance or Node share an Operation hold. A concurrent mutation for that owner returns `operation.target_busy`, including changes to different Schedule UUIDs. Enable, manual run and destroy have no Gateway execution hold; Swamp owns their placement and concurrency.
+Schedule mutations have no Gateway execution hold. Swamp owns their placement and concurrency.
 
-Retained Gateway callers keep the synchronous Schedule actions and native runtime manager until their owning lane cuts over. Clone and deployment definition installation use this path. They do not admit or await Schedule Operations.
+When a Schedule runs on any Node, HTTP create, enable, manual run and destroy return HTTP 202 and start Swamp directly. This includes Instance Schedules and Schedules on executor Nodes.
 
-When a Schedule targets the configured Swamp Services Node or an executor worker Node, HTTP create uses the synchronous PHP action until their conversion. Enable, manual run and destroy return HTTP 202 and start Swamp directly on every Node. This includes Instance Schedules on those Nodes. Create returns HTTP 201 for a new Schedule or 200 for an identical retry.
-
-Polled Swamp admission and final dispatch on those Nodes refuse with `schedule.executor_dependency` (HTTP 409). The SDK exposes either Schedule data or an Operation through `ScheduleMutationResponse.result`; the CLI renders the Schedule for synchronous responses and follows HTTP 202 Operations. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
+The SDK exposes the Operation through `ScheduleMutationResponse.result`; the CLI follows the HTTP 202 Operation. Installed Schedules remain immutable. `schedule:update` changes only a Project definition in Gateway state.
 
 ## Fields
 
@@ -70,8 +68,8 @@ Every endpoint is under `/api/v1/schedules` and needs an access grant to the Nod
 | List | `GET /api/v1/schedules` | The Schedules whose target Node the caller may address, ordered by name, without `command`. |
 | Create | `POST /api/v1/schedules` | Records one Schedule and returns its queued Operation with HTTP 202. |
 | Show | `GET /api/v1/schedules/{uuid}` | One Schedule, with `command`. |
-| Run | `POST /api/v1/schedules/{uuid}/run` | Queues one service start and returns its Operation with HTTP 202. The desired timer state does not change. |
-| Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | The newest journal lines of the service. |
+| Run | `POST /api/v1/schedules/{uuid}/run` | Admits one native command run and returns its Operation with HTTP 202. The desired timer state does not change. |
+| Logs | `GET /api/v1/schedules/{uuid}/logs?lines=N` | The newest observed Schedule journal lines. |
 | Enable | `POST /api/v1/schedules/{uuid}/activate` | Queues timer activation for an Instance Schedule and returns its Operation with HTTP 202. |
 | Destroy | `DELETE /api/v1/schedules/{uuid}` | Queues removal and returns its Operation with HTTP 202. |
 | Complete | `POST /api/v1/schedules/{uuid}/complete` | The host Node reports a run result. Returns 204. |
@@ -86,9 +84,9 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 
 | Target | User | Working directory | Shell |
 | --- | --- | --- | --- |
-| Node | The Node's managed user | That user's home | The user's login shell, with `-lc` |
-| Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with `-lc` |
-| Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -c`, without a login |
+| Node | The Node's managed user | That user's home | The user's login shell, with login mode and protected stdin |
+| Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with login mode and protected stdin |
+| Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -s`, without a login |
 
 For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
 
@@ -98,37 +96,32 @@ A Schedule does not follow its target. While a Schedule exists, the Gateway refu
 
 ## Host artifacts
 
-Each Schedule owns three files on the host Node. Only the UUID names them.
+Each Schedule owns two public files on its host Node. Only the UUID names them.
 
 | Artifact | Path | Owner and mode |
 | --- | --- | --- |
-| Command file | `/etc/orbit/schedules/{uuid}.sh` | `root:<runtime group>`, `0750` |
-| Service | `/etc/systemd/system/orbit-schedule-{uuid}.service` | `root:root`, `0644` |
+| Admission service | `/etc/systemd/system/orbit-schedule-{uuid}.service` | `root:root`, `0644` |
 | Timer | `/etc/systemd/system/orbit-schedule-{uuid}.timer` | `root:root`, `0644` |
 
-The command file holds only the user command and its typed execution context. Rust owns the Schedule runtime; no generated shell implements Schedule management. The oneshot service sets the user, group, working directory, `HOME`, and the timeout as `TimeoutStartSec`. Its `ExecStart` calls the agent’s named Schedule runner as the target user. Its `ExecStopPost` calls the fixed completion handler as root so it can read the agent’s pinned CA; it runs no project code.
-
-The timer uses the calendar with `Persistent=true`, so systemd runs one missed occurrence after the Node was down. systemd never starts the service while it still runs. The command text appears only in the protected command file, never in an SSH, `sudo`, `systemctl`, `journalctl`, or `systemd-analyze` argument.
-
-Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mode `0711`, so the runtime user can reach its command file but cannot list the directory. It refuses a symbolic link, a non-directory, or another owner there.
+The service sends an authenticated Node request to the Gateway run endpoint. Its systemd invocation ID is the idempotency key. The service contains public execution context and the command hash, without command bytes or credentials. The timer uses `Persistent=true`. Swamp executes each admitted command as its recorded account with the recorded home, working directory, shell and timeout. Command bytes enter only through protected stdin. Business output goes to the Node journal under `orbit-schedule-{uuid}`; it is absent from native results.
 
 ## Install and recover
 
-Create validates the input and the target first. Then Swamp calls `schedule.install` through the keyed executor and holds the Schedule lock on the Node. Rust checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
+Swamp checks the calendar with `systemd-analyze calendar`, validates accounts and directories, stages the public units, checks them with `systemd-analyze verify`, publishes them and reloads systemd. First installation applies desired timer state. Identical installation preserves actual enabled and active state separately. A changed installed specification refuses with `schedule.artifact_conflict`.
 
-An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, Rust restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
+Existing files must be regular, root-owned files with the exact expected modes and generated content. Wrong ownership, links, modified context or a mismatched command hash refuse before effects. Swamp recognizes an exact obsolete runner layout only to remove it during conversion. It verifies private command bytes and every remaining old artifact before removal, and preserves actual timer state. It executes no obsolete runner. A failure restores the earlier files and timer state; a failed restore returns `schedule.rollback_failed`.
 
 ## Direct Swamp control
 
-`schedule.enable`, `schedule.run` and `schedule.destroy` use `operation-schedule-control` directly. Admission records the selected writer. Destroy has no Gateway executor, so the shared writer defaults to direct without a family configuration override. Its public PHP branch, polled descriptors and receipt contract are removed. An explicit polled override refuses. Manual run also has no Gateway executor: its polled receipt contract is removed and it defaults to direct when the shared writer map is empty. The PHP run method is removed too. Roll back through a revert PR.
+`schedule.create` uses the single native `operation-schedule-create` DAG. Its installation step shares the canonical Schedule model with enable, run and destroy controls. The Gateway validates and records intent, starts the native DAG, and projects its bounded outcome. It does not install or control timers. Roll back through a revert PR.
 
 When you enable an active Instance Schedule, its writer defaults to direct. Its public PHP action and runtime activation method are removed. The Gateway changes desired timer state after native success; a failed activation preserves the prior intent.
 
-The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and alone binds its root run ID. A Node worker reads the admitted Schedule UUID, agent digest, runtime user and working directory. It verifies the pinned root-owned local binary, then invokes the fixed Schedule command with passwordless `sudo -n` as the configured Node user. The step limits time and output and projects only bounded ready/error fields. It uses no Gateway execution relay, lease, claim, target hold or receipt.
+The shared [direct Operation boundary](/reference/operations#direct-swamp-starts) starts the workflow after commit and binds its root run ID. The selected Node worker reads admitted execution context and the command hash. It reads the existing `schedule.command` private source inside the local effect callback. The source checks Schedule identity, owner, placement and the admitted hash. Each DAG projects only bounded ready/error fields through the shared endpoint.
 
-Node 209 uses its existing `swamp209-migration-a` worker identity for the first canary. Every other Node uses exactly `orbit-node-<admitted Node ID>` with no fallback to another Node. The workflow waits for that target's enrolled worker when it is unavailable. Replace the 209 identity when its per-Node worker is enrolled. Native systemd timers keep serving independently of this control path.
+Every job targets exactly `orbit-node-<admitted Node ID>` with the matching Node label, including Node 209. There is no worker fallback, Gateway execution relay, child Operation, polled claim or receipt.
 
-Each remaining kind changes in one PR after an actual safe action canary: native path, writer takeover and old PHP/test deletion together. The previous 209 pre-cancelled runs proved binding only. Existing Instance removal parents record the admitted Schedule UUID and cascade intent through the same direct destroy writer. Their synchronous cleanup helper remains solely for the unconverted Instance removal path; its owning lane removes that caller with the parent conversion.
+Definition installation composes the same Schedule installer as steps of its parent native DAG. It does not create child Operations.
 
 ## Timer state
 
@@ -138,7 +131,7 @@ A Node Schedule installs with its timer enabled and active and rejects a disable
 
 Enable turns on and starts the timer of an active Instance Schedule, checks both states, and stores `enabled`. It is idempotent. When it fails, it restores the earlier timer state and returns `schedule.activation_failed`, or `schedule.rollback_failed` when the restore fails too. A Node Schedule refuses enable with `schedule.target_invalid`, because its timer is always on.
 
-Run starts the service with `systemctl start --no-block` and returns at once. It uses the same service, user, timeout, and completion report as a timer run.
+Manual run and timer run admit the same native command DAG. The DAG waits for the command result and projects success or a bounded failure. A manual run leaves timer intent unchanged.
 
 ## Logs
 
@@ -146,13 +139,11 @@ Logs read only the Schedule's service, with fixed `journalctl --output cat` argu
 
 ## Latest run
 
-When the service stops, the agent sends one report to `https://gateway.orbit/api/v1/schedules/{uuid}/complete` with `success` or `error`. Its native HTTPS client trusts only `/etc/orbit/agent/ca.pem`, refuses redirects, and has a ten-second timeout. The system trust store does not apply. It reads no agent secret. The Gateway accepts it only from the Schedule's host Node, which it identifies by the WireGuard address. It sets `last_run_at` to the time of receipt and `last_run_status` to the reported status, and changes nothing else. A report for a Schedule that is `removing` changes nothing.
-
-The Node does not retry a failed report. A lost report leaves the earlier values in place and does not affect the command or later runs.
+The native run result sets `last_run_at` and `last_run_status` through the shared root projection. The Gateway stores only the latest result. A removed or removing Schedule receives no new run projection. No runner completion callback is installed on the Node.
 
 ## Remove
 
-Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the three files, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and fails the Operation with `schedule.run_active` and keeps the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
+Destroy marks the Schedule `removing` and disables and stops its timer. When the service is not running, it deletes the two public units and any exactly verified obsolete artifacts, reloads systemd, resets the failed state of both units, checks that the files are gone, and deletes the record. When the service still runs, destroy stops there and fails the Operation with `schedule.run_active` and keeps the Schedule as `removing`. The command finishes on its own. Repeat destroy after it ends to finish the removal. An artifact with the wrong owner, mode, or marker stops removal with `schedule.artifact_conflict`, and the Schedule stays `removing`.
 
 [Instance removal](/reference/instance-removal) removes each Schedule of the Instance without waiting for a running command. It leaves Node Schedules and the Schedules of other Instances in place.
 
@@ -180,13 +171,13 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 These reasons explain the design. Check them before you propose a change.
 
-### Native systemd timers
+### Timers admit work; Swamp executes it
 
-systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one. The Gateway's own scheduler and its [queue](/reference/gateway-queue) run only Gateway work, such as the [task VM jobs](/reference/compute-drivers#jobs). They never run a Schedule.
+systemd owns recurring timing on the host Node. Each firing admits the same native run as the API. This keeps all operational logic in Swamp while preserving persistent calendar state. A timer firing needs the Gateway; it cannot execute private command bytes during an outage.
 
-### The command only in a protected file
+### Private command bytes use stdin
 
-The command is operator input that runs as the target user. It must never become part of a root command line on the Node. The Gateway sends the command as typed input. Rust writes it into a file that root owns and runs it only as the target account. Every infrastructure command uses fixed arguments.
+The command is operator input that runs as the selected account. Keeping it in the admitted private source and sending it through stdin avoids putting it in root argv, public units or native output. Infrastructure commands use fixed arguments. Command output remains operator-controlled journal content, so commands must keep secrets out of their output.
 
 ### No edit and no automatic move
 
@@ -194,8 +185,10 @@ A Schedule changes only through destroy and create. When its target moves, an ex
 
 ### Only the latest run
 
-The completion report is informational. The Gateway stores only the latest result and time. It keeps no run history, run identity, or generation, and the Node does not retry a report. A retry would look the same as the next run with the same result.
+The native result projection records the latest run time and success or failure. Detailed native run history belongs to Swamp.
 
 ### A stopped timer for copied Schedules
 
 A copied Schedule on a new production Instance can run before the data of that Instance is ready. So an Instance Schedule can install with its timer disabled, and enable is a separate step. A manual run is not an enable, because one run does not start the recurring timer.
+
+Schedule installation and controls reuse one native installer. They create no private command file or callback and invoke no agent action. The Gateway validates intent and projects bounded outcomes.

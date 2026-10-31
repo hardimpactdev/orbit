@@ -12,6 +12,7 @@ use App\Models\DatabaseServer;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 final readonly class DatabaseServerCloseProjection implements DirectOperationProjection
 {
@@ -32,20 +33,25 @@ final readonly class DatabaseServerCloseProjection implements DirectOperationPro
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code']));
+        $result = array_intersect_key(ValidatedData::object($data['result'] ?? []), array_flip(['backend', 'error_code', 'default_open']));
         $status = ValidatedData::string($data['status']);
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        $unknown = $code === 'database.server_restore_failed' && $result === ['error_code' => $code, 'default_open' => 'unknown'];
         if (($status === 'succeeded' && ($result !== ['backend' => 'active'] || $code !== null))
             || (in_array($status, ['running', 'cancelled'], true) && ($result !== [] || $code !== null))
-            || ($status === 'failed' && ($result !== ['error_code' => $code]
+            || ($status === 'failed' && ! $unknown && ($result !== ['error_code' => $code]
                 || ! in_array($code, ['database.server_in_use', 'database.server_command_failed'], true)))) {
             throw new ResourceOperationException('operation.result_invalid', 'Closure needs its bounded native result.', 422);
         }
 
-        return DB::transaction(function () use ($operation, $data, $result, $status): Operation {
+        return DB::transaction(function () use ($operation, $data, $result, $status, $unknown): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
+            if (! $terminal && $status === 'failed' && $unknown) {
+                DatabaseServer::query()->whereKey($operation->target_id)->update(['default_open' => null, 'status' => 'failed', 'error_code' => 'database.default_access_unknown', 'failed_step' => 'database-apply']);
+                Log::critical('Database default access is unknown after ACL restore failed.', ['operation_id' => $operation->id, 'database_server_id' => $operation->target_id, 'node_id' => $operation->node_id]);
+            }
             if (! $terminal && $status === 'succeeded') {
                 DatabaseServer::query()->whereKey($operation->target_id)->update(['default_open' => false]);
             }

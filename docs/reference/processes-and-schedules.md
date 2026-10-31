@@ -18,7 +18,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 ## Execution
 
-Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the named agent commands and records their receipts. Only a proven completion changes the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
+Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
@@ -100,6 +100,12 @@ If verification fails, stop the service and restore from the verified backup wit
 Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty string. Invalid shapes and names are refused rather than silently converted. An empty environment serializes as `{}`, not `[]`. Responses and Activity retain the names and map shape but replace every value with `[REDACTED]`; errors and logs must not disclose values. This representation does not expand which runtimes accept public environment input: public create and update accept it for Docker, while Gateway-owned systemd Processes can store it internally.
 
 ## Environment of a systemd Process
+
+### Private managed values
+
+Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text.
+
+### Runtime environment
 
 The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker keeps the image's `WORKDIR`, and Node systemd Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
 
@@ -289,9 +295,9 @@ A candidate can run test options or a development-only server, such as Vite. Tho
 
 A copied worker or Schedule can run before the new Instance's data is ready, for example with copied queue jobs. So preparation installs every copy stopped, and the operator starts each one.
 
-### Managed environment as `Environment=` directives
+### Managed environment in private files
 
-A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
+Node Process units reference immutable root-owned `0600` EnvironmentFiles. Managed environment values travel only through the admitted private-material callback and protected stdin. The public unit contains the environment file path.
 
 The `vp-dev` preset applies only to development Instance Processes. Runtime definitions are copied only to production Instances.
 
@@ -310,7 +316,7 @@ Task VM runtime preparation may admit one `process.create` child using only `{pr
 A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the exact recorded restart plan after each keyed Process child has proven success. An empty selection returns an empty list. A failed or unproven child prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
 
 
-The runtime family reads target receipts before remote effects. A lost restart reply is recovered from its original keyed receipt. A proven pre-start refusal leaves the same key available; an uncertain restart stays pending until its receipt is known. Process completion requires a recorded `process.runtime_ready` check, which verifies every required agent step and any Caddy child. This check changes no Node state. Instance composition waits for each recorded runtime child before its own ready step.
+Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Unconverted Instance composition still waits for its recorded runtime children before its own ready step.
 
 ## Direct Process controls
 
@@ -330,7 +336,7 @@ Process creation records its owned definition and starts one native Process DAG.
 
 A newly admitted Process starts with `systemd_activation_pending=false` in memory as well as in storage. The first public installation input therefore carries a boolean before any refresh. The Gateway admission test and native create schema use the same captured public shape.
 
-The Node installs the captured definition through the pinned local agent. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
+Swamp installs the captured definition with direct Node-local system commands. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
 
 ### Native Process start
 
@@ -357,3 +363,9 @@ Ordinary Process creation records one direct intent and uses the same native roo
 Process creation through HTTP and MCP always admits the direct `process.create` intent, including executor Nodes. Admission returns HTTP 202 and leaves installation and completion to the native root. Record-only composition uses `RecordProcessIntentAction` inside its owning transaction and performs no runtime work.
 
 Four internal callers still require synchronous bootstrap completion: AI Router clears source activation and completes credential cutover; Plausible waits for container health before publication; Task VM preparation marks Pi ready for work; Gateway release handoff starts Horizon before release verification. These callers use closed bootstrap methods for their fixed Node Process names, runtimes, and commands. They cannot install arbitrary Processes. The next Process PR removes these temporary bootstrap methods together with their completion dependencies.
+
+### Native Process update
+
+Ordinary Process update records the changed definition and starts one native installation run. It preserves omitted fields, validates route listeners, and retains the prior desired state. The native steps prepare Vite traffic when needed, publish Caddy in the same root, remove its admitted artifact from the previous runtime, install the private definition and check readiness. The Gateway projects the final bounded result. Its last leaf Process executor, readiness command and receipt checks are removed, along with the old per-field private sources. The fixed `process.installation` callback supplies the admitted definition. Rollback is a revert PR.
+
+Process updates run in `operation-process-update` on the admitted Node. The Gateway records the requested specification and projects the native outcome. It does not execute an update or record executor steps.

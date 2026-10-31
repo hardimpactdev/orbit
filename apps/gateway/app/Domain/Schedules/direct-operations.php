@@ -6,12 +6,12 @@ use App\Domain\Schedules\ScheduleControlProjection;
 
 $control = [
     'workflow' => 'operation-schedule-control',
-    'writer_config' => 'swamp.direct_writers',
-    'writer_state' => 'schedule_control_writer',
     'projection' => ScheduleControlProjection::class,
+    'private_material' => ['command' => 'schedule.command'],
 ];
 
 return [
+    'schedule.create' => [...$control, 'workflow' => 'operation-schedule-create'],
     'schedule.enable' => $control,
     'schedule.run' => $control,
     'schedule.destroy' => $control,
