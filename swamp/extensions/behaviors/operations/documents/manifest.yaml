@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/documents-cleanup-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Invalidate the local cleanup gate before Gateway startup.
+behaviors:
+  - operations/documents/cleanup_input.ts
+additionalFiles:
+  - scripts/prepare_cleanup.py

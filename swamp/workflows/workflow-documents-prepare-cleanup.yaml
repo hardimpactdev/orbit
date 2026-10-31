@@ -1,0 +1,72 @@
+id: 5d378268-181a-4162-af9e-173d8b77f75d
+name: documents-prepare-cleanup
+description: Invalidate Documents cleanup authorization before the owning Gateway
+  release starts services.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      pattern: ^[a-z][a-z0-9_.-]+$
+    intent:
+      type: object
+      properties:
+        target_node_id:
+          type: integer
+          minimum: 1
+      required:
+      - target_node_id
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: cleanup
+  steps:
+  - name: input
+    target: ${{ "orbit-node-" + string(inputs.intent.target_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target_node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/documents-cleanup-input'
+      behaviorName: ${{ "documents-cleanup-input-" + string(inputs.operation_id) }}
+      methodName: prepare
+      inputs: {}
+  - name: prepare-tool-integrity-gate
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    target: ${{ "orbit-node-" + string(inputs.intent.target_node_id) }}
+    labels:
+      node: ${{ string(inputs.intent.target_node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "documents-cleanup-" + string(inputs.intent.target_node_id)
+        }}
+      methodName: execute
+      inputs:
+        run: 'set -eu
+
+          sudo -n -- /usr/bin/python3 -I "$ORBIT_DOCUMENTS_CLEANUP_SCRIPT"
+
+          '
+        env:
+          ORBIT_DOCUMENTS_CLEANUP_SCRIPT: ${{ steps.input.outputs.script }}

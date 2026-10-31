@@ -997,26 +997,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/documents/cleanup_program.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/documents/cleanup_program.ts",
-      "rule": "inline-script",
-      "count": 72,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/documents/cleanup.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/failure.ts",
       "rule": "gateway-http",
       "count": 2,
