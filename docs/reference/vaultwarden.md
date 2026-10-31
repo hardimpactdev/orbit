@@ -80,7 +80,7 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 | A published item that someone changed | Rewrite it. |
 | An Orbit item for a wanted source, with no record of publishing it | Adopt it and rewrite it. This covers a create that timed out after Vaultwarden stored the item, and items left by `vault:teardown --keep-items`. |
 | A recorded item in the trash or whose source is gone from Orbit, with an ID and decrypted source that match the publishing ledger | Delete it permanently, unless it belongs to another visible collection. |
-| An unrecorded copy, including an item carrying the same `orbit.source` as a published item | Leave it. A marker alone does not authorize deletion. |
+| A copy of an item whose published cipher is present, or an unrecorded item for an unwanted source | Leave it. A marker alone does not authorize deletion. |
 | An item without `orbit.source` | Leave it. |
 
 The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
@@ -109,7 +109,7 @@ One failed change does not stop the others. The run records its error, keeps tha
 
 [`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
 
-Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. After a later setup on the same collection, sync can adopt items for wanted sources and preserves the remaining unrecorded items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 
 Vaultwarden's `collectionIds` response lists only collections visible to the account. The sharing check detects those memberships; an absent ID does not prove that the item has no membership in a collection hidden from the account. Sync uses the same check before deleting a recorded item.
 
