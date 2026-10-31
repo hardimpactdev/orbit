@@ -40,8 +40,6 @@ pub struct InventoryOutput {
 pub struct PlanOutput {
     packages: Vec<String>,
 }
-#[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
-pub struct Done {}
 trait Host {
     fn run(&mut self, binary: &str, args: &[&str]) -> Result<String>;
 }
@@ -172,21 +170,6 @@ fn plan(host: &mut impl Host, package: &str) -> Result<PlanOutput> {
     }
     Ok(PlanOutput { packages })
 }
-fn mutate(host: &mut impl Host, package: &str, remove: bool) -> Result<Done> {
-    validate(package)?;
-    let mut args = vec![
-        "-o",
-        "DPkg::Lock::Timeout=300",
-        if remove { "remove" } else { "install" },
-        "--yes",
-    ];
-    if !remove {
-        args.push("--no-install-recommends");
-    }
-    args.extend(["--", package]);
-    host.run("/usr/bin/apt-get", &args)?;
-    Ok(Done {})
-}
 macro_rules! read_command {
     ($name:ident,$wire:literal,$summary:literal,$input:ty,$output:ty,$run:expr) => {
         pub struct $name;
@@ -238,48 +221,6 @@ read_command!(
     Input,
     PlanOutput,
     |input: Input, host: &mut Native<'_>| plan(host, &input.package)
-);
-macro_rules! mutation {
-    ($name:ident,$wire:literal,$summary:literal,$remove:literal) => {
-        pub struct $name;
-        impl Command for $name {
-            const NAME: &'static str = $wire;
-            const SUMMARY: &'static str = $summary;
-            const MUTATES: bool = true;
-            const TIMEOUT: Duration = Duration::from_secs(900);
-            const RESOURCES: &'static [&'static str] = &["packages"];
-            type Input = Input;
-            type Output = Done;
-            type Error = Error;
-            fn privilege(platform: Platform) -> Option<Privilege> {
-                super::linux_only(platform, Privilege::Root)
-            }
-            fn target(_: &Input) -> Option<String> {
-                Some("tools:apt".into())
-            }
-            fn run(input: Input, context: &Context) -> Result<Done> {
-                mutate(&mut Native(context), &input.package, $remove)
-            }
-        }
-    };
-}
-mutation!(
-    Install,
-    "tool.apt-install",
-    "Install exactly the requested APT package with no recommendations.",
-    false
-);
-mutation!(
-    Update,
-    "tool.apt-update",
-    "Update exactly the requested APT package to its normal candidate.",
-    false
-);
-mutation!(
-    Remove,
-    "tool.apt-remove",
-    "Remove the requested APT package without purging or autoremoving.",
-    true
 );
 #[cfg(test)]
 mod tests;
