@@ -215,7 +215,7 @@ export async function pipeline(
     );
     checkLease();
     const error = result.error_code ?? null;
-    if (!error) prove(effect.name, effect.input, result);
+    if (!error) prove(effect.name, result);
     await executor.post(`${path}/step`, {
       worker,
       key: `${effect.key}:finish`,
@@ -359,39 +359,29 @@ export async function pipeline(
 
 function prove(
   name: string,
-  input: Record<string, unknown>,
   result: z.infer<typeof SafeResult>,
 ) {
-  const action = input.action as { operation?: string } | undefined;
-  const snapshot = action?.operation === "snapshot" ||
-    input.operation === "snapshot";
-  const valid =
-    snapshot && ["metrics.node-exporter", "metrics.cadvisor"].includes(name)
-      ? typeof result.service_active === "boolean" &&
-        "configuration" in result && "firewall_source" in result
-      : snapshot && name === "metrics.service-runtime"
-      ? typeof result.active === "boolean" && result.rules !== undefined
-      : name === "php.inspect-production-pool"
-      ? typeof result.enabled === "boolean" &&
-        typeof result.fingerprint === "string"
-      : result.applied === true || result.verified === true
-      ? true
-      : ["integration.receipt", "metrics.receipt"].includes(name)
-      ? result.backend !== undefined
-      : name === "integration.certificate-record"
-      ? result.recorded === true
-      : name === "websocket.runtime-active"
-      ? result.active === true
-      : name === "http.await-healthy"
-      ? result.healthy === true
-      : name === "firewall.rules"
-      ? result.matches === true
-      : name === "ai_router.restore-takeover"
-      ? result.restored === true
-      : name === "ai_router.rename-cache"
-      ? result.changed === true
-      : typeof result.changed === "boolean" || result.removed === true ||
-        result.staged === true;
+  const valid = name === "php.inspect-production-pool"
+    ? typeof result.enabled === "boolean" &&
+      typeof result.fingerprint === "string"
+    : result.applied === true || result.verified === true
+    ? true
+    : name === "integration.receipt"
+    ? result.backend !== undefined
+    : name === "integration.certificate-record"
+    ? result.recorded === true
+    : name === "websocket.runtime-active"
+    ? result.active === true
+    : name === "http.await-healthy"
+    ? result.healthy === true
+    : name === "firewall.rules"
+    ? result.matches === true
+    : name === "ai_router.restore-takeover"
+    ? result.restored === true
+    : name === "ai_router.rename-cache"
+    ? result.changed === true
+    : typeof result.changed === "boolean" || result.removed === true ||
+      result.staged === true;
   if (!valid) throw new Error("integration.outcome_unproven");
 }
 
