@@ -192,6 +192,34 @@ class SqliteProgramTest(unittest.TestCase):
         self.assertFalse(missing.exists())
         self.assertFalse(self.call('write', {'owner': 'root', 'path': str(self.database), 'sql': 'SELECT 1'})['ok'])
 
+    def test_read_preserves_database_bytes_and_permissions_and_uses_admitted_account(self):
+        data = {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': 'SELECT length(value) AS n FROM proof', 'mode': 'query', 'table': None}
+        before = hashlib.sha256(self.database.read_bytes()).hexdigest()
+        permission = stat.S_IMODE(self.database.stat().st_mode)
+        for _ in range(2):
+            result = self.call('read', data)
+            self.assertTrue(result['ok'], result)
+            self.assertEqual(result['data']['row_count'], 1)
+        self.assertEqual(hashlib.sha256(self.database.read_bytes()).hexdigest(), before)
+        self.assertEqual(stat.S_IMODE(self.database.stat().st_mode), permission)
+        self.assertEqual(self.call('read', dict(data, owner=self.app.pw_name)), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
+        self.assertEqual(self.call('read', dict(data, owner='root')), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
+        self.assertEqual(self.call('read', dict(data, owner='missing-orbit-read-owner')), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
+        missing = self.source / 'missing-read.sqlite'
+        self.assertEqual(self.call('read', dict(data, path=str(missing))), {'ok': False, 'error_code': 'database.sqlite_unreadable'})
+        self.assertFalse(missing.exists())
+
+    def test_read_preserves_empty_and_duplicate_columns_and_refuses_invalid_queries(self):
+        data = {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': 'SELECT 1 AS n,2 AS n WHERE 0', 'mode': 'query', 'table': None}
+        result = self.call('read', data)
+        self.assertEqual(result, {'ok': True, 'data': {'columns': ['n', 'n'], 'rows': [], 'row_count': 0, 'truncated': False}})
+        result = self.call('read', dict(data, sql='SELECT 1 AS n,2 AS n'))
+        self.assertEqual(result['data']['rows'], [{'n': 2}])
+        for sql in ['SELECT 1; DROP TABLE proof', 'SELECT 1' + ' ' * 16385, 'SELECT \x00', 'SELECT private_read_query FROM missing']:
+            self.assertEqual(self.call('read', dict(data, sql=sql))['ok'], False)
+        result = self.call('read', dict(data, sql='WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n) SELECT sum(x) FROM n'), seconds=1)
+        self.assertEqual(result, {'ok': False, 'error_code': 'database.query_failed'})
+
     def test_target_cleanup_checks_operation_and_never_removes_replaced_files(self):
         _, prepared = self.seed()
         incoming = Path(prepared['incoming'])

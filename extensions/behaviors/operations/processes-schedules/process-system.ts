@@ -35,6 +35,7 @@ const Activate = z.object({
   on_demand: z.boolean(),
 }).strict();
 const Remove = Artifact.extend({
+  anonymous_volumes: z.boolean().optional(),
   vite: z.object({ path: Path, instance_id: Id }).strict().nullable(),
 });
 const Container = z.object({
@@ -122,6 +123,7 @@ type Meta = {
 };
 type OwnedContainer = { spec: string; running: boolean };
 type ContainerInput = z.infer<typeof Container>;
+export type BeforeContainerReplacement = () => Promise<Record<string, unknown>>;
 
 function publishedPorts(values: string[]) {
   const ports: Record<string, { HostIp: string; HostPort: string }[]> = {};
@@ -168,6 +170,7 @@ class ProcessSystem {
     private signal?: AbortSignal,
     private sleep = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    private beforeContainerReplacement?: BeforeContainerReplacement,
   ) {}
 
   private run(
@@ -633,7 +636,13 @@ class ProcessSystem {
       }
       for (const artifact of present) {
         await this.docker(
-          ["container", "rm", "--force", artifact],
+          [
+            "container",
+            "rm",
+            "--force",
+            ...(input.anonymous_volumes ? ["--volumes"] : []),
+            artifact,
+          ],
           "process.remove_failed",
         );
       }
@@ -908,6 +917,8 @@ class ProcessSystem {
       return {};
     }
     await this.cleanupCandidate(input);
+    const prepared = await this.beforeContainerReplacement?.();
+    if (prepared?.error_code !== undefined) return prepared;
     await this.create(input, canonical ? candidateName : canonicalName);
     const created = await this.container(
       input.process_id,
@@ -983,9 +994,15 @@ export function processSystem(
     name: ProcessSystemCommand,
     input: Record<string, unknown>,
     signal?: AbortSignal,
+    beforeContainerReplacement?: BeforeContainerReplacement,
   ): Promise<Record<string, unknown>> => {
     try {
-      const system = new ProcessSystem(command, signal, sleep);
+      const system = new ProcessSystem(
+        command,
+        signal,
+        sleep,
+        beforeContainerReplacement,
+      );
       switch (name) {
         case "process.stage-unit":
           return await system.stage(Stage.parse(input));

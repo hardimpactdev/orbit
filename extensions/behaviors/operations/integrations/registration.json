@@ -29,8 +29,6 @@
     "metrics.retire",
     "metrics.role_converge",
     "metrics.role_remove",
-    "analytics.role_converge",
-    "analytics.role_remove",
     "websocket.role_converge",
     "websocket.role_remove",
     "metrics.service_caddy_restore"

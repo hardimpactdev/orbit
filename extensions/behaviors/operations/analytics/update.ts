@@ -1,12 +1,13 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../_lib/direct.ts";
 import {
   DirectArgs,
   directOperation,
   GatewayOperation,
+  Globals,
 } from "../_lib/direct.ts";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { processSystem } from "../processes-schedules/process-system.ts";
+import { initializePlausible } from "./initialization.ts";
 
 const Version = z.string().regex(/^\d+\.\d+\.\d+$/);
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
@@ -36,7 +37,6 @@ export const UpdateInput = z.object({
   }).strict(),
   version: Version,
   previous_version: Version,
-  agent_sha256: Digest,
   environment_sha256: Digest,
   health_url: z.string().url(),
   before: Container,
@@ -58,18 +58,36 @@ const Result = z.union([
     rolled_back: z.boolean(),
   }).strict(),
 ]);
-type Invoke = (
-  call: NodeCall,
-  signal?: AbortSignal,
-) => Promise<Record<string, unknown>>;
+type Invoke = ReturnType<typeof processSystem>;
 type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
 
-/** The agent keeps its Process lock and rollback container through readiness verification. */
+function failedUpdate(effect: Record<string, unknown>) {
+  // Canonical recovery finishes before a refusal; never issue a second mutation here.
+  const restored = effect.restored === true ||
+    [
+      "process.health_failed",
+      "process.converge_failed",
+      "process.candidate_invalid",
+      "process.activation_failed",
+      "process.spec_changed",
+      "process.invalid",
+      "process.name_collision",
+    ].includes(String(effect.error_code));
+  return {
+    error_code: restored
+      ? "analytics.update_failed"
+      : "analytics.rollback_failed",
+    rolled_back: restored,
+  };
+}
+
+/** The canonical Process action owns container recovery and readiness on the placed Node. */
 export async function updateRuntime(
   raw: unknown,
   environment: z.infer<typeof Environment>,
-  invoke: Invoke = runNodeAgent,
+  invoke: Invoke = processSystem(),
   signal?: AbortSignal,
+  initialize: typeof initializePlausible = initializePlausible,
 ) {
   const input = UpdateInput.parse(raw);
   if (
@@ -98,51 +116,25 @@ export async function updateRuntime(
       rolled_back: true,
     };
   }
-  const changed = input.before.spec !== input.after.spec;
   const effect = await invoke(
-    changed
-      ? {
-        name: "process.converge-container",
-        input: {
-          ...input.after,
-          environment,
-          expected_spec: input.before.spec,
-          expected_running: true,
-          health: { url: input.health_url, attempts: 90, interval_seconds: 2 },
-        },
-        pin: input.agent_sha256,
-        sudo: true,
-        mutates: true,
-        deadlineMs: 900_000,
-      }
-      : {
-        name: "http.await-healthy",
-        input: { url: input.health_url, attempts: 90, interval_seconds: 2 },
-        pin: input.agent_sha256,
-        sudo: false,
-        mutates: false,
-        deadlineMs: 600_000,
-      },
+    "process.converge-container",
+    {
+      ...input.after,
+      environment,
+      expected_spec: input.before.spec,
+      expected_running: true,
+      health: { url: input.health_url, attempts: 90, interval_seconds: 2 },
+    },
     signal,
+    async () => await initialize(input.after, environment, invoke, signal),
   );
   if (effect.error_code !== undefined) {
-    // The agent restores the prior container before releasing its Process lock.
-    // Never send a second mutation after a refusal or uncertain transport outcome.
-    const restored = !changed || effect.restored === true ||
-      [
-        "process.activation_failed",
-        "process.spec_changed",
-        "process.invalid",
-        "process.name_collision",
-        "agent.version_mismatch",
-      ].includes(String(effect.error_code));
-    return {
-      error_code: restored
-        ? "analytics.update_failed"
-        : "analytics.rollback_failed",
-      rolled_back: restored,
-    };
+    if (String(effect.error_code).startsWith("analytics.initialization")) {
+      return { error_code: String(effect.error_code), rolled_back: true };
+    }
+    return failedUpdate(effect);
   }
+
   return {
     ready: true as const,
     version: input.version,
@@ -153,11 +145,12 @@ export async function updateRuntime(
 export function analyticsUpdate(
   makeHttp = (ctx: Context): Http =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-  invoke: Invoke = runNodeAgent,
+  invoke: Invoke = processSystem(),
+  initialize: typeof initializePlausible = initializePlausible,
 ) {
   return {
     type: "@nckrtl/analytics-update-direct",
-    version: "2026.10.30.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
       apply: {
@@ -181,6 +174,7 @@ export function analyticsUpdate(
                     Environment.parse(material.runtime_environment),
                     invoke,
                     ctx.signal,
+                    initialize,
                   ),
                 );
               });

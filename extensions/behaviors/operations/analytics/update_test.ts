@@ -1,6 +1,25 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { analyticsUpdate, updateRuntime } from "./update.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import { analyticsUpdate, updateRuntime as executeUpdate } from "./update.ts";
+const initialized = () => Promise.resolve({ ready: true as const });
+function updateRuntime(...args: Parameters<typeof executeUpdate>) {
+  return executeUpdate(
+    args[0],
+    args[1],
+    async (name, input, signal, prepare) => {
+      const result: Record<string, unknown> =
+        await (args[2] ?? (() => Promise.resolve({})))(
+          name,
+          input,
+          signal,
+        );
+      if (result.error_code !== undefined) return result;
+      return await prepare?.() ?? result;
+    },
+    args[3],
+    args[4] ?? initialized,
+  );
+}
+type Call = { name: string; input: Record<string, unknown> };
 export const environment = {
   SECRET_KEY_BASE: "runtime-secret-fixture",
   BASE_URL: "https://analytics.orbit",
@@ -35,7 +54,6 @@ export async function input() {
     runtime_environment: { "$secret": "analytics.runtime_environment", id: 17 },
     version: "3.3.0",
     previous_version: "3.2.1",
-    agent_sha256: "a".repeat(64),
     environment_sha256: hash,
     health_url: "http://10.44.0.3:8000/api/health",
     before,
@@ -47,11 +65,12 @@ export async function input() {
   };
 }
 Deno.test("update uses the owned container, preserves environment, and verifies health before success", async () => {
-  const calls: NodeCall[] = [];
+  const calls: Call[] = [];
   const result = await updateRuntime(
     await input(),
     environment,
-    (call) => {
+    (name, input) => {
+      const call = { name, input };
       calls.push(call);
       return Promise.resolve({});
     },
@@ -61,7 +80,7 @@ Deno.test("update uses the owned container, preserves environment, and verifies 
   ]);
   assertEquals(calls[0].input.environment, environment);
   assertEquals(calls[0].input.process_id, 250);
-  assertEquals(calls[0].input.health, {
+  assertEquals(calls.at(-1)!.input.health, {
     url: "http://10.44.0.3:8000/api/health",
     attempts: 90,
     interval_seconds: 2,
@@ -76,29 +95,32 @@ Deno.test("same version checks health without replacing the container", async ()
   const i = await input();
   i.after = i.before;
   i.version = i.previous_version;
-  const calls: NodeCall[] = [];
-  await updateRuntime(i, environment, (c) => {
-    calls.push(c);
+  const calls: Call[] = [];
+  await updateRuntime(i, environment, (name, input) => {
+    calls.push({ name, input });
     return Promise.resolve({});
   });
-  assertEquals(calls.map((c) => c.name), ["http.await-healthy"]);
+  assertEquals(calls.map((c) => c.name), ["process.converge-container"]);
 });
-Deno.test("agent health refusal projects restored state without a second mutation", async () => {
-  const calls: NodeCall[] = [];
-  const result = await updateRuntime(await input(), environment, (c) => {
-    calls.push(c);
-    return Promise.resolve({
-      error_code: "process.health_failed",
-      restored: true,
-    });
-  });
+Deno.test("system health refusal projects restored state without a second mutation", async () => {
+  const calls: Call[] = [];
+  const result = await updateRuntime(
+    await input(),
+    environment,
+    (name, input) => {
+      calls.push({ name, input });
+      return Promise.resolve({
+        error_code: "process.health_failed",
+      });
+    },
+  );
   assertEquals(calls.length, 1);
   assertEquals(result, {
     error_code: "analytics.update_failed",
     rolled_back: true,
   });
 });
-Deno.test("failed agent recovery is explicit and never issues another mutation", async () => {
+Deno.test("failed system recovery is explicit and never issues another mutation", async () => {
   let count = 0;
   const result = await updateRuntime(await input(), environment, () => {
     count++;
@@ -176,7 +198,7 @@ Deno.test("running projection is re-read before effects and terminal replay make
   }, () => {
     calls++;
     return Promise.resolve({});
-  });
+  }, initialized);
   const args = {
     operation_id: 12,
     kind: "analytics.update" as const,
@@ -197,7 +219,8 @@ Deno.test("stale runtime refusal leaves the newer Process healthy and makes no r
   const result = await updateRuntime(
     await input(),
     environment,
-    (call) => {
+    (name, input) => {
+      const call = { name, input };
       count++;
       assertEquals(call.input.expected_spec, "a".repeat(64));
       assertEquals(call.input.expected_running, true);
@@ -205,6 +228,65 @@ Deno.test("stale runtime refusal leaves the newer Process healthy and makes no r
     },
   );
   assertEquals(count, 1);
+  assertEquals(result, {
+    error_code: "analytics.update_failed",
+    rolled_back: true,
+  });
+});
+
+Deno.test("preactivation pull or candidate refusal preserves the prior Process without retry", async () => {
+  for (
+    const error_code of ["process.converge_failed", "process.candidate_invalid"]
+  ) {
+    let calls = 0;
+    const outcome = await updateRuntime(await input(), environment, () => {
+      calls++;
+      return Promise.resolve({ error_code });
+    });
+    assertEquals(calls, 1);
+    assertEquals(outcome, {
+      error_code: "analytics.update_failed",
+      rolled_back: true,
+    });
+  }
+});
+
+Deno.test("initialization failure stops before replacing the server", async () => {
+  let effects = 0;
+  const result = await executeUpdate(
+    await input(),
+    environment,
+    (_name, _input, _signal, prepare) => {
+      effects++;
+      return prepare!();
+    },
+    undefined,
+    () =>
+      Promise.resolve({
+        error_code: "analytics.initialization_failed",
+        rolled_back: true,
+      }),
+  );
+  assertEquals(effects, 1);
+  assertEquals(result, {
+    error_code: "analytics.initialization_failed",
+    rolled_back: true,
+  });
+});
+
+Deno.test("stale server refuses before database initialization", async () => {
+  let initialized = false;
+  const result = await executeUpdate(
+    await input(),
+    environment,
+    () => Promise.resolve({ error_code: "process.spec_changed" }),
+    undefined,
+    () => {
+      initialized = true;
+      return Promise.resolve({ ready: true });
+    },
+  );
+  assertEquals(initialized, false);
   assertEquals(result, {
     error_code: "analytics.update_failed",
     rolled_back: true,

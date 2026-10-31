@@ -655,3 +655,92 @@ Deno.test("private system transport exceptions produce only a fixed diagnostic",
     "Process system action did not complete",
   );
 });
+
+Deno.test("before-replacement effects run after stale checks and are skipped when the replacement already exists", async () => {
+  const host = new Host();
+  const input = {
+    ...dockerInput(),
+    expected_spec: "a".repeat(64),
+    expected_running: true,
+  };
+  host.containers.set(container, {
+    owner: 7,
+    spec: "a".repeat(64),
+    running: true,
+  });
+  let preparations = 0;
+  const prepare = () => {
+    preparations++;
+    return Promise.resolve({});
+  };
+  assertEquals(
+    await host.invoke("process.converge-container", input, undefined, prepare),
+    {},
+  );
+  assertEquals(preparations, 1);
+  assertEquals(
+    await host.invoke("process.converge-container", input, undefined, prepare),
+    {},
+  );
+  assertEquals(preparations, 1);
+  host.containers.set(container, {
+    owner: 7,
+    spec: "c".repeat(64),
+    running: true,
+  });
+  assertEquals(
+    await host.invoke("process.converge-container", input, undefined, prepare),
+    { error_code: "process.spec_changed" },
+  );
+  assertEquals(preparations, 1);
+});
+Deno.test("before-replacement refusal keeps the prior running server in place", async () => {
+  const host = new Host();
+  host.containers.set(container, {
+    owner: 7,
+    spec: "a".repeat(64),
+    running: true,
+  });
+  assertEquals(
+    await host.invoke(
+      "process.converge-container",
+      {
+        ...dockerInput(),
+        expected_spec: "a".repeat(64),
+        expected_running: true,
+      },
+      undefined,
+      () => Promise.resolve({ error_code: "analytics.initialization_failed" }),
+    ),
+    { error_code: "analytics.initialization_failed" },
+  );
+  assertEquals(host.containers.get(container), {
+    owner: 7,
+    spec: "a".repeat(64),
+    running: true,
+  });
+  assertEquals(host.mutations(), []);
+});
+Deno.test("ephemeral container removal requests anonymous volume deletion only after ownership validation", async () => {
+  const host = new Host();
+  host.containers.set(container, {
+    owner: 7,
+    spec: "a".repeat(64),
+    running: false,
+  });
+  assertEquals(
+    await host.invoke("process.remove", {
+      process_id: 7,
+      runtime: "docker",
+      name: container,
+      vite: null,
+      anonymous_volumes: true,
+    }),
+    {},
+  );
+  assert(
+    host.calls.some((call) =>
+      call.program === "/usr/bin/docker" && call.args.includes("--volumes")
+    ),
+  );
+});

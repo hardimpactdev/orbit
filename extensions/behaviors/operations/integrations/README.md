@@ -1,14 +1,14 @@
 # Integration Operations
 
 The Gateway records intent and validates commands. This family executes Reverb
-registry changes, AI router, Analytics role changes, Metrics, and integration
-work for Node role changes. Conn and Vault use their separate direct workflows.
+registry changes, AI router, Metrics, and integration work for Node role
+changes. Conn and Vault use their separate direct workflows.
 
-`registration.json` lists the polled kinds. Analytics retains only
-`analytics.role_converge` and `analytics.role_remove`; version updates use
-`operation-analytics-update-direct`. Family discovery skips a kind while its
-required Gateway capability is unavailable. Metrics list contracts need C. No
-family implements a substitute for these shared contracts.
+`registration.json` lists the polled kinds and contains no analytics kinds.
+Analytics enable, disable, and update each use their one placed native workflow.
+Analytics role kinds are unavailable until ported. Family discovery skips a kind
+while its required Gateway capability is unavailable. Metrics list contracts
+need C. No family implements a substitute for these shared contracts.
 
 `mod.ts` receives a kind and worker identity, claims one Operation on that
 placed worker, and saves its assignment before effects. A retry stays bound to

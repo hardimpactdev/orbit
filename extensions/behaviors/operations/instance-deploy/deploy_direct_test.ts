@@ -812,7 +812,7 @@ Deno.test("failed-dependency recovery retains every active checkpoint and never 
   }
 });
 
-Deno.test("failed-dependency recovery settles only inactive work and skips terminal projection", async () => {
+Deno.test("failed-dependency recovery settles inactive work without rendering public intent", async () => {
   const f = await fixture();
   f.status("running");
   assertEquals(
@@ -825,13 +825,6 @@ Deno.test("failed-dependency recovery settles only inactive work and skips termi
   assertEquals(f.posts.length, 1);
   assertEquals(f.posts[0].error_code, "deployment.interrupted");
   assertEquals(f.posts[0].result, {
-    instance_id: f.input.instance_id,
     failed_step: "native_execution",
   });
-  f.posts.length = 0;
-  await deployDirect({ http: () => f.http }).methods.failure.execute(
-    f.args,
-    f.ctx,
-  );
-  assertEquals(f.posts, []);
 });
