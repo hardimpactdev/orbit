@@ -14,7 +14,6 @@ import { lifecycle, LifecycleInput } from "./lifecycle.ts";
 import { buildImage, ImageInput } from "./images.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
 import { sweepHost, SweepInput } from "./sweep.ts";
-import { CacheFillInput, fillPackageCache } from "./package-cache.ts";
 
 export function taskVms(
   makeHttp = (ctx: Context) =>
@@ -68,7 +67,6 @@ export function taskVms(
           kind: z.enum(
             [
               ...leafKinds,
-              "task_vm.fill_package_cache",
               "task_vm.prepare_runtime",
               "task_vm.provision",
               "task_vm.enroll",
@@ -184,14 +182,9 @@ export function taskVms(
           const sweep = operation.kind === "task_vm.sweep_host"
             ? SweepInput.parse(operation.input)
             : null;
-          const cacheFill = operation.kind === "task_vm.fill_package_cache"
-            ? CacheFillInput.parse(operation.input)
-            : null;
-          const invocation =
-            runtime || life || image || upcloudImage || sweep ||
-              cacheFill
-              ? null
-              : invocationFor(operation.kind, operation.input);
+          const invocation = runtime || life || image || upcloudImage || sweep
+            ? null
+            : invocationFor(operation.kind, operation.input);
           if (runtime && runtime.node_id !== operation.node_id) {
             throw new Error("Wrong runtime Node");
           }
@@ -242,14 +235,12 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || image || upcloudImage || sweep ||
-              cacheFill
+              runtime || life || image || upcloudImage || sweep
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
-                (runtime ?? life ?? image ?? upcloudImage ?? sweep ??
-                  cacheFill)!
+                (runtime ?? life ?? image ?? upcloudImage ?? sweep)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -278,9 +269,7 @@ export function taskVms(
                 try {
                   completion = {
                     status: "succeeded",
-                    result: cacheFill
-                      ? await fillPackageCache(cacheFill, driver)
-                      : runtime
+                    result: runtime
                       ? await prepareRuntime(runtime, driver)
                       : sweep
                       ? await sweepHost(sweep, driver)
@@ -411,11 +400,7 @@ export function taskVms(
                   });
                 }
               }
-              const error = result.error_code ??
-                (operation.kind === "task_vm.fill_package_cache_batch" &&
-                    (result.failed_ids?.length ?? 0) > 0
-                  ? "task_vm.package_cache_failed"
-                  : null);
+              const error = result.error_code ?? null;
               completion = {
                 status: error === "operation.cancelled"
                   ? "cancelled"

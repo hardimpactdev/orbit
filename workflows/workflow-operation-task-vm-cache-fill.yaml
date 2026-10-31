@@ -1,0 +1,27 @@
+id: af65d004-1a56-4b0b-a75e-56b457e26918
+name: operation-task-vm-cache-fill
+description: Fill one admitted host cache without Gateway child Operations.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [task_vm.fill_package_cache] }
+  required: [operation_id, node_id, kind]
+vaults: []
+jobs:
+  - name: fill
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: fill-package-cache
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-cache-fill'
+          behaviorName: task-vm-cache-fill
+          methodName: execute
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

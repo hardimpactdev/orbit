@@ -43,6 +43,14 @@ class TaskVmNativeTest(NativeTestCase):
     def read(self):
         return json.loads((self.repo / "native-executor.json").read_text())
 
+    def test_native_cache_workflow_validates_exact_host_placement(self):
+        source = (ROOT / 'workflows/workflow-operation-task-vm-cache-fill.yaml').read_text()
+        self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', source)
+        self.assertIn("labels: { node: '${{ string(inputs.node_id) }}' }", source)
+        self.assertNotIn('trigger:', source)
+        self.assertNotIn('queueTimeout:', source)
+        self.cli('workflow', 'validate', 'operation-task-vm-cache-fill')
+
     def test_runner_dispatches_the_vm_family_with_proven_steps(self):
         for workflow in ("operation-task-vms",):
             self.cli("workflow", "validate", workflow)

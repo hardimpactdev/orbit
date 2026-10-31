@@ -207,18 +207,6 @@ for (
       : "ready",
   };
 }
-runtimeEffects["task_vm.fill_package_cache_batch"] = {
-  name: "task_vm.package-cache",
-  transport: "task_vm_package-cache",
-  fields: [
-    "host_node_id",
-    "artifacts",
-    "conflicts",
-    "max_bytes",
-    "github_token",
-  ],
-  proof: "ready",
-};
 for (
   const [verb, command, fields] of [
     ["image_remove", "incus.vm", ["vm", "operation"]],
