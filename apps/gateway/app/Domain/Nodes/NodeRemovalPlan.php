@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -16,7 +16,7 @@ use App\Models\TaskVm;
 /** Records each serving Node separately. Route source relations outlive every cleanup child. */
 final readonly class NodeRemovalPlan
 {
-    public function __construct(private MetricsGatewayResolver $gateways, private NodeRoleFirewallInput $firewall) {}
+    public function __construct(private NodeRoleFirewallInput $firewall) {}
 
     /** @return list<array<string,mixed>> */
     public function build(Node $node, bool $offline): array
@@ -31,9 +31,7 @@ final readonly class NodeRemovalPlan
         $steps[] = $this->child('remove-begin', 'node.removal_begin', $node->id, []);
         $metrics = NodeRole::query()->where('role', RoleName::Metrics)->where('node_id', '!=', $node->id)->where('status', LifecycleStatus::Active)->first();
         if ($metrics !== null && ! TaskVm::query()->where('node_id', $node->id)->exists()) {
-            $gateway = $this->gateways->resolve();
-            $steps[] = $this->child('remove-metrics-access', 'route.caddy_converge', $gateway->id, ['reason' => 'node removal access revocation']);
-            $steps[] = $this->child('remove-metrics', 'metrics.reconcile', $metrics->node_id, []);
+            throw new ResourceOperationException('metrics.native_composition_required', 'This parent requires Metrics stages in the same native run.', 409);
         }
         if (! $offline && $node->platform === 'linux') {
             $steps[] = ['type' => 'run', 'key' => 'remove-agent', 'transport' => 'agent', 'name' => 'agent.remove',
@@ -92,8 +90,7 @@ final readonly class NodeRemovalPlan
         }
         $metrics = NodeRole::query()->where('role', RoleName::Metrics)->where('node_id', '!=', $node->id)->where('status', LifecycleStatus::Active)->first();
         if ($metrics !== null && ! TaskVm::query()->where('node_id', $node->id)->exists()) {
-            $steps[] = $this->child('restore-metrics-access', 'route.caddy_converge', $this->gateways->resolve()->id, ['reason' => 'node removal restored']);
-            $steps[] = $this->child('restore-metrics', 'metrics.reconcile', $metrics->node_id, []);
+            throw new ResourceOperationException('metrics.native_composition_required', 'This parent requires Metrics stages in the same native run.', 409);
         }
 
         return $steps;

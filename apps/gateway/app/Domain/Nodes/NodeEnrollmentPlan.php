@@ -7,6 +7,7 @@ namespace App\Domain\Nodes;
 use App\Domain\Processes\ProcessSwampSafety;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Support\ValidatedData;
 
@@ -72,7 +73,7 @@ final readonly class NodeEnrollmentPlan
                     $metrics = Node::query()->where('status', LifecycleStatus::Active)
                         ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->first();
                     if ($metrics !== null) {
-                        $steps[] = $this->child('add-metrics', 'metrics.reconcile', $metrics->id, optional: true);
+                        throw new ResourceOperationException('metrics.native_composition_required', 'This parent requires Metrics stages in the same native run.', 409);
                     }
                 }
             }

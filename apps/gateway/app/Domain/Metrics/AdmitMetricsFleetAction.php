@@ -11,7 +11,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
-/** Records a single native intent. Writer choice remains with the operator. */
+/** Records standalone native intent. Ordered retirement needs owning native composition. */
 final readonly class AdmitMetricsFleetAction implements MetricsFleetReconciler
 {
     public function __construct(private MetricsFleetCapture $capture, private StartOperationAction $operations) {}
@@ -25,7 +25,9 @@ final readonly class AdmitMetricsFleetAction implements MetricsFleetReconciler
 
     public function retire(Node $node): void
     {
-        $this->reconcile();
+        if (NodeRole::query()->where('role', 'metrics')->where('status', 'active')->whereHas('node', static fn ($query) => $query->where('status', 'active'))->exists()) {
+            throw new ResourceOperationException('metrics.native_composition_required', 'Node retirement requires Metrics cleanup in the owning native run.', 409);
+        }
     }
 
     /** @param list<int> $canaryNodeIds Explicit effect scope, never an owner-selection filter. */

@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\Metrics\AdmitMetricsFleetAction;
+use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Metrics\MetricsFleetProjection;
+use App\Domain\Nodes\NodeEnrollmentPlan;
+use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -120,3 +124,24 @@ it('records and starts one native root without executing or awaiting the fleet i
     expect($socket->sent)->toHaveCount(1);
     expect($operation->children()->count())->toBe(0);
 });
+
+it('refuses retirement before removal changes state or revokes access', function (): void {
+    $target = Node::query()->create(['name' => 'retiring', 'public_ssh_host' => '192.0.2.13', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.13']);
+    $before = $target->fresh()->getAttributes();
+    $access = Mockery::mock(MetricsAccessRevoker::class);
+    $access->shouldNotReceive('revoke');
+    app()->instance(MetricsAccessRevoker::class, $access);
+    $count = Operation::query()->count();
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $this->node))->toThrow(ResourceOperationException::class, 'Node retirement requires Metrics cleanup');
+    expect($target->fresh()->getAttributes())->toBe($before);
+    expect(Operation::query()->count())->toBe($count);
+});
+it('refuses legacy parent plans instead of emitting incompatible Metrics children', function (string $plan): void {
+    $target = Node::query()->create(['name' => 'planned', 'public_ssh_host' => '192.0.2.13', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit']);
+    $build = match ($plan) {
+        'remove' => fn () => app(NodeRemovalPlan::class)->build($target, false),
+        'restore' => fn () => app(NodeRemovalPlan::class)->restore($target),
+        default => fn () => app(NodeEnrollmentPlan::class)->build($target, ['mode' => 'linux', 'roleless_operator' => false], ['route_changes' => [], 'roles' => [], 'settings_provided' => false, 'task_vm_id' => null]),
+    };
+    expect($build)->toThrow(ResourceOperationException::class, 'This parent requires Metrics stages');
+})->with(['remove', 'restore', 'enroll']);

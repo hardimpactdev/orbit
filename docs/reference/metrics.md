@@ -230,7 +230,7 @@ Nodes without workers remain in the capture and fail with `metrics.no_worker`. N
 
 Native step outputs preserve snapshots. Native dependencies and assertions control execution and recovery. Typed refusal before runtime mutation permits restoration. Missing mutation output remains uncertain; the workflow does not blindly repeat it. A committed runtime survives backup-cleanup failure. The canonical Caddy publisher refreshes its render under its lock, including removal of a stale scrape site when monitoring becomes disabled. Unmanaged Caddy Nodes stay untouched.
 
-Existing PHP fleet callers record an Operation without awaiting execution. Native parents that require ordered reconciliation compose the stages in the same run. Legacy Route child planning refuses with `metrics.native_composition_required` before effects. Foreign Caddy reads remain closed until their shared contract is approved and integrated. Private material for role roots needs its own approved contract.
+Existing PHP fleet callers record an Operation without awaiting execution. Native parents that require ordered reconciliation compose the stages in the same run. Legacy Route, Node and role child planning refuses with `metrics.native_composition_required` before effects. Node retirement also refuses before cleanup until its owning native run composes Metrics. Foreign Caddy reads remain closed until their shared contract is approved and integrated. Private material for role roots needs its own approved contract.
 
 ### Role changes with unchanged monitoring intent
 
