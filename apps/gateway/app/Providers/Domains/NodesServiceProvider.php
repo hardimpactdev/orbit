@@ -11,7 +11,6 @@ use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
-use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -40,7 +39,6 @@ use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
-use App\Infrastructure\Nodes\SshNodeReachabilityProbe;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -51,7 +49,6 @@ final class NodesServiceProvider extends ServiceProvider
     public array $bindings = [
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
-        NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
