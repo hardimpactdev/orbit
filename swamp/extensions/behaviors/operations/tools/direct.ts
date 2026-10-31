@@ -4,8 +4,9 @@ import {
   DirectArgs,
   directOperation,
   GatewayOperation,
+  Globals,
 } from "../_lib/direct.ts";
-import { Globals, Kind, Result, ToolIntentInput } from "./direct-contract.ts";
+import { Kind, Result, ToolIntentInput } from "./direct-contract.ts";
 import { toolNode } from "./node.ts";
 import { localTool } from "./local.ts";
 

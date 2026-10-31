@@ -1,0 +1,279 @@
+id: 7f06fed5-557b-41b6-93b4-e67ea72085b3
+name: database-server-container
+description: One shared native container replacement, readiness and recovery phase
+  for every database engine.
+writes: true
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database_server.create]}
+    intent: {type: object, properties: {driver: {type: string}, process_id: {type: integer}, container: {type: string}, container_input: {type: object}, spec: {type: string}, scrub_spec: {type: string}, initialize: {type: boolean}, validate_existing: {type: boolean}, was_active: {type: boolean}, default_open: {type: boolean}, host: {type: string}, port: {type: integer}, ssh: {type: object}}, required: [driver, process_id, container, container_input, spec, scrub_spec, initialize, validate_existing, was_active, default_open, host, port, ssh], additionalProperties: true}
+    execution_secrets: {type: object, properties: {server_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-server-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [server_create], additionalProperties: false}
+    intent_json: {type: string}
+    spec: {type: string, pattern: '^[a-f0-9]{64}$'}
+    scrub: {type: boolean}
+    rebuild_acl: {type: boolean}
+    phase: {type: string, enum: [initial, scrub]}
+  required: [operation_id, node_id, kind, intent, execution_secrets, intent_json, spec, scrub, rebuild_acl, phase]
+  additionalProperties: false
+jobs:
+- name: container
+  target: orbit-node-209
+  labels: {node: '209'}
+  steps:
+  - name: inspect
+    <<: &remote {target: orbit-node-209, labels: {node: '209'}, allowFailure: true}
+    guard: ${{ !(true) }}
+    writes: false
+    task:
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-server-" + string(inputs.operation_id) }}', globalArgs: {name: '${{ "database-server-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}, methodName: exec}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '', inspect.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: plan
+    <<: &placed {target: orbit-node-209, labels: {node: '209'}}
+    dependsOn: [{step: inspect, condition: {type: always}}]
+    writes: false
+    task:
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "dbphase-" + string(inputs.operation_id) + "-" + inputs.phase }}'}
+      methodName: plan
+      inputs:
+        stdout: '${{ has(steps.inspect.outputs) && has(steps.inspect.outputs.stdout) ? steps.inspect.outputs.stdout : "" }}'
+        spec: ${{ inputs.spec }}
+  - name: pull
+    <<: *remote
+    dependsOn: [{step: plan, condition: {type: always}}]
+    guard: ${{ !(true && (steps.plan.outputs.replace || !steps.plan.outputs.present)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', pull_image.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'true', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: create_candidate
+    <<: *remote
+    dependsOn: [{step: pull, condition: {type: always}}]
+    guard: ${{ !(true && steps.plan.outputs.replace && (has(steps.pull) && has(steps.pull.outputs) && has(steps.pull.outputs.exitCode) && steps.pull.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', candidate, '${{ inputs.spec }}', create_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'true', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: create_canonical
+    <<: *remote
+    dependsOn: [{step: pull, condition: {type: always}}]
+    guard: ${{ !(true && !steps.plan.outputs.present && (has(steps.pull) && has(steps.pull.outputs) && has(steps.pull.outputs.exitCode) && steps.pull.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', create_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'true', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: retire_original
+    <<: *remote
+    dependsOn: [{step: create_candidate, condition: {type: always}}]
+    guard: ${{ !(true && steps.plan.outputs.replace && (has(steps.create_candidate) && has(steps.create_candidate.outputs) && has(steps.create_candidate.outputs.exitCode) && steps.create_candidate.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', rename_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, '${{ has(steps.plan.outputs) ? steps.plan.outputs.rollback_slot : "rollback-stopped" }}', running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: stop_original
+    <<: *remote
+    dependsOn: [{step: retire_original, condition: {type: always}}]
+    guard: ${{ !(true && steps.plan.outputs.replace && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', '${{ has(steps.plan.outputs) ? steps.plan.outputs.rollback_slot : "rollback-stopped" }}', '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', control.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', stop, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: promote_candidate
+    <<: *remote
+    dependsOn: [{step: stop_original, condition: {type: always}}]
+    guard: ${{ !(true && steps.plan.outputs.replace && (has(steps.stop_original) && has(steps.stop_original.outputs) && has(steps.stop_original.outputs.exitCode) && steps.stop_original.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', candidate, '${{ inputs.spec }}', rename_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: start
+    <<: *remote
+    dependsOn: [{step: plan, condition: {type: always}}, {step: create_canonical, condition: {type: always}}, {step: promote_candidate, condition: {type: always}}]
+    guard: ${{ !(true && ((steps.plan.outputs.present && !steps.plan.outputs.replace) || (has(steps.create_canonical) && has(steps.create_canonical.outputs) && has(steps.create_canonical.outputs.exitCode) && steps.create_canonical.outputs.exitCode == 0) || (has(steps.promote_candidate) && has(steps.promote_candidate.outputs) && has(steps.promote_candidate.outputs.exitCode) && steps.promote_candidate.outputs.exitCode == 0))) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', control.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: restart_acl
+    <<: *remote
+    dependsOn: [{step: start, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.start) && has(steps.start.outputs) && has(steps.start.outputs.exitCode) && steps.start.outputs.exitCode == 0) && !inputs.scrub && inputs.intent.driver == "redis" && inputs.intent.was_active && !steps.plan.outputs.replace && inputs.rebuild_acl) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', control.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', restart, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: verify
+    <<: *remote
+    dependsOn: [{step: restart_acl, condition: {type: always}}]
+    guard: '${{ !(true && (has(steps.start) && has(steps.start.outputs) && has(steps.start.outputs.exitCode) && steps.start.outputs.exitCode == 0) && ((has(steps.restart_acl) ? steps.restart_acl.status : "skipped") == "skipped" || (has(steps.restart_acl) && has(steps.restart_acl.outputs) && has(steps.restart_acl.outputs.exitCode) && steps.restart_acl.outputs.exitCode == 0))) }}'
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', verify.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: wait_ready
+    <<: *remote
+    dependsOn: [{step: verify, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.verify) && has(steps.verify.outputs) && has(steps.verify.outputs.exitCode) && steps.verify.outputs.exitCode == 0)) }}
+    writes: false
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/wait_ready.py" }}', '${{ inputs.intent_json }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: ready
+    <<: *remote
+    dependsOn: [{step: wait_ready, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.wait_ready) && has(steps.wait_ready.outputs) && has(steps.wait_ready.outputs.exitCode) && steps.wait_ready.outputs.exitCode == 0)) }}
+    writes: false
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/ready.py" }}', '${{ inputs.intent_json }}']
+        okExitCodes: [0, 1]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_create.vault, inputs.execution_secrets.server_create.key) }}
+  - name: remove_original
+    <<: *remote
+    dependsOn: [{step: ready, condition: {type: always}}]
+    guard: ${{ !(true && steps.plan.outputs.replace && (has(steps.ready) && has(steps.ready.outputs) && has(steps.ready.outputs.exitCode) && steps.ready.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', '${{ has(steps.plan.outputs) ? steps.plan.outputs.rollback_slot : "rollback-stopped" }}', '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', remove_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: complete
+    <<: *placed
+    dependsOn: [{step: ready, condition: {type: always}}, {step: remove_original, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: result
+      inputs:
+        completed: ${{ ((has(steps.ready) && has(steps.ready.outputs) && has(steps.ready.outputs.exitCode) && steps.ready.outputs.exitCode == 0) && (!steps.plan.outputs.replace || (has(steps.remove_original) && has(steps.remove_original.outputs) && has(steps.remove_original.outputs.exitCode) && steps.remove_original.outputs.exitCode == 0))) }}
+        steps: ${{ steps }}
+  - name: recovery_stop_new
+    <<: *remote
+    dependsOn: [{step: complete, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.promote_candidate) && has(steps.promote_candidate.outputs) && has(steps.promote_candidate.outputs.exitCode) && steps.promote_candidate.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', control.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', stop, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_retire_new
+    <<: *remote
+    dependsOn: [{step: recovery_stop_new, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.promote_candidate) && has(steps.promote_candidate.outputs) && has(steps.promote_candidate.outputs.exitCode) && steps.promote_candidate.outputs.exitCode == 0) && (has(steps.recovery_stop_new) && has(steps.recovery_stop_new.outputs) && has(steps.recovery_stop_new.outputs.exitCode) && steps.recovery_stop_new.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ inputs.spec }}', rename_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, failed, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_restore_original
+    <<: *remote
+    dependsOn: [{step: recovery_retire_new, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (!(has(steps.promote_candidate) && has(steps.promote_candidate.outputs) && has(steps.promote_candidate.outputs.exitCode) && steps.promote_candidate.outputs.exitCode == 0) || (has(steps.recovery_retire_new) && has(steps.recovery_retire_new.outputs) && has(steps.recovery_retire_new.outputs.exitCode) && steps.recovery_retire_new.outputs.exitCode == 0))) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', '${{ has(steps.plan.outputs) ? steps.plan.outputs.rollback_slot : "rollback-stopped" }}', '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', rename_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_start_original
+    <<: *remote
+    dependsOn: [{step: recovery_restore_original, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.recovery_restore_original) && has(steps.recovery_restore_original.outputs) && has(steps.recovery_restore_original.outputs.exitCode) && steps.recovery_restore_original.outputs.exitCode == 0) && steps.plan.outputs.rollback_slot == "rollback-running") }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', control.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_verify_original
+    <<: *remote
+    dependsOn: [{step: recovery_start_original, condition: {type: always}}]
+    guard: '${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.recovery_restore_original) && has(steps.recovery_restore_original.outputs) && has(steps.recovery_restore_original.outputs.exitCode) && steps.recovery_restore_original.outputs.exitCode == 0) && ((has(steps.recovery_start_original) ? steps.recovery_start_original.status : "skipped") == "skipped" || (has(steps.recovery_start_original) && has(steps.recovery_start_original.outputs) && has(steps.recovery_start_original.outputs.exitCode) && steps.recovery_start_original.outputs.exitCode == 0))) }}'
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', canonical, '${{ has(steps.plan.outputs) && has(steps.plan.outputs.spec) ? steps.plan.outputs.spec : "" }}', verify.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, '${{ steps.plan.outputs.rollback_slot == "rollback-running" ? "running" : "stopped" }}', 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_remove_new
+    <<: *remote
+    dependsOn: [{step: recovery_verify_original, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.recovery_verify_original) && has(steps.recovery_verify_original.outputs) && has(steps.recovery_verify_original.outputs.exitCode) && steps.recovery_verify_original.outputs.exitCode == 0) && (has(steps.recovery_retire_new) && has(steps.recovery_retire_new.outputs) && has(steps.recovery_retire_new.outputs.exitCode) && steps.recovery_retire_new.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', failed, '${{ inputs.spec }}', remove_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: recovery_remove_candidate
+    <<: *remote
+    dependsOn: [{step: recovery_verify_original, condition: {type: always}}]
+    guard: ${{ !(true && (has(steps.complete.outputs) && steps.complete.outputs.exitCode != 0) && (has(steps.retire_original) && has(steps.retire_original.outputs) && has(steps.retire_original.outputs.exitCode) && steps.retire_original.outputs.exitCode == 0) && (has(steps.recovery_verify_original) && has(steps.recovery_verify_original.outputs) && has(steps.recovery_verify_original.outputs.exitCode) && steps.recovery_verify_original.outputs.exitCode == 0) && !(has(steps.promote_candidate) && has(steps.promote_candidate.outputs) && has(steps.promote_candidate.outputs.exitCode) && steps.promote_candidate.outputs.exitCode == 0) && (has(steps.create_candidate) && has(steps.create_candidate.outputs) && has(steps.create_candidate.outputs.exitCode) && steps.create_candidate.outputs.exitCode == 0)) }}
+    writes: true
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/database/process.py" }}', '${{ inputs.intent_json }}', candidate, '${{ inputs.spec }}', remove_container.py, '${{ "/tmp/orbit-database-server-" + string(inputs.operation_id) + "/process" }}', start, canonical, running, 'false', '${{ string(inputs.scrub) }}']
+        okExitCodes: [0, 1]
+  - name: result
+    <<: *placed
+    dependsOn: [{step: inspect, condition: {type: always}}, {step: plan, condition: {type: always}}, {step: pull, condition: {type: always}}, {step: create_candidate, condition: {type: always}}, {step: create_canonical, condition: {type: always}}, {step: retire_original, condition: {type: always}}, {step: stop_original, condition: {type: always}}, {step: promote_candidate, condition: {type: always}}, {step: start, condition: {type: always}}, {step: restart_acl, condition: {type: always}}, {step: verify, condition: {type: always}}, {step: wait_ready, condition: {type: always}}, {step: ready, condition: {type: always}}, {step: remove_original, condition: {type: always}}, {step: complete, condition: {type: always}}, {step: recovery_stop_new, condition: {type: always}}, {step: recovery_retire_new, condition: {type: always}}, {step: recovery_restore_original, condition: {type: always}}, {step: recovery_start_original, condition: {type: always}}, {step: recovery_verify_original, condition: {type: always}}, {step: recovery_remove_new, condition: {type: always}}, {step: recovery_remove_candidate, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: result
+      inputs:
+        completed: ${{ (has(steps.complete) && has(steps.complete.outputs) && has(steps.complete.outputs.exitCode) && steps.complete.outputs.exitCode == 0) }}
+        steps: ${{ steps }}

@@ -106,6 +106,10 @@ final readonly class NativeRouteMutationPlan
             foreach ($stages as $stage) {
                 $this->checkpoint($batch, $stage);
             }
+            $side = ValidatedData::object($capture[$outcome['restored'] ? 'restore' : 'forward']);
+            $migrationNodes = array_values(array_map(static fn (array $row): int => ValidatedData::integer($row['node_id']),
+                array_filter(RouteExecutionProof::objects($side['lan']), static fn (array $row): bool => ($row['migrate'] ?? false) === true)));
+            app(NativeRouteLanInput::class)->recordMigrations($migrationNodes, ValidatedData::integerList($outcome['migrated_node_ids'] ?? []));
             $analytics = RouteExecutionProof::objects($capture['analytics_changes']);
             foreach ($outcome['restored'] ? ['rollback'] : ['certificates_ready', 'public_verified', 'placement_cleanup', 'complete'] as $stage) {
                 app(AnalyticsRoutePlan::class)->checkpointUpdate($analytics, $stage);

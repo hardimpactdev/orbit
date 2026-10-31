@@ -88,7 +88,7 @@ jobs:
       inputs:
         hosts: name:target
         interpreter: python3
-        sudo: true
+        sudo: false
         script: ${{ steps["authorize_assets"].outputs.script_body }}
   - name: verify-own-key
     target: orbit-node-209

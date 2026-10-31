@@ -38,7 +38,7 @@ final readonly class NodeRemovalInput
             }
         };
         $intent = app()->makeWith(NativeRouteRemovalIntent::class, ['accounts' => $accounts]);
-        $routes = (new NativeRouteRemovalPlan($intent))->captureForNode($context,
+        $routes = new NativeRouteRemovalPlan($intent)->captureForNode($context,
             ValidatedData::integerList($snapshot['route_ids']), $snapshot['offline'] ? [$context->id] : []);
         $members = app(NodeRemovalParticipants::class)->capture($context, $routes, excludeContext: $snapshot['offline'] === true);
         $snapshot['participants'] = $members;

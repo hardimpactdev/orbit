@@ -14,6 +14,41 @@ final class RouteRenderContext
 {
     private ?NativeRouteNodeRender $candidate = null;
 
+    /** @var ?array{leaves:list<array{node_id:int,scope:string}>,withdrawals:list<array{node_id:int,scope:string}>} */
+    private ?array $roleCertificates = null;
+
+    /** Admission-only readiness for the configuration that follows native certificate publication.
+     * @template T
+     *
+     * @param  array{leaves:list<array{node_id:int,scope:string}>,withdrawals:list<array{node_id:int,scope:string}>}  $plan
+     * @param  Closure():T  $render
+     * @return T
+     */
+    public function renderRoleCertificates(array $plan, Closure $render): mixed
+    {
+        $previous = $this->roleCertificates;
+        $this->roleCertificates = $plan;
+        try {
+            return $render();
+        } finally {
+            $this->roleCertificates = $previous;
+        }
+    }
+
+    /** Null keeps the stored marker authoritative outside the captured role plan. */
+    public function roleCertificatePublished(int $nodeId, string $site): ?bool
+    {
+        foreach (['withdrawals' => false, 'leaves' => true] as $entries => $published) {
+            foreach ($this->roleCertificates[$entries] ?? [] as $leaf) {
+                if ($leaf['node_id'] === $nodeId && $leaf['scope'] === 'role-'.$site) {
+                    return $published;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** The owning parent authenticates and selects its immutable admitted candidate before calling.
      * @template T
      *

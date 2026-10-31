@@ -42,7 +42,7 @@ final readonly class NodeSettingsProjection implements DirectOperationProjection
         return DB::transaction(function () use ($operation, $data, $status, $result): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $previous = $operation->status;
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'node-storage-root');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === OperationStatus::Succeeded && $previous !== OperationStatus::Succeeded) {
                 app(NodeSettingsOperationCompletion::class)->complete($projected, OperationOutcome::succeeded($result));
             }

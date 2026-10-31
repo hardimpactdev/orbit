@@ -57,7 +57,7 @@ final readonly class DatabaseDestroyOwnedMaterial
             $this->forbidden();
         }
 
-        return array_map(static fn (mixed $server): array => ValidatedData::object($server), $servers);
+        return array_map(ValidatedData::object(...), $servers);
     }
 
     private function forbidden(): never

@@ -43,7 +43,6 @@ final readonly class ConvergeRouteAction
         private InstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
-        private ?ConvergeAnalyticsTrackingPlacementAction $trackingPlacement = null,
     ) {}
 
     /**
@@ -60,9 +59,7 @@ final readonly class ConvergeRouteAction
         ?RoutePlacement $placement = null,
         bool $deferPlacementWithdrawal = false,
     ): Route {
-        if ($route->isAnalyticsTracking() && $placement instanceof RoutePlacement) {
-            return $this->convergeTrackingPlacement($route, $placement, $deferPlacementWithdrawal);
-        }
+        $this->assertNativeAnalytics($route);
 
         if ($domain !== $route->domain || ($publication !== null && $publication !== $route->publication)) {
             WebSocketRouteSelection::assertMutable($route);
@@ -109,6 +106,7 @@ final readonly class ConvergeRouteAction
         $routeList = [];
 
         foreach ($routes as $route) {
+            $this->assertNativeAnalytics($route);
             $routeList[] = $route;
         }
 
@@ -124,12 +122,6 @@ final readonly class ConvergeRouteAction
         $this->dnsAnswers->waitAfter(...$pending->map(static fn (Route $route) => $route->transition_dns_moved_at)->all());
 
         foreach ($pending as $route) {
-            if ($route->isAnalyticsTracking()) {
-                $this->owned($this->trackingInstanceIds($route), fn (): Route => $this->tracking()->withdraw($route));
-
-                continue;
-            }
-
             $this->owned($this->targetIds($route), fn (): ?Route => $this->completePlacementOwned($route->id));
         }
     }
@@ -143,9 +135,10 @@ final readonly class ConvergeRouteAction
     {
         $route = $this->storedRoute($route->id);
 
-        if (! $route instanceof Route || $route->isAnalyticsTracking()) {
+        if (! $route instanceof Route) {
             return;
         }
+        $this->assertNativeAnalytics($route);
 
         $domain = RouteDomain::validate($domain);
 
@@ -177,41 +170,15 @@ final readonly class ConvergeRouteAction
         );
     }
 
-    /**
-     * A tracking host follows its Instance Route. It moves under that Instance's environment owner
-     * and waits for private DNS answers to expire without holding any owner.
-     */
-    private function convergeTrackingPlacement(Route $route, RoutePlacement $placement, bool $deferWithdrawal): Route
+    private function assertNativeAnalytics(Route $route): void
     {
-        $instanceIds = $this->trackingInstanceIds($route);
-        $moved = $this->owned($instanceIds, fn (): Route => $this->tracking()->cutOver($route, $placement));
-
-        if (! $this->tracking()->awaitsWithdrawal($moved)) {
-            return $moved;
+        if ($route->isAnalyticsTracking()) {
+            throw new ResourceOperationException(
+                'route.analytics_native_required',
+                'Analytics tracking placement requires its native Route workflow.',
+                409,
+            );
         }
-
-        if ($moved->replacement_step === RouteReplacementStep::DatabaseCutover) {
-            if ($deferWithdrawal) {
-                return $moved;
-            }
-
-            $this->dnsAnswers->waitAfter($moved->transition_dns_moved_at);
-        }
-
-        return $this->owned($instanceIds, fn (): Route => $this->tracking()->withdraw($moved));
-    }
-
-    /** @return list<int> */
-    private function trackingInstanceIds(Route $route): array
-    {
-        $instanceId = $route->analyticsTracking()->value('instance_id');
-
-        return $instanceId === null ? [] : [StoredInteger::from($instanceId)];
-    }
-
-    private function tracking(): ConvergeAnalyticsTrackingPlacementAction
-    {
-        return $this->trackingPlacement ?? app(ConvergeAnalyticsTrackingPlacementAction::class);
     }
 
     /**

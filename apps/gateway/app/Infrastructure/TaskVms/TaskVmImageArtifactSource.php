@@ -31,7 +31,7 @@ final readonly class TaskVmImageArtifactSource implements OperationArtifactSourc
             $vm = TaskVmEnrollmentMaterialSource::owned($operation);
             $intent = $operation->input['enrollment'] ?? $operation->input;
 
-            return $vm !== null && ($intent['runtime']['pi_sha256'] ?? null) === ($operation->input['pi_artifact']['sha256'] ?? null) ? $vm->id : null;
+            return $vm !== null && data_get($intent, 'runtime.pi_sha256') === data_get($operation->input, 'pi_artifact.sha256') ? $vm->id : null;
         }
         if ($operation->kind === 'task_vm.upcloud_image_build' && $operation->target_type === 'task_vm_upcloud_image') {
             $build = UpCloudTaskVmImageBuild::query()->find($operation->target_id);

@@ -802,29 +802,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>",
-        "GET default"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/server_create.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/server_destroy.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1235,14 +1212,6 @@
         "/usr/bin/git",
         "/usr/bin/python3",
         "/usr/bin/sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/policy_activity.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {
@@ -3431,12 +3400,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tools/direct-contract.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/tools/direct.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3477,12 +3440,6 @@
       "file": "extensions/behaviors/operations/tools/materialize_program.ts",
       "rule": "inline-script",
       "count": 182,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tools/node.ts",
-      "rule": "gateway-http",
-      "count": 1,
       "evidence": []
     },
     {

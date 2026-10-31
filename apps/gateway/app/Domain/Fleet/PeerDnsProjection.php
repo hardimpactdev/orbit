@@ -6,7 +6,6 @@ namespace App\Domain\Fleet;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
@@ -25,7 +24,7 @@ final readonly class PeerDnsProjection implements DirectOperationProjection
     {
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
-        $result = app(OperationExecutionContract::class)->result($operation, ValidatedData::object($data['result'] ?? []));
+        $result = ValidatedData::object($data['result'] ?? []);
         if ($status === OperationStatus::Succeeded && ($code !== null || isset($result['error_code'])
             || ($result['uplink'] ?? null) !== true
             || ! PeerDnsResult::matches(ValidatedData::string($operation->input['server']), ValidatedData::stringList($operation->input['domains']), $result))) {
@@ -41,6 +40,6 @@ final readonly class PeerDnsProjection implements DirectOperationProjection
             default => [],
         };
 
-        return app(DirectOperation::class)->project($operation, $data, $result, 'peer-dns');
+        return app(DirectOperation::class)->project($operation, $data, $result);
     }
 }

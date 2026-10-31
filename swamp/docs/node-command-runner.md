@@ -17,6 +17,10 @@ Node input contracts and local actions import public schemas and the
 cancellation type from `operations/_lib/direct-input.ts`. These imports keep
 input validation independent of the Gateway execution client.
 
+The shared Tool contract contains only intent and result schemas. Its legacy
+Gateway parent uses the common Gateway globals directly, so importing the Tool
+contract does not load Gateway configuration.
+
 The Node footprint parent resolves protected agent configuration data before
 calling the shared configuration lower. The lower takes that data directly and
 returns only the public change or refusal result.

@@ -2,15 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\AttachClusterNodeAction;
+use App\Actions\Clusters\DetachClusterNodeAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
@@ -21,7 +25,9 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePlacement;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -30,17 +36,22 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
+use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\FakeRouterLanIngressReconciler;
 
 beforeEach(function (): void {
     $this->events = new RouteDomainChangeEvents;
@@ -1876,3 +1887,84 @@ function s5_unactivated_replacement(Route $old): Route
 
     return $replacement;
 }
+
+it('refuses synchronous Analytics placement before effects or waits', function (string $method): void {
+    [$cluster, $appRoute, $member] = cluster_tld_generated_route();
+    $tracking = static_repair_tracking_route($appRoute);
+    $before = $tracking->fresh()->getAttributes();
+    Sleep::fake();
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(AgentCommandRunner::class, $agents);
+    $action = app(ConvergeRouteAction::class);
+
+    expect(fn () => match ($method) {
+        'preflight' => $action->assertConvergible($tracking, $tracking->domain),
+        'execute' => $action->execute($tracking, $tracking->domain, placement: new RoutePlacement($member->id, null, 'node.test')),
+        'complete' => $action->completePlacements([$appRoute, $tracking]),
+    })->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.analytics_native_required')->and($exception->status)->toBe(409);
+    });
+
+    expect($tracking->fresh()->getAttributes())->toBe($before);
+    expect($this->events->values)->toBe([]);
+    expect($agents->commands())->toBe([]);
+    Sleep::assertNeverSlept();
+})->with(['preflight', 'execute', 'complete']);
+
+it('refuses Cluster Analytics placement before changing membership, LAN or DNS', function (string $change): void {
+    [$cluster, $appRoute, $member] = cluster_tld_generated_route();
+    $member->update(['tld' => 'node.test']);
+    if ($change === 'attach') {
+        $member->update(['cluster_id' => null]);
+        $appRoute->update(['node_id' => $member->id, 'cluster_id' => null]);
+    }
+    $tracking = static_repair_tracking_route($appRoute);
+    $before = [$cluster->fresh()->getAttributes(), $member->fresh()->getAttributes(), $appRoute->fresh()->getAttributes(), $tracking->fresh()->getAttributes()];
+    $dns = new FakeClusterRouterDnsSelectionReconciler;
+    $lan = new FakeRouterLanIngressReconciler;
+    $agents = new FakeAgentCommandRunner;
+    app()->instance(ClusterRouterDnsSelectionReconciler::class, $dns);
+    app()->instance(RouterLanIngressReconciler::class, $lan);
+    app()->instance(AgentCommandRunner::class, $agents);
+    Sleep::fake();
+
+    expect(fn () => match ($change) {
+        'attach' => app(AttachClusterNodeAction::class)->execute($cluster, $member),
+        'detach' => app(DetachClusterNodeAction::class)->execute($cluster, $member),
+        'state' => app(UpdateClusterAction::class)->execute($cluster, new UpdateClusterData(false, null, false, null, true, ClusterState::Inactive)),
+    })->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.analytics_native_required')->and($exception->status)->toBe(409);
+    });
+
+    expect([$cluster->fresh()->getAttributes(), $member->fresh()->getAttributes(), $appRoute->fresh()->getAttributes(), $tracking->fresh()->getAttributes()])->toBe($before);
+    expect($dns->events)->toBe([]);
+    expect($lan->events)->toBe([]);
+    expect($this->events->values)->toBe([]);
+    expect($agents->commands())->toBe([]);
+    Sleep::assertNeverSlept();
+})->with(['attach', 'detach', 'state']);
+
+function static_repair_tracking_route(Route $appRoute): Route
+{
+    $route = Route::query()->create([
+        'kind' => RouteKind::AnalyticsTracking, 'node_id' => $appRoute->node_id, 'cluster_id' => $appRoute->cluster_id,
+        'domain' => 'tracking.example.test', 'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+    ]);
+    RouteAnalyticsTracking::query()->create(['route_id' => $route->id, 'instance_id' => $appRoute->targets()->sole()->instance_id]);
+
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route;
+}
+
+it('renames a Cluster without validating unrelated unhealthy tracking placement', function (): void {
+    [$cluster, $appRoute, $member] = cluster_tld_generated_route();
+    static_repair_tracking_route($appRoute);
+    $member->update(['status' => LifecycleStatus::Failed]);
+
+    $updated = app(UpdateClusterAction::class)->execute($cluster, new UpdateClusterData(true, 'renamed', false, null, false, null));
+
+    expect($updated->name)->toBe('renamed');
+    expect($this->events->values)->toBe([]);
+});

@@ -36,7 +36,6 @@ final readonly class StartInstanceSmokeAction
                 : new ResourceOperationException('instance.smoke_github_unavailable',
                     'GitHub is unavailable. Try admission again.', 503);
         }
-        $this->operations->assertAvailable();
         $holder = Operation::query()->where('lock_key', 'instance_smoke:'.$instance->id)
             ->where('kind', OperationKinds::InstanceSmoke)->first();
         if ($holder !== null && ($holder->input['deployment_id'] ?? null) !== $data->deploymentId

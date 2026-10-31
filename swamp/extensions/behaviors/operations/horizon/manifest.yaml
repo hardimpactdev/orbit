@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: '@nckrtl/horizon-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public Horizon observations and shipped one-action unit scripts.
+behaviors:
+- operations/horizon/observation.ts
+additionalFiles:
+- scripts/inspect.py
+- scripts/stage_unit.py
+- scripts/publish_unit.py

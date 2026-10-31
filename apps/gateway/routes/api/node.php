@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeNetworksController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
+use App\Http\Controllers\Api\NodeSshHostKeysController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,9 @@ Route::middleware([
         ->name('node:list');
     Route::get('nodes/{node}', [NodesController::class, 'show'])
         ->name('node:show');
+    Route::post('nodes/{node}/ssh-host-key', [NodeSshHostKeysController::class, 'store'])
+        ->whereNumber('node')
+        ->name('node:ssh-host-key:record');
     Route::post('nodes/{node}/ssh-access/converge', [NodeFootprintsController::class, 'sshAccess'])
         ->whereNumber('node')
         ->name('node:ssh-access:converge');

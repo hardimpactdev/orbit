@@ -23,7 +23,6 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerName;
-use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\NodeLocks;
@@ -34,42 +33,10 @@ use App\Models\Process;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeNodeRoleFirewallManager;
 
 describe(RemoveNodeRoleAction::class, function (): void {
-    it('rejects app role removal before mutation when a manager scope is busy', function (): void {
-        [$node, $assignment] = removal_role_fixture();
-        $cleaner = new RemovalCleanerFake;
-        $baseline = new RemovalBaselineFake;
-        $scope = Cache::lock("orbit:tool-manager:{$node->id}:vp", 3_600);
-        expect($scope->get())->toBeTrue();
-
-        try {
-            expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                $cleaner,
-                $baseline,
-            )->execute($node, RoleName::AppDev, force: true))
-                ->toThrow(function (NodeRoleOperationException $exception): void {
-                    expect($exception->errorCode)
-                        ->toBe('node_role.remove_failed')
-                        ->and($exception->underlyingErrorCode)
-                        ->toBe('node_role.tool_manager_locked');
-                });
-        } finally {
-            $scope->release();
-        }
-
-        expect($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
-            ->and($baseline->calls)
-            ->toBe(0);
-    });
-
     it('returns node_role.node_busy and keeps the role when another role operation holds the Node', function (): void {
         [$node, $assignment] = removal_role_fixture();
         $cleaner = new RemovalCleanerFake;
@@ -99,65 +66,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($baseline->calls)->toBe(0);
     });
 
-    it('locks app role removal even when another app role row exists', function (LifecycleStatus $otherStatus): void {
-        [$node, $assignment] = removal_role_fixture();
-        $node->roles()->create([
-            'role' => RoleName::AppProd,
-            'status' => $otherStatus,
-            'failed_step' => $otherStatus === LifecycleStatus::Failed ? 'converge:baseline' : null,
-            'error_code' => $otherStatus === LifecycleStatus::Failed ? 'app-prod.baseline_failed' : null,
-        ]);
-        $cleaner = new RemovalCleanerFake;
-        $baseline = new RemovalBaselineFake;
-        $scope = Cache::lock("orbit:tool-manager:{$node->id}:vp", 3_600);
-        expect($scope->get())->toBeTrue();
-
-        try {
-            expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                $cleaner,
-                $baseline,
-            )->execute($node, RoleName::AppDev, force: true))
-                ->toThrow(NodeRoleOperationException::class);
-        } finally {
-            $scope->release();
-        }
-
-        expect($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
-            ->and($baseline->calls)
-            ->toBe(0);
-    })->with([
-        'unsupported failed counterpart' => LifecycleStatus::Failed,
-        'supported active counterpart' => LifecycleStatus::Active,
-        'supported provisioning counterpart' => LifecycleStatus::Provisioning,
-    ]);
-
-    it('releases VP when Composer contention blocks app role removal', function (): void {
-        [$node, $assignment] = removal_role_fixture();
-        $composer = Cache::lock("orbit:tool-manager:{$node->id}:composer", 3_600);
-        expect($composer->get())->toBeTrue();
-
-        try {
-            expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                new RemovalCleanerFake,
-                new RemovalBaselineFake,
-            )->execute($node, RoleName::AppDev, force: true))
-                ->toThrow(NodeRoleOperationException::class);
-        } finally {
-            $composer->release();
-        }
-
-        $vp = Cache::lock("orbit:tool-manager:{$node->id}:vp", 3_600);
-        expect($vp->get())
-            ->toBeTrue()
-            ->and($assignment->refresh()->status)
-            ->toBe(LifecycleStatus::Active);
-        $vp->release();
-    });
     it('always returns a no-force preview without mutation even when dependents are empty', function (): void {
         [$node, $assignment] = removal_role_fixture();
         $inspector = new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], []));
@@ -953,7 +861,6 @@ function removal_action(
         $cleaner,
         $baseline,
         app(RoleRegistry::class),
-        app(ToolManagerScopeLock::class),
         $reachability ?? new RemovalReachabilityFake(null),
         new NodeSideResidue,
         $firewall ?? new FakeNodeRoleFirewallManager,

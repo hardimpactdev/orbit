@@ -38,7 +38,7 @@ final readonly class AdmitFleetRolloutAction
     {
         $plan = $this->plan->execute();
         $root = $this->gateway->nodeId();
-        if ($root === null || ! isset($plan['rollout']) || ($rolloutId !== null && $rolloutId !== $plan['rollout'])
+        if ($root === null || ! isset($plan['rollout'], $plan['targets'], $plan['commit']) || ($rolloutId !== null && $rolloutId !== $plan['rollout'])
             || ! in_array($plan['status'], ['running', 'completed'], true)) {
             throw new ResourceOperationException('fleet.rollout_not_ready', 'The serving release has no available fleet rollout.', 409);
         }
@@ -47,7 +47,7 @@ final readonly class AdmitFleetRolloutAction
             throw new ResourceOperationException('fleet.rollout_busy', 'A native fleet rollout is already running.', 409);
         }
         $nodes = [];
-        foreach ($plan['targets'] ?? [] as $target) {
+        foreach ($plan['targets'] as $target) {
             if ($nodeIds !== null && ! in_array($target['node_id'], $nodeIds, true)) {
                 continue;
             }

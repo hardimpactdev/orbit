@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-JOBS = ('php', 'cli', 'docs', 'api-reference', 'web', 'swamp')
+JOBS = ('php', 'gateway-static', 'cli', 'docs', 'api-reference', 'web', 'swamp')
 
 
 def select(paths, main=False):
@@ -15,6 +15,8 @@ def select(paths, main=False):
     jobs = dict.fromkeys(JOBS, False)
     agent = False
     for path in paths:
+        if path.startswith('apps/gateway/'):
+            jobs['gateway-static'] = True
         if path.startswith('swamp/'):
             jobs['swamp'] = True
             if path == 'swamp/config/gateway-workflow-grants.json':

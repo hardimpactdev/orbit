@@ -6,7 +6,6 @@ namespace App\Domain\Routes;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationPrimitive;
-use App\Domain\Operations\OperationTransports;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Models\Node;
@@ -39,10 +38,7 @@ final readonly class DirectRoutePublication implements DirectOperationPrimitive
     {
         $this->assertOperation($operation);
         $node = Node::query()->findOrFail($operation->node_id);
-        $transport = app(OperationTransports::class)->get('route-dns');
-        if (! $transport instanceof RoutePublicationPrimitive) {
-            throw new \LogicException('Route publications require a fixed publication primitive.');
-        }
+        $transport = app(PrivateDnsTransport::class);
         if ($operation->kind !== 'route.private_dns_publish' || ! PrivateDnsPublicationNodes::query()->whereKey($node->id)->exists()) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Only an active VPN Node publishes private DNS.', 422);
         }

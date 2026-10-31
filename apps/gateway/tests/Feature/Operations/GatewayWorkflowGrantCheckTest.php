@@ -43,3 +43,13 @@ it('runs the required registry entrypoint with intended grant validation without
     expect($process->getOutput())->toContain('GATEWAY-WORKFLOW-GRANTS workflows=')
         ->toContain('principal=user:orbit-gateway policy=intended');
 });
+
+it('requires execution copy key intent from core and loaded extension declarations', function (string $kind): void {
+    $definitions = app(DirectOperation::class)->definitions();
+    $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
+    $copy = $definitions[$kind]['execution_copies'][0];
+    $policy['vaults'] = array_values(array_filter($policy['vaults'], fn (array $entry): bool => $entry['vault'] !== $copy['vault'] || $entry['key_pattern'] !== $copy['key_pattern']));
+
+    expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
+        ->toThrow(LogicException::class, 'Execution copy vault intent');
+})->with(['database.write', 'vault.sync', 'conn.pairing_revoke', 'node.ssh_access_converge']);

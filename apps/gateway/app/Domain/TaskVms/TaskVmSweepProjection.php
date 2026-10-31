@@ -83,7 +83,7 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
         return DB::transaction(function () use ($operation, $data, $result, $observe, $names): Operation {
             $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'sweep-host');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($observe && ! $terminal) {
                 $query = TaskVm::query()->live()->where('provider', $operation->input['provider']);
                 if ($operation->input['provider'] === 'incus') {

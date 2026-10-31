@@ -10,15 +10,16 @@ use LogicException;
 final readonly class GatewayWorkflowGrantCheck
 {
     /**
-     * @param  array<string,array{workflow:string}>  $definitions
+     * @param  array<string,array{workflow:string,execution_copies?:list<array{vault:string,key_pattern:string}>}>  $definitions
      * @param  array<string,mixed>  $policy
      */
     public function execute(array $definitions, array $policy): int
     {
-        if (count($policy) !== 3 || ($policy['version'] ?? null) !== 1
+        if (count($policy) !== 4 || ($policy['version'] ?? null) !== 2
             || ($policy['principal'] ?? null) !== 'user:orbit-gateway'
+            || ! is_array($policy['vaults'] ?? null) || ! array_is_list($policy['vaults'])
             || ! is_array($policy['workflows'] ?? null) || ! array_is_list($policy['workflows'])) {
-            throw new LogicException('Gateway workflow grant intent needs version 1, principal user:orbit-gateway and a workflow list.');
+            throw new LogicException('Gateway workflow grant intent needs version 2, principal user:orbit-gateway and workflow and vault lists.');
         }
 
         $grants = [];
@@ -42,6 +43,29 @@ final readonly class GatewayWorkflowGrantCheck
         $retired = array_diff(array_keys($grants), $required);
         if ($retired !== []) {
             throw new LogicException('Remove undeclared Gateway workflow grant intent: '.implode(', ', $retired).'.');
+        }
+
+        $requiredVaults = [];
+        foreach ($definitions as $definition) {
+            foreach ($definition['execution_copies'] ?? [] as $copy) {
+                $requiredVaults[DirectOperation::executionCopySignature($copy)] = true;
+            }
+        }
+        $vaults = [];
+        foreach ($policy['vaults'] as $copy) {
+            if (! is_array($copy) || count($copy) !== 3
+                || ! in_array($copy['actions'] ?? null, [['write', 'read'], ['read', 'write']], true)) {
+                throw new LogicException('Each vault intent needs vault, key_pattern and only write and read actions.');
+            }
+            unset($copy['actions']);
+            $signature = DirectOperation::executionCopySignature($copy);
+            if (isset($vaults[$signature])) {
+                throw new LogicException('Duplicate execution copy vault intent.');
+            }
+            $vaults[$signature] = true;
+        }
+        if (array_diff_key($requiredVaults, $vaults) !== [] || array_diff_key($vaults, $requiredVaults) !== []) {
+            throw new LogicException('Execution copy vault intent must match all current declarations exactly.');
         }
 
         return count($required);
