@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmIncusEffectAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\Queue;
 
@@ -31,4 +33,13 @@ it('refuses synchronous deletion before changing a task VM or calling a retired 
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->status)->toBe(409));
     expect($vm->state->value)->toBe('ready');
     $this->assertDatabaseCount('operations', 0);
+});
+
+it('refuses allocation before recording a VM or queuing a deleted provisioning job', function (): void {
+    Queue::fake();
+    expect(fn () => app(AllocateTaskVmAction::class)->execute(new Task))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.kind_unavailable')->and($error->status)->toBe(409));
+    $this->assertDatabaseCount('task_vms', 0);
+    $this->assertDatabaseCount('operations', 0);
+    Queue::assertNothingPushed();
 });
