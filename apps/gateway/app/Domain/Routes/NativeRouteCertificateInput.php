@@ -16,13 +16,19 @@ final readonly class NativeRouteCertificateInput
     /** @return array<string,mixed> */
     public function convergenceInput(Node $node, string $scope, string $domain): array
     {
+        return [...$this->scopeInput($node, $scope), 'domain' => RouteDomain::validate($domain),
+            'version' => bin2hex(random_bytes(8)), 'root_hash' => hash('sha256', app(LeafCertificateSigner::class)->rootCertificate())];
+    }
+
+    /** @return array<string,mixed> */
+    public function scopeInput(Node $node, string $scope): array
+    {
         if ($node->platform !== 'linux' || ! LinuxUserName::isValid($node->user)
             || preg_match('/\A(?:app-instance-[1-9][0-9]*(?:-hostname-change)?|route-[1-9][0-9]*(?:-router(?:-hostname-change)?|-ingress)?)\z/D', $scope) !== 1) {
             throw new ResourceOperationException('certificate.scope_invalid', 'The leaf must name an admitted Linux Node account and Route scope.', 422);
         }
 
-        return ['node_id' => $node->id, 'user' => $node->user, 'scope' => $scope, 'domain' => RouteDomain::validate($domain),
-            'version' => bin2hex(random_bytes(8)), 'root_hash' => hash('sha256', app(LeafCertificateSigner::class)->rootCertificate()),
+        return ['node_id' => $node->id, 'user' => $node->user, 'scope' => $scope,
             'agent_sha256' => app(AgentDelivery::class)->pin($node)];
     }
 }

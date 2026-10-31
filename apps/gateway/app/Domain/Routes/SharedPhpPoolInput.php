@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -15,9 +15,9 @@ use App\Rules\SupportedPhpVersion;
 /** Pure stored-state render. An empty map still withdraws stale pools on the Node. */
 final readonly class SharedPhpPoolInput
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private DevelopmentPhpFpmConfigRenderer $renderer, private ManagedUserAccountResolver $accounts) {}
+    public function __construct(private DevelopmentSiteRepository $sites, private DevelopmentPhpFpmConfigRenderer $renderer) {}
 
-    /** @return array{configurations: object} */
+    /** @return array{configurations: object,account_user:string} */
     public function forNode(Node $node): array
     {
         $sites = $this->sites->forNode($node)->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null && ! $site->isProxy() && ! $site->usesDedicatedPhpRuntime());
@@ -26,9 +26,9 @@ final readonly class SharedPhpPoolInput
             if (! SupportedPhpVersion::isSupported((string) $version)) {
                 throw new ResourceOperationException('app-dev.php_version_unsupported', 'A stored pool uses an unsupported PHP version.', 409);
             }
-            $configurations[(string) $version] = $this->renderer->render($members->values(), $this->accounts->resolve($node));
+            $configurations[(string) $version] = $this->renderer->render($members->values(), new ManagedUserAccount($node->user, '__ORBIT_NODE_GROUP__', '/__ORBIT_NODE_HOME__'));
         }
 
-        return ['configurations' => (object) $configurations];
+        return ['configurations' => (object) $configurations, 'account_user' => $node->user];
     }
 }
