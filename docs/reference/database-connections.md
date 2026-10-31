@@ -227,9 +227,11 @@ The worker runs as the Node's configured user. Clone cleanup removes only its ow
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` directly. SQLite runs the fixed native SQLite program as its admitted owner. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. Neither path invokes an agent action or requires an agent pin. Native projection resumes from its saved row count without repeating SQL.
+`database:query --write` starts `operation-database-write` with the full public intent and vault key names. All steps select a Node 209 worker. Official `@swamp/ssh` exec steps run SQLite on its Node as its admitted owner, or PDO on the Gateway Node for MySQL and PostgreSQL. The existing approved worker key and recorded SSH host pins select the connection.
 
-SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection uses its own native database.read Operation.
+The shared Gateway helper copies SQL and connection credentials into the native execution vault. Each action reads that value through the official SSH tool-stdin input. No step reads intent or private material from the Gateway, invokes an agent action or requires an agent pin. The shared terminal subscriber records the public row count. Native result delivery resumes without repeating SQL.
+
+SQL writes are limited to 16,384 bytes. MySQL refuses multiple statements in one call. Actions retain bounded refusals as native outputs; a final native assertion marks a refusal failed. Missing output reports `database.write_outcome_unknown`. A normal resume uses the saved action outcome instead of submitting SQL again. Read-only inspection uses its own native database.read Operation. Nodes 1 and 18 use the same official SSH steps; no target Node needs a Swamp binary or worker token.
 
 SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO` cannot create another database file, including through an SQL expression. The same limit refuses ordinary `VACUUM`, which needs an internal attachment. These refusals return `database.query_failed` and leave the registered file unchanged.
 

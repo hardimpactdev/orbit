@@ -142,9 +142,6 @@ export class GatewayOperation {
     if (!bytes) throw new Error("Artifact unavailable");
     return bytes;
   }
-  primitive() {
-    return this.call("POST", "/primitive", { run_id: this.args.run_id });
-  }
   /** Credential bytes stay inside this action; never return them as behavior data. */
   async withGitHubToken(
     action: (token: string, grant: GitHubGrant) => Promise<Result>,

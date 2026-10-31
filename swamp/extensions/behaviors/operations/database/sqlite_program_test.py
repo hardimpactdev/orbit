@@ -177,21 +177,6 @@ class SqliteProgramTest(unittest.TestCase):
         finally:
             self.call('copy', {'operation': 'cleanup', 'directory': directory}, self.worker)
 
-    def test_write_runs_as_nonroot_owner_limits_sql_and_never_creates_missing_database(self):
-        result = self.call('write', {'owner': self.worker.pw_name, 'path': str(self.database),
-            'sql': "UPDATE proof SET value='new value'"})
-        self.assertEqual(result, {'ok': True, 'data': {'row_count': 1, 'truncated': False}})
-        for sql in ['SELECT 1; DROP TABLE proof', ' ' * 16385 + 'SELECT 1', "SELECT '\x00'", 'UPDATE missing SET private_secret=1']:
-            result = self.call('write', {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': sql})
-            if len(sql.strip().encode()) <= 16384 and '\x00' not in sql and sql.strip() == 'SELECT 1':
-                self.assertTrue(result['ok'])
-            else:
-                self.assertFalse(result['ok'])
-        missing = self.source / 'missing.sqlite'
-        self.assertFalse(self.call('write', {'owner': self.worker.pw_name, 'path': str(missing), 'sql': 'CREATE TABLE x(y)'})['ok'])
-        self.assertFalse(missing.exists())
-        self.assertFalse(self.call('write', {'owner': 'root', 'path': str(self.database), 'sql': 'SELECT 1'})['ok'])
-
     def test_read_preserves_database_bytes_and_permissions_and_uses_admitted_account(self):
         data = {'owner': self.worker.pw_name, 'path': str(self.database), 'sql': 'SELECT length(value) AS n FROM proof', 'mode': 'query', 'table': None}
         before = hashlib.sha256(self.database.read_bytes()).hexdigest()
