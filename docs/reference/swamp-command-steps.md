@@ -2,7 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{SwampCommandStep,SwampVaultExecutionCopy}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy}.php
 ---
 
 # Swamp command steps
@@ -35,6 +35,8 @@ The shared subscriber calls `projectTerminal(Operation $operation, array $termin
 A `completed` event can carry a failed run status. Native `interrupted` maps to failed. A failed or cancelled run can have no selected output because the step was skipped. A successful run requires its public JSON object. Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
 
 ### Event connection
+
+The start connection can receive `started` and a terminal event in the same message batch. After binding the confirmed root run, `StartSwampRun` sends that matching terminal event to this same helper when the family declares `terminal_result`. Unrelated requests, child runs and foreign workflows cannot supply the event. An unavailable terminal result leaves the accepted run bound and records a diagnostic without changing the start outcome or resubmitting it.
 
 Official e459 supports `run.attach` with `{runId, afterSeq}` for an active run. It returns `run.attached` and streams events on that request id. Completed runs leave the active registry, so this is not a durable subscription after completion. The shared event-connection owner must preserve the terminal event; families must not invent a polling fallback.
 
