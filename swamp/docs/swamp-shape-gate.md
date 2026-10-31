@@ -68,20 +68,18 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
-Swamp CI must never receive account credentials. The helper downloads the public,
-checksum-verified official artifact and launches it with an isolated configuration
-and a clean environment. Official e459 blocks `workflow validate` at its account
-startup gate before reading local extensions. Account verification uses
-`GET /api/whoami`; vendoring extensions does not remove that gate. The pinned
-command advertises no offline validation option.
+Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
+with `extensions:read` scope. Only the native workflow-validation step receives
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
+and Deno jobs receive neither. The caller maps both secrets explicitly, never
+through inherited secrets. Pull-request-target events cannot receive them.
 
-The callable reports this exact blocker as `SWAMP AUTH UNAVAILABLE` and
-`validation_ran=false`, with zero workflows validated. It fails normally. Only
-the caller-proven initial Orbit import PR or its first main push may set
-`allow-auth-unavailable: true`; the callable also checks the repository and event.
-Shape, placement and Deno checks remain required. Schema, download, checksum and
-other runtime failures never receive this exception. This is an explicit import
-limitation, not a claim that native validation passed.
+The helper downloads the public checksum-verified official artifact and starts
+it with fresh HOME, XDG and Swamp configuration directories. Its environment
+allowlist admits only these two approved credentials. Official e459's startup
+account gate precedes local schema loading and verifies through
+`GET /api/whoami`. Native validation is required: unavailable authentication and
+schema, checksum or download failures fail the job. There is no import exception.
 
 The gate prints current debt separately from base comparison. Retained historical
 agent actions are grandfathered; only growing counts or new action evidence fail.
