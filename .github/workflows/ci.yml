@@ -118,7 +118,7 @@ jobs:
           cp apps/gateway/.env.example apps/gateway/.env
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-dev
           bun install --cwd apps/web --frozen-lockfile
-      - name: Boot and validate Operation kinds
+      - name: Boot and validate Operation kinds and intended workflow grants
         if: steps.scope.outputs.selected == 'true'
         env:
           APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
