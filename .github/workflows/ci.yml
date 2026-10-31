@@ -45,7 +45,7 @@ jobs:
           composer install --working-dir=apps/gateway --no-interaction --prefer-dist
       - name: Test real first-visit Process admission
         working-directory: apps/gateway
-        run: vendor/bin/pest --compact --default-time-limit=5 tests/Feature/Api/ProcessOperationAdmissionTest.php --filter='real first-visit systemd input'
+        run: vendor/bin/pest --compact --fail-on-empty-test-suite --default-time-limit=5 tests/Feature/Api/ProcessOperationAdmissionTest.php --filter='real first-visit systemd input'
 
   cli:
     name: CLI build
