@@ -148,7 +148,7 @@ export function integrations(
             try {
               if (
                 (operation.kind === "ai_router.collector_converge" ||
-                  /^(metrics|analytics|websocket)\.role_(converge|remove)$/
+                  /^(metrics|websocket)\.role_(converge|remove)$/
                     .test(operation.kind)) &&
                 operation.input.flow === undefined
               ) {

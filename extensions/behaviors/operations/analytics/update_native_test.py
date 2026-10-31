@@ -1,9 +1,10 @@
-"""Native analytics update replay, secret persistence and Node209 health canary."""
+"""Native Analytics update replay and real HTTP/TLS secret scans."""
 import hashlib
 import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import socket
 import sys
@@ -23,23 +24,22 @@ class UpdateNative(NativeTestCase):
     native_timeout = 55
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy','operation-runner','operations/_lib','operations/analytics')
+        self.copy_behaviors('automatic-deploy','operations/_lib','operations/analytics')
+        for name in ['processes-schedules/process-system.ts','processes-schedules/system.ts','node/system_command.ts']:
+            source=ROOT/'extensions/behaviors/operations'/name
+            destination=self.repo/'extensions/behaviors/operations'/name
+            destination.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,destination)
         module=self.repo/'extensions/behaviors/operations/analytics/update.ts'
-        module.write_text('import {http,invoke} from "./update_native_fixture.ts";\n'+module.read_text().replace('export const behavior = analyticsUpdate();','export const behavior = analyticsUpdate(() => http,invoke);'))
+        module.write_text('import {http,invoke,initialize} from "./update_native_fixture.ts";\n'+module.read_text().replace('export const behavior = analyticsUpdate();','export const behavior = analyticsUpdate(() => http,invoke,initialize);'))
         source=ROOT/'workflows/workflow-operation-analytics-update-direct.yaml'
         (self.repo/'workflows'/source.name).write_text('\n'.join(line for line in source.read_text().splitlines() if not line.lstrip().startswith(('labels:','target:')))+'\n')
         self.secret='runtime-env-'+secrets.token_hex(24)
         self.secrets=(self.secret,base64.b64encode(self.secret.encode()).decode())
         self.environment={'SECRET_KEY_BASE':self.secret,'BASE_URL':'https://analytics.orbit'}
         raw=json.dumps(self.environment,sort_keys=True,separators=(',',':'))
-        before={'process_id':250,'container':'orbit-process-250-plausible','desired':'running','spec':'a'*64,'image':'ghcr.io/plausible/community-edition:v3.2.1','command':['/usr/local/bin/orbit-agent','service','plausible'],'restart':'unless-stopped','working_directory':None,'ports':['10.44.0.3:8000:8000/tcp'],'mounts':[]}
-        self.state={'operation':{'id':12,'kind':'analytics.update','node_id':209,'status':'queued','cancel_requested':False,'result':None,'input':{'process_id':250,'assignment_id':4,'runtime_environment':{'$secret':'analytics.runtime_environment','id':209},'version':'3.3.0','previous_version':'3.2.1','agent_sha256':'a'*64,'environment_sha256':hashlib.sha256(raw.encode()).hexdigest(),'health_url':'http://10.44.0.3:8000/api/health','before':before,'after':{**before,'spec':'b'*64,'image':'ghcr.io/plausible/community-edition:v3.3.0'}}},'calls':[]}
-        if os.environ.get('ANALYTICS_UPDATE_LIVE_HEALTH')=='1':
-            self.state['liveHealth']=True
-            self.state['operation']['input']['agent_sha256']=hashlib.sha256(Path('/usr/local/bin/orbit-agent').read_bytes()).hexdigest()
-            self.state['operation']['input']['version']='3.2.1'
-            self.state['operation']['input']['after']=before
-        if os.environ.get('ANALYTICS_UPDATE_DEV_AGENT'):
+        before={'process_id':250,'container':'orbit-process-250-plausible','desired':'running','spec':'a'*64,'image':'ghcr.io/plausible/community-edition:v3.2.1','command':['/entrypoint.sh','run'],'restart':'unless-stopped','working_directory':None,'ports':['10.44.0.3:8000:8000/tcp'],'mounts':[]}
+        self.state={'operation':{'id':12,'kind':'analytics.update','node_id':209,'status':'queued','cancel_requested':False,'result':None,'input':{'process_id':250,'assignment_id':4,'runtime_environment':{'$secret':'analytics.runtime_environment','id':209},'version':'3.3.0','previous_version':'3.2.1','environment_sha256':hashlib.sha256(raw.encode()).hexdigest(),'health_url':'http://10.44.0.3:8000/api/health','before':before,'after':{**before,'spec':'b'*64,'image':'ghcr.io/plausible/community-edition:v3.3.0'}}},'calls':[]}
+        if os.environ.get('ANALYTICS_UPDATE_DEV_DOCKER')=='1':
             self.prepare_dev_container(before)
         self.start_gateway()
         self.save()
@@ -81,10 +81,8 @@ class UpdateNative(NativeTestCase):
     def scan_scratch(self,*outputs):
         self.assert_private_absent(*outputs, json.dumps(self.public_requests))
     def prepare_dev_container(self,before):
-        agent=str(Path(os.environ['ANALYTICS_UPDATE_DEV_AGENT']).resolve())
-        self.state['devAgent']=agent
+        self.state['devDocker']=True
         plan=self.state['operation']['input']
-        plan['agent_sha256']=hashlib.sha256(Path(agent).read_bytes()).hexdigest()
         number=secrets.randbelow(10000000)+900000000
         name=f'orbit-process-{number}-plausible'
         with socket.socket() as listener:
@@ -94,20 +92,27 @@ class UpdateNative(NativeTestCase):
         images=[f'ghcr.io/plausible/community-edition:v{version}' for version in versions]
         def docker(*args):
             return subprocess.run(['docker',*args],check=True,capture_output=True,text=True,timeout=30)
-        for image in images:
-            docker('tag','caddy:2.11',image)
-            self.addCleanup(lambda image=image: docker('image','rm',image))
+        image_source=self.repo/'image';image_source.mkdir()
+        (image_source/'entrypoint.sh').write_text('#!/bin/sh\nset -e\nif [ "$1" = "db" ]; then exit 0; fi\nexec caddy file-server --listen :8000 --root /site\n')
+        (image_source/'Dockerfile').write_text('FROM caddy:2.11\nCOPY --chmod=755 entrypoint.sh /entrypoint.sh\n')
+        docker('build','--quiet','--tag',images[0],str(image_source))
+        self.addCleanup(lambda:docker('image','rm',images[0]))
+        docker('tag',images[0],images[1])
+        self.addCleanup(lambda:docker('image','rm',images[1]))
         def cleanup():
-            for suffix in ['', '-candidate', '-rollback-running', '-rollback-stopped']:
-                subprocess.run(['docker','container','rm','--force',name+suffix],capture_output=True,timeout=30)
+            for suffix in ['', '-candidate', '-rollback-running', '-rollback-stopped', '-init-createdb', '-init-migrate']:
+                subprocess.run(['docker','container','rm','--force','--volumes',name+suffix],capture_output=True,timeout=30)
         self.addCleanup(cleanup)
-        before.update(process_id=number,container=name,image=images[0],command=['caddy','file-server','--listen',':8000','--root','/site'],ports=[f'127.0.0.1:{port}:8000/tcp'],mounts=[{'source':str(site),'target':'/site','read_only':True}])
+        before.update(process_id=number,container=name,image=images[0],command=['/entrypoint.sh','run'],ports=[f'127.0.0.1:{port}:8000/tcp'],mounts=[{'source':str(site),'target':'/site','read_only':True}])
         plan.update(process_id=number,previous_version=versions[0],version=versions[1],health_url=f'http://127.0.0.1:{port}/',before=before,after={**before,'spec':'b'*64,'image':images[1]})
-        envelope={'agent_sha256':plan['agent_sha256'],'deadline_ms':900000,'input':{**before,'environment':self.environment,'health':{'url':plan['health_url'],'attempts':5,'interval_seconds':1}}}
-        result=subprocess.run(['sudo','-n','--',agent,'command','process.converge-container'],input=json.dumps(envelope),capture_output=True,text=True,timeout=55)
-        self.assertTrue(json.loads(result.stdout)['ok'],result.stdout+result.stderr)
+        body={'Image':before['image'],'Cmd':before['command'],'Env':[key+'='+value for key,value in self.environment.items()],
+              'Labels':{'orbit.managed':'true','orbit.container.kind':'process','orbit.process.id':str(number),'orbit.process.spec':'a'*64},
+              'ExposedPorts':{'8000/tcp':{}},'HostConfig':{'PortBindings':{'8000/tcp':[{'HostIp':'127.0.0.1','HostPort':str(port)}]},
+              'Mounts':[{'Type':'bind','Source':str(site),'Target':'/site','ReadOnly':True}]}}
+        subprocess.run(['curl','-q','--fail','--silent','--unix-socket','/var/run/docker.sock','--request','POST','--header','Content-Type: application/json','--data-binary','@-',f'http://localhost/containers/create?name={name}'],input=json.dumps(body),capture_output=True,text=True,check=True,timeout=30)
+        docker('container','start',name)
     def assert_dev_container(self,spec):
-        if not self.state.get('devAgent'):return
+        if not self.state.get('devDocker'):return
         name=self.state['operation']['input']['before']['container']
         result=subprocess.run(['docker','container','inspect',name],capture_output=True,text=True,check=True,timeout=10)
         container=json.loads(result.stdout)[0]
@@ -127,7 +132,7 @@ class UpdateNative(NativeTestCase):
     def test_native_update_and_secret_redaction(self):
         run=self.workflow();state=self.read()
         self.assertEqual(state['operation']['status'],'succeeded')
-        self.assertEqual(len(state['calls']),1)
+        self.assertEqual(len(state['calls']),5 if state.get('devDocker') else 1)
         self.assert_dev_container('b'*64)
         history=self.cli('workflow','history','get',run).stdout
         self.assertEqual(self.private_reads,1)
@@ -136,13 +141,27 @@ class UpdateNative(NativeTestCase):
         self.state['loseProjection']=True;self.save()
         run=self.workflow(success=False)
         self.cli('workflow','resume','operation-analytics-update-direct','--run',run,'--from','apply')
-        self.assertEqual(len(self.read()['calls']),1)
+        self.assertEqual(len(self.read()['calls']),5 if self.state.get('devDocker') else 1)
         self.assertEqual(self.private_reads,1)
         self.scan_scratch()
-    def test_failed_health_projects_agent_restoration(self):
+    @unittest.skipUnless(os.environ.get('ANALYTICS_UPDATE_DEV_DOCKER')=='1','actual Docker replay')
+    def test_replayed_effect_finishes_existing_replacement(self):
+        self.workflow()
+        self.state=self.read()
+        self.state['operation']['status']='running'
+        self.state['operation']['result']=None
+        self.save()
+        self.workflow()
+        state=self.read()
+        self.assertEqual(state['operation']['status'],'succeeded')
+        self.assertEqual(len(state['calls']),6)
+        self.assert_dev_container('b'*64)
+        self.scan_scratch()
+
+    def test_failed_health_projects_system_restoration(self):
         self.state['refuseHealth']=True;self.save();self.workflow(success=False)
         state=self.read();self.assertEqual(state['operation']['result'],{'error_code':'analytics.update_failed','rolled_back':True})
-        self.assertEqual(len(state['calls']),1)
+        self.assertEqual(len(state['calls']),5 if state.get('devDocker') else 1)
         self.assert_dev_container('a'*64)
         self.scan_scratch()
 
@@ -152,7 +171,7 @@ class UpdateNative(NativeTestCase):
     def test_real_http_private_refusal_redacts_response_body(self):
         self.state['privateHttpError']=True;self.save();self.workflow(success=False)
         self.assertEqual(self.private_reads,1);self.assertEqual(self.read()['calls'],[]);self.scan_scratch()
-    def test_real_http_private_agent_payload_never_becomes_a_result(self):
+    def test_real_http_private_action_payload_never_becomes_a_result(self):
         self.state['privatePayload']=True;self.save();self.workflow()
         self.assertEqual(self.private_reads,1);self.scan_scratch()
 
