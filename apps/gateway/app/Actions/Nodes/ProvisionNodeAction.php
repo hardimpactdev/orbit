@@ -45,8 +45,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
-use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
@@ -67,7 +65,6 @@ final readonly class ProvisionNodeAction
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
-        private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
@@ -376,7 +373,6 @@ final readonly class ProvisionNodeAction
                     $data->expectedSshHostFingerprint,
                     function () use ($node, $managedUser, $data): void {
                         $node->user = $managedUser;
-                        $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data);
                     },
                     $rolelessOperator,
@@ -392,8 +388,6 @@ final readonly class ProvisionNodeAction
                 );
                 $clock->step('node-converge');
                 $node->user = $managedUser;
-                $this->toolManagers->converge($node, ToolManagerName::Apt);
-                $clock->step('apt-tool-manager');
                 $this->convergeRoles($node, $data);
                 $clock->step('roles');
             }
