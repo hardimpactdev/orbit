@@ -133,3 +133,32 @@ it('uses only the fixed field binding and refuses a different material owner', f
     expect($source->ownerId($operation))->toBeNull();
     expect(fn () => $source->resolve($operation, $node->id, '', 'runtime_material'))->toThrow(ResourceOperationException::class);
 });
+
+it('renders an admitted parent role snapshot through the same guarded private lower', function (): void {
+    [$operation, $node] = roleRuntimeSourceRoot(RoleName::WebSocket);
+    $source = app(NodeRoleRuntimeSource::class);
+    $snapshot = $operation->input['_role'];
+    $expected = $source->resolve($operation, $node->id, '', 'runtime_material');
+    $material = $source->resolveRoleMaterial($snapshot, $node->id);
+    expect($material->value)->toBe($expected->value);
+    expect(json_encode($material))->toBe('"[REDACTED]"');
+    $operation->kind = 'node.add';
+    expect($source->ownerId($operation))->toBeNull();
+    expect(fn () => $source->resolve($operation, $node->id, '', 'runtime_material'))->toThrow(ResourceOperationException::class);
+});
+
+it('refuses a foreign or inconsistent parent role material snapshot before rendering', function (string $case): void {
+    [$operation, $node] = roleRuntimeSourceRoot(RoleName::WebSocket);
+    $snapshot = $operation->input['_role'];
+    match ($case) {
+        'node' => $snapshot['node_id']++,
+        'assignment' => $snapshot['assignment_id']++,
+        'schema' => $snapshot['schema_version'] = 2,
+        'pin' => $snapshot['agent_sha256'] = 'invalid',
+        'runtime-pin' => $snapshot['runtime']['agent_sha256'] = str_repeat('f', 64),
+        'runtime-role' => $snapshot['runtime']['role'] = 'metrics',
+        'runtime-ref' => $snapshot['runtime']['material']['id']++,
+    };
+    expect(fn () => app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $node->id))
+        ->toThrow(ResourceOperationException::class);
+})->with(['node', 'assignment', 'schema', 'pin', 'runtime-pin', 'runtime-role', 'runtime-ref']);
