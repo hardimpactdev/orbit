@@ -20,17 +20,6 @@ final readonly class NativeAnalyticsTrackingRouteProjector implements AnalyticsT
         private DnsmasqPrivateDnsManager $dns,
     ) {}
 
-    public function converge(Route $route): void
-    {
-        $router = $this->sites->routerNode($route);
-
-        // Creation stores the publication record once its certificate exists, before its first build.
-        $this->certificates->convergeRouteRouter($route, $router);
-        $route->publishSites();
-        $this->caddy->build($router);
-        $this->dns->converge();
-    }
-
     public function prepareHost(Route $candidate): void
     {
         $this->certificates->convergeRouteRouter($candidate, $this->sites->routerNode($candidate));

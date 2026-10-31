@@ -72,7 +72,17 @@ You can read the logs of `plausible` and restart it like any other Process. You 
 
 The current lifecycle identifies Plausible by its Node and the name `plausible`, not a persisted owning-role claim. A convergence with different configuration can remove that named Process through the internal owning-role path before recreating it; role removal and unreachable forget also select by name. Do not use an unrelated Process with that name on an Analytics Node. The [ownership proposal](/decisions/0210-give-each-extension-its-own-code-boundary#explicit-process-ownership-before-extraction) replaces this unsafe selection with explicit ownership; it is not implemented by this documentation change.
 
-`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
+`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit does not create Plausible accounts or API tokens. Native Instance enable manages its site. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
+
+## Native Instance analytics changes
+
+Enabling analytics records one `analytics.enable` intent and starts one native Swamp workflow. It creates or converges the Plausible site, including its domain, timezone and desired goals, then requests and publishes tracking certificates, publishes current Caddy and private DNS data on their admitted Nodes, and removes obsolete tracking hosts. Every step declares its exact Node target and matching label. The Gateway records desired Routes and projects bounded results; it does not execute these host actions or start child Operations.
+
+Plausible management credentials use the shared private-material path. The admitted analytics Node reads the existing protected login and API key only inside the effect callback. No key enters native arguments, resources, logs or results. CE3.2.1 uses management HTTP for Sites and the site-scoped Plugins API for goals. A repeated converge preserves site history and manual goals.
+
+Certificate requests and signed certificates are public data. The existing Gateway CA service signs only an admitted tracking hostname's public request; Node private keys remain on their Nodes. Caddy and DNS steps use the canonical per-Node publication model and fetch current data after its native lock is acquired. Their public view allows GET only. It grants no result, primitive or private-material access to a foreign Node.
+
+An obsolete completion cannot remove a changed tracking set or a newer site binding. The owning kind selects the direct writer and removes its synchronous PHP executor in the same PR. Rollback reverts that PR. Live takeover requires exact credential approval and every admitted worker's placement proof, followed by the production canary.
 
 ## ClickHouse configuration
 
@@ -143,7 +153,7 @@ The host answers two paths and nothing else:
 
 The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
 
-`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project.
+`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. Enabling creates or converges the Plausible site. Add the script tag to the Project.
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 
@@ -181,9 +191,13 @@ General path proxying on any Route is rejected, because nothing else needs it an
 
 The fleet does not have to own its public edge. A tracking host mirrors the Instance's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the Instance's own domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
 
-### The operator owns the Plausible site
+### Swamp manages the Plausible site
 
-Orbit publishes the tracking endpoint, but the operator creates the site in Plausible and adds the script to the Project. Creating Plausible accounts or sites and injecting markup are rejected, because Orbit does not manage Plausible accounts and the Project owns its markup.
+Enable records one parent intent and starts one native Swamp workflow. The placed jobs converge the site domain, timezone, and requested goals, then publish certificates, Caddy and private DNS on their admitted Nodes. The Gateway stores Route intent and projects observations. It never starts child Operations or relays host commands. The Project owns its markup.
+
+Plausible CE 3.2.1 does not compile the public Sites API. The workflow uses its authenticated management HTTP endpoints and the site-scoped Plugins API for goals. Credentials come from the Gateway's protected settings through the shared exact-Node private-material endpoint. They stay inside its effect callback. Goals require a protected Plugins token for the admitted site. A missing or foreign token refuses the change before site mutation. Existing manual goals remain.
+
+The enable API returns a queued Operation. It accepts `hosts`, an IANA `timezone` (default `Europe/Amsterdam`), and `goals`. Converging the same intent is idempotent. Host publication fetches fresh whole-Node data inside the canonical native publication lock. Every step has the admitted Node target and matching Node label.
 
 ### Stats read on the Gateway
 

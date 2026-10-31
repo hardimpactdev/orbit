@@ -7,6 +7,7 @@ namespace App\Http\Requests\Analytics;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Routes\RouteDomain;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
@@ -20,6 +21,16 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
         return [
             'hosts' => ['sometimes', 'array', 'list', 'max:'.AnalyticsTrackingHosts::MAXIMUM],
             'hosts.*' => ['required', 'string', 'max:253'],
+            'timezone' => ['sometimes', 'string', 'timezone'],
+            'goals' => ['sometimes', 'array', 'list', 'max:100'],
+            'goals.*' => ['array:goal_type,goal'],
+            'goals.*.goal_type' => ['required', 'in:Goal.CustomEvent,Goal.Pageview,Goal.Revenue'],
+            'goals.*.goal' => ['required', 'array:event_name,path,currency,custom_props'],
+            'goals.*.goal.event_name' => ['sometimes', 'string', 'min:1', 'max:2000'],
+            'goals.*.goal.path' => ['sometimes', 'string', 'starts_with:/', 'max:2000'],
+            'goals.*.goal.currency' => ['sometimes', 'string', 'regex:/\\A[A-Z]{3}\\z/D'],
+            'goals.*.goal.custom_props' => ['sometimes', 'array', 'max:3'],
+            'goals.*.goal.custom_props.*' => ['string', 'min:1', 'max:2000', 'regex:/\\A[^\\r\\n\\x00]+\\z/D'],
         ];
     }
 
@@ -30,7 +41,7 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
         $content = trim($this->getContent()) === '[]' ? '' : $this->getContent();
 
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['hosts']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($content, ['hosts', 'timezone', 'goals']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -42,6 +53,23 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
         return [function (Validator $validator): void {
             if ($validator->errors()->isNotEmpty()) {
                 return;
+            }
+
+            foreach ($this->goals() as $index => $goal) {
+                $fields = ValidatedData::object($goal['goal']);
+                $required = match ($goal['goal_type']) {
+                    'Goal.Pageview' => ['path'],
+                    'Goal.Revenue' => ['event_name', 'currency'],
+                    default => ['event_name'],
+                };
+                if (array_diff($required, array_keys($fields)) !== [] || array_diff(array_keys($fields), [...$required, 'custom_props']) !== []) {
+                    $validator->errors()->add("goals.{$index}.goal", 'Supply only the fields required by this goal type.');
+                }
+                foreach ($fields as $value) {
+                    if (is_string($value) && preg_match('/[\\r\\n\\x00]/', $value) === 1) {
+                        $validator->errors()->add("goals.{$index}.goal", 'Goal text must contain no control characters.');
+                    }
+                }
             }
 
             $hosts = $this->hosts();
@@ -58,6 +86,17 @@ final class EnableInstanceAnalyticsRequest extends FormRequest
                 $validator->errors()->add('hosts', 'Name each tracking host once.');
             }
         }];
+    }
+
+    public function timezone(): string
+    {
+        return ValidatedData::string($this->validated('timezone', 'Europe/Amsterdam'));
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function goals(): array
+    {
+        return array_values(array_map(ValidatedData::object(...), $this->array('goals')));
     }
 
     /** @return list<string> The normalised hosts, in request order. */

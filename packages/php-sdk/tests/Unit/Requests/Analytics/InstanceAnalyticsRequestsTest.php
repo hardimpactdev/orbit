@@ -7,6 +7,7 @@ use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Analytics\EnableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Analytics\ShowInstanceAnalyticsRequest;
 use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -57,17 +58,30 @@ describe('the instance analytics requests', function (): void {
 
     it('returns the typed response with every host, its DNS record, and the snippet', function (): void {
         $mockClient = new MockClient([
-            EnableInstanceAnalyticsRequest::class => MockResponse::make([
+            ShowInstanceAnalyticsRequest::class => MockResponse::make([
                 'data' => instance_analytics_gateway_data(),
                 'meta' => ['request_id' => node_role_request_id()],
             ]),
         ]);
 
-        $response = node_role_gateway_connector($mockClient)->send(new EnableInstanceAnalyticsRequest(12))->dto();
+        $response = node_role_gateway_connector($mockClient)->send(new ShowInstanceAnalyticsRequest(12))->dto();
 
         expect($response)->toBeInstanceOf(InstanceAnalyticsResponse::class)
             ->and($response->toArray())->toBe([...instance_analytics_gateway_data(), 'request_id' => node_role_request_id()])
             ->and($response->hosts[0]['dns'])->toBe(['type' => 'CNAME', 'name' => 'analytics.shop.example.com', 'value' => 'shop.example.com']);
+    });
+
+    it('returns the admitted native parent and preserves timezone and goals', function (): void {
+        $goals = [['goal_type' => 'Goal.CustomEvent', 'goal' => ['event_name' => 'Signup']]];
+        $request = new EnableInstanceAnalyticsRequest(12, [], 'UTC', $goals);
+        $mock = new MockClient([EnableInstanceAnalyticsRequest::class => MockResponse::make([
+            'data' => ['id' => 42, 'kind' => 'analytics.enable', 'target_type' => 'instance', 'target_id' => 12, 'status' => 'queued', 'sequence' => 1],
+            'meta' => ['request_id' => node_role_request_id()],
+        ], 202)]);
+        $response = node_role_gateway_connector($mock)->send($request)->dto();
+        expect($request->body()->all())->toBe(['timezone' => 'UTC', 'goals' => $goals])
+            ->and($response)->toBeInstanceOf(OperationResponse::class)
+            ->and($response->kind)->toBe('analytics.enable')->and($response->targetId)->toBe(12);
     });
 
     it('accepts an instance without tracking: no domain, no dashboard, no hosts, no snippet', function (): void {
@@ -122,4 +136,23 @@ describe('the instance analytics requests', function (): void {
         expect(fn () => node_role_gateway_connector($mockClient)->send(new ShowInstanceAnalyticsRequest(12))->dto())
             ->toThrow(GatewayApiException::class, 'invalid instance analytics data');
     })->with(['domain', 'dashboard_url', 'snippet']);
+});
+
+it('decodes asynchronous analytics receipts as Operations', function (string $class): void {
+    $data = [
+        'id' => 42, 'kind' => 'analytics.enable', 'target_type' => 'instance', 'target_id' => 12,
+        'input' => [], 'status' => 'succeeded', 'sequence' => 3, 'current_step' => null,
+        'failed_step' => null, 'error_code' => null, 'result' => ['ready' => true],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-10-30T10:00:00+00:00', 'started_at' => '2026-10-30T10:00:01+00:00',
+        'finished_at' => '2026-10-30T10:00:02+00:00', 'poll_after_seconds' => 2,
+    ];
+    $mock = new MockClient([$class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => node_role_request_id()]], 202)]);
+    $response = node_role_gateway_connector($mock)->send(new $class(12))->dto();
+    expect($response)->toBeInstanceOf(OperationResponse::class)
+        ->and($response->id)->toBe(42);
+})->with([EnableInstanceAnalyticsRequest::class]);
+
+it('transports a supplied timezone without changing the default body', function (): void {
+    expect((new EnableInstanceAnalyticsRequest(12, timezone: 'UTC'))->body()->all())->toBe(['timezone' => 'UTC']);
 });

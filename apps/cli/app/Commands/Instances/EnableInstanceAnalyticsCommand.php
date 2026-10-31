@@ -7,7 +7,7 @@ namespace App\Commands\Instances;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Analytics\EnableInstanceAnalyticsRequest;
-use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 {
@@ -43,12 +43,12 @@ final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         $response = $this->sendWithProgress(
             $connector,
             new EnableInstanceAnalyticsRequest($instanceId, $hosts),
-            InstanceAnalyticsResponse::class,
-            ['Enable analytics', 'Publishing tracking hosts', 'Published tracking hosts'],
+            OperationResponse::class,
+            ['Enable analytics', 'Requesting analytics enable', 'Analytics request accepted'],
         );
 
-        return $response instanceof InstanceAnalyticsResponse
-            ? $this->renderAnalytics($response, 'Analytics tracking enabled.')
+        return $response instanceof OperationResponse
+            ? $this->finishOperation($connector, $repository, $response, $instanceId, 'Analytics tracking enabled.')
             : self::FAILURE;
     }
 }

@@ -64,7 +64,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('hides the report when tracking is enabled but the analytics role is not active', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
         $this->driver->healthy = false;
 
         $this->getJson($this->url)
@@ -75,7 +75,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('returns live visitors, period counts, and top pages for the instance domain', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
 
         $this->getJson($this->url)
             ->assertOk()
@@ -100,7 +100,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('returns a readable false report with no visitor numbers when the driver cannot read stats', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
         $this->driver->read = AnalyticsStatsRead::failed(
             'shop.example.com',
             'analytics.stats_key_missing',
@@ -123,7 +123,7 @@ describe('instance:analytics:stats', function (): void {
     });
 
     it('maps the Project instance domain, not a client-supplied site', function (): void {
-        $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
+        instance_analytics_tracking($this->instance);
 
         $this->getJson($this->url.'?site_id=other.example.com')->assertOk();
 

@@ -166,12 +166,7 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
 
     const modal = page.getByRole("dialog");
-    await expect
-        .element(modal)
-        .toMatchTextContent("DNS CNAME analytics.dev.charlie-shop.test -> dev.charlie-shop.test");
-    await expect
-        .element(modal)
-        .toMatchTextContent('src="https://analytics.dev.charlie-shop.test/js/script.js"');
+    await expect.element(modal).toMatchTextContent("Analytics enable started as operation");
     expect(
         app.gateway.requests.some(
             (request) =>

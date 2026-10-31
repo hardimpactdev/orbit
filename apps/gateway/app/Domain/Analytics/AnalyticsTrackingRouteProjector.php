@@ -12,8 +12,6 @@ use App\Models\Route;
  */
 interface AnalyticsTrackingRouteProjector
 {
-    public function converge(Route $route): void;
-
     /** Issues the tracking host's certificate on the Node that serves `$candidate`'s placement. */
     public function prepareHost(Route $candidate): void;
 

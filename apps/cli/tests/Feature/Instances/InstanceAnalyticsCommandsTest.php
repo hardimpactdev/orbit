@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Analytics\EnableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Analytics\ShowInstanceAnalyticsRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -23,6 +25,14 @@ beforeEach(function (): void {
         caPath: '/home/orbit/.orbit/ca/root.pem',
     ));
     $this->requestId = (string) Str::uuid();
+    $this->operation = fn (): MockResponse => MockResponse::make(['data' => [
+        'id' => 42, 'kind' => 'analytics.enable', 'target_type' => 'instance', 'target_id' => 12,
+        'input' => [], 'status' => 'succeeded', 'sequence' => 3, 'current_step' => null,
+        'failed_step' => null, 'error_code' => null, 'result' => ['ready' => true],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-10-30T10:00:00+00:00', 'started_at' => '2026-10-30T10:00:01+00:00',
+        'finished_at' => '2026-10-30T10:00:02+00:00', 'poll_after_seconds' => 2,
+    ], 'meta' => ['request_id' => $this->requestId]], 202);
     $this->enabled = fn (): MockResponse => MockResponse::make([
         'data' => [
             'instance_id' => 12,
@@ -57,7 +67,12 @@ afterEach(function (): void {
 
 describe('instance:analytics:enable', function (): void {
     it('publishes the default host when none is named, and tells the operator what to do next', function (): void {
-        $mockClient = MockClient::global([EnableInstanceAnalyticsRequest::class => ($this->enabled)()]);
+        $mockClient = MockClient::global([
+            EnableInstanceAnalyticsRequest::class => ($this->operation)(),
+            ShowOperationRequest::class => ($this->operation)(),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+            ShowInstanceAnalyticsRequest::class => ($this->enabled)(),
+        ]);
 
         $this->artisan('instance:analytics:enable', ['instance' => '12'])
             ->expectsOutputToContain('Analytics tracking enabled.')
@@ -65,17 +80,21 @@ describe('instance:analytics:enable', function (): void {
             ->expectsOutputToContain('<script defer data-domain="shop.example.com"')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastPendingRequest()?->body()->all())->toBe([]);
+        $mockClient->assertSent(fn ($request): bool => $request instanceof EnableInstanceAnalyticsRequest && $request->body()->all() === []);
     });
 
     it('sends every named host', function (): void {
-        $mockClient = MockClient::global([EnableInstanceAnalyticsRequest::class => ($this->enabled)()]);
+        $mockClient = MockClient::global([
+            EnableInstanceAnalyticsRequest::class => ($this->operation)(),
+            ShowOperationRequest::class => ($this->operation)(),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false]]),
+            ShowInstanceAnalyticsRequest::class => ($this->enabled)(),
+        ]);
 
         $this->artisan('instance:analytics:enable', ['instance' => '12', '--host' => ['stats.example.com', 'analytics.shop.example.com'], '--json' => true])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastPendingRequest()?->body()->all())
-            ->toBe(['hosts' => ['stats.example.com', 'analytics.shop.example.com']]);
+        $mockClient->assertSent(fn ($request): bool => $request instanceof EnableInstanceAnalyticsRequest && $request->body()->all() === ['hosts' => ['stats.example.com', 'analytics.shop.example.com']]);
     });
 });
 
@@ -128,3 +147,25 @@ it('refuses an instance that is not a positive number before any request', funct
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with(['instance:analytics:show', 'instance:analytics:enable', 'instance:analytics:disable']);
+
+it('follows an analytics Operation and emits one machine result', function (string $command, string $class, array $options): void {
+    $data = [
+        'id' => 42, 'kind' => 'analytics.enable', 'target_type' => 'instance', 'target_id' => 12,
+        'input' => [], 'status' => 'succeeded', 'sequence' => 3, 'current_step' => null,
+        'failed_step' => null, 'error_code' => null, 'result' => ['ready' => true],
+        'cancel_requested' => false, 'attempts' => 1, 'triggered_by' => 'operator',
+        'created_at' => '2026-10-30T10:00:00+00:00', 'started_at' => '2026-10-30T10:00:01+00:00',
+        'finished_at' => '2026-10-30T10:00:02+00:00', 'poll_after_seconds' => 2,
+    ];
+    MockClient::global([
+        ShowRealtimeRequest::class => MockResponse::make(['data' => ['enabled' => false], 'meta' => ['request_id' => $this->requestId]]),
+        $class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => $this->requestId]], 202),
+        ShowOperationRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => $this->requestId]]),
+    ]);
+    $this->artisan($command, ['instance' => '12', '--json' => true, ...$options])
+        ->expectsOutputToContain('"status":"succeeded"')
+        ->doesntExpectOutputToContain('tracking enabled')
+        ->assertExitCode(0);
+})->with([
+    ['instance:analytics:enable', EnableInstanceAnalyticsRequest::class, []],
+]);

@@ -1,7 +1,7 @@
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
 import { api, GatewayError } from "./client";
-import { instanceOperationsQuery, startDeploy } from "./operations";
+import { type Operation, instanceOperationsQuery, startDeploy } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -38,21 +38,6 @@ const leaves = (label: string, command: string, description: string): Action => 
     description,
 });
 
-/** What the operator does after enabling: one DNS record per host, then the script tag. */
-const analyticsReport = (analytics: InstanceAnalytics): string =>
-    [
-        ...analytics.hosts.map(
-            (host) =>
-                `${host.host}  ${host.status}${host.error_code === null ? "" : ` (${host.error_code})`}` +
-                (host.dns === null
-                    ? ""
-                    : `\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`),
-        ),
-        "",
-        "Add this tag to the Project, and create the site in Plausible yourself:",
-        analytics.snippet ?? "",
-    ].join("\n");
-
 /**
  * Enable while the instance has no tracking host and an analytics role exists; disable while it
  * has one. The page has read the instance's analytics by the time the menu opens; before that,
@@ -73,13 +58,11 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                 destructive: true,
                 description: `Remove every analytics tracking host of [${target}]? Plausible stops receiving its visits.`,
                 run: async () => {
-                    queryClient.setQueryData(
-                        key,
-                        await api<InstanceAnalytics>(
-                            "DELETE",
-                            `/api/v1/instances/${instance.id}/analytics`,
-                        ),
+                    const result = await api<InstanceAnalytics>(
+                        "DELETE",
+                        `/api/v1/instances/${instance.id}/analytics`,
                     );
+                    queryClient.setQueryData(key, result);
                     queryClient.removeQueries({
                         queryKey: ["instance-analytics-stats", instance.id],
                     });
@@ -98,17 +81,18 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                   description: `Publish analytics.${analytics.domain ?? instance.domain} for [${target}].`,
                   report: async () => {
                       try {
-                          const enabled = await api<InstanceAnalytics>(
+                          const enabled = await api<Operation>(
                               "POST",
                               `/api/v1/instances/${instance.id}/analytics`,
                               {},
                           );
-                          queryClient.setQueryData(key, enabled);
-                          queryClient.removeQueries({
-                              queryKey: ["instance-analytics-stats", instance.id],
+                          await queryClient.invalidateQueries({
+                              queryKey: instanceOperationsQuery(instance.id).queryKey,
                           });
-
-                          return { ok: true, output: analyticsReport(enabled) };
+                          return {
+                              ok: true,
+                              output: `Analytics enable started as operation ${enabled.id}. Follow it in the Instance operations panel.`,
+                          };
                       } catch (error) {
                           return {
                               ok: false,

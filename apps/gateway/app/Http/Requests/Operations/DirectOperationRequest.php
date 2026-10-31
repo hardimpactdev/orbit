@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -39,6 +40,15 @@ class DirectOperationRequest extends ExecutorRequest
         if ($operation instanceof Operation) {
             $peer = $this->peerNodeId();
             if (! in_array(config('dependency_detection.services_node_id'), [$peer, (string) $peer], true) && $operation->node_id !== $peer) {
+                $projection = app(DirectOperation::class)->projection($operation);
+                if ($this->route()?->getActionMethod() === 'show' && $projection instanceof DirectOperationPublicView) {
+                    if ($operation->status->terminal()) {
+                        throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
+                    }
+                    $projection->assertPublicParticipant($operation, $peer);
+
+                    return true;
+                }
                 throw new ResourceOperationException('operation.executor_forbidden', 'A Node worker may access only its own Node intent.', 403);
             }
         }

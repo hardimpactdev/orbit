@@ -7,6 +7,7 @@ import {
     type Operation,
     type OperationStep,
 } from "../api/operations";
+import { queryClient } from "../api/queryClient";
 import type { Instance } from "../api/types";
 import { useFallbackPoll } from "../realtime/liveness";
 import { useOperation } from "../realtime/operation";
@@ -23,6 +24,7 @@ const stepColumns: Column<OperationStep>[] = [
 const TITLES: Record<string, string> = {
     "instance.deploy": "Deploy",
     "instance.rollback": "Rollback",
+    "analytics.enable": "Enable analytics",
 };
 
 const headline = (operation: Operation): string =>
@@ -50,6 +52,15 @@ export function OperationPanel({ instance }: { instance: Instance }) {
         }
     }, [newest]);
     const { operation, lines: live } = useOperation(tracked);
+
+    useEffect(() => {
+        if (operation !== null && isTerminal(operation) && operation.kind === "analytics.enable") {
+            void queryClient.invalidateQueries({ queryKey: ["instance-analytics", instance.id] });
+            void queryClient.invalidateQueries({
+                queryKey: ["instance-analytics-stats", instance.id],
+            });
+        }
+    }, [operation, instance.id]);
 
     if (operation === null) {
         return null;

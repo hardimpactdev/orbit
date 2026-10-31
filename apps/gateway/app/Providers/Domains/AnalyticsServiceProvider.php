@@ -6,6 +6,7 @@ namespace App\Providers\Domains;
 
 use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsDatabaseConnectionGuard;
+use App\Domain\Analytics\AnalyticsManagementCredentialsSource;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -15,6 +16,7 @@ use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
+use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
@@ -44,6 +46,7 @@ final class AnalyticsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([AnalyticsManagementCredentialsSource::class], OperationSecretSource::class);
         $this->app->tag([AnalyticsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([AnalyticsDatabaseConnectionGuard::class], DatabaseConnectionRemovalGuard::class);
         $this->app->tag([AnalyticsProcessOwnership::class], ProcessRemovalGuard::class);

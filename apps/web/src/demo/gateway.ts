@@ -955,8 +955,11 @@ export function createDemoGateway() {
                     method,
                     /^\/api\/v1\/instances\/(\d+)\/analytics$/,
                     ([id = ""]) => {
-                        if (method !== "GET") {
-                            trackedInstances[method === "POST" ? "add" : "delete"](id);
+                        if (method === "POST") {
+                            return startDemoOperation("analytics.enable", Number(id), {});
+                        }
+                        if (method === "DELETE") {
+                            trackedInstances.delete(id);
                         }
 
                         const domain =
@@ -1281,6 +1284,9 @@ export function createDemoGateway() {
         const next = steps.find((step) => step.status === "pending");
 
         if (next === undefined) {
+            if (operation.kind === "analytics.enable") {
+                trackedInstances.add(String(operation.target_id));
+            }
             Object.assign(operation, {
                 status: "succeeded",
                 current_step: null,
