@@ -25,7 +25,7 @@ class VaultDirectNative(NativeTestCase):
         self.workflow.write_text('\n'.join(line for line in (ROOT/'workflows/workflow-operation-vault-direct.yaml').read_text().replace('/usr/local/share/ca-certificates/orbit-root.crt','/dev/null').splitlines() if not line.lstrip().startswith(('target:', 'labels:')))+'\n')
         self.state = {'operations': {}, 'effects': 0, 'calls': [], 'loseProjection': False, 'echoPrivate': False}
         self.add_operation(17)
-    def add_operation(self, identity, kind='vault.sync'):
+    def add_operation(self, identity, kind='vault.setup'):
         self.state['operations'][str(identity)] = {'id': identity, 'node_id': 9, 'kind': kind, 'status': 'queued', 'input': {'action':kind.split('.')[1]}, 'result': None, 'cancel_requested':False}
         self.save()
     def save(self): (self.repo/'native-vault.json').write_text(json.dumps(self.state))
@@ -34,11 +34,11 @@ class VaultDirectNative(NativeTestCase):
         kind=self.read()['operations'][str(identity)]['kind']
         result=self.cli('workflow','run','operation-vault-direct','--input','operation_id='+str(identity),'--input','node_id=9','--input','kind='+kind,success=success)
         return json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
-    def test_sync_uses_shared_material_and_projects_only_metadata(self):
-        self.cli('workflow','validate','operation-vault-direct')
-        self.run_workflow()
-        self.assertEqual(self.read()['operations']['17']['status'],'succeeded')
-        self.assertEqual(self.read()['effects'],1)
+    def test_legacy_workflow_refuses_sync_before_material_read(self):
+        self.add_operation(17, 'vault.sync')
+        self.cli('workflow','run','operation-vault-direct','--input','operation_id=17','--input','node_id=9','--input','kind=vault.sync',success=False)
+        self.assertEqual(self.read()['effects'],0)
+        self.assertEqual(self.read()['calls'],[])
     def test_setup_uses_shared_material_and_projects_configuration_metadata(self):
         self.add_operation(17, 'vault.setup')
         self.run_workflow()

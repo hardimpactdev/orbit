@@ -22,7 +22,7 @@ Do these steps in Vaultwarden first:
 3. Invite the Gateway account to the organization and give it **Can manage** on the collection. Confirm the membership.
 4. Sign in as the Gateway account and copy its personal API key: `client_id` and `client_secret`.
 
-Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Every request trusts only the Orbit root CA, so the Gateway sends credentials only to a server with a certificate that Orbit issued.
+Vaultwarden must run behind an Orbit Route, such as `https://vault.orbit`. Setup accepts only an HTTPS origin on a `.orbit` host, with no user info, path, query, or fragment. Sync uses the official CLI's TLS verification with the Orbit public root added to its trust store. It never disables verification. Admission limits the destination to that managed HTTPS origin.
 
 Then run [`vault:setup`](/cli/vault#orbit-vaultsetup) with the Vaultwarden origin, the API key, the master password, and the organization and collection, each by name or ID. The Gateway records the encrypted setup intent. Its Swamp worker logs in, unlocks the account, and checks that it can write to the collection. The Gateway stores the configuration only after Swamp returns proven safe metadata. Setup can run again, for example with a new API key or master password. It refuses another organization or collection with `vault.items_published` while items are published, because they would stay behind in the old one. Run [`vault:teardown`](#tear-down) first.
 
@@ -43,7 +43,7 @@ The Gateway publishes one item for each of these:
 
 Redis and SQLite connections get no item. A `mysql` or `pgsql` connection that lacks one of the fields, and a Database user whose password Orbit does not store, are listed as skipped in [`vault:status`](/cli/vault#orbit-vaultstatus).
 
-Each item is a Secure Note in the configured collection. Every write names the Gateway account as `encryptedFor`, which Vaultwarden 1.37 requires, and sends a Bitwarden client version header. Its custom fields follow schema version 1 of Vault's Database item:
+Each item is a Secure Note in the configured collection. The official Bitwarden CLI owns sync authentication and encryption. Its custom fields follow schema version 1 of Vault's Database item:
 
 | Field | Value |
 | --- | --- |
@@ -85,7 +85,7 @@ A run that finds nothing to do does not contact Vaultwarden, except once an hour
 
 The publishing ledger identifies Orbit's items. Do not add items with an `orbit.source` field by hand.
 
-One failed change does not stop the others. The run records its error, keeps that item's state, and the next run retries it. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
+A failed change fails the native run. The publishing ledger stays unchanged, and the next run reconciles remote state before retrying. Earlier successful mutations can remain in Vaultwarden. Database operations never wait for Vaultwarden, so an outage delays only the copy. The scheduled command exits with failure while the Gateway records an error. The generic executor health command reports unclaimed or stalled Operations, including queued initial setup, in Activity and Operation assistance. Starting intent does not update `last_synced_at` or clear an error; successful completion does.
 
 [`vault:sync`](/cli/vault#orbit-vaultsync) runs the same reconcile at once, including the hourly check. It returns HTTP 202 with an Operation; follow that Operation until completion. A failed Operation records its safe error code, and a later run retries. Only one Operation holds the Vault target at a time.
 
@@ -174,19 +174,15 @@ Publishing is the feature itself, not the end of work that was already recorded,
 
 ### The account keeps PBKDF2
 
-The collection program derives the account's keys with PBKDF2 and refuses an account configured for Argon2id.
+The existing setup program derives the account's keys with PBKDF2 and refuses an account configured for Argon2id. Sync delegates key derivation to the official CLI.
 
-### The Gateway encrypts items itself
+### Sync uses the official CLI
 
-The named collection program writes the standard Bitwarden format instead of driving the Bitwarden CLI. That avoids Node.js and an unlocked session that outlives a run.
+Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.10.1 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown retain their existing implementation until their owning rewrite.
 
-### TLS trusts only Orbit
+### TLS verifies the server
 
-The Gateway pins the Orbit root CA and accepts only `.orbit` hosts. With the system trust store and any URL, a caller with Gateway access could point setup at a server it controls and receive every password within a minute.
-
-The Gateway reads the CA from `root.pem` in its state directory, next to the root key, and checks it before each request. It never copies the CA to a shared temporary directory, where another local account could plant its own CA under the expected name.
-
-That CA file is the only trust anchor. The system trust store, such as `/etc/ssl/certs`, does not apply, so a certificate from a public CA or any other CA fails the TLS check. The collection program builds its TLS context with that CA alone and rejects redirects. Each request has a 15-second overall deadline, including connecting, headers, and the body. A peer that sends headers slowly cannot extend that deadline. A process alarm enforces that deadline across the complete request.
+Admission accepts only HTTPS `.orbit` origins. Sync uses the official CLI's default trust store plus the public Orbit root through `NODE_EXTRA_CA_CERTS`; it never disables certificate verification. Setup and teardown retain their existing Orbit-root-only TLS context and request deadlines until their owning rewrite.
 
 ### Removed credentials are deleted
 
@@ -194,16 +190,37 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The shared private-material route resolves the Operation's secret reference into its encrypted snapshot of the submitted credentials and wanted Database items. Only the exact recorded run on that Node can read it while the Operation is unfinished.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Sync uses the native CLI workflow described below. Setup and teardown still run their existing collection program on the recorded Gateway Node, with the shared run-bound private-material endpoint and protected stdin. Their terminal completion deletes the encrypted snapshot.
 
-Swamp uses the private material in memory and through protected stdin; only safe metadata and published item identifiers reach its resources. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
-
-A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
+A retry reconciles the collection by `orbit.source` before it creates an item. It adopts a wanted marker only when that source has no ledger entry. A missing recorded cipher creates a replacement and preserves unrecorded copies. Only recorded orphans are eligible for deletion. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
 Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
 
 ## Direct Swamp writer
 
-`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and use their fixed direct declarations. No polling writer or Kit result contract is loaded. Rollback reverts the owning PR.
+`vault.setup` and `vault.teardown` retain `operation-vault-direct`. Their credentials stay in the effect callback and protected stdin. Only bounded public metadata reaches their results. Terminal replay does not read deleted credentials or project the ledger twice.
 
-The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway filters bounded public metadata, projects the ledger and removes terminal credential snapshots. It does not load a Kit execution contract. Terminal replay returns the recorded result without resolving deleted credentials or projecting the ledger again. No family route, token or relay is added.
+### Native sync with the official Bitwarden CLI
+
+The Gateway starts operation-vault-sync with full public intent and a names-only
+configuration execution-copy descriptor. Intent contains the server, organization
+and collection IDs, wanted source/fingerprint pairs and the publishing ledger.
+Credentials and wanted item contents stay in the shared Swamp vault and reach
+action scripts through the whole environment expression. Steps make no Gateway
+calls. The fixed sync/result public JSON uses the existing terminal subscriber.
+
+Swamp core workflows and command execution fit. Official extensions were checked
+at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud
+secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies
+API-key login, password-env unlock, item JSON on stdin and permanent deletion.
+Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be
+available on the placed worker; normal npm package execution/cache resolves
+the pinned official CLI.
+
+One temporary CLI app-data directory belongs to each run. Its derived session
+key is a mode-0600 file passed only as BW_SESSION, never a step output or argument.
+Only public item metadata leaves the CLI boundary. Item steps use native
+concurrency 1 because they share the official CLI's writable cache. Logout and
+cache removal follow success or failure. Native resume must restart from the
+workspace step to rebuild this disposable session and inventory; it must not
+reuse a cleaned-up session. There is no custom retry loop or lock.

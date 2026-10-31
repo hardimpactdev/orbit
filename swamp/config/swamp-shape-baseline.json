@@ -3552,7 +3552,7 @@
     {
       "file": "extensions/behaviors/operations/vault/collection.ts",
       "rule": "inline-script",
-      "count": 351,
+      "count": 313,
       "evidence": []
     },
     {

@@ -1,0 +1,444 @@
+id: 8f61a312-2b19-4ef7-92d5-39dff3d42380
+name: operation-vault-sync
+description: Complete public intent, vault environment, one cipher action per native
+  shell step.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - vault.sync
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        client_id:
+          type: string
+        organization_id:
+          type: string
+        collection_id:
+          type: string
+        ca_file:
+          type: string
+        wanted:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - fingerprint
+            additionalProperties: false
+        ledger:
+          type: array
+          items:
+            type: object
+            properties:
+              source:
+                type: string
+              cipher_id:
+                type: string
+              revision_date:
+                type: string
+              fingerprint:
+                type: string
+            required:
+            - source
+            - cipher_id
+            - revision_date
+            - fingerprint
+            additionalProperties: false
+      additionalProperties: false
+      required:
+      - url
+      - client_id
+      - organization_id
+      - collection_id
+      - ca_file
+      - wanted
+      - ledger
+    execution_secrets:
+      type: object
+      properties:
+        configuration:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^vault-sync-[a-f0-9-]+$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - configuration
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: prepare
+  steps:
+  - name: assets
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id001
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      methodName: assets
+      inputs:
+        intent: ${{ inputs.intent }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-assets" }}
+  - name: workspace
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          umask 077
+
+          mktemp -d -t orbit-vault-sync.XXXXXX
+
+          '
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-workspace"
+        }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: configure
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.configure }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-configure"
+        }}
+    dependsOn:
+    - step: workspace
+      condition:
+        type: succeeded
+  - name: login
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.login }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-login" }}
+    dependsOn:
+    - step: configure
+      condition:
+        type: succeeded
+  - name: unlock
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.unlock }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-unlock" }}
+    dependsOn:
+    - step: login
+      condition:
+        type: succeeded
+  - name: sync
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.sync }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-sync" }}
+    dependsOn:
+    - step: unlock
+      condition:
+        type: succeeded
+  - name: inventory
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.inventory }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-inventory"
+        }}
+    dependsOn:
+    - step: sync
+      condition:
+        type: succeeded
+  - name: trash
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.inventory }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_TRASH: 'true'
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-trash" }}
+    dependsOn:
+    - step: inventory
+      condition:
+        type: succeeded
+  - name: plan
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+        inventory: ${{ steps.inventory.outputs.stdout }}
+        trash: ${{ steps.trash.outputs.stdout }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-plan" }}
+    dependsOn:
+    - step: trash
+      condition:
+        type: succeeded
+- name: deletions
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: delete
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.delete }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-delete" }}
+    forEach:
+      item: item
+      in: ${{ steps.plan.outputs.deletes }}
+    concurrency: 1
+- name: writes
+  dependsOn:
+  - job: deletions
+    condition:
+      type: succeeded
+  steps:
+  - name: write
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.write }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+          ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}
+    forEach:
+      item: item
+      in: ${{ steps.plan.outputs.writes }}
+    concurrency: 1
+- name: sync
+  dependsOn:
+  - job: writes
+    condition:
+      type: always
+  steps:
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      methodName: result
+      inputs:
+        plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs
+          : null }}'
+        writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status
+          == "succeeded").map(name, steps[name].outputs.stdout) }}
+        successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
+          steps[name].status != "failed" && steps[name].status != "cancelled") }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}
+- name: cleanup
+  dependsOn:
+  - job: sync
+    condition:
+      type: always
+  steps:
+  - name: logout
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.scripts.logout }}"
+
+          '
+        env:
+          ORBIT_VAULT_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+          ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
+            inputs.execution_secrets.configuration.key) }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-logout" }}
+    allowFailure: true
+    guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
+  - name: remove-cache
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          rm -rf -- "$ORBIT_VAULT_DIRECTORY"
+
+          '
+        env:
+          ORBIT_VAULT_DIRECTORY: ${{ steps.workspace.outputs.stdout.trim() }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-remove-cache"
+        }}
+    dependsOn:
+    - step: logout
+      condition:
+        type: always
+    guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
