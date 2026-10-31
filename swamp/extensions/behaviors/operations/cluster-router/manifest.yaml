@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/cluster-router-result"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Pure native Cluster Router terminal result.
+behaviors:
+  - operations/cluster-router/result.ts

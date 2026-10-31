@@ -3,7 +3,7 @@ import { scheduleControl } from "./control.ts";
 const args = {
   operation_id: 17,
   node_id: 9,
-  kind: "schedule.run" as const,
+  kind: "schedule.enable" as const,
   run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
 const input = {
@@ -25,7 +25,7 @@ function fixture() {
   const current = {
     id: 17,
     node_id: 9,
-    kind: "schedule.run",
+    kind: "schedule.enable",
     input: { ...input },
     cancel_requested: false,
     status: "queued",

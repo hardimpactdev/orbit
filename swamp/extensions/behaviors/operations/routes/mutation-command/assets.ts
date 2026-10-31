@@ -12,6 +12,7 @@ const LanPlan = z.object({
     node_id: Id,
     rules: z.array(LanRule),
     migrate: z.boolean(),
+    legacy_router: z.literal(true).optional(),
 }).strict();
 function verifyLanRules(
     plan: z.infer<typeof LanPlan>,
@@ -241,13 +242,18 @@ export const behavior = {
         lanMigration: {
             description:
                 "Resolve the temporary approved old-rule cleanup asset",
-            arguments: z.object({}),
-            execute: async (_args: unknown, ctx: Context) => ({
+            arguments: z.object({ legacy_router: z.boolean().optional() }),
+            execute: async (
+                args: { legacy_router?: boolean },
+                ctx: Context,
+            ) => ({
                 dataHandles: [
                     await ctx.writeResource("assets", "assets", {
                         script: ctx.extensionFile("scripts/route_lan.py"),
                         scripts_directory: ctx.extensionFile("scripts"),
-                        input_json: "{}",
+                        input_json: JSON.stringify({
+                            legacy_router: args.legacy_router === true,
+                        }),
                     }),
                 ],
             }),

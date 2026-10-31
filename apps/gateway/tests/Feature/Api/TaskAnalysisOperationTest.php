@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -16,7 +17,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 /** @return array{Task, Task} */
 function native_analysis_group(string $orchestration = 'external'): array
 {
-    $node = test()->markAsGateway(Node::query()->create(['name' => 'check-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91']));
+    $node = test()->markAsGateway(Node::query()->create(['name' => 'check-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND']));
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'Check', 'slug' => 'check', 'repository_url' => 'https://github.com/acme/turn.git']);
@@ -58,6 +59,8 @@ it('admits one native analysis from the public provision pin with no PHP executi
         ->and($operation->input['base'])->toBe(str_repeat('a', 40))
         ->and($operation->input['checkout_path'])->toBe('/srv/check')
         ->and($operation->state['swamp_run_id'])->toBe($this->run)
+        ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.91')
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) [])
         ->and($operation->state)->not->toHaveKey('execution')
         ->and(TaskWorkspaceLeaseRecord::query()->count())->toBe(0)
         ->and(TaskCheck::query()->count())->toBe(0);
@@ -73,10 +76,19 @@ it('retains native success and closed failure evidence without judging it or cha
         : ['outcome' => 'ready', 'artifact' => ['content' => 'native evidence', 'bytes' => 15], 'provenance' => ['native' => true]];
     $native = $failed ? [...$result, 'error_code' => $result['error']['code']] : $result;
     $body = ['run_id' => $this->run, 'status' => $failed ? 'failed' : 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $native, 'error_code' => $failed ? $result['error']['code'] : null];
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk()->assertJsonPath('data.result', $result);
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk()->assertJsonPath('data.result', $result);
+    config(['swamp.read_token' => 'native-reader', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/dev/null']);
+    $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
+        'id' => $this->run, 'workflowName' => 'operation-task-analyze', 'status' => $body['status'],
+        'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.analyze'],
+        'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
+        'jobs' => [['name' => 'analysis', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($native, JSON_THROW_ON_ERROR)]]]]],
+    ]]]];
+    $projection = app(SwampCommandStep::class);
+    $operation = Operation::findOrFail($id);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], ['job' => 'analysis', 'step' => 'result']);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => $body['status']], ['job' => 'analysis', 'step' => 'result']);
     $this->getJson('/api/v1/operations/'.$id)->assertOk()->assertJsonPath('data.result', $result);
-    expect($group->fresh()->status->value)->toBe('running')->and(count($this->socket->sent))->toBe(1);
+    expect($group->fresh()->status->value)->toBe('running')->and(count($this->socket->sent))->toBe(2);
 })->with([false, true]);
 
 it('refuses a missing pin or substituted starting commit before dispatch', function (bool $missing): void {

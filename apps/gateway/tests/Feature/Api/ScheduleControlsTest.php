@@ -22,17 +22,19 @@ use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'schedule-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
+    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'schedule-direct', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']));
     config(['dependency_detection.services_node_id' => $this->node->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->schedule = Schedule::query()->create(['id' => '9a067a27-c2ce-45c5-83f5-735e03dc5b2f', 'target_type' => Node::class, 'target_id' => $this->node->id, 'host_node_id' => $this->node->id, 'name' => 'direct-proof', 'calendar' => '*:0/5', 'command' => 'private-command', 'timeout_seconds' => 60, 'desired_timer_state' => 'enabled', 'status' => 'active']);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $this->operation = Operation::query()->create(['kind' => 'schedule.run', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit', 'unrelated' => 'private-value'], 'state' => ['swamp_run_id' => $this->runId]]);
+    $this->operation = Operation::query()->create(['kind' => 'schedule.enable', 'target_type' => 'node_schedules', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'status' => OperationStatus::Queued, 'sequence' => 1, 'input' => ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit', 'unrelated' => 'private-value'], 'state' => ['swamp_run_id' => $this->runId]]);
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->socket = new FakeRoutePublicationSocket;
-    $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId,
-    ]]];
+    $this->socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->runId,
+        ]]];
     app()->instance(WebSocketClient::class, $this->socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 });
@@ -61,7 +63,7 @@ it('refuses worker access before Gateway start binding and never binds from a re
 
 it('checks shared start-response and first-read ordering without a family token or target hold', function (): void {
     DB::beginTransaction();
-    $operation = app(StartOperationAction::class)->execute('schedule.run', 'node_schedules', $this->node->id, $this->node->id, ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit'], 'test', null);
+    $operation = app(StartOperationAction::class)->execute('schedule.enable', 'node_schedules', $this->node->id, $this->node->id, ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit'], 'test', null);
     $path = '/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId;
     $this->getJson($path)->assertConflict()->assertJsonPath('error.code', 'operation.run_unbound');
     expect($this->socket->sent)->toBe([]);
@@ -69,7 +71,7 @@ it('checks shared start-response and first-read ordering without a family token 
     $this->getJson($path)->assertOk();
     expect($this->socket->sent)->toHaveCount(1);
     expect($this->socket->endpoint->bearerToken)->toBe('shared.scoped.fixture');
-    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.run', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
+    expect($this->socket->sent[0]['payload'])->toBe(['workflowIdOrName' => 'operation-schedule-control', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'schedule.enable', 'node_id' => $this->node->id], 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id]]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
@@ -93,6 +95,7 @@ it('restricts Node workers without the legacy allowlist and preserves the contro
 });
 
 it('projects a bounded failure without enabling the timer', function (): void {
+    $this->operation->update(['kind' => 'schedule.run', 'input' => [...$this->operation->input, 'command_hash' => hash('sha256', $this->schedule->command)]]);
     $this->schedule->update(['desired_timer_state' => 'disabled']);
     $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.run_failed', 'result' => ['error_code' => 'other.failure']];
     $this->postJson($this->path.'/result', $body)->assertOk()->assertJsonPath('data.result', ['error_code' => 'schedule.run_failed']);
@@ -226,5 +229,5 @@ it('admits manual runs directly on a worker Node without PHP runtime execution',
     $admitted = Operation::query()->findOrFail($id);
     expect($admitted->state['swamp_run_id'])->toBe($this->runId);
     expect($admitted->lock_key)->toBeNull();
-    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->socket->sent)->toHaveCount(2);
 });

@@ -1,3 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/vault-sync-plan'
+version: 2026.10.31.2
+visibility: private
+license: MIT
+description: Public Vault sync planning and shipped official Bitwarden CLI actions.
+behaviors:
+- operations/vault-sync/mod.ts
 additionalFiles:
 - scripts/bw.py
 - scripts/configure.py

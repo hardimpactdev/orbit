@@ -1,11 +1,13 @@
 # Public Node209 worker assets
 
-`@nckrtl/node-worker-assets` version `2026.10.31.2`, method `read`, supplies public worker files for Node209 only. Its inputs are exactly `{node_id: 209, user}`. Every other Node fails validation before asset reads. Node209 runs Serve and all workers; Node bootstrap installs no Swamp binary or worker and mints no worker token.
+`@nckrtl/node-worker-assets` version `2026.10.31.3`, method `read`, supplies public worker files for Node209 only. Its inputs are exactly `{node_id: 209, user}`. Every other Node fails validation before asset reads. Node209 runs Serve and all workers; Node bootstrap installs no Swamp binary or worker and mints no worker token.
 
 The native `assets` resource contains `unit`, `checker`, `preflight`, `checker_path`, `unit_path`, `ca_path`, `runtime_version`, `artifact_url`, `artifact_sha256` and `artifact_bytes`. No input or output contains a credential. The manifest ships scripts through `additionalFiles`; the metadata method reads them with `ctx.extensionFile`. TypeScript performs no host effect.
 
 `extensions/behaviors/node-worker/config.ts` owns the official runtime pin and workerUnit renderer. The exported Node209 unit includes the approved existing SSH identity through `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. Preserve that key and its worker-readable systemd credential when retiring target workers.
 
 For approved Node209 maintenance, publish the executable checker before starting the unit: its `ExecStartPre` requires `/usr/local/libexec/orbit-node-worker-check`. Use core or official extension file actions with their defaults. Keep unit publication, daemon-reload and worker start as separate steps. This export does not issue tokens, deliver private values, start a worker or authorize a restart.
+
+The unit retains `KillMode=mixed` and `TimeoutStopSec=infinity` so the main worker can finish its native drain. After that main process exits, systemd's default final kill cleans up remaining child processes, including official SSH connection masters. Do not disable that cleanup with `SendSIGKILL=no`: systemd refuses to restart a mixed-mode service while its old children remain, reporting `Result=resources`. Change an installed unit only in the approved worker maintenance window after active dispatches have drained.
 
 All target actions use official `@swamp/ssh` from209. Follow [the SSH guide](node-official-ssh.md) and [the retirement plan](single-swamp-node-retirement.md). The former target-worker issuer request is cancelled by the single-Node decision; it is not an enrollment prerequisite. Existing target worker and installation sources remain retirement dependencies until their family owners replace them. The native fixture proves public resource delivery to an unmodified official SSH method with a harmless synthetic SSH executable; it installs nothing on the fleet.

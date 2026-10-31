@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: "@nckrtl/node-worker-assets"
-version: 2026.10.31.2
+version: 2026.10.31.3
 visibility: private
 license: MIT
 description: Public worker unit and script assets for the sole Swamp Node209.

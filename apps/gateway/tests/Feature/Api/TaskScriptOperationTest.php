@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -15,7 +16,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 /** @return array{Task, Task} */
 function script_operation_group(string $orchestration = 'external'): array
 {
-    $node = test()->markAsGateway(Node::query()->create(['name' => 'script-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91']));
+    $node = test()->markAsGateway(Node::query()->create(['name' => 'script-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.91', 'public_ssh_host' => '192.0.2.91', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND']));
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'Script', 'slug' => 'script', 'repository_url' => 'https://github.com/acme/turn.git']);
@@ -48,6 +49,8 @@ it('admits the exact VM and literal arguments without a workspace lease', functi
         ->and($operation->input['checkout_path'])->toBe('/srv/script')
         ->and($operation->input['args'])->toBe($body['args'])
         ->and($operation->state['swamp_run_id'])->toBe($this->run)
+        ->and($this->socket->sent[0]['payload']['inputs']['intent']['ssh_execution']['target']['host'])->toBe('10.44.0.91')
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) [])
         ->and(TaskWorkspaceLeaseRecord::query()->count())->toBe(0);
     $group->update(['status' => 'completed']);
     $this->postJson($url, $body)->assertAccepted()->assertJsonPath('data.id', $id);
@@ -60,8 +63,19 @@ it('records a nonzero script result without changing board state', function (): 
     $result = ['outcome' => 'failed', 'exit_code' => 23, 'output' => 'Script failed', 'output_truncated' => false, 'changed' => true, 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40)];
     $body = ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:01:00.000Z', 'result' => $result, 'error_code' => null];
 
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk()->assertJsonPath('data.result', $result);
-    $this->postJson('/api/v1/direct-operations/'.$id.'/result', $body)->assertOk();
+    config(['swamp.read_token' => 'native-reader', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/dev/null']);
+    $this->socket->reply = fn (array $message): array => [['type' => 'workflow.history.get', 'id' => $message['id'], 'payload' => ['data' => [
+        'id' => $this->run, 'workflowName' => 'operation-task-script', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $id, 'node_id' => $group->taskable->node_id, 'kind' => 'tasks.script'],
+        'startedAt' => $body['started_at'], 'completedAt' => $body['finished_at'],
+        'jobs' => [['name' => 'script', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]],
+    ]]]];
+    $projection = app(SwampCommandStep::class);
+    $operation = Operation::findOrFail($id);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'script', 'step' => 'result']);
+    $projection->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], ['job' => 'script', 'step' => 'result']);
+    expect($operation->fresh()->result)->toBe($result);
+    expect(count($this->socket->sent))->toBe(2);
     expect($group->fresh()->status->value)->toBe('running');
 });
 

@@ -58,6 +58,14 @@ Before the first admission, the owning load lane publishes the exact workflow an
 
 Core workflow dependencies, vault expressions, method outputs and the existing terminal subscriber provide the execution contract. Official SSH package `2026.10.23.1` provides transport, pins, identity handling and sudo with its defaults. Official cfgmgmt authorized-key actions were checked: their connection schema lacks the admitted full host-key list. The shipped key policy uses official SSH for that connection contract and adds no transport or secret channel.
 
+
+## Shared public role prerequisites
+
+`swamp/extensions/behaviors/operations/node-role-command/steps.ts` supplies placed steps for an owning native role or enrollment workflow. The owner supplies complete official SSH globals with a host named `target`; every returned step runs on209. `roleActionSteps(name, action, inputExpr, globalArgs, dependency?)` accepts `account` or `caddy_package`. It reads a shipped public action, runs official SSH script, and decodes its public result. The account action accepts `{user}` and returns `{user,group,home}`. Caddy accepts the unchanged `AgentCaddyPackage::input` fields `{release,minimum_version,amd64_sha512}` and returns `{caddy_installed:true}`.
+
+`rolePackageSteps(name, prerequisitesExpr, globalArgs, dependency)` accepts the admitted `{releases,packages}` object and runs one operating-system package action after its dependency. It preserves installed packages and uses the captured supported release policy. The final step returns official SSH outputs. The owner retains runtime, settings, services, publication, failure ordering and restoration. These exports create no Operation, callback or credential.
+
+`authorizedKeySteps` re-exports the canonical helper already on main. Its behavior is `@nckrtl/node-ssh-access`. Normal role prerequisites use209's own approved identity and full target pins. The Gateway identity execution copy remains restricted to its separate first-key operation. Core dependencies and official SSH script/output handling fit these actions; official cfgmgmt connection schemas lack the admitted full host-key list, so the exports use official SSH for that contract.
 ## Record a trusted first host key
 
 After an authorized one-time scan from209 over the Node's WireGuard address, `POST /api/v1/nodes/{node}/ssh-host-key` records the public `{host,type,value}` result. `host` must equal the Node's stored WireGuard address; `type` is `ssh-ed25519` and `value` is its base64 public key. The Gateway calculates the SHA-256 fingerprint and records the three host-key fields on the Node, then broadcasts its normal update. The response is the updated Node with HTTP200. Normal directed Node access applies.
