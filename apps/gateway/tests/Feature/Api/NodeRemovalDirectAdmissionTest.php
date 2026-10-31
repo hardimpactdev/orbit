@@ -314,6 +314,8 @@ it('binds withdrawal and restoration hub material to the admitted Node removal r
             'private_bindings' => ['configuration' => ['owner_node_id' => $hub->id, 'read_node_ids' => [$root->id], 'write_node_ids' => []]]]]);
     expect(NodeWireGuardInput::bound($operation))->toBe($wire);
     $operation->result = ['restoring' => true];
+    expect(NodeWireGuardInput::bound($operation))->toBe($wire);
+    $operation->state = ['node_wireguard_restoring' => true];
     expect(NodeWireGuardInput::bound($operation))->toBe($restore);
     $input = $operation->input;
     match ($change) {
@@ -344,3 +346,37 @@ it('restores a failed Node to failed after a native compensation result', functi
     app(NodeRemovalRecords::class)->restore($snapshot);
     expect($node->fresh()->status)->toBe(LifecycleStatus::Failed);
 });
+
+it('restores membership and selects the canonical hub view in one parent callback transaction', function (bool $valid): void {
+    FleetFixtures::bind();
+    $root = FleetFixtures::node('removal-checkpoint-root', [RoleName::Gateway]);
+    $hub = FleetFixtures::node('removal-checkpoint-hub', [RoleName::Vpn]);
+    $node = FleetFixtures::node('removal-checkpoint-node');
+    $snapshot = app(NodeRemovalPlan::class)->build($node, true);
+    $wire = [...app(NodeWireGuardInput::class)->capture($node, $node->id), 'executor_node_id' => $root->id];
+    $restore = NodeWireGuardInput::restorationSnapshot($wire);
+    $run = '3a332a4f-0911-4e9d-9a18-09899b7b1864';
+    $input = ['_node_removal' => $snapshot, '_removal' => ['snapshot' => $snapshot, 'hub' => $wire, 'restore_hub' => $restore],
+        '_wireguard' => $wire, '_wireguard_restore' => $valid ? $restore : null,
+        'participant_node_ids' => [$root->id, $hub->id, $node->id],
+        'private_bindings' => ['configuration' => ['owner_node_id' => $hub->id, 'read_node_ids' => [$root->id], 'write_node_ids' => []]]];
+    $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $root->id, 'target_type' => 'node', 'target_id' => $node->id,
+        'status' => 'running', 'sequence' => 1, 'state' => ['swamp_run_id' => $run], 'input' => $input, 'result' => ['removing' => true]]);
+    app(NodeRemovalRecords::class)->begin($snapshot);
+    $data = ['run_id' => $run, 'status' => 'running', 'started_at' => '2026-10-31T08:00:00.000Z', 'result' => ['restoring' => true]];
+
+    if (! $valid) {
+        expect(fn () => app(NodeRemovalProjection::class)->apply($operation, $data))->toThrow(ResourceOperationException::class);
+        expect($node->fresh()->status)->toBe(LifecycleStatus::Removing);
+        expect($operation->fresh()->state)->not->toHaveKey('node_wireguard_restoring');
+        expect($operation->fresh()->result)->toBe(['removing' => true]);
+
+        return;
+    }
+    app(NodeRemovalProjection::class)->apply($operation, $data);
+
+    expect($node->fresh()->status)->toBe(LifecycleStatus::Active);
+    expect($operation->fresh()->state['node_wireguard_restoring'])->toBeTrue();
+    expect(NodeWireGuardInput::bound($operation->fresh()))->toBe($restore);
+    expect($operation->fresh()->input)->toBe($input);
+})->with(['valid restoration' => true, 'invalid restoration rolls back' => false]);

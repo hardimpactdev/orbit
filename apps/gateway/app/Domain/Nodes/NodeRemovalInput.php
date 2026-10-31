@@ -92,7 +92,7 @@ final readonly class NodeRemovalInput
 
         return ['snapshot' => $snapshot, 'retained_on_node' => $retained, 'online_blocker' => $onlineBlocker, 'unavailable_node_ids' => $unavailable, 'placements' => array_map(static fn (int $id): array => [
             'effect_node_id' => $id, 'execution_node_id' => $id, 'transport' => 'local'], $ids),
-            'hub' => $hub, 'restore_hub' => $hub === null ? null : [...$hub, 'excluded_node_id' => null],
+            'hub' => $hub, 'restore_hub' => $hub === null ? null : NodeWireGuardInput::restorationSnapshot($hub),
             'restore_certificates' => $this->certificates($routes),
             'retirement' => $retirement, 'host_retained' => $context->platform !== 'linux' || $context->ssh_host_fingerprint === null,
             'routes' => $routes, 'metrics_fleet' => $retiringFleet,
