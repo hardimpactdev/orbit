@@ -84,7 +84,9 @@ async function reviewed(path: string) {
     )
   ) {
     const dependency = match[1];
-    if (/^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)) {
+    if (
+      /^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)
+    ) {
       errors.push(
         `Node host APIs must use the shared command runner or local refusal: ${path}`,
       );
@@ -141,13 +143,16 @@ for (const path of await files(`${root}/workflows`)) {
         );
       }
       if (typeof placement.target === "string") {
-        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(placement.target);
+        const literal = /^orbit-node-([1-9][0-9]*)$/.exec(
+          placement.target,
+        );
         const expression = placement.target.includes("orbit-node-")
           ? /string\((.+)\)\s*\}\}$/s.exec(placement.target)
           : null;
         if (
           literal && labels.node !== literal[1] ||
-          expression && labels.node !== "${{ string(" + expression[1] + ") }}"
+          expression &&
+            labels.node !== "${{ string(" + expression[1] + ") }}"
         ) errors.push(`Node target and label disagree: ${path}`);
       }
     }
@@ -158,7 +163,8 @@ for (const path of await files(`${root}/workflows`)) {
         [task.expr, value.guard].some((v) =>
           typeof v === "string" && v.includes("(")
         ) ||
-        typeof task.message === "string" && task.message.includes("${{"))
+        typeof task.message === "string" &&
+          task.message.includes("${{"))
     ) {
       errors.push(
         `Node assertions must use data-only predicates and static messages: ${path}`,
@@ -170,7 +176,13 @@ for (const path of await files(`${root}/workflows`)) {
     ) {
       const type = task.behaviorType ?? task.modelType ??
         models.get(String(task.modelIdOrName));
-      if (typeof type !== "string" || !sources.has(type)) {
+      if (type === "command/shell") {
+        if (task.type !== "behavior" || task.methodName !== "execute") {
+          errors.push(
+            `Native shell steps must use command/shell.execute: ${path}`,
+          );
+        }
+      } else if (typeof type !== "string" || !sources.has(type)) {
         errors.push(
           `Node workers may run only reviewed local behaviors, not third-party extensions: ${path} (${
             String(type)

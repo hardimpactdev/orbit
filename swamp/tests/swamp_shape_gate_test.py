@@ -1,8 +1,10 @@
 """Gate acceptance, ratchet and relocation tests in private disposable Git trees."""
 import json
 import os
+import re
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -18,6 +20,46 @@ class ShapeGate(unittest.TestCase):
         self.assertEqual(scan("def install(WorkerCredentials):\n    subprocess.run(['tool', WorkerCredentials])\n"), [])
         self.assertEqual(scan("import os, subprocess\nvalue=os.environ['ORBIT_SECRET']\nsubprocess.run(['tool',value])\n")[0]["rule"], "secret-argv")
         self.assertEqual(scan("import os, subprocess\nvalue=os.environ['ORBIT_SECRET']\nsubprocess.run(['tool'], input=value)\n"), [])
+
+    def test_native_certificate_signer_has_only_the_scoped_post_and_checked_numeric_operation(self):
+        source = (ROOT / "tests/fixtures/shape/certificate-signing-http.yaml").read_text()
+        script = textwrap.dedent(re.search(r"<<'PYTHON'\n([\s\S]*?)\n    PYTHON", source)[1])
+        exported = subprocess.run([DENO, "eval", f"import {{GATEWAY_PRIMITIVES}} from '{ROOT.as_uri()}/bin/check-swamp-shape.ts';console.log(JSON.stringify(GATEWAY_PRIMITIVES));"], capture_output=True, text=True, check=True).stdout.strip()
+        def scan(text):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py"), exported], input=text, capture_output=True, text=True, check=True)
+            return json.loads(result.stdout)
+        self.assertEqual(scan(script), [])
+        variants = [
+            re.sub(r"method=([\"'])POST\1", 'method="GET"', script),
+            script.replace("/certificates/sign", "/primitive"),
+            re.sub(r"if not re\.fullmatch\([^\n]+\):", "if False:", script),
+            script.replace("    url = ", "    operation = os.environ['UNCHECKED_PATH']\n    url = "),
+            script + "\nurllib.request.Request('https://gateway.orbit/api/v1/operations/19/result',data=b'{}',method='POST')\n",
+        ]
+        for variant in variants:
+            self.assertNotEqual(variant, script, "Mutation must change the actual formatted source")
+            self.assertTrue(any(row["rule"] == "gateway-http" for row in scan(variant)))
+
+    def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
+        inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
+        def scan(source):
+            result = subprocess.run([DENO, "eval", f"import {{agentPythonFindings}} from '{ROOT.as_uri()}/bin/check-swamp-shape.ts';console.log(JSON.stringify(agentPythonFindings('fixture.py',await new Response(Deno.stdin.readable).text(),{inventory})));"], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        for source in [
+            "from pathlib import Path\nPath('/usr/local/bin/orbit-agent').read_bytes()\n",
+            "import subprocess\nsubprocess.run(['sha256sum','/usr/local/bin/orbit-agent'])\n",
+            "import subprocess\nsubprocess.run(['systemctl','restart','orbit-agent.service'])\n",
+            "import subprocess\nsubprocess.run(['ssh','host','sudo systemctl is-active orbit-agent.service'])\n",
+            "import subprocess\nsubprocess.run(['/usr/local/bin/orbit-agent','command','agent.status'])\n",
+        ]:
+            self.assertFalse(any(row["rule"].startswith("agent-") for row in scan(source)), source)
+        for source in [
+            "import subprocess\nsubprocess.run(['/usr/local/bin/orbit-agent','command','cli.install'])\n",
+            "import subprocess\ncmd=['sudo','-n','/usr/local/bin/orbit-agent','command','cli.install']\nsubprocess.run(cmd)\n",
+            "from subprocess import run as execute\nexecute(['ssh','-o','StrictHostKeyChecking=yes','--','host','sudo orbit-agent command cli.install'])\n",
+            "import os\nos.system('orbit-agent command cli.install')\n",
+        ]:
+            self.assertTrue(any(row["rule"] == "agent-action" for row in scan(source)), source)
 
     def test_gate_preserves_ratchet_and_metrics_when_run_from_swamp_subtree(self):
         with tempfile.TemporaryDirectory(prefix="shape-gate-") as scratch:

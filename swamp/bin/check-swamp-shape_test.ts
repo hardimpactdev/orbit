@@ -1,9 +1,14 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import {
+  agentPythonFindings,
+  agentShellFindings,
   aggregate,
   analyze,
   analyzeTs,
   analyzeYaml,
+  GATEWAY_PRIMITIVES,
+  gatewayShellFindings,
+  isGatewayPrimitive,
   ratchet,
   SCHEMA,
   workflowCoverage,
@@ -28,7 +33,9 @@ Deno.test("embedded threshold is per program, not sum of independent short progr
     ).includes("inline-script"),
   );
   assert(
-    rules(`const p=${JSON.stringify(program(21))};`).includes("inline-script"),
+    rules(`const p=${JSON.stringify(program(21))};`).includes(
+      "inline-script",
+    ),
   );
 });
 Deno.test("script metrics count source once across a tagged template, concatenation and subprocess sink", () => {
@@ -146,7 +153,8 @@ Deno.test("vault values are permitted only as whole command environment values",
     ]
   ) {
     assert(
-      analyzeYaml("workflows/test.yaml", workflow(input)).findings.length > 0,
+      analyzeYaml("workflows/test.yaml", workflow(input)).findings
+        .length > 0,
       input,
     );
   }
@@ -185,7 +193,8 @@ Deno.test("baseline cannot grow, add a rule, move a file or admit a different ag
     ]
   ) {
     assert(
-      ratchet([next], { schema: SCHEMA, entries: [next] }, baseline).length > 0,
+      ratchet([next], { schema: SCHEMA, entries: [next] }, baseline)
+        .length > 0,
     );
   }
   assertEquals(ratchet([], { schema: SCHEMA, entries: [] }, baseline), []);
@@ -194,7 +203,10 @@ Deno.test("workflow coverage separates clean, unknown and accepted debt", () => 
   const sources = new Map([
     ["workflows/clean.yaml", workflow("        run: true\n")],
     ["workflows/debt.yaml", workflow("        run: sleep 10\n")],
-    ["workflows/unknown.yaml", "jobs:\n- steps:\n  - task: {type: unknown}\n"],
+    [
+      "workflows/unknown.yaml",
+      "jobs:\n- steps:\n  - task: {type: unknown}\n",
+    ],
   ]);
   assertEquals(workflowCoverage(analyze(sources, inventory)), {
     total: 3,
@@ -279,7 +291,10 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
     type: "object",
     properties: {
       vault: { type: "string", enum: ["orbit-control-inputs"] },
-      key: { type: "string", pattern: "^bootstrap-identity-node-[1-9][0-9]*$" },
+      key: {
+        type: "string",
+        pattern: "^bootstrap-identity-node-[1-9][0-9]*$",
+      },
     },
     required: ["vault", "key"],
     additionalProperties: false,
@@ -291,12 +306,13 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
     additionalProperties: false,
   };
   const yaml = (schema: unknown) =>
-    "inputs:\n  properties:\n    execution_secrets: " + JSON.stringify(schema) +
+    "inputs:\n  properties:\n    execution_secrets: " +
+    JSON.stringify(schema) +
     "\n" + workflow("        run: true\n");
   assert(
-    !analyzeYaml("workflows/pilot.yaml", yaml(container)).findings.some((f) =>
-      f.rule === "secret-input"
-    ),
+    !analyzeYaml("workflows/pilot.yaml", yaml(container)).findings.some((
+      f,
+    ) => f.rule === "secret-input"),
   );
   for (
     const bad of [{ ...container, additionalProperties: true }, {
@@ -307,7 +323,10 @@ Deno.test("closed execution_secrets containers carry only public vault-key refer
       properties: {
         bootstrap_identity: {
           ...ref,
-          properties: { ...ref.properties, value: { type: "string" } },
+          properties: {
+            ...ref.properties,
+            value: { type: "string" },
+          },
         },
       },
     }]
@@ -344,5 +363,353 @@ Deno.test("a new registered step cannot reuse an old Gateway HTTP helper without
     result.get("extensions/behaviors/new.ts")?.findings.some((f) =>
       f.rule === "gateway-http"
     ),
+  );
+});
+
+Deno.test("Gateway primitive exceptions require exact POST routes, never endpoint prefixes", () => {
+  assertEquals(GATEWAY_PRIMITIVES, [
+    "/api/v1/direct-operations/{operation_id}/github-token",
+    "/api/v1/direct-operations/{operation_id}/certificates/sign",
+  ]);
+  for (const route of GATEWAY_PRIMITIVES) {
+    const path = route.replace("{operation_id}", "19");
+    assert(isGatewayPrimitive("POST", path));
+    for (const invalid of ["0", "-1", "node", "19/result", "19%2Fresult"]) {
+      assert(
+        !isGatewayPrimitive(
+          "POST",
+          route.replace("{operation_id}", invalid),
+        ),
+      );
+    }
+    for (const method of ["GET", "PUT", "DELETE", undefined]) {
+      assert(!isGatewayPrimitive(method, path));
+    }
+    for (
+      const suffix of [
+        "/intent",
+        "/result",
+        "?endpoint=/primitive",
+        "/../private-material",
+      ]
+    ) assert(!isGatewayPrimitive("POST", path + suffix));
+    assert(
+      !rules(`gatewayHttp('POST',${JSON.stringify(path)});`).includes(
+        "gateway-http",
+      ),
+    );
+    assert(
+      rules(`gatewayHttp('GET',${JSON.stringify(path)});`).includes(
+        "gateway-http",
+      ),
+    );
+    assert(
+      rules(
+        `gatewayHttp('POST',${
+          JSON.stringify(path)
+        });gatewayHttp('GET','/api/v1/operations/19');`,
+      ).includes("gateway-http"),
+    );
+  }
+  assert(
+    !isGatewayPrimitive("POST", "/api/v1/direct-operations/19/primitive"),
+  );
+  assert(
+    !isGatewayPrimitive(
+      "POST",
+      "/api/v1/direct-operations/19/private-material",
+    ),
+  );
+});
+Deno.test("Gateway primitive fetch aliases and options must prove their exact method and path", () => {
+  for (const route of GATEWAY_PRIMITIVES) {
+    const path = route.replace("{operation_id}", "19");
+    const url = JSON.stringify("https://gateway.orbit" + path);
+    assert(
+      !rules(
+        `const request=fetch;const url=${url};request(url,{method:'POST'});`,
+      ).includes("gateway-http"),
+    );
+    assert(rules(`fetch(${url});`).includes("gateway-http"));
+    assert(rules(`fetch(${url},{method:verb});`).includes("gateway-http"));
+    assert(
+      rules(`fetch(${url},{method:'POST',...options});`).includes(
+        "gateway-http",
+      ),
+    );
+    assert(
+      rules(
+        `fetch(${url},{method:'POST'});fetch(gatewayUrl+'/api/v1/operations/'+id);`,
+      ).includes("gateway-http"),
+    );
+    assert(
+      rules(
+        `import {GatewayOperation} from './direct.ts';fetch(${url},{method:'POST'});new GatewayOperation().read();`,
+      ).includes("gateway-http"),
+    );
+  }
+});
+Deno.test("Gateway release-runner wait exception does not allow polling in Swamp steps", () => {
+  assert(
+    rules("while(!healthy){await delay(15000)}").includes("custom-control"),
+  );
+});
+
+Deno.test("only concrete primitives are clean through shared local step dependencies", () => {
+  const path = GATEWAY_PRIMITIVES[0].replace("{operation_id}", "19");
+  const files = new Map([
+    [
+      "extensions/behaviors/step.ts",
+      "import {mint} from './mint.ts';export const behavior={type:'@example/mint',execute:mint};",
+    ],
+    [
+      "extensions/behaviors/mint.ts",
+      `export function mint(){return fetch('https://gateway.orbit${path}',{method:'POST'});}`,
+    ],
+    [
+      "workflows/mint.yaml",
+      "jobs:\n- steps:\n  - task: {type: behavior, behaviorType: '@example/mint'}\n",
+    ],
+  ]);
+  assertEquals(workflowCoverage(analyze(files, inventory)).clean, 1);
+  files.set(
+    "extensions/behaviors/mint.ts",
+    "export function mint(){return fetch(gatewayUrl+endpoint,{method:'POST'});}",
+  );
+  const blocked = analyze(files, inventory);
+  assert(
+    blocked.get("extensions/behaviors/step.ts")?.findings.some((f) =>
+      f.rule === "gateway-http"
+    ),
+  );
+  assertEquals(workflowCoverage(blocked).clean, 0);
+});
+Deno.test("sign and mint names grant no Gateway exception", () => {
+  for (const name of ["sign", "mint", "signCertificate", "mintGitHubToken"]) {
+    assert(
+      rules(
+        `function ${name}(){return gatewayHttp('POST','/api/v1/operations/19/result');}`,
+      ).includes("gateway-http"),
+    );
+  }
+  assert(
+    rules("gatewayHttp('POST',selectedEndpoint);").includes("gateway-http"),
+  );
+});
+
+Deno.test("native shell Gateway requests use the same two exact POST routes", () => {
+  for (const route of GATEWAY_PRIMITIVES) {
+    const url = "https://gateway.orbit" +
+      route.replace("{operation_id}", "19");
+    assertEquals(
+      gatewayShellFindings(
+        "scripts/request.sh",
+        `curl --request POST '${url}'`,
+      ),
+      [],
+    );
+    assert(
+      gatewayShellFindings("scripts/request.sh", `curl '${url}'`).some((
+        f,
+      ) => f.rule === "gateway-http"),
+    );
+    assert(
+      gatewayShellFindings(
+        "scripts/request.sh",
+        `curl --request POST '${url}/result'`,
+      ).some((f) => f.rule === "gateway-http"),
+    );
+    assert(
+      gatewayShellFindings(
+        "scripts/request.sh",
+        `curl --request POST '${url}'\ncurl https://gateway.orbit/api/v1/operations/19`,
+      ).some((f) => f.rule === "gateway-http"),
+    );
+  }
+});
+
+Deno.test("external HTTP calls are not Gateway primitives or callbacks", () => {
+  assert(
+    !rules(
+      "fetch('https://api.github.com/installation/token',{method:'DELETE'});",
+    ).includes("gateway-http"),
+  );
+  assertEquals(
+    gatewayShellFindings(
+      "scripts/download.sh",
+      "curl https://example.com/archive.tar.gz",
+    ),
+    [],
+  );
+});
+
+Deno.test("agent service and artifact operands are data, never agent action calls", () => {
+  for (
+    const source of [
+      "systemctl restart orbit-agent.service",
+      "sudo -n systemctl is-active orbit-agent.service",
+      "sha256sum /usr/local/bin/orbit-agent",
+      "cp /tmp/agent /usr/local/bin/orbit-agent",
+      "rm -f /usr/local/bin/orbit-agent /etc/orbit/agent/config.toml",
+      "echo orbit-agent command cli.install",
+      "ssh -o StrictHostKeyChecking=yes -- node 'sudo systemctl stop orbit-agent.service'",
+      "python3 - <<'PY'\nfrom pathlib import Path\nprint(Path('/usr/local/bin/orbit-agent').stat())\nPY",
+    ]
+  ) {
+    assertEquals(agentShellFindings(file, source, inventory), [], source);
+    assert(
+      !analyzeYaml(
+        "workflows/native.yaml",
+        workflow("        run: " + JSON.stringify(source) + "\n"),
+        inventory,
+      ).findings.some((f) => f.rule.startsWith("agent-")),
+      source,
+    );
+  }
+  assert(
+    !rules("Deno.readFile('/usr/local/bin/orbit-agent');").some((r) =>
+      r.startsWith("agent-")
+    ),
+  );
+  assert(
+    !rules(
+      "new Deno.Command('sha256sum',{args:['/usr/local/bin/orbit-agent']});",
+    ).some((r) => r.startsWith("agent-")),
+  );
+});
+Deno.test("real shell agent invocations remain forbidden through executable wrappers", () => {
+  for (
+    const source of [
+      "/usr/local/bin/orbit-agent command cli.install",
+      "sudo -n -- /usr/local/bin/orbit-agent command cli.install",
+      "env HOME=/tmp /usr/local/bin/orbit-agent command cli.install",
+      "exec /usr/local/bin/orbit-agent command cli.install",
+      "bash -c 'sudo orbit-agent command cli.install'",
+      "ssh -o StrictHostKeyChecking=yes -- node 'sudo orbit-agent command cli.install'",
+      'agent=/usr/local/bin/orbit-agent; "$agent" command cli.install',
+      'echo "$(orbit-agent command cli.install)"',
+    ]
+  ) {
+    assert(
+      agentShellFindings(file, source, inventory).some((f) =>
+        f.rule === "agent-action"
+      ),
+      source,
+    );
+  }
+  assertEquals(
+    agentShellFindings(file, "orbit-agent command agent.status", inventory),
+    [],
+  );
+  assert(
+    agentShellFindings(file, 'orbit-agent command "$command"', inventory)
+      .some((f) => f.rule === "agent-dynamic"),
+  );
+});
+
+Deno.test("closed empty execution secrets admits no private values", () => {
+  for (
+    const schema of [
+      { type: "object", additionalProperties: false },
+      { type: "object", properties: {}, additionalProperties: false },
+      {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+        maxProperties: 0,
+      },
+    ]
+  ) {
+    const source = "inputs:\n  properties:\n    execution_secrets: " +
+      JSON.stringify(schema) + "\n" + workflow("        run: 'true'\n");
+    assert(
+      !analyzeYaml("workflows/empty.yaml", source).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+  for (
+    const schema of [
+      { type: "object" },
+      { type: "object", additionalProperties: true },
+      {
+        type: "object",
+        additionalProperties: false,
+        patternProperties: { ".*": { type: "string" } },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: { password: { type: "string" } },
+      },
+    ]
+  ) {
+    const source = "inputs:\n  properties:\n    execution_secrets: " +
+      JSON.stringify(schema) + "\n";
+    assert(
+      analyzeYaml("workflows/unsafe.yaml", source).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+});
+Deno.test("normalized repository identity is public while authentication identities remain private", () => {
+  const source = (name: string) =>
+    "inputs:\n  properties:\n    intent:\n      type: object\n      properties:\n        " +
+    name + ": {type: string, minLength: 1, maxLength: 4096}\n";
+  assert(
+    !analyzeYaml("workflows/transfer.yaml", source("repository_identity"))
+      .findings.some((f) => f.rule === "secret-input"),
+  );
+  for (
+    const field of [
+      "bootstrap_identity",
+      "ssh_identity",
+      "api_token",
+      "private_key",
+    ]
+  ) {
+    assert(
+      analyzeYaml("workflows/private.yaml", source(field)).findings.some((f) =>
+        f.rule === "secret-input"
+      ),
+    );
+  }
+});
+
+Deno.test("agent invocations inside shell substitutions and interpreter bodies are actions", () => {
+  for (
+    const source of [
+      "sudo -S orbit-agent command cli.install",
+      "env -S 'sudo -S orbit-agent command cli.install'",
+      "printf hello `orbit-agent command cli.install`",
+      "bash <<EOF\norbit-agent command cli.install\nEOF",
+      'python3 -c \'import subprocess; subprocess.run(["orbit-agent","command","cli.install"])\'',
+      "python3 - <<'PY'\nimport subprocess\nsubprocess.run(['orbit-agent','command','cli.install'])\nPY",
+    ]
+  ) {
+    assertEquals(
+      agentShellFindings(file, source, inventory).filter((f) =>
+        f.rule === "agent-action"
+      ).length,
+      1,
+      source,
+    );
+  }
+  assertEquals(
+    agentPythonFindings(
+      file,
+      "import subprocess\nsubprocess.run(['printf','$(orbit-agent command cli.install)'])",
+      inventory,
+    ),
+    [],
+  );
+  assertEquals(
+    agentShellFindings(
+      file,
+      "cat <<'EOF'\norbit-agent command cli.install\nEOF",
+      inventory,
+    ),
+    [],
   );
 });

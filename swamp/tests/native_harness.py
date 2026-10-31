@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -21,6 +23,12 @@ class NativeTestCase(unittest.TestCase):
         support = self.repo / 'tests/_support'
         support.mkdir(parents=True)
         shutil.copy(ROOT / 'tests/_support/native_direct.ts', support)
+        signer = self.repo / 'models/@nckrtl/certificates'
+        signer.mkdir(parents=True)
+        model = yaml.safe_load((ROOT / 'models/@nckrtl/certificates/orbit-certificate-signing-http.yaml').read_text())
+        model['globalArguments']['run'] = "printf '%s\\n' '{\"certificates\":[]}'"
+        (signer / 'fixture-http.yaml').write_text(yaml.safe_dump(model))
+        self.real_certificate_signing = False
         self.native_env = {}
         self.secrets = ()
 
@@ -30,6 +38,21 @@ class NativeTestCase(unittest.TestCase):
                             self.repo / 'extensions/behaviors' / family)
 
     def cli(self, *args, success=True, input=None):
+        # Existing family tests inject fixtureSign. Preserve that fixed mock
+        # boundary for their new native shell step; the dedicated HTTPS test
+        # opts into the actual command and its disposable Gateway server.
+        if not self.real_certificate_signing:
+            for path in (self.repo / 'workflows').glob('*.yaml'):
+                workflow = yaml.safe_load(path.read_text())
+                changed = False
+                for job in workflow.get('jobs', []):
+                    for step in job.get('steps', []):
+                        task = step.get('task', {})
+                        if task.get('behaviorName') == 'orbit-certificate-signing-http':
+                            task.setdefault('inputs', {})['run'] = '${{ model["orbit-certificate-signing-http"].input.globalArguments.run }}'
+                            changed = True
+                if changed:
+                    path.write_text(yaml.safe_dump(workflow, sort_keys=False))
         env = dict(os.environ, SWAMP_NO_UPDATE_CHECK='1', SWAMP_NO_TELEMETRY='1')
         for key in ('SWAMP_SERVER_URL', 'SWAMP_SERVE_URL', 'SWAMP_SERVER_TOKEN',
                     'SWAMP_SERVER_TOKEN_FILE', 'SWAMP_REPO_DIR', 'SWAMP_CA_CERT',
