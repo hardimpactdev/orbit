@@ -17,6 +17,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 /** DB-only, per-placement Process capture for an owning multi-Node parent. */
 final readonly class ProcessInstallationBatch
@@ -48,7 +49,7 @@ final readonly class ProcessInstallationBatch
                 'input' => [...$input, 'agent_sha256' => $pin]];
         }
 
-        return ['instance_id' => $instance->id, 'node_id' => $target->node->id, 'origin_checkout' => $instance->checkout_path,
+        return ['instance_id' => $instance->id, 'node_id' => $target->node->id, 'origin_node_id' => $instance->node_id, 'origin_checkout' => $instance->checkout_path,
             'target' => ['user' => $target->user, 'checkout_path' => $target->checkoutPath,
                 'certificate_scope' => $target->certificateScope, 'environment_file' => $target->environmentFile,
                 'production_release_layout' => $target->productionReleaseLayout, 'route_domain' => $target->routeDomain,
@@ -67,6 +68,39 @@ final readonly class ProcessInstallationBatch
         return array_map(fn (array $member): array => ['id' => ValidatedData::integer($member['id']),
             'input' => Arr::only($this->projection->inputFor('process.create', ValidatedData::object($member['input']),
                 ValidatedData::integer($batch['node_id'])), ['control', 'installation'])], $this->members($batch));
+    }
+
+    /** Render a frozen prospective placement before the native parent starts; no DB cutover is required.
+     * The parent owns vault publication and fixed descriptor names through SwampCommandStep.
+     *
+     * @param  array<string,mixed>  $capture
+     */
+    public function materialForCapture(Instance $instance, ProcessTarget $target, array $capture, ?ManagedUserAccount $account = null): OperationSecretValue
+    {
+        return DB::transaction(function () use ($instance, $target, $capture, $account): OperationSecretValue {
+            $placement = $target->instance;
+            if ($placement === null) {
+                $this->refuse();
+            }
+            $origin = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            $node = Node::query()->findOrFail($target->node->id);
+            if ($origin->node_id !== ($capture['origin_node_id'] ?? null)
+                || $origin->checkout_path !== ($capture['origin_checkout'] ?? null)
+                || $node->status !== LifecycleStatus::Active || $node->platform !== 'linux'
+                || $this->capture($origin, $target, $account) !== $capture) {
+                $this->refuse();
+            }
+            $values = $redactions = [];
+            foreach ($this->members($capture) as $member) {
+                $record = Process::query()->findOrFail(ValidatedData::integer($member['id']));
+                $view = $this->placedProcess($record, $origin->checkout_path, $placement->checkout_path);
+                $value = $this->secrets->materialFor($view, $target, ValidatedData::object($member['input']), $account);
+                $values[(string) $record->id] = ['installation' => $value->value];
+                $redactions = [...$redactions, ...$value->strings()];
+            }
+
+            return new OperationSecretValue($values, $redactions);
+        });
     }
 
     /** Fixed fields only; the owning adapter chooses one at registration, never from a request.
