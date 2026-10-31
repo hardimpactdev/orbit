@@ -424,3 +424,84 @@ Deno.test("ClickHouse placed helper validates its admitted identity before nativ
   );
   assertEquals(effects > 0, true);
 });
+
+const websocket = {
+  ...base,
+  role: "websocket",
+  user: "orbit",
+  install_path: "/opt/orbit/websocket",
+  repository: "https://github.com/hardimpactdev/orbit-reverb.git",
+  ref: "a".repeat(40),
+  port: 8080,
+};
+const websocketMaterial = { websocket_environment: "APP_KEY=fixture-only\n" };
+
+Deno.test("role parent keeps WebSocket configuration inside one private-data boundary", async () => {
+  let opened = false, reads = 0, effects = 0;
+  const gateway = {
+    withPrivateMaterial: async (
+      use: (data: Record<string, unknown>) => Promise<void>,
+    ) => {
+      reads++;
+      opened = true;
+      try {
+        await use({ runtime_material: websocketMaterial });
+      } finally {
+        opened = false;
+      }
+    },
+  };
+  const transport: SystemTransport = (command) => {
+    assertEquals(opened, true);
+    if (command.command === "/usr/bin/python3") {
+      return Promise.resolve({
+        success: true,
+        stdout: '{"user":"orbit","group":"orbit","home":"/home/orbit"}',
+      });
+    }
+    effects++;
+    assertEquals(
+      JSON.parse(command.stdin!).environment,
+      websocketMaterial.websocket_environment,
+    );
+    return Promise.resolve({
+      success: true,
+      stdout: JSON.stringify({
+        release: "/opt/orbit/websocket.releases/release." + "b".repeat(32),
+      }),
+    });
+  };
+  assertEquals(
+    await installRoleRuntime(websocket, gateway, undefined, transport),
+    { completed: true },
+  );
+  assertEquals({ opened, reads, effects }, {
+    opened: false,
+    reads: 1,
+    effects: 1,
+  });
+});
+
+Deno.test("WebSocket cancellation while parent data resolves precedes runtime effects", async () => {
+  const abort = new AbortController();
+  let reads = 0, effects = 0;
+  assertEquals(
+    await installRoleRuntime(
+      websocket,
+      {
+        withPrivateMaterial: async (use) => {
+          reads++;
+          abort.abort();
+          await use({ runtime_material: websocketMaterial });
+        },
+      },
+      abort.signal,
+      () => {
+        effects++;
+        throw new Error("No runtime effect expected");
+      },
+    ),
+    { error_code: "operation.cancelled" },
+  );
+  assertEquals({ reads, effects }, { reads: 1, effects: 0 });
+});

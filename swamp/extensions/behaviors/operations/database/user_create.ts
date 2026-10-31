@@ -2,7 +2,11 @@ import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
 import { DirectArgs, GatewayOperation } from "../_lib/direct.ts";
-import { createUser, UserResult } from "./user_create_action.ts";
+import {
+  createUser,
+  UserCreateInput,
+  UserResult,
+} from "./user_create_action.ts";
 import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
 
 const Args = DirectArgs.extend({
@@ -88,14 +92,18 @@ export function userCreate(
               if (current.cancel_requested || ctx.signal?.aborted) {
                 status = "cancelled";
               } else {
-                result = UserResult.parse(
-                  await createUser(
-                    current.input,
-                    (use) => gateway.withPrivateMaterial(use),
+                const intent = UserCreateInput.parse(current.input);
+                ctx.signal?.throwIfAborted();
+                let applied: z.infer<typeof UserResult> | undefined;
+                await gateway.withPrivateMaterial(async (material) => {
+                  applied = await createUser(
+                    intent,
+                    material,
                     ctx.signal,
                     invoke,
-                  ),
-                );
+                  );
+                });
+                result = UserResult.parse(applied);
                 status = "error_code" in result ? "failed" : "succeeded";
               }
             }

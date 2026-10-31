@@ -289,50 +289,12 @@ def reconcile(action, config, remote):
         for identity in published_deletions(config, ciphers):
             remote.delete(identity)
         return {'backend': 'absent'}
-    wanted = {item['source']: item for item in config['wanted']}
-    ledger = {item['source']: item for item in config['ledger']}
-    kept = {}
-    discarded = []
-    for cipher in ciphers:
-        source = cipher['source']
-        if source is None:
-            continue
-        previous = ledger.get(source)
-        if previous is not None and previous['cipher_id'] != cipher['id']:
-            continue
-        if cipher['deleted'] or source not in wanted:
-            discarded.append(cipher)
-            continue
-        if source not in kept:
-            kept[source] = cipher
-        else:
-            discarded.append(cipher)
-    for identity in published_deletions(config, discarded):
-        remote.delete(identity)
-    result = {'backend': 'synced', 'sources': [], 'cipher_ids': [], 'revisions': [], 'fingerprints': []}
-    errors = []
-    for source, item in wanted.items():
-        try:
-            existing, previous = kept.get(source), ledger.get(source)
-            if existing and previous and previous['cipher_id'] == existing['id'] and previous['fingerprint'] == item['fingerprint'] and previous['revision_date'] == existing['revision']:
-                published = existing
-            else:
-                published = remote.write(item, existing['id'] if existing else None)
-            result['sources'].append(source)
-            result['cipher_ids'].append(published['id'])
-            result['revisions'].append(published['revision'] or '')
-            result['fingerprints'].append(item['fingerprint'])
-        except Refusal as failure:
-            errors.append(failure.code)
-    if errors:
-        refuse('vault.sync_failed')
-    return result
 
 
 def main(payload):
     try:
         action, config = payload['action'], payload['configuration']
-        if action not in ('setup', 'sync', 'teardown'):
+        if action not in ('setup', 'teardown'):
             refuse('vault.action_invalid')
         return 'succeeded', reconcile(action, config, Collection(config))
     except Refusal as failure:

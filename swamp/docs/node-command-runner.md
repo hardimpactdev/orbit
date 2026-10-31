@@ -21,5 +21,9 @@ The Node footprint parent resolves protected agent configuration data before
 calling the shared configuration lower. The lower takes that data directly and
 returns only the public change or refusal result.
 
+The role parent also resolves runtime data inside its existing private-data
+boundary. The shared WebSocket installer receives that data directly and
+returns a public completion or refusal result.
+
 See [worker placement](node-workers.md) and
 [app accounts](instance-sudo-steps.md).

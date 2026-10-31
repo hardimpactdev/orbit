@@ -75,7 +75,7 @@ The gate implements Nick's migration policy using these manual references:
   proof of the business meaning of an action.
 - [Vaults](https://swamp-club.com/manual/reference/vaults): resolve private values
   with `vault.get`. Command steps use whole `task.inputs.env` values; the official
-  SSH extension also accepts its native sensitive field described below. Argv,
+  SSH extension also accepts its native secret inputs described below. Argv,
   shell concatenation and workflow inputs cannot carry them. An explicitly
   closed empty `execution_secrets` object carries no values. SourceControl's
   `repository_identity` is the established public host/org/repo identifier; this
@@ -99,8 +99,21 @@ These are model global arguments, not per-method transport overrides. The
 declares the sensitive fields in `_lib/schemas.ts`; its README describes native
 key delivery and redaction. Use the extension's defaults. The gate grants no
 generic extension or field-name exemption: raw input values, concatenation,
-`identityFile`, method inputs, argv and other extension types remain outside this
+`identityFile`, other method inputs, argv and other extension types remain outside this
 recognition. Existing command-env checks remain in place.
+
+Official `@swamp/ssh` `exec` also accepts one whole `vault.get(...)` expression at
+`task.inputs.stdin`. This applies only to workflow `behavior` tasks with
+`behaviorType: '@swamp/ssh'` or `model_method` tasks with
+`modelType: '@swamp/ssh'`, and literal `methodName: exec`. The existing closed
+`execution_secrets` descriptor schema still applies. The official
+[`ExecArgsSchema`](https://github.com/swamp-club/swamp-extensions/blob/d6f7afdcd6d04a63fdbc6ed56c403832770f67a6/ssh/extensions/models/_lib/schemas.ts)
+provides native stdin; `runExec` in `_lib/operations.ts` passes it to the process
+and records only `hasStdin`. No `AcceptEnv`, sudo `env_keep` or family delivery
+channel is needed. Public stdin remains valid. Other methods, extension types,
+fields, nested stdin values, concatenation and argv/script interpolation remain
+outside this recognition. Node 209 hosts the worker; official SSH reaches the
+target Node with the approved identity, pinned host keys and sudo when needed.
 
 Each embedded operational program has a 20-line threshold before grandfathering.
 Independent short strings are not combined to cross it. Script metrics count each

@@ -19,11 +19,7 @@ const plan = {
   ref: "a".repeat(40),
   port: 8080,
 };
-const privateMaterial = {
-  withPrivateMaterial: async (
-    callback: (material: Record<string, unknown>) => Promise<void>,
-  ) => await callback({ websocket_environment: "APP_KEY=synthetic-secret\n" }),
-};
+const material = { websocket_environment: "APP_KEY=synthetic-secret\n" };
 const account: SystemTransport = () =>
   Promise.resolve({
     success: true,
@@ -35,28 +31,17 @@ function runtime(
 ): WebSocketRuntimeActions {
   return { converge, remove };
 }
-Deno.test("WebSocket native install resolves the local account and keeps environment inside its private callback", async () => {
-  let opened = false;
+Deno.test("WebSocket native install takes resolved data and returns only its public result", async () => {
   let calls = 0;
   const result = await installWebSocketRuntime(
     plan,
-    {
-      withPrivateMaterial: async (callback) => {
-        opened = true;
-        try {
-          await privateMaterial.withPrivateMaterial(callback);
-        } finally {
-          opened = false;
-        }
-      },
-    },
+    material,
     undefined,
     account,
     runtime((input) => {
       calls++;
-      assertEquals(opened, true);
       assertEquals(input.group, "operators");
-      assertEquals(input.environment, "APP_KEY=synthetic-secret\n");
+      assertEquals(input.environment, material.websocket_environment);
       assertEquals(input.ref, plan.ref);
       assertStringIncludes(input.unit, "Group=operators\n");
       return Promise.resolve({
@@ -68,32 +53,31 @@ Deno.test("WebSocket native install resolves the local account and keeps environ
   assertEquals(result, { completed: true });
   assertEquals(JSON.stringify(result).includes("synthetic-secret"), false);
 });
-Deno.test("foreign account refuses before private material or runtime mutation", async () => {
-  let reads = 0;
+Deno.test("foreign account refuses before runtime mutation", async () => {
+  let effects = 0;
   await assertRejects(() =>
     installWebSocketRuntime(
       plan,
-      {
-        withPrivateMaterial: () => {
-          reads++;
-          return Promise.resolve();
-        },
-      },
+      material,
       undefined,
       () =>
         Promise.resolve({
           success: true,
           stdout: '{"user":"foreign","group":"foreign","home":"/home/foreign"}',
         }),
+      runtime(() => {
+        effects++;
+        return Promise.resolve({ release: "/opt/orbit/release" });
+      }),
     )
   );
-  assertEquals(reads, 0);
+  assertEquals(effects, 0);
 });
 Deno.test("known native WebSocket refusal returns only its bounded code", async () => {
   assertEquals(
     await installWebSocketRuntime(
       plan,
-      privateMaterial,
+      material,
       undefined,
       account,
       runtime(() =>
@@ -107,7 +91,7 @@ Deno.test("uncertain native WebSocket installation cannot become terminal succes
   await assertRejects(() =>
     installWebSocketRuntime(
       plan,
-      privateMaterial,
+      material,
       undefined,
       account,
       runtime(() => Promise.resolve({ release: "relative" })),
@@ -125,7 +109,7 @@ Deno.test("pre-effect cancellation prevents install and late cancellation preser
   await assertRejects(() =>
     installWebSocketRuntime(
       plan,
-      privateMaterial,
+      material,
       AbortSignal.abort(),
       account,
       lower,
@@ -136,7 +120,7 @@ Deno.test("pre-effect cancellation prevents install and late cancellation preser
   assertEquals(
     await installWebSocketRuntime(
       plan,
-      privateMaterial,
+      material,
       late.signal,
       account,
       runtime(() => {
@@ -187,7 +171,7 @@ Deno.test("native private errors never escape in WebSocket diagnostics", async (
   const error = await assertRejects(() =>
     installWebSocketRuntime(
       plan,
-      privateMaterial,
+      material,
       undefined,
       account,
       runtime(() => Promise.reject(new Error(secret))),
@@ -199,22 +183,18 @@ Deno.test("native private errors never escape in WebSocket diagnostics", async (
     "Private WebSocket installation did not complete",
   );
 });
-Deno.test("cancellation while material arrives is known to precede any native runtime effect", async () => {
+Deno.test("cancellation during account resolution precedes any native runtime effect", async () => {
   const abort = new AbortController();
   let effects = 0;
   assertEquals(
     await installWebSocketRuntime(
       plan,
-      {
-        withPrivateMaterial: async (callback) => {
-          abort.abort();
-          await callback({
-            websocket_environment: "APP_KEY=synthetic-secret\n",
-          });
-        },
-      },
+      material,
       abort.signal,
-      account,
+      (command) => {
+        abort.abort();
+        return account(command);
+      },
       runtime(() => {
         effects++;
         return Promise.resolve({ release: "/opt/orbit/release" });
@@ -237,7 +217,7 @@ Deno.test("default WebSocket runtime dispatches only canonical fixed Python comm
     });
   };
   assertEquals(
-    await installWebSocketRuntime(plan, privateMaterial, undefined, transport),
+    await installWebSocketRuntime(plan, material, undefined, transport),
     { completed: true },
   );
   assertEquals(calls.length, 2);
