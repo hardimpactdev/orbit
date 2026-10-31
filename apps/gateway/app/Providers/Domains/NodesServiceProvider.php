@@ -33,7 +33,6 @@ use App\Infrastructure\Nodes\NodeBootstrapSshIdentitySource;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
-use App\Infrastructure\Nodes\NodeWireGuardProjectionLock;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
@@ -68,7 +67,6 @@ final class NodesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([NodeBootstrapSshIdentitySource::class, NodeVpnConfigurationSource::class, NodeRemovalEnvironmentSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
-        $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
         $this->app->tag(NodeRoleRuntimeSource::class, OperationSecretSource::class);
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
         $this->app->tag(NodeWorkerEnrollment::class, OperationSecretOutputStore::class);

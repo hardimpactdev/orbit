@@ -10,8 +10,13 @@ use App\Domain\Nodes\NodeRemovalProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
+use App\Domain\Nodes\NodeWireGuardHubProjection;
 
-return ['node.remove' => [
+return ['node.wireguard_hub_converge' => [
+    'workflow' => 'operation-node-wireguard-hub-converge',
+    'projection' => NodeWireGuardHubProjection::class,
+    'private_material' => ['configuration' => 'node.vpn_configuration'],
+], 'node.remove' => [
     'workflow' => 'operation-node-remove', 'projection' => NodeRemovalProjection::class,
     'private_material' => ['bootstrap_identity' => 'node.bootstrap_ssh_identity', 'configuration' => 'node.vpn_configuration', 'metrics_runtime' => 'metrics.fleet_runtime',
         ...NodeRemovalEnvironmentSource::privateMaterial()],
