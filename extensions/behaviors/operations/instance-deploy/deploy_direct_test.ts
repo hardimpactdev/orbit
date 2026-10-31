@@ -3,6 +3,91 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { sha256 } from "./app_step.ts";
 import { deployDirect } from "./deploy_direct.ts";
+import { LocalDeployError } from "./deploy_local.ts";
+import { localFixture } from "./deploy_test_fixture.ts";
+import type { VpLocal } from "./vp_local.ts";
+
+// Reuse the public traces as test fixtures; production calls only typed local functions.
+function fixtureDirect(
+  options: Parameters<typeof deployDirect>[0] & {
+    invoke?: (call: NodeCall) => Promise<Record<string, unknown>>;
+  },
+) {
+  const dispatch = options.invoke ??
+    (() => Promise.reject(new Error("Unexpected local action")));
+  const trace = async (
+    name: string,
+    input: Record<string, unknown>,
+    mutates: boolean,
+    sudo = true,
+  ) => {
+    const result = await dispatch({
+      name,
+      input,
+      mutates,
+      sudo,
+      pin: "fixture-only-unused",
+      deadlineMs: 900000,
+    });
+    if (typeof result.error_code === "string") {
+      if (/execution_(unconfirmed|uncertain)/.test(result.error_code)) {
+        throw new Error(result.error_code);
+      }
+      throw new LocalDeployError(result.error_code);
+    }
+    return result;
+  };
+  const names: Record<string, string> = {
+    resolveDevelopment: "instance.resolve-development-target",
+    checkoutDevelopment: "instance.checkout-development-default",
+    inspectDevelopment: "instance.inspect-development-source",
+  };
+  const local = localFixture((call) =>
+    trace(
+      names[call.name] ?? call.name,
+      call.name === "inspectDevelopment"
+        ? {
+          repository: call.input.repository,
+          checkout: call.input.home,
+          root: "/fast/apps",
+          user: call.input.user,
+          verify_origin: true,
+          require_idle: true,
+        }
+        : call.input,
+      call.mutates,
+      call.name !== "inspectDevelopment",
+    )
+  );
+  const modes = {
+    project: "tool.read-vp-project",
+    scope: "tool.inspect-vp-scope",
+    version: "tool.vp-version",
+    inspect: "tool.inspect-vp-store",
+    install: "tool.install-vp-environment",
+    prune: "tool.prune-vp-store",
+  };
+  const vp: VpLocal = (mode, input) =>
+    trace(
+      modes[mode],
+      input,
+      mode === "install",
+      ["project", "install"].includes(mode),
+    );
+  const { invoke: _invoke, ...rest } = options;
+  return deployDirect({
+    ...rest,
+    source: local,
+    inspectRunner: (runner) =>
+      trace("instance.inspect-deploy-step", { runner }, false) as Promise<
+        { runner: string; gone: boolean }
+      >,
+    vp: {
+      local: vp,
+      materialize: (_name, input) => trace("tool.materialize-vp", input, true),
+    },
+  });
+}
 
 const commit = "a".repeat(40), program = "printf dev-proof";
 async function fixture() {
@@ -14,6 +99,9 @@ async function fixture() {
   };
   const input = {
     instance_id: 763,
+    node_id: 9,
+    platform: "linux" as const,
+    architecture: "amd64" as const,
     project_id: 58,
     agent_sha256: "b".repeat(64),
     commit,
@@ -110,7 +198,6 @@ async function fixture() {
       "account.lookup": {
         user: "nckrtl",
         uid: 1000,
-        group: "developers",
         home: "/home/nckrtl",
         shell: "/bin/zsh",
       },
@@ -177,7 +264,7 @@ async function fixture() {
 
 Deno.test("native dev root fetches, checks out and runs admitted steps as configured account, then verifies locally", async () => {
   const f = await fixture();
-  const result = await deployDirect({
+  const result = await fixtureDirect({
     http: () => f.http,
     invoke: f.invoke,
     run: f.run,
@@ -187,7 +274,6 @@ Deno.test("native dev root fetches, checks out and runs admitted steps as config
   assertEquals(f.calls.map((x) => x.name), [
     "instance.resolve-development-target",
     "instance.checkout-development-default",
-    "account.lookup",
     "instance.inspect-development-source",
   ]);
   assertEquals(f.calls.at(-1)?.input, {
@@ -195,7 +281,6 @@ Deno.test("native dev root fetches, checks out and runs admitted steps as config
     checkout: "/fast/apps/proof/default",
     root: "/fast/apps",
     user: "nckrtl",
-    group: "developers",
     verify_origin: true,
     require_idle: true,
   });
@@ -229,7 +314,8 @@ Deno.test("restart before any active effect fails interrupted without replay and
   f.status("running");
   await assertRejects(
     () =>
-      deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run }).methods
+      fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+        .methods
         .run.execute(f.args, f.ctx),
     Error,
     "deployment.interrupted",
@@ -254,7 +340,8 @@ Deno.test("restart with an active effect checkpoint refuses replay and settlemen
   );
   await assertRejects(
     () =>
-      deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run }).methods
+      fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+        .methods
         .run.execute(f.args, f.ctx),
     Error,
     "deployment.execution_unconfirmed",
@@ -267,7 +354,7 @@ Deno.test("terminal native root replay makes no local calls or projections", asy
     const f = await fixture();
     f.status(status);
     assertEquals(
-      await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+      await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
         .methods.run.execute(f.args, f.ctx),
       { status },
     );
@@ -279,7 +366,7 @@ Deno.test("native cancellation before source records cancelled with zero effects
   const f = await fixture();
   f.cancel();
   assertEquals(
-    await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+    await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
       .methods.run.execute(f.args, f.ctx),
     { status: "cancelled" },
   );
@@ -291,7 +378,7 @@ Deno.test("required command failure retains checked-out commit and bounded failu
   const f = await fixture();
   await assertRejects(
     () =>
-      deployDirect({
+      fixtureDirect({
         http: () => f.http,
         invoke: f.invoke,
         run: () =>
@@ -321,7 +408,7 @@ Deno.test("verification refuses a different checked-out commit after app scripts
   const f = await fixture();
   await assertRejects(
     () =>
-      deployDirect({
+      fixtureDirect({
         http: () => f.http,
         run: f.run,
         invoke: (call) =>
@@ -348,7 +435,7 @@ Deno.test("a pending Route repair is refused before source effects", async () =>
   f.input.deployment.projection_route_id = 42;
   await assertRejects(
     () =>
-      deployDirect({ http: () => f.http, invoke: f.invoke }).methods.run
+      fixtureDirect({ http: () => f.http, invoke: f.invoke }).methods.run
         .execute(f.args, f.ctx),
     Error,
     "deployment.projection_pending",
@@ -360,13 +447,12 @@ Deno.test("a pending Route repair is refused before source effects", async () =>
 Deno.test("Vite-less project preparation stays local and does not create a prerequisite Operation", async () => {
   const f = await fixture();
   f.input.deployment.needs_vp = true;
-  await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+  await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
     .methods.run.execute(f.args, f.ctx);
   assertEquals(f.calls.map((x) => x.name), [
     "instance.resolve-development-target",
     "instance.checkout-development-default",
     "tool.read-vp-project",
-    "account.lookup",
     "instance.inspect-development-source",
   ]);
   assertEquals(f.paths.some((path) => path.includes("children")), false);
@@ -402,7 +488,7 @@ Deno.test("Vite+ preparation and app execution share the same root and configure
   };
 
   assertEquals(
-    await deployDirect({ http: () => f.http, invoke, run: f.run }).methods.run
+    await fixtureDirect({ http: () => f.http, invoke, run: f.run }).methods.run
       .execute(f.args, f.ctx),
     { status: "succeeded" },
   );
@@ -434,7 +520,7 @@ Deno.test("cancel after checkout stops before any app command", async () => {
     return result;
   };
   assertEquals(
-    await deployDirect({ http: () => f.http, invoke, run: f.run }).methods.run
+    await fixtureDirect({ http: () => f.http, invoke, run: f.run }).methods.run
       .execute(f.args, f.ctx),
     { status: "cancelled" },
   );
@@ -456,7 +542,7 @@ Deno.test("changed admitted account on a fresh read stops before the next local 
   };
   await assertRejects(
     () =>
-      deployDirect({ http: () => f.http, invoke, run: f.run }).methods.run
+      fixtureDirect({ http: () => f.http, invoke, run: f.run }).methods.run
         .execute(f.args, f.ctx),
     Error,
     "deployment.identity_changed",
@@ -469,7 +555,7 @@ Deno.test("a foreign Node cannot use the root to read material, project or execu
   const f = await fixture();
   await assertRejects(
     () =>
-      deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+      fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
         .methods.run.execute({ ...f.args, node_id: 209 }, f.ctx),
     Error,
     "deployment.identity_changed",
@@ -481,7 +567,7 @@ Deno.test("a foreign Node cannot use the root to read material, project or execu
 Deno.test("optional command failure counts a warning without exposing output", async () => {
   const f = await fixture();
   f.input.deployment.steps[0].required = false;
-  await deployDirect({
+  await fixtureDirect({
     http: () => f.http,
     invoke: f.invoke,
     run: () =>
@@ -499,7 +585,7 @@ Deno.test("optional command failure counts a warning without exposing output", a
 
 Deno.test("final checkout inspection uses the configured account without sudo", async () => {
   const f = await fixture();
-  await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+  await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
     .methods.run.execute(f.args, f.ctx);
   const inspect = f.calls.find((call) =>
     call.name === "instance.inspect-development-source"
@@ -513,7 +599,7 @@ Deno.test("uncertain source or app execution keeps the parent running without a 
     const f = await fixture();
     await assertRejects(
       () =>
-        deployDirect({
+        fixtureDirect({
           http: () => f.http,
           invoke: boundary === "source"
             ? () => {
@@ -539,7 +625,7 @@ Deno.test("cancellation cannot turn an uncertain app action into a terminal canc
   const abort = new AbortController();
   await assertRejects(
     () =>
-      deployDirect({
+      fixtureDirect({
         http: () => f.http,
         invoke: f.invoke,
         run: () => {
@@ -556,7 +642,7 @@ Deno.test("cancellation cannot turn an uncertain app action into a terminal canc
 Deno.test("a settled source refusal retains the admitted commit for automatic retry accounting", async () => {
   const f = await fixture();
   await assertRejects(() =>
-    deployDirect({
+    fixtureDirect({
       http: () => f.http,
       invoke: () => Promise.resolve({ error_code: "agent.version_mismatch" }),
       run: f.run,
@@ -578,7 +664,7 @@ Deno.test("seven 300-second admitted steps fit the native deadline with infrastr
     }),
   );
   let elapsed = 0;
-  await deployDirect({
+  await fixtureDirect({
     http: () => f.http,
     invoke: f.invoke,
     run: (step, script) => {
@@ -595,7 +681,7 @@ Deno.test("an operator cancellation settles a restarted run with no active effec
   f.status("running");
   f.cancel();
   assertEquals(
-    await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+    await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
       .methods.run.execute(f.args, f.ctx),
     { status: "cancelled" },
   );
@@ -613,7 +699,7 @@ Deno.test("typed uncertain source outcomes retain their active checkpoint withou
     const f = await fixture();
     await assertRejects(
       () =>
-        deployDirect({
+        fixtureDirect({
           http: () => f.http,
           invoke: () => Promise.resolve({ error_code: code }),
           run: f.run,
@@ -630,7 +716,7 @@ for (const probe of ["gone", "alive", "refused", "wrong runner", "throws"]) {
   Deno.test(`restart mid-step cancellation ${probe} never replays and settles only proven absence`, async () => {
     const f = await fixture();
     let attempts = 0;
-    const root = deployDirect({
+    const root = fixtureDirect({
       http: () => f.http,
       invoke: async (call) => {
         if (call.name !== "instance.inspect-deploy-step") {
@@ -639,7 +725,7 @@ for (const probe of ["gone", "alive", "refused", "wrong runner", "throws"]) {
         f.calls.push(call);
         assertEquals(call.mutates, false);
         assertEquals(call.sudo, true);
-        assertEquals(call.pin, f.input.agent_sha256);
+
         assertEquals(call.input, {
           runner:
             `orbit-deploy-step:100:${f.args.run_id}:before_activation.proof`,
@@ -702,3 +788,50 @@ for (const probe of ["gone", "alive", "refused", "wrong runner", "throws"]) {
     }
   });
 }
+
+Deno.test("failed-dependency recovery retains every active checkpoint and never releases a surviving effect", async () => {
+  for (const step of [null, { name: "proof", phase: "before_activation" }]) {
+    const f = await fixture();
+    f.status("running");
+    f.checkpoints.set(`execution-${f.args.operation_id}-${f.args.run_id}`, {
+      operation_id: f.args.operation_id,
+      run_id: f.args.run_id,
+      started_at: "2026-10-31T02:00:00.000Z",
+      active: true,
+      step,
+    });
+    assertEquals(
+      await deployDirect({ http: () => f.http }).methods.failure.execute(
+        f.args,
+        f.ctx,
+      ),
+      { status: "held" },
+    );
+    assertEquals(f.posts, []);
+    assertEquals(f.commands, []);
+  }
+});
+
+Deno.test("failed-dependency recovery settles only inactive work and skips terminal projection", async () => {
+  const f = await fixture();
+  f.status("running");
+  assertEquals(
+    await deployDirect({ http: () => f.http }).methods.failure.execute(
+      f.args,
+      f.ctx,
+    ),
+    { status: "failed" },
+  );
+  assertEquals(f.posts.length, 1);
+  assertEquals(f.posts[0].error_code, "deployment.interrupted");
+  assertEquals(f.posts[0].result, {
+    instance_id: f.input.instance_id,
+    failed_step: "native_execution",
+  });
+  f.posts.length = 0;
+  await deployDirect({ http: () => f.http }).methods.failure.execute(
+    f.args,
+    f.ctx,
+  );
+  assertEquals(f.posts, []);
+});

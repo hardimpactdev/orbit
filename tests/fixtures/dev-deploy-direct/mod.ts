@@ -2,52 +2,41 @@ import { z } from "npm:zod@4.4.3";
 import { deployDirect } from "../../../extensions/behaviors/operations/instance-deploy/deploy_direct.ts";
 
 const root = deployDirect({
-  invoke: (call) => {
-    const secret = Deno.env.get("ORBIT_DEPLOY_SENTINEL");
-    if (call.pin !== "d".repeat(64)) throw new Error("Wrong admitted pin");
-    const commit = "a".repeat(40);
-    if (call.name === "instance.resolve-development-target") {
-      if (Deno.env.get("ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE") === "1") {
-        throw new Error(secret);
-      }
+  source: {
+    resolveDevelopment: (_home, source) => {
       if (
-        !call.sudo || !call.mutates ||
-        (call.input.git_read as { github_token: string }).github_token !==
-          secret
+        source.git_read.github_token !== Deno.env.get("ORBIT_DEPLOY_SENTINEL")
       ) {
         throw new Error("Private Git binding failed");
       }
-      return Promise.resolve({ commit });
-    }
-    if (call.name === "instance.checkout-development-default") {
-      if (!call.sudo || !call.mutates) {
-        throw new Error("Wrong checkout privilege");
+      if (Deno.env.get("ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE") === "1") {
+        throw new Error("uncertain local source mutation");
       }
-      return Promise.resolve({ commit });
-    }
-    if (call.name === "instance.inspect-deploy-step") {
-      if (!call.sudo || call.mutates) throw new Error("Wrong probe privilege");
-      return Promise.resolve({ runner: call.input.runner, gone: true });
-    }
-    if (call.name === "account.lookup") {
-      if (call.sudo || call.mutates) throw new Error("Wrong account privilege");
-      return Promise.resolve({ user: "orbit", uid: 1000, group: "developers" });
-    }
-    if (call.name === "instance.inspect-development-source") {
+      return Promise.resolve({ commit: "a".repeat(40) });
+    },
+    checkoutDevelopment: (_home, target) =>
+      Promise.resolve({ commit: target.commit }),
+    inspectDevelopment: (home) => {
+      if (home.user !== "orbit") throw new Error("Wrong admitted account");
       if (Deno.env.get("ORBIT_DEPLOY_TEST_FAIL_AFTER_STEPS") === "1") {
-        throw new Error(secret);
+        throw new Error(Deno.env.get("ORBIT_DEPLOY_SENTINEL"));
       }
-      if (call.sudo || call.mutates || call.input.group !== "developers") {
-        throw new Error("Wrong inspection privilege");
-      }
-      return Promise.resolve({
-        origin: "https://example.test/proof.git",
-        branch: "main",
-        commit,
-      });
-    }
-    throw new Error("Unexpected local command");
+      return Promise.resolve({ commit: "a".repeat(40) });
+    },
+    prepareRelease: () => {
+      throw new Error("Unexpected production action");
+    },
+    inspectRelease: () => {
+      throw new Error("Unexpected production action");
+    },
+    activateRelease: () => {
+      throw new Error("Unexpected production action");
+    },
+    pruneReleases: () => {
+      throw new Error("Unexpected production action");
+    },
   },
+  inspectRunner: (runner) => Promise.resolve({ runner, gone: true }),
   run: (step, script) => {
     if (
       step.target.variant !== "checkout" || step.target.user !== "orbit" ||
@@ -69,6 +58,20 @@ export const behavior = {
   type: "@fixture/dev-deploy-direct",
   globalArguments: z.object({}),
   methods: {
+    failure: {
+      ...root.methods.failure,
+      execute: (
+        args: Parameters<typeof root.methods.failure.execute>[0],
+        context: Parameters<typeof root.methods.failure.execute>[1],
+      ) =>
+        root.methods.failure.execute(args, {
+          ...context,
+          globalArgs: {
+            gatewayUrl: Deno.env.get("ORBIT_DEPLOY_TEST_URL")!,
+            caFile: Deno.env.get("ORBIT_DEPLOY_TEST_CA")!,
+          },
+        }),
+    },
     run: {
       ...root.methods.run,
       execute: (

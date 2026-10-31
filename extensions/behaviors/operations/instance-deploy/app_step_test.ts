@@ -405,3 +405,14 @@ Deno.test("step runner identity is public and bound to Operation run and admitte
     "orbit-deploy-step:100:ed7cfb7a-64f3-496f-8722-e3fd1c06947d:setup.install",
   );
 });
+
+Deno.test("step runner normalizes run UUID case for the Node absence probe", () => {
+  const execution = {
+    operation_id: 100,
+    run_id: "ED7CFB7A-64F3-496F-8722-E3FD1C06947D",
+  };
+  assertEquals(
+    stepRunner(execution, step),
+    "orbit-deploy-step:100:ed7cfb7a-64f3-496f-8722-e3fd1c06947d:setup.install",
+  );
+});

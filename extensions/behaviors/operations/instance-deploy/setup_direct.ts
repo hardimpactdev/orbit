@@ -4,6 +4,7 @@ import { Globals } from "../_lib/direct.ts";
 import {
   DirectArgs,
   directOperation,
+  DirectOperationCancelled,
   GatewayOperation,
 } from "../_lib/direct.ts";
 import {
@@ -40,8 +41,6 @@ type Run = (
   signal?: AbortSignal,
 ) => Promise<AppStepResult>;
 
-class SetupCancelled extends Error {}
-
 /** Ordered list execution belongs to Swamp; private command reads never enter persisted inputs. */
 export function setupDirect(
   makeHttp = (ctx: Context) =>
@@ -61,7 +60,6 @@ export function setupDirect(
           const args = Args.parse(raw),
             http = makeHttp(ctx),
             gateway = new GatewayOperation(http, args);
-          let startedAt = "";
           const port = {
             read: async () => {
               const raw = await gateway.read();
@@ -95,52 +93,39 @@ export function setupDirect(
               return raw;
             },
             project: (body: Record<string, unknown>) => {
-              if (body.status === "running") {
-                startedAt = String(body.started_at);
-              }
               return gateway.project(body);
             },
           };
-          try {
-            return await directOperation(
-              args,
-              port,
-              async (input) => {
-                const admitted = Input.parse(input);
-                const result = await runProjectStepList(admitted, {
-                  read: async () => {
-                    const current = z.object({
-                      input: Input,
-                      status: z.string(),
-                      cancel_requested: z.boolean(),
-                    }).parse(await gateway.read());
-                    if (current.status !== "running") {
-                      throw new Error("instance.step_execution_unconfirmed");
-                    }
-                    return current;
-                  },
-                  program: async (step, execute) => {
-                    await execute(await currentProgram(http, step));
-                  },
-                  run,
-                }, ctx.signal);
-                if ("cancelled" in result) throw new SetupCancelled();
-                return result;
-              },
-              (result) => Result.parse(result),
-              ctx.signal,
-            );
-          } catch (error) {
-            if (!(error instanceof SetupCancelled) || !startedAt) throw error;
-            await gateway.project({
-              status: "cancelled",
-              started_at: startedAt,
-              finished_at: new Date().toISOString(),
-              result: {},
-              error_code: null,
-            });
-            return { status: "cancelled" };
-          }
+          return await directOperation(
+            args,
+            port,
+            async (input) => {
+              const admitted = Input.parse(input);
+              const result = await runProjectStepList(admitted, {
+                read: async () => {
+                  const current = z.object({
+                    input: Input,
+                    status: z.string(),
+                    cancel_requested: z.boolean(),
+                  }).parse(await gateway.read());
+                  if (current.status !== "running") {
+                    throw new Error("instance.step_execution_unconfirmed");
+                  }
+                  return current;
+                },
+                program: async (step, execute) => {
+                  await execute(await currentProgram(http, step));
+                },
+                run,
+              }, ctx.signal);
+              if ("cancelled" in result) {
+                throw new DirectOperationCancelled({ effectRunning: false });
+              }
+              return result;
+            },
+            (result) => Result.parse(result),
+            ctx.signal,
+          );
         },
       },
     },

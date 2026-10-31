@@ -17,7 +17,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
     native_timeout = 90
 
     def test_native_parent_uses_http_private_binding_and_leaves_no_private_artifacts(self):
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/instance-deploy')
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/instance-deploy', 'operations/tools')
         # Unit source files are not part of the native extension fixture.
         for path in (self.repo / 'extensions').rglob('*_test.ts'):
             path.unlink()
@@ -29,7 +29,8 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.secrets = (secret,)
         script = 'printf ' + secret
         safe = {
-            'instance_id': 101, 'project_id': 102, 'agent_sha256': 'd' * 64,
+            'instance_id': 101, 'project_id': 102, 'node_id': 9,
+            'platform': 'linux', 'architecture': 'amd64',
             'commit': 'a' * 40, 'release_name': 'unused-dev-release', 'timeout_seconds': 960,
             'deployment': {
                 'variant': 'development', 'home': '/fast/apps/proof/default',
@@ -100,6 +101,10 @@ class DevDeployDirectNativeTest(NativeTestCase):
                         'inputs': {'operation_id': 100, 'node_id': 9, 'kind': 'instance.deploy',
                                    'run_id': '${{ run.id }}'},
                     }}]}]}
+        workflow['jobs'].append({'name': 'failure', 'dependsOn': [{'job': 'dev', 'condition': {'type': 'failed'}}],
+            'steps': [{'name': 'settle', 'task': {'type': 'behavior', 'behaviorType': '@fixture/dev-deploy-direct',
+            'behaviorName': 'dev-deploy-direct-proof', 'methodName': 'failure',
+            'inputs': {'operation_id': 100, 'node_id': 9, 'kind': 'instance.deploy', 'run_id': '${{ run.id }}'}}}]})
         Path(created['path']).write_text(json.dumps(workflow))
         self.cli('workflow', 'validate', 'dev-deploy-direct-proof')
         self.cli('workflow', 'run', 'dev-deploy-direct-proof')
