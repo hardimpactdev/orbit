@@ -92,7 +92,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit.
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
 
 Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
 
