@@ -308,60 +308,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/node-worker/proxy-install.ts",
-      "rule": "inline-script",
-      "count": 33,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/node-worker/proxy-install.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "/usr/bin/systemctl",
-        "/usr/sbin/ip"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/node-worker/proxy-runtime.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/node-worker/proxy-runtime.ts",
-      "rule": "inline-script",
-      "count": 48,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/node-worker/proxy.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/node-worker/proxy.ts",
-      "rule": "multi-action",
-      "count": 4,
-      "evidence": [
-        "/usr/bin/ssh",
-        "/usr/bin/sudo",
-        "/usr/bin/timeout",
-        "/usr/sbin/ip"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/node-worker/rotation.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/observation/contract.ts",
       "rule": "gateway-http",
       "count": 1,
