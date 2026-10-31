@@ -8,11 +8,9 @@ use App\Data\Processes\AddProcessData;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -54,9 +52,7 @@ final readonly class CreateProcessAction
     /** @return array{process: Process, created: bool} */
     public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
-        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
-            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
-        }
+        $this->specifications->assertOptions($data);
         $this->targets->resolve($data->targetType, $data->targetId);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
@@ -145,88 +141,16 @@ final readonly class CreateProcessAction
                 checkoutPath: app(SshProcessUserResolver::class)->home($target->node, $data->user),
             );
         }
-        if ($data->preset !== null) {
-            $this->assertPresetAdmission($data, $target);
-        }
-        $attributes = $this->specifications->attributes($data, $target);
-        $process = Process::query()
-            ->whereIn('owner_type', $data->targetType->storedTypes())
-            ->where('owner_id', $data->targetId)
-            ->where('name', $data->name)
-            ->first() ?? new Process([
-                'owner_type' => $data->targetType->storedType(),
-                'owner_id' => $data->targetId,
-                'name' => $data->name,
-            ]);
-        $created = ! $process->exists;
-        $desiredState = $process->desired_state;
+        $records = app(RecordProcessIntentAction::class);
+        $admission = $records->prepare($data, $target);
+        $this->runtime->assertCanStart($admission['process']);
 
-        if ($created) {
-            $desiredState = $data->start ? DesiredProcessState::Running : DesiredProcessState::Stopped;
-        }
-
-        if ($process->exists && ! $this->specifications->matches($process, $attributes)) {
-            throw new ResourceOperationException(
-                errorCode: 'process.name_taken',
-                message: "Process [{$data->name}] already exists with different configuration.",
-                status: 409,
-            );
-        }
-
-        $process->fill([
-            ...$attributes,
-            'desired_state' => $desiredState,
-        ]);
-
-        $this->runtime->assertCanStart($process);
-
-        if ($created) {
-            $process->fill([
-                'status' => LifecycleStatus::Provisioning,
-                'failed_step' => null,
-                'error_code' => null,
-            ])->save();
-        }
-
-        return ['process' => $process, 'created' => $created, 'attributes' => $attributes];
-    }
-
-    private function assertPresetAdmission(AddProcessData $data, ProcessTarget $target): void
-    {
-        if ($data->preset === null || ! ProcessPresets::isKnown($data->preset)) {
-            throw new ResourceOperationException('process.preset_target_invalid', 'The Process preset is not supported.', 422);
-        }
-
-        if (! $target->instance?->placedOnAppDev()) {
-            throw new ResourceOperationException(
-                errorCode: 'process.preset_target_invalid',
-                message: "The {$data->preset} preset requires a development Instance.",
-                status: 422,
-            );
-        }
-
-        $siblings = Process::query()
-            ->whereIn('owner_type', Instance::morphTypes())
-            ->where('owner_id', $data->targetId)
-            ->where('name', '!=', $data->name)
-            ->get();
-
-        $duplicate = $siblings->contains(fn (Process $process): bool => ($process->runtime_config['preset'] ?? null) === $data->preset);
-
-        if ($duplicate) {
-            throw new ResourceOperationException(
-                errorCode: 'process.preset_exists',
-                message: "This Instance already has a {$data->preset} Process.",
-                status: 409,
-            );
-        }
+        return $records->persist($admission);
     }
 
     public function admit(#[SensitiveParameter] AddProcessData $data, ?Node $caller = null, ?string $requestId = null): Operation
     {
-        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
-            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
-        }
+        $this->specifications->assertOptions($data);
         $this->targets->resolve($data->targetType, $data->targetId);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
