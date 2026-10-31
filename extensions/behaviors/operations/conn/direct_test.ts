@@ -178,10 +178,11 @@ Deno.test("Conn stored credential recovers a lost projection without issuing aga
   assertEquals(f.effects.length, 1);
 });
 for (
-  const kind of ["conn.pairing_revoke"] as const
+  const kind of ["conn.pairing_revoke", "conn.gateway_sessions_revoke"] as const
 ) {
   Deno.test(`${kind} preserves current admin and unrelated sessions`, async () => {
     const f = fixture();
+    if (kind === "conn.gateway_sessions_revoke") f.input.links = [];
     assertEquals(
       await executeConn(
         { ...identity, kind },
@@ -194,7 +195,9 @@ for (
     );
     assertEquals(
       f.effects.map((e) => (e as { body: unknown }).body),
-      [{ sessionId: "owned" }, { id: "link-1" }],
+      kind === "conn.pairing_revoke"
+        ? [{ sessionId: "owned" }, { id: "link-1" }]
+        : [{ sessionId: "owned" }],
     );
   });
 }

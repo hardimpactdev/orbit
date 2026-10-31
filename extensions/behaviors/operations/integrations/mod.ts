@@ -8,7 +8,7 @@ import {
   Operation,
 } from "../../operation-runner/mod.ts";
 import { pipeline, runEffect } from "./pipeline.ts";
-import { maintainConn, revokeConn } from "./conn.ts";
+import { maintainConn } from "../conn/maintenance.ts";
 import { metricsFleet } from "./metrics.ts";
 import { Completion, invocation } from "./contract.ts";
 
@@ -147,22 +147,6 @@ export function integrations(
               );
             }, 30_000);
             try {
-              if (
-                (operation.kind === "conn.gateway_sessions_revoke") &&
-                operation.execution_context?.descriptors.some((item) =>
-                  item.name === "conn.revocation"
-                )
-              ) {
-                return await revokeConn(
-                  operation,
-                  executor,
-                  args.worker,
-                  ctx,
-                  () => {
-                    if (leaseError) throw leaseError;
-                  },
-                );
-              }
               if (
                 (operation.kind === "ai_router.collector_converge" ||
                   /^(metrics|analytics|websocket)\.role_(converge|remove)$/

@@ -39,7 +39,7 @@ class DirectConnPairingNative(NativeTestCase):
         result=self.cli('workflow','run',name,'--input','operation_id='+str(self.state['operation']['id']),'--input','node_id=9','--input','kind='+kind,success=success)
         self.run_id=json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]['id']
     def test_pairing_uses_native_dag_without_executor_or_credential_data(self):
-        for kind in ['conn.pairing_create', 'conn.pairing_revoke']:
+        for kind in ['conn.pairing_create', 'conn.pairing_revoke', 'conn.gateway_sessions_revoke']:
             self.state['effects']=0
             self.run_workflow(kind)
             state=self.read()

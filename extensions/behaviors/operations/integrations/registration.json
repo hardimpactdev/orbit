@@ -30,7 +30,6 @@
     "metrics.certificate_remove",
     "metrics.publication_firewall",
     "metrics.credentials_reset",
-    "conn.gateway_sessions_revoke",
     "metrics.retire",
     "metrics.role_converge",
     "metrics.role_remove",

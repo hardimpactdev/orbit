@@ -10,6 +10,7 @@ import {
 const Kind = z.enum([
   "conn.pairing_create",
   "conn.pairing_revoke",
+  "conn.gateway_sessions_revoke",
 ]);
 const Args = DirectArgs.extend({ kind: Kind });
 const Id = z.string().regex(/^[a-zA-Z0-9_-]{1,1024}$/);

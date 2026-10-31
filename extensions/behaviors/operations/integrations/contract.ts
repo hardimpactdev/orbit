@@ -32,55 +32,6 @@ export function invocation(
 ): Invocation {
   if (
     [
-      "conn.gateway_sessions_revoke",
-    ].includes(kind)
-  ) {
-    const environment = z.object({
-      $secret: z.literal("conn.environment"),
-      id: z.number().int().positive(),
-    }).strict().parse(input.environment);
-    const ids = z.array(z.number().int().positive()).max(10000).parse(
-      input.pairing_ids,
-    );
-    const result = z.union([
-      z.object({ error_code: ErrorCode }),
-      z.object({
-        backend: z.enum(["issued", "revoked"]),
-        pairing_id: z.number().int().positive().optional(),
-        pairing_link_id: z.string().optional(),
-        expires_at: z.string().optional(),
-        revoked_sessions: z.number().int().nonnegative().optional(),
-      }),
-    ]);
-    return {
-      step: kind === "conn.gateway_sessions_revoke"
-        ? "gateway-sessions-revoke"
-        : "pairing-revoke",
-      transport: "gateway",
-      name: kind === "conn.gateway_sessions_revoke"
-        ? "conn.gateway-sessions-revoke"
-        : "conn.pairing-revoke",
-      input: {
-        environment,
-        pairing_ids: ids,
-        ...(kind === "conn.gateway_sessions_revoke"
-          ? {
-            session_ids: z.array(z.string()).max(10000).parse(
-              input.session_ids,
-            ),
-          }
-          : {}),
-      },
-      parseResult: (value) => {
-        const parsed = result.parse(value);
-        return parsed;
-      },
-      error: remoteError,
-      prove: (value) => value.backend === "revoked",
-    };
-  }
-  if (
-    [
       "websocket.app_rotate",
     ].includes(kind)
   ) {

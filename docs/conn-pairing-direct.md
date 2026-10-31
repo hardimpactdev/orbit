@@ -1,10 +1,9 @@
 # Direct Conn pairing creation
 
-`conn.pairing_create` and `conn.pairing_revoke` start `operation-conn-direct`.
-Its owning Gateway slice selects the direct writer and removes the PHP issue
-command, pairing HTTP relay and receipt tests. Gateway session cleanup and Vault
-kinds retain their existing paths until their own takeover. Rollback reverts the
-owning PR.
+All three Conn kinds start `operation-conn-direct`. Its owning Gateway slice
+selects the direct writer and removes the PHP issue command, pairing HTTP relay
+and receipt tests. Vault kinds retain their existing paths until their own
+takeover. Rollback reverts the owning PR.
 
 Workflow input contains only Operation, kind and Node identifiers. The shared
 private-material endpoint requires the Gateway-recorded run, exact caller Node
@@ -48,5 +47,13 @@ the current admin and unrelated clients, and projects only the revoked count.
 The Gateway no longer executes device revokes or pairing-link HTTP calls.
 
 The polled integrations schedule excludes `conn.pairing_create` and
-`conn.pairing_revoke`. Both use only the direct Conn workflow. Their executor
+`conn.pairing_revoke`, plus `conn.gateway_sessions_revoke`. All three use the
+direct Conn workflow. Their executor
 registrations are removed in the same cutover; rollback reverts the owning PR.
+
+Gateway cleanup admits a recorded registration revision, selects only the
+Gateway client label, and preserves the current admin. A changed cleanup
+revision refuses the shared read with409; completion marks only its admitted
+revision so a newer registration stays pending. The old Conn executor, HTTP
+revocation methods and polled integration paths are removed. The periodic
+maintenance method still only admits intent.
