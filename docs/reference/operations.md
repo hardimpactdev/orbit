@@ -582,8 +582,10 @@ Read input comes only from the projection hook, never automatically from raw int
 | `POST /api/v1/direct-operations/{operation}/primitive` | Optional fixed kind-owned action; run ID only |
 | `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` | Only the kind-declared private material from existing owned secret sources |
 | `POST /api/v1/direct-operations/{operation}/secret-output` | Run ID and declared outputs, written by the existing owned secret stores |
+| `POST /api/v1/direct-operations/{operation}/github-token` | Bound run ID; the checked-in exact repository grant returns a short-lived token |
+| `POST /api/v1/direct-operations/{operation}/certificates/sign` | Bound run ID and CSR selectors; returns admitted public leaf bundles |
 
-A family may declare `github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}` and `private_material: {github: "github.installation"}` in its checked-in declaration. Its admitted input records `github: {$secret: "github.installation", id: <Operation Node ID>}`. The shared `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` resolves that owned reference and returns the credential under `data.github`. It refuses undeclared grants, cancelled intents and terminal Operations. Repository and permissions never come from workflow input. The closed permission names are `contents`, `pull_requests`, `checks`, `actions` and `metadata`; checks, actions and metadata are read-only. No mint route or family transport is added.
+A family may declare `github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}` and `private_material: {github: "github.installation"}` in its checked-in declaration. Its admitted input records `github: {$secret: "github.installation", id: <Operation Node ID>}`. The shared `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` resolves that owned reference and returns the credential under `data.github`. It refuses undeclared grants, cancelled intents and terminal Operations. Repository and permissions never come from workflow input. The closed permission names are `contents`, `pull_requests`, `checks`, `actions` and `metadata`; checks, actions and metadata are read-only. The dedicated `POST /api/v1/direct-operations/{operation}/github-token` accepts only `{run_id}` and returns the same `data.github` object. It applies the existing own-Node, bound-run and checked-in grant checks.
 
 The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. The mint response may omit its optional `repositories` field. The next query uses the new token and proves which repository it can read. A failed scope check refuses delivery and attempts to revoke the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies.
 
@@ -596,6 +598,47 @@ Mint callers must match the Operation's Node, including control-plane workflows.
 Each adopting family must bound mints per native run and make its GitHub writes idempotent. The shared client's one-attempt limit applies to one instance; it does not impose a run-wide cap across steps or resumed executions. Reconcile an uncertain write before retrying it.
 
 The shared client refuses a callback result that contains the credential and sanitizes callback failures. A declaration is a credential-authority change and needs access review before adoption. Gateway deployment precedes the paired client consumer.
+
+### Intent-bound certificate signing
+
+The Gateway alone keeps the Orbit CA private key. A placed Swamp step posts to
+`/api/v1/direct-operations/{operation}/certificates/sign` through the existing active
+WireGuard peer authentication. The caller must be the Operation's root Node or the
+canonical certificate signer, Node 209. The request is:
+
+```json
+{
+  "run_id": "UUID",
+  "requests": [
+    {"node_id": 9, "scope": "route-31", "state": "request", "request_base64": "BASE64_CSR_PEM"},
+    {"node_id": 12, "scope": "role-websocket", "state": "current"}
+  ],
+  "restoring": false
+}
+```
+
+Each selector must match a leaf captured in the original admitted Certificate,
+Route, Analytics, Node-role, Node-removal restoration, Cluster-router or Instance
+transfer intent. Node, scope, domain and `root_hash` come from that stored intent.
+`root_hash` is SHA-256 of the public root PEM bytes, as recorded at admission.
+The request cannot supply a domain, root or signing policy. A current leaf returns
+no new bundle. Node removal selects its admitted restoration leaves only when
+`restoring` is true.
+
+The signer verifies the CSR signature, RSA 2048 public key, exact common name and
+any requested DNS alternative name. It checks the existing matching RSA 4096 CA
+pair and issues a 397-day TLS server leaf with the admitted DNS name, critical
+`CA:FALSE` and critical digital-signature/key-encipherment usage. CSR extensions
+are not copied. Before returning, it rechecks the live Operation, run binding,
+cancellation, admitted leaves and root. Terminal or changed intents refuse.
+
+The private, no-store response contains
+`data.certificates: [{node_id, scope, certificate_base64, root_certificate_base64}]`.
+Both encoded values are public PEM certificates. Each issued bundle records a
+`operation:certificate:sign` Activity containing only Operation/run/caller/leaf
+selectors and root hash. Requests and keys are not kept in command Activity input.
+Signing adds no Operation, lease, execution step, retry or wait. These two named
+root-of-trust endpoints are the only Gateway HTTP primitives for new Swamp steps.
 
 On Swamp, use the shared `directOperation` template with family-owned read, action and projection functions. The action may be a local Node step or a fixed Gateway primitive while that family migrates. Native DAGs, placement, behavior locks, cancellation and recover/resume own execution. Mutating external steps declare `writes: true`. No Gateway claims, heartbeats, child waits, receipts or local retry loop belong in the template.
 

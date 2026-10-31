@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Console\Commands\AbandonGatewayReleaseCommand;
 use App\Console\Commands\AdoptGatewayReleaseCommand;
@@ -254,21 +255,22 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             GatewayReleaseUnitStarter::class,
             static fn (Application $app): SystemdGatewayReleaseUnitStarter => new SystemdGatewayReleaseUnitStarter($app->make(GatewayReleaseCommands::class)),
         );
-        $this->app->bind(
-            GatewayReleasePromoter::class,
-            static fn (Application $app): GatewayReleasePromoter => new GatewayReleasePromoter(
-                layout: $app->make(GatewayReleaseLayout::class),
-                switcher: $app->make(GatewayReleaseSwitcher::class),
-                runtime: $app->make(GatewayReleaseRuntime::class),
-                verifier: $app->make(GatewayReleaseVerifier::class),
-                web: $app->make(GatewayReleaseWebBuild::class),
-                smoke: $app->make(GatewayReleaseSmoke::class),
-                recorder: $app->make(GatewayReleaseRecorder::class),
-                builder: $app->make(GatewayReleaseBuilder::class),
-                keptReleases: Config::integer('orbit.gateway_releases.keep'),
-                retry: $app->make(GatewayReleaseRetry::class),
-            ),
+        $promoter = static fn (Application $app, ?GatewayReleaseRuntime $runtime = null): GatewayReleasePromoter => new GatewayReleasePromoter(
+            layout: $app->make(GatewayReleaseLayout::class),
+            switcher: $app->make(GatewayReleaseSwitcher::class),
+            runtime: $runtime ?? $app->make(GatewayReleaseRuntime::class),
+            verifier: $app->make(GatewayReleaseVerifier::class),
+            web: $app->make(GatewayReleaseWebBuild::class),
+            smoke: $app->make(GatewayReleaseSmoke::class),
+            recorder: $app->make(GatewayReleaseRecorder::class),
+            builder: $app->make(GatewayReleaseBuilder::class),
+            keptReleases: Config::integer('orbit.gateway_releases.keep'),
+            retry: $app->make(GatewayReleaseRetry::class),
         );
+        $this->app->bind(GatewayReleasePromoter::class, static fn (Application $app): GatewayReleasePromoter => $promoter($app));
+        // A retained rollback target can predate outage-safe handoff. Keep the current runner for recovery.
+        $this->app->when(RollbackGatewayReleaseAction::class)->needs(GatewayReleasePromoter::class)
+            ->give(static fn (Application $app): GatewayReleasePromoter => $promoter($app, new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class))));
         $this->app->bind(
             GatewayReleaseAdopter::class,
             static fn (Application $app): GatewayReleaseAdopter => new GatewayReleaseAdopter(

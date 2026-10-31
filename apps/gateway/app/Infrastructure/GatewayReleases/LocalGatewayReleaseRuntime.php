@@ -8,7 +8,8 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 
 /**
  * The runtime handoff in the running process, with its own code, for a release whose code may predate the handoff
- * command: adoption's first release, built from the in-place checkout's commit. The handoff works on the stable
+ * command: adoption's first release or a retained rollback target. Rollback keeps the current runner's recovery
+ * behavior even when the target predates it. The handoff works on the stable
  * Gateway path, so it applies to whichever release that path links to.
  */
 final readonly class LocalGatewayReleaseRuntime implements GatewayReleaseRuntime
