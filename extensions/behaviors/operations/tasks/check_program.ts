@@ -158,6 +158,41 @@ def record(path, value):
     temporary.write_text(json.dumps(value))
     temporary.replace(path)
 
+def push_checked(value):
+    import base64
+    root = os.path.abspath(value['checkout_path'])
+    repo = value['repository']
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo) or not re.fullmatch(r'task-[1-9][0-9]*(?:-handoff)?', value['branch']):
+        raise Refusal('tasks.check_invalid')
+    if 'tree' in value and snapshot(root) != {'head': value['commit'], 'tree': value['tree']}:
+        return {'error_code': 'tasks.head_moved'}
+    url = 'https://github.com/' + repo + '.git'
+    env = {key: os.environ[key] for key in ('PATH', 'HOME', 'LANG') if key in os.environ}
+    env.update({'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_ALLOW_PROTOCOL': 'https', 'GIT_CONFIG_COUNT': '4', 'GIT_CONFIG_KEY_0': 'http.https://github.com/.extraHeader',
+        'GIT_CONFIG_VALUE_0': 'Authorization: Basic ' + base64.b64encode(('x-access-token:' + value['token']).encode()).decode(),
+        'GIT_CONFIG_KEY_1': 'credential.helper', 'GIT_CONFIG_VALUE_1': '', 'GIT_CONFIG_KEY_2': 'core.hooksPath', 'GIT_CONFIG_VALUE_2': '/dev/null', 'GIT_CONFIG_KEY_3': 'http.followRedirects', 'GIT_CONFIG_VALUE_3': 'false'})
+    remote = 'refs/heads/' + value['branch']
+    try:
+        objects = git(root, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+        with tempfile.TemporaryDirectory(prefix='orbit-task-push-') as trusted:
+            clean = {key: env[key] for key in ('PATH', 'HOME', 'LANG', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM', 'GIT_ALLOW_PROTOCOL') if key in env}
+            subprocess.run(['git', 'init', '--quiet', '--bare', '--template=', '--object-format=' + ('sha256' if len(value['commit']) == 64 else 'sha1'), trusted], env=clean, check=True, capture_output=True)
+            env['GIT_ALTERNATE_OBJECT_DIRECTORIES'] = objects
+            observed = subprocess.check_output(git_arguments(trusted, 'ls-remote', '--refs', url, remote), env=env, stderr=subprocess.DEVNULL, timeout=60).decode().split()
+            if observed and observed[0] == value['commit']:
+                return {'pushed': True}
+            pushed = subprocess.run(git_arguments(trusted, 'push', '--porcelain', '--', url, value['commit'] + ':' + remote), env=env, capture_output=True, timeout=120)
+            if pushed.returncode != 0:
+                error = (pushed.stdout + pushed.stderr).decode('utf-8', errors='replace')
+                if 'refusing to allow a GitHub App' in error and '.github/workflows/' in error:
+                    return {'error_code': 'tasks.workflows_permission'}
+                if 'non-fast-forward' in error or '(fetch first)' in error:
+                    return {'error_code': 'tasks.not_fast_forward'}
+                return {'error_code': 'tasks.push_failed'}
+            return {'pushed': True}
+    except (OSError, subprocess.SubprocessError):
+        return {'error_code': 'tasks.push_failed'}
+
 def check(value):
     global DIRECTORY, SSR, EXECUTION_KEY
     root = os.path.abspath(value['checkout_path'])
@@ -189,21 +224,7 @@ def check(value):
         subprocess.run(git_arguments(root, 'update-ref', '--stdin'), input=transaction.encode(), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return {'commit': candidate, 'tree': value['tree']}
     if value['mode'] == 'push':
-        import base64
-        repo = value['repository']
-        if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo) or not re.fullmatch(r'task-[1-9][0-9]*-handoff', value['branch']):
-            raise Refusal('tasks.check_invalid')
-        url = 'https://github.com/' + repo + '.git'
-        env = {key: os.environ[key] for key in ('PATH', 'HOME', 'LANG') if key in os.environ}
-        env.update({'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_COUNT': '3', 'GIT_CONFIG_KEY_0': 'http.https://github.com/.extraHeader',
-            'GIT_CONFIG_VALUE_0': 'Authorization: Basic ' + base64.b64encode(('x-access-token:' + value['token']).encode()).decode(),
-            'GIT_CONFIG_KEY_1': 'credential.helper', 'GIT_CONFIG_VALUE_1': '', 'GIT_CONFIG_KEY_2': 'core.hooksPath', 'GIT_CONFIG_VALUE_2': '/dev/null'})
-        remote = 'refs/heads/' + value['branch']
-        observed = subprocess.check_output(git_arguments(root, 'ls-remote', '--refs', url, remote), env=env, stderr=subprocess.DEVNULL, timeout=60).decode().split()
-        if observed and observed[0] == value['commit']:
-            return {'pushed': True}
-        subprocess.run(git_arguments(root, 'push', '--porcelain', '--', url, value['commit'] + ':' + remote), env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
-        return {'pushed': True}
+        return push_checked(value)
     marker = directory / 'started'
     saved = directory / 'local.json'
     identity = hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()

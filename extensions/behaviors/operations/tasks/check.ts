@@ -271,11 +271,11 @@ export async function check(
 }
 
 /** Existing repository App token type; tokens stay inside trusted Git/GitHub calls. */
-async function withRepositoryTokens<T>(
+export async function withRepositoryTokens<T>(
   gateway: Pick<GatewayOperation, "withPrivateMaterial">,
   repository: string,
   action: (
-    tokens: { write_token: string; checks_token: string; read_token: string },
+    tokens: { write_token: string; checks_token?: string; read_token?: string },
   ) => Promise<T>,
   request = fetch,
 ): Promise<T> {
@@ -286,13 +286,15 @@ async function withRepositoryTokens<T>(
     const tokens = z.object({
       repository: z.literal(repository),
       write_token: token,
-      checks_token: token,
-      read_token: token,
+      checks_token: token.optional(),
+      read_token: token.optional(),
     }).parse(material.credentials);
+    const secrets = [tokens.write_token, tokens.checks_token, tokens.read_token]
+      .filter((secret): secret is string => typeof secret === "string");
     try {
       result = await action(tokens);
       if (
-        [tokens.write_token, tokens.checks_token, tokens.read_token].some((
+        secrets.some((
           secret,
         ) => JSON.stringify(result).includes(secret))
       ) throw new Error("Task result contains a private credential");
@@ -301,11 +303,7 @@ async function withRepositoryTokens<T>(
       else throw error;
     } finally {
       for (
-        const secret of new Set([
-          tokens.write_token,
-          tokens.checks_token,
-          tokens.read_token,
-        ])
+        const secret of new Set(secrets)
       ) {
         try {
           await (await request("https://api.github.com/installation/token", {
@@ -384,6 +382,7 @@ export async function hosted(
     gateway,
     input.repository,
     async (tokens) => {
+      const checksToken = z.string().min(1).parse(tokens.checks_token);
       if (signal.aborted) {
         throw new DirectOperationCancelled({
           effectRunning: false,
@@ -415,7 +414,7 @@ export async function hosted(
             const batch = z.array(z.unknown()).parse(
               (await github(
                 `/repos/${input.repository}/commits/${commit}/check-runs?filter=latest&per_page=100&page=${page}`,
-                tokens.checks_token,
+                checksToken,
                 signal,
                 runtime.request,
               )).check_runs,
@@ -428,7 +427,7 @@ export async function hosted(
             const batch = z.array(z.unknown()).parse(
               (await github(
                 `/repos/${input.repository}/commits/${commit}/check-suites?per_page=100&page=${page}`,
-                tokens.checks_token,
+                checksToken,
                 signal,
                 runtime.request,
               )).check_suites,
