@@ -12,6 +12,7 @@ use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\TaskVm;
@@ -60,6 +61,18 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
         }
 
         return $this->item($metricsNode, $projectedNode);
+    }
+
+    public function forEnrollment(Node $metricsNode, Node $candidate): ?MetricsExporterProjectionItem
+    {
+        if (! $candidate->exists || $candidate->status !== LifecycleStatus::Active
+            || ! Node::query()->whereKey($candidate->id)->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Active])->exists()) {
+            throw new ResourceOperationException('metrics.snapshot_changed', 'An enrollment capture requires its recorded candidate Node.', 409);
+        }
+        $candidate = clone $candidate;
+        $candidate->load('roles');
+
+        return $this->item($metricsNode, $candidate);
     }
 
     private function item(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem

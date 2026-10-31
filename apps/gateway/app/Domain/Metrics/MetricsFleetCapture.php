@@ -54,6 +54,33 @@ final readonly class MetricsFleetCapture
         return $this->build($assignment, $enabled);
     }
 
+    /** Pure post-enrollment fleet for one admission-owned candidate; no persisted identity changes.
+     * @return array<string,mixed>|null
+     */
+    public function captureForEnrollment(Node $candidate): ?array
+    {
+        if (! $candidate->exists || $candidate->status !== LifecycleStatus::Active
+            || ! Node::query()->whereKey($candidate->id)->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Active])->exists()) {
+            throw new ResourceOperationException('metrics.snapshot_changed', 'Enrollment requires its recorded candidate Node.', 409);
+        }
+        $assignments = NodeRole::query()->where('role', RoleName::Metrics)
+            ->whereIn('status', [LifecycleStatus::Provisioning, LifecycleStatus::Active])
+            ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active)->orWhere('id', $candidate->id))
+            ->with('node')->limit(2)->get();
+        if ($assignments->isEmpty()) {
+            return null;
+        }
+        if ($assignments->count() !== 1) {
+            throw new ResourceOperationException('metrics.assignment_drift', 'Enrollment requires one prospective Metrics owner.', 409);
+        }
+        $assignment = $assignments->sole();
+        if ($assignment->node_id === $candidate->id) {
+            $assignment->setRelation('node', $candidate);
+        }
+
+        return $this->build($assignment, true, candidate: $candidate);
+    }
+
     /** Complete desired fleet after one admitted Node retirement. No intent or host writes.
      * The owning parent records unreachable target residue separately; it never claims that target was cleaned.
      *
@@ -96,19 +123,28 @@ final readonly class MetricsFleetCapture
     }
 
     /** @return array<string,mixed> */
-    private function build(NodeRole $assignment, bool $enabled, ?Node $retiring = null): array
+    private function build(NodeRole $assignment, bool $enabled, ?Node $retiring = null, ?Node $candidate = null): array
     {
         $metrics = $assignment->node;
         $members = [];
         $targets = [];
         $services = [];
-        foreach ($this->exporters->for($metrics) as $item) {
+        $items = $this->exporters->for($metrics);
+        if ($candidate !== null) {
+            $items = array_values(array_filter($items, static fn (MetricsExporterProjectionItem $item): bool => $item->node->id !== $candidate->id));
+            $prospective = $this->exporters->forEnrollment($metrics, $candidate);
+            if ($prospective !== null) {
+                $items[] = $prospective;
+            }
+        }
+        foreach ($items as $item) {
             $node = $item->node;
             if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
                 throw new ResourceOperationException('metrics.exporter_address_invalid', 'An exporter needs its recorded WireGuard IPv4.', 409);
             }
             $selected = $enabled && $node->id !== $retiring?->id;
-            $service = $this->services->forNode($metrics, $node, $selected);
+            $service = $node->id === $candidate?->id
+                ? $this->services->forEnrollment($metrics, $node, $selected) : $this->services->forNode($metrics, $node, $selected);
             $members[] = ['node_id' => $node->id, 'name' => $node->name, 'address' => $node->wireguard_ip,
                 'agent_sha256' => $this->agents->pin($node), 'worker' => $this->workers->allows($node),
                 'selected' => $selected && $item->selection->selected, 'selection_reason' => $item->selection->reason->value,
