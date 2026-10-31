@@ -303,6 +303,50 @@ describe('gateway:release:handoff', function (): void {
             && $request->toPsrRequest()->getHeaderLine('Authorization') === '');
     });
 
+    it('keeps pre-send connection failures inside one release recovery deadline', function (bool $horizon, bool $persistent): void {
+        $gateway = handoff_gateway();
+        $path = sys_get_temp_dir().'/connect-wait-caddy-'.bin2hex(random_bytes(8));
+        if ($horizon) {
+            config(['orbit.gateway_queue.connection' => 'services-valkey']);
+            handoff_scheduler($gateway);
+            $version = app(NodeCaddyfileRenderer::class)->render($gateway)->version;
+            symlink('/etc/caddy/orbit-versions/'.$version.'/Caddyfile', $path);
+        }
+        try {
+            [$handoff, , , $builds, , $probe] = runtime_handoff(
+                horizon: $horizon ? app(GatewayHorizon::class) : null,
+                caddyfilePath: $path,
+                swampHealthy: static fn (): bool => true,
+            );
+            $builds->onConnect = static function (int $attempt) use ($persistent): void {
+                if ($persistent || $attempt <= 2) {
+                    throw new RuntimeException('HTTPS is healthy but WebSocket cannot connect.');
+                }
+            };
+
+            if ($persistent) {
+                expect(release_failure(fn () => $handoff->serve())->errorCode)
+                    ->toBe($horizon ? 'gateway.release_units_failed' : 'gateway.release_caddy_failed')
+                    ->and($probe->time->now())->toBe(600_000_000_000.0)
+                    ->and($builds->sent)->toBe([]);
+            } else {
+                expect($handoff->serve()[$horizon ? 'horizon' : 'caddy'])->toBe('submitted')
+                    ->and($builds->connections)->toHaveCount(3)
+                    ->and($builds->sent)->toHaveCount(1)
+                    ->and($probe->time->now())->toBe(5_000_000_000.0);
+            }
+        } finally {
+            if ($horizon) {
+                unlink($path);
+            }
+        }
+    })->with([
+        'Caddy recovers' => [false, false],
+        'Horizon recovers' => [true, false],
+        'Caddy deadline' => [false, true],
+        'Horizon deadline' => [true, true],
+    ]);
+
     it('bounds the release-only health wait to 600 seconds without submitting while serve stays down', function (): void {
         handoff_gateway();
         $checks = 0;

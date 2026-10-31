@@ -1,0 +1,190 @@
+id: 52eb4df2-ee4b-4950-9c46-d6f9fb1836e9
+name: operation-conn-pairing-revoke
+description: Revoke only the captured Conn pairing sessions and links on209.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - conn.pairing_revoke
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        links:
+          type: array
+          items:
+            type: string
+      required:
+      - url
+      - labels
+      - links
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        admin_session:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^conn-pairing-revoke-[a-f0-9-]+$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - admin_session
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: prepare
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: &id001
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-assets" }}
+      methodName: assets
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: list
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-list" }}
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.list_script }}"
+
+          '
+        env:
+          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
+            inputs.execution_secrets.admin_session.key) }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.labels.size() == 0 }}
+  - name: select
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-select" }}
+      methodName: select
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: '${{ "list" in steps && steps.list.status == "succeeded" ? steps.list.outputs.stdout
+          : "[]" }}'
+    dependsOn:
+    - step: list
+      condition:
+        type: always
+- name: sessions
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: session
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: workflow
+      workflowIdOrName: conn-revoke-session
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        session_id: ${{ self.item }}
+    forEach:
+      item: item
+      in: ${{ steps.select.outputs.sessions }}
+- name: links
+  dependsOn:
+  - job: sessions
+    condition:
+      type: succeeded
+  steps:
+  - name: link
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-link" }}
+      methodName: execute
+      inputs:
+        run: '#!/bin/sh
+
+          set -eu
+
+          /usr/bin/python3 -B "${{ steps.assets.outputs.revoke_script }}"
+
+          '
+        env:
+          ORBIT_CONN_INTENT: ${{ steps.assets.outputs.intent_json }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault,
+            inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_REVOKE: ${{ self.item.input_json }}
+    forEach:
+      item: item
+      in: ${{ steps.select.outputs.links }}
+- name: finish
+  dependsOn:
+  - job: links
+    condition:
+      type: always
+  steps:
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-revocation-plan'
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-result" }}
+      methodName: finish
+      inputs:
+        successful: ${{ steps.all(name, steps[name].status == "succeeded" || steps[name].status
+          == "skipped") }}
+        results: ${{ steps.filter(name, name.startsWith("session-") && steps[name].status
+          == "succeeded").map(name, steps[name].outputs.finish.stdout) }}
+        child: false

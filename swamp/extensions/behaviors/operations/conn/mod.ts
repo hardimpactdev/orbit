@@ -9,7 +9,6 @@ import {
 
 const Kind = z.enum([
   "conn.pairing_create",
-  "conn.pairing_revoke",
   "conn.gateway_sessions_revoke",
 ]);
 const Args = DirectArgs.extend({ kind: Kind });
