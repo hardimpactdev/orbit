@@ -11,10 +11,11 @@ use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
-it('starts selected executor footprints directly without PHP execution or child admission', function (string $peer): void {
+it('starts selected executor footprints directly without PHP execution or child admission', function (string $peer, int $id): void {
     FleetFixtures::bind([new FakeFootprintArtifact('tmpfiles', 'current')]);
+    $node = Node::query()->forceCreate(['id' => $id, 'name' => 'executor-'.$peer, 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.9', 'ssh_host_fingerprint' => 'SHA256:test', 'status' => 'active']);
     $gateway = FleetFixtures::node('gateway', [RoleName::Gateway]);
-    $node = FleetFixtures::node('executor-'.$peer);
     $runner = Mockery::mock(AgentCommandRunner::class);
     $runner->shouldNotReceive('run');
     $runner->shouldNotReceive('install');
@@ -36,13 +37,13 @@ it('starts selected executor footprints directly without PHP execution or child 
     expect($operation->lock_key)->toBeNull();
     expect($operation->worker)->toBeNull();
     expect($operation->attempts)->toBe(0);
-})->with(['services', 'worker']);
+})->with(['services', 'worker'])->with([1, 18, 13]);
 
-it('keeps excluded Nodes polled even when caller and rollout try to select native execution', function (int $id): void {
+it('keeps Nodes outside the rollout polled even when the caller requests native execution', function (int $id): void {
     $node = Node::query()->forceCreate(['id' => $id, 'name' => 'workerless', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
         'wireguard_ip' => '10.44.0.9', 'ssh_host_fingerprint' => 'SHA256:test', 'status' => 'active']);
     $gateway = FleetFixtures::node('gateway', [RoleName::Gateway]);
-    config(['swamp_workers.nodes' => [$id], 'swamp.direct_writers' => ['node.converge' => 'direct']]);
+    config(['swamp_workers.nodes' => [], 'swamp.direct_writers' => ['node.converge' => 'direct']]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $this->postJson('/api/v1/nodes/'.$id.'/converge', ['native_footprint' => true])->assertAccepted();
     $operation = Operation::query()->sole();

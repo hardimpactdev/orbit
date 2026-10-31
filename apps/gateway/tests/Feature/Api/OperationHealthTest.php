@@ -89,3 +89,18 @@ it('registers one fleet health schedule instead of family-specific copies', func
     expect($commands->filter(static fn (string $command): bool => str_contains($command, 'orbit:operations-check')))->toHaveCount(1)
         ->and($commands->filter(static fn (string $command): bool => str_contains($command, 'orbit:conn-operations-check') || str_contains($command, 'orbit:instance-deployment-operations-check')))->toBeEmpty();
 });
+
+it('alerts once for a bound direct footprint waiting on its offline target worker without changing the intent', function (): void {
+    $operation = healthOperation('node.converge');
+    $operation->update(['lock_key' => null, 'worker' => null, 'input' => ['native_footprint' => true],
+        'state' => ['node_converge_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    $before = $operation->refresh()->getRawOriginal();
+    $this->travel(5)->minutes();
+    expect(OperationData::fromModel($operation)->assistance)->toBe(['error_code' => 'operation.executor_unclaimed']);
+    $this->artisan('orbit:operations-check')->expectsOutputToContain('operation.executor_unclaimed: Operation '.$operation->id)->assertFailed();
+    $this->artisan('orbit:operations-check')->assertFailed();
+    expect(Activity::query()->where('command', 'operation:health')->count())->toBe(1);
+    expect($operation->fresh()->getRawOriginal())->toBe($before);
+    expect($operation->children()->count())->toBe(0);
+    Http::assertNothingSent();
+});
