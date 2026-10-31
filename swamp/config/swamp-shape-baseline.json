@@ -3278,14 +3278,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tasks/publish.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/tasks/script_program.ts",
       "rule": "inline-script",
       "count": 163,

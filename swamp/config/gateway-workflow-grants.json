@@ -2,6 +2,7 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^task-publish-token-[a-f0-9-]{36}$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-pi-token-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-user-create-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
