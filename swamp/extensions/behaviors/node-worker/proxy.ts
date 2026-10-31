@@ -7,7 +7,7 @@ import {
   installProxyWorkers,
   knownHost,
   prepareProxyKey,
-  type ProxyTarget,
+  ProxyTarget,
 } from "./proxy-install.ts";
 import {
   metadata,
@@ -20,27 +20,16 @@ import {
 import type { WorkerCredentials } from "./install.ts";
 import { due, type Native, native, Token } from "./rotation.ts";
 import { attestProxyRuntime, ProxyRuntime } from "./proxy-runtime.ts";
-import { ProxyIdentity } from "../operations/_lib/node-proxy-config.ts";
+import {
+  ProxyIdentity,
+  proxyTargets,
+} from "../operations/_lib/node-proxy-config.ts";
 
 // Orbit's recorded Ed25519 host keys, verified against their recorded fingerprints.
-export const targets: readonly ProxyTarget[] = [
-  {
-    node_id: 1,
-    host: "10.44.0.1",
-    user: "orbit",
-    host_key:
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG",
-    host_fingerprint: "SHA256:TP06RDL2oMgX8CDMhbQMVPkTgBz5oH7PDMb2QcpY8CE",
-  },
-  {
-    node_id: 18,
-    host: "10.44.0.13",
-    user: "orbit",
-    host_key:
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKTqizm/h9dgo7Zab5NUC1RlLprBkRoUPrKQkF/b+DjF",
-    host_fingerprint: "SHA256:teBody6WhmcYgLEXTTI2m3TqyfNnRxgEx7tCbsg7mwA",
-  },
-];
+export const targets: readonly ProxyTarget[] = proxyTargets.map((v) =>
+  ProxyTarget.parse(v)
+);
+
 const quote = (v: string) => "'" + v.replaceAll("'", "'\\''") + "'";
 
 /** Existing Gateway SSH authority installs only the new public key on each exact target. */

@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: '@nckrtl/node-command-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: One shared native shell transport over the existing approved light-Node SSH edge.
+behaviors:
+  - operations/node-command/script_assets.ts
+additionalFiles:
+  - scripts/node_command.py
+  - scripts/proxy_remote.py
+  - scripts/proxy_contract.json

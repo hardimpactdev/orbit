@@ -6,6 +6,7 @@ import {
   analyzeYaml,
   GATEWAY_PRIMITIVES,
   gatewayShellFindings,
+  inlinePythonScripts,
   isGatewayPrimitive,
   ratchet,
   SCHEMA,
@@ -518,5 +519,21 @@ Deno.test("external HTTP calls are not Gateway primitives or callbacks", () => {
       "curl https://example.com/archive.tar.gz",
     ),
     [],
+  );
+});
+
+Deno.test("shared proxy heredoc inspects only remote Python programs", () => {
+  const head =
+    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
+  assertEquals(
+    inlinePythonScripts(head + " <<'ORBIT_ACTION'\nprintf ok\nORBIT_ACTION\n"),
+    [],
+  );
+  assertEquals(
+    inlinePythonScripts(
+      head +
+        " <<'ORBIT_ACTION'\n/usr/bin/python3 - <<'PYTHON'\nprint('remote')\nPYTHON\nORBIT_ACTION\n",
+    ),
+    ["print('remote')"],
   );
 });
