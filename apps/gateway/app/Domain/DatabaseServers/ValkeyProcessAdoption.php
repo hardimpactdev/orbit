@@ -20,16 +20,12 @@ use App\Models\Process;
  */
 final readonly class ValkeyProcessAdoption
 {
-    public function __construct(
-        private ValkeyServerAdmin $valkey,
-    ) {}
-
     /**
-     * Check the Process and the connection, and log in with the connection's password as `default`.
+     * Admit recorded Process ownership; the Node checks authentication and live state.
      *
      * @return array{process: Process, connection: DatabaseConnection, port: int}
      */
-    public function check(Node $node, string $slug, int $processId, string $connectionSlug): array
+    public function admit(Node $node, string $slug, int $processId, string $connectionSlug): array
     {
         $process = Process::query()->find($processId);
 
@@ -58,7 +54,10 @@ final readonly class ValkeyProcessAdoption
             throw self::refused("Process [{$process->name}] does not publish container port 6379 on the WireGuard address of Node [{$node->name}].");
         }
 
-        self::assertUnowned($process);
+        $existing = DatabaseServer::query()->where('process_id', $process->id)->first();
+        if ($existing !== null && ($existing->slug !== $slug || $existing->node_id !== $node->id || $existing->driver !== DatabaseDriver::Redis)) {
+            throw self::refused("Process [{$process->name}] already runs Database server [{$existing->slug}].");
+        }
 
         $connection = DatabaseConnection::query()->where('slug', $connectionSlug)->first();
 
@@ -70,44 +69,13 @@ final readonly class ValkeyProcessAdoption
             throw self::refused("Database connection [{$connectionSlug}] does not point to {$node->wireguard_ip}:{$port}.");
         }
 
-        // Its clients keep logging in as `default` after the adoption, the only user in the new ACL file.
-        $candidate = new DatabaseServer(['slug' => $slug, 'port' => $port, 'root_password' => $connection->password]);
-        $candidate->setRelation('node', $node);
-
-        if (($connection->username !== null && $connection->username !== 'default') || ! (filled($connection->password) ? $this->valkey->acceptsAdminLogin($candidate) : $this->valkey->acceptsAnonymous($candidate))) {
-            throw self::refused("The password of Database connection [{$connectionSlug}] does not log in as default.");
-        }
-
-        $users = $this->valkey->aclUsers($candidate);
-        if (array_diff(array_keys($users), ['default']) !== []) {
-            throw self::refused('The Process already has non-default ACL users. Adoption would remove them.');
-        }
-
-        $default = $users['default'] ?? null;
-        $expectedDefault = filled($connection->password)
-            ? ValkeyAclUser::withPassword('default', ValkeyAclUser::ADMIN_RULES, (string) $connection->password)
-            : new ValkeyAclUser('default', 'on nopass ~* &* +@all', []);
-        if (! $default?->sameAs($expectedDefault)) {
-            throw self::refused("Adoption would replace the default user's authentication or permissions.");
-        }
-
-        $configuration = $this->valkey->adoptionConfiguration($candidate);
-        foreach (['dir' => '/data', 'appendonly' => 'yes', 'appenddirname' => 'appendonlydir', 'appendfilename' => 'appendonly.aof', 'dbfilename' => 'dump.rdb', 'databases' => '16'] as $key => $value) {
-            if (($configuration[$key] ?? null) !== $value) {
-                throw self::refused("Adoption would change the effective [{$key}] configuration.");
-            }
+        if (($connection->database_server_id !== null && $connection->database_server_id !== $existing?->id)
+            || ($existing !== null && ($existing->default_open ? filled($connection->password) : $connection->password !== $existing->root_password))
+            || ($connection->username !== null && $connection->username !== 'default')) {
+            throw self::refused('Adoption requires the default-user connection.');
         }
 
         return ['process' => $process, 'connection' => $connection, 'port' => $port];
-    }
-
-    public static function assertUnowned(Process $process): void
-    {
-        $owner = DatabaseServer::query()->where('process_id', $process->id)->first();
-
-        if ($owner instanceof DatabaseServer) {
-            throw self::refused("Process [{$process->name}] already runs Database server [{$owner->slug}].");
-        }
     }
 
     public static function refused(string $message): ResourceOperationException

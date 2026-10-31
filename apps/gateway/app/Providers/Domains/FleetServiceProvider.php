@@ -16,6 +16,7 @@ use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Fleet\RecipeGithubSecretSource;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubApi;
@@ -23,6 +24,7 @@ use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeCliInstaller;
 use App\Domain\Operations\OperationRunConstraint;
+use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -51,6 +53,7 @@ final class FleetServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
+        $this->app->tag([RecipeGithubSecretSource::class], OperationSecretSource::class);
         $this->app->tag([FleetWindow::class], OperationRunConstraint::class);
         $this->app->bind(
             ReleaseHistory::class,

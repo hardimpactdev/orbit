@@ -47,22 +47,13 @@ final readonly class OperationStore
         if ($expectedWriter !== null && $writer !== $expectedWriter) {
             throw new LogicException('The prepared Operation input must match its admitted writer.');
         }
-        $lockKey = $writer === 'direct' ? null : self::lockKey($targetType, $targetId);
-        $parent = $this->idempotency->parent;
-        if ($parent !== null) {
-            if ($this->idempotency->childIntent === null || $kind !== $this->idempotency->childIntent['kind'] || $nodeId !== $this->idempotency->childIntent['node_id']) {
-                throw new ResourceOperationException('operation.child_forbidden', 'The owning admission changed the bound kind or Node.', 422);
-            }
-            $holder = $lockKey === null ? null : Operation::query()->where('lock_key', $lockKey)->lockForUpdate()->first();
-            $ancestor = $parent;
-            while ($holder !== null && $ancestor !== null) {
-                if ($holder->id === $ancestor->id && ! $ancestor->status->terminal()) {
-                    $lockKey = null;
-                    break;
-                }
-                $ancestor = $ancestor->parent_operation_id === null ? null : Operation::query()->find($ancestor->parent_operation_id);
-            }
+        $lockKey = null;
+        if ($nodeId === null) {
+            throw new ResourceOperationException('operation.node_required', 'A direct Operation requires its admitted root Node.', 422);
         }
+        $definition = app(DirectOperation::class)->definition($kind);
+        $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
+        app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         $superseded = null;
 
         try {
@@ -89,9 +80,6 @@ final readonly class OperationStore
                     'triggered_by' => $triggeredBy,
                     'request_id' => $requestId,
                 ]);
-                if ($this->idempotency->parent !== null) {
-                    $created->forceFill(['parent_operation_id' => $this->idempotency->parent->id, 'child_key' => $this->idempotency->childKey, 'run_constraints' => $this->idempotency->parent->run_constraints ?? []])->save();
-                }
 
                 return $created;
             });
