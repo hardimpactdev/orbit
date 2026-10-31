@@ -362,7 +362,9 @@ it('rolls back restoration when its hub authority differs from cleanup', functio
 it('omits unrelated TaskVMs but refuses a workerless residue actor before admission', function (bool $hasResidue): void {
     destroyGuestFixture();
     $other = Node::query()->create(['name' => 'unrelated-tvm', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'ssh_host_fingerprint' => 'SHA256:other']);
+        'status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.209', 'public_ssh_host' => '192.0.2.209', 'ssh_host_fingerprint' => 'SHA256:other',
+        'wireguard_public_key' => base64_encode(str_repeat('u', 32))]);
+    $other->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     TaskVm::query()->create(['name' => $other->name, 'provider' => 'incus', 'host_node_id' => $this->host->id,
         'node_id' => $other->id, 'wireguard_ip' => $other->wireguard_ip, 'state' => 'ready']);
     if ($hasResidue) {
@@ -377,6 +379,7 @@ it('omits unrelated TaskVMs but refuses a workerless residue actor before admiss
 
 it('restores local participant input when no hub was admitted', function (): void {
     $guest = destroyGuestFixture();
+    $guest->update(['tld' => 'restore-cleanup.example']);
     $this->host->update(['ssh_host_fingerprint' => 'SHA256:destroy-host', 'wireguard_public_key' => base64_encode(str_repeat('h', 32)), 'dns_server_override' => '10.44.0.1']);
     $this->host->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     config(['swamp_workers.nodes' => [$this->host->id, $this->gateway->id]]);
