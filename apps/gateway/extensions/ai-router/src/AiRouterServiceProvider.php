@@ -9,7 +9,6 @@ use App\Domain\DatabaseConnections\DatabaseConnectionRemovalGuard;
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Fleet\NodeFootprintArtifact;
-use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\TaskVms\ModelKeyIssuer;
@@ -28,7 +27,6 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterRuntimeLifecycle;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSnapshotStore;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCaddySiteSource;
-use Orbit\Extensions\AiRouter\Infrastructure\AiRouterCollectorSecrets;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterFootprintArtifact;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterModelKeyIssuer;
 use Orbit\Extensions\AiRouter\Infrastructure\AiRouterPrivateHostnames;
@@ -86,7 +84,6 @@ final class AiRouterServiceProvider extends ExtensionServiceProvider
         $this->contribute(ProcessRemovalGuard::class, AiRouterProcessOwnership::class);
         $this->contribute(ContributedCaddySiteSource::class, AiRouterCaddySiteSource::class);
         $this->contribute(NodeFootprintArtifact::class, AiRouterFootprintArtifact::class);
-        $this->contribute(OperationSecretSource::class, AiRouterCollectorSecrets::class);
         $this->contribute(ContributedPrivateHostnames::class, AiRouterPrivateHostnames::class);
     }
 

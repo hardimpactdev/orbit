@@ -245,16 +245,6 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 
 ## Collector convergence
 
-### Native capture boundary
-
-The footprint contribution also implements the read-only `NodeFootprintCapture` interface on the existing artifact tag. Its capture binds an existing owned collector Process, selected Node, current agent pin and canonical desired unit hash. It neither creates a Process nor changes role assignments. Missing Process or source intent, pending rename, or a changed owner refuses capture. Native collector composition remains unsupported until the owning root supplies its complete publication, runtime and projection stages; implementing capture alone does not activate it.
-
-The family private source `ai_router.collector_installation` is restricted to an unfinished direct `node.converge` root on its own Node. The declared parameter is the fixed top-level `collector_installation`. Its `{$secret: "ai_router.collector_installation", id: <collector Node ID>}` reference must match the immutable `_converge.payloads.ai-router.installation` reference exactly. Hydration rechecks the selected collector, fixed owned systemd Process, admitted pin and complete safe capture. It returns `{runtime: "systemd", content: <canonical rendered unit>}` only through the existing private transport. The unit and credential values never enter public input or results. Generic Process sources keep their Process-only authority. The root owns the private declaration and effect-only callback; this source adds no endpoint or writer.
-
-For a noncollector Node, capture contains `applicable:false` and the same mandatory owned reference. Only when the admitted footprint has no `ai-router` artifact, the complete absence payload matches, and current public applicability remains false does private hydration return `collector_installation:null`. That branch does not read a Process, collector environment or certificate authority. A missing reference, required collector artifact or changed applicability refuses instead. This null describes private material absence; it never supplies an applied or skipped collector digest. Exact source/access review and complete root integration still precede activation.
-
-### Retained lifecycle
-
 The release tick and Node footprint use one collector convergence action under the same lifecycle lock. A footprint visit skips a pending rename; the next tick completes it automatically. The action preserves task model keys and origins and never restarts the router.
 
 `ai-router:status` reports `cutover_pending` until the rename finishes. While it is pending, setup and teardown refuse with `ai_router.cutover_pending`. Quota reads resume when the tick renames the previous snapshot. The window includes up to one minute for dispatch, queue wait, and retirement of the old collector. When no snapshot exists, reads wait for the first successful poll.
