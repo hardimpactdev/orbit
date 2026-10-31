@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
-use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\NodeWireGuardInput;
+use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Support\ValidatedData;
 
-/** Hydrates only the VPN hub identity and configuration; peers are read later under the publication lock. */
+/** Existing VPN private type, bound to one admitted hub participant in a native parent run. */
 final readonly class NodeVpnConfigurationSource implements OperationSecretSource
 {
     public function __construct(private VpnConfigurationRepository $configuration) {}
@@ -25,34 +26,34 @@ final readonly class NodeVpnConfigurationSource implements OperationSecretSource
 
     public function targetTypes(): array
     {
-        return ['node'];
+        return ['node', 'task_vm'];
     }
 
     public function ownerId(Operation $operation): ?int
     {
-        $context = $operation->input['context_node_id'] ?? null;
-        if (! in_array($operation->kind, ['node.wireguard_key', 'node.wireguard_hub_converge'], true)
-            || ! is_int($context) || ($operation->kind === 'node.wireguard_key' && $context !== $operation->target_id)
-            || ! Node::query()->whereKey($context)->exists()) {
-            return null;
-        }
+        $snapshot = NodeWireGuardInput::bound($operation);
 
-        return Node::query()->whereKey($operation->node_id)->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->exists()
-            ? $operation->node_id : null;
+        return $snapshot !== null && app(DirectOperationPrivateBindings::class)->ownerNode($operation, 'configuration') === $snapshot['hub_id']
+            ? $snapshot['hub_id'] : null;
     }
 
     public function resolve(Operation $operation, int $id, string $key, string $parameter): OperationSecretValue
     {
-        if ($this->ownerId($operation) !== $id || $parameter !== 'configuration') {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The VPN configuration does not belong to this hub Operation.', 422);
+        $snapshot = NodeWireGuardInput::bound($operation);
+        if ($snapshot === null || $this->ownerId($operation) !== $id || $parameter !== 'configuration'
+            || ($operation->input['configuration'] ?? null) !== ['$secret' => $this->name(), 'id' => $id]) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The VPN material requires its exact admitted hub participant.', 422);
         }
-        $context = ValidatedData::integer($operation->input['context_node_id']);
-        $vpn = $this->configuration->forPeer(Node::query()->findOrFail($context));
+        $vpn = $this->configuration->forPeer(Node::query()->findOrFail($snapshot['context_node_id']));
         if ($vpn->server->id !== $id) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The VPN hub changed after admission.', 422);
+            throw new ResourceOperationException('operation.execution_forbidden', 'The VPN owner changed after admission.', 422);
         }
+        $peers = Node::query()->whereNotNull('wireguard_public_key')->whereNotNull('wireguard_ip')
+            ->where('status', '!=', LifecycleStatus::Removing)->orderBy('id')->get()
+            ->map(static fn (Node $node): array => ['node_id' => $node->id, 'name' => $node->name,
+                'public_key' => $node->wireguard_public_key, 'address' => $node->wireguard_ip])->all();
 
-        return new OperationSecretValue(['hub_id' => $id, 'address' => $vpn->serverAddress, 'port' => $vpn->port,
-            'private_key' => $vpn->serverPrivateKey], [$vpn->serverPrivateKey]);
+        return new OperationSecretValue(['snapshot' => $snapshot, 'address' => $vpn->serverAddress, 'port' => $vpn->port,
+            'private_key' => $vpn->serverPrivateKey, 'peers' => $peers], [$vpn->serverPrivateKey]);
     }
 }
