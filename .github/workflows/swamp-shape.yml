@@ -7,8 +7,8 @@ on:
       SWAMP_SIGNIN_TOKEN:
         required: false
     inputs:
-      allow-initial-import-auth-unavailable:
-        description: "Only public Orbit PR 2002 may report unavailable auth without validating workflows"
+      allow-auth-unavailable:
+        description: "Only the caller-proven initial Orbit import PR or first main push may report unavailable auth"
         type: boolean
         default: false
       working-directory:
@@ -90,7 +90,7 @@ jobs:
         env:
           SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
           SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
-          SHAPE_IMPORT_AUTH_EXCEPTION: ${{ inputs.allow-initial-import-auth-unavailable }}
+          SHAPE_IMPORT_AUTH_EXCEPTION: ${{ inputs.allow-auth-unavailable }}
           SHAPE_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
         run: |
           if [[ -z "${SWAMP_API_KEY:-}" ]]; then
@@ -99,8 +99,8 @@ jobs:
             echo "### $message" >> "$GITHUB_STEP_SUMMARY"
             echo 'WORKFLOW-VALIDATE status=auth_unavailable workflows_validated=0'
             python3 -c 'import json,os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"],"workflow-validation.json").write_text(json.dumps({"schema_version":1,"status":"auth_unavailable","workflows_validated":0,"validation_ran":False})+"\n")'
-            if [[ "$SHAPE_IMPORT_AUTH_EXCEPTION" != 'true' || "$GITHUB_REPOSITORY" != 'hardimpactdev/orbit' || "$GITHUB_EVENT_NAME" != 'pull_request' || "$SHAPE_PR_NUMBER" != '2002' ]]; then
-              echo '::error::Workflow validation requires Swamp account authentication outside initial import PR 2002.'
+            if [[ "$SHAPE_IMPORT_AUTH_EXCEPTION" != 'true' || "$GITHUB_REPOSITORY" != 'hardimpactdev/orbit' ]] || ! [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "$SHAPE_PR_NUMBER" == '2002' || "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' ]]; then
+              echo '::error::Workflow validation requires Swamp account authentication outside the caller-proven initial import.'
               exit 1
             fi
           else
