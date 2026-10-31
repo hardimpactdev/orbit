@@ -25,6 +25,7 @@ export function nativeEffect(
   ) => Promise<Record<string, unknown>>,
   makeHttp = (ctx: Context) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
+  replayRunning = true,
 ) {
   const Args = DirectArgs.extend({
     kind: z.literal(kind),
@@ -77,6 +78,11 @@ export function nativeEffect(
               current.node_id !== args.node_id
             ) {
               throw new Error("Wrong admitted identity");
+            }
+            if (current.status === "running" && !replayRunning) {
+              throw new Error(
+                "An uncertain write requires inspection before settlement",
+              );
             }
             const started_at = new Date().toISOString();
             let status: z.infer<typeof Projection>["status"];

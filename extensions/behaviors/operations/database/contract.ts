@@ -5,7 +5,6 @@ export const Kinds = [
   "database_server.destroy",
   "database.create",
   "database.destroy",
-  "database.write",
   "database.clone",
   "database.destroy_owned",
   "database.sqlite_export",
