@@ -1,0 +1,24 @@
+[
+  {
+    "schema": 1,
+    "candidates": [
+      {
+        "path": ".", "manager": "composer", "package": "fixture/framework",
+        "current": "1.9.0", "latest": "2.1.0", "reasons": ["major", "security"],
+        "advisories": [
+          {"id": "PKSA-first", "url": "https://github.com/advisories/GHSA-first", "title": "First issue", "affected": "<2.0.0"},
+          {"id": "PKSA-second", "url": "https://github.com/advisories/GHSA-second", "title": "Second issue", "affected": "<1.9.1"}
+        ]
+      }
+    ]
+  },
+  {
+    "schema": 1,
+    "candidates": [
+      {"path": ".", "manager": "js", "package": "fixture-ui", "current": "2.0.0", "latest": "3.0.0", "reasons": ["major"], "advisories": []},
+      {"path": ".", "manager": "js", "package": "fixture-vulnerable", "reasons": ["security"], "advisories": [
+        {"id": "123456", "url": "https://github.com/advisories/GHSA-ui", "title": "Indirect advisory", "affected": "<1.1.1"}
+      ]}
+    ]
+  }
+]

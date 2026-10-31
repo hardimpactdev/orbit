@@ -232,6 +232,7 @@ A commit qualifies when all of these hold.
 - Every such run has completed with conclusion `success`. Any other state or conclusion fails this rule, including a queued or running run.
 - Every such run was created by GitHub Actions (`app.slug` is `github-actions`). Another App with `checks: write` could create a run with the same name. Its run never makes a commit green, and it disqualifies the commit.
 - The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
+- The `Gateway release inputs` check also passes those name, SHA, completion, and App rules. Swamp-only changes skip it and never become Gateway release candidates.
 - The commit has not failed a release.
 
 The check name, SHA, completion, and App rules also apply to [`bin/pr-head-check`](https://github.com/hardimpactdev/orbit/blob/main/bin/pr-head-check) and the [task merge gate](/reference/tasks#execution-ownership). The task merge gate first excludes workflow runs superseded by a newer run of the same workflow, event, and branch on the commit, and counts only `pull_request` suites. The release reader and `bin/pr-head-check` count every returned run of the required name.

@@ -1,0 +1,45 @@
+id: 43feacda-aba3-4150-bfcf-2164c796a766
+name: operation-ai-router-account-update
+description: Update one CLIProxyAPI account on the admitted collector Node.
+concurrency: 1
+vaults: []
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [ai_router.account_update]}
+  required: [operation_id, node_id, kind]
+jobs:
+- name: account
+  steps:
+  - name: update
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ai-router-accounts'
+      behaviorName: ${{ "ai-router-accounts-node-" + string(inputs.node_id) }}
+      methodName: update
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}
+
+- name: failure
+  dependsOn:
+  - {job: account, condition: {type: failed}}
+  steps:
+  - name: report_failure
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "operation-failure-node-" + string(inputs.node_id) }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        kind: ${{ inputs.kind }}
+        node_id: ${{ inputs.node_id }}
+        run_id: ${{ run.id }}

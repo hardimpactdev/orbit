@@ -1,0 +1,44 @@
+id: 48ee487e-7a63-4860-b768-56d052e51e6d
+name: operation-node-prepare-php-packages
+description: Run the admitted node.prepare_php_packages intent in one native root.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [node.prepare_php_packages] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: packages
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: apply
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-php-packages-direct"
+          behaviorName: '${{ "node-php-packages-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: failure
+    dependsOn: [{ job: packages, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: settle-failure
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "node-php-packages-failure-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

@@ -1,0 +1,26 @@
+id: b42b9a7e-70cf-4729-a16c-107ffef9e08c
+name: operation-route-target-unset
+description: Confirm the admitted empty Route target set without publication.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [route.target_unset] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: confirmation
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: confirm-targets
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/route-target-unset"
+          behaviorName: '${{ "route-target-unset-node-" + string(inputs.node_id) }}'
+          methodName: confirm
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

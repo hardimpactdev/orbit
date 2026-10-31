@@ -1,0 +1,43 @@
+id: 9baa6e73-cc5c-4c76-a6f3-1cfa64830eb2
+name: operation-task-publish
+description: Publish the checked candidate from the task VM worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.publish] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: publish
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: execute
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-workspace"
+          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
+          methodName: publish
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: failure
+    dependsOn: [{ job: publish, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "task-publish-failure-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

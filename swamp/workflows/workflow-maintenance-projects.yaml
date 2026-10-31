@@ -1,0 +1,24 @@
+id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
+name: maintenance-projects
+labels: { pool: migration, node: "209" }
+description: Admit scheduled work and reconcile findings and completed group receipts.
+trigger:
+  schedule: '40 * * * * *'
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: reconcile
+    steps:
+      - name: work
+        task:
+          type: model_method
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-project-work
+          methodName: project_work
+      - name: dependency-prs
+        dependsOn: [{ step: work, condition: { type: succeeded } }]
+        task:
+          type: model_method
+          modelType: "@nckrtl/native-host-method"
+          modelName: native-dependency-prs
+          methodName: dependency_prs

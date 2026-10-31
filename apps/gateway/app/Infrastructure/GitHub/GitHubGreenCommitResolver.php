@@ -75,7 +75,7 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
                 $checksToken ??= $this->github->repositoryChecksToken($credentials, $installation, $repository);
                 $runs = $this->github->checkRuns($checksToken, $repository, $candidate->sha, $checkName);
                 $state = RequiredCheckState::of($runs, $candidate->sha, $checkName);
-                if ($state === RequiredCheckState::Passed) {
+                if ($state === RequiredCheckState::Passed && $this->hasReleaseInputs($checksToken, $repository, $candidate->sha)) {
                     // On a first-parent chain, once a commit does not descend from the deployed one, no older commit does.
                     if (! $this->github->compareCommits($contentsToken, $repository, $deployed, $candidate->sha)->headDescendsFromBase()) {
                         return null;
@@ -89,6 +89,14 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
         }
 
         return null;
+    }
+
+    /** Swamp-only commits pass the aggregate but deliberately skip Gateway release inputs. */
+    private function hasReleaseInputs(#[\SensitiveParameter] string $token, GitHubRepository $repository, string $sha): bool
+    {
+        $runs = $this->github->checkRuns($token, $repository, $sha, GreenCommitResolver::RELEASE_INPUT_CHECK);
+
+        return RequiredCheckState::of($runs, $sha, GreenCommitResolver::RELEASE_INPUT_CHECK) === RequiredCheckState::Passed;
     }
 
     /**

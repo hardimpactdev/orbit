@@ -1,0 +1,92 @@
+id: 819512a2-d200-44f6-a270-779480e2fcdb
+name: operation-fleet-rollout
+description: One native fleet release DAG with ordered per-Node publication and bounded result projection.
+vaults: []
+inputs:
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - fleet.rollout
+  required:
+  - operation_id
+  - node_id
+  - kind
+  additionalProperties: false
+jobs:
+- name: prepare
+  steps:
+  - name: prepare
+    target: swamp209-services
+    labels: &id001
+      node: '209'
+      pool: services-local
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-root
+      methodName: prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: nodes
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  steps:
+  - name: node-${{ self._index }}
+    forEach:
+      item: node
+      in: ${{ steps.prepare.outputs.nodes }}
+    target: orbit-node-${{ self.node.node_id }}
+    labels:
+      node: ${{ string(self.node.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-node-${{ self.node.node_id }}
+      methodName: node
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ self.node.node_id }}
+        previous: ${{ steps }}
+    concurrency: 1
+- name: finish
+  dependsOn:
+  - job: prepare
+    condition:
+      type: succeeded
+  - job: nodes
+    condition:
+      type: always
+  steps:
+  - name: finish
+    target: swamp209-services
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/fleet-release'
+      behaviorName: fleet-release-root
+      methodName: finish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        admission: ${{ steps.prepare.outputs }}
+        node_results: ${{ steps }}

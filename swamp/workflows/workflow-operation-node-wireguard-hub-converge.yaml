@@ -1,0 +1,142 @@
+{
+  "id": "be0fb735-5420-4c04-aa82-b33a8a9ce8fa",
+  "name": "operation-node-wireguard-hub-converge",
+  "description": "Canonical hub publication on its exact admitted Node worker.",
+  "inputs": {
+    "type": "object",
+    "properties": {
+      "operation_id": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "node_id": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "node.wireguard_hub_converge"
+        ]
+      }
+    },
+    "required": [
+      "operation_id",
+      "node_id",
+      "kind"
+    ],
+    "additionalProperties": false
+  },
+  "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+  "labels": {
+    "node": "${{ string(inputs.node_id) }}"
+  },
+  "jobs": [
+    {
+      "name": "hub",
+      "steps": [
+        {
+          "name": "admit",
+          "writes": true,
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-wireguard-direct",
+            "behaviorName": "${{ \"node-wireguard-root-\" + string(inputs.node_id) }}",
+            "methodName": "admit",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        },
+        {
+          "name": "publish",
+          "writes": true,
+          "dependsOn": [
+            {
+              "step": "admit",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-wireguard-direct",
+            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.snapshot.hub_id) }}",
+            "methodName": "publish",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "snapshot": "${{ steps.admit.outputs.snapshot }}"
+            }
+          },
+          "guard": "${{ !steps.admit.outputs.ready }}"
+        },
+        {
+          "name": "project",
+          "writes": true,
+          "dependsOn": [
+            {
+              "step": "publish",
+              "condition": {
+                "type": "succeeded"
+              }
+            }
+          ],
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/node-wireguard-direct",
+            "behaviorName": "${{ \"node-wireguard-root-\" + string(inputs.node_id) }}",
+            "methodName": "project",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "kind": "${{ inputs.kind }}",
+              "node_id": "${{ inputs.node_id }}",
+              "run_id": "${{ run.id }}",
+              "admission": "${{ steps.admit.outputs }}",
+              "outcome": "${{ steps.publish.outputs }}"
+            }
+          },
+          "guard": "${{ !steps.admit.outputs.ready }}"
+        }
+      ]
+    },
+    {
+      "name": "failure_hub",
+      "dependsOn": [
+        {
+          "job": "hub",
+          "condition": {
+            "type": "failed"
+          }
+        }
+      ],
+      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
+      "labels": {
+        "node": "${{ string(inputs.node_id) }}"
+      },
+      "steps": [
+        {
+          "name": "report_hub",
+          "task": {
+            "type": "behavior",
+            "behaviorType": "@nckrtl/operation-failure",
+            "behaviorName": "${{ \"node-network-failure-\" + string(inputs.node_id) }}",
+            "methodName": "report",
+            "inputs": {
+              "operation_id": "${{ inputs.operation_id }}",
+              "node_id": "${{ inputs.node_id }}",
+              "kind": "${{ inputs.kind }}",
+              "run_id": "${{ run.id }}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

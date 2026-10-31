@@ -1,0 +1,26 @@
+id: 0f7caec5-264b-42a9-afca-2f30e914c956
+name: node-proxy-canary
+description: Read-only or disposable direct-command proof on one exact light Node proxy.
+inputs:
+  type: object
+  properties:
+    node_id: {type: integer, enum: [1, 18]}
+    effect: {type: boolean, default: false}
+  required: [node_id]
+  additionalProperties: false
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: {node: '${{ string(inputs.node_id) }}'}
+vaults: []
+jobs:
+  - name: canary
+    steps:
+      - name: prove
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-worker-canary'
+          behaviorName: '${{ "node-worker-canary-" + string(inputs.node_id) }}'
+          methodName: '${{ inputs.effect ? "exercise" : "inspect" }}'
+          inputs:
+            node_id: '${{ inputs.node_id }}'
+            user: orbit

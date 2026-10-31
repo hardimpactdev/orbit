@@ -1,0 +1,335 @@
+id: 6c413eaa-2e25-43c8-b146-f6c8e103c00d
+name: operation-instance-clone
+description: One native Instance clone root with placed source and environment steps.
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [instance.clone] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: provisioning
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: admission
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: admit
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: candidate
+        dependsOn:
+          - step: admission
+            condition: { type: succeeded }
+        target: '${{ "orbit-node-" + string(steps.admission.outputs.candidate_node_id) }}'
+        labels: {
+          node: "${{ string(steps.admission.outputs.candidate_node_id) }}",
+        }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: candidate
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ steps.admission.outputs.candidate_node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: prepare
+        dependsOn:
+          - step: candidate
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: prepare
+      - name: resolve
+        dependsOn:
+          - step: prepare
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: resolve
+            candidate_commit: "${{ steps.candidate.outputs.candidate_commit }}"
+      - name: profile
+        dependsOn:
+          - step: resolve
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: profile
+            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
+            candidate_commit: "${{ steps.candidate.outputs.candidate_commit }}"
+      - name: template
+        dependsOn:
+          - step: profile
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: template
+            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
+      - name: environment
+        dependsOn:
+          - step: template
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: environment
+      - name: vp
+        dependsOn:
+          - step: environment
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: vp
+      - name: setup
+        dependsOn:
+          - step: vp
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: stage
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            stage: setup
+      - name: complete
+        dependsOn:
+          - step: setup
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: finish
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: failure_admission
+        dependsOn:
+          - step: admission
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: candidate
+      - name: failure_candidate
+        dependsOn:
+          - step: candidate
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: candidate
+      - name: failure_prepare
+        dependsOn:
+          - step: prepare
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: prepare
+      - name: failure_resolve
+        dependsOn:
+          - step: resolve
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: resolve
+      - name: failure_profile
+        dependsOn:
+          - step: profile
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: profile
+      - name: failure_template
+        dependsOn:
+          - step: template
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: template
+      - name: failure_environment
+        dependsOn:
+          - step: environment
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: environment
+      - name: failure_vp
+        dependsOn:
+          - step: vp
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: vp
+      - name: failure_setup
+        dependsOn:
+          - step: setup
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: setup
+      - name: failure_complete
+        dependsOn:
+          - step: complete
+            condition: { type: failed }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-clone"
+          behaviorName: '${{ "instance-clone-" + run.id }}'
+          methodName: fail
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            failed_step: complete
+
+  - name: report_failure
+    dependsOn: [{job: provisioning, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    steps:
+      - name: report_failure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "instance-clone-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            kind: '${{ inputs.kind }}'
+            node_id: '${{ inputs.node_id }}'
+            run_id: '${{ run.id }}'

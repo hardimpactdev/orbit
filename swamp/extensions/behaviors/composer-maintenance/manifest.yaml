@@ -1,0 +1,34 @@
+manifestVersion: 1
+name: "@nckrtl/composer-maintenance"
+version: 2026.10.28.6
+visibility: private
+license: MIT
+description: Composer updates, locked detection, security exceptions, and dependency PR descriptions.
+repository: https://github.com/hardimpactdev/orbit-swamp
+behaviors:
+  - composer-maintenance/mod.ts
+include:
+  - composer-maintenance/_lib/batch.ts
+  - _lib/maintenance/batch.ts
+  - composer-maintenance/_lib/io.ts
+  - composer-maintenance/_lib/policy.ts
+  - composer-maintenance/_lib/summary.ts
+  - _lib/maintenance/composer.ts
+  - _lib/maintenance/composer_summary.ts
+  - _lib/maintenance/context.ts
+  - _lib/maintenance/environment.ts
+  - _lib/maintenance/tool_policy.ts
+  - _lib/maintenance/exceptions.ts
+  - _lib/maintenance/policy_schema.ts
+  - _lib/maintenance/io.ts
+  - _lib/maintenance/changes.ts
+  - _lib/maintenance/summary.ts
+  - _lib/maintenance/impact.ts
+  - _lib/maintenance/project_type.ts
+additionalFiles:
+  - README.md
+  - LICENSE
+labels:
+  - composer
+  - dependencies
+  - security

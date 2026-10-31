@@ -1,0 +1,21 @@
+{
+  "sha": "0364765d6d41794f3f89d702e0f72cc54e954b07",
+  "files": {
+    "tasks-analyze-failure-overflow.json": {
+      "source": "packages/php-sdk/fixtures/tasks/tasks-analyze/failure-overflow.json",
+      "sha256": "0818ccf027be54ca8fa703d234e8b2299a06012d9f74ef01116b6a082dfa1b23"
+    },
+    "tasks-analyze-failure-unavailable.json": {
+      "source": "packages/php-sdk/fixtures/tasks/tasks-analyze/failure-unavailable.json",
+      "sha256": "e083a1241f85be11cce7208af6c80a0b928f00323c67cf91cb2da744916c753c"
+    },
+    "tasks-provision-pinned.json": {
+      "source": "packages/php-sdk/fixtures/tasks/tasks-provision/pinned.json",
+      "sha256": "a00c60627ecc47e28ff503bb60bbfe6e4f305b0e3a83c12ee5e5f074695c02cc"
+    },
+    "tasks-provision-unavailable.json": {
+      "source": "packages/php-sdk/fixtures/tasks/tasks-provision/unavailable.json",
+      "sha256": "bacdb205bde7baf8a80d43ee012565acb0123b50c137d52455a89e4198b1e2da"
+    }
+  }
+}

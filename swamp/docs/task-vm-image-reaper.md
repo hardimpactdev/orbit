@@ -1,0 +1,9 @@
+# Leaked image builders
+
+The native `task-vm-image-reaper` schedule runs every 30 minutes. Its read-only discovery step runs on the existing `swamp209-migration-a` worker with the `migration` pool and Node `209` labels, and selects active Nodes with recorded Task VM host settings. Each host sweep runs on that Node's exact worker target and string Node label, under one stable native behavior instance per host. It adds no Gateway code, credential, worker or host timer.
+
+The sweep considers only `tvm-image-<build>` VMs, including attempt, builder and smoke suffixes, in the host's recorded Incus project and root pool. The VM must be more than two hours old. Normal `tvm-*` guests, images, custom seed volumes, explicit `operator_owned` reservations and other projects are untouched. Queued, running and waiting `task_vm.image_build` Operations protect every VM for their build, including cancellation requests that have not settled. An unavailable, malformed or full 50-row operation response prevents cleanup.
+
+Before each stop or delete, the sweep refreshes host settings, active build references and the VM's creation identity. It stops an eligible disposable builder, deletes it through Incus and verifies that its root storage and snapshots are absent. A lost response is reconciled by observation rather than repeating a mutation. Remaining storage is reported as a failure, never removed through raw filesystem or ZFS commands.
+
+Every completed deletion produces a public native `deletion` resource containing the Node, project, pool, VM name, creation time, deletion time and root-storage absence. Each host also writes a sweep summary. Failures retain their summary and fail the native step. Use native run history and the `@nckrtl/task-vm-image-reaper` behavior resources to read reports. The schedule complements the image workflow's always-run cleanup when a worker or native run dies before its finalizer.

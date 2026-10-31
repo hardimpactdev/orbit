@@ -1,0 +1,350 @@
+import { z } from "npm:zod@4.4.3";
+import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
+
+import {
+  DirectArgs,
+  directOperation,
+  DirectOperationCancelled,
+  GatewayOperation,
+  Globals,
+} from "../_lib/direct.ts";
+import { CaddyPublication, publishCaddy as applyCaddy } from "./caddy.ts";
+import { PhpPublication, publishPhp as applyPhp } from "./php.ts";
+import { runLocalProgram } from "./local-program.ts";
+import { DnsPublication, publishPrivateDns, runPrivateDns } from "./dns.ts";
+import { removeLan } from "./lan.ts";
+import { convergeFirewall } from "./firewall-local.ts";
+import { publishDestroyPhp } from "../instance-lifecycle/destroy_php.ts";
+
+const Args = DirectArgs.extend({
+  kind: z.literal("route.private_dns_publish"),
+  node_id: z.number().int().positive(),
+});
+type Context = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+};
+const Parent = z.object({
+  id: z.number().int().positive(),
+  kind: z.string(),
+  node_id: z.number().int().positive(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  cancel_requested: z.boolean(),
+  input: z.record(z.string(), z.unknown()),
+});
+
+async function freshParticipant(
+  http: ReturnType<typeof gatewayHttp>,
+  args: z.infer<typeof DirectArgs> & { recovery?: boolean },
+  signal?: AbortSignal,
+) {
+  const current = Parent.parse(
+    await new GatewayOperation(http, args).read(
+      args.recovery ? undefined : signal,
+    ),
+  );
+  if (
+    current.id !== args.operation_id || current.kind !== args.kind ||
+    current.node_id !== args.node_id
+  ) {
+    throw new Error("Publication parent does not match admitted intent");
+  }
+  if (!["queued", "running"].includes(current.status)) {
+    throw new Error("Publication parent has ended");
+  }
+  if (!args.recovery && (current.cancel_requested || signal?.aborted)) {
+    throw new DirectOperationCancelled({ effectRunning: false });
+  }
+  return current;
+}
+
+function boundCaddy(input: unknown, nodeId: number) {
+  const payload = CaddyPublication.parse(input);
+  if (payload.node_id !== nodeId) {
+    throw new Error("Caddy publication Node does not match");
+  }
+  return payload;
+}
+
+/** Native behavior locking serializes each Node's entire publication step. */
+export function publication(
+  makeHttp = (ctx: Context) =>
+    gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
+  invoke: Parameters<typeof applyCaddy>[1] = undefined,
+  invokeDns = runPrivateDns,
+  invokePhp = runLocalProgram,
+  invokeLan = runLocalProgram,
+  invokeFirewall = runLocalProgram,
+  destroyPhp = publishDestroyPhp,
+) {
+  return {
+    type: "@nckrtl/route-publication",
+    version: "2026.10.31.8",
+    globalArguments: Globals,
+    methods: {
+      removeLan: {
+        description:
+          "Remove and verify only the admitted Route's LAN allowance",
+        arguments: DirectArgs.extend({
+          kind: z.literal("route.lan_remove"),
+          node_id: z.number().int().positive(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & { node_id: number },
+          ctx: Context,
+        ) =>
+          await directOperation(
+            args,
+            new GatewayOperation(makeHttp(ctx), args),
+            (input) => removeLan(input, invokeLan, ctx.signal),
+            (result) => result,
+            ctx.signal,
+          ),
+      },
+      publish: {
+        description: "Publish the admitted DNS owner's current private catalog",
+        arguments: Args,
+        execute: async (args: z.infer<typeof Args>, ctx: Context) => {
+          const gateway = new GatewayOperation(
+            makeHttp(ctx),
+            args,
+          );
+          return await directOperation(
+            args,
+            gateway,
+            (input) => {
+              const payload = DnsPublication.parse(
+                input.private_dns_publication,
+              );
+              if (payload.node_id !== args.node_id) {
+                throw new Error("DNS publication Node does not match");
+              }
+              return publishPrivateDns(payload, invokeDns);
+            },
+            (result) => {
+              if (result.error_code === undefined && result.ready !== true) {
+                throw new Error("Route publication has no successful result");
+              }
+              return result;
+            },
+            ctx.signal,
+          );
+        },
+      },
+      convergeCaddy: {
+        description:
+          "Publish and project a Caddy Operation on its admitted Node",
+        arguments: DirectArgs.extend({
+          kind: z.literal("route.caddy_converge"),
+          node_id: z.number().int().positive(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & { node_id: number },
+          ctx: Context,
+        ) => {
+          const gateway = new GatewayOperation(makeHttp(ctx), args);
+          return await directOperation(
+            args,
+            gateway,
+            (input) =>
+              applyCaddy(
+                boundCaddy(input.caddy_publication, args.node_id),
+                invoke,
+                ctx.signal,
+              ),
+            (result) => {
+              if (
+                result.error_code === undefined && result.ready !== true
+              ) throw new Error("Caddy has no successful publication");
+              return result;
+            },
+            ctx.signal,
+          );
+        },
+      },
+      publishFirewall: {
+        description:
+          "Read and apply the participant's current ingress firewall rules",
+        arguments: DirectArgs.extend({
+          target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
+          ctx: Context,
+        ) => {
+          const current = await freshParticipant(
+            makeHttp(ctx),
+            args,
+            args.recovery ? undefined : ctx.signal,
+          );
+          const identity = z.object({ node_id: z.number().int().positive() })
+            .parse(current.input.caddy_publication);
+          if (identity.node_id !== (args.target_node_id ?? args.node_id)) {
+            throw new Error("Firewall publication Node does not match");
+          }
+          const result = await convergeFirewall(
+            current.input.ingress_firewall,
+            invokeFirewall,
+            args.recovery ? undefined : ctx.signal,
+          );
+          if ("error_code" in result) throw new Error(result.error_code);
+          return result;
+        },
+      },
+      withdrawInstancePhp: {
+        description:
+          "Publish the removing Instance Node's current private PHP pools",
+        arguments: DirectArgs.extend({
+          kind: z.literal("instance.destroy"),
+          node_id: z.number().int().positive(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & { node_id: number },
+          ctx: Context,
+        ) => {
+          await freshParticipant(makeHttp(ctx), args, ctx.signal);
+          return await destroyPhp(
+            args.node_id,
+            new GatewayOperation(makeHttp(ctx), args),
+            ctx.signal,
+          );
+        },
+      },
+      withdrawInstanceDns: {
+        description:
+          "Publish a removing Instance participant's fresh private DNS catalog",
+        arguments: DirectArgs.extend({
+          kind: z.literal("instance.destroy"),
+          target_node_id: z.number().int().positive(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & { target_node_id: number },
+          ctx: Context,
+        ) => {
+          const current = await freshParticipant(
+            makeHttp(ctx),
+            args,
+            ctx.signal,
+          );
+          const rows = z.array(z.object({ dns: z.array(DnsPublication) }))
+            .parse(current.input.withdrawal_publications);
+          const selected = rows.flatMap((row) => row.dns).filter((node) =>
+            node.node_id === args.target_node_id
+          );
+          if (
+            !selected.length ||
+            selected.some((row) =>
+              JSON.stringify(row) !== JSON.stringify(selected[0])
+            )
+          ) throw new Error("route.withdrawal_invalid");
+          const result = await publishPrivateDns(selected[0], invokeDns);
+          if ("error_code" in result) throw new Error(result.error_code);
+          return result;
+        },
+      },
+      publishPhp: {
+        description:
+          "Read and publish the participant's current whole-Node PHP pools",
+        arguments: DirectArgs.extend({
+          target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
+          ctx: Context,
+        ) => {
+          const current = await freshParticipant(
+            makeHttp(ctx),
+            args,
+            args.recovery ? undefined : ctx.signal,
+          );
+          const payload = PhpPublication.parse(current.input.php_publication);
+          if (payload.node_id !== (args.target_node_id ?? args.node_id)) {
+            throw new Error("PHP publication Node does not match");
+          }
+          const result = await applyPhp(
+            payload,
+            invokePhp,
+            args.recovery ? undefined : ctx.signal,
+          );
+          if ("error_code" in result) throw new Error(result.error_code);
+          return result;
+        },
+      },
+      publishDns: {
+        description:
+          "Read and publish the participant's current private DNS catalog",
+        arguments: DirectArgs.extend({
+          target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & {
+            target_node_id?: number;
+            recovery?: boolean;
+          },
+          ctx: Context,
+        ) => {
+          const current = await freshParticipant(
+            makeHttp(ctx),
+            args,
+            args.recovery ? undefined : ctx.signal,
+          );
+          const payload = DnsPublication.parse(
+            current.input.private_dns_publication,
+          );
+          if (payload.node_id !== (args.target_node_id ?? args.node_id)) {
+            throw new Error("DNS publication Node does not match");
+          }
+          const result = await publishPrivateDns(payload, invokeDns);
+          if ("error_code" in result) throw new Error(result.error_code);
+          return result;
+        },
+      },
+      publishCaddy: {
+        description:
+          "Read and publish fresh Caddy data for an admitted participant Node",
+        arguments: DirectArgs.extend({
+          node_id: z.number().int().positive(),
+          target_node_id: z.number().int().positive().optional(),
+          recovery: z.boolean().optional(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & {
+            node_id: number;
+            target_node_id?: number;
+            recovery?: boolean;
+          },
+          ctx: Context,
+        ) => {
+          const current = await freshParticipant(
+            makeHttp(ctx),
+            args,
+            args.recovery ? undefined : ctx.signal,
+          );
+          const result = await applyCaddy(
+            boundCaddy(
+              current.input.caddy_publication,
+              args.target_node_id ?? args.node_id,
+            ),
+            invoke,
+            args.recovery ? undefined : ctx.signal,
+          );
+          if ("error_code" in result) {
+            throw new Error(result.error_code);
+          }
+          return result;
+        },
+      },
+    },
+  };
+}
+
+export const behavior = publication();

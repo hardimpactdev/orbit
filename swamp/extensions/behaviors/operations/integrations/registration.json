@@ -1,0 +1,11 @@
+{
+  "kinds": [
+    "ai_router.setup",
+    "ai_router.teardown",
+    "ai_router.collector_converge",
+
+    "websocket.role_converge",
+    "websocket.role_remove"
+  ],
+  "workflow": "operation-integrations"
+}

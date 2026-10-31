@@ -1,0 +1,1417 @@
+import { recordQuery } from "./fixtures/worker_query.ts";
+import { impactRows } from "./_support/maintenance_fixture.ts";
+import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
+import {
+  ensureMaintenance,
+  ensurePlacedMaintenance,
+  ensureWorker,
+  MaintenanceAttention,
+  revokeEndedWorker,
+  START_RECEIPT_GRACE_MS,
+  type WorkflowIntent,
+  type WorkflowRun,
+} from "../extensions/behaviors/_lib/maintenance_worker.ts";
+import {
+  type MaintenanceContext,
+  maintenanceInputs,
+  maintenanceResult,
+  reconcileWorkers,
+  recordMaintenanceExceptions,
+  workerControl,
+} from "../extensions/behaviors/_lib/swamp_maintenance.ts";
+import {
+  type Http,
+  type Job,
+  runStage,
+  type StageArgs,
+} from "../extensions/behaviors/_lib/gateway_stage.ts";
+import { WEBSITE_PROJECT } from "./_support/dependency_projects.ts";
+import { startFakeGateway } from "./_support/fake_gateway.ts";
+import { behavior as gatewayBehavior } from "../extensions/behaviors/orbit_gateway.ts";
+
+const runFixture = () =>
+  JSON.parse(
+    Deno.readTextFileSync(
+      new URL("./fixtures/maintenance-worker/run.json", import.meta.url),
+    ),
+  ) as WorkflowRun;
+const workerFixture = () =>
+  JSON.parse(
+    Deno.readTextFileSync(
+      new URL("./fixtures/maintenance-worker/worker.json", import.meta.url),
+    ),
+  );
+const project = {
+  ...WEBSITE_PROJECT,
+  worker: {
+    composerPaths: ["."],
+    jsPaths: ["."],
+    policy: { ".": { minimumReleaseAgeDays: 7 } },
+  },
+};
+const args: StageArgs = {
+  workItem: "tg-7",
+  key: "tg-7.script.c1",
+  stage: "script",
+  routine: true,
+  dependencyProject: project,
+};
+
+function workerHarness() {
+  const records = new Map<string, Record<string, unknown>>();
+  const calls: Record<string, unknown>[] = [];
+  let enrolled = false, groupStatus = "running", lost = true, label = "7";
+  const context = {
+    globalArgs: {
+      enrollmentVault: "default",
+      workerUrl: "wss://swamp.orbit",
+      serveUrl: "wss://swamp.orbit",
+      serveTokenFile: "unused",
+      caFile: "unused",
+    },
+    definition: { name: "orbit-gateway" },
+    queryData: recordQuery((predicate: string) => {
+      const model = JSON.parse(/modelName == ("[^"]+")/.exec(predicate)![1]);
+      const name = JSON.parse(/name == ("[^"]+")/.exec(predicate)![1]);
+      if (model.startsWith("worker-") && enrolled) {
+        return Promise.resolve([{
+          tokenName: model.slice(7),
+          status: "idle",
+          labels: { group: label },
+        }]);
+      }
+      return Promise.resolve(
+        records.has(`${model}/${name}`)
+          ? [records.get(`${model}/${name}`)]
+          : [],
+      );
+    }),
+    writeResource: (
+      _spec: string,
+      name: string,
+      data: Record<string, unknown>,
+    ) => {
+      records.set(
+        `orbit-gateway/${name}`,
+        gatewayBehavior.resources.worker.schema.parse(structuredClone(data)),
+      );
+      return Promise.resolve({ name });
+    },
+    invokeModel: (
+      call: {
+        name: string;
+        method: string;
+        arguments?: Record<string, unknown>;
+      },
+    ) => {
+      calls.push(call);
+      records.set(`${call.name}/token-main`, {
+        state: call.method === "mint" ? "unused" : "revoked",
+        expiresAt: "2099-01-01T00:00:00Z",
+        vaultName: "default",
+        secretKey: `worker-token-${call.name}`,
+      });
+      return Promise.resolve({ ok: true });
+    },
+    vaultService: { get: () => Promise.resolve("fixture-credential") },
+  } as MaintenanceContext;
+  const http: Http = (method, path, body, key) => {
+    if (method === "POST") {
+      const generation = Number(key!.split(".c").at(-1));
+      assertEquals(path, "/api/v1/task-groups/7/worker");
+      assertEquals(body, {
+        worker: {
+          orchestrator_url: "wss://swamp.orbit",
+          enrollment_token: `task-group-7-${generation}.fixture-credential`,
+          server_token: `task-group-7-${generation}-access.fixture-credential`,
+          labels: { group: "7" },
+        },
+      });
+      assertEquals(key, `tg-7.worker.c${generation}`);
+      calls.push({ method, path, key });
+      if (lost) {
+        lost = false;
+        return Promise.resolve({ status: 0, body: null });
+      }
+      return Promise.resolve({
+        status: 202,
+        body: { data: { id: 87 + generation } },
+      });
+    }
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: path.includes("operations")
+          ? { ...workerFixture(), id: Number(path.split("/").at(-1)) }
+          : { status: groupStatus },
+      },
+    });
+  };
+  const deps = workerControl(context, http);
+  return {
+    records,
+    calls,
+    deps,
+    enroll: () => {
+      enrolled = true;
+    },
+    relabel: (value: string) => {
+      label = value;
+    },
+    end: (status: string) => {
+      groupStatus = status;
+    },
+  };
+}
+
+Deno.test("Swamp mints one short-lived single-machine token; lost Gateway response replays without durable plaintext", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  const waiting = await ensureWorker(7, h.deps);
+  assertEquals(waiting.ready, false);
+  h.enroll();
+  const ready = await ensureWorker(7, h.deps);
+  assertEquals(ready.operationId, 88);
+  assertEquals(ready.ready, true);
+  assertEquals(
+    h.calls.filter((call) =>
+      call.method === "mint" && call.modelType === "swamp/enrollment-token"
+    ),
+    [{
+      modelType: "swamp/enrollment-token",
+      name: "task-group-7-1",
+      method: "mint",
+      arguments: {
+        durationMs: 7200000,
+        vaultName: "default",
+        maxEnrollments: 1,
+      },
+    }],
+  );
+  assertEquals(h.calls.filter((call) => call.method === "POST").length, 2);
+  assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
+});
+
+Deno.test("completed, failed and cancelled groups revoke once through Swamp, including a lost revoke/save response", async () => {
+  for (const state of ["completed", "failed", "cancelled"]) {
+    const h = workerHarness();
+    await ensureWorker(7, h.deps);
+    await revokeEndedWorker(7, h.deps);
+    assertEquals(h.calls.filter((call) => call.method === "revoke").length, 0);
+    h.end(state);
+    const save = h.deps.save;
+    let lost = true;
+    h.deps.save = (session) => {
+      if (session.revoked && lost) {
+        lost = false;
+        throw new Error("lost save");
+      }
+      return save(session);
+    };
+    await assertRejects(() => revokeEndedWorker(7, h.deps));
+    await revokeEndedWorker(7, h.deps);
+    await revokeEndedWorker(7, h.deps);
+    assertEquals((await h.deps.read(7))!.revoked, true);
+    assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
+  }
+});
+
+Deno.test("an operation from another group never confirms worker enrollment", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  h.deps.http = () =>
+    Promise.resolve({
+      status: 200,
+      body: { data: { ...workerFixture(), target_id: 9 } },
+    });
+  await assertRejects(() => ensureWorker(7, h.deps), Error, "identity differs");
+});
+
+Deno.test("lost Swamp workflow start adopts the exact run; a missing or foreign receipt never dispatches twice", async () => {
+  let intent: WorkflowIntent | null = null, launches = 0, available = true;
+  const inputs = maintenanceInputs(project, args, 7, {
+    cwd: "/vm/repo",
+    mode: "routine",
+    base: "a".repeat(40),
+  });
+  const run = { ...runFixture(), inputs };
+  const deps = {
+    read: () => Promise.resolve(structuredClone(intent)),
+    save: (value: WorkflowIntent) => {
+      intent = structuredClone(value);
+      return Promise.resolve();
+    },
+    launch: () => {
+      launches++;
+      return Promise.reject(new Error("response lost"));
+    },
+    search: () => Promise.resolve(available ? [run] : []),
+    get: () => Promise.resolve(run),
+  };
+  await assertRejects(() => ensureMaintenance(inputs, deps));
+  available = false;
+  assertEquals(await ensureMaintenance(inputs, deps), null);
+  assertEquals(await ensureMaintenance(inputs, deps), null);
+  available = true;
+  assertEquals((await ensureMaintenance(inputs, deps))!.id, run.id);
+  assertEquals(launches, 1);
+  await assertRejects(
+    () => ensureMaintenance({ ...inputs, cwd: "/host/repo" }, deps),
+    Error,
+    "input conflict",
+  );
+  run.inputs = { ...inputs, group: "9" };
+  await assertRejects(
+    () => ensureMaintenance(inputs, deps),
+    Error,
+    "identity differs",
+  );
+});
+
+Deno.test("package placement carries VM cwd, configured paths/policy and literal advisory IDs; detection inputs have no package arguments", () => {
+  const target = {
+    workItem: "tg-7",
+    targets: [{
+      path: ".",
+      manager: "js" as const,
+      package: "react",
+      version: "20.0.0",
+      purpose: "security" as const,
+      advisories: ["GHSA-test"],
+      advisoryUrls: ["https://github.com/advisories/GHSA-test"],
+    }],
+  };
+  const input = maintenanceInputs(
+    project,
+    { ...args, packageTarget: target },
+    7,
+    { cwd: "/vm/repo", mode: "package", base: "a".repeat(40) },
+  );
+  assertEquals(input.group, "7");
+  assertEquals(input.composerPaths, []);
+  assertEquals(input.method, "batch");
+  assertEquals(input.js, {
+    cwd: "/vm/repo",
+    paths: ["."],
+    policy: project.worker.policy,
+    exceptions: project.exceptions,
+    captureFailure: true,
+    targets: target.targets,
+  });
+  assertEquals(input.jsCommon, {
+    cwd: "/vm/repo",
+    paths: ["."],
+    policy: project.worker.policy,
+    exceptions: project.exceptions,
+    captureFailure: true,
+  });
+});
+
+Deno.test("summary placement preserves the repair report and checked identity", () => {
+  const impact = {
+    report: '{"updates":[]}',
+    scriptTree: "c".repeat(40),
+    repairTree: "a".repeat(40),
+    checkedTree: "b".repeat(40),
+  };
+  const input = maintenanceInputs(project, { ...args, stage: "publish" }, 7, {
+    cwd: "/vm/repo",
+    mode: "summary",
+    base: "c".repeat(40),
+    projectType: "laravel-app",
+    impact,
+  });
+  assertEquals((input.summary as Record<string, unknown>).impact, impact);
+});
+
+Deno.test("worker receipts distinguish completed command failures from interruption and malformed snapshots", () => {
+  const run = runFixture();
+  assertEquals(maintenanceResult(run).result!.changed, true);
+  assertEquals(maintenanceResult(run).result!.impactRows, impactRows);
+  const failure = {
+    name: "failure",
+    attributes: { exitCode: 1, message: "composer update failed" },
+  };
+  run.jobs[0].steps[1].dataArtifacts = [failure];
+  assertEquals(maintenanceResult(run).result!.outcome, "failed");
+  assertEquals(maintenanceResult(run).result!.exit_code, 1);
+  run.status = "interrupted";
+  assertEquals(maintenanceResult(run).state, "failed");
+  run.status = "failed";
+  assertEquals(maintenanceResult(run).state, "failed");
+  run.jobs[0].steps[1].status = "failed";
+  assertEquals(maintenanceResult(run).state, "failed");
+  run.status = "succeeded";
+  run.jobs[0].steps[1].status = "succeeded";
+  run.jobs[0].steps.at(-1)!.dataArtifacts![0].attributes!.tree = "invalid";
+  assertEquals(maintenanceResult(run).state, "failed");
+});
+
+Deno.test("worker-enabled driver uses the VM Instance path, records existing factory products and never calls tasks.script", async () => {
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null;
+  const requests: string[] = [];
+  const http: Http = async (method, path, body, key) => {
+    requests.push(path);
+    if (path === "/api/v1/instances/70") {
+      return {
+        status: 200,
+        body: {
+          data: {
+            id: 70,
+            project_id: 20,
+            checkout_path: "/vm/repo",
+            starting_commit: "a".repeat(40),
+          },
+        },
+      };
+    }
+    const response = await fetch(fake.url + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(key ? { "Idempotency-Key": key } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const deps = {
+    http,
+    projects: [project],
+    readJob: () => Promise.resolve(job),
+    writeJob: (value: Job) => {
+      job = structuredClone(value);
+      return Promise.resolve();
+    },
+    maintenance: (
+      input: StageArgs,
+      group: number,
+      request: Record<string, unknown>,
+    ) => {
+      assertEquals(input.dependencyProject, project);
+      assertEquals(group, 7);
+      assertEquals(request.cwd, "/vm/repo");
+      return Promise.resolve(maintenanceResult(runFixture()));
+    },
+  };
+  try {
+    fake.groups.get(7)!.taskable_id = 70;
+    const result = await runStage(args, deps);
+    assertEquals(result.state, "succeeded");
+    assertEquals(result.artifacts.script.changed, true);
+    assertEquals(result.evidence!.workerName, "task-group-7-1");
+    assertEquals(result.operationId, null);
+    assert(!requests.some((path) => path.endsWith("/script")));
+    job = null;
+    await assertRejects(
+      () => runStage(args, { ...deps, maintenance: undefined }),
+      Error,
+      "maintenance requires the Swamp worker",
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+Deno.test("disconnected ready worker rotates; expired unknown start is reconciled without restarting an unenrolled process", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  // Lost response: retain the old key even if its enrollment has since expired.
+  h.records.get("task-group-7-1/token-main")!.expiresAt =
+    "2000-01-01T00:00:00Z";
+  await ensureWorker(7, h.deps);
+  assertEquals(
+    h.calls.filter((c) =>
+      c.method === "mint" && c.modelType === "swamp/enrollment-token"
+    ).length,
+    1,
+  );
+  const waiting = await ensureWorker(7, h.deps);
+  assertEquals(waiting.generation, 1);
+  assertEquals(waiting.operationId, 88);
+  assertEquals(h.calls.filter((c) => c.method === "revoke").length, 0);
+  const fresh = workerHarness();
+  await ensureWorker(7, fresh.deps);
+  await ensureWorker(7, fresh.deps);
+  fresh.enroll();
+  await ensureWorker(7, fresh.deps);
+  fresh.deps.connected = () => Promise.resolve(false);
+  assertEquals((await ensureWorker(7, fresh.deps)).generation, 2);
+});
+
+Deno.test("expired staged worker enrollment rotates only after a scoped terminal operation", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  h.deps.http = () =>
+    Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          ...workerFixture(),
+          status: "failed",
+          error_code: "tasks.worker_enrollment_expired",
+        },
+      },
+    });
+  assertEquals((await ensureWorker(7, h.deps)).generation, 2);
+});
+
+Deno.test("worker summary publication reuses saved checked text and rejects malformed or changed summaries", async () => {
+  for (const scenario of ["valid", "malformed", "changed"]) {
+    const fake = startFakeGateway({ 7: {} });
+    const jobs = new Map<string, Job>();
+    let calls = 0, now = Date.now();
+    const http: Http = async (method, path, body, key) => {
+      if (path === "/api/v1/instances/70") {
+        return {
+          status: 200,
+          body: {
+            data: {
+              id: 70,
+              project_id: 20,
+              checkout_path: "/vm/repo",
+              starting_commit: "a".repeat(40),
+            },
+          },
+        };
+      }
+      const response = await fetch(fake.url + path, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(key ? { "Idempotency-Key": key } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const handoff = {
+      payload: {
+        subtask: 701,
+        outcome: "passed",
+        checkId: 3,
+        commit: "a".repeat(40),
+        candidate: { tree: "c".repeat(40) },
+      },
+      recordedAt: "2026-10-27T00:00:00Z",
+    };
+    const input: StageArgs = {
+      ...args,
+      stage: "publish",
+      key: "tg-7.publish.c1",
+      handoff,
+    };
+    let key = input.key;
+    const deps = {
+      http,
+      projects: [project],
+      now: () => now,
+      readJob: () => Promise.resolve(jobs.get(key) ?? null),
+      writeJob: (job: Job) => {
+        jobs.set(key, structuredClone(job));
+        return Promise.resolve();
+      },
+      readPriorPublish: () => Promise.resolve([...jobs.values()]),
+      maintenance: () => {
+        calls++;
+        return Promise.resolve({
+          state: "succeeded" as const,
+          runId: runFixture().id,
+          result: {
+            outcome: "passed",
+            changed: scenario === "changed",
+            head: "a".repeat(40),
+            tree: "c".repeat(40),
+            output: scenario === "malformed"
+              ? "bad"
+              : "Update dependencies\n\n| Package | From | To |\n| --- | --- | --- |\n| fixture | 1 | 2 |\n\n## What changes on the site\n\n- fixture 2: No code changes needed.",
+          },
+        });
+      },
+    };
+    try {
+      fake.groups.get(7)!.taskable_id = 70;
+      fake.groups.get(7)!.tasks[0].status = "running";
+      const first = await runStage(input, deps);
+      if (scenario !== "valid") {
+        assertEquals(first.state, "failed");
+        assertEquals(fake.startsOf(7, "publish"), 0);
+        continue;
+      }
+      assert(first.request!.path.endsWith("/publish"));
+      assertEquals(fake.startsOf(7, "publish"), 1);
+      now += 60000;
+      assertEquals((await runStage(input, deps)).state, "succeeded");
+      key = "tg-7.publish.c2";
+      await runStage({ ...input, key }, deps);
+      assertEquals(
+        calls,
+        1,
+        "same check uses the saved summary after the child ends",
+      );
+      assertEquals(fake.startsOf(7, "script"), 0);
+    } finally {
+      await fake.close();
+    }
+  }
+});
+
+Deno.test("a lost mint response adopts the existing vault-backed token, and worker polls honor Gateway delays", async () => {
+  const h = workerHarness();
+  const mint = h.deps.mint;
+  h.deps.mint = async (name) => {
+    await mint(name);
+    throw new Error("mint response lost");
+  };
+  await assertRejects(() => ensureWorker(7, h.deps));
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  assertEquals(
+    h.calls.filter((call) =>
+      call.method === "mint" && call.modelType === "swamp/enrollment-token"
+    ).length,
+    1,
+  );
+  let now = Date.now(), reads = 0;
+  h.deps.now = () => now;
+  h.deps.http = () => {
+    reads++;
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: { ...workerFixture(), status: "waiting", poll_after_seconds: 30 },
+      },
+    });
+  };
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  assertEquals(reads, 1);
+  now += 30000;
+  await ensureWorker(7, h.deps);
+  assertEquals(reads, 2);
+});
+
+Deno.test("worker repair keeps the exact package and advisory scope and returns to maintenance", async () => {
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null, now = Date.now();
+  let prompt = "";
+  const http: Http = async (method, path, body, key) => {
+    if (path.endsWith("/turn")) prompt = String(body!.prompt);
+    const response = await fetch(fake.url + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(key ? { "Idempotency-Key": key } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  const input: StageArgs = {
+    ...args,
+    stage: "repair",
+    key: "tg-7.repair.c1",
+    script: {
+      payload: {
+        subtask: 701,
+        outcome: "failed",
+        output: "update failed",
+        impactRows,
+      },
+      recordedAt: "2026-10-27T00:00:00Z",
+    },
+    packageTarget: {
+      workItem: "tg-7",
+      targets: [{
+        manager: "composer",
+        path: ".",
+        package: "livewire/livewire",
+        version: "4.4.8",
+        purpose: "security",
+        advisories: ["PKSA-fixture"],
+        advisoryUrls: ["https://github.com/advisories/GHSA-fixture"],
+      }],
+    },
+  };
+  const deps = {
+    http,
+    projects: [project],
+    now: () => now,
+    readJob: () => Promise.resolve(job),
+    writeJob: (value: Job) => {
+      job = structuredClone(value);
+      return Promise.resolve();
+    },
+  };
+  try {
+    await runStage(input, deps);
+    assert(prompt.includes("livewire/livewire → 4.4.8"));
+    assert(
+      prompt.includes(
+        "PKSA-fixture",
+      ),
+    );
+    assert(prompt.includes("Swamp reruns this exact batch"));
+    assert(!prompt.includes("Finish scripts/dependencies"));
+    now += 60000;
+    assertEquals(
+      (await runStage(input, deps)).artifacts.change.rerunMaintenance,
+      true,
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+Deno.test("successful startup retries enrollment with fresh credentials before failing after three attempts", async () => {
+  const h = workerHarness();
+  let now = Date.now();
+  h.deps.now = () => now;
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  const waiting = await ensureWorker(7, h.deps);
+  assertEquals(waiting.startedAt, new Date(now).toISOString());
+  now += START_RECEIPT_GRACE_MS - 1;
+  assertEquals((await ensureWorker(7, h.deps)).ready, false);
+  h.records.get("task-group-7-1/token-main")!.expiresAt =
+    "2000-01-01T00:00:00Z";
+  now++;
+  for (const generation of [2, 3]) {
+    const fresh = await ensureWorker(7, h.deps);
+    assertEquals(fresh.generation, generation);
+    assertEquals(fresh.operationId, null);
+    assertEquals(fresh.startedAt, undefined);
+    for (const suffix of ["", "-access"]) {
+      assertEquals(
+        h.records.get(`task-group-7-${generation - 1}${suffix}/token-main`)!
+          .state,
+        "revoked",
+      );
+    }
+    await ensureWorker(7, h.deps);
+    const started = await ensureWorker(7, h.deps);
+    assertEquals(started.operationId, 87 + generation);
+    assertEquals(started.startedAt, new Date(now).toISOString());
+    now += START_RECEIPT_GRACE_MS;
+  }
+  for (let replay = 0; replay < 2; replay++) {
+    await assertRejects(
+      () => ensureWorker(7, h.deps),
+      MaintenanceAttention,
+      "after 3 startup attempts",
+    );
+  }
+  assertEquals(
+    h.calls.filter((call) => call.method === "POST").map((call) => call.key),
+    ["tg-7.worker.c1", "tg-7.worker.c1", "tg-7.worker.c2", "tg-7.worker.c3"],
+  );
+  assertEquals(h.calls.filter((call) => call.method === "mint").length, 6);
+  assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
+});
+
+Deno.test("uncertain workflow launch raises assistance after five minutes without a second dispatch", async () => {
+  let intent: WorkflowIntent | null = null, launches = 0, now = Date.now();
+  const deps = {
+    read: () => Promise.resolve(intent),
+    save: (value: WorkflowIntent) => {
+      intent = structuredClone(value);
+      return Promise.resolve();
+    },
+    search: () => Promise.resolve([]),
+    launch: () => {
+      launches++;
+      throw new Error("serve restarted before accepting dispatch");
+    },
+    get: () => Promise.reject(new Error("no receipt")),
+    now: () => now,
+  };
+  await assertRejects(() =>
+    ensureMaintenance({ key: "lost", worker: "task-group-7-1" }, deps)
+  );
+  now += START_RECEIPT_GRACE_MS - 1;
+  assertEquals(
+    await ensureMaintenance({ key: "lost", worker: "task-group-7-1" }, deps),
+    null,
+  );
+  now++;
+  await assertRejects(
+    () => ensureMaintenance({ key: "lost", worker: "task-group-7-1" }, deps),
+    MaintenanceAttention,
+    "no Swamp run receipt five minutes",
+  );
+  assertEquals(launches, 1);
+});
+
+Deno.test("a recovered enrollment keeps the same maintenance job running and replays a lost fresh-start response", async () => {
+  const h = workerHarness();
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null, now = Date.now(), launches = 0;
+  let intent: WorkflowIntent | null = null;
+  h.deps.now = () => now;
+  const workerHttp = h.deps.http;
+  let lostRetry = true;
+  h.deps.http = async (method, path, body, key) => {
+    const reply = await workerHttp(method, path, body, key);
+    if (key === "tg-7.worker.c2" && lostRetry) {
+      lostRetry = false;
+      throw new Error("lost reply containing fixture-credential");
+    }
+    return reply;
+  };
+  const http: Http = async (method, path) => {
+    if (path === "/api/v1/instances/70") {
+      return {
+        status: 200,
+        body: {
+          data: {
+            id: 70,
+            project_id: 20,
+            checkout_path: "/vm/repo",
+            starting_commit: "a".repeat(40),
+          },
+        },
+      };
+    }
+    const response = await fetch(fake.url + path, { method });
+    return { status: response.status, body: await response.json() };
+  };
+  const deps = {
+    http,
+    projects: [project],
+    readJob: () => Promise.resolve(job),
+    writeJob: (value: Job) => {
+      job = structuredClone(value);
+      return Promise.resolve();
+    },
+    maintenance: async (
+      input: StageArgs,
+      group: number,
+      request: Record<string, unknown>,
+    ) => {
+      const run = await ensurePlacedMaintenance(
+        group,
+        maintenanceInputs(project, input, group, request),
+        h.deps,
+        {
+          read: () => Promise.resolve(intent),
+          save: (value) => {
+            intent = structuredClone(value);
+            return Promise.resolve();
+          },
+          search: () => Promise.resolve([]),
+          launch: () => {
+            launches++;
+            return Promise.resolve(runFixture().id);
+          },
+          get: () =>
+            Promise.resolve({ ...runFixture(), inputs: intent!.inputs }),
+        },
+      );
+      return run ? maintenanceResult(run) : { state: "running" as const };
+    },
+  };
+  try {
+    fake.groups.get(7)!.taskable_id = 70;
+    for (let poll = 0; poll < 3; poll++) {
+      assertEquals((await runStage(args, deps)).state, "running");
+    }
+    now += START_RECEIPT_GRACE_MS;
+    assertEquals((await runStage(args, deps)).state, "running");
+    assertEquals((await h.deps.read(7))!.generation, 2);
+    assertEquals(launches, 0);
+    await assertRejects(
+      () => runStage(args, deps),
+      Error,
+      "worker start transport failed; retry the same key",
+    );
+    assertEquals(job!.state, "running");
+    assertEquals((await runStage(args, deps)).state, "running");
+    h.enroll();
+    const result = await runStage(args, deps);
+    assertEquals(result.state, "succeeded");
+    assertEquals(result.evidence!.workerName, "task-group-7-2");
+    assertEquals(intent!.inputs.worker, "task-group-7-2");
+    assertEquals((await h.deps.read(7))!.enrollmentAttempt, 1);
+    assertEquals((await runStage(args, deps)).state, "succeeded");
+    assertEquals(launches, 1);
+    assertEquals(h.calls.filter((c) => c.method === "POST").map((c) => c.key), [
+      "tg-7.worker.c1",
+      "tg-7.worker.c1",
+      "tg-7.worker.c2",
+      "tg-7.worker.c2",
+    ]);
+    assertEquals(h.calls.filter((c) => c.method === "mint").length, 4);
+    assert(!JSON.stringify([...h.records, job]).includes("fixture-credential"));
+    assertEquals(fake.startsOf(7, "script"), 0);
+  } finally {
+    await fake.close();
+  }
+});
+
+Deno.test("expired staged starts share the enrollment retry budget", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  const http = h.deps.http;
+  h.deps.http = async (method, path, body, key) => {
+    const reply = await http(method, path, body, key);
+    if (method === "GET" && path.includes("operations")) {
+      Object.assign(reply.body!.data!, {
+        status: "failed",
+        error_code: "tasks.worker_enrollment_expired",
+      });
+    }
+    return reply;
+  };
+  for (const generation of [2, 3]) {
+    assertEquals((await ensureWorker(7, h.deps)).generation, generation);
+    await ensureWorker(7, h.deps);
+  }
+  await assertRejects(
+    () => ensureWorker(7, h.deps),
+    MaintenanceAttention,
+    "after 3 startup attempts",
+  );
+  assertEquals(h.calls.filter((c) => c.method === "mint").length, 6);
+});
+
+Deno.test("a confirmed worker gets a fresh budget for a later disconnect", async () => {
+  const h = workerHarness();
+  let now = Date.now();
+  h.deps.now = () => now;
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  for (const generation of [2, 3]) {
+    await ensureWorker(7, h.deps);
+    now += START_RECEIPT_GRACE_MS;
+    assertEquals((await ensureWorker(7, h.deps)).generation, generation);
+    await ensureWorker(7, h.deps);
+  }
+  // A worker that eventually enrolls has recovered; a later disconnect starts
+  // a new enrollment sequence without reusing any previous generation's key.
+  h.enroll();
+  const ready = await ensureWorker(7, h.deps);
+  assertEquals(ready.ready, true);
+  assertEquals(ready.enrollmentAttempt, 1);
+  h.deps.connected = () => Promise.resolve(false);
+  const fresh = await ensureWorker(7, h.deps);
+  assertEquals(fresh.generation, 4);
+  assertEquals(fresh.enrollmentAttempt, 1);
+});
+
+Deno.test("saved worker target survives a disconnected or expired worker during active and uncertain writes", async () => {
+  for (const uncertain of [false, true]) {
+    const h = workerHarness();
+    h.deps.read = () =>
+      Promise.reject(
+        new Error("must not check or rotate a worker with an intent"),
+      );
+    const inputs = {
+      key: "in-flight",
+      cwd: "/vm/repo",
+      worker: "task-group-7-1",
+    };
+    const run = { ...runFixture(), inputs, status: "running" };
+    let intent: WorkflowIntent = {
+      key: inputs.key,
+      inputs,
+      runId: uncertain ? null : run.id,
+      createdAt: new Date().toISOString(),
+    };
+    const deps = {
+      read: () => Promise.resolve(intent),
+      save: (value: WorkflowIntent) => {
+        intent = value;
+        return Promise.resolve();
+      },
+      search: () => Promise.resolve([run]),
+      launch: () => Promise.reject(new Error("must not launch again")),
+      get: () => Promise.resolve(run),
+    };
+    assertEquals(
+      (await ensurePlacedMaintenance(
+        7,
+        { key: inputs.key, cwd: "/vm/repo" },
+        h.deps,
+        deps,
+      ))!.id,
+      run.id,
+    );
+    assertEquals(intent.inputs.worker, "task-group-7-1");
+    assertEquals(h.calls.length, 0);
+  }
+});
+
+Deno.test("worker placement is saved with the enrollment-bound name even when labels change", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  h.enroll();
+  h.relabel("8");
+  let intent: WorkflowIntent | null = null;
+  const deps = {
+    read: () => Promise.resolve(intent),
+    save: (value: WorkflowIntent) => {
+      intent = structuredClone(value);
+      return Promise.resolve();
+    },
+    search: () => Promise.resolve([]),
+    launch: (inputs: Record<string, unknown>) => {
+      assertEquals(inputs.worker, "task-group-7-1");
+      return Promise.resolve("placed");
+    },
+    get: () =>
+      Promise.resolve({
+        ...runFixture(),
+        id: "placed",
+        inputs: intent!.inputs,
+      }),
+  };
+  await ensurePlacedMaintenance(7, { key: "placed" }, h.deps, deps);
+  assertEquals(intent!.inputs.worker, "task-group-7-1");
+});
+
+Deno.test("worker cleanup continues after one session fails and retries it on the next sweep", async () => {
+  let broken = true;
+  const saved: number[] = [];
+  const sessions = [7, 8].map((group) => ({
+    group,
+    generation: 1,
+    tokenName: `task-group-${group}-1`,
+    operationId: 88,
+    ready: true,
+    revoked: false,
+  }));
+  const context: MaintenanceContext = {
+    globalArgs: {
+      enrollmentVault: "default",
+      workerUrl: "unused",
+      serveUrl: "unused",
+      serveTokenFile: "unused",
+      caFile: "unused",
+    },
+    definition: { name: "orbit-gateway" },
+    queryData: recordQuery((predicate) =>
+      Promise.resolve(
+        predicate.includes("startsWith")
+          ? sessions.filter((s) => !s.revoked)
+          : predicate.includes('modelName == "orbit-gateway"')
+          ? [sessions.find((s) => predicate.includes(`worker-${s.group}`))!]
+          : [{ state: "used" }],
+      )
+    ),
+    invokeModel: ({ name }: { name: string }) => {
+      if (name === "task-group-7-1" && broken) {
+        throw new Error("revoke transport failed");
+      }
+      return Promise.resolve({ ok: true });
+    },
+    writeResource: (_spec, name, data) => {
+      const group = Number(data.group);
+      saved.push(group);
+      Object.assign(sessions.find((s) => s.group === group)!, data);
+      return Promise.resolve({ name });
+    },
+    vaultService: {
+      get: () => Promise.reject(new Error("must not read secrets")),
+    },
+  };
+  const http: Http = () =>
+    Promise.resolve({ status: 200, body: { data: { status: "completed" } } });
+  await reconcileWorkers(context, http);
+  assertEquals(saved, [8]);
+  broken = false;
+  await reconcileWorkers(context, http);
+  assertEquals(saved, [8, 7]);
+});
+
+Deno.test("the enrollment grace starts at operation success after a driver outage and retries before escalation", async () => {
+  const h = workerHarness();
+  await ensureWorker(7, h.deps);
+  await ensureWorker(7, h.deps);
+  const now = Date.now();
+  h.deps.now = () => now;
+  h.deps.http = () =>
+    Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          ...workerFixture(),
+          finished_at: new Date(now - START_RECEIPT_GRACE_MS).toISOString(),
+        },
+      },
+    });
+  assertEquals((await ensureWorker(7, h.deps)).generation, 2);
+});
+
+Deno.test("worker server authentication is minted for only its worker identity and recovered after a lost mint reply", async () => {
+  const h = workerHarness();
+  const mintServer = h.deps.mintServer;
+  h.deps.mintServer = async (name, expiresAt) => {
+    await mintServer(name, expiresAt);
+    throw new Error("server token mint reply lost");
+  };
+  await assertRejects(() => ensureWorker(7, h.deps));
+  await ensureWorker(7, h.deps);
+  const calls = h.calls.filter((call) =>
+    call.modelType === "swamp/server-token"
+  );
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].name, "task-group-7-1-access");
+  const input = calls[0].arguments as Record<string, unknown>;
+  assertEquals(input.principalId, "worker:task-group-7-1");
+  assertEquals(input.vaultName, "default");
+  assert(Number(input.durationMs) > 0);
+  assertEquals(input.groups, undefined);
+  assertEquals(input.collectives, undefined);
+  h.end("completed");
+  let failed = true;
+  const revokeServer = h.deps.revokeServer;
+  h.deps.revokeServer = (name) => {
+    if (failed) {
+      failed = false;
+      throw new Error("revoke reply lost");
+    }
+    return revokeServer(name);
+  };
+  await assertRejects(() => revokeEndedWorker(7, h.deps));
+  assertEquals((await h.deps.read(7))!.revoked, false);
+  await revokeEndedWorker(7, h.deps);
+  assertEquals((await h.deps.read(7))!.revoked, true);
+  assertEquals(
+    h.records.get("task-group-7-1-access/token-main")!.state,
+    "revoked",
+  );
+  assert(!JSON.stringify([...h.records]).includes("fixture-credential"));
+});
+
+Deno.test("missing worker names stay absent in maintenance receipts", () => {
+  for (
+    const state of ["succeeded", "failed", "step-failed", "malformed-receipt"]
+  ) {
+    const run = runFixture();
+    delete run.inputs.worker;
+    if (state === "failed") run.status = "failed";
+    if (state === "step-failed") run.jobs[0].steps[1].status = "failed";
+    if (state === "malformed-receipt") {
+      run.jobs[0].steps[1].dataArtifacts = [{
+        name: "failure",
+        attributes: { exitCode: "invalid" },
+      }];
+    }
+    const result = maintenanceResult(run);
+    assertEquals(result.workerName, undefined);
+    assert(!JSON.stringify(result).includes('"workerName"'));
+  }
+});
+
+Deno.test("uncertain starts preserve an absent worker name", async () => {
+  const inputs = { key: "missing-worker" };
+  const intent: WorkflowIntent = {
+    key: inputs.key,
+    inputs,
+    runId: null,
+    createdAt: new Date(0).toISOString(),
+  };
+  const error = await assertRejects(() =>
+    ensureMaintenance(inputs, {
+      read: () => Promise.resolve(intent),
+      save: () => Promise.reject(new Error("must not save")),
+      search: () => Promise.resolve([]),
+      launch: () => Promise.reject(new Error("must not dispatch")),
+      get: () => Promise.reject(new Error("no receipt")),
+    }), MaintenanceAttention);
+  assertEquals(error.workerName, undefined);
+});
+
+Deno.test("pre-retirement running and completed jobs retain their work and results across the config migration", async () => {
+  const stored = JSON.parse(
+    await Deno.readTextFile(
+      new URL(
+        "./fixtures/project-extensions/stage-job-v1.json",
+        import.meta.url,
+      ),
+    ),
+  ) as Job;
+  const config = JSON.parse(stored.inputIdentity!).dependencyProject;
+  delete config.script;
+  for (const state of ["running", "succeeded", "failed"] as const) {
+    const fake = startFakeGateway({ 7: {} });
+    let job: Job = {
+      ...structuredClone(stored),
+      state,
+      ...(state === "running" ? {} : {
+        artifacts: {
+          script: { outcome: state === "succeeded" ? "passed" : "failed" },
+        },
+        evidence: { status: state, runId: "pre-retirement-run" },
+      }),
+    };
+    let runs = 0;
+    const before = structuredClone(job);
+    const http: Http = async (method, path, body, key) => {
+      const response = await fetch(fake.url + path, {
+        method,
+        headers: {
+          "content-type": "application/json",
+          ...(key ? { "Idempotency-Key": key } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const deps = {
+      http,
+      projects: [config],
+      readJob: () => Promise.resolve(structuredClone(job)),
+      writeJob: (value: Job) => {
+        job = structuredClone(value);
+        return Promise.resolve();
+      },
+      maintenance: (
+        _args: StageArgs,
+        group: number,
+        request: Record<string, unknown>,
+      ) => {
+        runs++;
+        assertEquals(group, stored.group);
+        assertEquals(request, stored.request!.body);
+        return Promise.resolve(maintenanceResult(runFixture()));
+      },
+    };
+    const input: StageArgs = {
+      workItem: stored.workItem,
+      key: stored.key,
+      stage: stored.stage,
+      routine: true,
+    };
+    try {
+      await assertRejects(
+        () =>
+          runStage(input, {
+            ...deps,
+            projects: [{
+              ...config,
+              worker: { ...config.worker, jsPaths: [] },
+            }],
+          }),
+        Error,
+        "input conflict",
+      );
+      assertEquals(job, before);
+      const result = await runStage(input, deps);
+      assertEquals(result.state, state === "running" ? "succeeded" : state);
+      assertEquals(result.request, before.request);
+      assertEquals(runs, state === "running" ? 1 : 0);
+      if (state !== "running") {
+        assertEquals(result.artifacts, before.artifacts);
+        assertEquals(result.evidence, before.evidence);
+      }
+      assertEquals(JSON.parse(job.inputIdentity!).schema, 2);
+      assertEquals(fake.operations.size, 0);
+      await runStage(input, deps);
+      assertEquals(runs, state === "running" ? 1 : 0);
+      await assertRejects(
+        () =>
+          runStage(input, {
+            ...deps,
+            projects: [{
+              ...config,
+              worker: { ...config.worker, jsPaths: [] },
+            }],
+          }),
+        Error,
+        "input conflict",
+      );
+    } finally {
+      await fake.close();
+    }
+  }
+});
+
+Deno.test("retained workflow exception snapshots survive new project receipts and pre-ledger inputs", async () => {
+  const request = { mode: "routine", cwd: "/vm/repo" };
+  const first = maintenanceInputs(project, args, 7, request);
+  const future = {
+    ...project,
+    exceptions: {
+      schema: 1 as const,
+      exceptions: [{
+        path: ".",
+        manager: "composer" as const,
+        package: "new/pkg",
+        recorded_on: "2026-10-27",
+        days: 7,
+      }],
+    },
+  };
+  assertEquals(maintenanceInputs(future, args, 7, request, first), first);
+  const legacy = structuredClone(first);
+  for (
+    const key of ["composer", "js", "composerCommon", "jsCommon", "summary"]
+  ) delete (legacy[key] as Record<string, unknown>).exceptions;
+  assertEquals(maintenanceInputs(future, args, 7, request, legacy), legacy);
+  const workChanged = maintenanceInputs(
+    { ...future, worker: { ...future.worker, policy: {} } },
+    args,
+    7,
+    request,
+    first,
+  );
+  await assertRejects(
+    () =>
+      ensureMaintenance(workChanged, {
+        read: () =>
+          Promise.resolve({
+            key: first.key,
+            inputs: first,
+            runId: "existing",
+            createdAt: "2026-10-27T00:00:00Z",
+          }),
+        save: () => {
+          throw new Error("must not save");
+        },
+        search: () => {
+          throw new Error("must not search");
+        },
+        launch: () => {
+          throw new Error("must not launch");
+        },
+        get: () => {
+          throw new Error("must not read");
+        },
+      }),
+    Error,
+    "input conflict",
+  );
+});
+
+Deno.test("exception receipts are saved on the owning project even when a worker run was interrupted", async () => {
+  const run = runFixture();
+  run.status = "interrupted";
+  const receipt = {
+    schema: 1,
+    exceptions: [{
+      path: ".",
+      manager: "composer",
+      package: "fixture/pkg",
+      recorded_on: "2026-10-27",
+      days: 7,
+    }],
+  };
+  run.jobs[0].steps[1].dataArtifacts = [{
+    name: "exceptions",
+    attributes: receipt,
+  }];
+  const calls: unknown[] = [];
+  let ok = false;
+  const ctx = {
+    globalArgs: {
+      projectExtensions: [{
+        projectId: 20,
+        type: "@nckrtl/project-nckrtl-com",
+      }],
+    },
+    invokeModel: (call: unknown) => {
+      calls.push(call);
+      return Promise.resolve({ ok });
+    },
+  } as unknown as MaintenanceContext;
+  await assertRejects(
+    () => recordMaintenanceExceptions(run, 20, ctx),
+    Error,
+    "cannot record",
+  );
+  ok = true;
+  await recordMaintenanceExceptions(run, 20, ctx);
+  assertEquals(calls[0], calls[1]);
+  assertEquals(calls[1], {
+    modelType: "@nckrtl/project-nckrtl-com",
+    name: "project-nckrtl-com",
+    method: "record_exceptions",
+    arguments: receipt,
+  });
+});
+
+Deno.test("inventory failures are retryable infrastructure failures, never script failures", () => {
+  for (const captured of [false, true]) {
+    const run = runFixture();
+    const inventory = run.jobs[0].steps.find((s) => s.name === "inventory")!;
+    if (captured) {
+      inventory.dataArtifacts = [{
+        name: "failure",
+        attributes: { exitCode: 70, message: "audit network unavailable" },
+      }];
+    } else {
+      run.status = "failed";
+      inventory.status = "failed";
+      inventory.error = "audit network unavailable";
+      inventory.dataArtifacts = [];
+    }
+    const result = maintenanceResult(run);
+    assertEquals(result.state, "failed");
+    assertEquals(result.code, "maintenance.inventory_failed");
+    assertEquals(result.retryable, true);
+    assertEquals(result.result, undefined);
+    assert(result.lastError?.includes("audit network unavailable"));
+  }
+});
+
+Deno.test("an inventory infrastructure failure produces no repairable script artifact", async () => {
+  const fake = startFakeGateway({ 7: {} });
+  let job: Job | null = null;
+  fake.groups.get(7)!.taskable_id = 7;
+  let turns = 0;
+  const run = runFixture();
+  run.status = "failed";
+  const inventory = run.jobs[0].steps.find((s) => s.name === "inventory")!;
+  inventory.status = "failed";
+  inventory.error = "audit network unavailable";
+  try {
+    const result = await runStage(args, {
+      projects: [project],
+      http: async (method, path, body, key) => {
+        if (path.endsWith("/turn")) turns++;
+        if (path === "/api/v1/instances/7") {
+          return {
+            status: 200,
+            body: {
+              data: {
+                id: 7,
+                project_id: 20,
+                checkout_path: "/vm/repo",
+                starting_commit: "a".repeat(40),
+              },
+            },
+          };
+        }
+        const r = await fetch(fake.url + path, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(key ? { "Idempotency-Key": key } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        return { status: r.status, body: await r.json() };
+      },
+      readJob: () => Promise.resolve(job),
+      writeJob: (value) => {
+        job = structuredClone(value);
+        return Promise.resolve();
+      },
+      maintenance: () => Promise.resolve(maintenanceResult(run)),
+    });
+    assertEquals(result.state, "failed");
+    assertEquals(result.evidence?.code, "maintenance.inventory_failed");
+    assertEquals(result.evidence?.retryable, true);
+    assertEquals(result.artifacts.script, undefined);
+    assertEquals(turns, 0);
+  } finally {
+    await fake.close();
+  }
+});
