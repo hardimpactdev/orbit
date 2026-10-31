@@ -545,11 +545,11 @@ A parent still on the previous executor may admit a direct child through the chi
 
 Cancelling a direct Operation only records `cancel_requested_at`. Swamp owns stopping and projecting the terminal result; the Gateway does not apply old execution policy, walk its native children or settle it as an unstarted queued job. The previous parent's cancellation may request cancellation of a direct child, but cannot settle that child on behalf of its native workflow.
 
-A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch records the previous polled writer. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
+A declaration may constrain its writer with literal `writer_scope` admitted fields; `node_id` and `parent_operation_id` come from Gateway admission authority. A scope mismatch can use the polled writer only while that kind retains its executor. Manager convergence retains this path for workerless Task VM enrollment. Tool admission also checks that its prepared input and the stored writer decision agree before it records an Operation.
 
 `firewall.allow`, `firewall.deny` and `firewall.remove` start `operation-firewall-direct` directly for root intents on Node 209. Admission refuses other Nodes and a disabled direct writer until their workers are ready. Their Gateway agent-run descriptors, receipt proofs and legacy execution tests are removed. Rollback is a revert PR, which restores both admission and the previous execution contract.
 
-All Tool kinds use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy, manager child admission and receipt adapters are removed. Swamp materializes the admitted manager and applies package policy locally. The Gateway retains typed manager and Tool result projection.
+`tool.install`, `tool.update`, `tool.remove` and `tool.adopt` use direct Swamp execution for root intents on Node 209. Its Gateway command descriptors, completion proofs and package execution policy are removed. Swamp materializes the admitted manager and applies package policy locally. Other Tool kinds retain their existing admission scopes until their own takeover slices.
 
 Firewall direct intent records the admitted agent digest. The Node worker checks that digest and the root-owned binary path before running `firewall.rule` through its existing passwordless sudo; the Gateway performs no Node action.
 

@@ -6,6 +6,7 @@ namespace App\Actions\Tools;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationFamilySpec;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -81,21 +82,24 @@ final readonly class StartToolOperationAction
 
                 $intentOnly = $roleOwned || ($verb === 'remove' && $tool?->status === ToolStatus::Failed
                     && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
+                $variant = $intentOnly ? 'version' : ($verb === 'adopt' && in_array($managerName, ['brew', 'brew-cask'], true) ? 'adoption' : 'inventory');
 
                 OperationFamilySpec::assertAvailable('tool.'.$verb);
+                $direct = app(DirectOperation::class)->writer('tool.'.$verb, ['manager' => $managerName, 'tool_status' => $tool?->status->value], $nodeId) === 'direct';
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                    'agent_sha256' => app(AgentDelivery::class)->pin($node),
+                    ...($direct ? ['agent_sha256' => app(AgentDelivery::class)->pin($node)] : []),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                     'intent_only' => $intentOnly,
+                    'completion_variant' => $managerName.':'.$variant,
                     'protected_packages' => $protected,
-                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
-                ], 'operator', request()->attributes->getString('orbit.request_id'), expectedWriter: 'direct');
+                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name(), direct: $direct) : []),
+                ], 'operator', request()->attributes->getString('orbit.request_id'), expectedWriter: $direct ? 'direct' : 'polled');
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {
