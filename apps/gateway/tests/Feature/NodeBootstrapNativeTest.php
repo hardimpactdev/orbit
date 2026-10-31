@@ -130,6 +130,7 @@ it('leaves first contact to the official SSH trust on first use policy', functio
 });
 
 it('copies the probe SSH value to its fixed execution key and records names only', function (): void {
+    config(['swamp.read_token' => 'fixture-read-token']);
     $identity = tmpfile();
     $value = "-----BEGIN OPENSSH PRIVATE KEY-----\n".bin2hex(random_bytes(32))."\n-----END OPENSSH PRIVATE KEY-----\n";
     fwrite($identity, $value);

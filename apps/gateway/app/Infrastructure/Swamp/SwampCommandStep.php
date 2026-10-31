@@ -112,7 +112,7 @@ final readonly class SwampCommandStep
      */
     private function history(string $runId): array
     {
-        $token = config('swamp.run_token');
+        $token = config('swamp.read_token');
         $address = config('swamp.address');
         $ca = config('swamp.ca_path');
         if (! is_string($token) || $token === '' || ! is_string($address) || $address === '' || ! is_string($ca) || $ca === '') {

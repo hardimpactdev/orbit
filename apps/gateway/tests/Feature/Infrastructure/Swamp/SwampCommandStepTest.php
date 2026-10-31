@@ -29,7 +29,7 @@ beforeEach(function (): void {
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $this->history]]];
     app()->instance(WebSocketClient::class, $this->socket);
-    config(['swamp.run_token' => 'synthetic-gateway-token', 'swamp.ca_path' => '/public/ca.pem']);
+    config(['swamp.run_token' => 'synthetic-gateway-token', 'swamp.read_token' => 'synthetic-native-read-token', 'swamp.ca_path' => '/public/ca.pem']);
     $this->step = app(SwampCommandStep::class);
     $this->selector = ['job' => 'bootstrap', 'step' => 'probe-host'];
 });
@@ -46,6 +46,28 @@ it('reads history once after a native terminal event and projects only the fixed
     expect($this->socket->closed)->toBeTrue();
     $this->step->projectTerminal($result, $terminal, $this->selector);
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('projects terminal history with the read credential when the run credential is absent', function (): void {
+    config(['swamp.run_token' => null]);
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'], $this->selector);
+
+    expect($result->status)->toBe(OperationStatus::Succeeded);
+    expect($this->socket->endpoint?->bearerToken)->toBe('synthetic-native-read-token');
+    expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('leaves the accepted run bound when the read credential is missing', function (): void {
+    config(['swamp.read_token' => '']);
+
+    expect(fn () => $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'succeeded'], $this->selector))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($this->socket->connections)->toBeEmpty();
+    expect($this->socket->sent)->toBeEmpty();
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe($this->runId);
 });
 
 it('projects native failure cancellation and interruption when the selected step was skipped', function (string $native, OperationStatus $expected, ?string $code): void {
