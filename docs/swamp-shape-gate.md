@@ -21,7 +21,9 @@ The gate implements Nick's migration policy using these manual references:
 - [Data](https://swamp-club.com/manual/reference/data): outputs are persisted.
   Do not write private material to resources, files or logs.
 
-Inline operational scripts have a 20-line per-file budget before grandfathering.
+Each embedded operational program has a 20-line threshold before grandfathering.
+Independent short strings are not combined to cross it. Script metrics count each
+contributing source literal once, including when a wrapper passes it to Python.
 The scanner resolves TypeScript literals, templates, tagged templates,
 concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
@@ -52,3 +54,9 @@ repo has `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`; Orbit needs an approved trans
 before the caller can use this workflow. The reusable workflow declares both
 secrets. Pass them with `secrets: inherit` from the approved caller. No credential
 is printed, copied from local config or passed as argv.
+
+The gate prints current debt separately from base comparison. Retained historical
+agent actions are grandfathered; only growing counts or new action evidence fail.
+Unknown agent targets remain unknown findings. A fresh PR also cannot reuse a
+stale allowance after the base source reduced its debt. The baseline must match
+current findings, so removals reduce the checked-in list in the same PR.

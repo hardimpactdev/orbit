@@ -43,7 +43,9 @@ jobs:
           "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
           echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
       - name: Check shape regression fixtures
-        run: deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
+        run: |
+          deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
+          python3 tests/swamp_shape_gate_test.py
       - name: Reject new violations with current and base rules
         env:
           SHAPE_BASE: ${{ inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
