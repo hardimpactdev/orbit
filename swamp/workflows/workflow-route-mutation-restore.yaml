@@ -1,0 +1,500 @@
+id: f11fa84e-418c-44cf-86d9-a84f46ef0146
+name: route-mutation-restore
+description: Canonical Route publications and complete native contribution proof.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$
+        required:
+        - vault
+        - key
+    parent_run_id:
+      type: string
+      format: uuid
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - parent_run_id
+  additionalProperties: false
+jobs:
+- name: restore
+  steps:
+  - name: restore_prepare_certificates
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.certificates }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn: []
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: true
+    allowFailure: true
+  - name: restore_php
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-php-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.before.php }}
+          after: ${{ self.part.after.php }}
+          direction: restore
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.lan }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_ingress
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.ingress }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-ingress-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_urls
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.url_writes }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-environment-write
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          write: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets:
+          material: ${{ inputs.execution_secrets[self.part.secret_field] }}
+    allowFailure: true
+  - name: restore_restore_prepare_caddy
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.after.caddy }}
+          after: ${{ self.part.before.caddy }}
+          direction: forward
+          retain_removed: true
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_dns
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null) }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-publish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          host_keys: ${{ self.part.host_keys }}
+          before: ${{ self.part.before.dns }}
+          after: ${{ self.part.before.dns }}
+          alternatives: ${{ [self.part.before.dns,self.part.prepared.dns,self.part.withdrawn.dns,self.part.after.dns]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_dns_grace
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && p.before.dns.digest
+        != p.after.dns.digest) ? [{}] : [] }}'
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-dns-grace
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: {}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_restore_caddy
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-route-caddy-delta
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          node_id: ${{ self.part.node_id }}
+          user: ${{ self.part.user }}
+          host_keys: ${{ self.part.host_keys }}
+          control_node_id: ${{ self.part.control_node_id }}
+          connection: ${{ self.part.connection }}
+          before: ${{ self.part.after.caddy }}
+          after: ${{ self.part.before.caddy }}
+          direction: forward
+          retain_removed: false
+          alternatives: ${{ [self.part.before.caddy,self.part.prepared.caddy,self.part.withdrawn.caddy,self.part.after.caddy]
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_cleanup
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.cleanup }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    - {step: restore_restore_caddy, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-certificate-remove
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          leaf: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+        parent_run_id: ${{ inputs.parent_run_id }}
+        restoring: true
+    allowFailure: true
+  - name: restore_retire_lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.retire_lan }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    - {step: restore_restore_caddy, condition: {type: always}}
+    - {step: restore_cleanup, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore_retire_ingress
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: part
+      in: ${{ inputs.intent.route_mutations.restore.retire_ingress }}
+    guard: ${{ steps.exists(key, key.startsWith("restore_") && steps[key].status == "failed") }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    - {step: restore_restore_caddy, condition: {type: always}}
+    - {step: restore_cleanup, condition: {type: always}}
+    - {step: restore_retire_lan, condition: {type: always}}
+    task:
+      type: workflow
+      workflowIdOrName: route-ingress-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent:
+          rule: ${{ self.part }}
+          control_node_id: 209
+          connection: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].connection
+            }}
+          host_keys: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.node_id == self.part.node_id)[0].host_keys
+            }}
+        execution_secrets: {}
+    allowFailure: true
+  - name: restore
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach:
+      item: stage
+      in: ${{ [inputs.intent.route_mutations.restore] }}
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    - {step: restore_restore_caddy, condition: {type: always}}
+    - {step: restore_cleanup, condition: {type: always}}
+    - {step: restore_retire_lan, condition: {type: always}}
+    - {step: restore_retire_ingress, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: restore-result
+      methodName: result
+      inputs:
+        stage: ${{ self.stage }}
+        mode: restore
+        required:
+          restore_prepare_certificates: ${{ size(inputs.intent.route_mutations.restore.certificates) }}
+          restore_php: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes)) }}
+          restore_lan: ${{ size(inputs.intent.route_mutations.restore.lan) }}
+          restore_ingress: ${{ size(inputs.intent.route_mutations.restore.ingress) }}
+          restore_urls: ${{ size(inputs.intent.route_mutations.restore.url_writes) }}
+          restore_restore_prepare_caddy: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes))
+            }}
+          restore_dns: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null))
+            }}
+          restore_dns_grace: '${{ size(inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns
+            != null && p.before.dns.digest != p.after.dns.digest) ? [{}] : []) }}'
+          restore_restore_caddy: ${{ size(inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes))
+            }}
+          restore_cleanup: ${{ size(inputs.intent.route_mutations.restore.cleanup) }}
+          restore_retire_lan: ${{ size(inputs.intent.route_mutations.restore.retire_lan) }}
+          restore_retire_ingress: ${{ size(inputs.intent.route_mutations.restore.retire_ingress) }}
+        outcomes: ${{ steps }}
+    allowFailure: true
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: restore_prepare_certificates, condition: {type: always}}
+    - {step: restore_php, condition: {type: always}}
+    - {step: restore_lan, condition: {type: always}}
+    - {step: restore_ingress, condition: {type: always}}
+    - {step: restore_urls, condition: {type: always}}
+    - {step: restore_restore_prepare_caddy, condition: {type: always}}
+    - {step: restore_dns, condition: {type: always}}
+    - {step: restore_dns_grace, condition: {type: always}}
+    - {step: restore_restore_caddy, condition: {type: always}}
+    - {step: restore_cleanup, condition: {type: always}}
+    - {step: restore_retire_lan, condition: {type: always}}
+    - {step: restore_retire_ingress, condition: {type: always}}
+    - {step: restore, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-mutation-phase
+      methodName: phase
+      inputs:
+        mode: restore
+        steps: ${{ steps }}

@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: "@nckrtl/instance-route-workload"
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Native one-action source access and selected-release link preparation.
+behaviors:
+  - operations/instance-route-workload/assets.ts
+additionalFiles:
+  - scripts/source_access.py
+  - scripts/served_roots.py

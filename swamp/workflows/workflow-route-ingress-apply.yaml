@@ -1,0 +1,96 @@
+id: 4977fbb9-658c-4d9c-a984-d003f4dbe225
+name: route-ingress-apply
+description: Apply the public ingress port policy through the official firewall model.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: firewall
+  steps:
+  - name: pins
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ingress-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "route-ingress-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/true
+  - name: apply
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: pins, condition: {type: succeeded}}
+    forEach:
+      item: rule
+      in: ${{ inputs.intent.rule.rules }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: ${{ "route-ingress-port-" + string(self.rule.port) }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+        nodePort: ${{ inputs.intent.connection.nodePort }}
+        become: true
+        port: ${{ self.rule.port }}
+        protocol: tcp
+        action: allow
+        direction: in
+        ensure: ${{ self.rule.ensure }}
+      inputs: {}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: pins, condition: {type: always}}
+    - {step: apply, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-update-result'
+      behaviorName: route-ingress-result
+      methodName: firewall
+      inputs:
+        rules: ${{ inputs.intent.rule.rules }}
+        steps: ${{ steps }}

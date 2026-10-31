@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DENO = os.environ.get("DENO_BIN", "/fast/worktrees/swamp-lane8/_scratch/tools/deno")
 
 
-class RouteMutationNative(NativeTestCase):
+class RouteMutationFixture(NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/routes/mutation-command")
@@ -49,6 +49,7 @@ class RouteMutationNative(NativeTestCase):
             "url_writes": [{"node_id": 9, "secret_field": "route_material_0"}],
             "lan": [{"node_id": 9}],
             "retire_lan": [{"node_id": 9}],
+            "ingress": [], "retire_ingress": [],
             "publications": [
                 {
                     "node_id": node,
@@ -91,6 +92,7 @@ print('{"ready":true}')
                 "route-lan-apply",
                 "route-dns-publish",
                 "route-dns-grace",
+                "route-ingress-apply",
                 "operation-route-caddy-delta",
                 "operation-route-php-delta",
             )
@@ -165,6 +167,9 @@ print('{"ready":true}')
         )
         return json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
 
+
+
+class RouteMutationNative(RouteMutationFixture):
     def test_multi_item_parent_requires_every_public_contribution(self):
         self.parent()
         history = self.run_parent()
