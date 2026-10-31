@@ -7,10 +7,12 @@ use App\Actions\DatabaseConnections\DropServerDatabaseAction;
 use App\Actions\DatabaseConnections\PrepareDatabaseChildAction;
 use App\Actions\DatabaseServers\PurgeDatabaseExecutionIntentsAction;
 use App\Domain\DatabaseServers\DatabaseOperationExecution;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\DatabaseServers\NativeDatabaseRemovalLock;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
@@ -101,4 +103,23 @@ it('retains both source and target SQLite intent while an unadmitted lifecycle p
     expect(app(PurgeDatabaseExecutionIntentsAction::class)->execute())->toBe(0);
     expect(DatabaseExecutionIntent::query()->count())->toBe(3);
     expect(DatabaseExecutionIntent::query()->where('parent_operation_id', $parent->id)->count())->toBe(3);
+});
+
+it('refuses clone reservation while synchronous removal owns the server lock and retries after release', function (): void {
+    $this->prepareServerDatabaseFixtures();
+    $directory = config()->string('orbit.home').'/locks/reservation-'.bin2hex(random_bytes(4));
+    $owner = new NativeDatabaseRemovalLock($directory);
+    app()->instance(DatabaseRemovalLock::class, new NativeDatabaseRemovalLock($directory));
+    $action = app(CreateServerDatabaseAction::class);
+    $owner->run([$this->server->id], function () use ($action): void {
+        expect(fn () => $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.server_in_use'));
+        $this->assertDatabaseCount('database_connections', 0);
+        $this->assertDatabaseCount('database_users', 0);
+    });
+    $connection = $action->reserve($this->server, 'clone', 'clone_db', $this->instance, null);
+    expect($connection->database)->toBe('clone_db');
+    $this->assertDatabaseCount('database_connections', 1);
+    $this->assertDatabaseCount('database_users', 1);
+    expect($this->admin->statements)->toBe([]);
 });

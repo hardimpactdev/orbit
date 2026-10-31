@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
+use App\Domain\DatabaseServers\DatabaseRemovalLock;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresTestDatabases;
@@ -52,6 +53,7 @@ final readonly class CreateServerDatabaseAction
         private PostgresTestDatabases $postgresTests,
         private RecordDatabaseOperationAction $operations,
         private RetryDatabaseCreateAction $retries,
+        private DatabaseRemovalLock $lock,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): Operation
@@ -145,7 +147,7 @@ final readonly class CreateServerDatabaseAction
      */
     public function reserve(DatabaseServer $server, string $slug, string $database, Instance $instance, ?string $createdBy, array $attributes = []): DatabaseConnection
     {
-        return DB::transaction(fn (): DatabaseConnection => $this->reserveRecorded($server, $slug, $database, $instance, $createdBy, $attributes));
+        return $this->lock->run([$server->id], fn (): DatabaseConnection => DB::transaction(fn (): DatabaseConnection => $this->reserveRecorded($server, $slug, $database, $instance, $createdBy, $attributes)));
     }
 
     /** @param array<string,mixed> $attributes */
