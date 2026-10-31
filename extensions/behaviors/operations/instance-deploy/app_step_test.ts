@@ -1,5 +1,11 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { AppStep, currentProgram, sha256, sudoAppStep } from "./app_step.ts";
+import {
+  AppStep,
+  currentProgram,
+  sha256,
+  stepRunner,
+  sudoAppStep,
+} from "./app_step.ts";
 import { setupDirect } from "./setup_direct.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 
@@ -342,4 +348,60 @@ Deno.test("an interrupted running list refuses replay before another sudo effect
     error_code: "instance.step_execution_unconfirmed",
     failed_step: null,
   });
+});
+
+Deno.test("development deploy commands use only the Project before-activation list", async () => {
+  const target = {
+    variant: "checkout" as const,
+    user: "orbit",
+    directory: "/home/orbit/apps/default",
+    seed_path: "",
+    seed_commit: "",
+  };
+  const admitted = { ...step, target, phase: "before_activation" as const };
+  const paths: string[] = [];
+  const http: Http = (_method, path) => {
+    paths.push(path);
+    return Promise.resolve({
+      status: 200,
+      body: {
+        data: [{ name: "install", command: script, timeout_seconds: 30 }],
+      },
+    });
+  };
+  assertEquals(await currentProgram(http, admitted), script);
+  assertEquals(paths, ["/api/v1/projects/9/development-deploy-steps"]);
+  await assertRejects(
+    () => currentProgram(http, { ...admitted, phase: "after_activation" }),
+    Error,
+    "instance.step_not_admitted",
+  );
+  assertEquals(paths.length, 1);
+  await assertRejects(
+    () =>
+      currentProgram(() =>
+        Promise.resolve({
+          status: 200,
+          body: {
+            data: [{
+              name: "install",
+              command: script,
+              timeout_seconds: 30,
+              phase: "before_activation",
+            }],
+          },
+        }), admitted),
+    Error,
+    "instance.step_not_admitted",
+  );
+});
+
+Deno.test("step runner identity is public and bound to Operation run and admitted step", () => {
+  assertEquals(
+    stepRunner({
+      operation_id: 100,
+      run_id: "ed7cfb7a-64f3-496f-8722-e3fd1c06947d",
+    }, step),
+    "orbit-deploy-step:100:ed7cfb7a-64f3-496f-8722-e3fd1c06947d:setup.install",
+  );
 });

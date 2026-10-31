@@ -2,7 +2,7 @@
 Compile app_step_native_fixture.ts to /usr/local/bin/lane2-sudo-step-fixture first.
 The scratch container is the cleanup boundary; never run on an enrolled Node.
 """
-import fcntl,hashlib,json,os,pwd,shlex,subprocess,time,unittest
+import fcntl,hashlib,json,os,pwd,shlex,shutil,subprocess,time,unittest
 from pathlib import Path
 NODE='orbit-node-proof';APP='orbit-app-99009';HOME=Path('/home')/APP;RELEASE=HOME/'releases/proof-1'
 def run(*argv,**kwargs):return subprocess.run(argv,check=True,capture_output=True,text=True,timeout=20,cwd='/tmp',**kwargs).stdout.strip()
@@ -84,6 +84,37 @@ print('probe-ok')
    self.assertEqual(result['exit_code'],0,result);self.assertIn('vp-home-ok',result['output_tail'])
   finally:
    if scopes[0].with_name('vp-held').exists():scopes[0].with_name('vp-held').rename(scopes[0])
+ def test_admitted_pinned_vp_survives_wrapper_fd_closure_without_access_changes(self):
+  store=Path('/opt/orbit/vite-plus');binary=store/'bin/vp';existed=store.exists()
+  (store/'bin').mkdir(parents=True,exist_ok=True);old=binary.read_bytes() if binary.exists() else None
+  fake="""#!/usr/bin/python3 -I
+import json,os,sys
+from pathlib import Path
+args=sys.argv[1:]
+Path('vp-argv.json').write_text(json.dumps(args))
+try:os.close(3)
+except OSError:pass
+os.execve(args[6],args[6:],os.environ)
+"""
+  binary.write_text(fake);binary.chmod(0o755);run('chown','-R',NODE+':'+NODE,str(store))
+  runtime={'store':str(store),'owner':NODE,'vp_version':'0.3.3','node_version':'24.22.0','package_manager':'npm','package_manager_version':'11.12.0','package_manager_hash':None}
+  try:
+   result=self.call('test "$VP_HOME" = '+str(store)+'; printf "pinned-vp-ok\\n"',changes={'phase':'before_activation','vp_environment':runtime})
+   self.assertEqual(result['exit_code'],0,result);self.assertIn('pinned-vp-ok',result['output_tail'])
+   args=json.loads((RELEASE/'vp-argv.json').read_text());self.assertEqual(args[:7],['env','exec','--node','24.22.0','--package-manager','npm@11.12.0','/bin/bash'])
+   self.assertFalse(Path(args[-1]).exists(),'sealed script fd survived supervisor completion')
+   binary.chmod(0o777)
+   self.assertIn('error_code',self.call('touch forbidden-vp',changes={'vp_environment':runtime}));self.assertFalse((RELEASE/'forbidden-vp').exists())
+   binary.chmod(0o755)
+   checkout=Path('/home')/NODE/'apps/canary'
+   target={'variant':'checkout','user':NODE,'directory':str(checkout),'seed_path':'','seed_commit':''}
+   foreign={**runtime,'owner':APP}
+   self.assertEqual(self.call('touch forbidden-owner',changes={'target':target,'vp_environment':foreign}),{'error_code':'tool.vp_scope_conflict'})
+   self.assertFalse((checkout/'forbidden-owner').exists())
+  finally:
+   if old is not None:binary.write_bytes(old);binary.chmod(0o755)
+   elif not existed:shutil.rmtree(store)
+   else:binary.unlink()
  def test_timeout_kills_setsid_sigterm_ignoring_child(self):
   child="import os,signal,time;from pathlib import Path;os.setsid();signal.signal(signal.SIGTERM,signal.SIG_IGN);Path('escaped.pid').write_text(str(os.getpid()));time.sleep(60)"
   script='/usr/bin/python3 -I -c '+shlex.quote(child)+' &\nwhile [ ! -f escaped.pid ];do sleep 0.01;done\nsleep 60'

@@ -1,10 +1,24 @@
 # Instance deployment execution
 
+## Native development deployment
+
+Default development Instances use `operation-instance-deploy-direct` on the admitted Node target and matching Node label. One native run fetches, checks out, prepares Vite+ when required, runs the ordered Project development-deploy commands, and verifies the resulting origin, branch and commit. The Gateway owns admission, fresh record validation and bounded history projection. It has no development step runner or child plan.
+
+The admitted environment selects the account: development uses the configured Node user; production uses `orbit-app-<ProjectID>` in its release. Caller input selects neither. The development root freezes the delivered agent digest and refuses an installed digest mismatch. Its final source inspection runs as the Node account, without sudo. Application steps use the proven sudo runner with cleared environment and full timeouts. Swamp calculates the native run deadline from the admitted command timeouts, with 900 seconds of infrastructure overhead and no smaller cap.
+
+Source preparation and scripts consume private callbacks only during delivery. Repeated or retained callbacks cannot repeat or start later effects. A delivery failure preserves a confirmed local result; an uncertain action cannot become success through another callback. Public repositories carry a null Git credential. Private bytes stay outside native inputs, resources and public results.
+
+Required failures stop the list and return only the runner’s redacted, bounded output tail. Best-effort failures add warnings and allow later steps. Verified success advances the seed; failed or cancelled work keeps the prior successful seed. A terminal replay does nothing. A restarted running invocation with no active native effect checkpoint fails `deployment.interrupted` without replay and releases its hold. A checkpoint is saved before every effect and clears only after a typed result. An active uncertain checkpoint refuses reexecution. An uncertain mutation keeps the Operation running and its Instance hold in place; cancellation cannot replace missing settlement proof. No source or script is repeated.
+
+Vite+ projects only public pins and checking, active or failed reference state through the same parent endpoint. The existing automatic policy workflow owns default development discovery, three-attempt retry policy, backoff and keyed admission. Pending default publication uses a normal Route update root and a matching succeeded Route receipt before deployment admission; the old Instance repair wrapper is deleted. This root creates no Route, Process, Schedule or prerequisite child Operations.
+
+## Retained production execution
+
 Swamp executes `instance.deploy` and `instance.rollback`. Orbit admits the request, owns deploy-step configuration, and records deployment history and Operation receipts. Automatic deployment policy and production smoke recovery continue to use their existing Gateway admission endpoints.
 
 Production deployment prepares one Operation-owned release, synchronizes its environment, runs before-activation steps, selects the release, refreshes PHP when configured, restarts opted-in running Processes, runs after-activation steps, and prunes old releases. A failure before selection keeps the previous release. A failure after selection reports the new selected release. Cleanup failure leaves the deployment successful and records a warning.
 
-A development default resolves the Project branch, checks out the target commit in place, and runs the Project's development deploy steps in order. A best-effort step failure records its exit code and warning, then continues. A required failure leaves the checkout at the attempted commit and keeps the previous successful seed. Successful completion advances the seed to the proven checkout commit. Other development Instances refuse deployment.
+Other development Instances refuse deployment. Development rollback continues to refuse `deployment_config.unavailable`; rollback is production-only.
 
 Rollback validates the exact retained release again, selects it, refreshes PHP when configured, and restarts opted-in running Processes. It runs no deploy scripts and changes no database data. Smoke recovery keeps its caller-bound failure, retained target and selected-release guards. Operator pauses, smoke holds, disabled automation and blocked commits are checked again before automatic effects.
 
@@ -14,11 +28,17 @@ Each Node effect has a stable key. A saved successful receipt is reused after re
 
 The Gateway allows only the family's named agent commands and exact inputs bound to admitted intent and proven prior receipts. It adds Git credentials, environment contents and redaction values in memory immediately before transport. These values never enter Swamp resources or Operation input, results, steps or responses. Every required step must match a successful keyed Node receipt before a successful completion can update deployment history.
 
-Deploy Swamp PR #77 before the Gateway release in Orbit PR #1590. The Gateway release requires kit I, kit B/D, the Process/Schedule children, the Node PHP preparation child and `route.converge`, in that order. It also requires kit C for production environment refresh and lifecycle composition for production cloning. Its registry check refuses a release with missing contracts. Drain the PHP deploy workers before migration; the cutover migration ends legacy deploy/rollback Operations and their history as `deployment.interrupted`, releasing held targets without Node effects. Completion uses proven activation and previous-selection receipts even when the Node is unreachable. First deploy a designated development Instance and retain its Operation ID, steps and result. Then observe a normal automatic production deployment of Hauzer (71) or Mealou (72). Forcing a production deployment requires approval from the orchestrator.
+The production release still requires the owning Process, Schedule, PHP, environment and Route contracts. Those callers stay in place until the production root replaces them. Executor-Node self-recovery exceptions keep their existing admitted selection.
+
+## Development release gate
+
+Existing `operation.target_busy` holds serialize the cutover with in-flight work. Before either merge, read all queued/running/waiting polled development deploys and their children. Finish or cancel them through their current owner and verify terminal receipts before removing that executor. The cutover adds no drain machinery or admission fence. Never adopt old work into the direct writer or replay an uncertain effect.
+
+After normal Swamp source acceptance, verify the exact workflow UUID and existing Gateway principal's run/read grant before the Gateway writer releases. Run the released writer on a disposable Beast development Instance and revert the pair on failure. This source fixture does not prove worker readiness, effective grants or a live canary.
 
 Project setup and teardown lists use `instance.run_steps`. The Gateway binds the list digest and repository-root checkout, hides stored programs behind protected references, and proves each result. Swamp preserves the difference between confirmed command failure, busy refusal, deadline and unknown transport outcome. Lifecycle parents own rollback decisions. Retained Gateway callers admit after committing and use the bounded `AwaitOperation` reader.
 
-Deployment children own environment synchronization, Vite+ readiness, Process/Schedule installation, PHP packages and Process restarts. The parent admits and waits for a child before starting its receipt step. A pending child releases the parent worker with no running parent step; after the child settles, the parent records the bound child receipt before advancing. This also applies to Vite+ manager prerequisites and rollback runtime children. The family uses the shared B child and I receipt clients. The Gateway gates unavailable children and list-result capabilities before admission. Explicit production environment synchronization remains gated until C supplies the exact restarted Process-ID list; it never falls back to PHP execution. URL-only Route children and production PHP/web-root preparation derive their targets from Gateway-stamped parent metadata and admitted target sets.
+Retained production deployment children own environment synchronization, Vite+ readiness, Process/Schedule installation, PHP packages and Process restarts. The parent admits and waits for a child before starting its receipt step. A pending child releases the parent worker with no running parent step; after the child settles, the parent records the bound child receipt before advancing. This also applies to Vite+ manager prerequisites and rollback runtime children. The family uses the shared B child and I receipt clients. The Gateway gates unavailable children and list-result capabilities before admission. Explicit production environment synchronization remains gated until C supplies the exact restarted Process-ID list; it never falls back to PHP execution. URL-only Route children and production PHP/web-root preparation derive their targets from Gateway-stamped parent metadata and admitted target sets.
 
 The live proof uses a new isolated Project with its own `default` development Instance on Beast Node 9, a harmless fixture repository and synthetic data. Send the new Project and Instance IDs to the orchestrator before running it. Preserve all existing defaults. No public Route, DNS, access change, production copy or forced production deploy is part of that proof.
 
@@ -35,3 +55,22 @@ proven refusal stops later phases. A lost reply leaves the child unfinished so a
 later invocation can adopt the original target receipt. Cancellation stops new
 phases without claiming that an uncertain write succeeded. Existing synchronous
 Gateway callers keep their native path until their owning cutover.
+
+The deploy sudo runner accepts an optional admitted Vite+ runtime. It runs the
+script through the exact Node and package-manager pins. Runtime paths must be
+owned by the admitted runtime account and free of writable or symlink components.
+This runner grants no filesystem access. A production app that cannot traverse
+the runtime store refuses before its script starts. Setup and teardown keep their
+existing account and directory contract.
+
+
+Development deploy checkpoints record each active app step and its public
+Operation/run/step runner identity before launch. Recovery never replays an
+active step. After operator cancellation, the native run uses the admitted
+agent digest to call read-only `instance.inspect-deploy-step` on its own Node.
+A complete process scan must prove the exact runner is gone before projecting
+`failed`, `deployment.interrupted`, the saved `failed_step`, and
+`step_outcome: unknown`. A live runner, an unreadable scan, or an active source
+mutation without step identity keeps the hold. No probe kills or adopts a
+process. Terminal projection releases the shared target lock for every direct
+kind; it does not claim a successful step or advance the development seed.

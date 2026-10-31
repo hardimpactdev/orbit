@@ -22,7 +22,7 @@ try:
  raw=sys.stdin.buffer.read(2*1024*1024+1)
  if len(raw)>2*1024*1024:refuse()
  value=json.loads(raw)
- if set(value)!={'project_id','target','command_digest','timeout_seconds','script'}:refuse()
+ if set(value)-{'vp_environment'}!={'project_id','target','command_digest','timeout_seconds','script'}:refuse()
  project=value['project_id'];target=value['target'];script=value['script'];seconds=value['timeout_seconds']
  if type(project)!=int or project<1 or type(seconds)!=int or not 1<=seconds<=3600:refuse()
  if not isinstance(target,dict):refuse()
@@ -87,6 +87,10 @@ try:
  secrets=set(line for text in env.values() for line in text.splitlines() if line)
  disabled=len(secrets)>4096
  secrets=sorted(secrets,key=len,reverse=True)[:4096]
+ if len(sys.argv)==2:
+  if not re.fullmatch(r'orbit-deploy-step:[1-9][0-9]*:[0-9a-fA-F-]{36}:[a-z_]+\.[a-z0-9-]+',sys.argv[1]):refuse()
+  env['ORBIT_DEPLOY_STEP_RUNNER']=sys.argv[1]
+ elif len(sys.argv)!=1:refuse()
  env.update(HOME=home,USER=account.pw_name,LOGNAME=account.pw_name,PATH='/usr/local/bin:/usr/bin:/bin')
  if variant=='checkout':
   env.update(ORBIT_SEED_PATH=target['seed_path'],ORBIT_SEED_COMMIT=target['seed_commit'])
@@ -100,6 +104,29 @@ try:
    scopes.append(str(candidate))
    break
   if scopes:env.update(VP_HOME=scopes[0],PATH=scopes[0]+'/bin:'+env['PATH'])
+ vp=value.get('vp_environment')
+ vp_args=None
+ if vp is not None:
+  if not isinstance(vp,dict) or set(vp)!={'store','owner','vp_version','node_version','package_manager','package_manager_version','package_manager_hash'}:refuse()
+  owner=pwd.getpwnam(vp['owner'])
+  if variant=='checkout' and owner.pw_name!=username:refuse('tool.vp_scope_conflict')
+  if not owner.pw_uid or not owner.pw_gid:refuse('tool.vp_scope_conflict')
+  store=vp['store']
+  if not isinstance(store,str) or not store.startswith('/') or len(store)>4096 or any(x in ('','..','.') for x in store[1:].split('/')):refuse()
+  if store not in ['/opt/orbit/vite-plus',owner.pw_dir+'/.vite-plus',owner.pw_dir+'/.local/share/vite-plus']:refuse('tool.vp_scope_conflict')
+  for path in reversed([Path(store),*Path(store).parents]):
+   st=path.lstat()
+   if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0,owner.pw_uid) or st.st_mode&0o022:refuse('tool.vp_scope_conflict')
+  for path in [Path(store),Path(store)/'bin',Path(store)/'bin/vp']:
+   st=path.lstat()
+   if st.st_uid!=owner.pw_uid or st.st_mode&0o022 or stat.S_ISLNK(st.st_mode):refuse('tool.vp_scope_conflict')
+  for version in ['vp_version','node_version','package_manager_version']:
+   if not isinstance(vp[version],str) or not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?',vp[version]):refuse()
+  manager=vp['package_manager'];pin=vp['package_manager_hash']
+  if manager not in ('npm','pnpm') or (pin is not None and (not isinstance(pin,str) or not re.fullmatch(r'sha(?:224|256|384|512)\.[a-fA-F0-9]+',pin))):refuse()
+  selector=manager+'@'+vp['package_manager_version']+('+'+pin if pin else '')
+  vp_args=[store+'/bin/vp','env','exec','--node',vp['node_version'],'--package-manager',selector]
+  env.update(VP_HOME=store)
  libc=ctypes.CDLL(None,use_errno=True)
  if libc.prctl(36,1,0,0,0)!=0 or libc.prctl(38,1,0,0,0)!=0:refuse('instance.step_start_failed')
  os.fchdir(cwd)
@@ -115,8 +142,10 @@ try:
  fcntl.fcntl(fd,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL)
  deadline=time.monotonic()+seconds
  if cancelled:refuse('operation.cancelled')
- child=subprocess.Popen(['/bin/bash','--noprofile','--norc','-p','-eu','/proc/self/fd/'+str(fd)],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,pass_fds=(fd,),start_new_session=True)
- os.close(fd)
+ script_path='/proc/'+str(os.getpid())+'/fd/'+str(fd) if vp_args else '/proc/self/fd/'+str(fd)
+ command=(vp_args+['/bin/bash'] if vp_args else ['/bin/bash'])+['--noprofile','--norc','-p','-eu',script_path]
+ child=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env,pass_fds=(fd,),start_new_session=True)
+ if vp_args is None:os.close(fd)
 except Exception:refuse('instance.step_layout_invalid')
 selector=selectors.DefaultSelector()
 for pipe in [child.stdout,child.stderr]:os.set_blocking(pipe.fileno(),False);selector.register(pipe,selectors.EVENT_READ,bytearray())
@@ -186,5 +215,6 @@ finally:
   if key.data:truncated=True
   key.fileobj.close()
  selector.close()
+if vp_args is not None:os.close(fd)
 print(json.dumps({'exit_code':130 if cancelled else 124 if timed_out else child.returncode,'timed_out':timed_out,'output_tail':output,'truncated':truncated}),flush=True)
 `;

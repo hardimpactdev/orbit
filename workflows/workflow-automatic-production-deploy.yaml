@@ -1,6 +1,6 @@
 id: 78efdd30-08ce-4ffb-a8eb-c7259c96ad24
 name: automatic-production-deploy
-description: Run production auto-deploy policy after the Gateway cutover. Discover all enabled production Instances.
+description: Run production and development automatic deployment policy after their Gateway cutovers.
 labels: { pool: services-local }
 trigger:
   schedule: 30 * * * * *
