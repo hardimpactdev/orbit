@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Actions\DatabaseServers\CreateDatabaseServerAction;
 use App\Data\DatabaseServers\CreateDatabaseServerData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
@@ -31,7 +31,6 @@ it('records a direct-only server with safe container intent and protected initia
     $operation = ($this->create)($driver);
     $server = DatabaseServer::query()->sole();
     $path = '/api/v1/direct-operations/'.$operation->id;
-    expect(app(OperationKinds::class)->definition('database_server.create'))->not->toHaveKeys(['runs', 'execution', 'completion', 'children']);
     expect($operation->lock_key)->toBeNull();
     expect($server->status->value)->toBe('provisioning');
     expect($server->process->runtime_config['environment'])->toBe([]);
@@ -39,7 +38,7 @@ it('records a direct-only server with safe container intent and protected initia
     expect($safe['driver'])->toBe($driver);
     expect($safe['initialize'])->toBe($driver !== 'redis');
     expect($safe['container_input'])->not->toHaveKey('environment');
-    expect($safe)->not->toHaveKeys(['password', 'environment', 'acl', 'payload']);
+    expect($safe)->not->toHaveKeys(['password', 'environment', 'acl', 'payload', 'agent_sha256']);
     $material = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
     expect($material['password'])->toBe($server->root_password);
     if ($driver !== 'redis') {
@@ -57,6 +56,8 @@ it('projects native server success once and refuses later private reads', functi
     $server = DatabaseServer::query()->sole();
     $path = '/api/v1/direct-operations/'.$operation->id;
     $result = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T19:00:00.000Z', 'finished_at' => '2026-10-30T19:00:01.000Z', 'result' => ['backend' => 'active']];
+    $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
+    $intent->update(['payload' => array_diff_key($intent->payload, ['commands' => true])]);
     $this->postJson($path.'/result', $result)->assertOk();
     expect($server->fresh()->status->value)->toBe('active');
     expect($server->fresh()->process->runtime_config['environment'])->toBe([]);
@@ -78,26 +79,26 @@ it('retains encrypted credentials after a bounded refusal for an explicit retry'
     $this->assertDatabaseCount('database_servers', 1);
 });
 
-it('refuses a changed server Node or foreign caller before releasing material', function (): void {
+it('keeps admitted server identity and refuses a foreign caller', function (): void {
     $operation = ($this->create)('mysql');
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertForbidden();
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     DatabaseServer::query()->sole()->update(['node_id' => $this->gateway->id]);
-    $this->getJson($path.'?run_id='.$this->runId)->assertUnprocessable();
-    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk();
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk();
 });
 
-it('refuses create and private reads while the server has a removal intent', function (): void {
+it('refuses new create admission while an existing run retains its immutable input', function (): void {
     $operation = ($this->create)('mysql');
     DatabaseServer::query()->sole()->update(['status' => 'removing']);
     expect(fn () => ($this->create)('mysql'))->toThrow(ResourceOperationException::class, 'unfinished removal intent');
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertUnprocessable();
-    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertUnprocessable();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)->assertOk();
+    $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertOk();
 });
 
-it('refuses stale open Valkey policy but records its safe failure after closure', function (): void {
+it('leaves runtime Valkey policy checks to the native workflow', function (): void {
     $initial = ($this->create)('redis');
     $initial->update(['status' => 'succeeded', 'finished_at' => now()]);
     $server = DatabaseServer::query()->sole();
@@ -105,9 +106,8 @@ it('refuses stale open Valkey policy but records its safe failure after closure'
     $operation = ($this->create)('redis');
     $server->update(['default_open' => false]);
     $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id='.$this->runId)->assertUnprocessable();
-    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertUnprocessable();
-    $this->postJson($path.'/result', ['run_id' => $this->runId, 'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z', 'status' => 'succeeded', 'result' => ['backend' => 'active']])->assertUnprocessable();
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk();
+    $this->getJson($path.'?run_id='.$this->runId)->assertJsonPath('data.input.default_open', true);
     $this->postJson($path.'/result', ['run_id' => $this->runId, 'started_at' => '2026-10-31T04:00:00.000Z', 'finished_at' => '2026-10-31T04:00:01.000Z', 'status' => 'failed', 'error_code' => 'database.server_policy_changed',
         'result' => ['error_code' => 'database.server_policy_changed']])->assertOk();
     expect($server->fresh()->default_open)->toBeFalse();

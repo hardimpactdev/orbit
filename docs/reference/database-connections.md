@@ -18,7 +18,7 @@ A Database connection is a Gateway record that describes one database: its drive
 
 ## Execution
 
-Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs the steps and reports proven results. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
+Database writes that change a Node return an [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp owns one native workflow and reports a bounded result. The Gateway records the outcome and updates domain records; it does not record step receipts or revalidate runtime effects. Public input has no agent binary pin; Swamp runs system commands directly. The CLI follows the Operation; use `--idempotency-key` to retry the same start after a lost response. List, show, tables, schema, describe, and read-only queries stay in the Gateway.
 
 Direct workflows read stored database credentials through the shared private-material API for the recorded run and owning Node. Legacy kinds still resolve their protected parameters through the old executor until their conversion. Operation projections and native history contain no passwords. Removal deletes the managed record only after the Node confirms the effect.
 
