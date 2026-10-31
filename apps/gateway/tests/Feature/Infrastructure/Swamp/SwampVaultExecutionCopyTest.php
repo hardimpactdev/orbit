@@ -3,60 +3,55 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use Illuminate\Support\Facades\Cache;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    config(['swamp.run_token' => 'synthetic-gateway.private', 'swamp.ca_path' => '/public/root.pem']);
-    $this->runner = new class implements ProcessRunner
-    {
-        public array $calls = [];
-
-        public array $values = [];
-
-        public bool $fail = false;
-
-        public function run(ProcessInvocation $invocation): CommandResult
-        {
-            $this->calls[] = $invocation;
-            $this->values[] = stream_get_contents($invocation->protectedInput->stream());
-            if ($this->fail) {
-                throw new RuntimeException($this->values[array_key_last($this->values)]);
-            }
-
-            return new CommandResult(0, '{}', '', 1, false);
-        }
-    };
-    $this->copies = new SwampVaultExecutionCopy($this->runner);
+    config(['swamp.run_token' => 'synthetic-gateway.private', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/root.pem']);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'],
+        'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    $this->copies = new SwampVaultExecutionCopy($this->socket);
 });
 
-it('pushes changed source values through native protected stdin and returns only vault key names', function (): void {
+it('pushes changed values in one authenticated native vault frame and returns only vault key names', function (): void {
     $key = 'bootstrap-identity-node-'.fake()->numberBetween(100000, 999999);
     $value = "-----BEGIN OPENSSH PRIVATE KEY-----\n".bin2hex(random_bytes(32))."\n-----END OPENSSH PRIVATE KEY-----\n";
     $reference = $this->copies->synchronize('orbit-control-inputs', $key, $value);
     expect($reference)->toBe(['vault' => 'orbit-control-inputs', 'key' => $key]);
-    expect($this->runner->values)->toBe([$value]);
-    $call = $this->runner->calls[0];
-    expect($call->arguments)->toBe(['/usr/local/bin/swamp', 'vault', 'put', 'orbit-control-inputs', $key,
-        '--server', 'wss://swamp.orbit', '--ca-cert', '/public/root.pem', '--force', '--json']);
-    expect(json_encode($call->arguments))->not->toContain($value)->not->toContain('synthetic-gateway.private');
-    expect($call->input)->toBeNull();
-    expect($call->protectedInput->__debugInfo())->toBe(['input' => '[PROTECTED]']);
+    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->socket->sent[0])->toMatchArray(['type' => 'vault.put',
+        'payload' => ['vaultName' => 'orbit-control-inputs', 'key' => $key, 'value' => $value, 'force' => true]]);
+    expect($this->socket->endpoint->address)->toBe('192.0.2.209');
+    expect($this->socket->endpoint->serverName)->toBe('swamp.orbit');
+    expect($this->socket->endpoint->caPath)->toBe('/public/root.pem');
+    expect($this->socket->endpoint->bearerToken)->toBe('synthetic-gateway.private');
+    expect($this->socket->closed)->toBeTrue();
     $this->copies->synchronize('orbit-control-inputs', $key, $value);
-    expect($this->runner->calls)->toHaveCount(1);
+    expect($this->socket->sent)->toHaveCount(1);
     $this->copies->synchronize('orbit-control-inputs', $key, $value.'changed');
-    expect($this->runner->calls)->toHaveCount(2);
+    expect($this->socket->sent)->toHaveCount(2);
     expect(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0".$key)))
         ->toBe(hash('sha256', $value.'changed'));
 });
 
-it('does not mark a refused copy synchronized and drops secret-bearing process diagnostics', function (): void {
+it('does not mark a refused or mismatched copy synchronized and drops secret-bearing diagnostics', function (string $failure): void {
     $key = 'bootstrap-identity-node-'.fake()->numberBetween(100000, 999999);
     $value = 'synthetic-private-'.bin2hex(random_bytes(32));
-    $this->runner->fail = true;
+    $this->socket->reply = static function (array $request) use ($failure, $value): array {
+        if ($failure === 'transport') {
+            throw new RuntimeException($value);
+        }
+
+        return $failure === 'forbidden'
+            ? [['type' => 'error', 'id' => $request['id'], 'code' => 'forbidden', 'message' => $value]]
+            : [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+                'vaultName' => $failure === 'vault' ? 'foreign' : $request['payload']['vaultName'],
+                'secretKey' => $failure === 'key' ? 'foreign' : $request['payload']['key'],
+                'vaultType' => $failure === 'type' ? 'foreign' : 'local_encryption',
+            ]]]];
+    };
     try {
         $this->copies->synchronize('orbit-control-inputs', $key, $value);
         test()->fail('A failed native write must refuse.');
@@ -65,18 +60,23 @@ it('does not mark a refused copy synchronized and drops secret-bearing process d
         expect((string) $error)->not->toContain($value);
         expect($error->getPrevious())->toBeNull();
     }
-    $this->runner->fail = false;
-    $this->copies->synchronize('orbit-control-inputs', $key, $value);
-    expect($this->runner->calls)->toHaveCount(2);
+    expect(Cache::get('swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0orbit-control-inputs\0".$key)))->toBeNull();
+    expect($this->socket->closed)->toBeTrue();
+})->with(['transport', 'forbidden', 'vault', 'key', 'type']);
+
+it('ignores another request response without marking the copy synchronized', function (): void {
+    $this->socket->reply = static fn (): array => [['type' => 'vault.put', 'id' => 'foreign', 'payload' => ['data' => ['vaultName' => 'orbit-control-inputs', 'secretKey' => 'key']]]];
+    expect(fn () => $this->copies->synchronize('orbit-control-inputs', 'key', 'synthetic-value'))->toThrow(ResourceOperationException::class);
+    expect($this->socket->sent)->toHaveCount(1);
 });
 
-it('refuses invalid names or credential-bearing endpoints before opening a process', function (string $vault, string $key, string $server): void {
-    config(['swamp.vault_server' => $server]);
+it('refuses invalid names or missing connection configuration before opening a socket', function (string $vault, string $key, string $address): void {
+    config(['swamp.address' => $address]);
     expect(fn () => $this->copies->synchronize($vault, $key, 'synthetic-value'))->toThrow(ResourceOperationException::class);
-    expect($this->runner->calls)->toBeEmpty();
+    expect($this->socket->sent)->toBeEmpty();
+    expect($this->socket->connections)->toBeEmpty();
 })->with([
-    ['--vault', 'key', 'wss://swamp.orbit'],
-    ['orbit-control-inputs', '--key', 'wss://swamp.orbit'],
-    ['orbit-control-inputs', 'key', 'ws://swamp.orbit'],
-    ['orbit-control-inputs', 'key', 'wss://user:password@swamp.orbit'],
+    ['--vault', 'key', '192.0.2.209'],
+    ['orbit-control-inputs', '--key', '192.0.2.209'],
+    ['orbit-control-inputs', 'key', ''],
 ]);

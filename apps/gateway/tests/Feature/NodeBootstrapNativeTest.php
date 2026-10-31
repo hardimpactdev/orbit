@@ -12,9 +12,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
@@ -35,7 +32,9 @@ beforeEach(function (): void {
     app()->instance(SshKeyProvider::class, $keys);
     $this->run = '0d363abd-ec96-4979-8866-f1c0233c576c';
     $socket = $this->socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $this->run]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fixture-token']);
 });
@@ -124,16 +123,6 @@ it('copies the probe SSH value to its fixed execution key and records names only
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
     $keys->shouldReceive('privateKeyPath')->once()->andReturn($path);
     app()->instance(SshKeyProvider::class, $keys);
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->once()->withArgs(function (ProcessInvocation $call) use ($value): bool {
-        expect($call->arguments[0])->toBe('/usr/local/bin/swamp');
-        expect(array_slice($call->arguments, 1, 4))->toBe(['vault', 'put', 'orbit-control-inputs', 'bootstrap-identity-node-'.$this->gateway->id]);
-        expect(stream_get_contents($call->protectedInput->stream()))->toBe($value);
-        expect(json_encode($call->arguments))->not->toContain($value);
-
-        return true;
-    })->andReturn(new CommandResult(0, '{}', '', 1, false));
-    app()->instance(ProcessRunner::class, $runner);
 
     try {
         $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
@@ -147,7 +136,10 @@ it('copies the probe SSH value to its fixed execution key and records names only
         expect($definition['workflow_inputs'])->toBeTrue();
         expect($definition['terminal_result'])->toBe(['job' => 'bootstrap', 'step' => 'probe-host']);
         expect($definition)->not->toHaveKey('private_material');
-        $inputs = $this->socket->sent[0]['payload']['inputs'];
+        expect($this->socket->sent[0])->toMatchArray(['type' => 'vault.put', 'payload' => [
+            'vaultName' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-'.$this->gateway->id, 'value' => $value, 'force' => true,
+        ]]);
+        $inputs = $this->socket->sent[1]['payload']['inputs'];
         expect($inputs)->toBe([
             'intent' => ['bootstrap' => $operation->input['bootstrap']],
             'execution_secrets' => $operation->input['execution_secrets'],
@@ -165,7 +157,7 @@ it('copies the probe SSH value to its fixed execution key and records names only
         $projected = app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $this->run, 'status' => 'succeeded'], $definition['terminal_result']);
         expect($projected->status)->toBe(OperationStatus::Succeeded);
         expect($this->target->fresh()->ssh_host_key)->toBe('public-fixture')->and($this->target->fresh()->user)->toBe('prior');
-        expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.run', 'workflow.history.get']);
+        expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put', 'workflow.run', 'workflow.history.get']);
     } finally {
         fclose($identity);
     }
@@ -178,9 +170,7 @@ it('refuses the probe before recording work when its execution copy cannot be pu
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
     $keys->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($identity)['uri']);
     app()->instance(SshKeyProvider::class, $keys);
-    $runner = Mockery::mock(ProcessRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(new CommandResult(1, '', 'not persisted', 1, false));
-    app()->instance(ProcessRunner::class, $runner);
+    $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'code' => 'forbidden']];
 
     try {
         expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))

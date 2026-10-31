@@ -22,9 +22,11 @@ The probe has no Gateway callback: native inputs record intent, script steps ret
 
 ## Swamp execution copies
 
-The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value through native `swamp vault put --server` with protected stdin and the existing Gateway run credential. It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value.
+The Gateway remains the source of truth for bootstrap SSH credentials. `SwampCommandStep::executionCopy` pushes a changed value inside a native `vault.put` frame over the authenticated serve WebSocket using the existing Gateway run credential. It launches no CLI and puts no value in process arguments.
 
-Live admission requires approved official remote-stdin support and an exact put/resolve policy for the bootstrap key. Official e459 lacks remote vault-put stdin; no broad vault grant or alternative transport is permitted. The GitHub App key and Orbit CA private key stay only in the Gateway.
+It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value.
+
+The server protocol works on official e459 even though its CLI refuses remote stdin. Live admission still requires approved authority for the exact bootstrap key. Native e459 uses `write` for put, delete and annotate, so a put-only decision cannot authorize that broader grant. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ### Probe workflow
 

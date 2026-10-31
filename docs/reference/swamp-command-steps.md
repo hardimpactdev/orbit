@@ -2,7 +2,7 @@
 title: "Swamp command steps"
 description: "The shared execution-copy and terminal-output contract for native command steps."
 covers:
-  - apps/gateway/app/Infrastructure/Swamp/{SwampCommandStep,SwampVaultExecutionCopy}.php
+  - apps/gateway/app/Infrastructure/Swamp/{StartSwampRun,SwampCommandStep,SwampVaultExecutionCopy}.php
 ---
 
 # Swamp command steps
@@ -11,7 +11,7 @@ Use `App\Infrastructure\Swamp\SwampCommandStep` for execution-copy references an
 
 ## Secret inputs
 
-Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper delegates to the native vault push primitive, which sends the value on stdin and retains only a synchronization digest. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
+Call `executionCopy(string $vault, string $key, string $value): array{vault:string,key:string}` when the source value changes. The value is a sensitive parameter. The helper sends one native `vault.put` request over the authenticated TLS WebSocket and retains only a synchronization digest. The value is in `payload.value`, never process arguments. It accepts only a matching vault/key acknowledgement from a `local_encryption` vault before recording synchronization. Pass the returned descriptor in `execution_secrets`; never pass a secret value in workflow inputs.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 
@@ -24,7 +24,9 @@ inputs:
 
 Swamp resolves the value. The script uses stdin or a protected config file when handing it to a tool. It must not expand a secret into `run:`, argv or shell tracing. Environment delivery does not isolate the value from the worker user: `/proc` can expose the environment.
 
-The primitive requires native remote stdin support and the exact approved vault permission. Official e459 does not accept remote vault-put stdin. That upstream gap remains blocked; the helper adds no access or runtime workaround. Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
+Official e459 accepts this server protocol even though its remote CLI refuses stdin. The request is `{type: "vault.put", id, payload: {vaultName, key, value, force: true}}`; no refresh hook is supplied. The primitive still requires approved vault authority; it adds no permission. Official e459 authorizes `write` on `vault:<name>` with the key in request context. That action also admits delete and annotate; a `methods: [put]` restriction does not narrow it because the handler supplies no method name. A put-only request does not authorize a broader write grant.
+
+Upstream fixes go through the orchestrator to Nick. Only official Swamp versions may be pinned or distributed. The GitHub App key and Orbit CA private key stay only in the Gateway.
 
 ## Terminal outputs
 
@@ -35,6 +37,8 @@ The shared subscriber calls `projectTerminal(Operation $operation, array $termin
 A `completed` event can carry a failed run status. Native `interrupted` maps to failed. A failed or cancelled run can have no selected output because the step was skipped. A successful run requires its public JSON object. Missing, mismatched or unreadable history leaves the Operation unchanged and raises `swamp.terminal_result_unavailable`; it never triggers resubmission.
 
 ### Event connection
+
+The start connection can receive `started` and a terminal event in the same message batch. After binding the confirmed root run, `StartSwampRun` sends that matching terminal event to this same helper when the family declares `terminal_result`. Unrelated requests, child runs and foreign workflows cannot supply the event. An unavailable terminal result leaves the accepted run bound and records a diagnostic without changing the start outcome or resubmitting it.
 
 Official e459 supports `run.attach` with `{runId, afterSeq}` for an active run. It returns `run.attached` and streams events on that request id. Completed runs leave the active registry, so this is not a durable subscription after completion. The shared event-connection owner must preserve the terminal event; families must not invent a polling fallback.
 
