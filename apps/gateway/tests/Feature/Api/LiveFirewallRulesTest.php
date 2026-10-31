@@ -5,11 +5,10 @@ declare(strict_types=1);
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Tests\Support\FakeAgentCommandRunner;
+use App\Models\Operation;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create([
@@ -42,7 +41,7 @@ describe('firewall:live:list', function (): void {
             'port' => '443',
             'status' => LifecycleStatus::Active,
         ]);
-        live_firewall_agent([
+        live_firewall_snapshot($this->node, [
             live_firewall_shape('orbit:public-ssh-recovery', '22', protocol: 'tcp'),
             live_firewall_shape('orbit:wireguard-members', destination: '10.44.0.3', interface: 'orbit'),
             live_firewall_shape("orbit:node:{$this->node->id}:firewall:office-web", '443', '10.6.0.0/24', protocol: 'tcp'),
@@ -78,7 +77,7 @@ describe('firewall:live:list', function (): void {
                 'port' => $port, 'protocol' => $protocol, 'interface' => null,
             ];
         }
-        live_firewall_agent($lines);
+        live_firewall_snapshot($router, $lines);
 
         $managed = $this->getJson("/api/v1/nodes/{$router->id}/managed-firewall-rules")->assertOk()->json('data');
         expect(array_slice($managed, 1))->toBe($expected);
@@ -90,16 +89,17 @@ describe('firewall:live:list', function (): void {
         $lines[2]['port'] = '54';
         $lines[2]['protocol'] = 'tcp';
         $lines[] = live_firewall_shape('orbit:router-lan-dns-tcp:999', '53', '10.20.0.99', '10.20.0.10', protocol: 'tcp');
-        live_firewall_agent($lines);
+        live_firewall_snapshot($router, $lines);
         $data = $this->getJson($url)->assertOk()->json('data');
         expect(array_column($data['live'], 'match'))->toBe(['exact', 'exact', 'drift', 'exact', 'unmanaged']);
     });
 
     it('returns no live or missing rows when UFW cannot be read', function (): void {
-        live_firewall_agent(throws: true);
+        live_firewall_snapshot($this->node, unavailable: true);
 
         $this->getJson($this->url)->assertOk()->assertJsonPath('data', [
             'backend_status' => 'unreachable',
+            'observed_at' => null,
             'live' => [],
             'missing' => [],
         ]);
@@ -115,12 +115,11 @@ describe('firewall:live:list', function (): void {
 });
 
 /** @param list<array<string, mixed>> $live */
-function live_firewall_agent(array $live = [], bool $throws = false): void
+function live_firewall_snapshot(Node $node, array $live = [], bool $unavailable = false): void
 {
-    $agents = new FakeAgentCommandRunner()->answer('firewall.inspect', $throws
-        ? static fn () => throw new RuntimeException('node unreachable')
-        : ['backend' => 'active', 'ownerships' => [], 'matches' => true, 'live' => $live]);
-    app()->instance(AgentCommandRunner::class, $agents);
+    Operation::query()->create(['kind' => 'firewall.inspect', 'target_type' => 'node_firewall', 'target_id' => $node->id,
+        'node_id' => $node->id, 'status' => $unavailable ? 'failed' : 'succeeded', 'input' => ['node_id' => $node->id],
+        'result' => $unavailable ? [] : ['backend' => 'active', 'live' => $live, 'observed_at' => '2026-10-31T10:00:01.000Z']]);
 }
 
 /** @return array<string, mixed> */

@@ -25,7 +25,7 @@ final readonly class ListLiveFirewallRulesAction
     /**
      * Live IPv4 UFW rules on the Node, classified against the desired managed set and operator records.
      *
-     * @return array{backend_status: string, live: list<array{name: string, comment: string, action: string, source: string, destination: string, port: string, protocol: string, interface: ?string, family: ?string, match: string}>, missing: list<array{name: string, comment: string, action: string, source: string, destination: string, port: string, protocol: string, interface: ?string, family: ?string, match: string}>}
+     * @return array{backend_status: string, observed_at: ?string, live: list<array{name: string, comment: string, action: string, source: string, destination: string, port: string, protocol: string, interface: ?string, family: ?string, match: string}>, missing: list<array{name: string, comment: string, action: string, source: string, destination: string, port: string, protocol: string, interface: ?string, family: ?string, match: string}>}
      */
     public function execute(Node $node): array
     {
@@ -34,6 +34,7 @@ final readonly class ListLiveFirewallRulesAction
         if ($status['backend'] !== LiveFirewallBackendStatus::Active) {
             return [
                 'backend_status' => $status['backend']->value,
+                'observed_at' => $status['observed_at'],
                 'live' => [],
                 'missing' => [],
             ];
@@ -60,6 +61,7 @@ final readonly class ListLiveFirewallRulesAction
 
         return [
             'backend_status' => LiveFirewallBackendStatus::Active->value,
+            'observed_at' => $status['observed_at'],
             'live' => array_map(
                 fn (array $row): array => $this->row(
                     $row['shape'],
