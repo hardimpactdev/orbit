@@ -2,7 +2,6 @@ import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
-import { nodeCommandLaunch } from "./node-command-launch.ts";
 import {
   movedLimits,
   proveProxyHttpMove,
@@ -1487,9 +1486,8 @@ export function analyzeYaml(
           .test(value)
       ) add("secret-argv");
       if (path.at(-1) === "run") {
-        const action = nodeCommandLaunch(value)?.action ?? value;
-        result.findings.push(...gatewayShellFindings(file, action));
-        const scripts = action.match(
+        result.findings.push(...gatewayShellFindings(file, value));
+        const scripts = value.match(
           /(?:^|[\s"'])scripts\/[A-Za-z0-9_./-]+\.(?:py|sh)\b/g,
         ) ??
           [];
@@ -1502,12 +1500,12 @@ export function analyzeYaml(
         }
         if (
           /(?:&&|\|\||;)[ \t]*(?:sudo|systemctl|apt|curl|docker|python|bash|sh)\b/
-            .test(action)
+            .test(value)
         ) add("multi-action");
         // The Python AST helper owns controls inside these same extracted bodies.
         // Do not count a tool transaction lock again as a shell token.
-        let shellControls = action;
-        for (const block of pythonHeredocs(action).reverse()) {
+        let shellControls = value;
+        for (const block of pythonHeredocs(value).reverse()) {
           const start = block.index! + block[0].indexOf("\n") + 1;
           shellControls = shellControls.slice(0, start) +
             block[2].replace(/[^\n]/g, " ") +
@@ -1522,7 +1520,7 @@ export function analyzeYaml(
         }
         const agentFindings = agentShellFindings(
           file,
-          action,
+          value,
           inventory,
         );
         result.findings.push(...agentFindings);
@@ -1816,13 +1814,6 @@ async function filesAt(ref?: string): Promise<Map<string, string>> {
   }
   return sources;
 }
-/** Inspect Python inside the validated remote action, not its local transport envelope. */
-export function inlinePythonScripts(run: string): string[] {
-  return pythonHeredocs(nodeCommandLaunch(run)?.action ?? run).map((block) =>
-    block[2]
-  );
-}
-
 let pythonAnalyzer = "bin/swamp-shape-python.py";
 async function toolFindings(
   sources: Map<string, string>,
@@ -1850,14 +1841,8 @@ async function toolFindings(
               "shape_value",
             );
             files.push([file, shell, "sh"]);
-            const proxy = nodeCommandLaunch(item);
-            if (proxy) files.push([file, proxy.action, "sh"]);
-            for (const program of inlinePythonScripts(item)) {
-              files.push([
-                file,
-                program.replace(/\$\{\{[\s\S]*?\}\}/g, "shape_value"),
-                "py",
-              ]);
+            for (const block of pythonHeredocs(shell)) {
+              files.push([file, block[2], "py"]);
             }
           } else walk(item);
         }

@@ -13,7 +13,6 @@ import {
   analyzeYaml,
   GATEWAY_PRIMITIVES,
   gatewayShellFindings,
-  inlinePythonScripts,
   isGatewayPrimitive,
   ratchet,
   SCHEMA,
@@ -817,41 +816,6 @@ Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock command
   }
 });
 
-Deno.test("shared proxy heredoc inspects only remote Python programs", () => {
-  const head =
-    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
-  assertEquals(
-    inlinePythonScripts(head + " <<'ORBIT_ACTION'\nprintf ok\nORBIT_ACTION\n"),
-    [],
-  );
-  assertEquals(
-    inlinePythonScripts(
-      head +
-        " <<'ORBIT_ACTION'\n/usr/bin/python3 - <<'PYTHON'\nprint('remote')\nPYTHON\nORBIT_ACTION\n",
-    ),
-    ["print('remote')"],
-  );
-});
-
-Deno.test("canonical proxy envelope preserves remote shell control and agent enforcement", () => {
-  const head =
-    '/usr/bin/python3 -I "${{ steps.assets.outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID"';
-  for (
-    const [body, rule] of [[
-      "while true; do printf bad; done",
-      "custom-control",
-    ], ["orbit-agent command cli.install", "agent-action"]]
-  ) {
-    const run = head + " <<'ORBIT_ACTION'\n" + body + "\nORBIT_ACTION\n";
-    const source = workflow("        run: " + JSON.stringify(run) + "\n");
-    assert(
-      analyzeYaml("workflows/proxy.yaml", source, inventory).findings.some(
-        (f) => f.rule === rule,
-      ),
-      rule,
-    );
-  }
-});
 Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
   for (
     const source of [
