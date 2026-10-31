@@ -10,6 +10,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 use Throwable;
 
@@ -27,14 +28,16 @@ final readonly class SwampCommandStep
     }
 
     /** Called by the shared native terminal subscriber, never by a family step or a poller.
-     * @param  array<string,mixed>  $terminalRun  The native event.run object.
+     * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
      * @param  array{job:string,step:string}  $selector  The fixed family terminal_result declaration.
      */
     public function projectTerminal(Operation $operation, array $terminalRun, array $selector): Operation
     {
         $direct = app(DirectOperation::class);
         $runId = $terminalRun['id'] ?? null;
-        if (! is_string($runId) || ! in_array($terminalRun['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+        $hasStatus = array_key_exists('status', $terminalRun);
+        $terminalStatuses = ['succeeded', 'failed', 'cancelled', 'interrupted'];
+        if (! is_string($runId) || ($hasStatus && ! in_array($terminalRun['status'], $terminalStatuses, true))) {
             throw $this->unavailable();
         }
         $direct->assertRun($operation, $runId);
@@ -46,7 +49,8 @@ final readonly class SwampCommandStep
         $inputs = $run['inputs'] ?? null;
         $workflow = $direct->definition($operation->kind)['workflow'] ?? throw $this->unavailable();
         if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
-            || ($run['status'] ?? null) !== $terminalRun['status'] || ! is_array($inputs)
+            || ! in_array($run['status'] ?? null, $terminalStatuses, true)
+            || ($hasStatus && $run['status'] !== $terminalRun['status']) || ! is_array($inputs)
             || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
@@ -88,11 +92,19 @@ final readonly class SwampCommandStep
         }
         $status = $run['status'] === 'interrupted' ? 'failed' : $run['status'];
 
-        return $direct->projection($operation)->apply($operation, [
-            'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
-            'error_code' => $status === 'failed' ? ($result['error_code'] ?? 'operation.native_failed') : null,
-            'result' => $result,
-        ]);
+        return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
+            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $direct->assertRun($current, $runId);
+            if ($current->status->terminal()) {
+                return $current;
+            }
+
+            return $direct->projection($current)->apply($current, [
+                'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
+                'error_code' => $status === 'failed' ? ($result['error_code'] ?? 'operation.native_failed') : null,
+                'result' => $result,
+            ]);
+        });
     }
 
     /** One request following a native terminal event. Receiving its response is not status polling.
