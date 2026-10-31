@@ -1,7 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { parentManagerAction } from "./manager_parent.ts";
-import { toolAgent } from "../tools/local.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import { toolSystem, type ToolSystemCall } from "../tools/local.ts";
 
 const parent = {
   operation_id: 91,
@@ -68,7 +67,7 @@ Deno.test("parent manager action delegates to canonical policy without another O
   });
   const node = f.calls[0].node as Record<string, unknown>;
   assertEquals(node.node_id, 9);
-  assertEquals(node.agent_sha256, parent.agent_sha256);
+  assertEquals(node.user, "orbit");
   assertEquals(node.package, "");
   assertEquals(node.tool_id, null);
   assertEquals(result.dataHandles.length, 1);
@@ -151,21 +150,24 @@ Deno.test("uncertain manager transport writes no terminal outcome", async () => 
   assertEquals(f.resources.size, 0);
 });
 
-Deno.test("parent manager action uses the canonical local sudo and admitted digest boundary", async () => {
+Deno.test("parent manager action uses the canonical native system and admitted Node boundary", async () => {
   const f = fixture();
-  const calls: NodeCall[] = [];
-  const action = parentManagerAction(toolAgent((call) => {
+  const calls: ToolSystemCall[] = [];
+  const action = parentManagerAction(toolSystem((call) => {
     calls.push(call);
     return Promise.resolve(
       call.name.endsWith("-version") ? { version: "3.0.0" } : {},
     );
   }));
   await action(input(), f.context);
-  assertEquals(calls.map((c) => [c.name, c.pin, c.sudo, c.mutates]), [
-    ["tool.materialize-composer", parent.agent_sha256, true, true],
-    ["tool.composer-version", parent.agent_sha256, false, false],
-    ["tool.composer-version", parent.agent_sha256, false, false],
-  ]);
+  assertEquals(
+    calls.map((c) => [c.name, c.node.user, c.node.node_id]),
+    [
+      ["tool.materialize-composer", "orbit", 9],
+      ["tool.composer-version", "orbit", 9],
+      ["tool.composer-version", "orbit", 9],
+    ],
+  );
 });
 
 Deno.test("cancelled parent manager action starts no local command", async () => {

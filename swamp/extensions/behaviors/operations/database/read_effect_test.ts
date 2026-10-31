@@ -6,7 +6,6 @@ for (const driver of ["mysql", "pgsql"] as const) {
   Deno.test({
     name:
       `native read-only ${driver} queries and metadata preserve row values and refuse mutation`,
-    ignore: Deno.env.get("DATABASE_READ_EFFECT_CANARY") !== "1",
     fn: async () => {
       const name = `orbit-database-read-${crypto.randomUUID()}`;
       const dir = await Deno.makeTempDir({ prefix: "database-read-" });

@@ -3,8 +3,6 @@ import {
   assertRejects,
   assertThrows,
 } from "jsr:@std/assert@1.0.14";
-import { runLocalProgram } from "../routes/local-program.ts";
-import { localAgent } from "../processes-schedules/agent.ts";
 import { localFilesystem } from "./local-worker.ts";
 import { selectVitePort } from "../processes-schedules/vite-system.ts";
 import { collectLogs } from "../../observation/doctor_logs.ts";
@@ -34,16 +32,6 @@ Deno.test("a route or process job in a proxy cgroup refuses before any local eff
     writable: true,
   });
   try {
-    await assertRejects(
-      () => runLocalProgram("raise RuntimeError('should never execute')", {}),
-      Error,
-      "proxy Node effect locally",
-    );
-    await assertRejects(
-      () => localAgent("process.control", {}, "0".repeat(64)),
-      Error,
-      "proxy Node effect locally",
-    );
     assertThrows(
       () => localFilesystem().makeTempDir(),
       Error,

@@ -4,7 +4,6 @@ import { createDatabase } from "./create.ts";
 import { destroyDatabase } from "./destroy.ts";
 import { copyMysqlClone } from "./clone_mysql.ts";
 
-const enabled = Deno.env.get("DATABASE_LOCAL_SQL_EFFECT_CANARY") === "1";
 const docker = async (...args: string[]) => {
   const result = await new Deno.Command("/usr/bin/sudo", {
     args: ["-n", "--", "/usr/bin/docker", ...args],
@@ -19,7 +18,6 @@ const docker = async (...args: string[]) => {
 Deno.test({
   name:
     "native Docker MySQL creates escaped underscore grants, copies rows and destroys only admitted databases",
-  ignore: !enabled,
   fn: async () => {
     const container = "orbit-process-2200000000-local-sql-" +
       crypto.randomUUID();
@@ -205,7 +203,6 @@ Deno.test({
 Deno.test({
   name:
     "native Docker PostgreSQL readiness, private SQL and fenced destruction work without the agent",
-  ignore: !enabled,
   fn: async () => {
     const container = "orbit-process-2200000001-local-sql-" +
       crypto.randomUUID();

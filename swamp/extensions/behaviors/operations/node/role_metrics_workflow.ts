@@ -91,9 +91,7 @@ export function roleMetricsJobs(
     steps: [{
       name: prefix + "_availability",
       ...placed("inputs.node_id"),
-      guard: expr(
-        `"${names.capture}" in steps ? steps.${names.capture}.status != "succeeded" : true`,
-      ),
+      ...(blocked ? { guard: expr(blocked) } : {}),
       task: {
         type: "assert",
         expr: `${capture}.available`,

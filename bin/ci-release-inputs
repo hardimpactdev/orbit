@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Read CI's release-input decision; never recompute a workflow run's push range."""
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+
+def selected(pages, sha):
+    runs = [run for page in pages for run in page['check_runs']
+            if run.get('name') == 'Gateway release inputs']
+    if not runs:
+        raise ValueError('CI has no Gateway release input decision for this commit')
+    if any(run.get('head_sha') != sha or run.get('app', {}).get('slug') != 'github-actions'
+           or run.get('status') != 'completed' for run in runs):
+        raise ValueError('Gateway release input checks are not complete and trusted on this commit')
+    conclusions = {run.get('conclusion') for run in runs}
+    if not conclusions <= {'success', 'skipped'}:
+        raise ValueError('Gateway release input selection failed')
+    return conclusions == {'success'}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sha', required=True)
+    parser.add_argument('--github-output', type=Path, required=True)
+    args = parser.parse_args()
+    if not re.fullmatch('[0-9a-f]{40}', args.sha):
+        parser.error('Pass a full commit SHA')
+    try:
+        value = selected(json.load(sys.stdin), args.sha)
+    except (ValueError, KeyError, TypeError) as error:
+        sys.exit(str(error))
+    with args.github_output.open('a') as output:
+        output.write(f'gateway_release={str(value).lower()}\n')
+
+
+if __name__ == '__main__':
+    main()

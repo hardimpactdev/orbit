@@ -1,4 +1,6 @@
-# orbit-swamp
+# Orbit Swamp
+
+Swamp lives in the Orbit monorepo under `swamp/`. Submit Gateway and Swamp changes in one `hardimpactdev/orbit` PR. The old `hardimpactdev/orbit-swamp` repository is frozen. Read the binding [Swamp shape guide](docs/swamp-shape.md) before changing operations.
 
 A spike to test whether [Swamp](https://swamp-club.com) can replace the
 hand-rolled orchestration in Orbit's tasks feature. It uses Orbit dependency
