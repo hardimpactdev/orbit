@@ -98,7 +98,7 @@ A Project slug update recomputes every generated development Route domain from t
 
 Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
 
-Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
+Creation reserves a `pending`, unpublished Route and starts one native Swamp workflow. Swamp prepares and publishes it before the Gateway records it active. An unchanged pending reservation can be retried. Failed or retiring Routes refuse a creation retry; their retained intent is available for explicit convergence. An unchanged active retry performs no effects and preserves its serving state even when that retry Operation fails. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`. Public Process Routes use `--process=PROCESS [--ingress=NODE] --publication=public`.
 
 ```bash
 orbit route:create 12 shop.example.test
@@ -286,7 +286,7 @@ The selected Ingress terminates public TLS with the same ACME policy and `ingres
 
 Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
 
-The Gateway sends the selected address, port, and Route domain to `route.verify-http`. The agent sends HEAD with the Route's Host header, bypasses HTTP proxies, and waits at most ten seconds. Any HTTP status proves reachability; it does not follow redirects or require application success.
+The Gateway supplies the selected address, port, Route domain and eligible managed firewall shapes to the native workflow. Swamp checks the Process Node firewall and sends HEAD from the Ingress with the Route's Host header, bypasses HTTP proxies, and waits at most ten seconds. Any HTTP status proves reachability; it does not follow redirects or require application success.
 
 It keeps the activation for retry and Doctor reports the blocked path. Orbit adds no hidden firewall opening or Process port rewrite. Use the managed [firewall commands](/cli/firewall) to allow the selected LAN source before retrying. Docker publications bypass UFW, as that page explains; this check requires recorded firewall intent and does not make UFW an isolation boundary for Docker.
 
@@ -294,7 +294,7 @@ Node convergence restores the WireGuard member rule; Ingress convergence rebuild
 
 Configuration and image updates are allowed when they preserve the Route's resolved upstream; see [Process updates](/reference/processes-and-schedules#update-in-place). The Route keeps its ID, active state, site, certificate, DNS, and firewall rules. A container replacement can briefly interrupt requests while the listener restarts. Caddy reconnects to the same upstream; no Route activation or rebuild is needed. Doctor's existing upstream check reports an unreachable listener after an update, for both public and private Process Routes.
 
-Process Route creation shares the [Process runtime lock](/reference/processes-and-schedules#locks) with updates. If an update is running, creation waits, reads the current Process, and resolves its listener again before reserving the Route. If creation reserves the Route first, an update must preserve that Route's listener.
+Process Route creation and Process updates serialize their admission transactions in the Gateway database. Creation reads and resolves the current Process listener inside that transaction. If creation reserves the Route first, an update must preserve that Route's listener.
 
 Doctor checks public Process Routes on the Ingress in the `route` family only when both Nodes are in its selected scope. Otherwise it reports nothing about that Route and does not inspect the Process Node. It checks lifecycle, reserved names, private DNS, rendered site, public certificate, forwarding from the Ingress, and both firewall ends. A missing or expiring public certificate is a certificate mismatch. An unavailable observation is an inspection failure.
 

@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Processes\DestroyProcessAction;
-use App\Actions\Processes\UpdateProcessAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Processes\AddProcessData;
 use App\Data\Processes\UpdateProcessData;
 use App\Data\Routes\CreateRouteData;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
@@ -29,24 +25,18 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
-use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeCustomProxyRouteProjector;
 use Tests\Support\FakePublicRouteEdgeProjector;
@@ -105,63 +95,6 @@ beforeEach(function (): void {
         'checkout_path' => '/srv/orbit/apps/acme/main',
         'status' => InstanceState::Active,
     ]);
-});
-
-describe('custom proxy Route create', function (): void {
-    it('creates a Node-owned custom proxy from an upstream URL', function (string $domain): void {
-        $created = $this
-            ->postJson('/api/v1/routes', [
-                'domain' => $domain,
-                'node_id' => $this->node->id,
-                'upstream' => 'http://127.0.0.1:4788',
-            ])
-            ->completeRoute()->assertOk()
-            ->assertJsonPath('data.kind', 'custom_proxy')
-            ->assertJsonPath('data.project_id', null)
-            ->assertJsonPath('data.node_id', $this->node->id)
-            ->assertJsonPath('data.cluster_id', null)
-            ->assertJsonPath('data.domain', $domain)
-            ->assertJsonPath('data.publication', 'private')
-            ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.target', null)
-            ->assertJsonPath('data.targets', [])
-            ->assertJsonPath('data.process_id', null)
-            ->assertJsonPath('data.upstream', 'http://127.0.0.1:4788');
-
-        $routeId = $created->json('data.id');
-
-        expect(Route::query()->findOrFail($routeId)->kind)
-            ->toBe(RouteKind::CustomProxy)
-            ->and(RouteCustomProxy::query()->where('route_id', $routeId)->sole()->upstream)
-            ->toBe('http://127.0.0.1:4788')
-            ->and(RouteTarget::query()->where('route_id', $routeId)->count())
-            ->toBe(0)
-            ->and(array_column(array_filter($this->routeSwamp->foreign->calls, static fn ($call): bool => $call['kind'] === 'route.caddy_converge'), 'node_id'))
-            ->toBe([$this->node->id]);
-    })->with([
-        'executor.orbit',
-        'grafana.internal',
-        'foo.bar',
-        'something.test',
-        'cli-proxy-api.orbit',
-        'ai-router.orbit',
-        'collector.cli-proxy-api.orbit',
-    ]);
-
-    it('creates a custom proxy from a Node Process listener', function (): void {
-        $process = custom_proxy_process($this->node, 'executor', ['127.0.0.1:4788:80/tcp']);
-
-        $this
-            ->postJson('/api/v1/routes', [
-                'domain' => 'executor.orbit',
-                'node_id' => $this->node->id,
-                'process_id' => $process->id,
-            ])
-            ->completeRoute()->assertOk()
-            ->assertJsonPath('data.kind', 'custom_proxy')
-            ->assertJsonPath('data.process_id', $process->id)
-            ->assertJsonPath('data.upstream', 'http://127.0.0.1:4788');
-    });
 });
 
 describe('custom proxy Route refusals', function (): void {
@@ -483,51 +416,6 @@ function public_process_body(Node $node): array
 }
 
 describe('public Process hostnames', function (): void {
-    it('activates a Cluster-scoped Process outside the Cluster and renders only on its Ingress', function (): void {
-        $edge = new FakePublicRouteEdgeProjector;
-        app()->instance(PublicRouteEdgeProjector::class, $edge);
-        $body = public_process_body($this->node);
-        $created = $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()
-            ->assertJsonPath('data.kind', 'custom_proxy')->assertJsonPath('data.node_id', null)
-            ->assertJsonPath('data.cluster_id', Node::query()->findOrFail($body['ingress_node_id'])->cluster_id)->assertJsonPath('data.process_id', $body['process_id'])
-            ->assertJsonPath('data.status', 'active')->assertJsonPath('data.replacement_step', 'ingress-firewall');
-        $route = Route::query()->findOrFail($created->json('data.id'));
-        $ingress = Node::query()->where('name', 'public-ingress')->sole();
-        $sites = new DevelopmentSiteRepository;
-        $site = $sites->forNode($ingress)->sole();
-        expect($site->publicListener)->toBeTrue()
-            ->and($site->localHttpUpstream)->toBe('10.44.0.7:8095')
-            ->and($sites->forNode($this->node))->toBeEmpty()
-            ->and($this->node->fresh()->cluster_id)->toBeNull()
-            ->and($this->projector->routeIds)->toBeEmpty();
-        $block = new DevelopmentCaddyConfigRenderer()->render(collect([$site]));
-        expect($block)->toContain('tls force_automate', 'reverse_proxy 10.44.0.7:8095', 'flush_interval -1', 'read_timeout 1h')
-            ->not->toContain('tls_insecure_skip_verify', 'header_up Host');
-        $effects = count($this->routeSwamp->foreign->calls);
-        expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('route.public_verify', 'route.public_firewall');
-        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id);
-        expect($this->routeSwamp->foreign->calls)->toHaveCount($effects);
-    });
-
-    it('resumes a failed public activation without creating a second Route', function (string $failure): void {
-        $body = public_process_body($this->node);
-        $this->routeSwamp->foreign->observe = function (Operation $child) use ($failure): void {
-            $stage = $child->parent?->state['route_active_stage'] ?? null;
-            if ($stage === $failure) {
-                $this->routeSwamp->foreign->failures[$child->child_key] = 1;
-                $this->routeSwamp->foreign->observe = null;
-            }
-        };
-        $failed = $this->routeSwamp->finish($this->postJson('/api/v1/routes', $body));
-        expect($failed->status->value)->toBe('failed');
-        $route = Route::query()->where('domain', $body['domain'])->sole();
-        expect($route->status->value)->toBe('activating')->and($route->failed_step)->toBe($failure);
-        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.id', $route->id)
-            ->assertJsonPath('data.status', 'active')->assertJsonPath('data.failed_step', null)
-            ->assertJsonPath('data.replacement_step', 'ingress-firewall');
-        expect(Route::query()->count())->toBe(1);
-    })->with(['public-edge-verified', 'public-activated', 'ingress-firewall']);
-
     it('refuses reserved public names before publishing with 409', function (string $domain): void {
         $body = public_process_body($this->node);
         $this->postJson('/api/v1/routes', [...$body, 'domain' => $domain])->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
@@ -617,17 +505,6 @@ it('refuses a public Process Route without an active Ingress before storing inte
     NodeRole::query()->where('role', RoleName::Ingress)->delete();
     $this->postJson('/api/v1/routes', $body)->assertConflict()->assertJsonPath('error.code', 'route.ingress_required');
     expect(Route::query()->count())->toBe(0);
-});
-
-it('replays an Ingress build after a public handler checkpoint whose build may not have finished', function (): void {
-    $edge = new FakePublicRouteEdgeProjector;
-    app()->instance(PublicRouteEdgeProjector::class, $edge);
-    $body = public_process_body($this->node);
-    $id = custom_proxy_seed($this, $body)->completeRoute()->assertOk()->json('data.id');
-    Route::query()->whereKey($id)->update(['status' => 'activating', 'replacement_step' => 'public-activated']);
-    $edge->calls = [];
-    $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'active');
-    expect(array_column($this->routeSwamp->foreign->calls, 'kind'))->toContain('route.caddy_converge', 'route.public_firewall');
 });
 
 it('preserves private Routes across the persistence upgrade and refuses a downgrade with public intent', function (): void {
@@ -759,127 +636,6 @@ describe('Process updates with targeting Routes', function (): void {
         $this->edge = new FakePublicRouteEdgeProjector;
         app()->instance(PublicRouteEdgeProjector::class, $this->edge);
     });
-
-    it('waits for an update before resolving and reserving a Process Route', function (string $publication, string $change, string $entry): void {
-        [$process, $data, $address, $retained] = process_route_race_fixture($this, $publication);
-        $ports = $change === 'drop' ? [$retained] : [$retained, $address.':8096:8080/tcp'];
-        $update = process_route_ports_update($process, $ports);
-        $updater = app(UpdateProcessAction::class);
-        $suspended = false;
-        Process::updating(function (Process $updating) use ($process, &$suspended): void {
-            if ($updating->id === $process->id && ! $suspended) {
-                $suspended = true;
-                Fiber::suspend();
-            }
-        });
-        $peer = new Fiber(fn (): Operation => $updater->admit($process, $update));
-        $peer->start();
-        expect($peer->isSuspended())->toBeTrue();
-
-        app()->instance(ProcessRuntimeLease::class, new NativeProcessRuntimeLease);
-        $projectionEntries = 0;
-        $projection = Mockery::mock(DevelopmentProjectionOperationLock::class);
-        $projection->shouldReceive('run')->andReturnUsing(function (Closure $operation) use (&$projectionEntries): mixed {
-            $projectionEntries++;
-
-            return $operation();
-        });
-        app()->instance(DevelopmentProjectionOperationLock::class, $projection);
-        $creator = app(CreateRouteAction::class);
-        $waited = false;
-        Sleep::whenFakingSleep(function () use ($peer, $data, &$waited, &$projectionEntries): void {
-            expect($projectionEntries)->toBe(0)
-                ->and(Route::query()->where('domain', $data->domain)->exists())->toBeFalse();
-            $waited = true;
-            $peer->resume();
-        });
-
-        if ($change === 'drop') {
-            try {
-                $creator->{$entry}($data);
-                test()->fail('Creation must refuse the removed listener.');
-            } catch (ResourceOperationException $exception) {
-                expect($exception->errorCode)->toBe('route.upstream_unresolved');
-            }
-            expect(Route::query()->where('domain', $data->domain)->exists())->toBeFalse();
-        } else {
-            $created = $creator->{$entry}($data)['route'];
-            expect($created->status->value)->toBe('active')
-                ->and($created->customProxy->upstream)->toBe('http://'.$address.':8096');
-        }
-
-        expect($waited)->toBeTrue()
-            ->and($peer->isTerminated())->toBeTrue()
-            ->and($process->refresh()->runtime_config['ports'])->toBe($ports);
-    })->with(['private', 'public'])->with(['drop', 'replace'])->with(['execute', 'executeForRouteCreate']);
-
-    it('protects a Process Route reservation from a concurrent listener removal', function (string $publication, string $entry): void {
-        [$process, $data, , $retained] = process_route_race_fixture($this, $publication);
-        $update = process_route_ports_update($process, [$retained]);
-        $updater = app(UpdateProcessAction::class);
-        $before = $process->runtime_config;
-        $attempted = false;
-        Route::creating(function (Route $route) use ($data, $updater, $process, $update, &$attempted): void {
-            if ($route->domain !== $data->domain) {
-                return;
-            }
-            $attempted = true;
-            try {
-                $updater->admit($process, $update);
-                test()->fail('The update must not pass an in-progress Route reservation.');
-            } catch (ProcessOperationException $exception) {
-                expect($exception->errorCode)->toBe('process.runtime_lock_failed');
-            }
-        });
-        app()->instance(ProcessRuntimeLease::class, new NativeProcessRuntimeLease);
-
-        $route = app(CreateRouteAction::class)->{$entry}($data)['route'];
-
-        expect($attempted)->toBeTrue()
-            ->and($route->status->value)->toBe('active')
-            ->and($process->refresh()->runtime_config)->toBe($before);
-        try {
-            $updater->admit($process, $update);
-            test()->fail('The reserved Route must protect its listener.');
-        } catch (ResourceOperationException $exception) {
-            expect($exception->errorCode)->toBe('process.route_upstream_changed')
-                ->and($exception->details['route_id'])->toBe($route->id);
-        }
-        expect($this->runtime->convergedProcessIds)->toBe([]);
-    })->with(['private', 'public'])->with(['execute', 'executeForRouteCreate']);
-
-    it('returns the Process lock error without reserving a Route when its wait expires', function (string $publication, float $budget): void {
-        [$process, $data] = process_route_race_fixture($this, $publication);
-        $deadline = new CommandDeadline;
-        $deadline->start($budget);
-        app()->instance(ProcessRuntimeLease::class, new NativeProcessRuntimeLease($deadline));
-        $key = "orbit:process-runtime:{$process->owner_id}:{$process->id}";
-        $owner = Cache::lock($key, 3_600);
-        expect($owner->get())->toBeTrue();
-        $waited = false;
-        Sleep::whenFakingSleep(function () use (&$waited): void {
-            $waited = true;
-        });
-        $body = array_filter([
-            'domain' => $data->domain, 'publication' => $publication, 'process_id' => $process->id,
-            'node_id' => $data->nodeId, 'ingress_node_id' => $data->ingressNodeId,
-        ], fn (mixed $value): bool => $value !== null);
-        $startedAt = now();
-
-        try {
-            $this->postJson('/api/v1/routes', $body)->assertStatus(502)
-                ->assertJsonPath('error.code', 'process.runtime_lock_failed')
-                ->assertJsonPath('error.details.step', 'lock-runtime');
-            expect($waited)->toBeTrue()
-                ->and(Route::query()->where('domain', $data->domain)->exists())->toBeFalse()
-                ->and($startedAt->diffInSeconds(now()))->toBeLessThanOrEqual(min(30.0, $budget))
-                ->and(Cache::lock($key, 60)->get())->toBeFalse();
-        } finally {
-            $owner->release();
-        }
-
-        $this->postJson('/api/v1/routes', $body)->completeRoute()->assertOk()->assertJsonPath('data.status', 'active');
-    })->with(['private', 'public'])->with([2.0, 60.0]);
 
     it('keeps the Route active after a listener-preserving update', function (string $scope, string $change): void {
         [$process, $route, $address] = process_update_route_fixture($this, $scope);

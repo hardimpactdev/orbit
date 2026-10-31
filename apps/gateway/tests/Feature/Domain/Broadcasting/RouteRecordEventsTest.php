@@ -58,7 +58,7 @@ describe('Route record events', function (): void {
         $data = new CreateRouteData(
             domain: 'docs.orbit',
             publication: RoutePublication::Private,
-            projectId: $this->orbitApp->id,
+
             instanceId: Instance::query()->create([
                 'project_id' => $this->orbitApp->id,
                 'node_id' => $this->node->id,
@@ -68,7 +68,7 @@ describe('Route record events', function (): void {
             ])->id,
         );
 
-        $result = app(CreateRouteAction::class)->execute($data);
+        $result = app(CreateRouteAction::class)->reserveForRouteCreate($data);
 
         expect($result['created'])->toBeTrue();
         Event::assertDispatched(
