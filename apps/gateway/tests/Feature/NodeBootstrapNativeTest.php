@@ -11,6 +11,9 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -36,7 +39,7 @@ beforeEach(function (): void {
 });
 
 it('admits first contact on its Gateway worker with exact target custody', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
+    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
     expect($operation->target_id)->toBe($this->target->id)->and($operation->node_id)->toBe($this->gateway->id);
     expect($operation->input['participant_node_ids'])->toBe([$this->gateway->id, $this->target->id]);
     expect($operation->input['private_bindings']['bootstrap_identity'])->toBe(['owner_node_id' => $this->target->id, 'read_node_ids' => [$this->gateway->id], 'write_node_ids' => []]);
@@ -50,7 +53,7 @@ it('admits first contact on its Gateway worker with exact target custody', funct
 });
 
 it('records native host observations without committing the candidate user or execution receipts', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
+    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
     $result = ['probed' => true, 'architecture' => 'x86_64', 'host_type' => 'ssh-ed25519', 'public_key' => 'AAAA', 'host_key_fingerprint' => $this->target->ssh_host_fingerprint, 'user' => 'candidate', 'bootstrap_identity' => 'discard'];
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run, 'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => $result])->assertOk();
     expect($this->target->fresh()->user)->toBe('prior')->and($this->target->fresh()->ssh_host_key)->toBe('AAAA');
@@ -60,7 +63,7 @@ it('records native host observations without committing the candidate user or ex
 });
 
 it('refuses a foreign target or credential owner before exposing the identity', function (string $change): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
+    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
     $input = $operation->input;
     if ($change === 'target') {
         $input['bootstrap']['node_id'] = $this->gateway->id;
@@ -73,7 +76,7 @@ it('refuses a foreign target or credential owner before exposing the identity', 
 
 it('refuses unavailable Gateway and unsupported bootstrap intents without recording work', function (): void {
     $this->gateway->update(['status' => LifecycleStatus::Failed]);
-    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify'))->toThrow(ResourceOperationException::class);
     expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.macos_inspect'))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe(0);
 });
@@ -103,9 +106,62 @@ it('admits the exact candidate account while preserving the stored prior identit
 });
 
 it('records empty successful observations without an empty Node write', function (): void {
-    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
+    $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_verify');
     $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run,
         'status' => 'succeeded', 'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z',
         'result' => []])->assertOk();
     expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->target->fresh()->user)->toBe('prior');
+});
+
+it('copies the probe SSH value to its fixed execution key and records names only', function (): void {
+    $identity = tmpfile();
+    $value = "-----BEGIN OPENSSH PRIVATE KEY-----\n".bin2hex(random_bytes(32))."\n-----END OPENSSH PRIVATE KEY-----\n";
+    fwrite($identity, $value);
+    $path = stream_get_meta_data($identity)['uri'];
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn($path);
+    app()->instance(SshKeyProvider::class, $keys);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->withArgs(function (ProcessInvocation $call) use ($value): bool {
+        expect($call->arguments[0])->toBe('/usr/local/bin/swamp');
+        expect(array_slice($call->arguments, 1, 4))->toBe(['vault', 'put', 'orbit-control-inputs', 'bootstrap-identity-node-'.$this->gateway->id]);
+        expect(stream_get_contents($call->protectedInput->stream()))->toBe($value);
+        expect(json_encode($call->arguments))->not->toContain($value);
+
+        return true;
+    })->andReturn(new CommandResult(0, '{}', '', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+
+    try {
+        $operation = app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe');
+        expect($operation->input['execution_secrets'])->toBe(['bootstrap_identity' => [
+            'vault' => 'orbit-control-inputs', 'key' => 'bootstrap-identity-node-'.$this->gateway->id,
+        ]]);
+        expect($operation->input)->not->toHaveKeys(['bootstrap_identity', 'private_bindings']);
+        expect(json_encode($operation->toArray()))->not->toContain($value)->not->toContain($path);
+        expect($this->target->fresh()->user)->toBe('prior');
+    } finally {
+        fclose($identity);
+    }
+});
+
+it('refuses the probe before recording work when its execution copy cannot be pushed', function (): void {
+    $identity = tmpfile();
+    fwrite($identity, 'synthetic-identity-'.bin2hex(random_bytes(32)));
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAA');
+    $keys->shouldReceive('privateKeyPath')->andReturn(stream_get_meta_data($identity)['uri']);
+    app()->instance(SshKeyProvider::class, $keys);
+    $runner = Mockery::mock(ProcessRunner::class);
+    $runner->shouldReceive('run')->once()->andReturn(new CommandResult(1, '', 'not persisted', 1, false));
+    app()->instance(ProcessRunner::class, $runner);
+
+    try {
+        expect(fn () => app(AdmitNodeBootstrapAction::class)->execute($this->target, 'node.bootstrap_probe'))
+            ->toThrow(ResourceOperationException::class);
+        expect(Operation::query()->count())->toBe(0);
+    } finally {
+        fclose($identity);
+    }
 });
