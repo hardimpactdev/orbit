@@ -44,11 +44,8 @@ final readonly class InstanceVpEnvironmentMaterial
             return [$instance, $parent, $instance->checkout_path];
         }
         $intent = InstanceDeploymentIntent::admitted($parent);
-        $path = $intent['variant'] === 'development' ? $intent['home']
-            : (InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path);
-        $sources = $intent['variant'] === 'development'
-            ? [['key' => 'source.checkout', 'name' => 'instance.checkout-development-default']]
-            : [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
+        $path = InstanceDeploymentIntent::storedRelease(InstanceExecutionEvidence::step($parent, 'source_preparation')['release'] ?? null)?->path;
+        $sources = [['key' => 'source.prepare', 'name' => 'instance.prepare-release']];
         $proven = array_any($sources, static function (array $source) use ($parent): bool {
             $run = InstanceExecutionEvidence::run($parent, $source['key']);
 
@@ -115,6 +112,12 @@ final readonly class InstanceVpEnvironmentMaterial
     public function reference(Operation $operation, VpEnvironment $environment, string $status): void
     {
         [$instance, , $path] = $this->target($operation);
+        $this->recordReference($instance, $path, $environment, $status);
+    }
+
+    /** Store public pins for a checkout already validated by its owning parent. Performs no runtime action. */
+    public function recordReference(Instance $instance, string $path, VpEnvironment $environment, string $status): void
+    {
         DB::transaction(function () use ($instance, $path, $environment, $status): void {
             DB::table('nodes')->where('id', $instance->node_id)->update(['id' => $instance->node_id]);
             $previous = $this->checkoutReferences($instance->refresh()->getAttribute('vp_environment'), $instance->checkout_path);

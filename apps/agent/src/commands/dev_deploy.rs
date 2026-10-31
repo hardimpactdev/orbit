@@ -4,7 +4,7 @@
 //! check.
 
 use super::deploy_step::{
-    run_program, with_live, Chunk, DeployStepError, Program, RunDeployStepOutput, StepCommand,
+    run_program, Chunk, DeployStepError, Program, RunDeployStepOutput, StepCommand,
 };
 use super::git_read::GitRead;
 use super::source::{
@@ -367,95 +367,6 @@ impl Command for CheckoutDefault {
     }
 }
 
-// ---- a step ------------------------------------------------------------------------------------------------------
-
-#[derive(schemars::JsonSchema, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StepInput {
-    #[serde(flatten)]
-    pub checkout: Checkout,
-    /// The step's program, which runs with `bash -eu` in the checkout.
-    pub script: String,
-    #[serde(default)]
-    pub vp_environment: Option<super::vp_store::Environment>,
-    pub step: String,
-    /// The step's own bound. At its end the step's process group stops, and the step fails with its output.
-    pub timeout_seconds: u64,
-    #[serde(default)]
-    pub operation: Option<u64>,
-    #[serde(default)]
-    pub secrets: Vec<String>,
-}
-
-/// Runs one Project step in the checkout, as this account, with the lifecycle lock held and not inherited, so a
-/// process the step leaves behind cannot refuse the next step.
-pub fn step(
-    input: &StepInput,
-    live: Option<tokio::sync::mpsc::UnboundedSender<serde_json::Value>>,
-) -> Result<RunDeployStepOutput, DevDeployError> {
-    let checkout = &input.checkout;
-    checkout.guard()?;
-    let _lock = checkout.lock()?;
-    let vp = super::deploy_step::prepare_vp(input.vp_environment.as_ref()).map_err(|_| {
-        DevDeployError::Invalid {
-            check: "the Vite+ environment is installed in its owner's store".into(),
-        }
-    })?;
-    let file = checkout.home.join(format!(
-        ".git/orbit-deploy-step.{:016x}",
-        rand::random::<u64>()
-    ));
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&file)
-        .and_then(|mut handle| handle.write_all(input.script.as_bytes()))
-        .map_err(|_| failed("write the step"))?;
-    let result = run_program(
-        &Program {
-            user: None,
-            directory: &checkout.home,
-            command: StepCommand::script(&file, vp.as_ref()),
-            step: &input.step,
-            secrets: &input.secrets,
-            environment: &BTreeMap::new(),
-            timeout: Duration::from_secs(input.timeout_seconds),
-        },
-        live,
-    );
-    let _ = fs::remove_file(&file);
-    result.map_err(|error| match error {
-        DeployStepError::StartFailed { reason } => DevDeployError::StepFailed { step: reason },
-        DeployStepError::Invalid { check } => DevDeployError::Invalid { check },
-    })
-}
-
-pub struct RunStep;
-
-impl Command for RunStep {
-    const NAME: &'static str = "instance.run-development-step";
-    const SUMMARY: &'static str =
-        "Run a development deploy step in a development default's checkout, live.";
-    const MUTATES: bool = true;
-    const TIMEOUT: Duration = Duration::from_secs(900);
-    type Input = StepInput;
-    type Output = RunDeployStepOutput;
-    type Error = DevDeployError;
-
-    fn privilege(platform: Platform) -> Option<Privilege> {
-        super::linux_only(platform, Privilege::Account)
-    }
-
-    fn target(input: &StepInput) -> Option<String> {
-        Some(format!("source:{}", input.checkout.home.display()))
-    }
-
-    fn run(input: StepInput, _: &Context) -> Result<RunDeployStepOutput, DevDeployError> {
-        with_live(input.operation, |live| step(&input, live))
-    }
-}
-
 // ---- a setup or teardown step ------------------------------------------------------------------------------------
 
 #[derive(schemars::JsonSchema, Deserialize)]
@@ -554,8 +465,7 @@ fn ci_caches(input: &LifecycleInput) -> Result<RunDeployStepOutput, DeployStepEr
     )
 }
 
-/// Runs one Project setup or teardown step with the lifecycle lock held and not inherited, as `step` runs a deploy
-/// step. Another step in the checkout refuses it at once with `instance.lifecycle_busy`.
+/// Runs one Project setup or teardown step with the lifecycle lock held and not inherited. Another step in the checkout refuses it at once with `instance.lifecycle_busy`.
 pub fn lifecycle_step(input: &LifecycleInput) -> Result<RunDeployStepOutput, DevDeployError> {
     check(
         input.checkout.is_absolute() && canonical(&input.checkout),

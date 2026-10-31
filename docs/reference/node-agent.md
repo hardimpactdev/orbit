@@ -169,6 +169,8 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
+`instance.inspect-deploy-step` is a Linux root read that checks the public Operation/run/step runner identity in `/proc`. It returns only that identity and whether the runner is gone. Hidden process visibility, unreadable or oversized data, or an incomplete scan refuses proof. It starts no process, sends no signal, and changes no Node state. Development deploy recovery uses it only after operator cancellation; absence proves no step result.
+
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. Before bootstrap records that identity, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
 ```text
@@ -305,7 +307,7 @@ Command mode currently runs as the enrolled macOS account. A future LaunchAgent 
 
 ### Live output
 
-A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner, and `instance.run-development-step` runs one development deploy step as the managed account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
+A command that runs project code can publish its output while it runs. `instance.run-deploy-step` runs one production deploy step as the Instance owner. Native Swamp development deployment uses its shared sudo runner as the configured Node account. Each step runs in its own session. When its shell ends, or at the step's `timeout_seconds`, its process group gets TERM and then KILL 100 milliseconds later, so a process the step left behind cannot hold its output or outlive it. A stopped step exits with 143.
 
 While a step runs, its command joins the operation's channel, `private-operation.{id}`, and publishes each redacted output line as a `client-output` event, as [Realtime events: Deploy step output](/reference/events#deploy-step-output) describes. `POST /api/v1/agent/broadcasting/auth` signs that channel for the agent of the Node that runs the operation, while the operation runs or waits. Publishing is best effort: when Reverb is down, the step still runs, and its result still carries the output for the record.
 

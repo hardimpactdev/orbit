@@ -820,59 +820,6 @@ fi
     }
 
     #[test]
-    fn development_steps_use_the_same_environment_and_refuse_before_writing() {
-        use crate::commands::dev_deploy::{step, Checkout, DevDeployError, StepInput};
-        let (_work, input) = deployment();
-        let home = input.home.join("releases/r1");
-        for args in [
-            vec!["init", "--quiet"],
-            vec![
-                "remote",
-                "add",
-                "origin",
-                "https://example.test/project.git",
-            ],
-        ] {
-            assert!(std::process::Command::new("git")
-                .args(args)
-                .current_dir(&home)
-                .status()
-                .unwrap()
-                .success());
-        }
-        let mut step_input = StepInput {
-            checkout: Checkout {
-                home: home.clone(),
-                repository: "https://example.test/project.git".into(),
-                instance: 1,
-            },
-            script: "npm run build -- --base=/dev/ && npm run build:ssr".into(),
-            vp_environment: input.vp_environment,
-            step: "build".into(),
-            timeout_seconds: 5,
-            operation: None,
-            secrets: vec![],
-        };
-        assert_eq!(step(&step_input, None).unwrap().exit_code, 0);
-        assert_eq!(
-            fs::read_to_string(home.join("build.log")).unwrap(),
-            "<run><build><--><--base=/dev/>\n<run><build:ssr>\n"
-        );
-        step_input.vp_environment.as_mut().unwrap().node_version = "latest".into();
-        step_input.script = "touch unexpected".into();
-        assert!(matches!(
-            step(&step_input, None),
-            Err(DevDeployError::Invalid { .. })
-        ));
-        assert!(!home.join("unexpected").exists());
-        assert!(fs::read_dir(home.join(".git")).unwrap().all(|entry| !entry
-            .unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("orbit-deploy-step.")));
-    }
-
-    #[test]
     fn refuses_bad_requirements_and_missing_runtimes_before_writing_or_running_a_step() {
         for invalid in [
             "node", "manager", "version", "hash", "path", "missing", "writable",

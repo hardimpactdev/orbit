@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  */
 final class UpCloudTaskVmImageBuild extends Model
 {
+    #[\Override]
     protected $hidden = ['bootstrap'];
 
     /** Outlasts the queued job timeout and matches the builder's running mark and sweep window. */

@@ -6,12 +6,11 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
-use Illuminate\Support\Carbon;
 
 /** Gateway pause and rollback evidence, plus retry history for development defaults. */
 final readonly class AutomaticDeployHistory
 {
-    /** The PHP runner's label, retained for development defaults and existing history. */
+    /** The retired PHP runner's label, retained for existing history. */
     public const string Trigger = 'orbit:auto-deploy';
 
     /** Automatic labels contain a colon, which a manual caller's Node name cannot contain. */
@@ -21,10 +20,6 @@ final readonly class AutomaticDeployHistory
 
     /** The error code of an automatic deployment that a pause stopped before it deployed anything. */
     public const string Paused = 'deployment.paused';
-
-    public const int MaxAttempts = 3;
-
-    public const int RetryMinutes = 10;
 
     public function __construct(private Instance $instance) {}
 
@@ -110,67 +105,5 @@ final readonly class AutomaticDeployHistory
         }
 
         return array_keys($commits);
-    }
-
-    /**
-     * Commits that may not deploy automatically until the next manual deployment.
-     *
-     * @return list<string>
-     */
-    public function blocked(): array
-    {
-        return array_keys(array_filter(
-            $this->failures(),
-            static fn (array $failure): bool => $failure['attempts'] >= self::MaxAttempts,
-        ));
-    }
-
-    /** Whether the commit failed fewer than {@see self::MaxAttempts} times and its retry is not due yet. */
-    public function backingOff(string $commit): bool
-    {
-        $failure = $this->failures()[$commit] ?? null;
-
-        if ($failure === null || $failure['attempts'] >= self::MaxAttempts) {
-            return false;
-        }
-
-        $wait = self::RetryMinutes * 2 ** ($failure['attempts'] - 1);
-
-        return $failure['last']->gt(Carbon::now()->subMinutes($wait));
-    }
-
-    /**
-     * Failed automatic development deployments since the last manual deployment, by commit.
-     *
-     * @return array<string, array{attempts: int, last: Carbon}>
-     */
-    private function failures(): array
-    {
-        $manual = InstanceDeployment::query()
-            ->where('instance_id', $this->instance->id)
-            ->where('kind', 'deploy')
-            ->where(static fn ($query) => $query->whereNotIn('triggered_by', self::Triggers)->orWhereNull('triggered_by'))
-            ->max('id');
-        $failures = [];
-
-        foreach (InstanceDeployment::query()
-            ->where('instance_id', $this->instance->id)
-            ->where('kind', 'deploy')
-            ->whereIn('triggered_by', self::Triggers)
-            ->where('status', 'failed')
-            ->whereNotNull('commit')
-            ->where(static fn ($query) => $query->whereNull('error_code')->orWhere('error_code', '!=', self::Paused))
-            ->where('id', '>', is_int($manual) ? $manual : 0)
-            ->orderBy('id')
-            ->get() as $deployment) {
-            $commit = (string) $deployment->commit;
-            $previous = $failures[$commit] ?? ['attempts' => 0];
-            $failures[$commit] = [
-                'attempts' => $previous['attempts'] + 1,
-                'last' => $deployment->finished_at ?? $deployment->started_at,
-            ];
-        }
-
-        return $failures;
     }
 }
