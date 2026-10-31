@@ -7,6 +7,7 @@ use App\Domain\Instances\Deployment\InstanceProjectionExecution;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\InstanceExecutionChildAdmission;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
+use App\Domain\Instances\StepLists\InstanceStepListExecution;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentExecution;
 use App\Domain\Operations\OperationKinds;
 
@@ -109,7 +110,18 @@ $instanceExecutionKinds = [
     'instance.run_steps' => [
         ...(OperationKinds::supports('children') ? ['admission' => InstanceExecutionChildAdmission::class] : []),
         'executor' => 'swamp',
-        'result_fields' => ['instance_id', 'outcome', 'failed_step', 'error_code', 'no_op'],
+        'execution' => InstanceStepListExecution::class,
+        'completion' => InstanceStepListExecution::class,
+        'runs' => [
+            ['transport' => 'gateway', 'name' => 'instance.step-budget', 'resumable' => true],
+            ['transport' => 'agent', 'name' => 'tool.inspect-vp-scope', 'resumable' => true, 'input_fields' => [], 'input_values' => []],
+            ['transport' => 'agent', 'name' => 'instance.run-lifecycle-step', 'input_fields' => [], 'input_values' => [],
+                'secrets' => ['program' => 'instance.step_list'], 'resumable' => false, 'uncertain_error_code' => 'deployment.interrupted'],
+            ['transport' => 'gateway', 'name' => 'instance.step-list-receipt', 'resumable' => true, 'input_fields' => ['instance_id'], 'input_values' => []],
+        ],
+        'completion_contract' => ['step' => 'lifecycle_receipt', 'transport' => 'gateway',
+            'name' => 'instance.step-list-receipt', 'result' => ['outcome' => 'succeeded']],
+        'result_fields' => ['budget_seconds', 'timeout_seconds', 'command_timeout_seconds', 'binary', 'exit_code', 'timed_out', 'instance_id', 'outcome', 'failed_step', 'error_code', 'no_op'],
     ],
 
 ];
