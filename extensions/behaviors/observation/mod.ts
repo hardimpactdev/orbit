@@ -1,9 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
-import { type Context, Globals } from "../operation-runner/mod.ts";
 import { collect, CollectionDisabled, Plan, Progress } from "./collection.ts";
 
-import { Args, ReadReceipt, Receipt } from "./contract.ts";
+import {
+  Args,
+  type Context,
+  Globals,
+  ReadReceipt,
+  Receipt,
+} from "./contract.ts";
 
 export class ObservationError extends Error {
   constructor(readonly code: string) {

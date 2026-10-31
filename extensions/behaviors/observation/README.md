@@ -17,13 +17,13 @@ Collection does not file problems. The existing hourly filing policy remains
 separate. No routine gains a secret reference or a multi-Node write child. The
 schedule is not a remote program or an unrestricted Artisan endpoint.
 
-This family uses Kit v2 E. It introduces no executing Operation kind: the secret
-references, child Operations, run allowlists and completion variants are empty.
-Shared execution primitives remain owned by lane 0d. Doctor's normal API and
-typed probes remain reads. `contract.ts` closes the response fields to status
-and integer counts. `collection.ts` types the selected resource plan. The
-existing executor request authorizer restricts every family API to the
-configured Services peer with Gateway access.
+Observation is a read and Gateway-state schedule family. It declares no
+executing Operation kind. Direct execution registration, private material and
+Node-effect workflows belong to the families that perform those writes.
+`contract.ts` defines this behavior's configuration, context and safe response
+fields without importing the removed Operation runner. `collection.ts` types the
+selected resource plan. Every family API requires the configured control-plane
+peer with Gateway access; per-Node worker enrollment grants no fleet authority.
 
 Local proof runs the focused Deno tests and the native Python test. The latter
 kills a real Swamp process after a Node read receipt, runs `run doctor --fix`,
