@@ -190,7 +190,7 @@ const github: typeof fetch = async (raw, init) => {
   return Response.json(data, { status: path === "/git/refs" ? 201 : 200 });
 };
 export function fixtureGateway(http: Http, args: DirectIntent) {
-  return new GatewayOperation(http, args, undefined, undefined, github);
+  return new GatewayOperation(http, args, undefined, github);
 }
 export function fixtureAction(secret: string, plans: OpenPlanStore) {
   return new RecipePrAction(new RecipeGitHub(secret, github), {
