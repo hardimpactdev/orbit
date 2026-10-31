@@ -53,9 +53,22 @@ final readonly class InstanceDeploymentSecrets implements OperationSecretSource
             || $admitted['node_user'] !== $instance->node->user) {
             throw $this->forbidden();
         }
+        if ($admitted['variant'] !== 'development'
+            && ($admitted['user'] !== $instance->production_user || $admitted['home'] !== $instance->production_home)) {
+            throw $this->forbidden();
+        }
         if ($parameter === 'vp_materialize' && DirectOperation::owns($operation)) {
             return new OperationSecretValue(InstanceDeploymentIntent::admitted($operation)['needs_vp']
                 ? (app(ToolManagerIntent::class)->input($instance->node, ToolManagerName::Vp)['materialize'] ?? []) : []);
+        }
+        if ($admitted['variant'] === 'development' && in_array($parameter, ['environment_material', 'definitions_material'], true)) {
+            return new OperationSecretValue([]);
+        }
+        if ($parameter === 'environment_material') {
+            return new OperationSecretValue(app(InstanceDeploymentEnvironmentMaterial::class)->read($operation));
+        }
+        if ($parameter === 'definitions_material') {
+            return new OperationSecretValue(app(InstanceRuntimeDefinitions::class)->material($operation));
         }
         if ($parameter === 'git_read') {
             $read = $this->repositories->for($instance->project->repository_url, $instance->project->source_access);

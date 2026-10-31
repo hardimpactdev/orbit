@@ -289,3 +289,51 @@ function orb225_schedule_definition(Project $project, string $name): ScheduleDef
         ],
     ]);
 }
+
+it('refuses record conflicts without adopting existing members', function (): void {
+    $worker = orb225_process_definition($this->orbitApp, 'queue', ['production'], [
+        'runtime' => 'systemd',
+        'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+    ]);
+    $scheduleDefinition = orb225_schedule_definition($this->orbitApp, 'report');
+    $candidate = orb225_process($this->candidate, 'candidate-worker', ['/usr/bin/php', 'artisan', 'queue:work']);
+    $collision = orb225_process($this->target, 'queue', ['/usr/bin/php', 'artisan', 'queue:listen']);
+    $scheduleCollision = orb225_schedule($this->target, 'report');
+
+    expect(fn () => $this->action->capture($this->target->id))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'process.name_taken');
+
+    expect($this->target->refresh()->runtime_definitions_captured_at)->toBeNull()
+        ->and($collision->refresh()->source_definition_id)->toBeNull()
+        ->and($scheduleCollision->refresh()->source_definition_id)->toBeNull();
+
+    $collision->delete();
+
+    expect(fn () => $this->action->capture($this->target->id))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.retry_conflict');
+
+    expect($this->target->refresh()->runtime_definitions_captured_at)->toBeNull()
+        ->and(Process::query()->where('owner_id', $this->target->id)->exists())->toBeFalse()
+        ->and($scheduleCollision->refresh()->source_definition_id)->toBeNull();
+
+    $scheduleCollision->delete();
+    $this->action->capture($this->target->id);
+    expect(Process::query()->where('owner_id', $this->target->id)->sole()->source_definition_id)->toBe($worker->id)
+        ->and(Schedule::query()->where('target_id', $this->target->id)->sole()->source_definition_id)->toBe($scheduleDefinition->id)
+        ->and($candidate->fresh())->not->toBeNull();
+});
+
+function orb225_schedule(Instance $instance, string $name): Schedule
+{
+    return Schedule::query()->create([
+        'target_type' => Instance::MorphAlias,
+        'target_id' => $instance->id,
+        'host_node_id' => $instance->node_id,
+        'name' => $name,
+        'calendar' => 'daily',
+        'command' => '/usr/bin/php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Disabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+}

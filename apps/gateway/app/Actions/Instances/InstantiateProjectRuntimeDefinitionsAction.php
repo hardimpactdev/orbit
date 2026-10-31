@@ -37,7 +37,8 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
         return $this->capture($instance->id);
     }
 
-    private function capture(int $instanceId): Instance
+    /** Record owned definitions inside the parent admission transaction. */
+    public function capture(int $instanceId): Instance
     {
         return DB::transaction(function () use ($instanceId): Instance {
             $instance = Instance::query()

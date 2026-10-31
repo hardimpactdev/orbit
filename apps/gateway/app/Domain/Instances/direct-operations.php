@@ -33,7 +33,8 @@ return [
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
         'projection' => InstanceDeployProjection::class,
-        'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment'],
+        'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
+            'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
     ],
     'instance.run_steps' => [
         'workflow' => 'operation-instance-setup-direct',

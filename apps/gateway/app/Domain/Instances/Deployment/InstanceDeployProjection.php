@@ -21,6 +21,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         private DirectOperation $direct,
         private InstanceDeploymentDirectInput $intent,
         private InstanceDeploymentRecorder $history,
+        private InstanceRuntimeDefinitions $members,
         private InstanceVpEnvironmentMaterial $vp,
     ) {}
 
@@ -72,8 +73,17 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             }
             if ($admitted['variant'] === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
-            } elseif ($admitted['variant'] !== 'development' && $facts['selected_release'] !== null) {
+            } elseif ($admitted['variant'] !== 'development' && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
                 $instance->update(['checkout_path' => ValidatedData::string($admitted['home']).'/releases/'.$facts['selected_release']]);
+            }
+            if (is_array($payload['environment'] ?? null)) {
+                $keys = ValidatedData::stringList($payload['environment']['keys'] ?? []);
+                sort($keys, SORT_STRING);
+                $instance->forceFill(['environment_owned_keys' => array_values(array_unique($keys)),
+                    'environment_runtime_pending_at' => null])->saveOrFail();
+            }
+            if (is_array($payload['runtime_definitions'] ?? null)) {
+                $this->members->project($locked, ValidatedData::object($payload['runtime_definitions']));
             }
             $row = InstanceDeployment::query()->where('instance_id', $instance->id)->findOrFail($historyId);
             $this->history->recordNative($row, $status, ValidatedData::nullableString($data['error_code'] ?? null), $facts);
