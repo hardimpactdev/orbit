@@ -19,7 +19,7 @@ final readonly class HorizonOperation implements DirectOperationProjection
 
     public function input(Operation $operation): array
     {
-        return $operation->input;
+        return ['intent' => $operation->input, 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation

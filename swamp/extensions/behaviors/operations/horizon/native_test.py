@@ -28,7 +28,7 @@ class HorizonInlineNative(NativeTestCase):
         self.analyzer.write_text('#!/bin/sh\nexit 0\n')
         self.analyzer.chmod(0o755)
         self.php = self.repo / 'php-fixture'
-        self.php.write_text('#!/bin/sh\nprintf "terminated\\n"\n')
+        self.php.write_text('#!/usr/bin/python3\nfrom pathlib import Path\nPath('+repr(str(self.repo/'horizon-terminated'))+').write_text("terminated")\n')
         self.php.chmod(0o755)
         (self.repo/'host-state.json').write_text(json.dumps({'active':False,'calls':[]}))
         text = (ROOT/'workflows/workflow-operation-process-horizon-handoff.yaml').read_text()
@@ -45,7 +45,7 @@ class HorizonInlineNative(NativeTestCase):
                 step.pop('labels',None)
         (self.repo/'workflows/workflow-operation-process-horizon-handoff.yaml').write_text(yaml.safe_dump(workflow,sort_keys=False))
         self.content='[Unit]\nX-Orbit-Process-ID=8\n[Service]\nExecStart=/usr/bin/true\n'
-        self.inputs={'operation_id':17,'node_id':9,'kind':'process.horizon_handoff','intent':{
+        self.inputs={'operation_id':17,'node_id':9,'kind':'process.horizon_handoff','execution_secrets':{},'intent':{
             'process_id':8,'unit':'orbit-process-8-horizon.service','content':self.content,'content_hash':hashlib.sha256(self.content.encode()).hexdigest(),
             'command':[str(self.php),'artisan','horizon'],'directory':str(self.repo),'user':'orbit','created':True}}
         self.unit=self.host/'etc/systemd/system/orbit-process-8-horizon.service'
@@ -79,6 +79,7 @@ class HorizonInlineNative(NativeTestCase):
         state=json.loads((self.repo/'host-state.json').read_text())
         self.assertNotIn(['daemon-reload'],state['calls'])
         self.assertFalse(any(c[0] in ['start','restart','stop'] for c in state['calls']))
+        self.assertEqual((self.repo/'horizon-terminated').read_text(), 'terminated')
 
     def test_candidate_validation_failure_never_enables_or_publishes(self):
         self.analyzer.write_text('#!/bin/sh\nexit 1\n')

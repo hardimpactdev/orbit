@@ -6,9 +6,9 @@ use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\HorizonOperation;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\RunScheduledCommand;
 use App\Jobs\TaskVms\RefreshTaskVmBaseImages;
 use App\Models\DatabaseConnection;
@@ -220,7 +221,7 @@ describe(GatewayHorizon::class, function (): void {
     });
 
     beforeEach(function (): void {
-        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+        app()->instance(WebSocketClient::class, $this->socket = new FakeRoutePublicationSocket);
         config(['swamp.run_token' => 'fixture-token']);
     });
 
@@ -233,6 +234,10 @@ describe(GatewayHorizon::class, function (): void {
             ->and($operation->node_id)->toBe($this->gateway->id)
             ->and($operation->input['command'])->toBe(['/usr/bin/php8.5', 'artisan', 'horizon'])
             ->and($operation->input['content'])->not->toContain('EnvironmentFile=')
+            ->and($this->socket->sent[0]['payload']['inputs'])->toEqual([
+                'intent' => $operation->input, 'execution_secrets' => (object) [],
+                'operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id,
+            ])
             ->and($horizon->working_directory)->toBe('/home/orbit/orbit/apps/gateway')
             ->and($horizon->desired_state)->toBe(DesiredProcessState::Running)
             ->and($horizon->status)->toBe(LifecycleStatus::Provisioning)
@@ -256,11 +261,19 @@ describe(GatewayHorizon::class, function (): void {
         $admitted = app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler);
         $operation = Operation::query()->findOrFail($admitted['operation_id']);
         $result = $status === 'succeeded' ? ['ready' => true, 'state' => 'active', 'process_id' => $operation->target_id] : [];
-        app(HorizonOperation::class)->apply($operation, [
-            'run_id' => $operation->state['swamp_run_id'], 'status' => $status,
-            'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
-            'error_code' => $status === 'failed' ? 'operation.native_failed' : null, 'result' => $result,
-        ]);
+        $runId = $operation->state['swamp_run_id'];
+        $history = ['id' => $runId, 'workflowName' => 'operation-process-horizon-handoff', 'status' => $status,
+            'inputs' => $this->socket->sent[0]['payload']['inputs'],
+            'startedAt' => now()->toISOString(), 'completedAt' => now()->toISOString(),
+            'jobs' => [['name' => 'horizon', 'steps' => [['name' => 'result',
+                ...($status === 'succeeded' ? ['outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]] : ['status' => 'skipped']),
+            ]]]],
+        ];
+        $this->socket->reply = static fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+        $selector = app(DirectOperation::class)->definition($operation->kind)['terminal_result'];
+        app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+        expect($this->socket->sent)->toHaveCount(2)
+            ->and($this->socket->sent[1]['type'])->toBe('workflow.history.get');
         $horizon = Process::query()->findOrFail($operation->target_id);
         expect($horizon->status)->toBe($status === 'succeeded' ? LifecycleStatus::Active : LifecycleStatus::Failed)
             ->and($horizon->error_code)->toBe($status === 'failed' ? 'operation.native_failed' : null)
