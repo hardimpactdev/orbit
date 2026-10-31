@@ -114,7 +114,7 @@ export function taskVmModelKeys(
   });
   return {
     type: "@nckrtl/task-vm-model-keys",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       result: {

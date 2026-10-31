@@ -38,6 +38,15 @@ admitted top-level `task_vm_id`, `model_origin`, `model_router_node_id` and
 identity before reading credentials. The same binding must hold at each guard.
 Methods neither admit another Operation nor project the parent result.
 
+CLIProxyAPI acknowledges a key-list write before it reloads its access provider.
+The locked native step allows up to two seconds for that exact postcondition:
+401 may become 200 after issue, and 200 may become 401 after revocation. It
+checks every 100 ms and honors cancellation and the parent guard before each
+read. It never repeats a mutation, retries transport or server failures, or
+accepts anonymous access. An unchanged status after the deadline fails the step.
+This verification finishes before the parent records a terminal outcome;
+resuming an already terminal Gateway Operation cannot read its private material.
+
 Pi delivery downloads the parent's admitted `pi_artifact_file`, verifies its
 SHA-256 digest and sends bounded chunks to the local native Pi receiver. The
 receiver publishes the verified cache file atomically. The next native Pi step
@@ -47,6 +56,6 @@ and digest checks stay in the canonical `pi_native.ts` implementation. Secret
 bytes travel on stdin; the command source is code-owned.
 
 The shared Gateway private-material transport and native Pi implementation are
-used directly. There is no second secret store, transfer protocol, retry loop or
-agent compatibility path. Tests exercise the real HTTP boundary, redaction,
-anchor protection, interrupted transfers and local file publication.
+used directly. There is no second secret store, transfer protocol, mutation
+retry or agent compatibility path. Tests exercise the real HTTP boundary,
+redaction, anchor protection, interrupted transfers and local file publication.

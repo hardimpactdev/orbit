@@ -160,3 +160,52 @@ Deno.test("secret-bearing malformed and oversized router replies have bounded re
     }
   }
 });
+
+Deno.test("real HTTP access-provider reload settles after its successful issue and revoke writes", async () => {
+  let keys = [anchor], access = [anchor], refreshAt = 0, mutations = 0;
+  const observed: number[] = [];
+  const server = Deno.serve(
+    { hostname: "127.0.0.1", port: 0, onListen() {} },
+    async (request) => {
+      const path = new URL(request.url).pathname;
+      const token = request.headers.get("Authorization")?.slice(7);
+      if (path === "/v0/management/api-keys" && token === management) {
+        if (request.method === "PATCH") {
+          const body = await request.json();
+          const index = keys.indexOf(body.old);
+          if (index === -1) keys.push(body.new);
+          else keys[index] = body.new;
+        } else if (request.method === "PUT") keys = await request.json();
+        if (request.method !== "GET") {
+          mutations++;
+          refreshAt = Date.now() + 150;
+        }
+        return Response.json({ "api-keys": keys });
+      }
+      if (path !== "/v1/models") return new Response("", { status: 404 });
+      if (Date.now() >= refreshAt) access = [...keys];
+      const status = token && access.includes(token) ? 200 : 401;
+      if (token === key) observed.push(status);
+      return new Response("", { status });
+    },
+  );
+  const intent = { origin: `http://127.0.0.1:${server.addr.port}` };
+  try {
+    assertEquals(await issueTaskVmModelKey(intent, guard, material), {
+      issued: true,
+    });
+    assertEquals(keys, [anchor, key]);
+    assertEquals(observed[0], 401);
+    assertEquals(observed.at(-1), 200);
+    observed.length = 0;
+    assertEquals(await revokeTaskVmModelKey(intent, guard, material), {
+      revoked: true,
+    });
+    assertEquals(keys, [anchor]);
+    assertEquals(observed[0], 200);
+    assertEquals(observed.at(-1), 401);
+    assertEquals(mutations, 2);
+  } finally {
+    await server.shutdown();
+  }
+});

@@ -322,7 +322,7 @@ Deno.test("superseded parent refuses immediately before private mutation", async
   );
   assertEquals(f.patches, []);
 });
-Deno.test("model verification failure has no bespoke retry or polling loop", async () => {
+Deno.test("model server failure is not retried", async () => {
   const f = fixture([anchor, key]);
   f.modelStatus = 503;
   await assertRejects(
@@ -397,4 +397,207 @@ Deno.test("cancelled parent performs no model API request", async () => {
     "task_vm.model_key_failed",
   );
   assertEquals(f.calls, []);
+});
+
+function verificationClock() {
+  let now = 0;
+  const pauses: number[] = [];
+  return {
+    now: () => now,
+    pauses,
+    pause: (milliseconds: number) => {
+      pauses.push(milliseconds);
+      now += milliseconds;
+      return Promise.resolve();
+    },
+  };
+}
+
+for (const action of ["issue", "revoke"] as const) {
+  Deno.test(`${action} waits for the acknowledged router access reload without repeating the write`, async () => {
+    const f = fixture(action === "issue" ? [anchor] : [anchor, key]);
+    const time = verificationClock();
+    let checks = 0;
+    const request: typeof fetch = (url, options) => {
+      if (
+        String(url).endsWith("/v1/models") &&
+        new Headers(options?.headers).get("Authorization") === `Bearer ${key}`
+      ) {
+        checks++;
+        if (checks <= 2) {
+          return Promise.resolve(
+            new Response("", { status: action === "issue" ? 401 : 200 }),
+          );
+        }
+      }
+      return f.request(url, options);
+    };
+    const call = action === "issue"
+      ? issueTaskVmModelKey
+      : revokeTaskVmModelKey;
+    assertEquals(
+      await call(input, async () => {}, material, undefined, request, time),
+      action === "issue"
+        ? { issued: true as const }
+        : { revoked: true as const },
+    );
+    assertEquals(time.pauses, [100, 100]);
+    assertEquals(checks, 3);
+    assertEquals(f.patches.length + f.puts.length, 1);
+    assertEquals(f.keys, action === "issue" ? [anchor, key] : [anchor]);
+  });
+}
+
+Deno.test("persistent old access status fails after the two-second budget with no second mutation", async () => {
+  for (const action of ["issue", "revoke"] as const) {
+    const f = fixture(action === "issue" ? [anchor] : [anchor, key]);
+    const time = verificationClock();
+    let checks = 0;
+    const request: typeof fetch = (url, options) => {
+      if (
+        String(url).endsWith("/v1/models") &&
+        new Headers(options?.headers).get("Authorization") === `Bearer ${key}`
+      ) {
+        checks++;
+        return Promise.resolve(
+          new Response("", { status: action === "issue" ? 401 : 200 }),
+        );
+      }
+      return f.request(url, options);
+    };
+    const call = action === "issue"
+      ? issueTaskVmModelKey
+      : revokeTaskVmModelKey;
+    await assertRejects(
+      () => call(input, async () => {}, material, undefined, request, time),
+      Error,
+      "task_vm.model_key_failed",
+    );
+    assertEquals(time.now(), 2000);
+    assertEquals(checks, 20);
+    assertEquals(f.patches.length + f.puts.length, 1);
+  }
+});
+
+Deno.test("non-reload HTTP responses and transport failures fail immediately", async () => {
+  for (const code of [403, 429, 500, 503, null]) {
+    const f = fixture();
+    const time = verificationClock();
+    let checks = 0;
+    const request: typeof fetch = (url, options) => {
+      if (
+        String(url).endsWith("/v1/models") &&
+        new Headers(options?.headers).get("Authorization") === `Bearer ${key}`
+      ) {
+        checks++;
+        if (code === null) return Promise.reject(new Error(management));
+        return Promise.resolve(new Response("", { status: code }));
+      }
+      return f.request(url, options);
+    };
+    await assertRejects(
+      () =>
+        issueTaskVmModelKey(
+          input,
+          async () => {},
+          material,
+          undefined,
+          request,
+          time,
+        ),
+      Error,
+      "task_vm.model_key_failed",
+    );
+    assertEquals(time.pauses, []);
+    assertEquals(checks, 1);
+    assertEquals(f.patches.length, 1);
+  }
+});
+
+Deno.test("cancellation and a superseded guard stop the next access reload read", async () => {
+  for (const cancel of [true, false]) {
+    const f = fixture();
+    const time = verificationClock();
+    const controller = new AbortController();
+    let checks = 0, superseded = false;
+    const request: typeof fetch = (url, options) => {
+      if (
+        String(url).endsWith("/v1/models") &&
+        new Headers(options?.headers).get("Authorization") === `Bearer ${key}`
+      ) {
+        checks++;
+        return Promise.resolve(new Response("", { status: 401 }));
+      }
+      return f.request(url, options);
+    };
+    const clock = {
+      now: time.now,
+      pause: (ms: number) => {
+        if (cancel) controller.abort(new Error(management));
+        else superseded = true;
+        return time.pause(ms);
+      },
+    };
+    const guard = () =>
+      superseded ? Promise.reject(new Error(key)) : Promise.resolve();
+    await assertRejects(
+      () =>
+        issueTaskVmModelKey(
+          input,
+          guard,
+          material,
+          controller.signal,
+          request,
+          clock,
+        ),
+      Error,
+      "task_vm.model_key_failed",
+    );
+    assertEquals(checks, 1);
+    assertEquals(f.patches.length, 1);
+  }
+});
+
+Deno.test("a newly repaired anchor may settle but anonymous access never gets a grace period", async () => {
+  const f = fixture([]);
+  const time = verificationClock();
+  let checks = 0;
+  const request: typeof fetch = (url, options) => {
+    if (
+      String(url).endsWith("/v1/models") &&
+      new Headers(options?.headers).get("Authorization") ===
+        `Bearer ${anchor}` &&
+      ++checks === 1
+    ) {
+      return Promise.resolve(new Response("", { status: 401 }));
+    }
+    return f.request(url, options);
+  };
+  await issueTaskVmModelKey(
+    input,
+    async () => {},
+    material,
+    undefined,
+    request,
+    time,
+  );
+  assertEquals(time.pauses, [100]);
+  const open = fixture();
+  open.anonymous = 200;
+  const openTime = verificationClock();
+  await assertRejects(
+    () =>
+      issueTaskVmModelKey(
+        input,
+        async () => {},
+        material,
+        undefined,
+        open.request,
+        openTime,
+      ),
+    Error,
+    "task_vm.model_key_failed",
+  );
+  assertEquals(openTime.pauses, []);
+  assertEquals(open.patches, []);
 });

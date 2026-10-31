@@ -20,6 +20,15 @@ const Private = z.object({
   }),
 }).refine((input) => input.model_key !== input.model_router.anchor_key);
 const failed = () => new Error("task_vm.model_key_failed");
+type Clock = {
+  now: () => number;
+  pause: (milliseconds: number) => Promise<void>;
+};
+const clock: Clock = {
+  now: () => performance.now(),
+  pause: (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+};
 
 /** Keys stay inside the private callback. The owning native step supplies retry policy. */
 async function modelKey(
@@ -29,6 +38,7 @@ async function modelKey(
   privateMaterial: Material,
   signal: AbortSignal | undefined,
   fetcher: typeof fetch,
+  time: Clock,
 ): Promise<void> {
   try {
     const input = ModelKeyInput.parse(raw);
@@ -41,9 +51,15 @@ async function modelKey(
         path: "/v0/management/api-keys" | "/v1/models",
         token: string,
         body?: { old: string; new: string } | string[],
+        deadline?: number,
       ) => {
         signal?.throwIfAborted();
         await guard();
+        const remaining = deadline === undefined
+          ? 5000
+          : Math.min(5000, deadline - time.now());
+        if (remaining <= 0) throw failed();
+        const timeoutMs = Math.max(1, Math.floor(remaining));
         return await fetcher(origin + path, {
           method: body === undefined
             ? "GET"
@@ -58,8 +74,8 @@ async function modelKey(
           ...(body ? { body: JSON.stringify(body) } : {}),
           redirect: "error",
           signal: signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
-            : AbortSignal.timeout(5000),
+            ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+            : AbortSignal.timeout(timeoutMs),
         });
       };
       const keys = async () => {
@@ -105,10 +121,32 @@ async function modelKey(
         await response.body?.cancel();
         if (response.status !== 200) throw failed();
       };
-      const status = async (token: string, expected: 200 | 401) => {
-        const response = await request("/v1/models", token);
-        await response.body?.cancel();
-        if (response.status !== expected) throw failed();
+      const status = async (
+        token: string,
+        expected: 200 | 401,
+        settle = false,
+      ) => {
+        const deadline = time.now() + 2000;
+        for (;;) {
+          const remaining = settle ? deadline - time.now() : 5000;
+          if (remaining <= 0) throw failed();
+          const response = await request(
+            "/v1/models",
+            token,
+            undefined,
+            settle ? deadline : undefined,
+          );
+          await response.body?.cancel();
+          if (response.status === expected) return;
+          // Only the old access-provider answer may settle after a successful list update.
+          if (!settle || response.status !== (expected === 200 ? 401 : 200)) {
+            throw failed();
+          }
+          signal?.throwIfAborted();
+          const left = deadline - time.now();
+          if (left <= 0) throw failed();
+          await time.pause(Math.min(100, left));
+        }
       };
       const initial = await keys();
       if (!initial.includes(router.anchor_key)) {
@@ -121,7 +159,11 @@ async function modelKey(
       if (JSON.stringify(anchored) !== JSON.stringify(expectedAnchor)) {
         throw failed();
       }
-      await status(router.anchor_key, 200);
+      await status(
+        router.anchor_key,
+        200,
+        !initial.includes(router.anchor_key),
+      );
       await status("", 401);
       const before = await keys();
       if (!before.includes(router.anchor_key)) throw failed();
@@ -131,7 +173,7 @@ async function modelKey(
         ? present ? before : [...before, key]
         : before.filter((value) => value !== key);
       if (action === "revoke" && present) {
-        // The parent serializes router-key steps. PUT removes duplicates without URL secrets or empty PATCH tombstones.
+        // The shared behavior lock serializes router keys. PUT removes duplicates without URL secrets or empty PATCH tombstones.
         const response = await request(
           "/v0/management/api-keys",
           router.management_key,
@@ -145,7 +187,7 @@ async function modelKey(
         !final.includes(router.anchor_key) ||
         JSON.stringify(final) !== JSON.stringify(expected)
       ) throw failed();
-      await status(key, action === "issue" ? 200 : 401);
+      await status(key, action === "issue" ? 200 : 401, true);
       await status(router.anchor_key, 200);
       await status("", 401);
     });
@@ -161,8 +203,9 @@ export async function issueTaskVmModelKey(
   privateMaterial: Material,
   signal?: AbortSignal,
   request: typeof fetch = fetch,
+  time: Clock = clock,
 ): Promise<{ issued: true }> {
-  await modelKey(input, "issue", guard, privateMaterial, signal, request);
+  await modelKey(input, "issue", guard, privateMaterial, signal, request, time);
   return { issued: true };
 }
 
@@ -172,7 +215,16 @@ export async function revokeTaskVmModelKey(
   privateMaterial: Material,
   signal?: AbortSignal,
   request: typeof fetch = fetch,
+  time: Clock = clock,
 ): Promise<{ revoked: true }> {
-  await modelKey(input, "revoke", guard, privateMaterial, signal, request);
+  await modelKey(
+    input,
+    "revoke",
+    guard,
+    privateMaterial,
+    signal,
+    request,
+    time,
+  );
   return { revoked: true };
 }
