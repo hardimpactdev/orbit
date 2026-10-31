@@ -1,11 +1,8 @@
 """Router LAN transactions reuse the shared UFW engine and preserve foreign rules."""
 import json,pathlib,re,unittest
 HERE=pathlib.Path(__file__).parent
-BASE=(HERE/'firewall-command/scripts/firewall.py').read_text()
-EXT=(HERE/'firewall-command/scripts/router_lan.py').read_text().split('def main(value):')[0].replace('import firewall as engine','')
-EXT=re.sub(r'^from firewall import \([\s\S]*?^\)', '', EXT, flags=re.M)
-EXT=re.sub(r'^from firewall import .*$', '', EXT, flags=re.M)
-
+BASE=(HERE/'firewall-program.ts').read_text().split('.raw`',1)[1].rsplit('`;',1)[0]
+EXT=re.search(r'String.raw`(.*?)`;', (HERE/'router-lan.ts').read_text(),re.S)[1]
 class RouterLanTest(unittest.TestCase):
     def setUp(self):
         self.ns={'__name__':'fixture'};exec(BASE+EXT,self.ns);self.rows=[];self.calls=[];self.fail=None

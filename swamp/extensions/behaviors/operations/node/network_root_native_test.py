@@ -17,14 +17,11 @@ from native_harness import NativeTestCase
 class NetworkNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        shared=self.repo/"extensions/behaviors/operations/routes/firewall-command"
-        shared.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copytree(ROOT/"extensions/behaviors/operations/routes/firewall-command",shared)
         self.secrets = (base64.b64encode(uuid.uuid4().bytes + uuid.uuid4().bytes).decode(),)
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         self.copy_behaviors('operations/node-bootstrap')
         ops = self.repo / 'extensions/behaviors/operations'
-        routes = ops / 'routes'; routes.mkdir(exist_ok=True)
+        routes = ops / 'routes'; routes.mkdir()
         for name in ['firewall-local.ts', 'firewall-program.ts', 'local-program.ts', 'router-lan.ts']:
             shutil.copy(ROOT / 'extensions/behaviors/operations/routes' / name, routes / name)
         node = ops / 'node'; node.mkdir()

@@ -12,9 +12,6 @@ from native_harness import NativeTestCase
 class RemovalNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        shared=self.repo/"extensions/behaviors/operations/routes/firewall-command"
-        shared.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copytree(ROOT/"extensions/behaviors/operations/routes/firewall-command",shared)
         self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/php')
         route = self.repo / 'extensions/behaviors/operations/routes'
         route.mkdir(parents=True)
