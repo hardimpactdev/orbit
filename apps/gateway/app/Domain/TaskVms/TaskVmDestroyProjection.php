@@ -85,7 +85,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $this->nodes->remove(ValidatedData::object($canonicalInput['node_removal']));
             $vm->refresh();
         }
-        $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null,
+        $vm->update(['state' => TaskVmState::Destroyed, 'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null, 'provider_bootstrap' => null,
             'worker_stop_required' => false, 'error_code' => null, 'error_message' => null, ...$vm::ForgetTopology]);
 
         return $vm;

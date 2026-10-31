@@ -225,6 +225,8 @@ it('routes the normal lifecycle entry to one direct destroy root without changin
 });
 
 it('projects native terminal status with only its bounded VM changes', function (string $status): void {
+    $bootstrap = ['private' => 'staged-provider-private-key', 'public' => 'staged-provider-public-key'];
+    $this->vm->update(['provider_bootstrap' => $bootstrap]);
     $operation = savedDestroyIntent();
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $operation->update(['state' => ['swamp_run_id' => $run]]);
@@ -238,4 +240,5 @@ it('projects native terminal status with only its bounded VM changes', function 
     expect($operation->fresh()->status->value)->toBe($status);
     expect($this->vm->fresh()->state->value)->toBe($status === 'succeeded' ? 'destroyed' : 'failed');
     expect($this->vm->fresh()->pi_token)->toBe($status === 'succeeded' ? null : 'private-pi-token');
+    expect($this->vm->fresh()->provider_bootstrap)->toBe($status === 'succeeded' ? null : $bootstrap);
 })->with(['succeeded', 'failed', 'cancelled']);
