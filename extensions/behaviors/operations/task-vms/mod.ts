@@ -11,7 +11,6 @@ import { Completion, invocationFor, leafKinds } from "./contract.ts";
 import { ChildIntent, FamilyDriver, FamilyWaiting } from "./driver.ts";
 import { prepareRuntime, RuntimeInput } from "./runtime.ts";
 import { lifecycle, LifecycleInput } from "./lifecycle.ts";
-import { buildImage, ImageInput } from "./images.ts";
 import { buildUpCloudImage, UpCloudImageInput } from "./upcloud-images.ts";
 
 export function taskVms(
@@ -72,7 +71,6 @@ export function taskVms(
               "task_vm.resume",
               "task_vm.park",
               "task_vm.destroy",
-              "task_vm.image_build",
               "task_vm.upcloud_image_build",
             ],
           ),
@@ -171,13 +169,10 @@ export function taskVms(
             ].includes(operation.kind)
             ? LifecycleInput.parse(operation.input)
             : null;
-          const image = operation.kind === "task_vm.image_build"
-            ? ImageInput.parse(operation.input)
-            : null;
           const upcloudImage = operation.kind === "task_vm.upcloud_image_build"
             ? UpCloudImageInput.parse(operation.input)
             : null;
-          const invocation = runtime || life || image || upcloudImage
+          const invocation = runtime || life || upcloudImage
             ? null
             : invocationFor(operation.kind, operation.input);
           if (runtime && runtime.node_id !== operation.node_id) {
@@ -230,12 +225,12 @@ export function taskVms(
           try {
             let completion: z.infer<typeof Completion>;
             if (
-              runtime || life || image || upcloudImage
+              runtime || life || upcloudImage
             ) {
               const driver = new FamilyDriver(
                 operation.id,
                 args.worker,
-                (runtime ?? life ?? image ?? upcloudImage)!
+                (runtime ?? life ?? upcloudImage)!
                   .deadline_at,
                 ctx,
                 makeHttp(ctx),
@@ -268,8 +263,6 @@ export function taskVms(
                       ? await prepareRuntime(runtime, driver)
                       : upcloudImage
                       ? await buildUpCloudImage(upcloudImage, driver)
-                      : image
-                      ? await buildImage(image, driver)
                       : await lifecycle(operation.kind, life!, driver),
                     error_code: null,
                   };

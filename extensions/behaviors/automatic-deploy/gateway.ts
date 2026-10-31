@@ -512,6 +512,47 @@ export class GatewayClient implements Gateway {
 }
 
 /** Services' WireGuard peer provides authority. TLS uses Orbit's root CA; no bearer identity is invented. */
+/** Binary private-material replies must declare and respect the shared artifact bound. */
+export async function boundedArtifactResponse(
+  response: globalThis.Response,
+): Promise<Uint8Array> {
+  const length = response.headers.get("Content-Length");
+  const maximum = 268435456;
+  if (
+    response.status !== 200 || !length || !/^[1-9][0-9]*$/.test(length) ||
+    Number(length) > maximum || !response.body
+  ) {
+    await response.body?.cancel();
+    throw new Error("Invalid bounded artifact response");
+  }
+  const chunks: Uint8Array[] = [];
+  const reader = response.body.getReader();
+  let size = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value.length;
+      if (size > Number(length)) {
+        throw new Error("Artifact exceeds declared size");
+      }
+      chunks.push(part.value);
+    }
+    if (size !== Number(length)) {
+      throw new Error("Incomplete artifact response");
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
 export function gatewayHttp(
   url: string,
   caFile: string,
@@ -537,7 +578,13 @@ export function gatewayHttp(
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      return { status: response.status, body: await response.json() };
+      return {
+        status: response.status,
+        body: response.headers.get("Content-Type")?.split(";")[0] ===
+            "application/octet-stream"
+          ? await boundedArtifactResponse(response)
+          : await response.json(),
+      };
     } finally {
       client.close();
     }
