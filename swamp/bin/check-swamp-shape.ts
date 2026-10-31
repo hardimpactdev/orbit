@@ -46,6 +46,8 @@ type Analysis = {
   types: string[];
   workflowNames: string[];
   workflowRefs: string[];
+  modelNames: string[];
+  modelRefs: string[];
   inlineLines: number;
   loops: number;
   agentActions: number;
@@ -57,6 +59,8 @@ const empty = (): Analysis => ({
   types: [],
   workflowNames: [],
   workflowRefs: [],
+  modelNames: [],
+  modelRefs: [],
   inlineLines: 0,
   loops: 0,
   agentActions: 0,
@@ -1602,6 +1606,20 @@ export function analyzeYaml(
     }
   };
   walk(data, []);
+  if (file.startsWith("models/")) {
+    result.modelNames = [data.id, data.name].filter((
+      value,
+    ): value is string => typeof value === "string" && value.length > 0);
+    if (
+      typeof data.type === "string" && data.type.startsWith("@") &&
+      !/\$\{\{|\}\}/.test(data.type)
+    ) {
+      result.types.push(data.type);
+    } else if (data.type !== "command/shell") {
+      add("unknown-behavior");
+      result.unknown = true;
+    }
+  }
   if (file.startsWith("workflows/")) {
     result.workflowNames = [data.id, data.name].filter((
       value,
@@ -1636,7 +1654,14 @@ export function analyzeYaml(
         const type = task.behaviorType ?? task.modelType ??
           (["behavior", "model_method"].includes(String(task.type)) &&
             (task.behavior ?? task.modelIdOrName));
-        if (typeof type === "string" && type.startsWith("@")) {
+        if (
+          task.type === "model_method" && !task.modelType &&
+          typeof task.modelIdOrName === "string" &&
+          task.modelIdOrName.length > 0 &&
+          !/\$\{\{|\}\}/.test(task.modelIdOrName)
+        ) {
+          result.modelRefs.push(task.modelIdOrName);
+        } else if (typeof type === "string" && type.startsWith("@")) {
           result.types.push(type);
         } else if (
           ["behavior", "model_method"].includes(String(task.type)) &&
@@ -2028,12 +2053,30 @@ export function analyze(
     }
   }
   const workflows = new Map<string, string[]>();
+  const models = new Map<string, string[]>();
   for (const [file, a] of analyses) {
     for (const name of a.workflowNames) {
       workflows.set(name, [...new Set([...(workflows.get(name) ?? []), file])]);
     }
+    for (const name of a.modelNames) {
+      models.set(name, [...new Set([...(models.get(name) ?? []), file])]);
+    }
   }
   for (const [file, a] of analyses) {
+    for (const reference of a.modelRefs) {
+      const matches = models.get(reference) ?? [];
+      if (matches.length === 1) a.imports.push(matches[0]);
+      else {
+        a.unknown = true;
+        a.findings.push({
+          file,
+          rule: "unknown-behavior",
+          count: 1,
+          line: 1,
+          evidence: [reference],
+        });
+      }
+    }
     for (const reference of a.workflowRefs) {
       const matches = workflows.get(reference) ?? [];
       if (matches.length === 1) a.imports.push(matches[0]);

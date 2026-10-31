@@ -959,6 +959,70 @@ Deno.test("static native child workflows are scanned through their local source 
   assertEquals(workflowCoverage(unresolvedBehavior).unknown, 2);
 });
 
+Deno.test("named native models resolve by name or id and retain their source findings", () => {
+  const id = "2175a31b-0f01-4715-bada-683a46696388";
+  const model = (run = "true") =>
+    `id: ${id}\nname: cleanup\ntype: 'command/shell'\nversion: 1\nglobalArguments:\n  run: ${
+      JSON.stringify(run)
+    }\n`;
+  const parent = (reference: string) =>
+    `name: parent\njobs:\n- steps:\n  - task:\n      type: model_method\n      modelIdOrName: ${
+      JSON.stringify(reference)
+    }\n      methodName: execute\n`;
+  for (const reference of ["cleanup", id]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["models/command/shell/cleanup.yaml", model()],
+    ]);
+    const clean = analyze(sources, inventory);
+    assertEquals(clean.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(workflowCoverage(clean).clean, 1);
+    sources.set(
+      "models/command/shell/cleanup.yaml",
+      model("orbit-agent command cli.install"),
+    );
+    assertEquals(
+      workflowCoverage(analyze(sources, inventory)).baseline_accepted,
+      1,
+    );
+    sources.set(
+      "models/command/shell/cleanup.yaml",
+      model().replace("command/shell", "@swamp/cfgmgmt/file"),
+    );
+    const official = analyze(sources, inventory);
+    assertEquals(official.get("workflows/parent.yaml")!.findings, []);
+    assertEquals(official.get("models/command/shell/cleanup.yaml")!.types, [
+      "@swamp/cfgmgmt/file",
+    ]);
+  }
+  for (const reference of ["missing", "${{ inputs.model }}", "cleanup"]) {
+    const sources = new Map([
+      ["workflows/parent.yaml", parent(reference)],
+      ["models/command/shell/cleanup.yaml", model()],
+      ["models/command/shell/duplicate.yaml", model()],
+    ]);
+    const result = analyze(sources, inventory).get(
+      "workflows/parent.yaml",
+    )!;
+    assert(result.unknown);
+    assert(
+      result.findings.some((finding) => finding.rule === "unknown-behavior"),
+    );
+  }
+  for (const type of [undefined, "unsupported/custom", "${{ inputs.kind }}"]) {
+    const definition = type === undefined
+      ? model().replace("type: 'command/shell'\n", "")
+      : model().replace("'command/shell'", JSON.stringify(type));
+    const result = analyze(new Map([
+      ["workflows/parent.yaml", parent("cleanup")],
+      ["models/command/shell/cleanup.yaml", definition],
+    ]), inventory);
+    assert(result.get("models/command/shell/cleanup.yaml")!.unknown);
+    assertEquals(workflowCoverage(result).unknown, 1);
+    assertEquals(workflowCoverage(result).clean, 0);
+  }
+});
+
 Deno.test("Python subprocess wrappers cannot hide sleep or workflow-lock commands", () => {
   for (
     const program of [
