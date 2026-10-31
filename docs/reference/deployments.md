@@ -695,7 +695,7 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 
 This kind has no direct workflow declaration. A stale per-kind direct-writer setting cannot start a second workflow. Its complete native cutover must replace the current dispatch and execution path in the same change.
 
-### Swamp setup and teardown steps
+## Swamp setup and teardown steps
 
 `instance.run_steps` runs every admitted Project setup or teardown list through Swamp, including lists requested by Instance lifecycle parents. The Gateway records the Node, Project, checkout, execution account, ordered command digests and complete timeouts. It validates current target and configuration on reads, and projects bounded outcomes. It keeps no PHP step executor, command budget, execution receipt or completion proof for this kind.
 
