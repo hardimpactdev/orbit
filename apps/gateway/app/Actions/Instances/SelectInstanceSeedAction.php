@@ -17,7 +17,7 @@ final readonly class SelectInstanceSeedAction
 {
     public function execute(Instance $instance): Instance
     {
-        return DB::transaction(fn (): Instance => $this->select(Instance::query()->lockForUpdate()->findOrFail($instance->id)));
+        return DB::transaction(fn (): Instance => $this->select($instance->refresh()));
     }
 
     private function select(Instance $instance): Instance

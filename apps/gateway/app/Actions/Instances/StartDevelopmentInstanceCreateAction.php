@@ -86,7 +86,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 ]);
             }
 
-            app(SelectInstanceSeedAction::class)->execute($instance);
+            $instance = app(SelectInstanceSeedAction::class)->execute($instance);
             $lists = app(StartInstanceStepListAction::class);
             $digest = static fn (LifecyclePhase $phase): string => $lists->configurationDigest($project, $phase);
 

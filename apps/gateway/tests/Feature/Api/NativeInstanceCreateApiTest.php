@@ -57,6 +57,20 @@ it('records one native root with source environment and setup steps before any N
     Queue::assertNothingPushed();
 });
 
+it('freezes the selected default source seed in the first native admission', function (): void {
+    $seed = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id,
+        'name' => 'default', 'checkout_path' => '/srv/apps/native-create/default', 'status' => 'active',
+        'branch' => 'main', 'seed_path' => '/srv/apps/native-create/default', 'seed_commit' => str_repeat('a', 40)]);
+
+    $id = $this->postJson('/api/v1/instances', $this->payload)->assertAccepted()->json('data.id');
+    $input = Operation::query()->findOrFail($id)->input;
+    expect($input['seed_repository'])->toBe($seed->checkout_path)
+        ->and($input['seed_commit'])->toBe($seed->seed_commit)
+        ->and($input['direct_provisioning']['source']['seed_repository'])->toBe($seed->checkout_path)
+        ->and($input['direct_provisioning']['setup']['execution']['seed_path'])->toBe($seed->seed_path)
+        ->and($input['direct_provisioning']['setup']['execution']['seed_commit'])->toBe($seed->seed_commit);
+});
+
 it('refuses immutable placement changes on retry', function (): void {
     $this->postJson('/api/v1/instances', $this->payload)->assertAccepted();
     $this->postJson('/api/v1/instances', [...$this->payload, 'branch' => 'other'])->assertConflict()
