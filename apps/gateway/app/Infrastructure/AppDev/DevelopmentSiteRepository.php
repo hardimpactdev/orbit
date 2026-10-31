@@ -49,6 +49,12 @@ final readonly class DevelopmentSiteRepository
         return $this->sites($node);
     }
 
+    /** Resource paths for preparing an admitted workload, before its site is published. */
+    public function workloadSite(Instance $instance, Route $route): DevelopmentSite
+    {
+        return $this->instanceSite($instance, $route);
+    }
+
     /** @return Collection<int, DevelopmentSite> */
     public function all(): Collection
     {

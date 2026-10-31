@@ -15,7 +15,7 @@ The CLI calls `POST /api/v1/instances/{instance}/transfer` and follows the retur
 
 Both Nodes must be active Linux Nodes with an active `app-dev` role and an active Cluster. The source must be an active development Instance with one authoritative Route and no removal in progress. The destination must be a different Node that the Project permits. A stored absolute destination apps path is required. Filesystem ownership, the real source Git identity and the unoccupied destination are checked by the native workers.
 
-The current native admission refuses VM placements, SQLite copies and Instances with Process or Schedule definitions. It returns `operation.kind_unavailable` before reserving or moving anything. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
+The current native admission refuses VM placements, SQLite copies and Instances with Schedule definitions. It returns `operation.kind_unavailable` before reserving or moving anything. It also refuses an unknown source profile. Existing external database bindings stay with the Instance.
 
 Each additional Route with a web root must be active and have no domain or placement change. A public web-root Route cannot move across Clusters. The Route family captures the complete primary and web-root inventory and reserves any replacement primary during admission.
 
@@ -29,7 +29,9 @@ Extraction rejects paths and links that escape the checkout. Local staging direc
 
 ## Placement and publication
 
-Swamp prepares destination certificates before cutover. The root then posts one bounded cutover callback. In one database transaction, the Gateway changes the Instance placement and then the captured Route placements. The Operation retains its truthful source Node throughout the workflow.
+Admission captures source and destination Process installation batches without account or port discovery. The destination verifies stored port intent before the source pauses. Native steps stop source Processes before the archive, install destination Processes after publication, and verify running Vite listeners before retiring source runtime. Desired stopped Processes stay stopped. Before cutover, recovery restores source runtime before discarding the destination. Installation material is readable only on its admitted Node while the stored Instance and Process paths match that placement. Account home and group resolve locally through the canonical Process installer.
+
+Swamp prepares destination certificates before cutover. The root then posts one bounded cutover callback. In one database transaction, the Gateway changes the Instance placement, relocates Process working directories and explicit environment-file paths, and changes the captured Route placements. Paths outside the source checkout refuse admission; null defaults stay null. The Operation retains its truthful source Node throughout the workflow.
 
 Workload access, PHP, environment URLs, Caddy and DNS run after cutover. They read the current stored placement through canonical Route adapters. URL material stays inside the existing private callback and preserves the archived environment. Each field belongs only to its admitted Node.
 
