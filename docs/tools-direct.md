@@ -36,7 +36,12 @@ resumed install from silent adoption. A resumed removal that is already absent
 needs no new removal plan. The before-observation and bounded outcome use native
 workflow lifetime; no external data-version pin is stored in the Gateway.
 
-Unknown action outcomes and lost projection responses escape to native recovery.
+The shared direct helper records an unknown action outcome as a bounded failure.
+Native resume reads the terminal result and does not repeat that action. A lost
+successful projection response can resume from the Gateway's recorded success.
+Each workflow also has a separate failure job on the exact root Node. It calls
+the shared failure reporter when the Tool job fails before its first callback.
+The reporter preserves an existing terminal result and performs no Tool effect.
 A terminal Gateway read avoids another action. Bounded Gateway HTTP calls do not
 inherit the workflow cancellation signal. Cancellation is checked before action;
 a started action must stop safely and retain an uncertain outcome if needed.
@@ -81,8 +86,8 @@ about 6,392 inodes/hour. Evidence is
 exact removal, incomplete inventory, manager refusal, shared API identity,
 cancellation and native reconciliation. `direct_native_test.py` exercises the
 pinned native workflow with injected Gateway/Node fixtures: all kinds, lost
-projection and uncertain install/update/remove recovery. Placement is removed
-only in a disposable checkout; fixture success is not live canary proof.
+projection, terminal uncertain outcomes and failure before the first callback.
+Placement is removed only in a disposable checkout; fixture success is not live canary proof.
 
 `system_program_test.py` covers package arguments, inventory and candidate
 parsers, exact removals, official bottles/casks, archive escapes and candidate
