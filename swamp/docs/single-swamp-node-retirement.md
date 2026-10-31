@@ -29,6 +29,8 @@ Broad scans timed out on8/9/11/13/17/209. A targeted supplement hashes installed
 
 The authenticated native read at19:10:55Z found one running `maintenance-projects` root (`84d217e8-c24a-4412-aa8a-5bfda8a270a3`),32 interrupted roots and zero suspended roots. Interrupted Doctor Operation6194/run `546a5044-d3e0-476c-9fd4-8ff1ca037a64` retains Node14. These are observations, not retirement clearance.53 schedules remain; fleet-maintenance, rotation, runtime-retention and subtasks-driver remain paused. Preserve failed history and do not resume or settle roots just to clear retirement.
 
+Lane2's separate read-only saved-record snapshot at19:15:07Z found552 durable automatic-deploy admissions,15 TaskVM reaper admissions and5 worker-rotation admissions. Its pending-ID sample is explicitly truncated. These are pending admissions, not native run IDs; the worker queue read does not cover them. Lane21 must account for the five rotations and the accepted remote installer before retirement, while Deploy2 and TaskVM owners account for their admissions. No pending records were removed.
+
 Machine-readable receipts are held by Lane21: `single-node-fleet-inventory.json`, `single-node-source-placement-inventory.json`, `single-node-active-roots.json`, worker roster/queue/token metadata and the family inventories named in the rollout receipt. Each exact selector row includes file, workflow UUID, job/step, effective target, labels and task type/method.
 
 ## Migration order and owners
