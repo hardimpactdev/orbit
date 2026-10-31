@@ -30,7 +30,6 @@ export function registerServerCreateEffect(
             );
             assertEquals(value, {
                 driver,
-                native_run: value.native_run,
                 scrubbed: true,
                 repaired: true,
             });
