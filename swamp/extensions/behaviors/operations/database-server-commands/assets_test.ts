@@ -51,15 +51,16 @@ Deno.test("server result refuses missing completion and retains bounded action r
     assertEquals(
         await result({
             completed: true,
-            steps: [{ status: "succeeded", exit_code: 0 }, {
-                status: "skipped",
-            }],
+            steps: {
+                run: { status: "succeeded", outputs: { exitCode: 0 } },
+                skip: { status: "skipped" },
+            },
         }, context),
         { stdout: '{"backend":"active"}\n', exitCode: 0 },
     );
     assertEquals(
         await result(
-            { completed: false, steps: [{ status: "skipped" }] },
+            { completed: false, steps: { run: { status: "skipped" } } },
             context,
         ),
         {
@@ -70,11 +71,16 @@ Deno.test("server result refuses missing completion and retains bounded action r
     assertEquals(
         await result({
             completed: false,
-            steps: [{
-                status: "succeeded",
-                exit_code: 1,
-                stdout: '{"error_code":"database.server_adoption_refused"}',
-            }],
+            steps: {
+                run: {
+                    status: "succeeded",
+                    outputs: {
+                        exitCode: 1,
+                        stdout:
+                            '{"error_code":"database.server_adoption_refused"}',
+                    },
+                },
+            },
         }, context),
         {
             stdout: '{"error_code":"database.server_adoption_refused"}\n',
@@ -84,11 +90,43 @@ Deno.test("server result refuses missing completion and retains bounded action r
     assertEquals(
         await result({
             completed: false,
-            steps: [{ status: "failed", stdout: "private diagnostic" }],
+            steps: {
+                run: {
+                    status: "failed",
+                    outputs: { stdout: "private diagnostic" },
+                },
+            },
         }, context),
         {
             stdout: '{"error_code":"database.server_create_outcome_unknown"}\n',
             exitCode: 1,
         },
     );
+});
+
+Deno.test("server result reads bounded native child output before assertion diagnostics", async () => {
+    const value = await behavior.methods.result.execute({
+        completed: false,
+        steps: {
+            initial: {
+                status: "succeeded",
+                outputs: {
+                    result: {
+                        exitCode: 1,
+                        stdout:
+                            '{"error_code":"database.server_adoption_refused"}',
+                    },
+                },
+            },
+            scrub: { status: "skipped" },
+            assertion: {
+                status: "failed",
+                outputs: { stderr: "private diagnostic" },
+            },
+        },
+    }, context);
+    assertEquals(value, {
+        stdout: '{"error_code":"database.server_adoption_refused"}\n',
+        exitCode: 1,
+    });
 });

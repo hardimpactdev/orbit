@@ -62,48 +62,60 @@ export const behavior = {
                 "Shape bounded public native step outcomes for the shared terminal projector",
             arguments: z.object({
                 completed: z.boolean(),
-                steps: z.array(
+                steps: z.record(
+                    z.string(),
                     z.object({
                         status: z.string(),
-                        exit_code: z.number().optional(),
-                        stdout: z.string().optional(),
-                    }).strict(),
+                        outputs: z.record(z.string(), z.unknown()).optional(),
+                    }).passthrough(),
                 ),
             }).strict(),
             execute: async (
                 args: {
                     completed: boolean;
-                    steps: {
-                        status: string;
-                        exit_code?: number;
-                        stdout?: string;
-                    }[];
+                    steps: Record<
+                        string,
+                        { status: string; outputs?: Record<string, unknown> }
+                    >;
                 },
                 ctx: Context,
             ) => {
                 let result: Record<string, unknown> = args.completed
                     ? { backend: "active" }
                     : { error_code: "database.server_create_outcome_unknown" };
-                for (const step of args.steps) {
+                for (const step of Object.values(args.steps)) {
+                    const outputs = step.outputs ?? {};
+                    // Native child-workflow outputs are keyed by their result step.
+                    const output =
+                        (outputs.result && typeof outputs.result === "object"
+                            ? outputs.result
+                            : outputs) as Record<string, unknown>;
                     if (
                         step.status === "skipped" ||
                         step.status === "succeeded" &&
-                            (step.exit_code ?? 0) === 0
+                            (output.exitCode ?? 0) === 0
                     ) continue;
-                    let code = "database.server_create_outcome_unknown";
+                    result = {
+                        error_code: "database.server_create_outcome_unknown",
+                    };
                     try {
-                        const raw = JSON.parse(step.stdout ?? "");
+                        const raw = JSON.parse(
+                            typeof output.stdout === "string"
+                                ? output.stdout
+                                : "",
+                        );
                         if (
                             typeof raw.error_code === "string" &&
                             /^(?:database|process)\.[a-z0-9_]{1,80}$/.test(
                                 raw.error_code,
                             )
-                        ) code = raw.error_code;
+                        ) {
+                            result = { error_code: raw.error_code };
+                            break;
+                        }
                     } catch {
                         /* A missing public result is an unknown outcome. */
                     }
-                    result = { error_code: code };
-                    break;
                 }
                 const value = {
                     stdout: JSON.stringify(result) + "\n",

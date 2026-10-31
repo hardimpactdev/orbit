@@ -15,9 +15,9 @@ class Refused(Exception):
         self.code = code
 
 
-def command(argv, stdin=None):
+def command(argv, stdin=None, *, timeout=None):
     return subprocess.run(
-        argv, input=stdin, text=True, capture_output=True, check=False
+        argv, input=stdin, text=True, capture_output=True, check=False, timeout=timeout
     )
 
 

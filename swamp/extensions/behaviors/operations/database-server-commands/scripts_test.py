@@ -7,7 +7,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 SCRIPTS=Path(__file__).parent/'scripts'
 sys.path.insert(0,str(SCRIPTS))
@@ -80,6 +80,39 @@ class Scripts(unittest.TestCase):
                 with patch.object(wait_ready.subprocess,'Popen') as start:
                     self.assertEqual(wait_ready.wait(self.intent,self.material),{'ready':True})
                     start.assert_not_called()
+
+    def test_initial_health_inspection_has_the_readiness_deadline(self):
+        with patch.object(wait_ready,'command',side_effect=subprocess.TimeoutExpired('inspect',120)) as inspect:
+            with patch.object(wait_ready.subprocess,'Popen') as start:
+                with self.assertRaisesRegex(server_common.Refused,'database.server_not_ready'):
+                    wait_ready.wait(self.intent,self.material)
+                self.assertEqual(inspect.call_args.kwargs,{'timeout':120})
+                start.assert_not_called()
+
+    def test_event_wait_uses_only_the_remaining_probe_budget(self):
+        event=MagicMock()
+        observed=subprocess.CompletedProcess([],0,'starting\n','')
+        with patch.object(wait_ready,'command',return_value=observed):
+            with patch.object(wait_ready.time,'monotonic',side_effect=[100,105]):
+                with patch.object(wait_ready.subprocess,'Popen',return_value=event):
+                    with patch.object(wait_ready.subprocess,'run',return_value=subprocess.CompletedProcess([],0,'health_status: healthy\n','')) as read:
+                        self.assertEqual(wait_ready.wait(self.intent,self.material),{'ready':True})
+                        self.assertEqual(read.call_args.kwargs['timeout'],115)
+        event.stdout.close.assert_called_once()
+        event.terminate.assert_called_once()
+        event.wait.assert_called_once_with(timeout=1)
+
+    def test_event_timeout_refuses_and_escalates_cleanup_with_fixed_bounds(self):
+        event=MagicMock()
+        event.wait.side_effect=[subprocess.TimeoutExpired('events',1),None]
+        with patch.object(wait_ready,'command',return_value=subprocess.CompletedProcess([],0,'starting\n','')):
+            with patch.object(wait_ready.subprocess,'Popen',return_value=event):
+                with patch.object(wait_ready.subprocess,'run',side_effect=subprocess.TimeoutExpired('head',120)):
+                    with self.assertRaisesRegex(server_common.Refused,'database.server_not_ready'):
+                        wait_ready.wait(self.intent,self.material)
+        event.terminate.assert_called_once()
+        event.kill.assert_called_once()
+        self.assertEqual([call.kwargs for call in event.wait.call_args_list],[{'timeout':1},{'timeout':1}])
 
 
 if __name__=='__main__':unittest.main()

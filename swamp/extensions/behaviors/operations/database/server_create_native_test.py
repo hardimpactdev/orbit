@@ -85,15 +85,17 @@ sys.exit(code)
         identity.write_text('fixture key')
         identity.chmod(0o600)
         self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-database-server-create.yaml').read_text())
-        for job in self.workflow['jobs']:
-            job.pop('target', None); job.pop('labels', None)
-            for step in job['steps']:
-                self.assertEqual(step.pop('target'), 'orbit-node-209')
-                self.assertEqual(step.pop('labels'), {'node': '209'})
-                if step['task'].get('behaviorType') == '@swamp/ssh':
-                    step['task']['globalArgs']['sshBinary'] = str(fake)
-                    step['task']['globalArgs']['scpBinary'] = str(scp)
-                    step['task']['globalArgs']['transport']['identityFile'] = str(identity)
+        self.child_workflow = yaml.safe_load((ROOT / 'workflows/workflow-database-server-container.yaml').read_text())
+        for workflow in (self.workflow, self.child_workflow):
+            for job in workflow['jobs']:
+                job.pop('target', None); job.pop('labels', None)
+                for step in job['steps']:
+                    self.assertEqual(step.pop('target'), 'orbit-node-209')
+                    self.assertEqual(step.pop('labels'), {'node': '209'})
+                    if step['task'].get('behaviorType') == '@swamp/ssh':
+                        step['task']['globalArgs']['sshBinary'] = str(fake)
+                        step['task']['globalArgs']['scpBinary'] = str(scp)
+                        step['task']['globalArgs']['transport']['identityFile'] = str(identity)
         self.save()
         self.material = {'password': 'private-server-create-native-sentinel', 'environment': {'MYSQL_ROOT_PASSWORD': 'private-server-create-native-sentinel'}, 'acl': '', 'payload': {}}
         self.secrets = (self.material['password'],)
@@ -106,6 +108,7 @@ sys.exit(code)
         self.cli('vault','put','orbit-control-inputs','database-server-create-intent-17',input=json.dumps(self.material))
 
     def save(self):
+        (self.repo / 'workflows/workflow-database-server-container.yaml').write_text(yaml.safe_dump(self.child_workflow,sort_keys=False))
         (self.repo / 'workflows/workflow-operation-database-server-create.yaml').write_text(yaml.safe_dump(self.workflow,sort_keys=False))
 
     def run_server(self, success=True):
@@ -138,11 +141,19 @@ sys.exit(code)
         result=next(s for s in self.history(run)['jobs'][0]['steps'] if s['name']=='result')
         self.assertEqual(json.loads(result['outputs']['stdout']),{'error_code':'database.server_adoption_refused'})
 
-    def test_scrub_activation_failure_restores_initializer_container(self):
+    def test_scrub_failure_restores_then_native_phase_resume_keeps_initial_work(self):
         state=json.loads(self.state.read_text());state['fail_scrub_start']=True;self.state.write_text(json.dumps(state))
-        self.run_server(success=False)
+        run=self.run_server(success=False)
         state=json.loads(self.state.read_text())
         self.assertEqual(state['containers'],{'canonical':{'spec':'b'*64,'state':'running','initializer':True}})
+        before=len(state['calls'])
+        state['fail_scrub_start']=False;self.state.write_text(json.dumps(state))
+        resumed=reply(self.cli('workflow','resume','operation-database-server-create','--run',run['id'],'--from','scrub').stdout)
+        self.assertEqual(resumed['status'],'succeeded')
+        state=json.loads(self.state.read_text())
+        self.assertEqual(state['containers'],{'canonical':{'spec':'c'*64,'state':'running','initializer':False}})
+        new_creates=[c for c in state['calls'][before:] if c['action']=='create_container.py']
+        self.assertEqual([c['spec'] for c in new_creates],['c'*64])
 
     def test_terminal_delivery_resume_does_not_recreate_or_restart(self):
         marker=self.repo/'delivery-failed';marker.touch()
