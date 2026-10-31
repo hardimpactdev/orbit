@@ -20,7 +20,7 @@ class NativeProcessesSchedulesTest(NativeTestCase):
         for name in ['processes-schedules']:
             path = ROOT / f'workflows/workflow-operation-{name}.yaml'
             (self.repo / 'workflows' / path.name).write_text(path.read_text().replace('labels: { pool: migration }\n', '').replace('queueTimeout: 60\n', ''))
-        self.state = {'operation': {'id': 9, 'node_id': 2, 'kind': 'process.update', 'status': 'queued', 'cancel_requested': False, 'steps': [], 'step_results': {}, 'input': {'node_id': 2, 'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'unit': 'orbit-process-12-proof.service', 'content': {'$secret': 'process.unit_content', 'id': 12}, 'desired': 'stopped', 'on_demand': True, 'activation_pending': False}}, 'receipts': {}, 'calls': [], 'completions': [], 'loseRunReply': False, 'loseCompletionReply': False}
+        self.state = {'operation': {'id': 9, 'node_id': 2, 'kind': 'process.create', 'status': 'queued', 'cancel_requested': False, 'steps': [], 'step_results': {}, 'input': {'node_id': 2, 'process_id': 12, 'runtime': 'systemd', 'name': 'orbit-process-12-proof.service', 'unit': 'orbit-process-12-proof.service', 'content': {'$secret': 'process.unit_content', 'id': 12}, 'desired': 'stopped', 'on_demand': True, 'activation_pending': False}}, 'receipts': {}, 'calls': [], 'completions': [], 'loseRunReply': False, 'loseCompletionReply': False}
         self.save()
 
     def save(self):
@@ -38,7 +38,7 @@ class NativeProcessesSchedulesTest(NativeTestCase):
             self.last_run_id = value.get("id")
         return result
 
-    def test_unconverted_systemd_update_runs_native_parent_dispatch_and_family(self):
+    def test_systemd_create_runs_native_parent_dispatch_and_family(self):
         for name in ['processes-schedules']:
             self.swamp('workflow', 'validate', f'operation-{name}')
         self.swamp('workflow', 'run', 'operation-processes-schedules')

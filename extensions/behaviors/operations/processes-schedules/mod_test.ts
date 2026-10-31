@@ -269,7 +269,7 @@ Deno.test("restart after a failed step recovers its keyed refusal", async () => 
   assertEquals(f.runs, 1);
   assertEquals(f.resources.get("operation-7")!.status, "failed");
 });
-function processFixture(verb = "update", runtime = "systemd") {
+function processFixture(verb = "create", runtime = "systemd") {
   const f = new Fixture();
   f.operation.kind = `process.${verb}`;
   f.operation.input = {
@@ -306,7 +306,7 @@ function processFixture(verb = "update", runtime = "systemd") {
   };
   return f;
 }
-Deno.test("unconverted systemd update stages then activates the owned unit", async () => {
+Deno.test("systemd create stages then activates the owned unit", async () => {
   const f = processFixture();
   await f.execute();
   assertEquals(
@@ -377,7 +377,7 @@ Deno.test("systemd replacement, backup refusal and release refusal retain eviden
   );
 });
 Deno.test("Docker converge transports the exact definition without logging it", async () => {
-  const f = processFixture("update", "docker");
+  const f = processFixture("create", "docker");
   f.operation.input.environment = { PASSWORD: "private-value" };
   await f.execute();
   assertEquals(f.runs, 1);
@@ -540,7 +540,6 @@ Deno.test("A proven not-started unconverted Schedule installation can retry the 
 Deno.test("direct kinds refuse polled dispatch before claim or effect", async () => {
   for (
     const kind of [
-      "process.create",
       "process.stop",
       "process.destroy",
       "process.restart",
