@@ -390,6 +390,25 @@ jobs:
           current = hashlib.sha256(live.read_bytes()).hexdigest() if live.is_file() else None
           if current != observed["prior_digest"]:
               raise SystemExit("caddy.publication_stale")
+          if live.is_file():
+              target = live.resolve()
+              previous = live.read_bytes()
+              managed_generation = (
+                  live.is_symlink()
+                  and target.is_relative_to(root / "orbit-versions")
+                  and previous.startswith(b"# Managed by Orbit: Node Caddy build\n")
+                  and hashlib.sha256(previous).hexdigest()[:32] == target.parent.name[:32]
+              )
+              if not managed_generation:
+                  backup = root / "orbit-backups" / meta["run_id"]
+                  backup.mkdir(mode=0o700, parents=True, exist_ok=True)
+                  saved = backup / "Caddyfile"
+                  if saved.exists():
+                      if saved.read_bytes() != previous:
+                          raise SystemExit("caddy.backup_conflict")
+                  else:
+                      shutil.copy2(live, saved)
+                      saved.chmod(0o600)
           state_path = stage / "restore.json"
           prior = stage / "prior"
           if not state_path.is_file():

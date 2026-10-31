@@ -355,8 +355,11 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
     def test_filesystem_cleanup_bounds_completed_stages_and_preserves_active_generation(
         self,
     ):
+        foreign = "# custom Caddy config\nlocalhost { respond custom }\n"
+        (self.host / "Caddyfile").write_text(foreign)
         self.run_caddy()
         current = next((self.host / ".orbit-staging").iterdir())
+        os.utime(current, (0, 0))
         for index in range(16):
             stage = current.parent / f"00000000-0000-4000-8000-{index:012d}"
             stage.mkdir()
@@ -378,7 +381,7 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
             ["sh", "-c", script],
             env={
                 **os.environ,
-                "ORBIT_CADDY_META": json.dumps({"run_id": current.name}),
+                "ORBIT_CADDY_META": json.dumps({"run_id": "00000000-0000-4000-8000-999999999999"}),
             },
             capture_output=True,
             text=True,
@@ -389,6 +392,9 @@ if name=='systemctl' and sys.argv[1]=='reload-or-restart' and os.environ.get('FI
         self.assertLessEqual(len(list(current.parent.iterdir())), 11)
         self.assertEqual(len(list((self.host / "orbit-versions").iterdir())), 10)
         self.assertEqual((self.host / "Caddyfile").read_text(), self.content)
+        self.assertFalse(current.exists())
+        backups = list((self.host / "orbit-backups").glob("*/Caddyfile"))
+        self.assertEqual([path.read_text() for path in backups], [foreign])
 
     def test_no_gateway_endpoint_or_secret_input_in_production_workflow(self):
         source = (ROOT / "workflows/workflow-operation-route-caddy.yaml").read_text()
