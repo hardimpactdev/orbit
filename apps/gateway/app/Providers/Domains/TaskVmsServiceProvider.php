@@ -18,7 +18,7 @@ final class TaskVmsServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag(TaskVmImageArtifactSource::class, OperationSecretSource::class);
-        foreach (['installation', 'enrollment_network', 'first_visit'] as $field) {
+        foreach (['installation', 'first_visit'] as $field) {
             $name = 'task-vm.enrollment.'.$field;
             $this->app->bind($name, static fn (): TaskVmEnrollmentMaterialSource => new TaskVmEnrollmentMaterialSource($field));
             $this->app->tag($name, OperationSecretSource::class);

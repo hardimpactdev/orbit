@@ -195,7 +195,7 @@ it('admits immutable field custody without exporting private material or invokin
     $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
     $issuer = Node::query()->create(['name' => 'native-issuer', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
     $router = Node::query()->create(['name' => 'model-router', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
-    $hub = Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
+    $hub = Node::query()->create(['name' => 'vpn', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active']);
     $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     config()->set('dependency_detection.services_node_id', $issuer->id);
     app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->twice()->andReturn($router->id);
@@ -250,13 +250,14 @@ it('bulk reads initial standalone enrollment material without requiring provider
     $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
     $issuer = Node::query()->create(['name' => 'native-issuer', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
     $router = Node::query()->create(['name' => 'model-router', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
-    $hub = Node::query()->create(['name' => 'vpn', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active',
-        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'PUBLIC-HUB-SSH']);
+    $hub = Node::query()->create(['name' => 'vpn', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'PUBLIC-HUB-SSH', 'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
     $hub->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
     config()->set('dependency_detection.services_node_id', $issuer->id);
     app(ModelKeyIssuer::class)->shouldReceive('ownerNodeId')->andReturn($router->id);
     app(ModelKeyIssuer::class)->shouldReceive('privateMaterial')->with($intent['runtime']['origin'], $router->id)->once()
         ->andReturn(['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)]);
+    app(SshKeyProvider::class)->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
     $home = sys_get_temp_dir().'/native-enrollment-read-'.bin2hex(random_bytes(8));
     mkdir($home.'/wireguard', 0o700, true);
     file_put_contents($home.'/wireguard/private.key', 'PRIVATE-HUB');
@@ -272,8 +273,10 @@ it('bulk reads initial standalone enrollment material without requiring provider
 
         $material = app(DirectOperationPrivateMaterial::class)->read($operation, $intent['execution_node_id']);
 
-        expect($material)->toEqual(['model_key' => $vm->fresh()->model_key, 'model_router' => ['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)],
-            'secret_hash' => null, 'worker_credentials' => null, 'enrollment_network' => null, 'first_visit' => null]);
+        expect($material)->toMatchArray(['model_key' => $vm->fresh()->model_key, 'model_router' => ['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)],
+            'secret_hash' => null, 'worker_credentials' => null, 'first_visit' => null]);
+        expect($material['configuration']['snapshot'])->toBe($private['_wireguard']);
+        expect($material)->not->toHaveKey('enrollment_network');
         expect($material)->not->toHaveKey('provider_bootstrap');
         expect($vm->fresh()->node->agent_secret_hash)->toBeNull();
         Http::assertNothingSent();

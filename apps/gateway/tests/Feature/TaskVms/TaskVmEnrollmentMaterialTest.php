@@ -42,7 +42,7 @@ function enrollmentMaterialBindings(Operation $operation, string $field, int $ow
         {
             return isset($this->known['tasks.provision']) ? [] : ['tasks.provision' => [
                 'workflow' => 'operation-test-enrollment', 'projection' => TaskVmEnrollmentProjection::class,
-                'private_material' => ['installation' => 'task_vm.installation', 'first_visit' => 'task_vm.first_visit', 'enrollment_network' => 'task_vm.enrollment_network'],
+                'private_material' => ['installation' => 'task_vm.installation', 'first_visit' => 'task_vm.first_visit'],
             ]];
         }
     };
