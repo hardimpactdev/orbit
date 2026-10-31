@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\DropServerDatabaseAction;
+use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
@@ -69,3 +70,10 @@ it('refuses an attachment or a different recorded owner before destruction', fun
     expect(fn () => app(DropServerDatabaseAction::class)->prepareMany([$connection], $this->instance->id + 1))->toThrow(ResourceOperationException::class, 'another Instance');
     $this->assertDatabaseCount('database_execution_intents', 0);
 });
+
+it('refuses a recorded system name or prefix when rendering native destroy intent', function (array $names, array $prefixes): void {
+    $operation = Operation::query()->create(['kind' => 'database.destroy', 'target_type' => 'database_server', 'target_id' => $this->server->id,
+        'node_id' => $this->dbNode->id, 'status' => 'running', 'input' => ['databases' => $names, 'test_prefixes' => $prefixes]]);
+    expect(fn () => app(DatabaseDestroyProjection::class)->input($operation))
+        ->toThrow(ResourceOperationException::class, 'System databases');
+})->with([[['mysql'], []], [[], ['s']]]);

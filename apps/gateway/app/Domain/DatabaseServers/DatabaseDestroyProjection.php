@@ -18,7 +18,10 @@ final readonly class DatabaseDestroyProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['driver', 'container', 'host', 'port', 'default_open', 'databases', 'users', 'test_prefixes', 'owners']));
+        $input = array_intersect_key($operation->input, array_flip(['driver', 'container', 'host', 'port', 'default_open', 'databases', 'users', 'test_prefixes', 'owners']));
+        app(DatabaseDestroySafety::class)->assertNames(ValidatedData::stringList($input['databases'] ?? []), ValidatedData::stringList($input['test_prefixes'] ?? []));
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation
