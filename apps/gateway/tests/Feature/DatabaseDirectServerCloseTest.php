@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseServers\CloseDatabaseServerAction;
+use App\Data\DatabaseServers\DatabaseServerData;
+use App\Domain\DatabaseServers\ValkeyAcl;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -57,5 +60,41 @@ it('keeps the admitted endpoint and default-user state on native refusal', funct
     $this->server->update(['port' => 5435]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.port', 5434);
     $this->postJson($this->path.'/result', [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_in_use', 'result' => ['error_code' => 'database.server_in_use']])->assertOk();
+    expect($this->server->fresh()->default_open)->toBeTrue();
+});
+
+it('records unknown default access and alerts once when restoring nopass fails', function (): void {
+    Log::spy();
+    $failed = [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_restore_failed',
+        'result' => ['error_code' => 'database.server_restore_failed', 'default_open' => 'unknown']];
+    $this->postJson($this->path.'/result', $failed)->assertOk()->assertJsonPath('data.result.default_open', 'unknown');
+    $server = $this->server->fresh();
+    expect($server->default_open)->toBeNull()
+        ->and($server->status->value)->toBe('failed')
+        ->and($server->error_code)->toBe('database.default_access_unknown');
+    expect(DatabaseServerData::fromModel($server)->toArray()['default_open'])->toBeNull();
+    expect(fn () => ValkeyAcl::file($server))->toThrow(LogicException::class);
+    $this->postJson($this->path.'/result', $failed)->assertOk();
+    Log::shouldHaveReceived('critical')->once()->with(
+        'Database default access is unknown after ACL restore failed.',
+        ['operation_id' => $this->operation->id, 'database_server_id' => $server->id, 'node_id' => $server->node_id],
+    );
+});
+
+it('preserves verified boolean access facts when the nullable schema is applied', function (): void {
+    $closed = $this->server->replicate()->fill(['slug' => 'closed-proof', 'default_open' => false]);
+    $closed->save();
+    $migration = require database_path('migrations/2027_01_09_120015_allow_unknown_database_default_access.php');
+    $migration->up();
+    expect($this->server->fresh()->default_open)->toBeTrue();
+    expect($closed->fresh()->default_open)->toBeFalse();
+    $this->server->update(['default_open' => null]);
+    expect($this->server->fresh()->default_open)->toBeNull();
+});
+
+it('refuses an incomplete unknown-state result without changing access', function (): void {
+    $failed = [...$this->finished, 'status' => 'failed', 'error_code' => 'database.server_restore_failed',
+        'result' => ['error_code' => 'database.server_restore_failed']];
+    $this->postJson($this->path.'/result', $failed)->assertUnprocessable();
     expect($this->server->fresh()->default_open)->toBeTrue();
 });

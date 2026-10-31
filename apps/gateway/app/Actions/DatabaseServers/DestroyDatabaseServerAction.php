@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseServers;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseServer;
 use App\Models\Operation;
@@ -33,12 +33,25 @@ final readonly class DestroyDatabaseServerAction
             $process = $server->process;
             $operation = $this->operations->execute('database_server.destroy', 'database_server', $server->id, $server->node_id,
                 ['server_id' => $server->id, 'process_id' => $process?->id,
-                    'container' => $process === null ? null : (new DockerProcessRenderer)->containerName($process),
-                    'agent_sha256' => app(AgentDelivery::class)->pin($server->node)],
+                    'container' => $process === null ? null : (new DockerProcessRenderer)->containerName($process), 'record_only' => $this->preservesAdoption($server)],
                 'operator', request()->attributes->getString('orbit.request_id'));
             $server->update(['status' => 'removing']);
 
             return $operation;
         });
+    }
+
+    private function preservesAdoption(DatabaseServer $server): bool
+    {
+        $creates = Operation::query()->where('kind', 'database_server.create')->where('target_type', 'database_server')->where('target_id', $server->id);
+        if ($server->status === LifecycleStatus::Active || (clone $creates)->where(fn ($query) => $query->where('status', 'succeeded')->orWhere('input->was_active', true))->exists()) {
+            return false;
+        }
+        $create = $creates->latest('id')->first();
+        $input = $create->input ?? [];
+
+        return $create?->node_id === $server->node_id
+            && ($input['server_id'] ?? null) === $server->id && ($input['process_id'] ?? null) === $server->process_id
+            && ($input['validate_existing'] ?? false) === true && ($input['was_active'] ?? null) === false;
     }
 }

@@ -8,7 +8,7 @@ use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-/** Gateway intent for the native bootstrap; the agent owns packages, DNS, and account setup. */
+/** Gateway intent for the native bootstrap; Swamp owns packages, DNS, and account setup. */
 final readonly class NodeBootstrapCommandFactory
 {
     public function __construct(
