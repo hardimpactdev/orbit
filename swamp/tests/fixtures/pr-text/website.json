@@ -1,0 +1,127 @@
+{
+  "changes": [
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "@types/node",
+      "from": "25.9.9",
+      "to": "26.6.5",
+      "major": true,
+      "advisories": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "lucide-react",
+      "from": "0.577.0",
+      "to": "1.60.0",
+      "major": true,
+      "advisories": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "shaders",
+      "from": "2.5.135",
+      "to": "4.0.4",
+      "major": true,
+      "advisories": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "typescript",
+      "from": "5.9.3",
+      "to": "7.0.2",
+      "major": true,
+      "advisories": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "puppeteer",
+      "from": "25.3.0",
+      "to": "25.15.0",
+      "major": false,
+      "advisories": [
+        {
+          "id": "GHSA-mrhx-c7xc-m3w5",
+          "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+        }
+      ]
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "shadcn",
+      "from": "4.21.4",
+      "to": "4.22.1",
+      "major": false,
+      "advisories": [
+        {
+          "id": "GHSA-mrhx-c7xc-m3w5",
+          "url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+        }
+      ]
+    }
+  ],
+  "updates": [
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "@types/node",
+      "codeChanged": true,
+      "effect": "Page modules now have explicit types; pages render the same.",
+      "files": [
+        "types.d.ts"
+      ],
+      "label": "Types"
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "lucide-react",
+      "codeChanged": false,
+      "effect": "",
+      "files": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "shaders",
+      "codeChanged": true,
+      "effect": "The light-ray effect now appears only when the browser offers WebGPU.",
+      "files": [
+        "layout.ts"
+      ],
+      "label": "Background effect"
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "typescript",
+      "codeChanged": true,
+      "effect": "Page modules now have explicit types; pages render the same.",
+      "files": [
+        "types.d.ts"
+      ],
+      "label": "Types"
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "puppeteer",
+      "codeChanged": false,
+      "effect": "",
+      "files": []
+    },
+    {
+      "manager": "js",
+      "path": ".",
+      "package": "shadcn",
+      "codeChanged": false,
+      "effect": "",
+      "files": []
+    }
+  ]
+}

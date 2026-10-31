@@ -1,0 +1,688 @@
+id: 10c1e646-19cd-4527-8be5-01f524976346
+name: operation-instance-destroy
+description: One native parent owns Instance source, runtime, Route withdrawal and
+  placed database removal.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - instance.destroy
+  required:
+  - operation_id
+  - node_id
+  - kind
+  additionalProperties: false
+jobs:
+- name: capture_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: capture_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: captureSources
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+- name: admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: plan
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: admit
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  dependsOn:
+  - job: capture_sources
+    condition:
+      type: succeeded
+- name: prepare_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: prepare_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: prepare_sources
+  dependsOn:
+  - job: admission
+    condition:
+      type: succeeded
+- name: runtime
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: runtime
+  dependsOn:
+  - job: prepare_sources
+    condition:
+      type: succeeded
+- name: teardown
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: teardown
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: teardown
+  dependsOn:
+  - job: runtime
+    condition:
+      type: succeeded
+- name: verify_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: verify_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: verify_sources
+  dependsOn:
+  - job: teardown
+    condition:
+      type: succeeded
+- name: php
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: php
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication'
+      behaviorName: ${{ "route-publication-node-" + string(inputs.node_id) }}
+      methodName: withdrawInstancePhp
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  dependsOn:
+  - job: verify_sources
+    condition:
+      type: succeeded
+- name: caddy
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: caddy-${{ self.member.node_id }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication'
+      behaviorName: ${{ "route-publication-node-" + string(self.member.node_id) }}
+      methodName: publishCaddy
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ self.member.node_id }}
+    forEach:
+      item: member
+      in: ${{ steps.plan.outputs.nodes }}
+    target: ${{ "orbit-node-" + string(self.member.node_id) }}
+    labels:
+      node: ${{ string(self.member.node_id) }}
+  dependsOn:
+  - job: php
+    condition:
+      type: succeeded
+- name: dns
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: dns-${{ self.member }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-publication'
+      behaviorName: ${{ "route-publication-node-" + string(self.member) }}
+      methodName: withdrawInstanceDns
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ self.member }}
+    forEach:
+      item: member
+      in: ${{ steps.plan.outputs.dns_node_ids }}
+    target: ${{ "orbit-node-" + string(self.member) }}
+    labels:
+      node: ${{ string(self.member) }}
+  dependsOn:
+  - job: caddy
+    condition:
+      type: succeeded
+- name: databases
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: database-${{ self.work.key }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: database
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        target_node_id: ${{ self.work.node_id }}
+        work: ${{ self.work }}
+    forEach:
+      item: work
+      in: ${{ steps.plan.outputs.work }}
+    target: ${{ "orbit-node-" + string(self.work.node_id) }}
+    labels:
+      node: ${{ string(self.work.node_id) }}
+  dependsOn:
+  - job: dns
+    condition:
+      type: succeeded
+- name: cleanup
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: cleanup-${{ self.member.node_id }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: cleanupNode
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        node: ${{ self.member }}
+    forEach:
+      item: member
+      in: ${{ steps.plan.outputs.nodes }}
+    target: ${{ "orbit-node-" + string(self.member.node_id) }}
+    labels:
+      node: ${{ string(self.member.node_id) }}
+  dependsOn:
+  - job: databases
+    condition:
+      type: succeeded
+- name: finalize_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: finalize_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: step
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        stage: finalize_sources
+  dependsOn:
+  - job: cleanup
+    condition:
+      type: succeeded
+- name: complete
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: complete
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: finish
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  dependsOn:
+  - job: finalize_sources
+    condition:
+      type: succeeded
+- name: failure_capture_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_capture_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: capture_sources
+  dependsOn:
+  - job: capture_sources
+    condition:
+      type: failed
+- name: failure_admission
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_admission
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: admission
+  dependsOn:
+  - job: admission
+    condition:
+      type: failed
+- name: failure_prepare_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_prepare_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: prepare_sources
+  dependsOn:
+  - job: prepare_sources
+    condition:
+      type: failed
+- name: failure_runtime
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_runtime
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: runtime
+  dependsOn:
+  - job: runtime
+    condition:
+      type: failed
+- name: failure_teardown
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_teardown
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: teardown
+  dependsOn:
+  - job: teardown
+    condition:
+      type: failed
+- name: failure_verify_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_verify_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: verify_sources
+  dependsOn:
+  - job: verify_sources
+    condition:
+      type: failed
+- name: failure_php
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_php
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: php
+  dependsOn:
+  - job: php
+    condition:
+      type: failed
+- name: failure_caddy
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_caddy
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: caddy
+  dependsOn:
+  - job: caddy
+    condition:
+      type: failed
+- name: failure_dns
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_dns
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: dns
+  dependsOn:
+  - job: dns
+    condition:
+      type: failed
+- name: failure_databases
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_databases
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: databases
+  dependsOn:
+  - job: databases
+    condition:
+      type: failed
+- name: failure_cleanup
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_cleanup
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: cleanup
+  dependsOn:
+  - job: cleanup
+    condition:
+      type: failed
+- name: failure_finalize_sources
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_finalize_sources
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: finalize_sources
+  dependsOn:
+  - job: finalize_sources
+    condition:
+      type: failed
+- name: failure_complete
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: failure_complete
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/instance-destroy'
+      behaviorName: ${{ "instance-destroy-" + run.id }}
+      methodName: fail
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+        failed_step: complete
+  dependsOn:
+  - job: complete
+    condition:
+      type: failed
+- name: report_native_failure
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: *id001
+  steps:
+  - name: report_native_failure
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/operation-failure'
+      behaviorName: ${{ "instance-destroy-failure-" + run.id }}
+      methodName: report
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        run_id: ${{ run.id }}
+  dependsOn:
+  - job: complete
+    condition:
+      type: or
+      conditions:
+      - type: failed
+      - type: skipped
+  - job: failure_capture_sources
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_admission
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_prepare_sources
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_runtime
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_teardown
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_verify_sources
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_php
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_caddy
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_dns
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_databases
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_cleanup
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_finalize_sources
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped
+  - job: failure_complete
+    condition:
+      type: or
+      conditions:
+      - type: completed
+      - type: skipped

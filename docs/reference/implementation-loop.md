@@ -81,7 +81,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-CI runs builds and static checks only. It keeps every test file, but runs no test suites. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast gate. There is no nightly test run.
+Orbit CI runs builds and static checks. Swamp changes also run the Operation Deno tests. Pull requests, pushes to `main`, task handoff pushes and manual runs use the same fast gate. There is no nightly test run.
 
 | Check | Work |
 | --- | --- |
@@ -90,9 +90,17 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 | Docs build | Generate the documentation index, check its committed freshness and run strict documentation lint |
 | Generated contracts | Boot the Gateway and load all Operation kinds, executors and completion contracts; check OpenAPI, MCP tools and `apps/web/src/api/schema.d.ts` against their generators |
 | Web build | Build the web app and require `dist/index.html` and `dist/version.json` |
+| Gateway release inputs | Pass when the change includes Orbit inputs; skip Swamp-only commits so automatic releases do not queue them |
+| Swamp | Validate every workflow, run the Operation Deno tests and enforce the Swamp-shape gate |
 | Required checks | Require every selected build and static check to succeed; only an explicitly untouched job may skip |
 
-`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
+`bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds.
+
+Swamp source lives under `swamp/`. Swamp-only changes select the Swamp checks and skip PHP and Gateway builds, including on main. Other main commits build and upload Web for Gateway delivery. Swamp checks validate every workflow with the runtime pinned in `swamp/.swamp.yaml`, run the Operation Deno tests with four workers, and enforce the Swamp-shape baseline. `Required checks` remains the single aggregate for all selected jobs.
+
+`Gateway release inputs` records whether the whole push includes Orbit inputs; both the Gateway and CLI publisher read that check instead of recomputing the last commit. The initial import ratchets against its retained Swamp source commit, recorded in `swamp/import-source.json`; once the comparison base contains `swamp/`, every run uses its actual Orbit base.
+
+Swamp workflow validation uses the dedicated `orbit-monorepo-ci` collective token with only `extensions:read`. Only the validation job receives its two approved secret inputs, on pull requests and pushes to main. Shape and Operation test jobs receive no secret environment. CI never uses `pull_request_target`. The runtime and local extension tree remain pinned; validation, shape, placement and Operation tests are required, including when authentication is absent or refused. No personal key or initial-import validation exception is used.
 
 Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for build input selection. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. No event builds the Rust agent. Gateway releases and desired fleet state use the frozen published agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 
@@ -106,7 +114,7 @@ The required check name stays exactly `Required checks`. The branch ruleset and 
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-On `main`, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
+On `main`, when Gateway release inputs are selected, Web uploads `web-dist-<full commit SHA>` for 14 days. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build. Pull requests publish no web build.
 
 ### Action pins and token permissions
 

@@ -1,0 +1,14 @@
+swampVersion: 20261031.063736.0-sha.e459d219
+initializedAt: '2026-10-22T09:22:07.812Z'
+repoId: 8fbf0f44-23c1-44d5-a7bd-627900f09457
+tools:
+- claude
+defaultVault: default
+gitignoreManaged: true
+telemetryDisabled: true
+autoGc: true
+garbageCollection:
+  automatic: true
+  retention: 30d
+  workflowRuns: 1d
+  outputs: 1d

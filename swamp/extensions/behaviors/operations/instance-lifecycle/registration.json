@@ -1,0 +1,12 @@
+{
+  "kinds": [
+    "instance.rename",
+    "instance.destroy",
+    "instance.create",
+    "instance.register",
+    "instance.clone",
+    "instance.transfer",
+    "instance.transfer_rollback"
+  ],
+  "workflow": "operation-instance-lifecycle"
+}

@@ -260,7 +260,7 @@ Rolling back to a release from before provenance runs code without the verifier.
 
 #### Web build
 
-The web app ships with the Gateway release of the same commit. On every CI run on `main`, a push or a manual dispatch, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
+The web app ships with the Gateway release of the same commit. On CI runs on `main` that select Gateway release inputs, from a push or a manual dispatch, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
 
 1. It asks the [GitHub App](/reference/github-app#read-ci-artifacts) for a token with only `Actions: read`, for the repository that `shared/orbit.git` names as `origin`.
 2. It finds the newest unexpired artifact with that name from an [accepted CI run](#accepted-ci-runs) of exactly this commit.
@@ -277,7 +277,7 @@ The Gateway selects and downloads the GitHub artifact. It calls `gateway.inspect
 
 A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. Open pages read the new build's `version.json` and move to it on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
 
-CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. So a commit with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
+CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. A commit also needs a passing `Gateway release inputs` check for automatic release. Swamp-only commits skip that check and the Gateway build; they never enter the release queue. So a release candidate with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
 
 ##### Accepted CI runs
 
@@ -650,7 +650,7 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 3. A requested release that waits for its unit goes first. The tick stops.
 4. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
 5. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-6. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
 7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
 8. It deploys that commit with the trigger `auto`, under the release lock.
 

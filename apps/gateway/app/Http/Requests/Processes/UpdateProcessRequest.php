@@ -45,6 +45,10 @@ final class UpdateProcessRequest extends StoreProcessRequest
     public function after(): array
     {
         return [...parent::after(), function (Validator $validator): void {
+            $process = $this->route('process');
+            if ($this->exists('required_mount_paths') && $process instanceof Process && isset($process->runtime_config['preset'])) {
+                $validator->errors()->add('required_mount_paths', 'The preset owns this configuration.');
+            }
             foreach ($this->immutableFields as $field) {
                 $validator->errors()->add($field, 'The Process identity cannot be changed.');
             }

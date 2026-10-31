@@ -25,17 +25,19 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: ./.github/actions/ci-scope
+        id: scope
+        with:
+          job: php
       - name: Cache frozen published agent
+        if: steps.scope.outputs.selected == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/orbit-frozen-agent
           key: frozen-agent-${{ runner.os }}-${{ hashFiles('apps/gateway/resources/agent/frozen-manifest.json') }}
       - name: Check frozen agent command references
+        if: steps.scope.outputs.selected == 'true'
         run: bin/check-frozen-agent-commands --binary-cache "$HOME/.cache/orbit-frozen-agent"
-      - uses: ./.github/actions/ci-scope
-        id: scope
-        with:
-          job: php
       - uses: ./.github/actions/php
         if: steps.scope.outputs.selected == 'true'
         with:
@@ -187,29 +189,48 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       jobs: ${{ steps.plan.outputs.jobs }}
+      gateway_release: ${{ steps.plan.outputs.gateway_release }}
+      swamp_base_ref: ${{ steps.plan.outputs.swamp_base_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Select changed build inputs
         id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
-          PR: ${{ github.event_name == 'pull_request' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
-          if [ "$PR" = true ]; then git fetch --no-tags --depth=1 origin "$BASE"; fi
           args=()
           if [ "$MAIN" = true ]; then args+=(--main); fi
-          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --github-output "$GITHUB_OUTPUT"
+          python3 bin/ci-build-plan --base "$BASE" "${args[@]}" --swamp-base --github-output "$GITHUB_OUTPUT"
+
+  swamp:
+    name: Swamp
+    needs: changes
+    if: fromJSON(needs.changes.outputs.jobs).swamp
+    uses: ./.github/workflows/swamp-shape.yml
+    with:
+      working-directory: swamp
+      base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
+    secrets:
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+  gateway-release:
+    name: Gateway release inputs
+    needs: changes
+    if: needs.changes.outputs.gateway_release == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - run: echo 'This commit has Orbit inputs and may release after Required checks pass.'
 
   required:
     name: Required checks
     if: always()
-    needs: [php, cli, docs, api-reference, web, changes]
+    needs: [php, cli, docs, api-reference, web, swamp, gateway-release, changes]
     runs-on: ubuntu-26.04
     steps:
       - name: Require builds and static checks
@@ -222,6 +243,7 @@ jobs:
           if needs['changes']['result'] != 'success':
               sys.exit('Build input selection failed')
           selected = json.loads(needs['changes']['outputs']['jobs'])
+          selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
           expected = set(needs) - {'changes'}
           if set(selected) != expected or any(type(value) is not bool for value in selected.values()):
               sys.exit('Incomplete build selections')

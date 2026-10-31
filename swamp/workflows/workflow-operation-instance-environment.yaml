@@ -1,0 +1,42 @@
+id: 1aa9bc3f-6c22-4b27-8742-e0a8620da06b
+name: operation-instance-environment
+description: Synchronize one Instance on its exact owning Node without Gateway children.
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [instance.sync_environment] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: environment
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: synchronize
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/instance-environment"
+          behaviorName: '${{ "instance-environment-node-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+
+  - name: report_failure
+    dependsOn: [{job: environment, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    steps:
+      - name: report_failure
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "instance-environment-failure-" + run.id }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            kind: '${{ inputs.kind }}'
+            node_id: '${{ inputs.node_id }}'
+            run_id: '${{ run.id }}'

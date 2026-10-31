@@ -1,0 +1,44 @@
+id: c1f0a7d2-9b8e-4df1-8a21-43b8bfc50d74
+name: operation-instance-policy-activity
+description: Record automatic policy Activity through its single native parent.
+vaults: []
+inputs:
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [instance.policy_event]}
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: record
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    writes: true
+    steps:
+      - name: record
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-policy-activity'
+          behaviorName: '${{ "instance-policy-node-" + string(inputs.node_id) }}'
+          methodName: run
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'
+  - name: failure
+    dependsOn: [{job: record, condition: {type: failed}}]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: {node: '${{ string(inputs.node_id) }}'}
+    writes: true
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/operation-failure'
+          behaviorName: '${{ "instance-policy-failure-node-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: '${{ inputs.operation_id }}'
+            node_id: '${{ inputs.node_id }}'
+            kind: '${{ inputs.kind }}'
+            run_id: '${{ run.id }}'

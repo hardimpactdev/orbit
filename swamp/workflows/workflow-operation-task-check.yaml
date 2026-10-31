@@ -1,0 +1,43 @@
+id: 69561032-d945-4df7-a3e5-87aa67e4b5e9
+name: operation-task-check
+description: Run setup, check, deliverables and hosted CI on the task VM worker.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.check] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: check
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: execute
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-workspace"
+          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
+          methodName: check
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: failure
+    dependsOn: [{ job: check, condition: { type: failed } }]
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: report
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: '${{ "task-check-failure-" + string(inputs.node_id) }}'
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

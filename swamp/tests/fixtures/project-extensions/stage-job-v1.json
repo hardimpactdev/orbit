@@ -1,0 +1,26 @@
+{
+  "key": "tg-7.script.c1",
+  "workItem": "tg-7",
+  "stage": "script",
+  "group": 7,
+  "subtask": 701,
+  "state": "running",
+  "launches": 0,
+  "launchedNow": false,
+  "request": {
+    "path": "swamp:maintenance",
+    "body": {
+      "cwd": "/vm/repo",
+      "mode": "routine",
+      "base": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "idempotencyKey": "tg-7.script.c1"
+  },
+  "operationId": null,
+  "operationStatus": "Swamp worker maintenance",
+  "lastError": null,
+  "inputIdentity": "{\"routine\":true,\"dependencyProject\":{\"projectId\":20,\"repository\":\"git@github.com:nckrtl/website.git\",\"script\":\"scripts/dependencies\",\"worker\":{\"composerPaths\":[\".\"],\"jsPaths\":[\".\"],\"policy\":{\".\":{\"minimumReleaseAgeDays\":7}}},\"check\":\"composer check\",\"defaultBranch\":\"main\"}}",
+  "nextReadAt": null,
+  "artifacts": {},
+  "evidence": null
+}

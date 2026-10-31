@@ -77,6 +77,9 @@ final readonly class ProcessOperationAdmission
             'on_demand' => $target->onDemandHostStart, 'created' => $created, 'preserve_record' => $preserveRecord,
             'caller_node_id' => $caller?->id,
             'vite' => $verb !== 'stop' && $systemd && $process->isVpDev() ? ['path' => SystemdProcessRenderer::viteEnvironmentPath($process->owner_id), 'instance_id' => $process->owner_id] : null];
+        if ($systemd && in_array($verb, ['create', 'update'], true)) {
+            $input['required_mount_paths'] = RequiredMountPaths::parse($process->runtime_config['required_mount_paths'] ?? []);
+        }
         if ($target->productionReleaseLayout && ($process->desired_state === DesiredProcessState::Running || in_array($verb, ['start', 'restart'], true)) && $verb !== 'destroy' && $verb !== 'stop') {
             $input['directory'] = $target->defaultWorkingDirectory;
         }

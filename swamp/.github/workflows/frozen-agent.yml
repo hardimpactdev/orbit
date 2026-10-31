@@ -1,0 +1,21 @@
+name: Frozen agent commands
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  frozen-agent-commands:
+    runs-on: [self-hosted, hardimpact]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/orbit-frozen-agent
+          key: frozen-agent-${{ runner.os }}-${{ hashFiles('config/frozen-agent/frozen-manifest.json') }}
+      - name: Reject commands absent from the frozen published binary
+        run: bin/check-frozen-agent-commands --binary-cache "$HOME/.cache/orbit-frozen-agent"

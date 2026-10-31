@@ -1,0 +1,44 @@
+id: 51bb9b35-450f-4cc3-b5e4-c7f92aa77749
+name: operation-fleet-docker-migrate
+description: Explicit Docker provider migration and Process reconciliation on one owning Node.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [fleet.docker_migrate] }
+  required: [operation_id, node_id, kind]
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+jobs:
+  - name: migrate
+    writes: true
+    steps:
+      - name: execute
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/fleet-docker-migrate"
+          behaviorName: "${{ 'fleet-docker-migrate-' + string(inputs.node_id) }}"
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+  - name: native-failure
+    dependsOn:
+      - job: migrate
+        condition: { type: failed }
+    steps:
+      - name: report
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/operation-failure"
+          behaviorName: "${{ 'docker-failure-' + run.id }}"
+          methodName: report
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"

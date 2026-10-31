@@ -1,0 +1,123 @@
+name: Swamp shape
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        type: string
+        default: "."
+      base-ref:
+        type: string
+        default: ""
+    secrets:
+      SWAMP_API_KEY:
+        required: true
+      SWAMP_SIGNIN_TOKEN:
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: swamp-shape-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shape:
+    name: Swamp shape gate
+    runs-on: [self-hosted, hardimpact]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: v2.9.8
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - name: Install pinned script linters
+        run: |
+          python3 -m venv "$RUNNER_TEMP/shape-tools"
+          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
+          echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
+      - name: Check shape regression fixtures
+        run: |
+          deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
+          python3 tests/swamp_shape_gate_test.py
+          python3 tests/swamp_validate_ci_test.py
+          python3 tests/swamp_base_policy_test.py
+      - name: Reject new violations with current and base rules
+        env:
+          SHAPE_BASE: ${{ inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="$SHAPE_BASE"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
+          deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
+          python3 bin/check-swamp-base-policy.py --base "$base"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: swamp-shape-metrics
+          path: ${{ runner.temp }}/shape.json
+
+  validate:
+    name: Swamp workflow validate
+    runs-on: [self-hosted, hardimpact]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: v2.9.8
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/orbit-shape-runtime
+          key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
+      - name: Native workflow validation with dedicated registry-read credentials
+        env:
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
+      - name: Check placement on every step
+        if: always()
+        run: deno run --allow-read bin/lint-workflow-placement.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: swamp-workflow-validation
+          path: ${{ runner.temp }}/workflow-validation.json
+
+  tests:
+    name: Swamp Deno tests
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory || '.' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb
+        with:
+          deno-version: v2.9.8
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_mysql, pdo_pgsql, pdo_sqlite
+          coverage: none
+      - name: Verify disposable effect prerequisites
+        run: |
+          docker info >/dev/null
+          sudo -n true
+          # shellcheck disable=SC2016
+          php -r 'foreach (["mysql", "pgsql", "sqlite"] as $driver) { if (!in_array($driver, PDO::getAvailableDrivers(), true)) { exit(1); } }'
+      - name: Run every Operations test
+        env:
+          DENO_JOBS: "4"
+        run: deno test --parallel -A extensions/behaviors/operations

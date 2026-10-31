@@ -1,0 +1,136 @@
+import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+import { agentLaunch, agentReply, type NodeCall } from "./node-agent.ts";
+import { applyNamedRule } from "../firewall/local.ts";
+
+const call: NodeCall = {
+  name: "firewall.rule",
+  input: { name: "canary", operation: "converge" },
+  pin: "a".repeat(64),
+  sudo: true,
+  mutates: true,
+  deadlineMs: 120000,
+};
+Deno.test("sudo launch is fixed argv with a frozen admitted envelope", () => {
+  assertEquals(agentLaunch(call), {
+    command: "/usr/bin/sudo",
+    args: [
+      "-n",
+      "--",
+      "/usr/local/bin/orbit-agent",
+      "command",
+      "firewall.rule",
+    ],
+    envelope: {
+      agent_sha256: call.pin,
+      deadline_ms: 120000,
+      input: call.input,
+    },
+  });
+  assertEquals(
+    agentLaunch({ ...call, sudo: false }).command,
+    "/usr/local/bin/orbit-agent",
+  );
+});
+Deno.test("Firewall uses its fixed native UFW program and bounded admitted rule", async () => {
+  const calls: unknown[] = [];
+  await applyNamedRule({
+    node_id: 9,
+    name: "canary",
+    action: "allow",
+    source: "10.44.0.1",
+    protocol: "tcp",
+    port: "443",
+    operation: "converge",
+  }, (_program, input) => {
+    calls.push(input);
+    return Promise.resolve({ matches: true });
+  });
+  assertEquals(calls, [{
+    mode: "named",
+    node_id: 9,
+    name: "canary",
+    action: "allow",
+    source: "10.44.0.1",
+    protocol: "tcp",
+    port: "443",
+    operation: "converge",
+  }]);
+});
+Deno.test("refusal diagnostics and malformed output never escape the local step", () => {
+  const bytes = (value: unknown) =>
+    new TextEncoder().encode(JSON.stringify(value));
+  assertEquals(
+    agentReply(
+      bytes({
+        ok: false,
+        error: {
+          code: "agent.version_mismatch",
+          message: "SECRET",
+          details: { stderr: "SECRET" },
+        },
+      }),
+      false,
+    ),
+    { error_code: "agent.version_mismatch" },
+  );
+  for (
+    const value of [{ ok: false, error: { code: "SECRET\n" } }, {
+      ok: true,
+      data: [],
+    }, null]
+  ) {
+    assertThrows(
+      () => agentReply(bytes(value), true),
+      Error,
+      "The Node action returned no typed result",
+    );
+  }
+  assertThrows(
+    () => agentReply(new TextEncoder().encode("SECRET invalid output"), false),
+    Error,
+    "The Node action returned no typed result",
+  );
+  assertThrows(
+    () => agentReply(bytes({ ok: true, data: {} }), false),
+    Error,
+    "The Node action outcome is uncertain",
+  );
+});
+
+Deno.test("only the typed restoration boolean survives refusal diagnostics", () => {
+  const bytes = new TextEncoder().encode(JSON.stringify({
+    ok: false,
+    error: {
+      code: "process.health_failed",
+      message: "SECRET",
+      details: { restored: true, output: { stderr: "SECRET" } },
+    },
+  }));
+  assertEquals(agentReply(bytes, false), {
+    error_code: "process.health_failed",
+    restored: true,
+  });
+});
+
+Deno.test("only the fixed Caddy validate stage survives redacted refusal diagnostics", () => {
+  const reply = (code: string, stage: string) =>
+    agentReply(
+      new TextEncoder().encode(
+        JSON.stringify({
+          ok: false,
+          error: { code, details: { stage, message: "PRIVATE" } },
+        }),
+      ),
+      false,
+    );
+  assertEquals(reply("caddy.publication_failed", "validate"), {
+    error_code: "caddy.publication_failed",
+    stage: "validate",
+  });
+  assertEquals(reply("caddy.publication_failed", "reload"), {
+    error_code: "caddy.publication_failed",
+  });
+  assertEquals(reply("agent.configure_failed", "PRIVATE"), {
+    error_code: "agent.configure_failed",
+  });
+});

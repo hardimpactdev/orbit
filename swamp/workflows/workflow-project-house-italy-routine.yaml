@@ -1,0 +1,20 @@
+id: de1107c8-7416-4281-b4e7-83808d52b28d
+name: '@nckrtl/project-house-italy/routine'
+labels: { pool: migration, node: "209" }
+description: house-italy routine through its private project extension.
+trigger:
+  schedule: 50 3 * * 1
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+- name: start
+  steps:
+  - name: routine
+    task:
+      type: model_method
+      modelType: "@nckrtl/native-host-method"
+      modelName: native-project-routine-17
+      methodName: project_routine
+      inputs:
+        projectId: 17
+        mode: routine

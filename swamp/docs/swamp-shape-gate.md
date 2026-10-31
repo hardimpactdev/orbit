@@ -1,0 +1,199 @@
+# Swamp shape gate
+
+Every pull request and main push runs `Swamp shape`. Existing violations are
+listed by file and rule in `config/swamp-shape-baseline.json`. Entries and their
+counts may only decrease. Moving code does not transfer an exception. CI also
+runs the base revision's checker and dependencies against committed HEAD in
+isolated sparse worktrees. That check derives its own shrink-only baseline from
+immutable base limits; it does not reinterpret the PR's revised baseline under
+old rules. Changing current rules, limits or exclusions cannot admit new debt
+under the frozen rules. Actual debt removal and approved classification fixes do
+not require stale allowances.
+
+One approved HTTP-only extraction has explicit source accounting: the unchanged
+`curlQuote`, `proxyHttpConfig` and `proxyGatewayRequest` declarations move from
+`operations/_lib/node-proxy.ts` to `node-proxy-http.ts`. The checker compares all
+three declarations with immutable origin `529a72e86d2757cd8f90fedb564e4c69d1879b6d`,
+requires the exact two imports, removes the original definitions, and preserves
+only the existing automatic-deploy caller and call expression. Extra declarations,
+new or indirect callers, changed executable bodies, count/evidence growth and
+resurrection after the actual comparison base removed the debt all fail. The
+origin must be an ancestor of HEAD. Normally it must also be an ancestor of the
+comparison base. For the first history-preserving import only, the verified
+unprefixed comparison source may instead precede the origin: it must have the
+same repository identity, retained ancestry, and no gate or baseline. The actual
+older source still supplies the declarations, caller, findings and derived caps;
+the later origin never replaces the comparison base. A prefixed or unrelated
+older tree cannot use this path.
+
+The raw baseline still only shrinks. This source proof derives one virtual limit
+at the new path for each run; `--write-baseline` never writes that limit into the
+ledger. Current findings and workflow coverage still include the retained HTTP
+call. JSON metrics report checked-in baseline rows and derived source moves
+separately; `SHAPE-GATE` includes `source_moves`. This is not a general permission
+to transfer allowances on rename. The support lower must reach the comparison
+base before the extraction, so the frozen checker enforces the same contract.
+
+## Review checklist
+
+- Before adding a mechanism, check [Swamp core](https://swamp-club.com/manual) and the [official extensions](https://github.com/swamp-club/swamp-extensions), including ssh, vault, datastore, git, container-image, cfgmgmt and workflows. Use the provided feature and its defaults when it fits. A PR that adds a mechanism must name what it checked and explain why it does not fit.
+- Reject custom wrappers, transports, supervisors, protocols or channels for work Swamp already provides. For example, use official `@swamp/ssh` instead of a custom SSH runner.
+- Keep the design proportionate. Orbit Nodes are trusted; do not add custody, placement or identity hardening beyond Swamp defaults for hypothetical edge cases.
+
+These are review items. The scanner does not decide whether a custom mechanism
+has a justified business purpose. The binding [Swamp shape guide](swamp-shape.md)
+owns the execution contract.
+
+## Automated checks
+
+The gate implements Nick's migration policy using these manual references:
+
+- [Workflows](https://swamp-club.com/manual/reference/workflows): placed steps,
+  guards, allowFailure, resume, concurrency, queueTimeout and manual approval
+  replace application polling, waits and locks.
+- [Behavior definitions](https://swamp-club.com/manual/reference/behavior-definitions):
+  `command/shell` runs an action script; TypeScript reads intent and records typed
+  results. Distinct commands are evidence for the multi-action heuristic, not a
+  proof of the business meaning of an action.
+- [Vaults](https://swamp-club.com/manual/reference/vaults): resolve private values
+  with `vault.get`. Our pilot restricts them to whole `task.inputs.env` values;
+  argv, shell concatenation and workflow inputs cannot carry them. An explicitly
+  closed empty `execution_secrets` object carries no values. SourceControl's
+  `repository_identity` is the established public host/org/repo identifier; this
+  exact field name is public, unlike SSH or bootstrap identity material.
+- [Data](https://swamp-club.com/manual/reference/data): outputs are persisted.
+  Do not write private material to resources, files or logs.
+
+Each embedded operational program has a 20-line threshold before grandfathering.
+Independent short strings are not combined to cross it. Script metrics count each
+contributing source literal once, including when a wrapper passes it to Python.
+The scanner resolves TypeScript literals, templates, tagged templates,
+concatenation, constant aliases and joins. It inspects nested subprocesses and
+reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
+polling, retries and lock calls are counted separately. Agent calls are checked
+against an explicit observer/action inventory; dynamic agent targets are unknown,
+not passing. The agent rule examines executable command positions in shell and
+Python subprocess calls, including sudo, shell and SSH wrappers. Service units
+such as `orbit-agent.service`, artifact paths passed to stat/copy/digest tools and
+configuration metadata are not agent invocations. Actual executable calls still
+use the observer/action inventory; unresolved commands remain unknown. Python
+bindings follow execution order within a lexical scope. Outer captures require
+an immutable binding, including writes through loops, destructuring and context
+managers. Later assignments cannot replace the command evaluated at an earlier
+subprocess call.
+
+Guide rule 6 permits host-tool transaction locks. The Python AST checker accepts
+only proven file descriptors for the canonical UFW, observer self-update,
+WireGuard peer config and documents cleanup lock paths. It follows literal paths, Path joins, open/fdopen
+and with bindings, and accepts exclusive acquisition (optionally nonblocking)
+or release. Dynamic paths, other files, unrelated descriptors, sleeps and retry
+loops remain findings. Naming a tool in a comment grants no exception. Python
+heredocs use this AST rule once rather than a second shell-token lock count.
+
+The parameterized PHP/FPM transaction also qualifies when its tracked sibling
+scripts prove the complete source contract. The Host constructor fixes the root
+to `/run/lock` and root uid/gid to zero. The Runtime constructor validates the
+account with `[a-z_][a-z0-9_-]{0,31}` before an action uses it. The checker follows
+the constructor tuple through the action dispatcher, rejects untyped callers and
+rebinding, and recognizes the exact `orbit-php-<user>.lock` acquisition sequence:
+`O_NOFOLLOW`, root-owned regular file, mode 0600, exclusive flock and close in
+finally. It preserves coordination with existing PHP deployment writers. A path
+prefix alone, missing sibling source, changed custody checks or an unknown call
+chain grants no exception; no grandfather entry is added.
+
+Rule F can prove a fixed external HTTP origin before a dynamic path suffix.
+The literal prefix must contain a complete authority and its trailing slash;
+unknown origins, partial authorities, reassigned bindings and URL joins that
+could replace the authority remain unresolved. Gateway metadata in a public
+provider input does not make a fixed external API request a Gateway callback.
+
+Static native child workflows resolve by an unambiguous local workflow name or id.
+The coverage graph follows each child and its behavior and script dependencies.
+Missing, dynamic or ambiguous children stay unknown; a child with accepted debt
+does not make its parent clean.
+
+Workflow metrics separate clean, baseline-accepted and unknown workflows. A clean
+workflow has known steps and no findings in its own source or reachable local
+behavior dependencies. Static coverage is not a runtime canary. Each run emits
+versioned JSON with its commit and units, plus a `SHAPE-GATE` summary on one line.
+
+Nick permits exactly two Gateway execution primitives from steps: GitHub
+installation-token mint and certificate signing (CSR plus operation id to a public
+bundle). The gate allows only these exact POST route templates:
+
+- `/api/v1/direct-operations/{operation}/github-token`
+- `/api/v1/direct-operations/{operation}/certificates/sign`
+
+Root confirmed both route contracts on 2026-10-31. The operation segment must be a
+positive numeric id. The native Python request fixture proves
+its numeric check precedes the request and rejects reassignment after that check. It does not exempt
+a client, module, endpoint prefix or file. Other Gateway HTTP calls from steps,
+including failure reporters, remain forbidden. The `gateway-http` rule covers the client and its aliases and imports;
+workflow coverage follows local dependencies, so helper modules and failure jobs
+remain part of the audit. A registered step that reaches a Gateway helper has
+its own file/rule finding, so new steps cannot inherit a historical exception.
+Intent arrives as non-secret workflow inputs, vault
+names and key names identify secrets, and step outputs carry results.
+
+Shared public Operation schemas and cancellation evidence live in
+`extensions/behaviors/operations/_lib/direct-input.ts`. Metadata and data-only
+helpers import that module directly. Importing `direct.ts` also reaches the
+retained Gateway client and therefore keeps that dependency in the shape audit.
+
+The required jobs are `Swamp shape gate`, `Swamp workflow validate` and
+`Swamp Deno tests`. The reusable workflow accepts `working-directory` and
+`base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
+with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
+workflow must validate on the checksum-verified runtime pin. All Operations Deno
+tests run with four workers, including disposable database effect tests.
+
+Legacy Gateway HTTP over proxy Nodes 1/18 lives in
+`operations/_lib/node-proxy-http.ts`. Its retained caller uses pinned SSH curl
+on the effect Node with the caller's CA file and timeout. Command lowers import
+`operations/_lib/node-proxy.ts`, which contains no Gateway HTTP client. This
+separation grants no new use of the legacy client or admission on proxy Nodes.
+
+Nick approved the dedicated `orbit-monorepo-ci` collective token on 2026-10-31,
+with `extensions:read` scope. Only the native workflow-validation step receives
+`SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`, on pull requests and main pushes. Shape
+and Deno jobs receive neither. The caller maps both secrets explicitly, never
+through inherited secrets. Pull-request-target events cannot receive them.
+
+The helper downloads the public checksum-verified official artifact and starts
+it with fresh HOME, XDG and Swamp configuration directories. Its environment
+allowlist admits only these two approved credentials. Official e459's startup
+account gate precedes local schema loading and verifies through
+`GET /api/whoami`. Native validation is required: unavailable authentication and
+schema, checksum or download failures fail the job. There is no import exception.
+
+The gate prints current debt separately from base comparison. Retained historical
+agent actions are grandfathered; only growing counts or new action evidence fail.
+Unknown agent targets remain unknown findings. A fresh PR also cannot reuse a
+stale allowance after the base source reduced its debt. The baseline must match
+current findings, so removals reduce the checked-in list in the same PR.
+
+For the history-preserving monorepo import only, the caller may pass the recorded
+Swamp source SHA when the actual comparison base has no `swamp/.swamp.yaml`.
+This applies to the import PR and its first main push. The checker accepts the
+unprefixed source tree only when that commit is an ancestor and its repository
+identity matches. Subsequent runs compare the actual Orbit base under `swamp/`.
+Lane24 records the import provenance and selects this one-time base.
+
+The scanner reads tracked files. Stage the imported inventory and baseline before
+a local import check. When the preserved source predates the gate, the checker
+derives initial limits from that source; a gate-source comparison base is not
+needed. The import fixtures cover both the PR and its first main push.
+
+The only Gateway wait exception is in the Orbit release runner: it may wait up
+to ten minutes for Swamp serve health before failing Caddy publication. It does
+not allow Swamp-step polling or Gateway wait/retry machinery elsewhere.
+
+The TS checker owns the endpoint policy and passes it to the Python AST helper.
+Native shell URLs use the same policy. The signer fixture is copied from lane0c
+model `orbit-certificate-signing-http`; altered methods, paths, unchecked ids and
+extra callbacks are rejected.
+
+Python command provenance uses lexical scope and statement order. Global or
+nonlocal declarations, walrus assignments and deleted bindings prevent a claim
+that a captured command is fixed. Unresolved executable control remains unknown
+and cannot gain a clean classification.

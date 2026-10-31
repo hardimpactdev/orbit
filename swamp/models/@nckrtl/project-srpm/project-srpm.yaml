@@ -1,0 +1,8 @@
+type: '@nckrtl/project-srpm'
+typeVersion: 2026.10.27.1
+id: 53b92ca9-39f9-45ab-9eb9-68beb3d18252
+name: project-srpm
+version: 1
+tags: {}
+globalArguments: {}
+methods: {}
