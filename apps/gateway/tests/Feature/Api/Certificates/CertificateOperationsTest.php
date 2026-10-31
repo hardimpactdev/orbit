@@ -12,9 +12,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,21 +24,8 @@ use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $this->node = Node::query()->create(['name' => 'native-certificate', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '10.44.0.8',
-        'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
-    $this->control = Node::query()->create(['name' => 'certificate-control', 'public_ssh_host' => '192.0.2.209', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
-    $this->control->roles()->create(['role' => 'gateway', 'status' => 'active']);
-    app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
-    {
-        public function privateKeyPath(): string
-        {
-            return '/fixture/existing-managed-identity';
-        }
-
-        public function publicKey(): string
-        {
-            return 'public-fixture';
-        }
-    });
+        'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'public-fixture-key']);
     $this->manifest = tempnam(sys_get_temp_dir(), 'certificate-agent-');
     file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0',
         'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
@@ -127,8 +114,10 @@ it('starts standalone leaf workflows with complete public input and fixed termin
 
     $sent = $socket->sent[0]['payload']['inputs'];
     expect($sent['intent']['leaf'])->toBe($input);
-    expect($sent['intent']['control_node_id'])->toBe($this->control->id);
-    expect($sent['intent']['connection'])->toMatchArray(['nodeHost' => '10.44.0.8', 'nodeUser' => 'orbit', 'nodeIdentityFile' => '/fixture/existing-managed-identity']);
+    expect($sent['intent']['control_node_id'])->toBe(209)
+        ->and($sent['intent']['host_keys'])->toBe(['ssh-ed25519 public-fixture-key']);
+    expect($sent['intent']['connection'])->toMatchArray(['nodeHost' => '10.44.0.8', 'nodeUser' => 'orbit', 'nodePort' => 22,
+        'nodeIdentityFile' => app(SwampSshExecutionInput::class)->identity()['identity_file']]);
     expect($sent['operation_id'])->toBe($operation->id);
     expect($sent['node_id'])->toBe($this->node->id);
     expect((array) $sent['execution_secrets'])->toBe([]);
