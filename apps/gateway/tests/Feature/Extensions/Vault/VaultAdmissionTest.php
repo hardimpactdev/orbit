@@ -7,6 +7,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
 use App\Models\Node;
@@ -24,6 +25,7 @@ use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 use Orbit\Extensions\Vault\Domain\VaultOperationSecrets;
 use Orbit\Extensions\Vault\Domain\VaultSettings;
 use Orbit\Extensions\Vault\Models\VaultItem;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -31,6 +33,10 @@ beforeEach(function (): void {
     $this->caller = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active',
         'platform' => 'linux', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1', 'user' => 'orbit']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-vault-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $this->payload = ['url' => 'https://vault.orbit', 'client_id' => 'fixture-client', 'client_secret' => 'fixture-client-secret',
         'master_password' => 'fixture-master-password', 'organization' => 'Orbit', 'collection' => 'Database'];
 });
@@ -157,7 +163,7 @@ it('binds each Vault program to its admitted action and requires the matching su
 
     expect(fn () => $contract->assertCompletion($operation, ['outcome' => 'succeeded', 'data' => ['backend' => 'forged']]))
         ->toThrow(ResourceOperationException::class);
-})->with(['setup', 'sync', 'teardown']);
+})->with(['setup', 'teardown']);
 
 it('projects proven setup and sync metadata and retains it until successful teardown', function (): void {
     $this->freezeTime();

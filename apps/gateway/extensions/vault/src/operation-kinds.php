@@ -9,8 +9,14 @@ return (static function (): array {
     if (! OperationKinds::supports('list_of')) {
         return [];
     }
-    $kinds = [];
-    foreach (['setup', 'sync', 'teardown'] as $action) {
+    $resultFields = [
+        'outcome', 'error_code', 'data.backend', 'data.error_code', 'data.email',
+        'data.organization_id', 'data.organization_name', 'data.collection_id', 'data.collection_name',
+        ...array_map(static fn (string $field): array => ['name' => 'data.'.$field, 'type' => 'list', 'items' => 'string', 'max' => 4096],
+            ['sources', 'cipher_ids', 'revisions', 'fingerprints']),
+    ];
+    $kinds = ['vault.sync' => ['executor' => 'swamp', 'result_fields' => $resultFields]];
+    foreach (['setup', 'teardown'] as $action) {
         $kinds['vault.'.$action] = [
             'executor' => 'swamp',
             'completion' => VaultOperationCompletion::class,
@@ -32,12 +38,7 @@ return (static function (): array {
                 'transport' => 'remote_program', 'name' => 'vault.collection',
                 'result' => ['outcome' => 'succeeded'],
             ],
-            'result_fields' => [
-                'outcome', 'error_code', 'data.backend', 'data.error_code', 'data.email',
-                'data.organization_id', 'data.organization_name', 'data.collection_id', 'data.collection_name',
-                ...array_map(static fn (string $field): array => ['name' => 'data.'.$field, 'type' => 'list', 'items' => 'string', 'max' => 4096],
-                    ['sources', 'cipher_ids', 'revisions', 'fingerprints']),
-            ],
+            'result_fields' => $resultFields,
         ];
     }
 
