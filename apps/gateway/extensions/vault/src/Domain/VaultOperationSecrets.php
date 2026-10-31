@@ -47,16 +47,6 @@ final readonly class VaultOperationSecrets implements OperationSecretSource
     {
         $configuration = $this->snapshot($operation, ['$secret' => $this->name(), 'id' => $id]);
         $redactions = [$configuration['client_secret'] ?? '', $configuration['master_password'] ?? ''];
-        foreach (is_array($configuration['wanted'] ?? null) ? $configuration['wanted'] : [] as $rawItem) {
-            $item = ValidatedData::object($rawItem);
-            $cipher = ValidatedData::object($item['cipher'] ?? []);
-            foreach (is_array($cipher['fields'] ?? null) ? $cipher['fields'] : [] as $rawField) {
-                $field = ValidatedData::object($rawField);
-                if (($field['hidden'] ?? false) === true && is_string($field['value'] ?? null)) {
-                    $redactions[] = $field['value'];
-                }
-            }
-        }
 
         return new OperationSecretValue(new VaultExecutionInput($configuration), array_values(array_filter($redactions, is_string(...))));
     }

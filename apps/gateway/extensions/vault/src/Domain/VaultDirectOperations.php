@@ -11,9 +11,11 @@ final readonly class VaultDirectOperations implements DirectOperationContributio
 {
     public function definitions(): array
     {
-        return array_fill_keys(['vault.sync', 'vault.setup', 'vault.teardown'], [
-            'workflow' => 'operation-vault-direct', 'projection' => DirectOperationResultProjection::class, 'result_hook' => VaultDirectResult::class,
-            'private_material' => ['configuration' => 'vault.credentials'],
-        ]);
+        return ['vault.sync' => ['workflow' => 'operation-vault-sync', 'projection' => DirectOperationResultProjection::class,
+            'result_hook' => VaultDirectResult::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'sync', 'step' => 'result']],
+            ...array_fill_keys(['vault.setup', 'vault.teardown'], [
+                'workflow' => 'operation-vault-direct', 'projection' => DirectOperationResultProjection::class, 'result_hook' => VaultDirectResult::class,
+                'private_material' => ['configuration' => 'vault.credentials'],
+            ])];
     }
 }

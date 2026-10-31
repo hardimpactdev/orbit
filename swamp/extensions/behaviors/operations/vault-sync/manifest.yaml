@@ -1,0 +1,10 @@
+additionalFiles:
+- scripts/bw.py
+- scripts/configure.py
+- scripts/login.py
+- scripts/unlock.py
+- scripts/sync.py
+- scripts/inventory.py
+- scripts/delete.py
+- scripts/write.py
+- scripts/logout.py

@@ -853,18 +853,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/user_create_action.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/user_create_action.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/user_create.ts",
       "rule": "gateway-http",
       "count": 3,
@@ -2215,18 +2203,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/role_relocate_direct_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/role_relocate_direct_local.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/node/role_removal.ts",
       "rule": "custom-control",
       "count": 2,
@@ -2254,7 +2230,7 @@
     {
       "file": "extensions/behaviors/operations/node/role_runtime_local.ts",
       "rule": "private-material",
-      "count": 3,
+      "count": 1,
       "evidence": []
     },
     {
@@ -3512,7 +3488,7 @@
     {
       "file": "extensions/behaviors/operations/vault/collection.ts",
       "rule": "inline-script",
-      "count": 351,
+      "count": 313,
       "evidence": []
     },
     {

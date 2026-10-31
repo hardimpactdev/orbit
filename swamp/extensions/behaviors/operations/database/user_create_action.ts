@@ -33,7 +33,7 @@ export const UserResult = z.union([
   Refusal,
 ]);
 
-/** A callback supplied by the shared Gateway client, never a family transport. */
+/** Existing type-only contract used by the remaining legacy Database parents. */
 export type PrivateMaterialUse = (
   use: (material: Record<string, unknown>) => Promise<void>,
 ) => Promise<void>;
@@ -41,72 +41,63 @@ export type PrivateMaterialUse = (
 /** One fixed action; native workflow resume owns uncertainty, with no local retry. */
 export async function createUser(
   rawIntent: unknown,
-  withPrivateMaterial: PrivateMaterialUse,
+  rawMaterial: unknown,
   signal?: AbortSignal,
   invoke: (call: NodeCall, signal?: AbortSignal) => Promise<unknown> =
     invokeSql,
 ): Promise<{ backend: "active" } | z.infer<typeof Refusal>> {
   try {
     const intent = UserCreateInput.parse(rawIntent);
+    const material = Material.parse(rawMaterial);
     signal?.throwIfAborted();
-    let outcome: { backend: "active" } | z.infer<typeof Refusal> | undefined;
-    await withPrivateMaterial(async (rawMaterial) => {
-      const material = Material.parse(rawMaterial);
-      signal?.throwIfAborted();
-      const postgres = intent.driver === "pgsql";
-      if (postgres && intent.username.length > 63) {
-        throw new Error("Invalid role");
-      }
-      const execute = (sql: string, mutates: boolean) =>
-        invoke({
-          name: "database.server-admin",
-          sudo: true,
-          mutates,
-          deadlineMs: 900_000,
-          input: {
-            operation: "execute",
-            container: intent.container,
-            password_variable: postgres ? "PGPASSWORD" : "MYSQL_PWD",
-            client: postgres
-              ? [
-                "psql",
-                "--no-psqlrc",
-                "--host=127.0.0.1",
-                "--username=postgres",
-                "--dbname=postgres",
-                "--no-align",
-                "--tuples-only",
-                "--quiet",
-                "--set=ON_ERROR_STOP=1",
-              ]
-              : ["mysql", "--user=root", "--batch", "--skip-column-names"],
-            password: material.password,
-            sql,
-          },
-        }, signal);
-      if (postgres && intent.replication) {
-        const readiness = await execute("SHOW wal_level;\n", false);
-        const refusal = Refusal.safeParse(readiness);
-        if (refusal.success) {
-          outcome = refusal.data;
-          return;
-        }
-        if (Applied.parse(readiness).output.trim() !== "logical") {
-          outcome = { error_code: "database.wal_level_not_logical" };
-          return;
-        }
-      }
-      const result = await execute(material.sql, true);
-      const refusal = Refusal.safeParse(result);
+    const postgres = intent.driver === "pgsql";
+    if (postgres && intent.username.length > 63) {
+      throw new Error("Invalid role");
+    }
+    const execute = (sql: string, mutates: boolean) =>
+      invoke({
+        name: "database.server-admin",
+        sudo: true,
+        mutates,
+        deadlineMs: 900_000,
+        input: {
+          operation: "execute",
+          container: intent.container,
+          password_variable: postgres ? "PGPASSWORD" : "MYSQL_PWD",
+          client: postgres
+            ? [
+              "psql",
+              "--no-psqlrc",
+              "--host=127.0.0.1",
+              "--username=postgres",
+              "--dbname=postgres",
+              "--no-align",
+              "--tuples-only",
+              "--quiet",
+              "--set=ON_ERROR_STOP=1",
+            ]
+            : ["mysql", "--user=root", "--batch", "--skip-column-names"],
+          password: material.password,
+          sql,
+        },
+      }, signal);
+    if (postgres && intent.replication) {
+      const readiness = await execute("SHOW wal_level;\n", false);
+      const refusal = Refusal.safeParse(readiness);
       if (refusal.success) {
-        outcome = refusal.data;
-        return;
+        return refusal.data;
       }
-      Applied.parse(result);
-      outcome = { backend: "active" };
-    });
-    if (outcome === undefined) throw new Error("No completed Node action");
-    return outcome;
+      if (Applied.parse(readiness).output.trim() !== "logical") {
+        return { error_code: "database.wal_level_not_logical" };
+      }
+    }
+    const result = await execute(material.sql, true);
+    const refusal = Refusal.safeParse(result);
+    if (refusal.success) {
+      return refusal.data;
+    }
+    Applied.parse(result);
+    return { backend: "active" };
   } catch {
     // Zod issues, cancellation reasons and thrown transport errors can contain SQL.
     throw new Error("database.user_create_outcome_unknown");
