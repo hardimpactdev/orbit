@@ -128,7 +128,7 @@ A failed setup step removes the new Instance after the teardown steps run. A mis
 
 ## orbit instance:rename
 
-Record a Git branch that is already checked out, change the Instance's Route domain, or do both. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or run Git commands that alter the checkout.
+Record a Git branch that is already checked out. Domain changes currently return `operation.kind_unavailable` before admission while their native Route parent is unavailable. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or run Git commands that alter the checkout.
 
 ```bash
 orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
@@ -211,7 +211,7 @@ orbit instance:register [options]
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
 | `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
 
-The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
+The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The native cutover requires an explicit non-web Project and an ordinary checkout already at the configured `apps.path/PROJECT/NAME`. Swamp checks and adopts the checkout locally; the Gateway records the result. Project inference, relocation, linked worktrees, setup and Route publication return `operation.kind_unavailable` before reservation. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
 When `--name` equals the Project default branch, Orbit registers the source as `default`, under the usual [identity rules](/domains/applications#register-an-existing-checkout). The final Operation result carries `name_converted_from` with the requested name, or null without a conversion, as it does for `instance:create`.
 

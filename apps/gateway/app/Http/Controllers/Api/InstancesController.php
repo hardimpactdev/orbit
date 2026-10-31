@@ -17,7 +17,6 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
-use App\Http\Requests\Instances\InstanceDestroyStartKind;
 use App\Http\Requests\Instances\RegisterInstanceRequest;
 use App\Http\Requests\Instances\RemoveInstanceRequest;
 use App\Http\Requests\Instances\RenameInstanceRequest;
@@ -103,7 +102,7 @@ final class InstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
-    #[StartsOperation('instance.destroy', kindResolver: InstanceDestroyStartKind::class)]
+    #[StartsOperation('instance.destroy')]
     public function destroy(
         RemoveInstanceRequest $request,
         int $instance,

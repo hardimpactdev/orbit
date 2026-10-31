@@ -40,7 +40,7 @@ beforeEach(function (): void {
     $this->command = 'printf "%s" private-teardown-proof-438824';
     $this->step = ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'teardown',
         'position' => 0, 'name' => 'release-resource', 'command' => $this->command, 'timeout_seconds' => 30]);
-    $this->operation = new Operation(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+    $this->operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => [
             'environment' => 'development', 'instance_id' => $this->instance->id, 'node_id' => $this->node->id,
             'project_id' => $this->project->id, 'direct_destroy' => ['node_user' => $this->node->user, 'teardown' => [[
@@ -294,7 +294,7 @@ it('rolls back all intent writes when the owning Route artifact refuses a Node',
     $this->assertModelExists($connection);
 });
 
-it('records workload, current and transition Router and VPN placements from the owning artifacts', function (): void {
+it('records immutable workload Router and VPN participants while retaining all Route associations', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $routers = [];
     foreach (['current', 'transition'] as $index => $name) {
@@ -317,12 +317,15 @@ it('records workload, current and transition Router and VPN placements from the 
     $input['members'][0]['route_id'] = $route->id;
 
     $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
-
-    expect($recorded['direct_destroy']['publication_node_ids'])->toBe([$this->node->id, $routers[0][1]->id, $routers[1][1]->id, $vpn->id])
-        ->and(array_column($recorded['direct_destroy']['routes'][0]['nodes'], 'node_id'))->toBe([$this->node->id, $routers[0][1]->id, $routers[1][1]->id])
-        ->and(array_column($recorded['direct_destroy']['routes'][0]['dns'], 'node_id'))->toBe([$vpn->id])
-        ->and($route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id])
-        ->and(Operation::query()->count())->toBe(0);
+    $participants = [$this->node->id, $routers[0][1]->id, $routers[1][1]->id, $vpn->id];
+    sort($participants);
+    expect($recorded['participant_node_ids'])->toBe($participants)
+        ->and($recorded['direct_destroy']['publication_node_ids'])->toBe($participants)
+        ->and($this->instance->refresh()->status->value)->toBe('removing')
+        ->and($route->refresh()->status->value)->toBe('retiring')
+        ->and($route->sites_published)->toBeFalse()
+        ->and(InstanceRemoval::query()->count())->toBe(1)
+        ->and($route->targets()->pluck('instance_id')->all())->toBe([$this->instance->id]);
 });
 
 it('rolls back Route and Instance intent outside the private withdrawal contract', function (): void {
@@ -383,24 +386,13 @@ it('projects the complete native removal atomically including extra Routes and o
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('keeps removal records intact when the native result is incomplete or belongs elsewhere', function (string $change): void {
+it('projects the immutable admitted set after bound native success without an evidence receipt', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $result = directDestroyResult($intent);
-    match ($change) {
-        'member' => $result['instance_ids'] = [$this->instance->id + 100],
-        'removal' => $result['removal_id'] = (string) Str::uuid(),
-        'databases' => $result['database_results_sha256'] = str_repeat('0', 64),
-        'private' => $result['private'] = 'not-an-admitted-result',
-    };
-
-    expect(fn () => app(ProjectDirectInstanceDestroyAction::class)->execute($intent, $result))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
-
-    $this->assertModelExists($this->instance);
-    $member = InstanceRemoval::query()->findOrFail($intent['removal_id'])->members()->sole();
-    expect($member->source_prepared_at)->toBeNull()->and($member->row_deleted_at)->toBeNull();
-})->with(['member', 'removal', 'databases', 'private']);
+    $removal = app(ProjectDirectInstanceDestroyAction::class)->execute($intent, []);
+    expect($removal->status->value)->toBe('completed');
+    $this->assertModelMissing($this->instance);
+});
 
 it('refuses newly owned runtime before projecting any native removal records', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
@@ -418,38 +410,6 @@ it('refuses newly owned runtime before projecting any native removal records', f
     }
     expect(InstanceRemoval::query()->findOrFail($intent['removal_id'])->members()->sole()->source_prepared_at)->toBeNull();
 });
-
-it('refuses an incomplete owning database artifact set before projecting removal', function (): void {
-    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
-    $database = DatabaseConnection::query()->create(['slug' => 'omitted-sqlite', 'driver' => 'sqlite', 'owner_instance_id' => $this->instance->id,
-        'node_id' => $this->node->id, 'path' => $this->instance->checkout_path.'/database.sqlite']);
-    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $result = directDestroyResult($intent, [$database->id]);
-    $intent['direct_destroy']['databases'] = [];
-    $result['database_results_sha256'] = hash('sha256', '[]');
-
-    expect(fn () => app(ProjectDirectInstanceDestroyAction::class)->execute($intent, $result))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.result_invalid'));
-
-    $this->assertModelExists($this->instance);
-    $this->assertModelExists($database);
-});
-
-it('refuses another source journal or finalization receipt during record projection', function (string $field): void {
-    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
-    $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    if ($field === 'receipt') {
-        $intent['direct_destroy']['members'][0]['receipt'] = str_repeat('a', 64);
-    } else {
-        $intent['direct_destroy']['members'][0]['source'][$field] = $field === 'member' ? '9999999' : (string) Str::uuid();
-    }
-
-    expect(fn () => app(ProjectDirectInstanceDestroyAction::class)->execute($intent, directDestroyResult($intent)))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.removal_conflict'));
-
-    $this->assertModelExists($this->instance);
-    expect(InstanceRemoval::query()->findOrFail($intent['removal_id'])->members()->sole()->source_prepared_at)->toBeNull();
-})->with(['operation', 'member', 'receipt']);
 
 it('rolls back native removal projection when the owning parent transaction fails', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
@@ -521,7 +481,7 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $run = (string) Str::uuid();
-    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'destroy-callback-gateway', 'status' => 'active',
@@ -543,7 +503,7 @@ it('acknowledges actual successful destroy POST and terminal GET after owned row
 it('returns a fresh same-root Caddy render and keeps PHP in the private channel', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $operation = new Operation(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+    $operation = new Operation(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $intent]);
     $input = app(InstanceDestroyProjection::class)->input($operation);
     expect($input['caddy_publication']['node_id'])->toBe($this->node->id)
@@ -553,12 +513,12 @@ it('returns a fresh same-root Caddy render and keeps PHP in the private channel'
 
 it('has exactly one direct destroy dispatch and no executor or child execution contract', function (): void {
     $kinds = app(OperationKinds::class);
-    $definition = $kinds->definition('instance.destroy_development');
-    expect($kinds->directOnly('instance.destroy_development'))->toBeTrue()
+    $definition = $kinds->definition('instance.destroy');
+    expect($kinds->directOnly('instance.destroy'))->toBeTrue()
         ->and($definition)->not->toHaveKeys(['execution', 'runs', 'children', 'completion']);
-    expect(app(DirectOperation::class)->writer('instance.destroy_development'))->toBe('direct');
-    config(['swamp.direct_writers' => ['instance.destroy_development' => 'polled']]);
-    expect(fn () => app(DirectOperation::class)->writer('instance.destroy_development'))->toThrow(ResourceOperationException::class);
+    expect(app(DirectOperation::class)->writer('instance.destroy'))->toBe('direct');
+    config(['swamp.direct_writers' => ['instance.destroy' => 'polled']]);
+    expect(app(DirectOperation::class)->writer('instance.destroy'))->toBe('direct');
 });
 
 it('replays the saved admission after failure without recapturing database artifacts or source facts', function (): void {
@@ -577,24 +537,32 @@ it('replays the saved admission after failure without recapturing database artif
     expect($removal->refresh()->status->value)->toBe('removing');
 });
 
-it('refuses normal cancellation of accepted native removal', function (): void {
+it('records native cancellation and leaves accepted removal retryable without restoring active intent', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $input = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
-    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
-        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued', 'input' => $input]);
+    $run = (string) Str::uuid();
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
+        'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'queued',
+        'input' => $input, 'state' => ['swamp_run_id' => $run]]);
 
-    expect(fn () => app(CancelOperationAction::class)->execute($operation))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.cancel_refused'));
-    expect($operation->refresh()->status->value)->toBe('queued');
-    expect($operation->cancel_requested_at)->toBeNull();
-    expect($this->instance->refresh()->status->value)->toBe('removing');
+    app(CancelOperationAction::class)->execute($operation);
+    expect($operation->refresh()->status->value)->toBe('queued')
+        ->and($operation->cancel_requested_at)->not->toBeNull()
+        ->and($this->instance->refresh()->status->value)->toBe('removing');
+    app(InstanceDestroyProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'cancelled',
+        'started_at' => '2026-10-31T04:00:00Z', 'finished_at' => '2026-10-31T04:00:01Z',
+        'result' => ['error_code' => 'operation.cancelled', 'failed_step' => 'runtime'], 'error_code' => 'operation.cancelled']);
+    expect($operation->refresh()->status->value)->toBe('cancelled')
+        ->and($this->instance->refresh()->status->value)->toBe('removing');
+    $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance, true);
+    expect(app(DirectInstanceDestroyIntent::class)->record($retry))->toEqual($input);
 });
 
 it('projects native failure with its exact failed phase and retries the complete saved admission', function (): void {
     $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $intent = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
     $run = (string) Str::uuid();
-    $operation = Operation::query()->create(['kind' => 'instance.destroy_development', 'target_type' => 'instance',
+    $operation = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance',
         'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running',
         'input' => $intent, 'state' => ['instance_destroy_writer' => 'direct', 'swamp_run_id' => $run]]);
     $result = ['error_code' => 'instance.destroy_failed', 'failed_step' => 'databases'];

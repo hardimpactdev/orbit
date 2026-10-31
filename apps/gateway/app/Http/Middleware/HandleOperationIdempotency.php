@@ -49,8 +49,7 @@ final readonly class HandleOperationIdempotency
         }
 
         $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
-        $kind = $start->kindResolver === null ? $start->kind : app($start->kindResolver)->resolve($request);
-        $this->idempotency->kind = $kind;
+        $this->idempotency->kind = $start->kind;
         $this->idempotency->key = $key;
         $caller = $request->user();
         $this->idempotency->fingerprint = app(OperationRequestFingerprint::class)->make(
@@ -58,7 +57,7 @@ final readonly class HandleOperationIdempotency
         );
 
         try {
-            $operation = $this->idempotency->replay($kind);
+            $operation = $this->idempotency->replay($this->idempotency->kind);
 
             return $operation === null ? $next($request) : response()->json([
                 'data' => OperationData::fromModel($operation, $operation->callerNodeId() === null ? null : Node::query()->find($operation->callerNodeId())?->name)->toArray(),

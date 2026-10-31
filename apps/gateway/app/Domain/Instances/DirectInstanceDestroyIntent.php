@@ -51,7 +51,7 @@ final readonly class DirectInstanceDestroyIntent
     private function recordIntent(array $input): array
     {
         $members = InstanceLifecycleInput::members($input);
-        if (Operation::query()->whereIn('kind', ['instance.destroy', 'instance.destroy_development'])
+        if (Operation::query()->whereIn('kind', ['instance.destroy'])
             ->where('target_type', 'instance')->whereIn('target_id', array_column($members, 'instance_id'))
             ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'A removal root already owns this Instance.', 409);
@@ -67,7 +67,7 @@ final readonly class DirectInstanceDestroyIntent
             throw new ResourceOperationException('instance.destroy_unsupported', 'Direct development removal requires its recorded source Node.', 409);
         }
         foreach ($members as $member) {
-            if (! is_string($member['worktree_inventory'] ?? null) || ! is_string($member['origin'] ?? null) || $member['origin'] === '') {
+            if (! ($input['source_pending'] ?? false) && (! is_string($member['worktree_inventory'] ?? null) || ! is_string($member['origin'] ?? null) || $member['origin'] === '')) {
                 throw new ResourceOperationException('instance.removal_conflict', 'Removal requires its captured source inventory and origin.', 409);
             }
         }
@@ -156,7 +156,7 @@ final readonly class DirectInstanceDestroyIntent
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
 
-        $recorded = [...$input, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $recorded = [...$input, 'participant_node_ids' => $nodes, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
             'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
             'direct_destroy' => [

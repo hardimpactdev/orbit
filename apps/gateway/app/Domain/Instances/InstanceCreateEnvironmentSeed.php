@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
 
 /** Seeds encrypted values from native template output, never from a Swamp completion body. */
@@ -37,7 +38,9 @@ final readonly class InstanceCreateEnvironmentSeed implements OperationSecretOut
         if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || strlen($value) > 131072) {
             throw new ResourceOperationException('operation.secret_output_unproven', 'The create template does not belong to this Instance.', 422);
         }
-        $instance = app(InstanceLifecycleState::class)->instance($operation);
+        $instance = Instance::query()->with(['node', 'project'])->whereKey($ownerId)
+            ->where('node_id', $operation->node_id)->where('project_id', $operation->input['project_id'] ?? null)
+            ->where('checkout_path', $operation->input['checkout'] ?? null)->firstOrFail();
         $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, true, createOperationId: $operation->id);
         $store = app(InstanceEnvironmentStore::class);
         $template = app(InstanceEnvironmentImporter::class)->parse($value);

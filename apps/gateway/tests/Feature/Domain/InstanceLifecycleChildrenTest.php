@@ -143,7 +143,7 @@ it('keeps the admitted native rollback kind after the removed Instance row is go
             'name' => 'instance.resolve-development-source', 'step' => 'source-resolve', 'result' => ['error_code' => 'instance.git_failed']]]]]);
     $context = app(InstanceLifecycleChildren::class)->context($this->parent);
     $intent = array_find($context['children'], static fn (array $intent): bool => $intent['key'] === 'rollback-removal');
-    expect($intent['kind'])->toBe('instance.destroy_development');
+    expect($intent['kind'])->toBe('instance.destroy');
     $child = Operation::query()->create(['kind' => $intent['kind'], 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $this->parent->node_id, 'input' => $intent['input'], 'status' => 'succeeded']);
     $snapshot = ['intent' => $intent, 'admitted' => ['parent_operation_id' => $this->parent->id, 'key' => $intent['key'],

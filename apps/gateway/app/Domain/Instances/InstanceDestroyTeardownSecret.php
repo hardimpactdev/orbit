@@ -100,7 +100,7 @@ final readonly class InstanceDestroyTeardownSecret implements OperationSecretSou
     /** @return array<string, mixed>|null */
     private function input(Operation $operation): ?array
     {
-        return $operation->kind === 'instance.destroy_development' && $operation->target_type === 'instance'
+        return $operation->kind === 'instance.destroy' && $operation->target_type === 'instance'
             && $operation->target_id === ($operation->input['instance_id'] ?? null) ? $operation->input : null;
     }
 

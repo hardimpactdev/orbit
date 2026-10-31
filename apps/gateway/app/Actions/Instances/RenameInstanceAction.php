@@ -6,18 +6,15 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\RenameInstanceData;
-use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Operation;
-use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
 final readonly class RenameInstanceAction
@@ -25,8 +22,6 @@ final readonly class RenameInstanceAction
     public function __construct(
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
-        private ReservedPrivateHostname $reservedHostnames,
-        private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $boundaries,
     ) {}
 
@@ -35,7 +30,9 @@ final readonly class RenameInstanceAction
         if (($replay = $this->idempotency->replay('instance.rename')) !== null) {
             return $replay;
         }
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.rename');
+        if ($data->domain !== null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Domain replacement requires the native Route publication parent.', 503);
+        }
 
         return DB::transaction(fn (): Operation => $this->admit($instance->refresh(), $data, $caller, $requestId));
     }
@@ -54,35 +51,23 @@ final readonly class RenameInstanceAction
         if ($instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('instance.rename_inactive', 'Rename requires an active Instance.', 409);
         }
-        $routeId = null;
-
-        if ($data->domain !== null) {
-            $this->reservedHostnames->assertAvailable($data->domain);
-            $routes = $instance->routes()->whereNull('web_root')->with('targets')->get();
-            // During replacement both Routes own the same target. Resume through its original Route.
-            $roots = $routes->filter(static fn (Route $route): bool => $route->replaces_route_id === null);
-            $route = $roots->count() === 1 ? $roots->sole() : null;
-            if (! $route instanceof Route || ! $route->isApp() || $route->project_id !== $instance->project_id
-                || $route->targets->count() !== 1 || $route->targets->sole()->instance_id !== $instance->id
-                || $routes->contains(static fn (Route $other): bool => $other->id !== $route->id && $other->replaces_route_id !== $route->id)) {
-                throw new ResourceOperationException('instance.route_required', 'Rename requires the Instance’s own single-target Project Route.', 409);
-            }
-            $routeId = $route->id;
-            if (Route::query()->where('domain', $data->domain)->whereKeyNot($route->id)->exists()) {
-                throw new ResourceOperationException('route.domain_conflict', 'Another Route owns the requested domain.', 409);
-            }
+        $node = $instance->node;
+        if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
+            throw new ResourceOperationException('instance.source_owner_invalid', 'Rename requires the configured Node account.', 409);
         }
-
-        $account = $this->accounts->resolve($instance->node);
+        $root = $this->boundaries->instanceGroupingDirectory($instance)->parent();
+        if ($root === null) {
+            throw new ResourceOperationException('instance.checkout_path_unsafe', 'Rename requires its stored checkout boundary.', 409);
+        }
 
         return $this->operations->execute('instance.rename', 'instance', $instance->id, $instance->node_id, [
             'instance_id' => $instance->id, 'project_id' => $instance->project_id,
-            'branch' => $data->branch, 'domain' => $data->domain, 'route_id' => $routeId,
+            'branch' => $data->branch,
             'checkout' => $instance->checkout_path, 'repository_identity' => $instance->project->repository_identity,
             'repository' => $instance->project->repository_url, 'source_layout' => $instance->source_layout,
             'prepare_id' => $instance->source_prepare_id, 'seed_repository' => $instance->seed_repository,
-            'user' => $account->user, 'group' => $account->group,
-            'source_root' => $this->boundaries->instanceRoot($instance, $account)->value,
-        ], $caller, $requestId);
+            'user' => $node->user, 'agent_sha256' => app(AgentDelivery::class)->pin($node),
+            'source_root' => $root->value,
+        ], $caller, $requestId, expectedWriter: 'direct');
     }
 }

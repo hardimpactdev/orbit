@@ -13,8 +13,6 @@ use App\Domain\Instances\VpEnvironment\InstanceVpPlanCommand;
 use App\Domain\Instances\VpEnvironment\InstanceVpReceiptCommand;
 
 return [
-    ...require __DIR__.'/lifecycle-operation-commands.php',
-    ...require __DIR__.'/environment-operation-commands.php',
     'instance.web-roots-receipt' => InstanceServedWebRootsReceiptCommand::class,
     'instance.projection-receipt' => InstanceProjectionReceiptCommand::class,
     'instance.executor-runtime' => InstanceExecutorRuntimeCommand::class,
