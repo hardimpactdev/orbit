@@ -102,7 +102,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     {
         $children = match ($operation->kind) {
             'task_vm.prepare_runtime' => $this->runtime($operation),
-            'task_vm.fill_package_cache' => $this->cacheFill($operation),
             'task_vm.image_build' => $this->image($operation),
             'task_vm.upcloud_image_build' => $this->upcloudImage($operation),
             'task_vm.sweep_host' => $this->sweep($operation),
@@ -126,18 +125,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     private function child(string $key, string $kind, int $node, array $input): array
     {
         return ['key' => $key, 'kind' => $kind, 'node_id' => $node, 'input' => [...$input, 'effect_key' => $key]];
-    }
-
-    /** @return list<ChildIntent> */
-    private function cacheFill(Operation $operation): array
-    {
-        $children = [];
-        foreach (TaskVmInputs::cacheFillBatches($operation->input['batches']) as $index => $batch) {
-            $children[] = $this->child('fill-'.$index, 'task_vm.fill_package_cache_batch', ValidatedData::integer($operation->node_id),
-                [...Arr::only($operation->input, ['host_node_id', 'max_bytes', 'github_token']), ...$batch]);
-        }
-
-        return $children;
     }
 
     /** @return array<string,mixed> */

@@ -4,23 +4,21 @@ declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmPackageCacheOperationAction;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationChildren;
-use App\Domain\Operations\OperationExecutionContract;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmCacheFillBatches;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
-use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\TaskVms\TaskVmPackageCache;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\PackageCacheEntry;
 use App\Models\PackageCacheSnapshot;
 use App\Models\Project;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmSettingsBuilder;
 
 function cacheFillArtifact(string $key): array
@@ -45,131 +43,127 @@ function cacheFillAdmission(array $artifacts): Operation
     return app(StartTaskVmPackageCacheOperationAction::class)->execute($host->id);
 }
 
-it('partitions a large inventory without losing artifacts and keeps worst-case child results inside kit C', function (): void {
-    $artifacts = array_map(static fn (int $index): array => cacheFillArtifact(hash('sha256', (string) $index)), range(1, 1800));
-    $batches = TaskVmCacheFillBatches::compile($artifacts, ['conflicting' => 'IntegrityConflict']);
-    expect(count($batches))->toBeGreaterThan(1);
-    expect(array_merge(...array_column($batches, 'artifacts')))->toBe($artifacts);
-    expect(array_merge(...array_column($batches, 'conflicts')))->toBe(['conflicting' => 'IntegrityConflict']);
-    foreach ($batches as $batch) {
-        $keys = [...array_column($batch['artifacts'], 'key'), ...array_keys($batch['conflicts'])];
-        $result = ['ready' => true, 'archive_ids' => [], 'archive_digests' => [], 'failed_ids' => $keys, 'failure_reasons' => array_fill(0, count($keys), str_repeat('\\', 160))];
-        $safe = app(OperationExecutionContract::class)->result(new Operation(['kind' => 'task_vm.fill_package_cache_batch']), $result);
-        expect($safe)->toBe($result);
-        expect(strlen(json_encode($safe, JSON_THROW_ON_ERROR)))->toBeLessThan(256 * 1024);
-    }
+beforeEach(function (): void {
+    $this->run = '80fc2fea-52e3-46ed-b789-d38219c231c6';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-task-vm-cache-fill', 'runId' => $this->run,
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
+    config(['swamp.run_token' => 'fixture.token']);
+    $this->outcome = ['run_id' => $this->run, 'status' => 'running', 'started_at' => '2026-10-31T00:00:00.000Z'];
 });
 
-it('refuses a cache key that cannot fit a result before recording intent', function (): void {
+function cacheBatch(array $hashes = [], array $failures = []): array
+{
+    return ['replace_inventory' => true, 'archive_ids' => array_keys($hashes), 'archive_digests' => array_values($hashes),
+        'failed_ids' => array_keys($failures), 'failure_reasons' => array_values($failures)];
+}
+
+it('admits one exact-host native root with safe input and no executor fallback', function (): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    expect(app(StartTaskVmPackageCacheOperationAction::class)->execute($op->node_id)->id)->toBe($op->id);
+    expect(app(OperationKinds::class)->directOnly($op->kind))->toBeTrue()->and(DirectOperation::owns($op))->toBeTrue()
+        ->and(app(OperationKinds::class)->definition('task_vm.fill_package_cache_batch'))->toBeNull()
+        ->and($op->input)->not->toHaveKeys(['batches', 'deadline_at'])->and($op->lock_key)->toBeNull();
+    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->run)->assertOk()
+        ->assertJsonPath('data.input.artifacts.0.key', 'archive')->assertJsonMissingPath('data.input.github_token')
+        ->assertJsonMissingPath('data.input.snapshots');
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertStatus(422);
+});
+
+it('refuses oversized artifact keys before recording intent', function (): void {
     Queue::fake();
     expect(fn () => cacheFillAdmission([cacheFillArtifact(str_repeat('a', 1025))]))->toThrow(TaskVmException::class, 'cache key exceeds');
     $this->assertDatabaseCount('operations', 0);
     Queue::assertNothingPushed();
 });
 
-it('records one bounded host fill and admits only its immutable batch keys', function (): void {
-    Queue::fake();
-    $operation = cacheFillAdmission([cacheFillArtifact('archive')]);
-    expect(app(StartTaskVmPackageCacheOperationAction::class)->execute($operation->node_id)->id)->toBe($operation->id);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'cache-parent'])->assertOk();
-    $path = "/api/v1/operation-executor/{$operation->id}";
-    $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'succeeded', 'result' => ['ready' => true, 'skipped' => []]])->assertConflict();
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertAccepted();
-    $child = $operation->children()->sole();
-    expect($child->kind)->toBe('task_vm.fill_package_cache_batch');
-    expect($child->node_id)->toBe($operation->node_id);
-    expect($child->input['artifacts'])->toBe($operation->input['batches'][0]['artifacts']);
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertOk()->assertJsonPath('data.id', $child->id);
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-1'])->assertUnprocessable();
-    Queue::assertNothingPushed();
-});
-
-it('completes a Swamp batch from its exact proven step and projects the host inventory', function (): void {
-    $parent = cacheFillAdmission([cacheFillArtifact('verified')]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'cache-parent'])->assertOk();
-    $path = "/api/v1/operation-executor/{$parent->id}";
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertAccepted();
-    $child = $parent->children()->sole();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'cache-child'])->assertOk();
+it('projects partial verified inventory and replays it without retaining executor receipts', function (): void {
+    $op = cacheFillAdmission([cacheFillArtifact('verified'), cacheFillArtifact('refused')]);
+    $path = '/api/v1/direct-operations/'.$op->id.'/result';
+    $this->postJson($path, $this->outcome)->assertOk();
     $hash = 'sha256-'.str_repeat('a', 64);
-    $runner = Mockery::mock(AgentCommandRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(['hashes' => ['verified' => $hash], 'failures' => []]);
-    app()->instance(AgentCommandRunner::class, $runner);
-    $childPath = "/api/v1/operation-executor/{$child->id}";
-    $result = ['ready' => true, 'archive_ids' => ['verified'], 'archive_digests' => [$hash], 'failed_ids' => [], 'failure_reasons' => []];
-    $completion = ['worker' => 'cache-child', 'status' => 'succeeded', 'result' => $result];
-    $this->postJson($childPath.'/run', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
-        'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])])->assertOk()->assertJsonPath('data', $result);
-    $this->postJson($childPath.'/complete', $completion)->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-    $this->postJson($childPath.'/step', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch:finish', 'name' => 'fill-package-cache-batch', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($childPath.'/complete', $completion)->assertOk()->assertJsonPath('data.result', $result);
-    $this->postJson($childPath.'/complete', $completion)->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'succeeded', 'result' => ['ready' => true, 'skipped' => []]])->assertOk();
-    $this->assertDatabaseHas('package_cache_entries', ['host_node_id' => $parent->node_id, 'key' => 'verified', 'integrity' => $hash]);
-    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeFalse();
+    $batch = cacheBatch(['verified' => $hash], ['refused' => 'ChecksumMismatch']);
+    $this->postJson($path, [...$this->outcome, 'result' => $batch])->assertOk();
+    $this->postJson($path, [...$this->outcome, 'result' => $batch])->assertOk();
+    $this->assertDatabaseHas('package_cache_entries', ['host_node_id' => $op->node_id, 'key' => 'verified', 'integrity' => $hash]);
+    $this->assertDatabaseCount('package_cache_entries', 1);
+    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeTrue();
+    $final = [...$this->outcome, 'status' => 'failed', 'finished_at' => '2026-10-31T00:00:01.000Z',
+        'error_code' => 'task_vm.package_cache_failed', 'result' => ['error_code' => 'task_vm.package_cache_failed']];
+    $this->postJson($path, $final)->assertOk()->assertJsonPath('data.status', 'failed');
+    $this->postJson($path, $final)->assertOk();
+    $this->assertDatabaseCount('package_cache_entries', 1);
+    expect($op->fresh()->state)->not->toHaveKeys(['children', 'executor_runs']);
 });
 
-it('projects partial archives only from proven child results and derives failed batch identities', function (): void {
-    Log::spy();
-    $parent = cacheFillAdmission([cacheFillArtifact('verified'), cacheFillArtifact('refused')]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'cache-parent'])->assertOk();
-    $path = "/api/v1/operation-executor/{$parent->id}";
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertAccepted();
-    $child = $parent->children()->sole();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'cache-child'])->assertOk();
+it('updates only the admitted snapshot and completes fully verified inventory', function (bool $stale): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    if ($stale) {
+        PackageCacheSnapshot::query()->sole()->update(['blobs' => ['composer.lock' => 'new']]);
+    }
+    $path = '/api/v1/direct-operations/'.$op->id.'/result';
+    $this->postJson($path, [...$this->outcome, 'result' => cacheBatch(['archive' => 'sha256-'.str_repeat('b', 64)])])->assertOk();
+    $this->postJson($path, [...$this->outcome, 'status' => 'succeeded', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
+    expect(PackageCacheEntry::query()->count())->toBe($stale ? 0 : 1);
+    if (! $stale) {
+        expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeFalse();
+    }
+})->with([false, true]);
+
+it('rejects foreign keys, bad hashes and unsafe results before inventory mutation', function (string $variant): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    $result = match ($variant) {
+        'foreign' => cacheBatch(['foreign' => 'sha256-'.str_repeat('a', 64)]),
+        'hash' => cacheBatch(['archive' => 'incorrect']),
+        'overlap' => cacheBatch(['archive' => 'sha256-'.str_repeat('a', 64)], ['archive' => 'Failed']),
+        'unsafe' => cacheBatch([], ['archive' => "unsafe\nsecret"]),
+        'long' => cacheBatch([], ['archive' => str_repeat('a', 161)]),
+    };
+    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [...$this->outcome, 'result' => $result])->assertUnprocessable();
+    $this->assertDatabaseCount('package_cache_entries', 0);
+})->with(['foreign', 'hash', 'overlap', 'unsafe', 'long']);
+
+it('refuses an explicit polled option before admission', function (): void {
+    config(['swamp.direct_writers' => ['task_vm.fill_package_cache' => 'polled']]);
+    expect(fn () => cacheFillAdmission([]))->toThrow(ResourceOperationException::class, 'This kind requires its direct Swamp writer.');
+    $this->assertDatabaseCount('operations', 0);
+});
+
+it('keeps verified inventory when cancellation happens before a fill result', function (): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    $snapshot = PackageCacheSnapshot::query()->sole();
+    PackageCacheEntry::query()->create(['project_id' => $snapshot->project_id, 'host_node_id' => $op->node_id,
+        'manager' => 'npm', 'package' => 'package-archive', 'version' => '1.0.0', 'key' => 'archive', 'integrity' => 'sha256-'.str_repeat('a', 64)]);
+    $path = '/api/v1/direct-operations/'.$op->id.'/result';
+    $this->postJson($path, $this->outcome)->assertOk();
+    $this->postJson($path, [...$this->outcome, 'status' => 'cancelled', 'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => []])->assertOk();
+    $this->assertDatabaseCount('package_cache_entries', 1);
+});
+
+it('hydrates only the owning root through the shared private callback', function (): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    $path = '/api/v1/direct-operations/'.$op->id.'/private-material?run_id='.$this->run;
+    $this->getJson($path)->assertForbidden();
+    $host = Node::query()->findOrFail($op->node_id);
+    $host->accessibleNodes()->attach(Node::query()->where('name', 'gateway')->sole());
+    config(['operation_executor.worker_node_ids' => [$host->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $host->wireguard_ip]);
+    $this->getJson($path)->assertOk()->assertJsonPath('data.github_token', null)->assertHeader('Cache-Control', 'no-store, private');
+    $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.github_token');
+    $this->getJson(str_replace($this->run, '413c7594-13e7-40bf-b952-90df5a0eb737', $path))->assertConflict();
+});
+
+it('does not count another hosts stale version as a fully replicated archive', function (): void {
+    $op = cacheFillAdmission([cacheFillArtifact('archive')]);
+    $other = Node::query()->create(['name' => 'other-cache-host', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.21', 'user' => 'orbit']);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($op->node_id), TaskVmSettingsBuilder::host($other->id)]]);
+    $snapshot = PackageCacheSnapshot::query()->sole();
     $hash = 'sha256-'.str_repeat('a', 64);
-    $runner = Mockery::mock(AgentCommandRunner::class);
-    $runner->shouldReceive('run')->once()->andReturn(['hashes' => ['verified' => $hash], 'failures' => ['refused' => 'ChecksumMismatch']]);
-    app()->instance(AgentCommandRunner::class, $runner);
-    $childPath = "/api/v1/operation-executor/{$child->id}";
-    $result = ['ready' => true, 'archive_ids' => ['verified'], 'archive_digests' => [$hash], 'failed_ids' => ['refused'], 'failure_reasons' => ['ChecksumMismatch']];
-    $this->postJson($childPath.'/run', ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch', 'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
-        'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])])->assertOk()->assertJsonPath('data', $result);
-    $this->postJson($childPath.'/step', ['worker' => 'cache-child', 'key' => 'finish', 'name' => 'fill-package-cache-batch', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($childPath.'/complete', ['worker' => 'cache-child', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => $result])->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => []])
-        ->assertOk()->assertJsonPath('data.result.skipped.0.child_id', $child->id)->assertJsonPath('data.result.skipped.0.key', 'fill-0')
-        ->assertJsonPath('data.result.skipped.0.kind', 'task_vm.fill_package_cache_batch');
-    $this->assertDatabaseHas('package_cache_entries', ['host_node_id' => $parent->node_id, 'key' => 'verified', 'integrity' => $hash]);
-    $this->assertDatabaseMissing('package_cache_entries', ['key' => 'refused']);
-    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeTrue();
-    Log::shouldHaveReceived('warning')->once()->with('Task VM package cache artifact failed.', ['host_node_id' => $parent->node_id, 'archive_id' => 'refused', 'reason' => 'ChecksumMismatch']);
-});
-
-it('refuses an unproven failed batch result before projecting archive inventory', function (): void {
-    $parent = cacheFillAdmission([cacheFillArtifact('forged')]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $parent->kind, 'worker' => 'cache-parent'])->assertOk();
-    $path = "/api/v1/operation-executor/{$parent->id}";
-    $this->postJson($path.'/children', ['worker' => 'cache-parent', 'key' => 'fill-0'])->assertAccepted();
-    $child = $parent->children()->sole();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'operation_id' => $child->id, 'worker' => 'cache-child'])->assertOk();
-    $this->postJson("/api/v1/operation-executor/{$child->id}/complete", ['worker' => 'cache-child', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed',
-        'result' => ['ready' => true, 'archive_ids' => ['forged'], 'archive_digests' => ['sha256-'.str_repeat('a', 64)], 'failed_ids' => [], 'failure_reasons' => []]])->assertOk();
-    $this->postJson($path.'/complete', ['worker' => 'cache-parent', 'status' => 'failed', 'error_code' => 'task_vm.package_cache_failed', 'result' => []])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-    $this->assertDatabaseCount('package_cache_entries', 0);
-});
-
-it('returns bounded redacted cache transport failures without projecting archive inventory', function (): void {
-    $parent = cacheFillAdmission([cacheFillArtifact('archive')]);
-    PackageCacheSnapshot::query()->sole()->update(['fill_pending' => true]);
-    $child = DB::transaction(fn () => app(OperationChildren::class)->admit($parent, ['key' => 'fill-0']))['operation'];
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $child->kind, 'worker' => 'cache-child'])->assertOk();
-    $runner = Mockery::mock(AgentCommandRunner::class);
-    $runner->shouldReceive('run')->once()->andThrow(new AgentCommandRefused('package-cache.host', 'task_vm.package_cache_failed', 'Fill refused.', [
-        'operation' => 'fill', 'path' => TaskVmPackageCache::HostPath,
-        'reason' => "old output\n".str_repeat("progress\n", 1000)."PASSWORD=cache-secret\nPermissionError: cache file\n",
-    ]));
-    app()->instance(AgentCommandRunner::class, $runner);
-
-    $response = $this->postJson("/api/v1/operation-executor/{$child->id}/run", ['worker' => 'cache-child', 'key' => 'fill-package-cache-batch',
-        'transport' => 'task_vm_package-cache', 'name' => 'task_vm.package-cache',
-        'input' => Arr::only($child->input, ['host_node_id', 'artifacts', 'conflicts', 'max_bytes', 'github_token'])]);
-
-    $response->assertStatus(502)->assertJsonPath('error.code', 'task_vm.package_cache_failed');
-    expect($response->json('error.message'))->toBe('The named operation refused this request.');
-    expect($response->getContent())->not->toContain('cache-secret', 'old output', 'PermissionError');
-    expect(mb_strlen($response->json('error.message')))->toBeLessThanOrEqual(TaskVmException::MessageLimit);
-    $this->assertDatabaseCount('package_cache_entries', 0);
-    expect(PackageCacheSnapshot::query()->sole()->fill_pending)->toBeTrue();
+    PackageCacheEntry::query()->create(['project_id' => $snapshot->project_id, 'host_node_id' => $other->id,
+        'manager' => 'npm', 'package' => 'package-archive', 'version' => '0.9.0', 'key' => 'archive', 'integrity' => $hash]);
+    $this->postJson('/api/v1/direct-operations/'.$op->id.'/result', [...$this->outcome, 'result' => cacheBatch(['archive' => $hash])])->assertOk();
+    expect($snapshot->fresh()->fill_pending)->toBeTrue();
 });
