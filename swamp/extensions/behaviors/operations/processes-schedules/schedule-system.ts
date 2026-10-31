@@ -16,15 +16,12 @@ import {
 export { renderScheduleUnits } from "./contract.ts";
 const Command = z.string().min(1).max(4096).regex(/^[^\0\r\n]+$/);
 const Install = PublicInstall.extend({ command: Command.optional() });
-const Target = z.object({ id: Id, user: Account, working_directory: Path })
-  .strict();
 const Remove = z.union([
   Install.extend({ command: Command, cascade: z.boolean() }),
   z.object({ id: Id, group: Account, cascade: z.boolean() }).strict(),
 ]);
 export type ScheduleCommand =
   | "schedule.install"
-  | "schedule.activate"
   | "schedule.remove";
 
 class Refused extends Error {
@@ -491,39 +488,6 @@ async function install(host: Host, input: z.infer<typeof Install>) {
   }
 }
 
-async function activate(host: Host, input: z.infer<typeof Target>) {
-  await host.inspectDirectories();
-  const artifacts = await readArtifacts(host, input.id);
-  if (artifacts.script !== null || artifacts.callback !== null) {
-    refuse("schedule.artifact_conflict");
-  }
-  const context = installedIntent(
-    input.id,
-    artifacts.service,
-    artifacts.timer,
-  );
-  if (
-    context.user !== input.user ||
-    context.working_directory !== input.working_directory
-  ) refuse("schedule.target_unavailable");
-  await host.group(context.group);
-  await host.runnable(
-    input.user,
-    input.working_directory,
-    context.home,
-    context.shell,
-  );
-  const unit = paths(input.id).timerUnit;
-  const state = await host.timerState(unit);
-  host.beginMutation();
-  if (!await host.settle(unit, true)) {
-    if (!await host.restoreState(unit, state)) {
-      refuse("schedule.rollback_failed");
-    }
-    refuse();
-  }
-}
-
 async function remove(host: Host, input: z.infer<typeof Remove>) {
   await host.inspectDirectories();
   const gid = await host.group(input.group);
@@ -591,9 +555,6 @@ export async function scheduleSystem(
     switch (name) {
       case "schedule.install":
         await install(host, Install.parse(input));
-        break;
-      case "schedule.activate":
-        await activate(host, Target.parse(input));
         break;
       case "schedule.remove":
         await remove(host, Remove.parse(input));
