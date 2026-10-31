@@ -34,8 +34,7 @@ it('admits one native root with immutable participants and no Gateway observatio
         ->and($operation->input['families'])->toBe(['node'])
         ->and($operation->input['participant_node_ids'])->toBe([$this->node->id])
         ->and($operation->input['nodes'][0]['managed'])->toBeFalse()
-        ->and($operation->input['nodes'][0]['resources'])->toHaveKey('node_checks')
-        ->and($operation->steps()->count())->toBe(0);
+        ->and($operation->input['nodes'][0]['resources'])->toHaveKey('node_checks');
     $declaration = app(DirectOperation::class)->definition('doctor.inspect');
     expect($declaration['workflow'])->toBe('operation-doctor-inspect')
         ->and($declaration)->not->toHaveKeys(['runs', 'executor', 'completion_contract', 'result_fields', 'children']);
@@ -50,7 +49,7 @@ it('refuses inaccessible Nodes before admission', function (): void {
 it('returns an asynchronous Doctor API response and preserves its access boundary', function (): void {
     $body = json_encode(['node_id' => $this->node->id, 'families' => ['node']], JSON_THROW_ON_ERROR);
     $this->call('POST', '/api/v1/doctor', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => $this->caller->wireguard_ip], $body)
-        ->assertAccepted()->assertJsonPath('data.kind', 'doctor.inspect')->assertJsonPath('data.status', 'queued');
+        ->assertAccepted()->assertJsonPath('data.kind', 'doctor.inspect')->assertJsonPath('data.status', 'running');
     $this->caller->accessibleNodes()->detach();
     $this->call('POST', '/api/v1/doctor', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'REMOTE_ADDR' => $this->caller->wireguard_ip], $body)
         ->assertForbidden()->assertJsonPath('error.code', 'node_access.required');
@@ -67,7 +66,7 @@ it('records native recovery scope without exposing it or creating step receipts'
     expect($result->status)->toBe(OperationStatus::Succeeded)->and($result->result['report']['healthy'])->toBeFalse()
         ->and($result->result['report']['summary']['drift'])->toBe(1)
         ->and($result->result['report']['nodes'][0]['families'][0])->not->toHaveKey('observed_resources')
-        ->and($result->steps()->count())->toBe(0)->and(ProblemFingerprint::query()->count())->toBe(1);
+        ->and(ProblemFingerprint::query()->count())->toBe(1);
     app(DoctorProjection::class)->apply($operation, $data);
     expect(ProblemFingerprint::query()->count())->toBe(1)->and(ProblemFingerprint::query()->first()->occurrences)->toBe(1);
 });

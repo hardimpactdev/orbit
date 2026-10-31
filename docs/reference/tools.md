@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Data/Tools/**
   - apps/agent/src/commands/{vp_store,vp_project,vp_scope,vp_materialize,vp_global,tools_apt,composer_scope,composer_global,homebrew_scope,homebrew,tool_output}{.rs,/**}
   - apps/gateway/app/Http/{Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php,Requests/Tools/**}
-  - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
+  - apps/gateway/app/Actions/Doctor/Intent/RuntimeDoctorIntent.php
 ---
 
 # Tools

@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
   - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
-  - apps/gateway/app/Infrastructure/Doctor/NativeCaddyBuildInspector.php
+  - apps/gateway/app/Actions/Doctor/Intent/InfrastructureDoctorIntent.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
 ---
