@@ -127,7 +127,7 @@ Deno.test("development deploy uses Project commands as the admitted Node account
   );
   assertEquals(
     f.paths,
-    Array(2).fill("/api/v1/projects/9/development-deploy-steps"),
+    Array(2).fill("/api/v1/projects/9/dev-deploy-steps"),
   );
   assertEquals(f.effects[0].target, f.admitted.target);
 });

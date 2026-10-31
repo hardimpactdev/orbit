@@ -67,7 +67,7 @@ export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
   return {
     type: "@nckrtl/instance-deploy-direct",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     globalArguments: Globals,
     resources: {
       execution: {

@@ -57,7 +57,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
 
             def do_GET(self):
                 state['paths'].append(self.path)
-                if self.path == '/api/v1/projects/102/development-deploy-steps':
+                if self.path == '/api/v1/projects/102/dev-deploy-steps':
                     self.reply([{'name': 'proof', 'command': script, 'timeout_seconds': 60}])
                     return
                 base, separator, run_id = self.path.partition('?run_id=')

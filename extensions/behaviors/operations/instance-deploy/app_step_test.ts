@@ -362,6 +362,10 @@ Deno.test("development deploy commands use only the Project before-activation li
   const paths: string[] = [];
   const http: Http = (_method, path) => {
     paths.push(path);
+    // Canonical Gateway route: routes/api/project.php. Other paths are absent.
+    if (path !== "/api/v1/projects/9/dev-deploy-steps") {
+      return Promise.resolve({ status: 404, body: {} });
+    }
     return Promise.resolve({
       status: 200,
       body: {
@@ -370,7 +374,7 @@ Deno.test("development deploy commands use only the Project before-activation li
     });
   };
   assertEquals(await currentProgram(http, admitted), script);
-  assertEquals(paths, ["/api/v1/projects/9/development-deploy-steps"]);
+  assertEquals(paths, ["/api/v1/projects/9/dev-deploy-steps"]);
   await assertRejects(
     () => currentProgram(http, { ...admitted, phase: "after_activation" }),
     Error,

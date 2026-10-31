@@ -139,7 +139,7 @@ async function fixture() {
     paths.push(method + " " + path);
     if (
       method === "GET" &&
-      path === `/api/v1/projects/58/development-deploy-steps`
+      path === `/api/v1/projects/58/dev-deploy-steps`
     ) {
       return Promise.resolve({
         status: 200,

@@ -13,9 +13,10 @@ store installer maps it to artifact names. The deadline includes every admitted
 command timeout plus 900 seconds of infrastructure time.
 
 Git credentials and registry settings stay inside private callbacks. Scripts
-come from the Project reader and must match admitted digests and timeouts.
-Required failures stop the list and return a redacted tail of at most 2 KiB;
-best-effort failures add warnings. Only success advances the seed.
+come from the canonical Project `dev-deploy-steps` reader and must match
+admitted digests and timeouts. Required failures stop the list and return a
+redacted tail of at most 2 KiB; best-effort failures add warnings. Only success
+advances the seed.
 
 A checkpoint records an effect before launch and clears after its typed result.
 Shared admission marks a fresh Operation running before starting its native

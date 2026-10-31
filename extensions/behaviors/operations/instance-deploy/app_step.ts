@@ -75,7 +75,7 @@ export async function currentProgram(
   const path = (step.phase === "setup" || step.phase === "teardown")
     ? `/api/v1/projects/${step.project_id}/${step.phase}-steps`
     : development
-    ? `/api/v1/projects/${step.project_id}/development-deploy-steps`
+    ? `/api/v1/projects/${step.project_id}/dev-deploy-steps`
     : `/api/v1/instances/${step.instance_id}/deploy-steps`;
   try {
     if (development && step.phase !== "before_activation") throw new Error();
