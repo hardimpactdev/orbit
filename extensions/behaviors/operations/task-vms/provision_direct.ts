@@ -76,7 +76,7 @@ export const ProvisionInput = ProviderCreateInput.safeExtend({
   );
 export type ProvisionIntent = z.infer<typeof ProvisionInput>;
 const Args = DirectArgs.extend({
-  kind: z.literal("task_vm.provision"),
+  kind: z.enum(["task_vm.provision", "tasks.provision"]),
   node_id: Id,
 });
 const Status = z.enum([
@@ -130,26 +130,26 @@ const Code = z.enum([
   "task_vm.image_mismatch",
   "task_vm.worker_bootstrap_refused",
 ]);
-const Outcome = z.object({
+export const ProvisionOutcome = z.object({
   stage: Stage,
   ok: z.boolean(),
   output: Output.nullable(),
   error_code: Code.nullable(),
 }).strict().refine((value) => value.ok === (value.error_code === null));
-const Admission = z.object({
+export const ProvisionAdmission = z.object({
   active: z.boolean(),
   started_at: z.string(),
   input: ProvisionInput,
 }).strict();
 const StepArgs = Args.extend({
-  admission: Admission,
+  admission: ProvisionAdmission,
   stage: Stage.exclude(["issue-model", "publish-hub"]),
   provider: Provider.nullable(),
-  outcomes: z.array(Outcome).max(ProvisionStages.length),
+  outcomes: z.array(ProvisionOutcome).max(ProvisionStages.length),
 });
-const ProjectArgs = Args.extend({
-  admission: Admission.nullable(),
-  outcomes: z.array(Outcome).max(ProvisionStages.length),
+export const ProvisionProjectArgs = Args.extend({
+  admission: ProvisionAdmission.nullable(),
+  outcomes: z.array(ProvisionOutcome).max(ProvisionStages.length),
 });
 export type ProvisionGateway = Pick<
   GatewayOperation,
@@ -168,7 +168,7 @@ export type ProvisionAction = (
   input: ProvisionIntent,
   prepared: {
     provider: z.infer<typeof Provider> | null;
-    outcomes: z.infer<typeof Outcome>[];
+    outcomes: z.infer<typeof ProvisionOutcome>[];
   },
   gateway: ProvisionGateway,
   guard: () => Promise<void>,
@@ -254,24 +254,89 @@ export function provisionNativeActions(
   };
 }
 
+/** Pure readiness fold shared by the VM parent and its owning Tasks parent. */
+export function provisionOutcome(
+  args: z.infer<typeof ProvisionProjectArgs>,
+  value: { input: ProvisionIntent; cancel_requested: boolean },
+) {
+  const complete = args.outcomes.length === ProvisionStages.length &&
+    Stage.options.every((stage, index) => args.outcomes[index].stage === stage);
+  const failure = args.outcomes.find((outcome) => !outcome.ok);
+  const cancelled = failure?.error_code === "operation.cancelled" ||
+    (!failure && complete && value.cancel_requested);
+  const code = failure?.error_code ??
+    (complete && args.admission?.active && value.input.eligible
+      ? null
+      : "task_vm.provision_refused");
+  const status = cancelled ? "cancelled" : code ? "failed" : "succeeded";
+  const nativeNode = Object.assign(
+    {},
+    ...args.outcomes.map((outcome) =>
+      PublicOutput.safeParse(outcome.output).data?.node ?? {}
+    ),
+  );
+  const peer = args.outcomes.find((outcome) =>
+    outcome.stage === "prepare-network"
+  );
+  const provider = args.outcomes.find((outcome) =>
+    outcome.stage === "provider"
+  );
+  const confirmed = args.outcomes.find((outcome) =>
+    outcome.stage === "confirm-runtime"
+  );
+  const result = status === "succeeded"
+    ? {
+      task_vm_id: value.input.task_vm_id,
+      guest_node_id: value.input.guest_node_id,
+      ready: true,
+      provider_id: Provider.parse(provider?.output).provider_id,
+      enrollment: {
+        ready: true,
+        node: {
+          ...nativeNode,
+          address: Provider.parse(provider?.output).address,
+          wireguard_public_key:
+            PublicOutput.parse(peer?.output).wireguard_public_key,
+        },
+        process: PublicOutput.parse(confirmed?.output).process,
+      },
+    }
+    : status === "failed"
+    ? { error_code: code }
+    : {};
+  return {
+    status,
+    started_at: args.admission?.started_at ?? new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    result,
+    error_code: cancelled ? null : code,
+  };
+}
+
 /** One parent root with explicit host, Gateway, issuer and exact-guest placements. */
 export function nativeProvision(
   makeHttp: (ctx: Context) => Http = (ctx) =>
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   actions?: ProvisionActions,
+  kind: "task_vm.provision" | "tasks.provision" = "task_vm.provision",
 ) {
   const gateway = (args: z.infer<typeof Args>, ctx: Context) =>
     new GatewayOperation(makeHttp(ctx), args);
   const current = async (args: z.infer<typeof Args>, ctx: Context) => {
     const value = z.object({
       id: Id,
-      kind: z.literal("task_vm.provision"),
+      kind: z.literal(kind),
       node_id: Id,
       status: Status,
       cancel_requested: z.boolean(),
-      input: ProvisionInput,
+      input: kind === "tasks.provision"
+        ? ProvisionInput.strip()
+        : ProvisionInput,
     }).parse(await gateway(args, ctx).read(ctx.signal));
-    if (value.id !== args.operation_id || value.node_id !== args.node_id) {
+    if (
+      args.kind !== kind || value.id !== args.operation_id ||
+      value.node_id !== args.node_id
+    ) {
       throw new Error("task_vm.provision_refused");
     }
     return value;
@@ -283,13 +348,13 @@ export function nativeProvision(
     resources: {
       admission: {
         description: "Frozen allocation input and root start time",
-        schema: Admission,
+        schema: ProvisionAdmission,
         lifetime: "1d",
         garbageCollection: 3,
       },
       outcome: {
         description: "Bounded safe output from one same-root provision stage",
-        schema: Outcome,
+        schema: ProvisionOutcome,
         lifetime: "1d",
         garbageCollection: 3,
       },
@@ -437,7 +502,7 @@ export function nativeProvision(
               ? known.data
               : "task_vm.provision_failed";
           }
-          const outcome = Outcome.parse({
+          const outcome = ProvisionOutcome.parse({
             stage: args.stage,
             ok: error_code === null,
             output,
@@ -453,73 +518,20 @@ export function nativeProvision(
       project: {
         description:
           "Record one final native readiness outcome without another executor",
-        arguments: ProjectArgs,
-        execute: async (raw: z.infer<typeof ProjectArgs>, ctx: Context) => {
-          const args = ProjectArgs.parse(raw);
+        arguments: ProvisionProjectArgs,
+        execute: async (
+          raw: z.infer<typeof ProvisionProjectArgs>,
+          ctx: Context,
+        ) => {
+          const args = ProvisionProjectArgs.parse(raw);
           const value = await current(args, ctx);
           if (["succeeded", "failed", "cancelled"].includes(value.status)) {
             return { status: value.status };
           }
-          const complete = args.outcomes.length === ProvisionStages.length &&
-            Stage.options.every((stage, index) =>
-              args.outcomes[index].stage === stage
-            );
-          const failure = args.outcomes.find((outcome) => !outcome.ok);
-          const cancelled = failure?.error_code === "operation.cancelled" ||
-            (!failure && complete && value.cancel_requested);
-          const code = failure?.error_code ??
-            (complete && args.admission?.active && value.input.eligible
-              ? null
-              : "task_vm.provision_refused");
-          const status = cancelled
-            ? "cancelled"
-            : code
-            ? "failed"
-            : "succeeded";
-          const nativeNode = Object.assign(
-            {},
-            ...args.outcomes.map((outcome) =>
-              PublicOutput.safeParse(outcome.output).data?.node ?? {}
-            ),
-          );
-          const peer = args.outcomes.find((outcome) =>
-            outcome.stage === "prepare-network"
-          );
-          const provider = args.outcomes.find((outcome) =>
-            outcome.stage === "provider"
-          );
-          const confirmed = args.outcomes.find((outcome) =>
-            outcome.stage === "confirm-runtime"
-          );
-          const result = status === "succeeded"
-            ? {
-              task_vm_id: value.input.task_vm_id,
-              guest_node_id: value.input.guest_node_id,
-              ready: true,
-              provider_id: Provider.parse(provider?.output).provider_id,
-              enrollment: {
-                ready: true,
-                node: {
-                  ...nativeNode,
-                  address: Provider.parse(provider?.output).address,
-                  wireguard_public_key:
-                    PublicOutput.parse(peer?.output).wireguard_public_key,
-                },
-                process: PublicOutput.parse(confirmed?.output).process,
-              },
-            }
-            : status === "failed"
-            ? { error_code: code }
-            : {};
-          await gateway(args, ctx).project({
-            status,
-            started_at: args.admission?.started_at ?? new Date().toISOString(),
-            finished_at: new Date().toISOString(),
-            result,
-            error_code: cancelled ? null : code,
-          });
-          if (status === "failed") throw new Error(code!);
-          return { status };
+          const outcome = provisionOutcome(args, value);
+          await gateway(args, ctx).project(outcome);
+          if (outcome.status === "failed") throw new Error(outcome.error_code!);
+          return { status: outcome.status };
         },
       },
     },

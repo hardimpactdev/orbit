@@ -256,3 +256,9 @@ live configuration if reload fails. The Node agent observes; publication does
 not invoke an agent action.
 
 GitHub installation credentials include the stateless `ghs_APPID_JWT` format. The bounded private token reader accepts JWT dots, keeps the token inside its callback and revokes it afterward. Tokens and upstream failures never enter public output or native history.
+
+## Task provision
+
+`tasks.provision` uses `operation-task-provision`. One admission captures the group, VM, exact guest Node and workspace. The native run composes the canonical VM provider and enrollment steps, shared WireGuard hub publication and model-key issue, then prepares source and runs Project setup on the guest. It starts no child VM Operation. A root-Node checkpoint records completed VM enrollment before guest checkout. The final root-Node projection marks the group running only after workspace readiness. A later workspace failure retains the confirmed VM state.
+
+The first slice supports unrouted workspaces without Project Process or Schedule definitions. Gateway admission refuses other combinations before placement. Source checkout uses the existing Git read credential source, bound to the admitted guest. No caller worker token or new credential type is added. All effects use native system commands; the frozen agent is unchanged.
