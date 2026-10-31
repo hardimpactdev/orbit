@@ -49,7 +49,6 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
@@ -92,7 +91,6 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
-        InstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         DevelopmentInstanceBranchInspector::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
