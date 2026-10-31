@@ -32,7 +32,7 @@ final readonly class DirectOperationResultProjection implements DirectOperationP
                 throw new ResourceOperationException('operation.result_invalid', 'Only safe domain metadata is accepted.', 422);
             }
             $code = ValidatedData::nullableString($data['error_code'] ?? null);
-            if (($status === OperationStatus::Failed && ($code === null || ($result['error_code'] ?? null) !== $code))
+            if ((in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) && ($code === null || ($result['error_code'] ?? null) !== $code))
                 || ($status === OperationStatus::Succeeded && ($code !== null || isset($result['error_code'])))) {
                 throw new ResourceOperationException('operation.result_invalid', 'The status and refusal code disagree.', 422);
             }
@@ -42,6 +42,7 @@ final readonly class DirectOperationResultProjection implements DirectOperationP
                 $this->hook($projected)->complete($projected, match ($status) {
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),
                     OperationStatus::Failed => OperationOutcome::failed($code, $result),
+                    OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
                     default => OperationOutcome::cancelled($result),
                 });
             }

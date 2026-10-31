@@ -27,6 +27,12 @@ final readonly class OperationOutcome
     }
 
     /** @param array<string, mixed>|null $result */
+    public static function interrupted(?string $errorCode = null, ?array $result = null): self
+    {
+        return new self(OperationStatus::Interrupted, $errorCode, $result);
+    }
+
+    /** @param array<string, mixed>|null $result */
     public static function cancelled(?array $result = null): self
     {
         return new self(OperationStatus::Cancelled, null, $result);

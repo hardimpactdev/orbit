@@ -23,11 +23,12 @@ final readonly class ReadOperationAction
             || $definition === null || $operation->node_id === null) {
             return $operation;
         }
-        if (! $this->history->failed($operation, $definition['workflow'], $runId)) {
+        $status = $this->history->status($operation, $definition['workflow'], $runId);
+        if ($status === null) {
             return $operation->refresh();
         }
         try {
-            return $this->failures->execute($operation, $runId);
+            return $this->failures->execute($operation, $runId, $status);
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['operation.run_mismatch', 'operation.run_unbound'], true)) {
                 throw $exception;

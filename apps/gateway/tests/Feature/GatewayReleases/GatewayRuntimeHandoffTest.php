@@ -305,7 +305,7 @@ describe('gateway:release:handoff', function (): void {
             && $request->toPsrRequest()->getHeaderLine('Authorization') === '');
     });
 
-    it('keeps pre-send connection failures inside one release recovery deadline', function (bool $horizon, bool $persistent): void {
+    it('limits release recovery to Caddy and attempts Horizon admission once', function (bool $horizon, bool $persistent): void {
         $gateway = handoff_gateway();
         $path = sys_get_temp_dir().'/connect-wait-caddy-'.bin2hex(random_bytes(8));
         if ($horizon) {
@@ -326,7 +326,12 @@ describe('gateway:release:handoff', function (): void {
                 }
             };
 
-            if ($persistent) {
+            if ($horizon) {
+                expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_units_failed')
+                    ->and($builds->connections)->toHaveCount(1)
+                    ->and($builds->sent)->toBe([])
+                    ->and($probe->time->now())->toBe(0.0);
+            } elseif ($persistent) {
                 expect(release_failure(fn () => $handoff->serve())->errorCode)
                     ->toBe($horizon ? 'gateway.release_units_failed' : 'gateway.release_caddy_failed')
                     ->and($probe->time->now())->toBe(600_000_000_000.0)
@@ -592,7 +597,7 @@ describe('gateway:release:handoff', function (): void {
             ->and(DB::table('jobs')->pluck('queue')->all())->toBe([]);
     });
 
-    it('uses the existing bounded release recovery for Horizon', function (string $outcome): void {
+    it('never probes or retries Horizon admission on refusal or uncertainty', function (string $outcome): void {
         config(['orbit.gateway_queue.connection' => 'services-valkey']);
         $gateway = handoff_gateway();
         handoff_scheduler($gateway);
@@ -625,23 +630,12 @@ describe('gateway:release:handoff', function (): void {
                 };
             }
 
-            if ($outcome === 'recovered') {
-                $result = $handoff->serve();
-                expect($result)->toMatchArray(['caddy' => 'unchanged', 'horizon' => 'submitted'])
-                    ->and(Operation::query()->findOrFail($result['horizon_operation_id'])->status->value)->toBe('running')
-                    ->and(Process::query()->where('name', 'horizon')->sole()->status)->toBe(LifecycleStatus::Provisioning);
-            } else {
-                expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_units_failed');
-            }
+            expect(release_failure(fn () => $handoff->serve())->errorCode)->toBe('gateway.release_units_failed');
             expect(Operation::query()->where('kind', 'route.caddy_converge')->count())->toBe(0)
-                ->and(Operation::query()->where('kind', 'process.horizon_handoff')->count())->toBe(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
-                ->and($builds->connections)->toHaveCount(in_array($outcome, ['recovered', 'refused'], true) ? 2 : 1)
-                ->and($checks)->toBe(match ($outcome) {
-                    'recovered' => 2, 'refused' => 1, 'deadline' => 120, default => 0
-                })
-                ->and($probe->time->now())->toBe(match ($outcome) {
-                    'recovered' => 5_000_000_000.0, 'deadline' => 600_000_000_000.0, default => 0.0
-                });
+                ->and(Operation::query()->where('kind', 'process.horizon_handoff')->count())->toBe(1)
+                ->and($builds->connections)->toHaveCount(1)
+                ->and($checks)->toBe(0)
+                ->and($probe->time->now())->toBe(0.0);
         } finally {
             unlink($path);
         }

@@ -10,12 +10,13 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use LogicException;
 
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
+    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}> */
     private array $definitions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
@@ -29,7 +30,7 @@ final readonly class DirectOperation
         foreach ($families as $family) {
             foreach ($family as $kind => $definition) {
                 if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'result_hook']) !== []
+                    || array_diff(array_keys($definition), ['workflow', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token', 'result_hook']) !== []
                     || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
                     || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
                     || ! isset($definition['projection'])
@@ -51,6 +52,12 @@ final readonly class DirectOperation
                 if (array_key_exists('terminal_result', $definition)) {
                     $definition['terminal_result'] = self::terminalResult($definition['terminal_result']);
                 }
+                if (array_key_exists('scheduled_result', $definition)) {
+                    if (! isset($definition['terminal_result'])) {
+                        throw new LogicException('Scheduled observations require the original terminal result declaration.');
+                    }
+                    $definition['scheduled_result'] = self::scheduledResult($definition['scheduled_result']);
+                }
                 if (isset($definition['github_token'])) {
                     GitHubTokenGrant::from($definition['github_token']);
                 }
@@ -58,6 +65,40 @@ final readonly class DirectOperation
             }
         }
         $this->definitions = $definitions;
+        $this->scheduledResultDefinitions();
+    }
+
+    /** @return array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string} */
+    private static function scheduledResult(mixed $declaration): array
+    {
+        if (! is_array($declaration) || count($declaration) !== 4
+            || ! is_string($declaration['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['workflow']) !== 1
+            || ! is_string($declaration['workflow_id'] ?? null) || ! Str::isUuid($declaration['workflow_id'])
+            || ! is_string($declaration['rows'] ?? null) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $declaration['rows']) !== 1) {
+            throw new LogicException('Scheduled observations require a fixed workflow identity and row selector.');
+        }
+
+        return ['workflow' => $declaration['workflow'], 'workflow_id' => $declaration['workflow_id'],
+            'terminal_result' => self::terminalResult($declaration['terminal_result'] ?? null), 'rows' => $declaration['rows']];
+    }
+
+    /** @return array<string,array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}> */
+    public function scheduledResultDefinitions(): array
+    {
+        $scheduled = [];
+        foreach ($this->definitions as $definition) {
+            if (! isset($definition['scheduled_result'])) {
+                continue;
+            }
+            $declaration = $definition['scheduled_result'];
+            $id = $declaration['workflow_id'];
+            if (isset($scheduled[$id]) && $scheduled[$id] !== $declaration) {
+                throw new LogicException('One scheduled workflow must have one fixed result declaration.');
+            }
+            $scheduled[$id] = $declaration;
+        }
+
+        return $scheduled;
     }
 
     public static function executionCopySignature(mixed $copy): string
@@ -117,7 +158,7 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
+    /** @return array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}, projection: class-string<DirectOperationProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token?: array{repository:string, permissions:array<string,string>}}|null */
     public function definition(string $kind): ?array
     {
         return $this->definitions[$kind] ?? null;
