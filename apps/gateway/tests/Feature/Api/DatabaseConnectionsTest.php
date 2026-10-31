@@ -2,17 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Domain\DatabaseServers\DatabaseReadProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
-use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 const DATABASE_CONNECTION_SECRET = 'db-registry-secret-9f3a';
 
@@ -29,6 +31,10 @@ beforeEach(function (): void {
     ]);
     $this->node = $this->markAsGateway($node);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-connection-update', 'runId' => 'e1589ed9-996b-4c9c-aa75-7749ef519210']]];
+    app()->instance(WebSocketClient::class, $socket);
 });
 
 it('selects a production home only on the registered Node and at a path boundary', function (string $path, bool $sameNode, bool $sudo): void {
@@ -50,35 +56,19 @@ it('selects a production home only on the registered Node and at a path boundary
         'slug' => 'production-file', 'driver' => 'sqlite',
         'node_id' => $sameNode ? $worker->id : $this->node->id, 'path' => $path,
     ])->assertCreated();
-    $agents = (new FakeAgentCommandRunner)->answer('database.query-sqlite', function (array $input) use ($sudo): array {
-        expect($input['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
-
-        return ['columns' => ['name'], 'rows' => [['name' => 'users']], 'row_count' => 1, 'truncated' => false];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-
-    $this->getJson('/api/v1/database-connections/production-file/tables')
-        ->assertOk()->assertJsonPath('data.tables', ['users']);
+    config(['swamp.run_token' => 'fake.token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-database-read', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    $response = $this->getJson('/api/v1/database-connections/production-file/tables')->assertAccepted();
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect(app(DatabaseReadProjection::class)->input($operation)['owner'])->toBe($sudo ? 'orbit-app-82' : 'orbit');
 })->with([
     'production home' => ['/home/orbit-app-82/shared/database.sqlite', true, true],
     'same path on another Node' => ['/home/orbit-app-82/shared/database.sqlite', false, false],
     'similar home name' => ['/home/orbit-app-82-other/database.sqlite', true, false],
     'path traversal' => ['/home/orbit-app-82/../other/database.sqlite', true, false],
 ]);
-
-it('returns a distinct safe API error when SQLite inspection cannot read the file', function (): void {
-    $this->postJson('/api/v1/database-connections', [
-        'slug' => 'unreadable', 'driver' => 'sqlite', 'node_id' => $this->node->id,
-        'path' => '/private/database.sqlite',
-    ])->assertCreated();
-    app()->instance(AgentCommandRunner::class, (new FakeAgentCommandRunner)->refuse(
-        'database.query-sqlite', 'database.sqlite_unreadable', ['private' => 'remote-private-secret'],
-    ));
-
-    $response = $this->getJson('/api/v1/database-connections/unreadable/tables')
-        ->assertUnprocessable()->assertJsonPath('error.code', 'database.sqlite_unreadable');
-    expect($response->getContent())->not->toContain('remote-private-secret');
-});
 
 it('round-trips mysql connection CRUD, encrypts the password, and redacts it from activity', function (): void {
     $create = $this->postJson('/api/v1/database-connections', [
@@ -153,10 +143,12 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
         'host' => 'db-internal.example.test',
     ]);
 
-    $update
-        ->assertOk()
-        ->assertJsonPath('data.host', 'db-internal.example.test')
-        ->assertJsonPath('data.has_password', true);
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
+    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
+        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
+    ])->assertOk();
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->host)->toBe('db-internal.example.test');
 
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)
         ->toBe(DATABASE_CONNECTION_SECRET);
@@ -289,10 +281,13 @@ it('updates a password independently and clears an optional node association', f
         'password' => $nextSecret,
     ]);
 
-    $update
-        ->assertOk()
-        ->assertJsonPath('data.node_id', null)
-        ->assertJsonPath('data.has_password', true);
+    $update->assertAccepted()->assertJsonPath('data.kind', 'database.update');
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)->toBe(DATABASE_CONNECTION_SECRET);
+    $this->postJson('/api/v1/direct-operations/'.$update->json('data.id').'/result', [
+        'run_id' => 'e1589ed9-996b-4c9c-aa75-7749ef519210', 'status' => 'succeeded',
+        'started_at' => '2026-10-31T09:00:00.000Z', 'finished_at' => '2026-10-31T09:00:01.000Z', 'result' => ['backend' => 'active'],
+    ])->assertOk();
+    expect(DatabaseConnection::query()->where('slug', 'app')->sole()->node_id)->toBeNull();
 
     expect($update->getContent())->not->toContain($nextSecret, DATABASE_CONNECTION_SECRET);
     expect(DatabaseConnection::query()->where('slug', 'app')->sole()->password)->toBe($nextSecret);

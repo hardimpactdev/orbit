@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\DatabaseConnections;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -38,16 +38,23 @@ final class UpdateDatabaseConnectionRequest extends GatewayRequest implements Ha
         private readonly bool $hasPassword = false,
         #[SensitiveParameter]
         private readonly ?string $password = null,
+        private readonly ?string $idempotencyKey = null,
     ) {}
+
+    /** @return array<string, string> */
+    protected function defaultHeaders(): array
+    {
+        return $this->idempotencyKey === null ? [] : ['Idempotency-Key' => $this->idempotencyKey];
+    }
 
     public function resolveEndpoint(): string
     {
         return '/api/v1/database-connections/'.rawurlencode($this->slug);
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): DatabaseConnectionResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return DatabaseConnectionResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return OperationResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
     /** @return array<string, int|string|null> */

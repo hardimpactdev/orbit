@@ -103,7 +103,7 @@ Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty st
 
 ### Private managed values
 
-Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text.
+Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text. A unit with no managed values after derived keys are removed has no managed `EnvironmentFile` reference. In particular, Gateway Horizon starts from its cached application configuration without requiring an empty private environment generation.
 
 ### Runtime environment
 
@@ -305,18 +305,20 @@ The `vp-dev` preset applies only to development Instance Processes. Runtime defi
 
 The systemd `User=` of a Node Process can be an account other than the managed user. Use it for a service that must not run as the managed user. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.
 
-Runtime definition composition provides `process.install_instance_definitions`, `schedule.install_instance_definitions` and `process.restart_instance`. These kinds are unused by retained deploy, rollback and environment-sync callers until lane 2 cuts over. Their current synchronous callers and `installCaptured` keep native execution. Each child targets its Instance and accepts only `{instance_id}`. The Gateway stamps parent identity on the Operation; callers never send it in child input. Installation uses recorded definition copies. Clone copies stay stopped with timers disabled. Deployment restart selects only active, desired-running Processes with `restart_on_deploy` enabled.
+Instance Process restart executes as member steps in one native parent. `process.restart_instance` captures only active, desired-running Processes with `restart_on_deploy` enabled. The captured list stays fixed when later inventory changes. The run creates no member Operation. Owning native parents can reuse the record capture and local action exports without admitting another root. Native member outcomes drive bounded record projections.
+
+`process.install_instance_definitions` captures owned definition copies and reuses the canonical private Process installer in the same root. Copies remain stopped. The Gateway capture action records definitions without converging a runtime. `schedule.install_instance_definitions` applies the same captured-selection contract to Schedule copies and leaves their timers disabled. Private command values stay inside the canonical callback.
 
 When the plan contains runtime effects on a configured executor Node, composition refuses at admission with `process.executor_dependency` or `schedule.executor_dependency`. It records no composition Operation and rolls back any definition copies created during that admission. Retain synchronous runtime composition on those Nodes at caller cutover. Empty plans have no effects and can complete normally.
 
 Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
 
-Task VM runtime preparation may admit one `process.create` child using only `{process_id}`. The parent must be `task_vm.prepare_runtime` and target that VM. The Process must belong to the VM's own Node and match its fixed systemd `pi-server` definition: managed-user home paths, WireGuard host, configured Pi port, token-file path, `orbit-task-vm` provider, always-restart policy and keep-alive settings. Other owners, commands and runtime configuration are refused before child admission. Instance installation and restart children keep their existing rules. This adapter does not switch retained task VM callers or enable their gated parent composition.
+Task VM runtime preparation composes the canonical Process installer within its native root. The Process belongs to the admitted VM Node and uses its fixed systemd `pi-server` definition. The private installation callback retains Process ownership and configuration checks.
 
-A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the exact recorded restart plan after each keyed Process child has proven success. An empty selection returns an empty list. A failed or unproven child prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
+A successful `process.restart_instance` result contains `process_ids`, a bounded list of integers in Process ID order. The IDs come from the captured restart plan after every native member step succeeds. An empty selection returns an empty list. A failed member prevents successful completion. Callers map this list to the existing `restarted_process_ids` field.
 
 
-Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Unconverted Instance composition still waits for its recorded runtime children before its own ready step.
+Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Instance composition uses native member steps in the owning run.
 
 ## Direct Process controls
 

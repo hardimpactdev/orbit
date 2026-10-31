@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
-use App\Domain\DatabaseConnections\DatabaseSchemaTable;
 use App\Models\DatabaseConnection;
+use App\Models\Operation;
 
 final readonly class ShowDatabaseSchemaAction
 {
-    public function __construct(
-        private DatabaseInspectionExecutor $executor,
-    ) {}
+    public function __construct(private ReadDatabaseConnectionAction $reads) {}
 
-    /** @return list<DatabaseSchemaTable> */
-    public function execute(DatabaseConnection $connection): array
+    public function execute(DatabaseConnection $connection): Operation
     {
-        return $this->executor->schema($connection);
+        return $this->reads->execute($connection, 'schema');
     }
 }

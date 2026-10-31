@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\DatabaseConnections\DatabaseOwnerAdmission;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -26,6 +27,25 @@ final class DatabaseConnectionTarget extends Model
         'prefix',
         'network',
     ];
+
+    /** @param array{touch?: bool|null} $options */
+    #[\Override]
+    public function save(array $options = []): bool
+    {
+        if ($this->exists && ! $this->isDirty(['database_connection_id', 'instance_id'])) {
+            return parent::save($options);
+        }
+
+        return $this->getConnection()->transaction(function () use ($options): bool {
+            $stored = $this->exists ? $this->newQuery()->find($this->id) : null;
+            $ids = array_filter([$stored?->database_connection_id, $this->database_connection_id]);
+            foreach (DatabaseConnection::on($this->getConnectionName())->whereKey($ids)->get() as $connection) {
+                app(DatabaseOwnerAdmission::class)->assertWritable($connection);
+            }
+
+            return parent::save($options);
+        });
+    }
 
     /** @return BelongsTo<DatabaseConnection, $this> */
     public function databaseConnection(): BelongsTo

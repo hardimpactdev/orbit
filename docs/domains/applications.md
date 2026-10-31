@@ -111,7 +111,11 @@ When the Project has an Instance named `default` with a database attached under 
 
 On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. It first checks that the filesystem can clone the file, so no writer waits when it cannot. Orbit copies a snapshot made with SQLite's backup API instead in three cases: the filesystem has no block cloning, a writer holds the lock for two seconds, or the source is on another Node.
 
-Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`.
+The Gateway validates the source and reserves the target connection. It starts one native `database.clone` run. Swamp reads the admitted placements, checks the source, prepares the target, and copies the database on the selected Node workers. MySQL ownership and name checks run in Swamp before reset. Each copy attempt resets only its admitted, proven targets before importing, so an uncertain attempt never keeps a partial copy.
+
+For a cross-Node SQLite copy, Swamp exports the snapshot into native workflow file data. The target worker reads that immutable file, checks its exact size, SQLite header, and SHA-256, and installs it at the same relative path. The snapshot is limited to 1 TiB. The source and target run fixed native actions on their admitted Node workers. Path walks refuse symlinks and escapes. Snapshot bytes never pass through the Gateway. Source cleanup runs after the target step, including target failure. A retry of an uncertain install copies the native snapshot into a fresh private incoming file before installing again.
+
+Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`. The Gateway records Swamp's result and the attachment.
 
 When the Instance has no stored configuration yet and its [application directory](/reference/projects#application-directory) has a `.env`, Orbit first [imports](/reference/environment-variables#import) that file, so synchronization keeps its other keys. Without a `.env`, synchronization writes only the stored keys.
 
@@ -124,7 +128,7 @@ The clone returns these codes.
 
 No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
 
-Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy. Only a create that has not finished its [first setup](/reference/instance-setup#run-setup) resumes this way. A retry keeps the Instance when the copy or a setup step fails again; only the request that activated the Instance removes it.
+Swamp records each finished native step. The Gateway marks the connection complete after Swamp reports success. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy. Only a create that has not finished its [first setup](/reference/instance-setup#run-setup) resumes this way. A retry keeps the Instance when the copy or a setup step fails again; only the request that activated the Instance removes it.
 
 The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
 

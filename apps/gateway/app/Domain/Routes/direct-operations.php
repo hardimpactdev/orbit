@@ -14,6 +14,10 @@ $publication = [
 ];
 
 return [
+    'route.target_set' => [
+        'workflow' => 'operation-route-target-set', 'projection' => \App\Domain\Routes\NativeRouteTargetProjection::class,
+        'private_material' => \App\Domain\Routes\NativeRouteAdmission::privateMaterial(),
+    ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,
         'private_material' => NativeRouteRemovalAdmission::privateMaterial(),

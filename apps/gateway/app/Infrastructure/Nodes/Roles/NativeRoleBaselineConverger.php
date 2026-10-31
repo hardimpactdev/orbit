@@ -7,15 +7,12 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileDeferral;
-use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NodeAgentRoleConverger;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Support\Facades\Log;
 use LogicException;
 
 final readonly class NativeRoleBaselineConverger implements RoleBaselineConverger
@@ -32,7 +29,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?ClusterRouterOperationLock $clusterRouterOperations = null,
         private ?DatabaseRoleBaseline $database = null,
         private ?WebSocketRoleBaseline $websocket = null,
-        private ?NodeAgentRoleConverger $agentConverger = null,
         private ?IngressRoleBaseline $ingress = null,
         private ?MetricsReconcileDeferral $metricsDeferral = null,
         private ?NodeRoleConvergeLock $nodeLock = null,
@@ -65,16 +61,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         // Node's lock when the caller holds it for the whole operation, as role add and remove do.
         $this->reconcileMetrics($assignment);
 
-        try {
-            $this->nodeLock()->run($node, fn () => $this->convergeAgent($node));
-        } catch (NodeRoleOperationException $exception) {
-            // Like any agent failure, a busy Node does not fail the role; the next converge repairs the agent.
-            Log::warning('Node agent convergence skipped; another role operation holds the Node.', [
-                'node_id' => $node->id,
-                'node_name' => $node->name,
-                'error' => $exception->underlyingErrorCode,
-            ]);
-        }
     }
 
     private function reconcileMetrics(NodeRole $assignment): void
@@ -88,11 +74,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         }
 
         $this->metricsFleet->reconcile();
-    }
-
-    private function convergeAgent(Node $node): void
-    {
-        ($this->agentConverger ?? app(NodeAgentRoleConverger::class))->converge($node);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void

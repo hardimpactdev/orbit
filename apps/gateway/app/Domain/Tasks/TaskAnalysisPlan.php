@@ -14,6 +14,8 @@ final readonly class TaskAnalysisPlan
 
     public const int RequestBytes = 49152;
 
+    public const int ReportBytes = 65536;
+
     public const string DigestPattern = '/\A[a-f0-9]{64}\z/D';
 
     /** @param array<string, mixed> $manifest

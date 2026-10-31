@@ -76,6 +76,7 @@ final class MetricsServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag(\App\Domain\Metrics\MetricsFleetRuntimeMaterial::class, OperationSecretSource::class);
         $this->app->tag([MetricsRuntimeSecrets::class, MetricsPasswordSecrets::class], OperationSecretSource::class);
         $this->app->tag([ServiceMetricsCaddySiteSource::class], NodeCaddySiteSource::class);
         $this->app->tag([MetricsCaddySiteSource::class], NodeCaddySiteSource::class);

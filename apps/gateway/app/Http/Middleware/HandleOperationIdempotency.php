@@ -34,7 +34,8 @@ final readonly class HandleOperationIdempotency
         if ($start === null) {
             return $next($request);
         }
-        app(DirectOperation::class)->writer($start->kind);
+        $kind = $start->requestKind($request);
+        app(DirectOperation::class)->writer($kind);
         if (! $request->headers->has('Idempotency-Key')) {
             if ($start->requiresKey) {
                 throw ValidationException::withMessages(['Idempotency-Key' => ['Idempotency-Key is required.']]);
@@ -51,7 +52,7 @@ final readonly class HandleOperationIdempotency
         }
 
         $previous = [$this->idempotency->kind, $this->idempotency->key, $this->idempotency->fingerprint];
-        $this->idempotency->kind = $start->kind;
+        $this->idempotency->kind = $kind;
         $this->idempotency->key = $key;
         $caller = $request->user();
         $this->idempotency->fingerprint = app(OperationRequestFingerprint::class)->make(

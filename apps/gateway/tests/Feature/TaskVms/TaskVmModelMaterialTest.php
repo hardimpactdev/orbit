@@ -57,7 +57,7 @@ function modelMaterialOperation(TaskVm $vm, string $targetType = 'task_group'): 
 
     return new Operation(['kind' => 'test.task_vm_material', 'target_type' => $targetType,
         'target_id' => $targetType === 'task_group' ? $vm->group_id : $vm->id, 'node_id' => $router->id,
-        'input' => ['task_vm_id' => $vm->id, 'origin' => TaskVmSettingsBuilder::Origin,
+        'input' => ['task_vm_id' => $vm->id, 'model_router_node_id' => $router->id, 'origin' => TaskVmSettingsBuilder::Origin,
             'participant_node_ids' => [$router->id, $vm->node_id], 'private_bindings' => $bindings]]);
 }
 

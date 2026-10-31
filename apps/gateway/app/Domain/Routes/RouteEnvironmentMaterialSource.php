@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Existing Instance environment values, rendered only inside the declared private callback. */
 final readonly class RouteEnvironmentMaterialSource implements OperationSecretSource
@@ -25,7 +26,7 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
 
     public function ownerId(Operation $operation): ?int
     {
-        return in_array($operation->kind, ['route.withdraw', 'route.destroy'], true)
+        return in_array($operation->kind, ['route.withdraw', 'route.destroy', 'route.target_set', 'route.create', 'route.converge', 'route.update'], true)
             && $operation->target_type === 'route' ? $operation->target_id : null;
     }
 
@@ -37,6 +38,20 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
             throw new ResourceOperationException('operation.execution_forbidden', 'The Route environment field is not bound to this workload Node.', 403);
         }
 
-        return new OperationSecretValue(app(NativeRouteEnvironmentMaterial::class)->forNode($operation, $nodeId));
+        if (isset($operation->input['route_removal'])) {
+            return new OperationSecretValue(app(NativeRouteEnvironmentMaterial::class)->forNode($operation, $nodeId));
+        }
+        $intent = ValidatedData::object($operation->input['route_convergence'] ?? $operation->input['route_target'] ?? []);
+        if (isset($operation->input['route_update'])) {
+            $update = ValidatedData::object($operation->input['route_update']);
+            $intent = ValidatedData::object($update[($operation->state['native_route_rollback'] ?? false) ? 'previous' : 'desired']);
+        }
+        if (($operation->state['native_target_rollback'] ?? false) === true) {
+            $intent['workloads'] = $intent['previous_workloads'] ?? [];
+            $operation = clone $operation;
+            $operation->state = [...($operation->state ?? []), 'native_route_rollback' => true];
+        }
+
+        return new OperationSecretValue(app(NativeRouteConvergenceEnvironmentMaterial::class)->forNode($operation, $nodeId, $intent));
     }
 }

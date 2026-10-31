@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
@@ -16,7 +15,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
-use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\FakesEnvironmentSyncInspection;
 
 const SERVER_DATABASE_ROOT_SECRET = 'server-root-secret-5d1e';
@@ -26,8 +24,6 @@ trait ServerDatabaseFixtures
     protected function prepareServerDatabaseFixtures(): void
     {
 
-        $this->admin = new FakeDatabaseServerAdmin;
-        app()->instance(DatabaseServerAdmin::class, $this->admin);
         app()->instance(InstanceOperationPreflight::class, new ServerDatabaseEnvironmentAccess);
         app()->instance(InstanceEnvironmentReader::class, new ServerDatabaseEnvironmentAccess);
         app()->instance(InstanceEnvironmentWriter::class, new ServerDatabaseEnvironmentAccess);

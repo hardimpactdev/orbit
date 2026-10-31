@@ -82,7 +82,7 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
-            'EnvironmentFile='.$this->environmentPath($process, $target),
+            ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),
             ...$environmentProjection['directives'],
             ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
@@ -114,15 +114,25 @@ final readonly class SystemdProcessRenderer
     public function environmentContent(#[SensitiveParameter] Process $process, ProcessTarget $target): string
     {
         $lines = ['# Orbit Process '.$process->id];
-        foreach ($this->stringMap($process->runtime_config['environment'] ?? []) as $name => $value) {
-            if ($this->isReservedEnvironmentName($name)
-                || (is_int($target->instance?->ssr_port) && in_array($name, [SsrEndpoint::PORT_KEY, SsrEndpoint::URL_KEY], true))) {
-                continue;
-            }
+        foreach ($this->managedEnvironment($process, $target) as $name => $value) {
             $lines[] = $name.'="'.str_replace(['\\', '"'], ['\\\\', '\\"'], $value).'"';
         }
 
         return implode("\n", $lines)."\n";
+    }
+
+    /** @return array<string, string> */
+    private function managedEnvironment(#[SensitiveParameter] Process $process, ProcessTarget $target): array
+    {
+        $environment = $this->stringMap($process->runtime_config['environment'] ?? []);
+        foreach (array_keys($environment) as $name) {
+            if ($this->isReservedEnvironmentName($name)
+                || (is_int($target->instance?->ssr_port) && in_array($name, [SsrEndpoint::PORT_KEY, SsrEndpoint::URL_KEY], true))) {
+                unset($environment[$name]);
+            }
+        }
+
+        return $environment;
     }
 
     private function isReservedEnvironmentName(string $name): bool
