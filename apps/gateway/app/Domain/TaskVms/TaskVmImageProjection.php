@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\RecipeImageBuildSteps;
@@ -82,16 +82,12 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
                 app(RecipeImageBuildSteps::class)->assertCurrent($build);
             }
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'image-build');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if (! $terminal && $status === OperationStatus::Running) {
                 $this->progress($build, $operation, ValidatedData::string($phase), $result);
             }
             if (! $terminal && $status->terminal()) {
-                app(TaskVmImageCompletion::class)->complete($projected, match ($status) {
-                    OperationStatus::Succeeded => OperationOutcome::succeeded($result),
-                    OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
-                    default => OperationOutcome::cancelled(),
-                });
+                $this->finish($projected, $status, $code);
             }
 
             return $projected;
@@ -123,5 +119,26 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             $build->promoted_at ??= now();
         }
         $build->forceFill(['steps' => $steps, 'current_step' => $step, 'current_program' => $program])->save();
+    }
+
+    private function finish(Operation $operation, OperationStatus $status, ?string $errorCode): void
+    {
+        $build = TaskVmImageBuild::query()->findOrFail(ValidatedData::integer($operation->input['build_id']));
+        $changed = TaskVmImageBuild::query()->whereKey($build->id)->where('attempt', $operation->input['attempt'])
+            ->where('state', TaskVmImageBuildState::Running)->whereNull('cleanup_started_at')
+            ->update(['state' => $status === OperationStatus::Succeeded ? TaskVmImageBuildState::Succeeded : TaskVmImageBuildState::Failed]);
+        if ($changed === 1 && $status !== OperationStatus::Succeeded) {
+            $steps = $build->steps;
+            foreach ($steps as &$entry) {
+                if ($entry['step'] === $build->current_step?->value && $entry['program'] === $build->current_program) {
+                    $entry['error'] = $errorCode ?? 'operation.cancelled';
+                }
+            }
+            unset($entry);
+            $build->update(['steps' => $steps]);
+            DB::afterCommit(static fn () => app(RecipeMaintenanceAlerts::class)->halted(
+                "Image build [{$build->id}] failed on host [{$build->host_node_id}]. Inspect the Operation and retained builder, then resume or retry.",
+                $build->id, incident: RecipeMaintenanceAlerts::imageIncident($build)));
+        }
     }
 }
