@@ -52,8 +52,9 @@ def safe_output(raw):
     text = re.sub(r'(?i)(?:Proxy-)?Authorization\s*:[^\r\n]*', 'Authorization: [REDACTED]', text)
     text = re.sub(r'(?i)\bBearer\s+[A-Za-z0-9._+/=-]+', 'Bearer [REDACTED]', text)
     text = re.sub(r'(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})', '[REDACTED]', text)
-    key = r'[A-Za-z0-9_-]*(?:TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY)[A-Za-z0-9_-]*'
-    text = re.sub(r'(?i)([\"\x27]?' + key + r'[\"\x27]?\s*[:=]\s*)(?:\"[^\"]*\"|\x27[^\x27]*\x27|[^\s,}&]+)', r'\1[REDACTED]', text)
+    def assignment(match):
+        return match[0] if re.search(r'(?i)TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|APIKEY|APPKEY|PRIVATEKEY|KEYS?', match[2]) is None else match[1] + match[2] + match[1] + match[3] + '[REDACTED]'
+    text = re.sub(r'([\"\x27]?)([A-Za-z][A-Za-z0-9_-]{0,255})\1(\s*[:=]\s*)(?:\"[^\"\r\n]*\"|\x27[^\x27\r\n]*\x27|[^\s,}&]+)', assignment, text)
     return text.encode()[-16384:].decode('utf-8', errors='ignore')
 
 def stop_unit():

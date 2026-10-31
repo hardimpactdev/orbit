@@ -1,3 +1,30 @@
+/** Shared cache-baseline policy for Instance setup and Task baseline checks. */
+export const ciCacheImportProgram = String
+  .raw`# The task workspace's @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline's ref from the Gateway mirror.
+# Missing or invalid refs leave checks cold. Required tooling and cache writes remain setup failures.
+set -eu
+if [ ! -f bin/ci-cache-ref ]; then
+    echo 'CI cache import tooling is missing from this checkout.' >&2
+    exit 1
+fi
+branch=$(git symbolic-ref --quiet --short HEAD || true)
+default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)
+if [ "origin/$branch" = "$default" ]; then
+    commit=$(git rev-parse --verify HEAD)
+else
+    commit=$(git rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)
+    # Another branch at a main commit, such as a fresh agent branch, uses that commit's own caches.
+    if [ -z "$commit" ] && [ -n "$default" ] && git merge-base --is-ancestor HEAD "$default" 2>/dev/null; then
+        commit=$(git rev-parse --verify HEAD)
+    fi
+fi
+if [ -z "$commit" ]; then
+    echo 'CI caches cold: no recorded code baseline.'
+else
+    python3 bin/ci-cache-ref import --commit "$commit"
+fi
+`;
+
 /** Trusted workflow code executed once as the app user, never as a service or broker. */
 export const appStepRuntime = String.raw`
 import ctypes,fcntl,hashlib,json,os,pwd,re,selectors,signal,subprocess,sys,time
@@ -28,7 +55,7 @@ try:
  if not isinstance(target,dict):refuse()
  if not isinstance(script,str) or not 1<=len(script.encode())<=16384 or '\0' in script:refuse()
  if hashlib.sha256(script.encode()).hexdigest()!=value['command_digest']:refuse()
- if script=='@orbit/ci-caches':script='# The task workspace\'s @orbit/ci-caches setup step: import the Pint and PHPStan caches of only the recorded code baseline\'s ref from the Gateway mirror.\n# Missing or invalid refs leave checks cold. Required tooling and cache writes remain setup failures.\nset -eu\nif [ ! -f bin/ci-cache-ref ]; then\n    echo \'CI cache import tooling is missing from this checkout.\' >&2\n    exit 1\nfi\nbranch=$(git symbolic-ref --quiet --short HEAD || true)\ndefault=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)\nif [ "origin/$branch" = "$default" ]; then\n    commit=$(git rev-parse --verify HEAD)\nelse\n    commit=$(git rev-parse --verify --quiet refs/worktree/orbit/ci-baseline || true)\n    # Another branch at a main commit, such as a fresh agent branch, uses that commit\'s own caches.\n    if [ -z "$commit" ] && [ -n "$default" ] && git merge-base --is-ancestor HEAD "$default" 2>/dev/null; then\n        commit=$(git rev-parse --verify HEAD)\n    fi\nfi\nif [ -z "$commit" ]; then\n    echo \'CI caches cold: no recorded code baseline.\'\nelse\n    python3 bin/ci-cache-ref import --commit "$commit"\nfi\n'
+ if script=='@orbit/ci-caches':script=${JSON.stringify(ciCacheImportProgram)}
  variant=target.get('variant')
  if variant=='release':
   if set(target)!={'variant','release'} or not isinstance(target['release'],str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}',target['release']):refuse()

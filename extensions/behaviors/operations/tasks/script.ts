@@ -7,6 +7,7 @@ import {
   GatewayOperation,
   Globals,
 } from "../_lib/direct.ts";
+import { withTaskCancellation } from "./cancellation.ts";
 import { ScriptProgram } from "./script_program.ts";
 
 const Id = z.number().int().positive();
@@ -41,10 +42,14 @@ export type ScriptExecutor = (
 ) => Promise<unknown>;
 
 /** The native step owns the process; abort requests stop its systemd cgroup before returning. */
-export const localScript: ScriptExecutor = async (input, signal) => {
+export async function workspaceProgram(
+  program: string,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown> {
   signal?.throwIfAborted();
   const process = new Deno.Command("/usr/bin/python3", {
-    args: ["-c", ScriptProgram],
+    args: ["-c", program],
     stdin: "piped",
     stdout: "piped",
     stderr: "null",
@@ -63,7 +68,7 @@ export const localScript: ScriptExecutor = async (input, signal) => {
     let size = 0;
     for await (const chunk of process.stdout) {
       size += chunk.length;
-      if (size > 65536) {
+      if (size > 1048576) {
         throw new Error("Native script output exceeded its bound");
       }
       chunks.push(chunk);
@@ -83,7 +88,10 @@ export const localScript: ScriptExecutor = async (input, signal) => {
     stop();
     await process.status;
   }
-};
+}
+
+export const localScript: ScriptExecutor = (input, signal) =>
+  workspaceProgram(ScriptProgram, input, signal);
 
 export async function script(
   input: z.infer<typeof ScriptInput>,
@@ -115,13 +123,14 @@ export const scriptBehavior = {
     execute: {
       description: "Run the admitted tracked repository script in its task VM",
       arguments: Args,
-      execute: (args: z.infer<typeof Args>, ctx: Context) =>
-        directOperation(
+      execute: (args: z.infer<typeof Args>, ctx: Context) => {
+        const gateway = new GatewayOperation(
+          gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
           args,
-          new GatewayOperation(
-            gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-            args,
-          ),
+        );
+        return directOperation(
+          args,
+          gateway,
           (raw) => {
             const input = ScriptInput.parse(raw);
             if (input.node_id !== args.node_id) {
@@ -129,11 +138,16 @@ export const scriptBehavior = {
                 "Wrong task VM Node",
               );
             }
-            return script(input, args.operation_id, localScript, ctx.signal);
+            return withTaskCancellation(
+              gateway,
+              (signal) => script(input, args.operation_id, localScript, signal),
+              ctx.signal,
+            );
           },
           (result) => ScriptResult.parse(result),
           ctx.signal,
-        ),
+        );
+      },
     },
   },
 };

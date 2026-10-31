@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { withTaskCancellation } from "./cancellation.ts";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import {
   DirectArgs,
@@ -405,13 +406,14 @@ export const turnBehavior = {
       description:
         "Prepare the workspace and run Pi under one native write lock",
       arguments: Args,
-      execute: (args: z.infer<typeof Args>, ctx: Context) =>
-        directOperation(
+      execute: (args: z.infer<typeof Args>, ctx: Context) => {
+        const gateway = new GatewayOperation(
+          gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
           args,
-          new GatewayOperation(
-            gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
-            args,
-          ),
+        );
+        return directOperation(
+          args,
+          gateway,
           async (raw) => {
             const input = Input.parse(raw);
             if (input.node_id !== args.node_id) {
@@ -421,19 +423,25 @@ export const turnBehavior = {
             }
             const workspace = localWorkspace(input.checkout_path);
             const before = await workspace.prepare(input);
-            return await withPi(input, (pi) =>
-              turn(
-                input,
-                `operation-${args.operation_id}`,
-                before,
-                pi,
-                workspace,
-                ctx.signal,
-              ));
+            return await withTaskCancellation(
+              gateway,
+              (signal) =>
+                withPi(input, (pi) =>
+                  turn(
+                    input,
+                    `operation-${args.operation_id}`,
+                    before,
+                    pi,
+                    workspace,
+                    signal,
+                  )),
+              ctx.signal,
+            );
           },
           (result) => result,
           ctx.signal,
-        ),
+        );
+      },
     },
   },
 };

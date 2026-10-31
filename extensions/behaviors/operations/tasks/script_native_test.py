@@ -97,7 +97,7 @@ class ScriptNativeTest(unittest.TestCase):
         self.assertFalse(pathlib.Path(result['output'].strip()).exists())
 
     def test_output_is_bounded_and_redacted_before_persistence(self):
-        self.install('#!/usr/bin/env python3\nprint("log line\\n" * 10000)\nprint("Authorization: Bearer hidden-value")\nprint("DB_PASSWORD=hidden-password")\n')
+        self.install('#!/usr/bin/env python3\nprint("log line\\n" * 10000)\nprint("Authorization: Bearer hidden-value")\nprint("DB_PASSWORD=hidden-password")\nprint("API_KEY=hidden-key")\n')
         self.git('add', '.')
         self.git('commit', '-qm', 'output')
         result = self.invoke()
