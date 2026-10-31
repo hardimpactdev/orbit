@@ -9,7 +9,7 @@ export type VpLocalMode =
 export type VpLocalOptions = {
   user: string;
   platform: "linux" | "macos";
-  architecture: "amd64" | "arm64";
+  architecture: "x86_64" | "arm64";
   deadline: number;
   signal?: AbortSignal;
   /** Trusted fixture configuration; never populated from an admitted intent. */

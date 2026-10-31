@@ -67,7 +67,7 @@ export function deployDirect(ports: Ports = {}) {
   const now = ports.now ?? Date.now;
   return {
     type: "@nckrtl/instance-deploy-direct",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       execution: {
@@ -301,7 +301,10 @@ export function deployDirect(ports: Ports = {}) {
               result.failed_step = interruptedStep;
               throw new Refused("deployment.interrupted");
             }
-            if (initial.status !== "queued") {
+            if (
+              checkpoint !== null ||
+              !["queued", "running"].includes(initial.status)
+            ) {
               throw new Refused(
                 initial.cancel_requested
                   ? "operation.cancelled"

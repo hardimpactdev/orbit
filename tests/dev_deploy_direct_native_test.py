@@ -30,7 +30,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
         script = 'printf ' + secret
         safe = {
             'instance_id': 101, 'project_id': 102, 'node_id': 9,
-            'platform': 'linux', 'architecture': 'amd64',
+            'platform': 'linux', 'architecture': 'x86_64',
             'commit': 'a' * 40, 'release_name': 'unused-dev-release', 'timeout_seconds': 960,
             'deployment': {
                 'variant': 'development', 'home': '/fast/apps/proof/default',
@@ -41,7 +41,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
                            'timeout_seconds': 60, 'command_digest': hashlib.sha256(script.encode()).hexdigest()}],
             },
         }
-        state = {'status': 'queued', 'posts': [], 'paths': [], 'run_id': None, 'cancel_requested': False}
+        state = {'status': 'running', 'posts': [], 'paths': [], 'run_id': None, 'cancel_requested': False}
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -123,7 +123,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertFalse(any('children' in path or 'operation-executor' in path for path in state['paths']))
         self.assert_private_absent(json.dumps(state['posts']))
         # An error after the private script returns must retain only bounded failure facts.
-        state.update(status='queued', posts=[], paths=[], run_id=None)
+        state.update(status='running', posts=[], paths=[], run_id=None)
         self.native_env['ORBIT_DEPLOY_TEST_FAIL_AFTER_STEPS'] = '1'
         self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
         self.assertEqual(state['status'], 'failed')
@@ -132,7 +132,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual(state['posts'][-1]['result']['commit'], 'a' * 40)
         self.assert_private_absent(json.dumps(state['posts']))
         # A lost mutation outcome leaves the same parent open and does not free its target.
-        state.update(status='queued', posts=[], paths=[], run_id=None)
+        state.update(status='running', posts=[], paths=[], run_id=None)
         self.native_env['ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE'] = '1'
         self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
         self.assertEqual(state['status'], 'running')
@@ -146,7 +146,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual(state['posts'], before)
         # A worker loss during an app step keeps its marker. Operator cancellation
         # resumes the SAME run, probes its bound runner, and projects unknown failure.
-        state.update(status='queued', posts=[], paths=[], run_id=None, cancel_requested=False)
+        state.update(status='running', posts=[], paths=[], run_id=None, cancel_requested=False)
         self.native_env.pop('ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE')
         self.native_env.pop('ORBIT_DEPLOY_TEST_FAIL_AFTER_STEPS')
         self.native_env['ORBIT_DEPLOY_TEST_UNCERTAIN_STEP'] = '1'
@@ -165,7 +165,7 @@ class DevDeployDirectNativeTest(NativeTestCase):
 
         # A broken public intent renderer must not prevent proven inactive failure
         # settlement. The callback binds the existing root and never reads intent.
-        state.update(status='queued', posts=[], paths=[], run_id=None, cancel_requested=False, read_refused=True)
+        state.update(status='running', posts=[], paths=[], run_id=None, cancel_requested=False, read_refused=True)
         self.native_env.pop('ORBIT_DEPLOY_TEST_UNCERTAIN_STEP')
         self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
         self.assertEqual(state['status'], 'failed')

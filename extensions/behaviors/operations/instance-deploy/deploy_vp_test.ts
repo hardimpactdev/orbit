@@ -14,7 +14,7 @@ function fixture(installed = true) {
   const input = {
     node_id: 9,
     platform: "linux" as const,
-    architecture: "amd64" as const,
+    architecture: "x86_64" as const,
     path: "/home/orbit/apps/default",
     user: "orbit",
     node_user: "orbit",

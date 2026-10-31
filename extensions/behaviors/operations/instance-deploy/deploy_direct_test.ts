@@ -101,7 +101,7 @@ async function fixture() {
     instance_id: 763,
     node_id: 9,
     platform: "linux" as const,
-    architecture: "amd64" as const,
+    architecture: "x86_64" as const,
     project_id: 58,
     agent_sha256: "b".repeat(64),
     commit,
@@ -309,9 +309,20 @@ Deno.test("native dev root fetches, checks out and runs admitted steps as config
   );
 });
 
-Deno.test("restart before any active effect fails interrupted without replay and releases the hold", async () => {
+Deno.test("restart with an inactive journal fails interrupted without replay and releases the hold", async () => {
   const f = await fixture();
   f.status("running");
+  await f.ctx.writeResource(
+    "execution",
+    `execution-${f.args.operation_id}-${f.args.run_id}`,
+    {
+      operation_id: f.args.operation_id,
+      run_id: f.args.run_id,
+      started_at: "2026-10-31T02:00:00.000Z",
+      active: false,
+      step: null,
+    },
+  );
   await assertRejects(
     () =>
       fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
@@ -827,4 +838,22 @@ Deno.test("failed-dependency recovery settles inactive work without rendering pu
   assertEquals(f.posts[0].result, {
     failed_step: "native_execution",
   });
+});
+
+Deno.test("fresh StartSwampRun running intent with Node x86_64 executes once without an old journal", async () => {
+  const f = await fixture();
+  f.status("running");
+  assertEquals(f.input.architecture, "x86_64");
+  assertEquals(
+    await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+      .methods.run.execute(f.args, f.ctx),
+    { status: "succeeded" },
+  );
+  assertEquals(f.commands.length, 1);
+  assertEquals(f.posts.at(-1)?.status, "succeeded");
+  const count = f.calls.length;
+  await fixtureDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+    .methods.run.execute(f.args, f.ctx);
+  assertEquals(f.calls.length, count);
+  assertEquals(f.commands.length, 1);
 });
