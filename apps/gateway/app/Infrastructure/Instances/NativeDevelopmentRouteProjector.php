@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
-use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
@@ -20,14 +18,12 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
-use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Models\Instance;
-use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
 
-final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, InstanceTransferRouteProjector, RouteDomainProjector
+final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteDomainProjector
 {
     public function __construct(
         private RemoteAppDevPhpFpmManager $php,
@@ -92,75 +88,6 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
         if ($router instanceof Node) {
             $this->certificates->convergeRouteRouter($route, $router);
-        }
-    }
-
-    public function retireSource(InstanceTransfer $transfer): void
-    {
-        app(DevelopmentProjectionOperationLock::class)->run(fn () => $this->retireSourceOwned($transfer));
-    }
-
-    private function retireSourceOwned(InstanceTransfer $transfer): void
-    {
-        $transfer->load(['sourceNode', 'instance.node']);
-        $source = $transfer->sourceNode;
-        $sourceRouter = Node::query()->find($transfer->source_router_node_id);
-        if (! $sourceRouter instanceof Node || $transfer->cutover_at === null) {
-            throw new RuntimeConvergenceException(
-                step: 'source-cleanup',
-                errorCode: 'instance.transfer_source_router_unknown',
-                message: 'The original Router must be recorded before retiring source projections.',
-            );
-        }
-        $destinationRoute = Route::query()->with('cluster.routerAssignment.node')
-            ->findOrFail($transfer->destination_route_id ?? $transfer->source_route_id);
-        $destinationRouter = $destinationRoute->cluster?->routerAssignment?->node;
-        $nodes = collect([$source, $sourceRouter, $transfer->instance->node]);
-        if ($destinationRouter instanceof Node) {
-            $nodes->push($destinationRouter);
-        }
-
-        foreach ($nodes->unique('id') as $node) {
-            $this->caddy->build($node);
-        }
-        $this->php->converge($source);
-        $this->dns->converge();
-
-        $sourceInstance = clone $transfer->instance;
-        $sourceInstance->setRelation('node', $source);
-        if (! $this->usesCertificate($source, "app-instance-{$sourceInstance->id}")) {
-            $this->certificates->removeInstance($sourceInstance);
-        }
-        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $transfer->source_route_id);
-        if (! $this->usesCertificate($sourceRouter, "route-{$transfer->source_route_id}-router")) {
-            $oldRoute = new Route;
-            $oldRoute->id = $transfer->source_route_id;
-            $this->certificates->removeRouteRouter($oldRoute, $sourceRouter);
-        }
-
-        foreach ($transfer->web_root_route_ids ?? [] as $routeId) {
-            $this->retireSourceWebRootRoute($routeId, $source, $sourceRouter);
-        }
-    }
-
-    /**
-     * A Route with a web root that the transfer moved keeps its ID, so its old leaves carry the same
-     * scopes as the new ones. A leaf that a site on the Node still loads stays, such as the Router leaf
-     * when the transfer kept the Cluster.
-     */
-    private function retireSourceWebRootRoute(int $routeId, Node $source, Node $sourceRouter): void
-    {
-        $route = new Route;
-        $route->id = $routeId;
-
-        if (! $this->usesCertificate($source, "route-{$routeId}")) {
-            $this->certificates->removeRouteLeaf($route, $source);
-        }
-
-        new RemoteAppDevRouteFirewallManager($this->agents)->remove($source, $routeId);
-
-        if (! $this->usesCertificate($sourceRouter, "route-{$routeId}-router")) {
-            $this->certificates->removeRouteRouter($route, $sourceRouter);
         }
     }
 

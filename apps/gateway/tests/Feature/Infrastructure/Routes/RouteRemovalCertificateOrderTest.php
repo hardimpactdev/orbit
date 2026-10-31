@@ -35,14 +35,12 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Firewall\NativeLiveUfwReader;
-use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
-use App\Infrastructure\Routes\RouteRemovalResidueCleaner;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -245,43 +243,7 @@ describe('Route removal certificate order', function (): void {
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
     });
 
-    it('removes a Route offline, leaves the dead Node unchanged, and finishes on its next converge', function (): void {
-        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
-        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
-        $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
-        [$route, $instance] = certificate_order_targeted_route($this->nodes, $worker, nodeScoped: false);
-        $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
-        certificate_order_caddy()->converge($router);
-        $this->nodes->down = ['10.44.0.30'];
-
-        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])
-            ->completeRoute()->assertOk()
-            ->assertJsonPath('data.result.route_id', $route->id)
-            ->assertJsonPath('data.result.retained_on_nodes', [
-                ['node_id' => $worker->id, 'node' => 'worker', 'steps' => ['php', 'firewall', 'caddy']],
-            ]);
-
-        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
-            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
-            ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
-            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
-            ->and($this->php->converged)->toBe([])
-            ->and($this->nodes->firewallRemovals)->toBe([]);
-
-        $artifact = app(RouteResidueFootprintArtifact::class);
-        $this->nodes->down = [];
-
-        expect($artifact->applies($worker))->toBeTrue()
-            ->and($artifact->applies($router))->toBeFalse()
-            ->and(app(RouteRemovalResidueCleaner::class)->clean($worker))->toBeTrue()
-            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
-            ->and($this->php->converged)->toBe(['worker' => []])
-            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
-            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
-            ->and($artifact->applies($worker))->toBeFalse()
-            ->and($this->nodes->removedWhileNamed)->toBe([])
-            ->and($this->nodes->validates('10.44.0.30'))->toBeTrue();
-    });
+    // Offline residue execution is covered by Routes residue-local_test.ts.
 
     it('keeps the certificate and a retryable Route when the Caddy build fails', function (): void {
         $routeId = $this
