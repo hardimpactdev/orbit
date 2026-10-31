@@ -11,6 +11,10 @@ on:
       - 'extensions/behaviors/observation/**'
       - 'workflows/workflow-observation-*.yaml'
       - '.github/workflows/observation.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

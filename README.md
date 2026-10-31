@@ -335,3 +335,5 @@ Lifecycle workflows complete as cancelled when the Gateway refuses an effect or 
 Lifecycle removal cancellation before `removal-accept` closes that Gateway step without replaying its transaction. The Gateway cancel guard and the acceptance transaction share the parent lock: an accepted cancellation proves removal has not been accepted and can no longer commit. Native effects still require their receipts.
 
 [Local peer DNS reconciliation](docs/fleet-peer-dns-local.md) documents the shared callable used by Fleet and Node workflows.
+
+CI scopes workflow placement checks to workflow YAML and its checker. Node trust checks run when workflow, model or behavior inputs change. Unrelated documentation edits allocate neither runner. Each workflow cancels an older run of the same pull request; main runs finish. The private runners retain their Deno dependency cache between jobs, so CI adds no second cache upload/download around subsecond checks. Existing check names stay unchanged.

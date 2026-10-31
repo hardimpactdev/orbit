@@ -17,6 +17,10 @@ on:
       - 'workflows/workflow-automatic-production-deploy.yaml'
       - 'docs/automatic-deploy.md'
       - '.github/workflows/automatic-deploy.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:
