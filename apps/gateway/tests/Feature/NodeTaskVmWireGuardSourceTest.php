@@ -38,11 +38,13 @@ beforeEach(function (): void {
 
         public function definitions(): array
         {
-            $definitions = array_diff_key(array_fill_keys(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision', 'task_vm.destroy'],
+            $definitions = array_diff_key(array_fill_keys(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision', 'task_vm.destroy', 'node.add'],
                 ['workflow' => 'operation-test-hub', 'projection' => TaskVmEnrollmentProjection::class,
                     'private_material' => ['configuration' => 'node.vpn_configuration']]), $this->known);
-            if (isset($definitions['task_vm.destroy'])) {
-                $definitions['task_vm.destroy']['projection'] = NodeNetworkProjection::class;
+            foreach (['task_vm.destroy', 'node.add'] as $kind) {
+                if (isset($definitions[$kind])) {
+                    $definitions[$kind]['projection'] = NodeNetworkProjection::class;
+                }
             }
 
             return $definitions;
@@ -221,4 +223,120 @@ it('uses the same fresh restore view for an exact Gateway-rooted Node enrollment
     $input['_enrollment']['executor_node_id'] = $this->hub->id;
     $operation->input = $input;
     expect(NodeWireGuardInput::bound($operation))->toBeNull();
+});
+
+function prospectiveEnrollmentHubOperation($test): Operation
+{
+    $snapshot = app(NodeWireGuardInput::class)->captureForTaskVm($test->guest, $test->gateway);
+    $operation = $test->operation;
+    $operation->kind = 'node.add';
+    $operation->target_type = 'node';
+    $operation->target_id = $test->guest->id;
+    $input = $operation->input;
+    $input['_wireguard'] = $snapshot;
+    $input['_wireguard_restore'] = NodeWireGuardInput::restorationSnapshot($snapshot);
+    $input['_enrollment'] = ['schema_version' => 1, 'node_id' => $test->guest->id,
+        'executor_node_id' => $test->gateway->id, 'candidate' => ['user' => 'candidate', 'wireguard_ip' => '10.44.0.252']];
+    $operation->input = $input;
+
+    return $operation;
+}
+
+it('renders only the prospective enrollment peer address and restores fresh stored identity in the same root', function (bool $withoutPriorAddress): void {
+    $operation = prospectiveEnrollmentHubOperation($this);
+    $operation->save();
+    if ($withoutPriorAddress) {
+        $this->guest->update(['wireguard_ip' => null]);
+    }
+    $original = $this->guest->only(['user', 'wireguard_ip', 'wireguard_public_key']);
+    $other = FleetFixtures::node('prospective-other-peer');
+    $other->update(['wireguard_public_key' => base64_encode(str_repeat('o', 32))]);
+    $unaddressed = FleetFixtures::node('prospective-unaddressed-peer');
+    $unaddressed->update(['wireguard_ip' => null, 'wireguard_public_key' => base64_encode(str_repeat('u', 32))]);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->twice()->andReturn('/private/gateway-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+    $source = app(NodeVpnConfigurationSource::class);
+
+    $prospective = $source->resolve($operation, $this->hub->id, '', 'configuration')->value;
+
+    $peers = array_column($prospective['peers'], null, 'node_id');
+    expect($peers[$this->guest->id]['address'])->toBe('10.44.0.252');
+    expect($peers[$this->guest->id]['public_key'])->toBe($original['wireguard_public_key']);
+    expect($peers[$other->id]['address'])->toBe($other->wireguard_ip);
+    expect(array_keys($peers))->not->toContain($unaddressed->id);
+    expect($this->guest->fresh()->only(array_keys($original)))->toBe($original);
+    $restoredKey = base64_encode(str_repeat('r', 32));
+    DB::transaction(function () use ($operation, $restoredKey): void {
+        $this->guest->update(['status' => LifecycleStatus::Active, 'wireguard_ip' => '10.44.0.253', 'wireguard_public_key' => $restoredKey]);
+        NodeWireGuardInput::beginRestoration($operation);
+    });
+
+    $restored = $source->resolve($operation->fresh(), $this->hub->id, '', 'configuration')->value;
+
+    $restoredPeers = array_column($restored['peers'], null, 'node_id');
+    expect($restoredPeers[$this->guest->id]['address'])->toBe('10.44.0.253');
+    expect($restoredPeers[$this->guest->id]['public_key'])->toBe($restoredKey);
+    expect($restored['connection'])->toBe($prospective['connection']);
+    expect($operation->fresh()->input)->toBe($operation->input);
+})->with(['existing address' => false, 'no prior address' => true]);
+
+it('refuses incomplete or foreign prospective enrollment address bindings before SSH custody', function (string $case, string $exception): void {
+    $operation = prospectiveEnrollmentHubOperation($this);
+    $input = $operation->input;
+    match ($case) {
+        'schema' => $input['_enrollment']['schema_version'] = 2,
+        'guest' => $input['_enrollment']['node_id'] = $this->hub->id,
+        'executor' => $input['_enrollment']['executor_node_id'] = $this->hub->id,
+        'missing address' => $input['_enrollment']['candidate'] = [],
+        'invalid address' => $input['_enrollment']['candidate']['wireguard_ip'] = 'not-an-address',
+        'outside subnet' => $input['_enrollment']['candidate']['wireguard_ip'] = '192.0.2.1',
+    };
+    $operation->input = $input;
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldNotReceive('privateKeyPath');
+    app()->instance(SshKeyProvider::class, $keys);
+
+    expect(fn () => app(NodeVpnConfigurationSource::class)->resolve($operation, $this->hub->id, '', 'configuration'))
+        ->toThrow($exception);
+})->with([
+    ['schema', ResourceOperationException::class],
+    ['guest', ResourceOperationException::class],
+    ['executor', ResourceOperationException::class],
+    ['missing address', ResourceOperationException::class],
+    ['invalid address', ResourceOperationException::class],
+    ['outside subnet', ResourceOperationException::class],
+]);
+
+it('ignores enrollment candidate fields in a TaskVM parent', function (): void {
+    $operation = $this->operation;
+    $input = $operation->input;
+    $input['_enrollment'] = ['schema_version' => 1, 'node_id' => $this->guest->id,
+        'executor_node_id' => $this->gateway->id, 'candidate' => ['wireguard_ip' => '10.44.0.252']];
+    $operation->input = $input;
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+
+    $material = app(NodeVpnConfigurationSource::class)->resolve($operation, $this->hub->id, '', 'configuration')->value;
+
+    expect(array_column($material['peers'], null, 'node_id')[$this->guest->id]['address'])->toBe($this->guest->wireguard_ip);
+});
+
+it('omits a new enrollment peer after restoring its absent database address and key', function (): void {
+    $operation = prospectiveEnrollmentHubOperation($this);
+    $operation->save();
+    DB::transaction(function () use ($operation): void {
+        $this->guest->update(['wireguard_ip' => null, 'wireguard_public_key' => null]);
+        NodeWireGuardInput::beginRestoration($operation);
+    });
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn('/private/gateway-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+
+    $material = app(NodeVpnConfigurationSource::class)->resolve($operation->fresh(), $this->hub->id, '', 'configuration')->value;
+
+    expect(array_column($material['peers'], 'node_id'))->not->toContain($this->guest->id);
+    expect($this->guest->fresh()->wireguard_ip)->toBeNull();
+    expect($this->guest->fresh()->wireguard_public_key)->toBeNull();
 });
