@@ -236,7 +236,9 @@ export function agentPythonFindings(
     const args = argumentsOf(node),
       argv = args ? value(expressions(args)[0]) : undefined;
     if (typeof argv === "string") {
-      findings.push(...agentShellFindings(file, argv, inventory, depth + 1));
+      findings.push(
+        ...agentShellFindings(file, argv, inventory, depth + 1, true),
+      );
     } else if (Array.isArray(argv)) {
       findings.push(
         ...agentShellFindings(
@@ -244,6 +246,7 @@ export function agentPythonFindings(
           argv.map(quoteShellWord).join(" "),
           inventory,
           depth + 1,
+          true,
         ),
       );
     } else if (/\borbit-agent\b/.test(source)) {
@@ -265,6 +268,7 @@ export function agentShellFindings(
   source: string,
   inventory: Record<string, string> = {},
   depth = 0,
+  controlCommands = false,
 ): Finding[] {
   if (depth > 8) {
     return [{
@@ -387,7 +391,7 @@ export function agentShellFindings(
   const findings: Finding[] = [
     ...heredocFindings,
     ...nested.flatMap((body) =>
-      agentShellFindings(file, body, inventory, depth + 1)
+      agentShellFindings(file, body, inventory, depth + 1, controlCommands)
     ),
   ];
   const executable = (argv: string[], level: number): void => {
@@ -418,6 +422,18 @@ export function agentShellFindings(
       argv = [resolved, ...argv.slice(1)];
     }
     const binary = argv[0]?.split("/").at(-1);
+    if (
+      controlCommands &&
+      ["sleep", "usleep", "flock", "lockfile"].includes(binary ?? "")
+    ) {
+      findings.push({
+        file,
+        rule: "custom-control",
+        count: 1,
+        line: 1,
+        evidence: [binary!],
+      });
+    }
     if (binary === "eval") {
       const body = argv.slice(1).map((arg) =>
         arg.replace(
@@ -426,7 +442,13 @@ export function agentShellFindings(
         )
       ).join(" ");
       findings.push(
-        ...agentShellFindings(file, body, inventory, depth + 1),
+        ...agentShellFindings(
+          file,
+          body,
+          inventory,
+          depth + 1,
+          controlCommands,
+        ),
       );
       return;
     }
@@ -444,6 +466,7 @@ export function agentShellFindings(
               argv.slice(i).join(" "),
               inventory,
               depth + 1,
+              controlCommands,
             ),
           );
           return;
@@ -466,6 +489,7 @@ export function agentShellFindings(
             argv[i + 1],
             inventory,
             depth + 1,
+            controlCommands,
           ),
         );
       }
@@ -488,6 +512,7 @@ export function agentShellFindings(
           argv.slice(i + 1).join(" "),
           inventory,
           depth + 1,
+          controlCommands,
         ),
       );
       return;

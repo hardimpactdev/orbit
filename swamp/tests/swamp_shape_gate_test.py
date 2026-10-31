@@ -53,6 +53,8 @@ class ShapeGate(unittest.TestCase):
             source.replace('    gateway_node_id=1', "    ORIGIN=path\n    gateway_node_id=1"),
             source.replace('ORIGIN+path', 'path+ORIGIN'),
             source.replace('ORIGIN+path', 'urllib.parse.urljoin(ORIGIN,path)'),
+            source + "ORIGIN='https://gateway.orbit/api/v1/'\nrequest('GET','private-material')\n",
+            source + "def change():\n    global ORIGIN\n    ORIGIN='https://gateway.orbit/api/v1/'\nchange()\nrequest('GET','private-material')\n",
         ]:
             self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(variant)), variant)
 
@@ -78,6 +80,11 @@ class ShapeGate(unittest.TestCase):
             source + "for attempt in range(3):\n    pass\n",
         ]:
             self.assertTrue(any(row['rule'] == 'custom-control' for row in scan(variant)), variant)
+
+    def test_late_outer_fd_rebinding_is_not_a_proven_tool_lock(self):
+        source = "import os,fcntl\nfd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\ndef acquire():\n    fcntl.flock(fd,fcntl.LOCK_EX)\nfd=os.open('/tmp/workflow.lock',os.O_RDWR)\nacquire()\n"
+        result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+        self.assertTrue(any(row['rule'] == 'custom-control' for row in json.loads(result.stdout)))
 
     def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
         inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
