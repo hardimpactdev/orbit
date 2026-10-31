@@ -76,3 +76,16 @@ Deno.test("Phase summaries require final contribution proof and retain observed 
         [9, 13],
     );
 });
+
+Deno.test("Router records candidate firewall migrations even if forward preparation fails", () => {
+    assertEquals(
+        result({
+            prepare: {
+                status: "succeeded",
+                outputs: { firewall: { result: { migrated_node_ids: [9] } } },
+            },
+            forward: phase(false, false),
+        }).migrated_node_ids,
+        [9],
+    );
+});

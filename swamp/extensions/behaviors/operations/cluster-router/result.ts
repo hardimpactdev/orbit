@@ -8,6 +8,12 @@ const Summary = z.object({
 const State = z.object({
     status: z.string(),
     outputs: z.object({
+        firewall: z.object({
+            result: z.object({
+                migrated_node_ids: z.array(z.number().int().positive())
+                    .optional(),
+            }).optional(),
+        }).optional(),
         result: z.object({
             ready: z.boolean().optional(),
             selected: z.boolean().optional(),
@@ -33,9 +39,12 @@ const succeeded = (steps: Steps, name: string) =>
 function migrations(steps: Steps) {
     return [
         ...new Set(
-            Object.values(steps).flatMap((step) =>
-                step.outputs?.result?.migrated_node_ids ?? []
-            ),
+            Object.values(steps).flatMap((
+                step,
+            ) => [
+                ...(step.outputs?.result?.migrated_node_ids ?? []),
+                ...(step.outputs?.firewall?.result?.migrated_node_ids ?? []),
+            ]),
         ),
     ];
 }
