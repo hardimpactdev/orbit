@@ -8,6 +8,8 @@ use App\Actions\GitHub\CompleteGitHubAppRegistrationAction;
 use App\Actions\GitHub\DestroyGitHubAppAction;
 use App\Actions\GitHub\InstallGitHubAppAction;
 use App\Actions\GitHub\ShowGitHubAppAction;
+use App\Actions\GitHub\SyncGitHubAppAction;
+use App\Data\Operations\OperationData;
 use App\Domain\GitHub\GitHubAppManifestPage;
 use App\Domain\GitHub\GitHubAppRegistration;
 use App\Domain\GitHub\GitHubAppStore;
@@ -16,8 +18,8 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GitHub\InstallGitHubAppRequest;
+use App\Http\Requests\Operations\StartsOperation;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -62,7 +64,8 @@ final class GitHubAppController extends Controller
     }
 
     /** GitHub redirects the operator's browser here after it registers the Project. */
-    public function callback(Request $request, CompleteGitHubAppRegistrationAction $action): RedirectResponse
+    #[StartsOperation('github.app_register')]
+    public function callback(Request $request, CompleteGitHubAppRegistrationAction $action): JsonResponse
     {
         $state = $request->query('state');
         $code = $request->query('code');
@@ -71,7 +74,13 @@ final class GitHubAppController extends Controller
             throw $this->registrationInvalid();
         }
 
-        return redirect()->away($action->handle($state, $code)->installUrl());
+        return response()->json(['data' => OperationData::fromModel($action->handle($state, $code, $request->attributes->getString('orbit.request_id')))->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202)->header('Cache-Control', 'no-store');
+    }
+
+    #[StartsOperation('github.app_sync')]
+    public function sync(Request $request, SyncGitHubAppAction $action): JsonResponse
+    {
+        return response()->json(['data' => OperationData::fromModel($action->handle($request->attributes->getString('orbit.request_id')))->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202)->header('Cache-Control', 'no-store');
     }
 
     private function registrationInvalid(): ResourceOperationException
