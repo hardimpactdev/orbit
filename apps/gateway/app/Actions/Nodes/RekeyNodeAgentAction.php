@@ -4,18 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\NodeAgentRekeyContext;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentSchemas;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -30,18 +29,22 @@ final readonly class RekeyNodeAgentAction
         private OperationExecutionContract $contract,
         private OperationStore $operations,
         private NodeAgentHashSource $hashes,
-        private ManagedNodeEligibility $eligibility,
+        private NodeAgentRekeyContext $context,
         private AgentCommandRunner $agents,
         private NodeLocks $locks,
     ) {}
 
-    public function execute(int $nodeId, int $operationId): Node
+    public function execute(int $nodeId, int $operationId): Node|Operation
     {
+        $node = Node::query()->find($nodeId);
+        if ($node !== null && app(NodeWorkerRollout::class)->allows($node)) {
+            return app(StartNodeAgentRekeyAction::class)->execute($nodeId, $operationId);
+        }
         $operation = Operation::query()->find($operationId) ?? throw $this->refused();
         $leaseId = $this->children->executionLeaseId($operation);
         $result = null;
         $held = $this->attempts->hold($leaseId, function () use ($nodeId, $operation, &$result): void {
-            $node = $this->owner($nodeId, $operation->refresh());
+            $node = $this->context->node($nodeId, $operation->refresh());
             $lock = $this->locks->lock('node-agent:id:'.$nodeId, 420);
             if (! $lock->get()) {
                 throw new ResourceOperationException('agent.converge_busy', 'Another Node agent operation is running.', 409);
@@ -56,7 +59,7 @@ final readonly class RekeyNodeAgentAction
                 $data = ['worker' => $operation->worker ?? '', 'key' => 'footprint-agent',
                     'transport' => 'agent', 'name' => 'agent.configure', 'input' => ValidatedData::object($run['input'])];
                 $this->contract->authorizeRun($operation, $data);
-                $input = [...$data['input'], 'secret_hash' => null];
+                $input = [...$data['input'], 'secret_hash' => null, 'worker_credentials' => null];
                 AgentSchemas::assertInput('agent.configure', $input);
                 // This is a new, operator-requested repair with no target receipt or original effect key.
                 $configured = $this->agents->run($node, 'agent.configure', $input);
@@ -68,7 +71,7 @@ final readonly class RekeyNodeAgentAction
                 }
                 DB::transaction(function () use ($nodeId, $operation, $configured): void {
                     $fresh = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                    $this->owner($nodeId, $fresh);
+                    $this->context->node($nodeId, $fresh);
                     $this->hashes->store($fresh, $nodeId, $configured['secret_hash'] ?? null);
                     $this->operations->change($fresh, ['state' => [...($fresh->state ?? []),
                         'agent_secret_rekey' => ['node_id' => $nodeId, 'recovered_at' => now()->toISOString()]]]);
@@ -85,26 +88,8 @@ final readonly class RekeyNodeAgentAction
         return $result;
     }
 
-    private function owner(int $nodeId, Operation $operation): Node
-    {
-        $node = Node::query()->find($nodeId);
-        $run = ValidatedData::object($operation->state['executor_runs'] ?? [])['footprint-agent'] ?? null;
-        $holder = Operation::query()->where('lock_key', 'node:'.$nodeId)->first();
-        if ($node === null || $node->platform !== 'linux' || $node->status === LifecycleStatus::Removing || ! $this->eligibility->isManagedForObservation($node) || $operation->kind !== 'node.converge'
-            || $operation->status !== OperationStatus::Running || $operation->node_id !== $nodeId
-            || $operation->target_type !== 'node' || $operation->target_id !== $nodeId
-            || $this->children->nodeId($operation) !== $nodeId
-            || $holder === null || $holder->status->terminal() || $holder->id !== $this->children->executionLeaseId($operation)
-            || ! is_array($run) || ($run['transport'] ?? null) !== 'agent' || ($run['name'] ?? null) !== 'agent.configure'
-            || ($run['started'] ?? false) !== true || ! array_key_exists('result', $run) || $run['result'] !== null) {
-            throw $this->refused();
-        }
-
-        return $node;
-    }
-
     private function refused(): ResourceOperationException
     {
-        return new ResourceOperationException('node.agent_rekey_unavailable', 'Recovery requires the owning Node and its open, uncertain configure Operation.', 409);
+        return NodeAgentRekeyContext::refused();
     }
 }

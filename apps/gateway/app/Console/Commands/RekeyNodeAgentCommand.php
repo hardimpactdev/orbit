@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Nodes\RekeyNodeAgentAction;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -36,6 +37,12 @@ final class RekeyNodeAgentCommand extends Command
             $this->error('Agent re-key did not return a proven result. Retry this operator command.');
 
             return self::FAILURE;
+        }
+        if ($recovered instanceof Operation) {
+            $this->info("Agent recovery Operation #{$recovered->id} accepted for Node #{$node}.");
+            $this->line('Observe the recovery Operation before cancelling the original uncertain configure.');
+
+            return self::SUCCESS;
         }
         $this->info("Agent authentication restored for Node [{$recovered->name}] (Operation #{$operation}).");
         $this->line('The original configure receipt remains uncertain. Cancel that Operation, then start a fresh converge.');

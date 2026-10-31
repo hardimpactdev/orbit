@@ -37,7 +37,7 @@ it('rekeys only the admitted Node and restores authentication without proving th
     $hash = hash('sha256', $secret);
     $agents = new FakeAgentCommandRunner;
     $agents->answer('agent.configure', function (array $actual, Node $owner) use ($node, $input, $hash): array {
-        expect($owner->id)->toBe($node->id)->and($actual)->toBe([...$input, 'secret_hash' => null]);
+        expect($owner->id)->toBe($node->id)->and($actual)->toBe([...$input, 'secret_hash' => null, 'worker_credentials' => null]);
 
         return ['secret_hash' => $hash, 'restarted' => true, 'unclosed' => []];
     });

@@ -20,6 +20,7 @@ use App\Domain\Nodes\NodeWireGuardOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 $nodeKinds = [
+    'node.agent_rekey' => ['executor' => 'swamp', 'result_fields' => ['rekeyed', 'restarted', 'error_code']],
     'node.prepare_php_packages' => [
         'executor' => 'swamp',
         'admission' => NodePhpPackagesChildAdmission::class,
