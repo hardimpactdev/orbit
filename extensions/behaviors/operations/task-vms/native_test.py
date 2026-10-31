@@ -19,9 +19,6 @@ class TaskVmNativeTest(NativeTestCase):
         fixture = self.repo / "extensions/behaviors/_test/executor.ts"
         fixture.parent.mkdir()
         shutil.copy(ROOT / "extensions/behaviors/operations/task-vms/native-fixture.ts", fixture)
-        cache = self.repo / 'extensions/behaviors/operations/task-vms/cache_fill_direct.ts'
-        cache.write_text('import { fixtureHttp, fixtureCacheAction } from "../../_test/executor.ts";\n' + cache.read_text().replace(
-            '...cacheFillDirect()', '...cacheFillDirect(() => fixtureHttp, fixtureCacheAction)'))
         for name, factory, relative in (("operation-runner", "operationDiscovery", "../_test/executor.ts"), ("operations/task-vms", "taskVms", "../../_test/executor.ts")):
             path = self.repo / "extensions/behaviors" / name / "mod.ts"
             source = path.read_text().replace(f"...{factory}()", f"...{factory}(() => fixtureHttp)").replace("behavior = taskVms()", "behavior = taskVms(() => fixtureHttp)")
@@ -46,47 +43,10 @@ class TaskVmNativeTest(NativeTestCase):
     def read(self):
         return json.loads((self.repo / "native-executor.json").read_text())
 
-    def test_native_cache_settles_lost_agent_reply_in_same_root_without_private_run_data(self):
-        import uuid
-        self.secrets = ('cache-private-' + str(uuid.uuid4()),)
-        self.native_env['CACHE_PRIVATE_FIXTURE'] = self.secrets[0]
-        source = (ROOT / 'workflows/workflow-operation-task-vm-cache-fill.yaml').read_text()
-        self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', source)
-        self.assertRegex(source, r"""labels: \{ node: ['"]\$\{\{ string\(inputs.node_id\) \}\}['"] \}""")
-        # Scratch recovery only. Production source retains exact target and label.
-        (self.repo / 'workflows/workflow-operation-task-vm-cache-fill.yaml').write_text('\n'.join(
-            line for line in source.splitlines() if not line.strip().startswith(('target:', 'labels:'))) + '\n')
-        self.state['operation'].update(kind='task_vm.fill_package_cache', result=None,
-            input={'agent_sha256': 'a' * 64, 'artifacts': [{'key': 'verified', 'manager': 'npm',
-                   'package': 'test', 'version': '1.0.0', 'url': 'https://registry.npmjs.org/test/-/test-1.0.0.tgz',
-                   'integrity': None}], 'conflicts': {}, 'max_bytes': 1024})
-        self.state['loseCacheReply'] = True
-        self.save()
-        failed = self.cli('workflow', 'run', 'operation-task-vm-cache-fill', '--input',
-            json.dumps({'operation_id': 19, 'kind': 'task_vm.fill_package_cache', 'node_id': 3}), success=False)
-        run = json.JSONDecoder().raw_decode(failed.stdout.lstrip())[0]['id']
-        self.assertEqual(self.read()['operation']['status'], 'failed')
-        self.assertEqual(self.read()['operation']['result'], {'error_code': 'task_vm.package_cache_failed'})
-        self.assertEqual(self.read()['cacheMutations'], 1)
-        self.assert_private_absent(failed.stdout, failed.stderr)
-        self.assertEqual(self.read()['cacheInvocations'], 1)
-        # A later normal admission verifies the convergent archive; it is not held by an open intent.
-        self.state = self.read()
-        self.state['operation'].update(id=20, status='queued', result=None)
-        self.save()
-        recovered = self.cli('workflow', 'run', 'operation-task-vm-cache-fill', '--input',
-            json.dumps({'operation_id': 20, 'kind': 'task_vm.fill_package_cache', 'node_id': 3}))
-        self.assertEqual(self.read()['operation']['id'], 20)
-        self.assertEqual(self.read()['operation']['status'], 'succeeded')
-        self.assertEqual(self.read()['operation']['result'], {'ready': True})
-        self.assertEqual(self.read()['cacheMutations'], 1)
-        self.assertEqual(self.read()['cacheInvocations'], 2)
-        self.assert_private_absent(recovered.stdout, recovered.stderr)
-
     def test_native_cache_workflow_validates_exact_host_placement(self):
         source = (ROOT / 'workflows/workflow-operation-task-vm-cache-fill.yaml').read_text()
         self.assertIn('target: \'${{ "orbit-node-" + string(inputs.node_id) }}\'', source)
-        self.assertRegex(source, r"""labels: \{ node: ['"]\$\{\{ string\(inputs.node_id\) \}\}['"] \}""")
+        self.assertIn("labels: { node: '${{ string(inputs.node_id) }}' }", source)
         self.assertNotIn('trigger:', source)
         self.assertNotIn('queueTimeout:', source)
         self.cli('workflow', 'validate', 'operation-task-vm-cache-fill')

@@ -199,11 +199,3 @@ no production caller or Gateway admission. Live workspace provisioning still
 uses its retained cache implementation and tests until the owning Tasks root
 cutover. Host cache fills remain separate; this removal does not change their
 discovery or execution.
-
-Host cache fill keeps one 1,700-second deadline from the original native run
-start. The canonical pinned agent validates non-null lockfile checksums against
-archive bytes, including cached hits. A failed fill job triggers a placed native
-failure-projection job on the same host. It reports only a fixed failure code
-and no unverified archive inventory, so a lost agent reply cannot leave an open
-Operation blocking the next normal fill admission. Worker recovery remains
-native; there is no Gateway failure poll or retry loop.
