@@ -26,7 +26,16 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'logs', 'participant_node_ids']));
+        $input = array_intersect_key($operation->input, array_flip(['nodes', 'families', 'collect_problems', 'logs', 'participant_node_ids']));
+        $nodes = [];
+        foreach (Arr::array($input, 'nodes') as $value) {
+            $node = ValidatedData::object($value);
+            $node['observations'] = app(DoctorObservations::class)->forNode(Arr::integer($node, 'id'));
+            $nodes[] = $node;
+        }
+        $input['nodes'] = $nodes;
+
+        return $input;
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -46,6 +55,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
             $node = ValidatedData::object($value);
             if ($node['id'] !== $callerNodeId) {
                 $node['resources'] = (object) [];
+                unset($node['observations']);
             }
             $nodes[] = $node;
         }
