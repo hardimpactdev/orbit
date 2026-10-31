@@ -59,7 +59,7 @@ export function invocation(
         (value.data as Record<string, unknown>).backend === "applied",
     };
   }
-  if (kind.startsWith("vault.")) {
+  if (["vault.setup", "vault.teardown"].includes(kind)) {
     const action = z.enum(["setup", "sync", "teardown"]).parse(kind.slice(6));
     const reference = z.object({
       $secret: z.literal("vault.credentials"),

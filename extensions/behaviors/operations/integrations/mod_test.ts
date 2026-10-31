@@ -256,7 +256,7 @@ Deno.test("cancellation after an uncertain effect reconciles the same receipt", 
 
 Deno.test("Vault carries only a secret reference and persists only safe collection metadata", async () => {
   for (
-    const [action, backend] of [["setup", "configured"], ["sync", "synced"], [
+    const [action, backend] of [["setup", "configured"], [
       "teardown",
       "absent",
     ]]
@@ -292,11 +292,11 @@ Deno.test("Vault carries only a secret reference and persists only safe collecti
 });
 Deno.test("Vault refuses wrong backend and retains machine-readable failure", async () => {
   const f = new Fixture();
-  f.operation.kind = "vault.sync";
+  f.operation.kind = "vault.setup";
   f.operation.input = {
     configuration: { $secret: "vault.credentials", id: 2 },
   };
-  f.result = { outcome: "succeeded", data: { backend: "configured" } };
+  f.result = { outcome: "succeeded", data: { backend: "synced" } };
   await assertRejects(() => f.execute());
   f.receipt = null;
   f.result = {
@@ -486,32 +486,8 @@ Deno.test("an unrecognized pre-start marker cannot become a terminal command ref
   );
 });
 
-Deno.test("Vault sync resumes its keyed collection result and completes every admitted ledger field", async () => {
-  const f = new Fixture();
-  f.operation.kind = "vault.sync";
-  f.operation.input = {
-    configuration: { $secret: "vault.credentials", id: 2 },
-  };
-  f.result = {
-    outcome: "succeeded",
-    data: {
-      backend: "synced",
-      sources: ["database-connection:1", "database-user:2"],
-      cipher_ids: ["cipher-1", "cipher-2"],
-      revisions: ["revision-1", "revision-2"],
-      fingerprints: ["hash-1", "hash-2"],
-    },
-  };
-  f.loseRun = true;
-  await assertRejects(() => f.execute(), Error, "Lost run reply");
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.effects, 1);
-  assertEquals(f.calls.at(-1)?.body.result, f.result);
-  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
-});
-
-Deno.test("Vault failed collection deletion or write cannot complete as a successful sync", async () => {
-  for (const action of ["sync", "teardown"]) {
+Deno.test("Vault failed collection deletion cannot complete as a successful teardown", async () => {
+  for (const action of ["teardown"]) {
     const f = new Fixture();
     f.operation.kind = `vault.${action}`;
     f.operation.input = {

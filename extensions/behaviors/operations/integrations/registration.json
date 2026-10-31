@@ -5,7 +5,6 @@
     "metrics.cadvisor_converge",
     "metrics.cadvisor_remove",
     "vault.setup",
-    "vault.sync",
     "vault.teardown",
     "websocket.app_rotate",
     "ai_router.setup",

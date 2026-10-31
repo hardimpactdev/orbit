@@ -1,0 +1,29 @@
+id: 6247e94c-f8c1-471c-b19f-74e7f37e381d
+name: operation-vault-direct
+description: Direct vault intent; private credentials never become workflow input.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [vault.sync] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: vault
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: '${{ string(inputs.node_id) }}' }
+    steps:
+      - name: apply
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/vault-direct"
+          behaviorName: '${{ "vault-gateway-" + string(inputs.node_id) }}'
+          methodName: apply
+          globalArgs:
+            caFile: /usr/local/share/ca-certificates/orbit-root.crt
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
