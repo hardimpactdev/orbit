@@ -267,7 +267,9 @@ Each Process definition becomes a new Instance Process with its own ID, installe
 
 A copy that the Instance already has by name stops preparation with `process.name_taken` or `schedule.retry_conflict`. The Gateway does not adopt the existing record. A retry installs only the unfinished copies from the captured set. It does not read the definitions again, rewrite a finished copy, or stop a copy that an operator started.
 
-A native Instance root calls `InstantiateProjectRuntimeDefinitionsAction::capture(instanceId)` inside its admission transaction before capturing immutable input. This records the production copies and capture time without a runtime call, child Operation or Process admission lock. A refused root transaction rolls the copies back. Runtime installation and owned-row result projection remain the parent DAG's separate responsibilities.
+### Native root capture
+
+A native Instance root calls `InstantiateProjectRuntimeDefinitionsAction::capture(instanceId)` inside its admission transaction before capturing immutable input. This records the production copies and capture time without a runtime call, child Operation or Process admission lock. A refused root transaction rolls the copies back. The parent DAG installs each runtime and projects its result into the owned record.
 
 A copy is independent. Changing or removing a copy does not change the definition. Changing a definition does not change existing copies.
 
