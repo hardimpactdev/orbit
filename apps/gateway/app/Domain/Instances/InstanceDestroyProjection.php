@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Routes\CaddyPublicationPlan;
-use App\Domain\Routes\RouteWithdrawalArtifacts;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -21,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 /** Record projection only. Every effect belongs to the bound native root. */
 final readonly class InstanceDestroyProjection implements DirectOperationProjection, DirectOperationPublicView
 {
-    public function __construct(private DirectOperation $direct, private ProjectDirectInstanceDestroyAction $records, private RouteWithdrawalArtifacts $routes) {}
+    public function __construct(private DirectOperation $direct, private ProjectDirectInstanceDestroyAction $records, private InstanceDestroyWithdrawal $routes) {}
 
     public function input(Operation $operation): array
     {
@@ -43,12 +44,12 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
         $publications = [];
         foreach (InstanceLifecycleInput::members($input) as $member) {
             $instance = Instance::query()->with(['node', 'project'])->findOrFail(ValidatedData::integer($member['instance_id']));
-            $artifact = $this->routes->forDevelopmentRemoval($instance, $instance->routes()->with('targets')->orderBy('routes.id')->get());
+            $artifact = $this->routes->forInstance($instance, $instance->routes()->with('targets')->orderBy('routes.id')->get());
             unset($artifact['php']);
             $publications[] = $artifact;
         }
 
-        return [...$input, 'direct_destroy' => $detail, 'withdrawal_publications' => $publications, 'caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))];
+        return [...$input, 'ingress_firewall' => $this->firewall($publications, ValidatedData::integer($operation->node_id)), 'direct_destroy' => $detail, 'withdrawal_publications' => $publications, 'caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -88,12 +89,29 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
         $select = static function (mixed $rows) use ($local): array {
             return array_map(static fn (array $row): array => ['nodes' => $local($row['nodes']), 'dns' => $local($row['dns'])], InstanceLifecycleInput::members(['members' => $rows]));
         };
+        $view['ingress_firewall'] = $this->firewall(InstanceLifecycleInput::members(['members' => $current['withdrawal_publications'] ?? []]), $callerNodeId);
         $view['publication_node_id'] = $callerNodeId;
         $view['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($callerNodeId));
         $view['withdrawal_publications'] = $select($current['withdrawal_publications'] ?? []);
         $view['direct_destroy']['routes'] = $select($detail['routes']);
 
         return $view;
+    }
+
+    /** @param array<mixed> $publications
+     * @return array<string,mixed>|null
+     */
+    private function firewall(array $publications, int $nodeId): ?array
+    {
+        foreach ($publications as $artifact) {
+            foreach (InstanceLifecycleInput::members(['members' => ValidatedData::object($artifact)['nodes']]) as $member) {
+                if ($member['node_id'] === $nodeId && ($member['ingress_firewall'] ?? false) === true) {
+                    return app(NodeRoleFirewallInput::class)->converge(Node::query()->findOrFail($nodeId), RoleName::Ingress);
+                }
+            }
+        }
+
+        return null;
     }
 
     public function apply(Operation $operation, array $data): Operation

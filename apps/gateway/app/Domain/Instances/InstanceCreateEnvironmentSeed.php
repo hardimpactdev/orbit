@@ -11,7 +11,9 @@ use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 /** Seeds encrypted values from native template output, never from a Swamp completion body. */
 final readonly class InstanceCreateEnvironmentSeed implements OperationSecretOutputStore
@@ -37,7 +39,13 @@ final readonly class InstanceCreateEnvironmentSeed implements OperationSecretOut
         if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || strlen($value) > 131072) {
             throw new ResourceOperationException('operation.secret_output_unproven', 'The create template does not belong to this Instance.', 422);
         }
-        $instance = app(InstanceLifecycleState::class)->instance($operation);
+        $instance = Instance::query()->with(['project', 'node'])->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+        if ($instance->node_id !== $operation->node_id
+            || isset($operation->input['checkout']) && $instance->checkout_path !== $operation->input['checkout']
+            || isset($operation->input['project_id']) && $instance->project_id !== $operation->input['project_id']
+            || isset($operation->input['repository_identity']) && $instance->project->repository_identity !== $operation->input['repository_identity']) {
+            throw new ResourceOperationException('instance.lifecycle_conflict', 'The admitted Instance placement or repository changed.', 409);
+        }
         $context = app(InstanceEnvironmentContextResolver::class)->resolve($instance, true, createOperationId: $operation->id);
         $store = app(InstanceEnvironmentStore::class);
         $template = app(InstanceEnvironmentImporter::class)->parse($value);
