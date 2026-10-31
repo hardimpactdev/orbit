@@ -11,7 +11,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -161,7 +160,7 @@ it('admits direct package and manager intents with immutable account pin and rec
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'composer', 'vendor/package', null);
     expect($operation->input['user'])->toBe('orbit');
-    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->input)->not->toHaveKey('agent_sha256');
     expect($operation->input['materialize'])->toBe(['user' => 'orbit']);
     expect($operation->input)->not->toHaveKeys(['materialize_command', 'materialize_fields']);
     expect($operation->lock_key)->toBeNull();

@@ -18,7 +18,6 @@ use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Models\Node;
@@ -83,7 +82,6 @@ final readonly class StartToolOperationAction
 
                 return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
-                    'agent_sha256' => app(AgentDelivery::class)->pin($node),
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,

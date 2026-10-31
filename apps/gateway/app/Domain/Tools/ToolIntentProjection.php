@@ -23,7 +23,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         return ['node_id' => $operation->node_id, ...array_intersect_key($operation->input, array_flip([
-            'manager', 'package', 'user', 'agent_sha256', 'platform', 'architecture',
+            'manager', 'package', 'user', 'platform', 'architecture',
             'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'materialize',
         ]))];
     }
