@@ -1,33 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { mergeOperation, type Operation, type OperationStep } from "../api/operations";
+import { mergeOperation, type Operation } from "../api/operations";
 import {
-    addLine,
-    LIVE_LINES,
     LIVE_READ_SECONDS,
     OperationFollow,
-    type OperationOutput,
     operationChannel,
 } from "./operation";
 import type { RealtimeSocket } from "./socket";
-
-const step = (
-    name: string,
-    position: number,
-    status: string,
-    sequence: number,
-    output: string | null = null,
-): OperationStep => ({
-    name,
-    position,
-    status,
-    resumable: true,
-    sequence,
-    started_at: null,
-    finished_at: null,
-    error_code: null,
-    output,
-    output_truncated: false,
-});
 
 const operation = (overrides: Partial<Operation> = {}): Operation => ({
     id: 42,
@@ -51,7 +29,6 @@ const operation = (overrides: Partial<Operation> = {}): Operation => ({
     started_at: null,
     finished_at: null,
     poll_after_seconds: 2,
-    steps: [],
     ...overrides,
 });
 
@@ -78,27 +55,22 @@ function fakeSocket() {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-it("keeps the steps a delta read did not return and ignores a read older than the page", () => {
-    const first = operation({ steps: [step("a", 1, "running", 3), step("b", 2, "pending", 2)] });
-    const delta = operation({ sequence: 5, steps: [step("a", 1, "succeeded", 5, "done\n")] });
-
-    const merged = mergeOperation(first, delta);
-
-    expect(merged.sequence).toBe(5);
-    expect(merged.steps?.map((s) => `${s.name}:${s.status}`)).toEqual(["a:succeeded", "b:pending"]);
-    expect(mergeOperation(merged, operation({ sequence: 4, status: "queued" }))).toBe(merged);
+it("keeps the newest parent record and ignores an older read", () => {
+    const first = operation();
+    const next = operation({ sequence: 5, status: "succeeded", result: { deployed: true } });
+    expect(mergeOperation(first, next)).toBe(next);
+    expect(mergeOperation(next, operation({ sequence: 4, status: "queued" }))).toBe(next);
 });
 
 it("subscribes before it reads, reads again for a newer event, drops an older one, and stops once terminal", async () => {
     const { socket, handlers, subscribed, unsubscribed } = fakeSocket();
-    const reads: Array<number | null> = [];
+    const reads: number[] = [];
     const answers = [
-        operation({ sequence: 3, steps: [step("a", 1, "running", 3)] }),
+        operation({ sequence: 3 }),
         operation({
             sequence: 6,
             status: "succeeded",
             poll_after_seconds: null,
-            steps: [step("a", 1, "succeeded", 6)],
         }),
     ];
     const seen: Operation[] = [];
@@ -106,8 +78,8 @@ it("subscribes before it reads, reads again for a newer event, drops an older on
         42,
         (next) => seen.push(next),
         socket,
-        async (_id, after) => {
-            reads.push(after);
+        async (id) => {
+            reads.push(id);
 
             return answers.shift() ?? operation({ sequence: 6, status: "succeeded" });
         },
@@ -119,21 +91,20 @@ it("subscribes before it reads, reads again for a newer event, drops an older on
 
     handlers.get("operation.updated")?.({ data: { sequence: 2 } });
     await Promise.resolve();
-    expect(reads).toEqual([null]);
+    expect(reads).toEqual([42]);
 
     handlers.get("operation.updated")?.({ data: { sequence: 6 } });
     await vi.waitFor(() => expect(seen).toHaveLength(2));
 
-    expect(reads).toEqual([null, 3]);
+    expect(reads).toEqual([42, 42]);
     expect(seen[1]?.status).toBe("succeeded");
-    expect(seen[1]?.steps?.[0]?.status).toBe("succeeded");
     expect(unsubscribed).toEqual([operationChannel(42)]);
 });
 
 it("reads on its own schedule when no event arrives: every 15 seconds live, every poll interval without a socket", async () => {
-    const reads: Array<number | null> = [];
-    const read = async (_id: number, after: number | null) => {
-        reads.push(after);
+    const reads: number[] = [];
+    const read = async (id: number) => {
+        reads.push(id);
 
         return operation({ sequence: 3, poll_after_seconds: 4 });
     };
@@ -154,43 +125,4 @@ it("reads on its own schedule when no event arrives: every 15 seconds live, ever
     await vi.advanceTimersByTimeAsync(4000);
     expect(reads).toHaveLength(2);
     polling.stop();
-});
-
-it("hands each live output line of the channel to onOutput and keeps the newest lines per step", async () => {
-    const { socket, handlers } = fakeSocket();
-    const outputs: OperationOutput[] = [];
-    const follow = new OperationFollow(
-        42,
-        () => {},
-        socket,
-        async () => operation(),
-        (output) => outputs.push(output),
-    );
-
-    follow.start();
-    handlers.get("client-output")?.({
-        step: "migrate",
-        stream: "stdout",
-        sequence: 1,
-        line: "Migrating",
-    });
-    handlers.get("client-output")?.({ line: "no step" });
-
-    expect(outputs).toEqual([
-        { step: "migrate", stream: "stdout", sequence: 1, line: "Migrating" },
-    ]);
-    follow.stop();
-
-    let lines: Record<string, string[]> = {};
-    for (let n = 0; n <= LIVE_LINES; n++) {
-        lines = addLine(lines, {
-            step: "migrate",
-            stream: "stdout",
-            sequence: n,
-            line: `line ${n}`,
-        });
-    }
-
-    expect(lines.migrate).toHaveLength(LIVE_LINES);
-    expect(lines.migrate?.[0]).toBe("line 1");
 });

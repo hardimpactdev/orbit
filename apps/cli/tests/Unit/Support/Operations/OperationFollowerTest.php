@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Support\Console\InterruptIntent;
 use App\Support\Operations\OperationFollower;
-use App\Support\Operations\OperationOutputLine;
-use App\Support\Operations\OperationOutputTail;
 use App\Support\Realtime\FakeRealtimeChannelAuthorizer;
 use App\Support\Realtime\FakeWebSocketTransport;
 use App\Support\Realtime\RealtimeState;
@@ -21,50 +19,35 @@ function follower_operation(int $sequence, string $status): OperationResponse
     ], 'req-1');
 }
 
-it('hands each live output line of the channel to onOutput and stays connected', function (): void {
+it('reads the current parent record after its channel announces an update', function (): void {
     Sleep::fake();
     $transport = new FakeWebSocketTransport([
         ['event' => 'pusher:connection_established', 'data' => json_encode(['socket_id' => 's1'])],
         ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-orbit', 'data' => '{}'],
-        ['event' => 'client-output', 'channel' => 'private-orbit', 'data' => json_encode(['step' => 'migrate', 'stream' => 'stdout', 'sequence' => 1, 'line' => 'Migrating'])],
-        ['event' => 'client-output', 'channel' => 'private-orbit', 'data' => json_encode(['line' => 'no step'])],
+        ['event' => 'operation.updated', 'channel' => 'private-orbit', 'data' => json_encode(['type' => 'operation.updated', 'id' => 42, 'at' => '2026-10-31T07:00:00Z', 'data' => ['sequence' => 4]])],
     ]);
     $subscriber = new RealtimeSubscriber($transport, realtime_test_connection_config(), new FakeRealtimeChannelAuthorizer);
-    $lines = [];
-    $follower = new OperationFollower(
-        static fn (int $after): OperationResponse => follower_operation(4, 'succeeded'),
-        $subscriber,
-        static function (OperationOutputLine $output) use (&$lines): void {
-            $lines[] = "{$output->step}: {$output->line}";
-        },
-    );
+    $reads = 0;
+    $follower = new OperationFollower(static function () use (&$reads): OperationResponse {
+        $reads++;
 
-    // A command follows inside its own interrupt scope, so a signal another test recorded cannot reach it.
-    InterruptIntent::run(static fn (): OperationResponse => $follower->next(follower_operation(3, 'running')));
+        return follower_operation(4, 'succeeded');
+    }, $subscriber);
 
-    expect($lines)->toBe(['migrate: Migrating'])
-        ->and($subscriber->state())->toBe(RealtimeState::Connected);
+    $result = InterruptIntent::run(static fn (): OperationResponse => $follower->next(follower_operation(3, 'running')));
+
+    expect($result->status)->toBe('succeeded');
+    expect($reads)->toBe(1);
+    expect($subscriber->state())->toBe(RealtimeState::Connected);
+    $follower->close();
+    expect($transport->isConnected())->toBeFalse();
 });
 
-it('prints only unseen persisted output after a partial live stream', function (): void {
-    $tail = new OperationOutputTail;
+it('reads a terminal parent without a realtime connection or step cursor', function (): void {
+    $follower = new OperationFollower(static fn (): OperationResponse => follower_operation(4, 'failed'), null);
 
-    expect($tail->lines('build', "one\n"))->toBe(['one']);
+    $result = InterruptIntent::run(static fn (): OperationResponse => $follower->next(follower_operation(3, 'running')));
 
-    $tail->printedLive('migrate', 'Migrating');
-
-    expect($tail->lines('migrate', "Migrating\nSQLSTATE failure\n"))->toBe(['SQLSTATE failure'])
-        ->and($tail->lines('migrate', "Migrating\nSQLSTATE failure\n"))->toBe([]);
-});
-
-it('recovers the final tail when a live connection joins after earlier output', function (): void {
-    $tail = new OperationOutputTail;
-    $tail->printedLive('build', 'middle');
-    expect($tail->lines('build', "earlier\nmiddle\nfailed\n"))->toBe(['failed']);
-});
-
-it('marks a gap and prints the final tail when live and persisted text do not overlap', function (): void {
-    $tail = new OperationOutputTail;
-    $tail->printedLive('build', 'first');
-    expect($tail->lines('build', "late failure\n"))->toBe(['[orbit] earlier output skipped', 'late failure']);
+    expect($result->status)->toBe('failed');
+    expect($result->toArray())->not->toHaveKey('steps');
 });
