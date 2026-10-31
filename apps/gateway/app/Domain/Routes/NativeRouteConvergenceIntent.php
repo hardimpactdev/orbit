@@ -13,6 +13,7 @@ use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -60,9 +61,10 @@ final readonly class NativeRouteConvergenceIntent
             Node::query()->findOrFail($leaf['node_id']), $leaf['scope'], $leaf['domain']), $certificates);
         $public = new PublicRouteEligibility()->canStartActivation($route);
         $ingress = $public ? $route->cluster?->ingressAssignment?->node_id : null;
+        $processNodeId = $public && $route->isCustomProxy() ? $route->customProxy?->process?->owner_id : null;
         $dns = PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all();
         $nodes = array_values(array_unique(array_filter([...array_column($workloads, 'node_id'), ...array_column($certificates, 'node_id'),
-            $router?->id, $ingress, $route->node_id, ...$dns], is_int(...))));
+            $router?->id, $ingress, $route->node_id, $processNodeId, ...$dns], is_int(...))));
         sort($nodes);
 
         $workloadNodes = array_values(array_unique(array_column($workloads, 'node_id')));
@@ -80,7 +82,7 @@ final readonly class NativeRouteConvergenceIntent
         return ['route_id' => $route->id, 'status' => $route->status->value, 'domain' => $route->domain, 'publication' => $route->publication->value,
             'web_root' => $route->web_root, 'mode' => $input['mode'] ?? 'converge', 'workloads' => $workloads,
             'certificates' => array_values(array_unique($certificates, SORT_REGULAR)), 'router_node_id' => $router?->id,
-            'ingress_node_id' => $ingress, 'dns_node_ids' => $dns, 'node_ids' => $nodes,
+            'ingress_node_id' => $ingress, 'upstream_firewall_node_ids' => is_int($processNodeId) ? [$processNodeId] : [], 'dns_node_ids' => $dns, 'node_ids' => $nodes,
             'production' => $workloads !== [] && array_all($workloads, fn (array $item): bool => $item['production']),
             'workload_node_ids' => $workloadNodes, 'workload_caddy_node_ids' => $workloadCaddy,
             'public_node_ids' => $public ? array_values(array_unique(array_filter([$ingress, $router?->id], is_int(...)))) : [],
@@ -163,12 +165,29 @@ final readonly class NativeRouteConvergenceIntent
                 }
             }
         }
-        if ($callerNodeId === $intent['ingress_node_id'] && is_int($intent['router_node_id'])) {
+        if ($route->isApp() && $callerNodeId === $intent['ingress_node_id'] && is_int($intent['router_node_id'])) {
             $target = Node::query()->findOrFail($intent['router_node_id']);
             $probes[] = ['protocol' => 'tls', 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'probe' => ['address' => $target->wireguard_ip, 'port' => 443, 'domain' => $route->domain]];
         }
 
-        return ['participant_node_id' => $callerNodeId, 'environment_fields' => $operation->input['environment_fields'] ?? [], 'caddy_publication' => CaddyPublicationPlan::forNode($node),
+        $upstreamFirewall = null;
+        if ($route->isCustomProxy() && is_int($intent['ingress_node_id'])) {
+            $ingress = Node::query()->findOrFail($intent['ingress_node_id']);
+            $process = $route->customProxy?->process;
+            if ($process === null) {
+                throw new ResourceOperationException('route.upstream_unresolved', 'The public Route Process is missing.', 409);
+            }
+            if ($callerNodeId === $process->owner_id) {
+                $upstreamFirewall = app(PublicProcessRouteFirewall::class)->expectation($route, $ingress);
+            }
+            if ($callerNodeId === $ingress->id) {
+                $upstream = new CustomProxyProcessListener()->resolvePublic($process, $ingress);
+                $probes[] = ['protocol' => 'http', 'agent_sha256' => app(AgentDelivery::class)->pin($node),
+                    'probe' => ['address' => $upstream->host, 'port' => $upstream->port, 'domain' => $route->domain]];
+            }
+        }
+
+        return ['upstream_firewall' => $upstreamFirewall, 'participant_node_id' => $callerNodeId, 'environment_fields' => $operation->input['environment_fields'] ?? [], 'caddy_publication' => CaddyPublicationPlan::forNode($node),
             'php_publication' => ['node_id' => $callerNodeId, 'agent_sha256' => app(AgentDelivery::class)->pin($node), ...app(SharedPhpPoolInput::class)->forNode($node)],
             'private_dns_publication' => $dns, 'route' => $intent, 'firewall' => $firewall, 'ingress_firewall' => $firewall, 'probes' => $probes, 'publication' => ['node_id' => $callerNodeId,
                 'agent_sha256' => app(AgentDelivery::class)->pin($node), 'caddy_publication' => CaddyPublicationPlan::forNode($node),

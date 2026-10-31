@@ -18,6 +18,7 @@ final readonly class NativeRouteAdmission
     public function capture(string $kind, Route $route, array $input, int $rootNodeId): array
     {
         $intent = match ($kind) {
+            'route.create' => ['route_convergence' => app(NativeRouteConvergenceIntent::class)->forRoute($route, $input)],
             'route.destroy', 'route.withdraw' => ['route_removal' => app(NativeRouteRemovalIntent::class)->forRoute($route, $input)],
             'route.target_set' => ['route_target' => app(NativeRouteTargetIntent::class)->forRoute($route, $input)],
             default => [],
