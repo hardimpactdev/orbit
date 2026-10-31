@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { incusDirect } from "./incus_direct.ts";
 import type { Http } from "../../automatic-deploy/gateway.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 
 const args = {
   operation_id: 7,

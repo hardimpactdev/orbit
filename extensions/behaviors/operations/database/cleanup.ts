@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { cleanupAsOwner } from "./cleanup_local.ts";
-import { Globals } from "../../operation-runner/mod.ts";
+import { Globals } from "../_lib/direct.ts";
 import {
   DirectArgs,
   directOperation,

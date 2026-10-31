@@ -4,8 +4,8 @@ import type { Http } from "../../automatic-deploy/gateway.ts";
 /** Shared native configuration, independent of the retired polled runner. */
 export const Globals = z.object({
   gatewayUrl: z.string().url().default("https://gateway.orbit"),
-  caFile: z.string().default(
-    "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+  caFile: z.string().min(1).default(
+    "/usr/local/share/ca-certificates/orbit-root.crt",
   ),
 });
 

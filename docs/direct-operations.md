@@ -244,3 +244,9 @@ guarantee. Native engine delivery/recovery remains shared platform work.
 
 Swamp runs system commands itself. Do not call an orbit-agent action command;
 the agent only observes health, drift and metrics.
+
+The shared scheduled Gateway discovery workflows and their fixed worker-slot
+models are removed. Old runs and runtime history are not deleted. Family owners
+finish removing their retired runner imports and per-family claim
+implementations as they port their parent kinds; no removed Gateway executor
+endpoint is restored for them.
