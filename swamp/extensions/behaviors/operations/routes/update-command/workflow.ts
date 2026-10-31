@@ -140,7 +140,7 @@ export function updateWorkflow(): Fields {
         name: "operation-route-update",
         description:
             "Immutable Route update and restoration through official209 publication children.",
-        vaults: [],
+        vaults: ["orbit-control-inputs"],
         inputs: envelope,
         jobs: [{ name: "update", steps }],
     };
