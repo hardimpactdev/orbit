@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Domain\Fleet\FleetServingRelease;
-use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
 use App\Domain\Fleet\NodeRecipeVerification;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -25,13 +25,13 @@ use Illuminate\Support\Facades\DB;
 /** Reads the current generation's build gate, halt state and next ordered recipe target. */
 final readonly class RecipeFleetPlanAction
 {
-    public function __construct(private RecipeImageBuilds $builds, private TaskVmSettings $settings, private ManagedNodeEligibility $eligibility, private GatewayServingHost $gateway, private FleetServingRelease $serving, private FleetWindow $window, private FleetVisitPrerequisites $prerequisites) {}
+    public function __construct(private RecipeImageBuilds $builds, private TaskVmSettings $settings, private ManagedNodeEligibility $eligibility, private GatewayServingHost $gateway, private FleetServingRelease $serving, private FleetWindow $window, private DirectOperation $operations) {}
 
     /** @return array<string, mixed> */
     public function execute(): array
     {
         try {
-            $this->prerequisites->assertAvailable();
+            $this->operations->writer('fleet.recipe');
         } catch (ResourceOperationException $error) {
             return ['status' => 'unavailable', 'error_code' => $error->errorCode];
         }

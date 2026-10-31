@@ -17,15 +17,19 @@ final readonly class GitHubAppInstallData
         public string $step,
         public string $url,
         public array $accounts,
+        public string $accountsStatus = 'unknown',
+        public ?string $observedAt = null,
     ) {}
 
-    /** @return array{step: string, url: string, accounts: list<string>} */
+    /** @return array{step:string,url:string,accounts:list<string>,accounts_status:string,observed_at:?string} */
     public function toArray(): array
     {
         return [
             'step' => $this->step,
             'url' => $this->url,
             'accounts' => $this->accounts,
+            'accounts_status' => $this->accountsStatus,
+            'observed_at' => $this->observedAt,
         ];
     }
 }

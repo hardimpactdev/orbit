@@ -56,12 +56,6 @@ final readonly class CreateProcessAction
     }
 
     /** @return array{process: Process, created: bool} */
-    public function bootstrapPlausible(#[SensitiveParameter] AddProcessData $data): array
-    {
-        return $this->bootstrap($data, 'plausible', ProcessRuntime::Docker, ['/usr/local/bin/orbit-agent', 'service', 'plausible']);
-    }
-
-    /** @return array{process: Process, created: bool} */
     public function bootstrapPi(#[SensitiveParameter] AddProcessData $data): array
     {
         if (array_slice($data->command, 1, 1) !== ['serve']) {
@@ -82,7 +76,7 @@ final readonly class CreateProcessAction
     }
 
     /**
-     * Only the four fixed bootstrap callers may execute here until their completion transitions move native.
+     * Only the three fixed bootstrap callers may execute here until their completion transitions move native.
      *
      * @param  list<string>  $command
      * @return array{process: Process, created: bool}

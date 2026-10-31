@@ -20,7 +20,7 @@ final class ConvergeNodeRecipeCommand extends Command
     use ReadsStringInput;
 
     #[\Override]
-    protected $signature = 'node:converge-recipe {node? : Node name or ID} {--recipe= : Require this full recipe identity} {--status : List the recorded recipe of every Node without SSH} {--dry-run : Read versions and show the plan without changing the Node}';
+    protected $signature = 'node:converge-recipe {node? : Node name or ID} {--recipe= : Require this full recipe identity} {--status : List the recorded recipe of every Node without SSH} {--dry-run : Show desired pins; native preflight reads installed versions when admitted}';
 
     #[\Override]
     protected $description = 'Converge one Node to the repository recipe and stop on any failed check';

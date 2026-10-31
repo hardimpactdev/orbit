@@ -10,7 +10,7 @@ use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The stable names of the programs {@see NodeEnrollmentPrograms} renders for enrollment and image builds.
+ * Stable prerequisite names used by enrollment and image state.
  */
 final class EnrollmentProgram
 {
@@ -20,10 +20,6 @@ final class EnrollmentProgram
 
     /** The recipe's pinned JavaScript runtimes of an application role. */
     public const string JavascriptRuntime = 'javascript-runtime';
-
-    public const string VpManager = 'vp-manager';
-
-    public const string ComposerManager = 'composer-manager';
 
     /**
      * Prefix of the `app-dev` PHP programs: `app-dev-php-source` and one per PHP version, such as `app-dev-php-8-5`.

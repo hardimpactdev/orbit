@@ -6,9 +6,8 @@ use App\Actions\Analytics\AdmitAnalyticsUpdateAction;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsRuntimeEnvironmentSource;
 use App\Domain\Analytics\AnalyticsUpdateProjection;
+use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -34,7 +33,7 @@ beforeEach(function (): void {
         'runtime' => ProcessRuntime::Docker, 'desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Active,
         'restart_policy' => 'unless-stopped', 'runtime_config' => ['image' => 'ghcr.io/plausible/community-edition:v3.2.1',
             'command' => ['/usr/local/bin/orbit-agent', 'service', 'plausible'], 'environment' => $this->environment,
-            'ports' => ['10.44.0.3:8000:8000/tcp'], 'volumes' => []]]);
+            'ports' => ['10.44.0.3:8000:8000/tcp'], 'volumes' => [['source' => '/usr/local/bin/orbit-agent', 'target' => '/usr/local/bin/orbit-agent', 'read_only' => true], ['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]]]]);
     $this->mock(AgentCommandRunner::class)->shouldNotReceive('run');
     config(['swamp.run_token' => 'private.start.fixture', 'orbit.analytics.plausible_version' => '3.2.1']);
     $this->socket = new FakeRoutePublicationSocket;
@@ -49,21 +48,24 @@ beforeEach(function (): void {
 it('admits the direct-only version intent without changing the pin or runtime', function (): void {
     $response = $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])->assertAccepted()->assertJsonPath('data.kind', 'analytics.update');
     $operation = Operation::query()->findOrFail($response->json('data.id'));
-    expect(app(OperationKinds::class)->directOnly('analytics.update'))->toBeTrue()
-        ->and(app(DirectOperation::class)->writer('analytics.update'))->toBe('direct')
-        ->and($operation->lock_key)->toBeNull()->and($operation->state)->not->toHaveKeys(['runtime_plan', 'executor_runs', 'executor_lease_node_id']);
+    expect($operation->lock_key)->toBeNull()->and($operation->state)->not->toHaveKeys(['runtime_plan', 'executor_runs', 'executor_lease_node_id']);
     expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.2.1')
         ->and($this->process->fresh()->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.2.1');
     expect(json_encode($operation->toArray()))->not->toContain($this->environment['SECRET_KEY_BASE']);
     expect($this->socket->sent)->toHaveCount(1);
 });
 
-it('freezes safe runtime intent after native scope acquisition and never returns environment values', function (): void {
-    $operation = ($this->running)(app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0'));
+it('freezes the safe runtime plan at admission without exposing environment values', function (): void {
+    $operation = app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0');
     $input = app(AnalyticsUpdateProjection::class)->input($operation);
     expect($input['after']['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
+        ->and($input)->not->toHaveKey('agent_sha256')
+        ->and($input['after']['command'])->toBe(PlausibleProcess::Startup)
+        ->and($input['after']['mounts'])->toBe([['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]])
         ->and($input['before']['process_id'])->toBe($this->process->id)
-        ->and($input['after']['container'])->toBe($input['before']['container']);
+        ->and($input['after']['container'])->toBe($input['before']['container'])
+        ->and($input['health_url'])->toBe('http://10.44.0.3:8000/api/health')
+        ->and($operation->state)->not->toHaveKey('runtime_plan');
     expect(json_encode($input))->not->toContain($this->environment['SECRET_KEY_BASE'])->not->toContain('"environment":');
 });
 
@@ -73,6 +75,8 @@ it('projects the exact version only after success and preserves the existing env
         'result' => ['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1']];
     app(AnalyticsUpdateProjection::class)->apply($operation, $body);
     expect($this->process->fresh()->runtime_config['environment'])->toBe($this->environment)
+        ->and($this->process->fresh()->runtime_config['command'])->toBe(PlausibleProcess::Startup)
+        ->and($this->process->fresh()->runtime_config['volumes'])->toBe([['source' => '/srv/plausible', 'target' => '/data', 'read_only' => false]])
         ->and(Process::query()->count())->toBe(1)
         ->and(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.3.0');
     app(AnalyticsRoleSettingsRepository::class)->storeVersion($this->node, '3.4.0');
@@ -80,12 +84,29 @@ it('projects the exact version only after success and preserves the existing env
     expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.4.0');
 });
 
-it('rejects invented success and secret-bearing result fields', function (): void {
-    $operation = ($this->running)(app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0'));
-    foreach ([['ready' => true, 'version' => '9.9.9', 'previous_version' => '3.2.1'], ['environment' => 'secret.fixture']] as $result) {
-        expect(fn () => app(AnalyticsUpdateProjection::class)->apply($operation->fresh(), [...$this->body,
-            'status' => 'succeeded', 'finished_at' => '2026-10-30T17:00:01.000Z', 'result' => $result]))->toThrow(ResourceOperationException::class);
-    }
+it('projects native success with bounded admitted fields and no runtime proof', function (): void {
+    $operation = app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0');
+    $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => [...$this->environment, 'EXTRA' => 'newer']]]);
+
+    $projected = app(AnalyticsUpdateProjection::class)->apply($operation, [...$this->body,
+        'status' => 'succeeded', 'finished_at' => '2026-10-30T17:00:01.000Z',
+        'result' => ['environment' => 'secret.fixture', 'version' => '9.9.9']]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1']);
+    expect($this->process->fresh()->runtime_config['image'])->toBe('ghcr.io/plausible/community-edition:v3.3.0')
+        ->and($this->process->fresh()->runtime_config['environment']['EXTRA'])->toBe('newer');
+});
+
+it('records a native failure before the action without inventing runtime recovery', function (): void {
+    $operation = app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0');
+
+    $projected = app(AnalyticsUpdateProjection::class)->apply($operation, [...$this->body,
+        'status' => 'failed', 'finished_at' => '2026-10-30T17:00:01.000Z', 'error_code' => 'workflow.failed']);
+
+    expect($projected->result)->toBe(['error_code' => 'workflow.failed']);
+    expect($this->process->fresh()->status)->toBe(LifecycleStatus::Active)
+        ->and(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.2.1');
 });
 
 it('keeps the pin on failed updates and records failed runtime recovery', function (bool $restored): void {
@@ -112,35 +133,26 @@ it('refuses an absent role or runtime before admission', function (bool $roleMis
         ->assertJsonPath('error.code', $roleMissing ? 'analytics.role_missing' : 'analytics.runtime_missing');
 })->with([true, false]);
 
-it('refuses a stale success before overwriting a later Process definition', function (): void {
-    $operation = ($this->running)(app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0'));
-    $this->process->update(['runtime_config' => [...$this->process->runtime_config, 'environment' => [...$this->environment, 'EXTRA' => 'newer']]]);
-    expect(fn () => app(AnalyticsUpdateProjection::class)->apply($operation, [...$this->body, 'status' => 'succeeded',
-        'finished_at' => '2026-10-30T17:00:01.000Z', 'result' => ['ready' => true, 'version' => '3.3.0', 'previous_version' => '3.2.1']]))->toThrow(ResourceOperationException::class);
-    expect($operation->fresh()->status->value)->toBe('running')
-        ->and($this->process->fresh()->runtime_config['environment']['EXTRA'])->toBe('newer')
-        ->and(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.2.1');
-});
-
-it('refuses a stopped Plausible before freezing a running update', function (): void {
-    $operation = app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0');
+it('refuses a stopped Plausible before recording or starting an update', function (): void {
     $this->process->update(['desired_state' => DesiredProcessState::Stopped]);
-    expect(fn () => ($this->running)($operation))->toThrow(ResourceOperationException::class);
-    expect($operation->fresh()->state)->not->toHaveKey('runtime_plan')
-        ->and($this->process->fresh()->desired_state)->toBe(DesiredProcessState::Stopped);
+
+    $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])->assertConflict()
+        ->assertJsonPath('error.code', 'analytics.runtime_stopped');
+
+    expect(Operation::query()->count())->toBe(0)
+        ->and($this->socket->sent)->toBe([]);
 });
 
 it('reads the admitted environment privately without persisting it or declaring secret outputs', function (): void {
     $operation = ($this->running)(app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0'));
     $before = $operation->fresh()->getAttributes();
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk()
         ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.runtime_environment', $this->environment);
     $this->getJson($path.'?run_id='.$this->runId)->assertOk()->assertDontSee($this->environment['SECRET_KEY_BASE']);
     expect($operation->fresh()->getAttributes())->toBe($before);
-    expect(json_encode([$operation->fresh()->toArray(), $operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain($this->environment['SECRET_KEY_BASE']);
+    expect(json_encode([$operation->fresh()->toArray(), Activity::query()->get()->toArray()]))->not->toContain($this->environment['SECRET_KEY_BASE']);
     $this->postJson($path.'/secret-output', ['run_id' => $this->runId, 'outputs' => ['environment' => 'invented']])->assertUnprocessable();
 });
 
@@ -152,7 +164,6 @@ it('refuses stale private runtime ownership or environment', function (string $c
         'assignment' => $this->node->roles()->delete(),
         'stopped' => $this->process->update(['desired_state' => DesiredProcessState::Stopped]),
     };
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)
         ->assertConflict()->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('error.code', 'analytics.runtime_changed')
@@ -161,7 +172,6 @@ it('refuses stale private runtime ownership or environment', function (string $c
 
 it('keeps private reads bound to the exact Node run and unfinished Operation', function (): void {
     $operation = ($this->running)(app(AdmitAnalyticsUpdateAction::class)->execute('3.3.0'));
-    config(['dependency_detection.services_node_id' => $this->gateway->id, 'operation_executor.worker_node_ids' => [$this->node->id, $this->gateway->id]]);
     $path = '/api/v1/direct-operations/'.$operation->id.'/private-material?run_id=';
     $this->getJson($path.$this->runId)->assertForbidden()->assertHeader('Cache-Control', 'no-store, private');
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
@@ -177,7 +187,6 @@ it('rejects caller-selected private owners paths and command keys', function ():
         expect(fn () => $source->resolve($operation, $id, $key, $parameter))->toThrow(ResourceOperationException::class);
     }
     $operation->update(['input' => [...$operation->input, 'runtime_environment' => ['$secret' => 'analytics.runtime_environment', 'id' => $this->gateway->id]]]);
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$this->runId)->assertUnprocessable();
 });

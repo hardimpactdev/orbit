@@ -107,6 +107,8 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 ### Prepare a release
 
+The observer is frozen at the published delivery in `apps/gateway/resources/agent/frozen-manifest.json`. Prepare resolves the Gateway commit independently and verifies that fixed delivery's manifest, checksums and provenance. It never waits for the Gateway commit's CLI release or for new agent builds. The desired fleet state keeps the same agent commit and binary digests. Changing agent source does not change the delivered agent.
+
 As `orbit`, build a release for one commit:
 
 ```bash
@@ -115,13 +117,13 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
 
 Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused.
 
-Prepare first takes the commit's agent, in PHP and before any agent command, so a commit without a release refuses before anything changes:
+Prepare first verifies the frozen agent, in PHP and before any agent command:
 
-1. It finds the commit's [published release](/reference/cli-binaries#published-releases). `git ls-remote` lists the `cli-v*` tags of `ORBIT_CLI_RELEASE_REPOSITORY`. The tag that points at the commit names the release, which also resolves a short SHA.
+1. It accepts the full Gateway commit SHA directly. For a short SHA, `git ls-remote` resolves it from published tags or branches. An unresolved prefix requires the full SHA. The frozen manifest names the fixed agent release.
 2. It downloads `manifest.json`, `SHA256SUMS`, and `provenance.sigstore.json` without authentication, and [verifies the provenance](#release-provenance) of the first two.
-3. It checks the manifest against `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
+3. It checks that the manifest equals the frozen manifest and matches `SHA256SUMS`, then downloads the agent binary for the Gateway's platform and checks its digest. The binary waits in `ORBIT_HOME/agent-artifacts`.
 
-A commit without a release yet refuses here with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks publication every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
+An unreachable frozen delivery refuses with `gateway.release_agent_delivery_unavailable`, before anything changes. The automatic runner keeps one queued record and rechecks availability every 20 seconds, without starting the failure cooldown. It raises one `release_stalled` alert after 15 minutes and keeps the request queued for later checks. A release without a valid provenance bundle refuses with `gateway.release_provenance_invalid`, also before anything changes. A published release never changes, so that failure is final for the commit.
 
 Prepare then fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
 
@@ -180,7 +182,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
 | `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
 | `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
-| `gateway.release_agent_delivery_unavailable` | No published release holds the commit yet, or its agent cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
+| `gateway.release_agent_delivery_unavailable` | The frozen agent delivery cannot be downloaded or does not match its digest. Nothing changed. The commit is tried again later. |
 | `gateway.release_agent_delivery_invalid` | The release's manifest does not match its files or `SHA256SUMS`, or the release directory already holds another manifest. |
 | `gateway.release_provenance_invalid` | The release has no `provenance.sigstore.json`, or the bundle does not [verify](#release-provenance). Nothing changed. The commit is marked failed and is not tried again automatically. |
 | `gateway.release_provenance_unconfigured` | The trust root cannot be read or is malformed, or `ORBIT_CLI_RELEASE_REPOSITORY` is not on github.com. Nothing changed. The commit is tried again later without spending its attempts. |
@@ -472,10 +474,12 @@ The Gateway sends the release ID and phase to `gateway.handoff-release`. The age
 
 The serving phase:
 
-1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
+1. submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its `caddy_operation_id`;
 2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
 4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
+
+The native Caddy Operation owns publication and its final result. Submission is not a publication claim. Release verification still checks live HTTPS.
 
 The scheduler phase:
 

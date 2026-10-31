@@ -4,20 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Actions\Gateway\BootstrapGatewayAction;
-use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
-use App\Actions\Gateway\GatewayOperatingSystemGuard;
-use App\Actions\Nodes\AssignRoleAction;
 use App\Domain\AgentView\AgentViewConverger;
-use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
-use App\Domain\Nodes\NodeAgentRuntime;
-use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
@@ -89,22 +82,6 @@ final class GatewayServiceProvider extends ServiceProvider
                 sshKeys: app(SshKeyProvider::class),
             ),
         );
-        $this->app->singleton(
-            BootstrapGatewayAction::class,
-            static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
-                agent: app(NodeAgentRuntime::class),
-                assignRole: app(AssignRoleAction::class),
-                identity: app(GatewayBootstrapIdentityValidator::class),
-                operatingSystem: app(GatewayOperatingSystemGuard::class),
-                vpnSettings: app(VpnSettings::class),
-                processes: app(ProcessRunner::class),
-                commands: app(AgentCommandRunner::class),
-                vpn: app(GatewayVpnConverger::class),
-                web: app(GatewayWebConverger::class),
-                selfAccess: app(GatewaySelfAccessConverger::class),
-                dns: app(PrivateDnsManager::class),
-                orbitHome: rtrim(string: Config::string('orbit.home'), characters: '/'),
-            ),
-        );
+
     }
 }

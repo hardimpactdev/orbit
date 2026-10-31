@@ -39,21 +39,20 @@ A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`
 
 ### Assets
 
-Each release has one CLI binary per supported platform, the agent delivery that CI built and tested for the commit, a checksum file, and a provenance bundle.
+Each new release has one CLI binary per supported platform, a checksum file, and a provenance bundle. The agent stays at its frozen published pin.
 
 | Asset | Platform | Built on | Run on |
 | --- | --- | --- | --- |
 | `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
-| `orbit-agent-<platform>`, `manifest.json` | The three [agent](/reference/node-agent#releases) platforms | The commit's CI run | The commit's CI run |
-| `SHA256SUMS` | Checksums of the five binaries | | |
-| `provenance.sigstore.json` | The [provenance](#provenance) of the seven files above | | |
+| `SHA256SUMS` | Checksums of the two CLI binaries | | |
+| `provenance.sigstore.json` | The [provenance](#provenance) of the three files above | | |
 
 Each CLI binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the agent's do. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
 ### Provenance
 
-The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the seven files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
+The publish job signs the release with the workflow's own identity. `actions/attest-build-provenance` takes the job's OIDC token, gets a short-lived certificate from Sigstore's public Fulcio CA, and records the signature in Sigstore's public Rekor log. The job needs `id-token: write` and `attestations: write`, and no secret. It signs one in-toto statement with SLSA provenance v1. Its subjects are the three files above, each with its SHA-256 digest. The job adds the Sigstore bundle as `provenance.sigstore.json` to the same `gh release create` call, so the release appears with it.
 
 The certificate names the workflow file and its ref, `orbit-cli-release.yml@refs/heads/main`. A `workflow_run` after CI and a `workflow_dispatch` backfill both run the workflow on `refs/heads/main`, so both sign with that identity. No other workflow or branch can produce it.
 
@@ -85,7 +84,7 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. Until then every URL above returns 404, and the Gateway [waits for it](/reference/gateway-recovery#prepare-a-release) before it deploys the commit. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 
@@ -135,7 +134,7 @@ When the Gateway's fleet runs a newer release, other commands print a notice to 
 
 ### Publish a missed commit
 
-When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check. It takes the agent from the newest passing CI run on `main` for that commit, so it works only while that run's `agent-delivery` artifact exists, 30 days.
+When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check. It builds the CLI without requiring an agent artifact from the earlier CI run.
 
 The build uses the commit's own builder, so a commit whose builder cannot build every target cannot be published. When the release already exists for that commit with every asset, the run changes nothing. A release published before provenance existed lacks the bundle, so its run fails and replaces nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
