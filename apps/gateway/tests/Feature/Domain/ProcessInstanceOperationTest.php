@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessTarget;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 
 beforeEach(function (): void {
@@ -61,6 +64,21 @@ it('uses a provided admitted Process target without resolving current owner plac
     $process->owner_id = 999999;
     $input = app(ProcessOperationAdmission::class)->inputFor($process, 'restart', target: $target);
     expect($input['node_id'])->toBe($this->node->id);
+});
+
+it('hydrates only recorded owned installations and refuses changed definitions', function (): void {
+    $definition = ProcessDefinition::query()->create(['project_id' => $this->instance->project_id, 'name' => 'copy', 'runtime' => 'docker', 'environments' => ['production'], 'spec' => []]);
+    $process = runtimeRestartProcess($this->instance, 'copy', ['status' => 'provisioning', 'desired_state' => 'stopped', 'runtime' => 'docker', 'source_definition_id' => $definition->id,
+        'runtime_config' => ['image' => 'example:1', 'command' => ['/usr/bin/sleep', '300'], 'environment' => ['PASSWORD' => 'instance-private-fixture']]]);
+    $input = $this->runtime->capture($this->instance, 'process.install_instance_definitions');
+    $operation = Operation::query()->create(['kind' => 'process.install_instance_definitions', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'queued', 'input' => $input, 'state' => ['process_instance_writer' => 'direct']]);
+    $safe = $this->runtime->input($operation);
+    $private = app(DirectOperationPrivateMaterial::class)->read($operation);
+    expect(json_encode($safe))->not->toContain('instance-private-fixture')
+        ->and($private['installations'][$process->id]['installation']['definition']['environment']['PASSWORD'])->toBe('instance-private-fixture');
+    $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:2']]);
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'operation.execution_forbidden');
 });
 
 it('projects native member results without child proof or another Operation', function (): void {
