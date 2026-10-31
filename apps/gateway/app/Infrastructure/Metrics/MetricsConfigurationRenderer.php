@@ -24,27 +24,6 @@ final readonly class MetricsConfigurationRenderer
             throw new InvalidArgumentException('The Grafana admin password is unavailable.');
         }
 
-        $publicFiles = $this->publicFiles($targets, $services);
-        $files = [];
-
-        foreach ($publicFiles as $path => $contents) {
-            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents));
-        }
-
-        $files[] = new MetricsGeneratedFile(
-            path: '/etc/orbit/metrics/grafana/admin-password',
-            contents: new ProtectedMetricsSecret($password),
-        );
-
-        return new MetricsConfigurationBundle($files);
-    }
-
-    /** @param list<array{name: string, address: string}> $targets
-     * @param  list<ServiceMetricsNode>  $services
-     * @return array<string,string>
-     */
-    public function publicFiles(array $targets, array $services = []): array
-    {
         $prometheusFiles = [
             '/etc/orbit/metrics/prometheus.yml' => $this->prometheus->render($targets, $services),
         ];
@@ -63,7 +42,17 @@ final readonly class MetricsConfigurationRenderer
         foreach (['caddy', 'fpm'] as $kind) {
             $publicFiles['/etc/orbit/metrics/grafana/dashboards/orbit-'.$kind.'.json'] = new ServiceMetricsDashboardRenderer()->render($kind);
         }
+        $files = [];
 
-        return $publicFiles;
+        foreach ($publicFiles as $path => $contents) {
+            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents));
+        }
+
+        $files[] = new MetricsGeneratedFile(
+            path: '/etc/orbit/metrics/grafana/admin-password',
+            contents: new ProtectedMetricsSecret($password),
+        );
+
+        return new MetricsConfigurationBundle($files);
     }
 }

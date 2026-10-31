@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
+use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -87,3 +88,18 @@ describe(AddNodeRoleRequest::class, function (): void {
         }
     });
 });
+
+it('keeps the existing mutation response for each unported role', function (string $role): void {
+    $data = node_role_added_gateway_data();
+    $data['role'] = $role;
+    $data['assignment']['role'] = $role;
+    $mock = new MockClient([
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => $data, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+    $connector = node_role_gateway_connector($mock);
+    $response = $connector->send(new AddNodeRoleRequest(17, $role))->dto();
+    expect($response)->toBeInstanceOf(NodeRoleMutationResponse::class)
+        ->and($response->role)->toBe($role);
+})->with(['app-dev', 'app-prod', 'gateway', 'websocket', 'metrics', 'analytics', 'ingress']);

@@ -9,7 +9,7 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Metrics\MetricsRoleReconcileImpact;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
@@ -54,6 +54,9 @@ final readonly class AdmitNodeRoleOperationAction
 
     public function add(Node $node, RoleName $role, bool $converge = false, ?AnalyticsRoleSettings $analytics = null, ?string $requestId = null, bool $duringProvisioning = false, bool $native = false): Operation
     {
+        if (! $native && ! $duringProvisioning && $this->idempotency->parent === null && NodeRoleDirectInput::supports($role)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Standalone CI and database additions use the native role path.', 422);
+        }
         if (($existing = $this->idempotency->replay('node.role_add')) !== null) {
             return $existing;
         }
@@ -93,8 +96,11 @@ final readonly class AdmitNodeRoleOperationAction
             }
             if ($native) {
                 if ($duringProvisioning || $this->idempotency->parent !== null || $firstRole
-                    || ! in_array($role, [RoleName::Database, RoleName::CiRunner], true)) {
+                    || ! NodeRoleDirectInput::supports($role)) {
                     throw new ResourceOperationException('operation.kind_unavailable', 'This role transition needs its owning same-root publication or enrollment composition.', 422);
+                }
+                if ($role === RoleName::Database && (! is_string($node->wireguard_ip) || $node->wireguard_ip === '')) {
+                    throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
                 }
                 if (! app(NodeWorkerRollout::class)->allows($node)) {
                     throw new ResourceOperationException('swamp.node_worker_not_ready', 'The Node is outside the native worker rollout.', 422);
@@ -102,10 +108,7 @@ final readonly class AdmitNodeRoleOperationAction
                 if (! is_string($node->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $node->agent_secret_hash) !== 1) {
                     throw new ResourceOperationException('node.agent_rekey_required', 'The standalone role needs the existing recorded Node agent identity.', 409);
                 }
-                if (Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
-                    static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->exists()) {
-                    $metricsBefore = app(MetricsFleetCapture::class)->capture();
-                }
+                $metricsBefore = app(MetricsRoleReconcileImpact::class)->capture($node, $role);
             }
             // Take the durable target hold before changing an assignment or its Settings.
             $operation = $this->operations->execute('node.role_add', 'node', $node->id, $node->id,

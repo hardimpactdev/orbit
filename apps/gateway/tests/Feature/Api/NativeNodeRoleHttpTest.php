@@ -53,10 +53,3 @@ it('hydrates only the existing owned hash through the real shared private reader
         ->assertUnprocessable();
     expect($this->node->refresh()->agent_secret_hash)->toBe(str_repeat('e', 64));
 });
-
-it('refuses unsupported app publication without recording an Operation or changing roles', function (): void {
-    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev', 'converge_existing' => true])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.kind_unavailable');
-    expect(Operation::query()->where('kind', 'node.role_add')->count())->toBe(0)
-        ->and($this->node->roles()->where('role', RoleName::AppDev)->sole()->status->value)->toBe('active');
-});

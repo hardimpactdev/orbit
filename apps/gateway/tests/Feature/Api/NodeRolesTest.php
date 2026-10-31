@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
@@ -9,33 +10,43 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeLockLoss;
+use App\Domain\Nodes\NodeObservation;
+use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
 use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\Fleet\FleetFixtures;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -113,9 +124,8 @@ it('allows Metrics role mutation through directed Gateway access', function (): 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'metrics'])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        ->assertCreated();
 
-    $target->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $this
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
@@ -126,14 +136,35 @@ it('keeps ordinary role mutation on target access', function (): void {
     $this->caller->accessibleNodes()->attach($this->node);
 
     $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        ->assertCreated();
 });
 
-it('refuses a recorded Linux ARM role before admission or any Node command', function (): void {
-    $this->node->update(['architecture' => 'aarch64']);
+it('refuses a role on a Linux ARM Node with HTTP 422 and assigns nothing', function (): void {
+    $this->node->update(['architecture' => 'aarch64', 'user' => 'orbit']);
+    $this->caller->accessibleNodes()->attach($this->node);
+    // The native converger refuses a Linux machine that is not x86_64 at its architecture probe.
+    app()->instance(NodeConverger::class, new class implements NodeConverger, RecoverableNodeConverger
+    {
+        public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
+        {
+            throw new NodeProvisioningException('machine-architecture', 'node.architecture_unsupported', "Node [{$node->name}] reports architecture [aarch64]. Linux Nodes must be [x86_64].", status: 422);
+        }
+
+        public function convergeRecoverably(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint, Closure $completion, bool $rolelessOperator = false, ?Closure $recordObservation = null): void
+        {
+            $completion($this->converge($node, $identity, $expectedSshHostFingerprint, $rolelessOperator, $recordObservation));
+        }
+    });
+
     $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'node.architecture_unsupported');
-    expect($this->node->roles()->exists())->toBeFalse()->and($this->roleLifecycle->converged)->toBe([]);
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node_role.convergence_failed')
+        ->assertJsonPath('error.details.error_code', 'node.architecture_unsupported')
+        ->assertJsonPath('error.details.step', 'converge:machine-architecture')
+        ->assertJsonPath('error.message', 'Node [role-target] reports architecture [aarch64]. Linux Nodes must be [x86_64].');
+
+    expect($this->node->roles()->exists())->toBeFalse()
+        ->and($this->roleLifecycle->converged)->toBe([]);
 });
 
 it('exposes only the exact numeric node role routes and methods', function (): void {
@@ -229,6 +260,91 @@ it('lists assignments in role catalog order with the stable projection', functio
             ],
             'meta' => ['request_id' => $requestId],
         ]);
+});
+
+it('returns 201 for a new assignment and 200 for explicit convergence', function (): void {
+    $requestId = (string) Str::uuid();
+
+    $created = $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'app-dev',
+            'converge_existing' => false,
+        ]);
+    $assignment = NodeRole::query()->where('node_id', $this->node->id)->sole();
+
+    $created
+        ->assertCreated()
+        ->assertHeader('X-Orbit-Request-Id', $requestId)
+        ->assertExactJson([
+            'data' => [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'role' => 'app-dev',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'assignment' => [
+                    'id' => $assignment->id,
+                    'role' => 'app-dev',
+                    'status' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'removed' => false,
+            ],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'app-dev',
+            'converge_existing' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignment->id)
+        ->assertJsonPath('data.removed', false)
+        ->assertJsonPath('meta.request_id', $requestId);
+
+    expect($this->roleLifecycle->converged)->toBe(['app-dev', 'app-dev']);
+});
+
+it('returns an active role with the follow-up of a step that failed without failing the role', function (): void {
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])->assertCreated();
+    $this->roleLifecycle->followUp = 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).';
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev', 'converge_existing' => true])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.status', 'active')
+        ->assertJsonPath('data.degradation', null)
+        ->assertJsonPath('data.follow_up', 'The Gateway machine does not route the private domain to Orbit VPN DNS (vpn.dns_resolver_failed).');
+
+    // The next convergence succeeds, so it reports no follow-up.
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev', 'converge_existing' => true])
+        ->assertOk()
+        ->assertJsonPath('data.follow_up', null);
+});
+
+it('admits database addition as one native Operation without PHP role execution', function (): void {
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    node_roles_prepare_native($this->node);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.role_add')->assertJsonPath('data.status', 'queued');
+    expect($this->roleLifecycle->converged)->toBe([])
+        ->and($this->node->roles()->where('role', RoleName::Database)->sole()->status)->toBe(LifecycleStatus::Provisioning);
+});
+
+it('admits native database beside router without executing or changing the router role', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'router-database']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node->roles()->create(['role' => RoleName::Router, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+    node_roles_prepare_native($this->node);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])->assertAccepted();
+    expect($this->roleLifecycle->converged)->toBe([])
+        ->and($this->node->roles()->where('role', RoleName::Router)->sole()->status)->toBe(LifecycleStatus::Active);
 });
 
 it('refuses database settings and documented role conflicts', function (): void {
@@ -336,6 +452,36 @@ describe('analytics role assignment', function (): void {
         expect(NodeRole::query()->where('role', RoleName::Analytics)->exists())->toBeFalse();
     });
 
+    it('assigns the role and records the two storage Processes', function (): void {
+        $storage = analytics_storage_processes();
+        $requestId = (string) Str::uuid();
+
+        $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.role', 'analytics');
+
+        $assignment = $this->node->roles()->where('role', RoleName::Analytics)->sole();
+
+        expect($assignment->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($this->roleLifecycle->converged)
+            ->toBe(['analytics'])
+            ->and(app(AnalyticsRoleSettingsRepository::class)->find($this->node))
+            ->toEqual(new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id))
+            ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+            ->toBe([
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ]);
+    });
+
     it('refuses the analytics role on the Gateway Node', function (): void {
         $storage = analytics_storage_processes();
 
@@ -353,6 +499,69 @@ describe('analytics role assignment', function (): void {
     });
 });
 
+it('assigns lists and retries one Ingress through the existing exact lifecycle contract', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $requestId = (string) Str::uuid();
+
+    $created = $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress']);
+    $assignment = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+
+    $created
+        ->assertCreated()
+        ->assertExactJson([
+            'data' => [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'role' => 'ingress',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'assignment' => [
+                    'id' => $assignment->id,
+                    'role' => 'ingress',
+                    'status' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'removed' => false,
+            ],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignment->id);
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'ingress',
+            'converge_existing' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignment->id);
+    $this
+        ->getJson("/api/v1/nodes/{$this->node->id}/roles")
+        ->assertOk()
+        ->assertExactJson([
+            'data' => [[
+                'id' => $assignment->id,
+                'role' => 'ingress',
+                'status' => 'active',
+                'failed_step' => null,
+                'error_code' => null,
+            ]],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    expect($assignment->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($this->roleLifecycle->converged)
+        ->toBe(['ingress', 'ingress']);
+});
+
 it('rejects an unclustered Ingress assignment without partial state', function (): void {
     $this
         ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
@@ -364,6 +573,31 @@ it('rejects an unclustered Ingress assignment without partial state', function (
         ->toBeFalse()
         ->and($this->roleLifecycle->converged)
         ->toBeEmpty();
+});
+
+it('rejects a second Cluster Ingress and permits one in each of two Clusters', function (): void {
+    $firstCluster = Cluster::query()->create(['name' => 'first-ingress-api']);
+    $secondCluster = Cluster::query()->create(['name' => 'second-ingress-api']);
+    $this->node->update(['cluster_id' => $firstCluster->id]);
+    $second = node_roles_api_node('second-same-cluster');
+    $second->update(['cluster_id' => $firstCluster->id]);
+    $other = node_roles_api_node('other-cluster');
+    $other->update(['cluster_id' => $secondCluster->id]);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $original = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+    $this
+        ->postJson("/api/v1/nodes/{$second->id}/roles", ['role' => 'ingress'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+    $this->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'ingress'])->assertCreated();
+
+    expect($original->fresh()?->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($second->roles()->exists())
+        ->toBeFalse()
+        ->and(NodeRole::query()->where('role', RoleName::Ingress)->count())
+        ->toBe(2);
 });
 
 it('supports Ingress compatibility and rejects app-dev in both assignment orders', function (
@@ -387,12 +621,12 @@ it('supports Ingress compatibility and rejects app-dev in both assignment orders
     $response = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => $assignedRole]);
 
     if ($accepted) {
-        $response->assertUnprocessable()->assertJsonPath('error.code', 'operation.kind_unavailable');
+        $response->assertCreated();
     } else {
         $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     }
 
-    expect($this->node->roles()->where('role', $assignedRole)->exists())->toBeFalse();
+    expect($this->node->roles()->where('role', $assignedRole)->exists())->toBe($accepted);
 })->with([
     'Ingress with Router' => [['router'], 'ingress', true],
     'Ingress with app-prod' => [['app-prod'], 'ingress', true],
@@ -418,10 +652,39 @@ it('refuses Ingress on a Gateway Node before any convergence', function (): void
         ->toBe([]);
 });
 
+it('removes Ingress repeatedly and supports remove then add replacement', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'replace-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $replacement = node_roles_api_node('replacement-ingress');
+    $replacement->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.retained_on_node', []);
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+    $this
+        ->postJson("/api/v1/nodes/{$replacement->id}/roles", ['role' => 'ingress'])
+        ->assertCreated()
+        ->assertJsonPath('data.assignment.role', 'ingress');
+
+    expect($this->node->roles()->where('role', RoleName::Ingress)->exists())
+        ->toBeFalse()
+        ->and($replacement->roles()->where('role', RoleName::Ingress)->sole()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'ingress', 'purge_data' => false]]);
+});
+
 it('removes Ingress through its baseline while the assignment is removing', function (): void {
     $cluster = Cluster::query()->create(['name' => 'baseline-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
-    $this->node->roles()->create(['role' => RoleName::Ingress, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
     $statuses = [];
     $this->roleLifecycle->onRemove = static function (NodeRole $assignment) use (&$statuses): void {
         $statuses[] = NodeRole::query()->findOrFail($assignment->id)->status;
@@ -441,7 +704,7 @@ it('removes Ingress through its baseline while the assignment is removing', func
 it('refuses Ingress removal while a public Route in its Cluster depends on it', function (): void {
     $cluster = Cluster::query()->create(['name' => 'guarded-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
-    $this->node->roles()->create(['role' => RoleName::Ingress, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
     node_roles_api_public_route($cluster);
 
     $this
@@ -459,7 +722,7 @@ it('refuses Ingress removal while a public Route in its Cluster depends on it', 
 it('records a failed Ingress removal and completes it on retry', function (): void {
     $cluster = Cluster::query()->create(['name' => 'retry-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
-    $this->node->roles()->create(['role' => RoleName::Ingress, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
     $this->roleLifecycle->removalFailure = new NodeRoleOperationException(
         step: 'caddy-config',
         errorCode: 'node_role.remove_failed',
@@ -570,7 +833,7 @@ it('refuses to remove a role while another operation holds it', function (Lifecy
 it('removes an unreachable Ingress on the Gateway side and lists what stays on the Node', function (): void {
     $cluster = Cluster::query()->create(['name' => 'offline-ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);
-    $this->node->roles()->create(['role' => RoleName::Ingress, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
     $this->reachability->degradation = ExporterDegradationReason::Unreachable;
 
     $this
@@ -1050,6 +1313,99 @@ it('returns safe binding and inactive-node failures', function (): void {
         ->assertJsonPath('error.code', 'validation.failed');
 });
 
+it('returns a safe correlated 502 for convergence failure', function (): void {
+    $sentinel = (string) Str::uuid();
+    $requestId = (string) Str::uuid();
+    $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+        step: 'packages',
+        errorCode: 'node_role.convergence_failed',
+        underlyingErrorCode: 'packages.failed',
+        message: 'Role convergence failed.',
+        result: new CommandResult(23, $sentinel, $sentinel, 10, false),
+    );
+
+    $response = $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev']);
+
+    $response
+        ->assertStatus(502)
+        ->assertHeader('X-Orbit-Request-Id', $requestId)
+        ->assertExactJson([
+            'error' => [
+                'code' => 'node_role.convergence_failed',
+                'message' => 'Role convergence failed.',
+                'details' => ['step' => 'converge:packages', 'error_code' => 'packages.failed'],
+            ],
+        ]);
+
+    expect($response->getContent())
+        ->not
+        ->toContain($sentinel)
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->error_code)
+        ->toBe('node_role.convergence_failed');
+});
+
+it('names node.lock_lost in the error details when the role operation lost its Node lock', function (): void {
+    $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+        step: 'packages',
+        errorCode: 'node_role.convergence_failed',
+        underlyingErrorCode: 'packages.failed',
+        message: 'Role convergence failed.',
+        previous: NodeLockLoss::exception("node-role:id:{$this->node->id}"),
+    );
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node_role.convergence_failed')
+        ->assertJsonPath('error.details', ['step' => 'converge:packages', 'error_code' => 'node.lock_lost']);
+});
+
+it('names node_role.node_busy in the error details when another role operation holds the Node', function (): void {
+    app()->instance(NodeRoleConvergeLock::class, new NodeRoleConvergeLock(app(NodeLocks::class), waitSeconds: 0));
+    $held = app(NodeLocks::class)->lock("node-role:id:{$this->node->id}", 60);
+    expect($held->get())->toBeTrue();
+
+    try {
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'metrics'])
+            ->assertStatus(502)
+            ->assertExactJson([
+                'error' => [
+                    'code' => 'node_role.convergence_failed',
+                    'message' => "Another role operation is still running on node [{$this->node->name}].",
+                    'details' => ['step' => 'converge:node-lock', 'error_code' => 'node_role.node_busy'],
+                ],
+            ]);
+    } finally {
+        $held->release();
+    }
+
+    expect($this->node->roles()->where('role', 'metrics')->exists())->toBeFalse();
+});
+
+it('records the message of a Caddy listen address refusal on the activity', function (): void {
+    $requestId = (string) Str::uuid();
+    $refusal = 'Caddy would bind 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then publish again.';
+    $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+        step: 'websocket-caddy',
+        errorCode: 'node_role.convergence_failed',
+        underlyingErrorCode: 'websocket.caddy_publication_failed',
+        message: $refusal,
+        result: new CommandResult(1, '', $refusal, 10, false),
+    );
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.message', $refusal);
+
+    expect(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('error_message'))
+        ->toBe($refusal);
+});
+
 it('returns a safe correlated 502 for removal failure', function (): void {
     $sentinel = (string) Str::uuid();
     $requestId = (string) Str::uuid();
@@ -1227,7 +1583,6 @@ function node_roles_api_node(
         'name' => $name,
         'status' => $status,
         'platform' => 'linux',
-        'architecture' => 'x86_64',
         'public_ssh_host' => $name.'.example.test',
         'wireguard_ip' => '10.44.10.'.(Node::query()->count() + 2),
     ]);
@@ -1326,6 +1681,17 @@ final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe
     }
 }
 
+it('reconverges an existing CI role through the native Operation only', function (): void {
+    $target = node_roles_api_node('ci-only-target');
+    $assignment = $target->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    node_roles_prepare_native($target);
+    $response = $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'ci-runner', 'converge_existing' => true])
+        ->assertAccepted()->assertJsonPath('data.kind', 'node.role_add');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect($operation->input['_role']['assignment_id'])->toBe($assignment->id)
+        ->and($operation->input['_role']['created'])->toBeFalse()->and($this->roleLifecycle->converged)->toBe([]);
+});
+
 it('refuses ci-runner on trust-anchor Nodes in either assignment order', function (string $first, string $second): void {
     $target = node_roles_api_node('ci-conflict-target');
     $target->roles()->create(['role' => $first, 'status' => LifecycleStatus::Active]);
@@ -1334,3 +1700,22 @@ it('refuses ci-runner on trust-anchor Nodes in either assignment order', functio
         ->assertJsonPath('error.code', 'validation.failed');
     expect($this->roleLifecycle->converged)->toBe([]);
 })->with([['gateway', 'ci-runner'], ['vpn', 'ci-runner'], ['ci-runner', 'gateway']]);
+
+it('admits native CI beside app and database roles without replacing them', function (): void {
+    $target = node_roles_api_node('beast-ci-target');
+    foreach ([RoleName::AppDev, RoleName::Database] as $role) {
+        $target->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+    node_roles_prepare_native($target);
+    $this->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'ci-runner'])->assertAccepted();
+    expect($target->roles()->pluck('role')->map->value->sort()->values()->all())->toBe(['app-dev', 'ci-runner', 'database']);
+    expect($this->roleLifecycle->converged)->toBe([]);
+});
+
+function node_roles_prepare_native(Node $node): void
+{
+    FleetFixtures::bind();
+    $node->forceFill(['architecture' => 'x86_64', 'agent_secret_hash' => str_repeat('e', 64), 'ssh_host_fingerprint' => 'SHA256:fixture'])->save();
+    config(['swamp_workers.nodes' => [$node->id], 'swamp.direct_writers' => ['node.role_add' => 'direct']]);
+    DB::beginTransaction();
+}

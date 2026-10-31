@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\CliConvergePlan;
-use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Metrics\MetricsRoleReconcileImpact;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
@@ -23,22 +21,24 @@ final readonly class NodeRoleDirectInput
 {
     public function __construct(private AgentDelivery $delivery, private RolePrerequisites $prerequisites,
         private NodeRoleFirewallInput $firewall, private NodeConvergeInput $footprint,
-        private MetricsFleetCapture $metrics, private MetricsRoleReconcileImpact $metricsImpact, private CliConvergePlan $cli) {}
+        private MetricsRoleReconcileImpact $metricsImpact, private CliConvergePlan $cli) {}
 
-    /** @param array<string,mixed>|null $metricsBefore Complete owning capture before recording the role transition.
+    public static function supports(RoleName $role): bool
+    {
+        return in_array($role, [RoleName::Database, RoleName::CiRunner], true);
+    }
+
+    /** @param array{metrics_node_id:int,selected:bool,caddy:bool,fpm:bool}|null $metricsBefore Complete owning capture before recording the role transition.
      * @return array<string,mixed>
      */
     public function capture(Node $node, NodeRole $assignment, bool $created, ?array $metricsBefore = null): array
     {
-        if ($assignment->node_id !== $node->id || ! in_array($assignment->role, [RoleName::AppDev, RoleName::Database, RoleName::CiRunner], true)) {
+        if ($assignment->node_id !== $node->id || ! self::supports($assignment->role)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot requires its admitted Node assignment.', 422);
         }
-        $metricsNodeId = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
-            static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->value('id');
-        if (($metricsNodeId === null) !== ($metricsBefore === null)) {
-            throw new ResourceOperationException('metrics.snapshot_changed', 'The role needs the complete pre-transition Metrics intent.', 409);
-        }
-        $impact = $metricsBefore === null ? null : $this->metricsImpact->compare($metricsBefore, $this->metrics->capture());
+        $after = $this->metricsImpact->capture($node, $assignment->role);
+        $metricsNodeId = $after['metrics_node_id'] ?? null;
+        $impact = $after === null && $metricsBefore === null ? null : $this->metricsImpact->compare($metricsBefore, $after);
         $role = $assignment->role;
         $prerequisites = $this->prerequisites->input($node, $role,
             new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
@@ -49,7 +49,7 @@ final readonly class NodeRoleDirectInput
         return ['schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
             'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
-            'managers' => [], 'footprint' => $footprint,
+            'footprint' => $footprint,
             'metrics_node_id' => $metricsNodeId, 'metrics_impact' => $impact, 'cli' => $this->cli->input($node)];
     }
 
@@ -72,7 +72,7 @@ final readonly class NodeRoleDirectInput
         $run = $operation->state['swamp_run_id'] ?? null;
         $role = $snapshot['role'] ?? null;
         $pin = $snapshot['agent_sha256'] ?? null;
-        if (! in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)
+        if ($operation->kind !== 'node.role_add'
             || $operation->target_type !== 'node' || $operation->node_id === null || $operation->target_id !== $operation->node_id
             || $operation->parent_operation_id !== null || $operation->status->terminal()
             || ($operation->state['node_role_writer'] ?? null) !== 'direct'
@@ -80,7 +80,7 @@ final readonly class NodeRoleDirectInput
             || ! is_string($run) || preg_match('/\A[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/D', $run) !== 1
             || ($snapshot['schema_version'] ?? null) !== 1 || ($snapshot['node_id'] ?? null) !== $operation->node_id
             || ($operation->input['node_id'] ?? null) !== $operation->node_id
-            || ! in_array($role, ['app-dev', 'database', 'ci-runner'], true) || ($operation->input['role'] ?? null) !== $role
+            || ! in_array($role, ['database', 'ci-runner'], true) || ($operation->input['role'] ?? null) !== $role
             || ! is_string($pin) || preg_match('/\A[a-f0-9]{64}\z/D', $pin) !== 1
             || ($footprint['schema_version'] ?? null) !== 1 || ($footprint['node_id'] ?? null) !== $operation->node_id
             || ($footprint['agent_sha256'] ?? null) !== $pin || array_key_exists('secret_hash', $footprint)

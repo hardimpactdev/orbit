@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -32,12 +33,18 @@ final class AddNodeRoleRequest extends GatewayRequest implements HasBody
         return "/api/v1/nodes/{$this->nodeId}/roles";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): OperationResponse|NodeRoleMutationResponse
     {
         $data = $this->unwrapData($response);
         $requestId = $this->successRequestId($response);
 
-        return OperationResponse::fromGatewayData($data, $requestId);
+        return $this->responseClass()::fromGatewayData($data, $requestId);
+    }
+
+    /** @return class-string<OperationResponse>|class-string<NodeRoleMutationResponse> */
+    public function responseClass(): string
+    {
+        return in_array($this->role, ['database', 'ci-runner'], true) ? OperationResponse::class : NodeRoleMutationResponse::class;
     }
 
     /** @return array<string,string> */

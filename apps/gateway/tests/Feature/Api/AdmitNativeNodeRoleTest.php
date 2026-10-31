@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Nodes\NodeConvergeInput;
@@ -73,3 +74,20 @@ it('rolls back the assignment and intent when an applicable footprint contributi
         ->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
 });
+
+it('refuses a database role with no WireGuard address before recording intent or effects', function (): void {
+    $this->node->update(['wireguard_ip' => null]);
+    try {
+        app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database, native: true);
+        test()->fail('The missing WireGuard address was accepted.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('database.wireguard_ip_missing');
+    }
+    expect(Operation::query()->count())->toBe(0)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
+});
+
+it('cannot choose a polled or synchronous standalone executor for a ported role', function (RoleName $role): void {
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, $role))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(AddNodeRoleAction::class)->execute($this->node, $role))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->count())->toBe(0);
+})->with([RoleName::Database, RoleName::CiRunner]);

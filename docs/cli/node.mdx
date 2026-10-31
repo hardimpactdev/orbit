@@ -292,13 +292,13 @@ orbit node:role:add shark ci-runner --converge --idempotency-key=shark-ci-conver
 
 `vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. For `analytics`, a terminal lists the Docker Processes that run the right image and asks for each missing option. With `--json` or without a terminal, the command refuses. The [Analytics role](/reference/analytics) page describes that role.
 
-Standalone additions return a queued Operation and use the shared Operation follower. JSON contains the Operation and its bounded result. The native rollout currently admits `database` and `ci-runner` on selected Linux Nodes with an existing active role. Other applicable transitions wait for their owning native composition and refuse before recording an intent. See [Native role scope](/reference/node-provisioning#ci-runner-role).
+Standalone `database` and `ci-runner` additions return a queued Operation and use the shared Operation follower. JSON contains the Operation and its bounded result. This native scope needs a selected Linux worker, an existing active role and an agent identity. The unported roles `app-dev`, `app-prod`, `gateway`, `websocket`, `metrics`, `analytics` and `ingress` keep their existing synchronous path and response until their own conversion. See [Native role scope](/reference/node-provisioning#ci-runner-role).
 
 A known footprint or CLI follow-up failure leaves the proven role `active`. The Operation result records it in `follow_up`, and the CLI prints a warning. An uncertain effect leaves the Operation unresolved until its native run reconciles it.
 
 The [`ci-runner` role](/reference/node-provisioning#ci-runner-role) prepares the Incus host boundary without creating or registering containers. It cannot share `gateway` or `vpn`. Add it to CI-only hosts and alongside Beast's existing roles through this command.
 
-Standalone `gateway` addition is outside the native rollout. Use [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
+Adding `gateway` grants its Node access to the active VPN and Metrics Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
 
 ## orbit node:role:list
 

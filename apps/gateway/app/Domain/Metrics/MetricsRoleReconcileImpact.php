@@ -4,55 +4,48 @@ declare(strict_types=1);
 
 namespace App\Domain\Metrics;
 
+use App\Domain\Nodes\NodeRoleDirectInput;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Support\ValidatedData;
+use App\Infrastructure\Metrics\ServiceMetricsProjection;
+use App\Models\Node;
 
-/** Metrics owns whether a role transition changes any desired fleet effect. */
+/** CI/database change only this Node's selection; they change no PHP pools, routes or Metrics owner. */
 final readonly class MetricsRoleReconcileImpact
 {
-    public function __construct(private MetricsFleetCapture $capture) {}
+    public function __construct(private MetricsExporterProjection $exporters, private ServiceMetricsProjection $services) {}
 
-    /** @param array<string,mixed> $before Immutable owner capture before the role intent.
-     * @param  array<string,mixed>  $after  Immutable owner capture after the role intent.
-     * @return array{required:bool,before_sha256:string,after_sha256:string}
-     */
-    public function compare(array $before, array $after): array
+    /** @return array{metrics_node_id:int,selected:bool,caddy:bool,fpm:bool}|null */
+    public function capture(Node $node, RoleName $role): ?array
     {
-        $current = $this->capture->capture();
-        $inventory = array_column(MetricsFleetCapture::members($current), 'node_id');
-        foreach ([$before, $after] as $candidate) {
-            MetricsFleetCapture::assertDigest($candidate);
-            if (array_column(MetricsFleetCapture::members($candidate), 'node_id') !== $inventory) {
-                throw new ResourceOperationException('metrics.snapshot_changed', 'A role comparison must retain the complete owning fleet.', 409);
-            }
+        if (! NodeRoleDirectInput::supports($role)) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'This Metrics comparison supports CI and database roles only.', 422);
         }
-        if (! hash_equals($this->desiredHash($current), $this->desiredHash($after))) {
-            throw new ResourceOperationException('metrics.snapshot_changed', 'The post-role desired fleet changed before comparison.', 409);
+        $owners = Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles',
+            static fn ($query) => $query->where('role', RoleName::Metrics)->where('status', LifecycleStatus::Active))->limit(2)->get();
+        if ($owners->isEmpty()) {
+            return null;
         }
-        $beforeHash = $this->desiredHash($before);
-        $afterHash = $this->desiredHash($after);
+        if ($owners->count() !== 1) {
+            throw new ResourceOperationException('metrics.assignment_missing', 'Role reconciliation requires one Metrics owner.', 409);
+        }
+        $owner = $owners->sole();
+        $item = $this->exporters->forNode($owner, $node);
+        $service = $this->services->forNode($owner, $node);
 
-        return ['required' => ! hash_equals($beforeHash, $afterHash), 'before_sha256' => $beforeHash, 'after_sha256' => $afterHash];
+        return ['metrics_node_id' => $owner->id, 'selected' => $item?->selection->selected ?? false,
+            'caddy' => $service->caddy, 'fpm' => $service->fpm];
     }
 
-    /** @param array<string,mixed> $capture */
-    private function desiredHash(array $capture): string
+    /** @param array{metrics_node_id:int,selected:bool,caddy:bool,fpm:bool}|null $before
+     * @param  array{metrics_node_id:int,selected:bool,caddy:bool,fpm:bool}|null  $after
+     * @return array{required:bool,before_sha256:string,after_sha256:string}
+     */
+    public function compare(?array $before, ?array $after): array
     {
-        MetricsFleetCapture::assertDigest($capture);
-        $members = MetricsFleetCapture::members($capture);
-        $ids = ValidatedData::integerList(array_column($members, 'node_id'));
-        if (count($ids) !== count(array_unique($ids))) {
-            throw new ResourceOperationException('metrics.snapshot_changed', 'The Metrics capture repeats a Node.', 422);
-        }
-        // Availability and executable delivery do not change the desired monitoring configuration.
-        // Every member and its selection remains in this comparison, including worker-free Nodes.
-        unset($capture['digest']);
-        foreach ($members as &$member) {
-            unset($member['worker'], $member['agent_sha256'], $member['selection_reason']);
-        }
-        unset($member);
-        $capture['fleet'] = $members;
-
-        return MetricsFleetCapture::digest($capture);
+        return ['required' => $before !== $after,
+            'before_sha256' => hash('sha256', json_encode($before, JSON_THROW_ON_ERROR)),
+            'after_sha256' => hash('sha256', json_encode($after, JSON_THROW_ON_ERROR))];
     }
 }

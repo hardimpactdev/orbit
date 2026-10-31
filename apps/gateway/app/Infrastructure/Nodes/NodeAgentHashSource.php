@@ -27,7 +27,7 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function ownerId(Operation $operation): ?int
     {
-        if (in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)) {
+        if ($operation->kind === 'node.role_add') {
             return NodeRoleDirectInput::ownerId($operation);
         }
 
@@ -37,7 +37,7 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function store(Operation $operation, int $ownerId, #[\SensitiveParameter] mixed $value): void
     {
-        if (in_array($operation->kind, ['node.role_add', 'node.role_remove'], true)
+        if ($operation->kind === 'node.role_add'
             || $ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }

@@ -38,7 +38,7 @@ it('reads the existing hash privately for a bound role root but cannot store one
     expect(fn () => $source->store($operation, $operation->node_id, str_repeat('f', 64)))
         ->toThrow(ResourceOperationException::class);
     expect(Node::query()->findOrFail($operation->node_id)->agent_secret_hash)->toBe(str_repeat('e', 64));
-})->with(['node.role_add', 'node.role_remove']);
+})->with(['node.role_add']);
 
 it('refuses foreign owners and undeclared parameters for role hash reads', function (): void {
     $operation = roleHashSourceOperation();
@@ -67,3 +67,11 @@ it('reuses canonical refusal for role owner drift before reading protected bytes
     expect(fn () => $source->resolve($operation, $operation->node_id, '', 'secret_hash'))
         ->toThrow(ResourceOperationException::class);
 })->with(['parent', 'terminal', 'polled', 'pin', 'assignment']);
+
+it('does not grant removal roots hash reads or stores', function (): void {
+    $operation = roleHashSourceOperation('node.role_remove');
+    $source = app(NodeAgentHashSource::class);
+    expect($source->ownerId($operation))->toBeNull();
+    expect(fn () => $source->resolve($operation, $operation->node_id, '', 'secret_hash'))->toThrow(ResourceOperationException::class);
+    expect(fn () => $source->store($operation, $operation->node_id, str_repeat('f', 64)))->toThrow(ResourceOperationException::class);
+});

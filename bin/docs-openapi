@@ -2230,7 +2230,11 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if starts_operation:
         responses['409']['description'] += ' The key already belongs to another target or input (`operation.idempotency_conflict`), or another operation holds the target (`operation.target_busy`).'
         responses.setdefault('422', error_response('Invalid input (`validation.failed`).'))['description'] += ' A malformed Idempotency-Key also returns `validation.failed`.'
-    if route['name'] in ('node:role:remove', 'node:role:relocate'):
+    if route['name'] == 'node:role:add':
+        for code, description in [('200', 'Unported role converged.'), ('201', 'Unported role added.')]:
+            responses[code] = envelope(ref('NodeRoleMutationData'), description)
+        responses['202']['description'] = 'Database or ci-runner role intent queued as one native Operation.'
+    if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
         responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.')
     if route['name'] in ('node:add', 'node:remove'):
         responses['502'] = error_response('A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step\'s own code.')

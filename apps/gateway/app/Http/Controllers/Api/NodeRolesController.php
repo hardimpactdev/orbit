@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\ListNodeRolesAction;
 use App\Actions\Nodes\RelocateNodeRoleAction;
@@ -11,6 +12,7 @@ use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
 use App\Data\Operations\OperationData;
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -53,14 +55,24 @@ final class NodeRolesController extends Controller
         AddNodeRoleRequest $request,
         Node $node,
         AdmitNodeRoleOperationAction $action,
+        AddNodeRoleAction $unported,
         RoleRegistry $registry,
     ): JsonResponse {
         $role = $request->role();
         $this->guardMutable($role, $registry);
 
         try {
-            $result = $action->add($node, $role, $request->convergeExisting(), $request->analyticsSettings(),
-                requestId: $request->attributes->getString('orbit.request_id'), native: true);
+            if (NodeRoleDirectInput::supports($role)) {
+                $result = $action->add($node, $role, $request->convergeExisting(), $request->analyticsSettings(),
+                    requestId: $request->attributes->getString('orbit.request_id'), native: true);
+            } else {
+                $result = $unported->execute($node, $role, $request->convergeExisting(), $request->analyticsSettings());
+
+                return response()->json([
+                    'data' => NodeRoleMutationData::added($node, $result['assignment'], $result['follow_up'])->toArray(),
+                    'meta' => $this->meta($request),
+                ], $result['created'] ? 201 : 200);
+            }
         } catch (RoleAssignmentException $exception) {
             throw new NodeRoleValidationException(
                 message: $exception->getMessage(),

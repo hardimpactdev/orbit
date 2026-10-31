@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Metrics\MetricsRoleReconcileImpact;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleIntent;
@@ -46,7 +46,7 @@ it('records the owning unchanged Metrics comparison for a database addition whil
     FleetFixtures::node('metrics', [RoleName::Metrics]);
     FleetFixtures::node('vpn', [RoleName::Vpn]);
     $node = FleetFixtures::node('role-native', [RoleName::AppDev]);
-    $before = app(MetricsFleetCapture::class)->capture();
+    $before = app(MetricsRoleReconcileImpact::class)->capture($node, RoleName::Database);
     $assignment = $node->roles()->create(['role' => RoleName::Database, 'status' => 'active']);
 
     $input = app(NodeRoleDirectInput::class)->capture($node->refresh(), $assignment, true, $before);
@@ -60,8 +60,7 @@ it('requires the complete pre-transition Metrics capture instead of inventing un
     FleetFixtures::node('metrics', [RoleName::Metrics]);
     $node = FleetFixtures::node('role-native', [RoleName::Database]);
 
-    expect(fn () => app(NodeRoleDirectInput::class)->capture($node, $node->roles->sole(), false))
-        ->toThrow(ResourceOperationException::class);
+    expect(app(NodeRoleDirectInput::class)->capture($node, $node->roles->sole(), false)['metrics_impact']['required'])->toBeTrue();
 });
 
 function boundRoleRoot(string $kind = 'node.role_add'): Operation
@@ -81,7 +80,7 @@ it('binds only a standalone native role root to its original Node and assignment
     $operation = boundRoleRoot($kind);
     expect(NodeRoleDirectInput::ownerId($operation))->toBe($operation->node_id)
         ->and(NodeRoleDirectInput::bound($operation))->toBe($operation->input['_role']);
-})->with(['node.role_add', 'node.role_remove']);
+})->with(['node.role_add']);
 
 it('refuses an unbound foreign stale parent or polled role root', function (string $mismatch): void {
     $operation = boundRoleRoot();
@@ -89,6 +88,7 @@ it('refuses an unbound foreign stale parent or polled role root', function (stri
     $state = $operation->state;
     match ($mismatch) {
         'kind' => $operation->kind = 'node.role_converge',
+        'remove' => $operation->kind = 'node.role_remove',
         'parent' => $operation->parent_operation_id = 1,
         'polled' => $state['node_role_writer'] = 'polled',
         'unbound' => $state['swamp_run_id'] = null,
@@ -106,11 +106,17 @@ it('refuses an unbound foreign stale parent or polled role root', function (stri
     $operation->input = $input;
     $operation->state = $state;
     expect(NodeRoleDirectInput::ownerId($operation))->toBeNull();
-})->with(['kind', 'parent', 'polled', 'unbound', 'terminal', 'target', 'snapshot_node', 'footprint_node', 'pin', 'assignment', 'role', 'created', 'private_ref', 'malformed']);
+})->with(['kind', 'remove', 'parent', 'polled', 'unbound', 'terminal', 'target', 'snapshot_node', 'footprint_node', 'pin', 'assignment', 'role', 'created', 'private_ref', 'malformed']);
 
 it('refuses a role assignment transferred away after admission', function (): void {
     $operation = boundRoleRoot();
     $foreign = FleetFixtures::node('foreign');
     NodeRole::query()->whereKey($operation->input['_role']['assignment_id'])->update(['node_id' => $foreign->id]);
     expect(NodeRoleDirectInput::ownerId($operation))->toBeNull();
+});
+
+it('does not capture an unported role in the native input contract', function (): void {
+    FleetFixtures::bind();
+    $node = FleetFixtures::node('unported', [RoleName::AppDev]);
+    expect(fn () => app(NodeRoleDirectInput::class)->capture($node, $node->roles->sole(), false))->toThrow(ResourceOperationException::class);
 });
