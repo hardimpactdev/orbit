@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
-use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
-use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
@@ -31,7 +29,6 @@ use App\Domain\Instances\InstanceCreateEnvironmentSeed;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Instances\ProductionCloneRouteProjector;
@@ -49,7 +46,6 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentSecrets;
 use App\Domain\Operations\OperationSecretOutputStore;
@@ -65,7 +61,6 @@ use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
-use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
@@ -76,7 +71,6 @@ use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentRuntimeRefresher;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
-use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
@@ -95,7 +89,6 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
-        InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
@@ -103,7 +96,6 @@ final class InstancesServiceProvider extends ServiceProvider
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
-        InstanceRemover::class => DestroyInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
@@ -122,7 +114,6 @@ final class InstancesServiceProvider extends ServiceProvider
         ProductionCloneRouteProjector::class => NativeProductionRouteProjector::class,
         InstanceEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
         InstanceRouteEnvironmentSynchronizer::class => SynchronizeInstanceEnvironmentAction::class,
-        SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,
         InstanceQueueReader::class => RemoteInstanceQueueReader::class,
     ];
@@ -130,7 +121,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, \App\Domain\Instances\InstanceDestroyTeardownSecret::class, \App\Domain\Instances\InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class, InstanceVpEnvironmentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

@@ -2,102 +2,99 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationChildIntent;
-use App\Domain\Operations\OperationOutcome;
+use App\Domain\Operations\DirectOperationPrivateMaterial;
 use App\Domain\Processes\ProcessInstanceOperation;
+use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessTarget;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
+use App\Models\ProcessDefinition;
 use App\Models\Project;
 
 beforeEach(function (): void {
-    $this->node = Node::query()->create(['name' => 'restart-plan', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.19']);
+    $this->node = Node::query()->create(['name' => 'restart-plan', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.19']);
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Runtime proof', 'slug' => 'runtime-proof', 'repository_url' => 'https://example.test/runtime.git']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'proof',
         'environment' => 'development', 'checkout_path' => '/srv/proof', 'provisioning_step' => 'active', 'status' => 'active']);
-    $root = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $this->instance->id,
-        'node_id' => $this->node->id, 'status' => 'running', 'input' => []]);
-    $this->operation = new Operation;
-    $this->operation->forceFill(['kind' => 'process.restart_instance', 'target_type' => 'instance', 'target_id' => $this->instance->id,
-        'node_id' => $this->node->id, 'status' => 'running', 'parent_operation_id' => $root->id, 'child_key' => 'restart-processes',
-        'input' => ['instance_id' => $this->instance->id], 'state' => ['runtime_children' => []]])->save();
     $this->runtime = app(ProcessInstanceOperation::class);
 });
 
-it('selects only active desired-running opted-in Processes in ID order', function (): void {
+it('captures only active desired-running opted-in Processes in ID order without member Operations', function (): void {
     $first = runtimeRestartProcess($this->instance, 'first');
     runtimeRestartProcess($this->instance, 'opt-out', ['restart_on_deploy' => false]);
     runtimeRestartProcess($this->instance, 'stopped', ['desired_state' => 'stopped']);
     runtimeRestartProcess($this->instance, 'failed', ['status' => 'failed']);
     $second = runtimeRestartProcess($this->instance, 'second');
     runtimeRestartProcess($this->instance, 'other-owner', ['owner_type' => Node::class, 'owner_id' => $this->node->id]);
-
-    $plan = $this->runtime->plan($this->instance, 'process.restart_instance');
-
-    expect(array_column(array_column($plan, 'input'), 'process_id'))->toBe([$first->id, $second->id]);
-    expect(array_column($plan, 'kind'))->toBe(['process.restart', 'process.restart']);
-    expect(array_column($plan, 'node_id'))->toBe([$this->node->id, $this->node->id]);
+    $capture = $this->runtime->capture($this->instance, 'process.restart_instance');
+    expect(array_column($capture['members'], 'id'))->toBe([$first->id, $second->id])
+        ->and(array_column(array_column($capture['members'], 'input'), 'node_id'))->toBe([$this->node->id, $this->node->id])
+        ->and(Operation::query()->count())->toBe(0);
 });
 
-it('returns an empty Process ID list when no Process needs restarting', function (): void {
-    expect($this->runtime->run($this->operation, ['instance_id' => $this->instance->id]))->toBe(['ready' => true, 'process_ids' => []]);
+it('captures an empty selection without inventing a Process', function (): void {
+    expect($this->runtime->capture($this->instance, 'process.restart_instance')['members'])->toBe([])
+        ->and(Process::query()->count())->toBe(0);
 });
 
-it('reports exact restarted IDs from verified child targets and refuses an invented completion list', function (): void {
+it('uses the exact executor Node without a Gateway recovery writer', function (): void {
+    config(['operation_executor.worker_node_ids' => [(string) $this->node->id], 'dependency_detection.services_node_id' => (string) $this->node->id]);
+    runtimeRestartProcess($this->instance, 'executor');
+    expect($this->runtime->capture($this->instance, 'process.restart_instance')['node_id'])->toBe($this->node->id);
+});
+
+it('keeps captured selection when the current inventory changes', function (): void {
     $first = runtimeRestartProcess($this->instance, 'first');
-    $second = runtimeRestartProcess($this->instance, 'second');
-    $plan = $this->runtime->plan($this->instance, 'process.restart_instance');
-    $this->operation->update(['state' => ['runtime_children' => $plan]]);
-    runtimeRestartChild($this->operation, $plan[0]);
-    runtimeRestartChild($this->operation, $plan[1]);
-
-    $result = $this->runtime->run($this->operation, ['instance_id' => $this->instance->id]);
-
-    expect($result)->toBe(['ready' => true, 'process_ids' => [$first->id, $second->id]]);
-    $this->runtime->assertCompletion($this->operation, OperationOutcome::succeeded($result));
-    expect(fn () => $this->runtime->assertCompletion($this->operation, OperationOutcome::succeeded(['ready' => true, 'process_ids' => [$second->id, $first->id]])))
-        ->toThrow(ResourceOperationException::class);
-    expect(fn () => $this->runtime->assertCompletion($this->operation, OperationOutcome::succeeded(['ready' => true, 'process_ids' => [(string) $first->id, (string) $second->id]])))
-        ->toThrow(ResourceOperationException::class);
+    $input = $this->runtime->capture($this->instance, 'process.restart_instance');
+    $operation = new Operation;
+    $operation->forceFill(['id' => 17, 'kind' => 'process.restart_instance', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => $input]);
+    $first->update(['restart_on_deploy' => false]);
+    runtimeRestartProcess($this->instance, 'later');
+    expect(array_column($this->runtime->input($operation)['members'], 'id'))->toBe([$first->id]);
 });
 
-it('refuses missing failed and modified restart evidence', function (string $case): void {
-    runtimeRestartProcess($this->instance, 'first');
-    $plan = $this->runtime->plan($this->instance, 'process.restart_instance');
-    $this->operation->update(['state' => ['runtime_children' => $plan]]);
-    if ($case !== 'missing') {
-        $child = runtimeRestartChild($this->operation, $plan[0]);
-        $child->update($case === 'failed' ? ['status' => 'failed'] : ['target_id' => $child->target_id + 1]);
-    }
+it('uses a provided admitted Process target without resolving current owner placement', function (): void {
+    $process = runtimeRestartProcess($this->instance, 'admitted-target');
+    $target = new ProcessTarget($this->node, 'orbit', '/srv/captured', instance: $this->instance);
+    $process->owner_type = Node::class;
+    $process->owner_id = 999999;
+    $input = app(ProcessOperationAdmission::class)->inputFor($process, 'restart', target: $target);
+    expect($input['node_id'])->toBe($this->node->id);
+});
 
-    expect(fn () => $this->runtime->run($this->operation, ['instance_id' => $this->instance->id]))->toThrow(ResourceOperationException::class);
-})->with(['missing', 'failed', 'modified']);
+it('hydrates only recorded owned installations and refuses changed definitions', function (): void {
+    $definition = ProcessDefinition::query()->create(['project_id' => $this->instance->project_id, 'name' => 'copy', 'runtime' => 'docker', 'environments' => ['production'], 'spec' => []]);
+    $process = runtimeRestartProcess($this->instance, 'copy', ['status' => 'provisioning', 'desired_state' => 'stopped', 'runtime' => 'docker', 'source_definition_id' => $definition->id,
+        'runtime_config' => ['image' => 'example:1', 'command' => ['/usr/bin/sleep', '300'], 'environment' => ['PASSWORD' => 'instance-private-fixture']]]);
+    $input = $this->runtime->capture($this->instance, 'process.install_instance_definitions');
+    $operation = Operation::query()->create(['kind' => 'process.install_instance_definitions', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'queued', 'input' => $input, 'state' => ['process_instance_writer' => 'direct']]);
+    $safe = $this->runtime->input($operation);
+    $private = app(DirectOperationPrivateMaterial::class)->read($operation);
+    expect(json_encode($safe))->not->toContain('instance-private-fixture')
+        ->and($private['installations'][$process->id]['installation']['definition']['environment']['PASSWORD'])->toBe('instance-private-fixture');
+    $process->update(['runtime_config' => [...$process->runtime_config, 'image' => 'example:2']]);
+    expect(fn () => app(DirectOperationPrivateMaterial::class)->read($operation))->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'operation.execution_forbidden');
+});
 
-it('uses stamped parent metadata and refuses parent identity supplied in input', function (): void {
-    $this->operation->input = ['instance_id' => $this->instance->id, 'parent_operation_id' => $this->operation->parent_operation_id];
-
-    expect(fn () => $this->runtime->context($this->operation))->toThrow(ResourceOperationException::class);
+it('projects native member results without child proof or another Operation', function (): void {
+    $process = runtimeRestartProcess($this->instance, 'finished');
+    $operation = Operation::query()->create(['kind' => 'process.restart_instance', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->runtime->capture($this->instance, 'process.restart_instance'),
+        'state' => ['process_instance_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
+    $result = ['ready' => true, 'process_ids' => [$process->id], 'members' => [['id' => $process->id, 'ready' => true, 'state' => 'active']]];
+    $this->runtime->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [...$result, 'private_material' => 'private-extra', 'members' => [[...$result['members'][0], 'stdout' => 'private-extra']]]]);
+    expect($operation->refresh()->result)->toBe($result)->and($process->refresh()->status->value)->toBe('active')->and(Operation::query()->count())->toBe(1);
 });
 
 /** @param array<string,mixed> $attributes */
 function runtimeRestartProcess(Instance $instance, string $name, array $attributes = []): Process
 {
     return Process::query()->create([...['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id, 'name' => $name,
-        'runtime' => 'systemd', 'restart_policy' => 'never', 'runtime_config' => ['command' => ['sleep', '300']],
+        'runtime' => 'systemd', 'restart_policy' => 'never', 'runtime_config' => ['command' => ['/usr/bin/sleep', '300']],
         'status' => 'active', 'desired_state' => 'running', 'restart_on_deploy' => true], ...$attributes]);
-}
-
-/** @param array{key:string,kind:string,node_id:int,input:array<string,mixed>} $intent */
-function runtimeRestartChild(Operation $parent, array $intent): Operation
-{
-    $child = new Operation;
-    $identity = ['parent_operation_id' => $parent->id, 'key' => $intent['key'], 'kind' => $intent['kind'],
-        'node_id' => $intent['node_id'], 'target_type' => 'process', 'target_id' => $intent['input']['process_id'], 'input' => $intent['input'], 'run_constraints' => []];
-    $snapshot = ['intent' => $intent, 'admitted' => $identity];
-    $child->forceFill([...array_diff_key($identity, ['key' => true]), 'child_key' => $intent['key'], 'status' => 'succeeded',
-        'child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
-
-    return $child;
 }

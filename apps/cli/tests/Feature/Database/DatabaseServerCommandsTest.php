@@ -11,6 +11,8 @@ use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -32,28 +34,14 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-/** @return array<string, int|string|null> */
-function database_server_cli_data(): array
+/** @return array<class-string, MockResponse> */
+function database_server_cli_responses(string $request, string $kind = 'database_server.create'): array
 {
-    return [
-        'id' => 1,
-        'slug' => 'beast-mysql',
-        'driver' => 'mysql',
-        'node_id' => 7,
-        'process_id' => 3,
-        'tag' => '8.4',
-        'port' => 3306,
-        'status' => 'active',
-        'databases_count' => 0,
-    ];
-}
+    $operation = ['id' => 7, 'kind' => $kind, 'target_type' => 'database_server', 'target_id' => 1,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['backend' => 'active']];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']];
 
-function database_server_cli_response(int $status = 200): MockResponse
-{
-    return MockResponse::make([
-        'data' => database_server_cli_data(),
-        'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
-    ], $status);
+    return [$request => MockResponse::make($envelope, 202), ShowOperationRequest::class => MockResponse::make($envelope), ShowRealtimeRequest::class => MockResponse::make([], 503)];
 }
 
 describe('database:server commands', function (): void {
@@ -73,30 +61,30 @@ describe('database:server commands', function (): void {
                 ]],
                 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
             ]),
-            CreateDatabaseServerRequest::class => database_server_cli_response(201),
+            ...database_server_cli_responses(CreateDatabaseServerRequest::class),
         ]);
 
         $this
             ->artisan('database:server:create', ['slug' => 'beast-mysql', '--node' => 'beast', '--port' => '3307', '--json' => true])
-            ->expectsOutput(json_encode([...database_server_cli_data(), 'request_id' => '11111111-1111-4111-8111-111111111111'], JSON_THROW_ON_ERROR))
+            ->expectsOutputToContain('"kind":"database_server.create"')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())
-            ->toBe(['slug' => 'beast-mysql', 'node_id' => 7, 'port' => 3307]);
+        $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseServerRequest
+            && $request->body()->all() === ['slug' => 'beast-mysql', 'node_id' => 7, 'port' => 3307]);
     });
 
     it('sends the MySQL image tag as tag', function (): void {
-        $mockClient = MockClient::global([CreateDatabaseServerRequest::class => database_server_cli_response(201)]);
+        $mockClient = MockClient::global(database_server_cli_responses(CreateDatabaseServerRequest::class));
 
         $this->artisan('database:server:create', ['slug' => 'beast-mysql', '--node' => '7', '--tag' => '8.0', '--json' => true])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())
-            ->toBe(['slug' => 'beast-mysql', 'node_id' => 7, 'tag' => '8.0']);
+        $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseServerRequest
+            && $request->body()->all() === ['slug' => 'beast-mysql', 'node_id' => 7, 'tag' => '8.0']);
     });
 
     it('refuses a JSON destroy without --force and destroys after it', function (): void {
-        $mockClient = MockClient::global([DestroyDatabaseServerRequest::class => database_server_cli_response()]);
+        $mockClient = MockClient::global(database_server_cli_responses(DestroyDatabaseServerRequest::class, 'database_server.destroy'));
         $tester = new CommandTester(app(Kernel::class)->all()['database:server:destroy']);
 
         expect($tester->execute(['slug' => 'beast-mysql', '--json' => true], ['interactive' => false]))->toBe(1)
@@ -106,16 +94,17 @@ describe('database:server commands', function (): void {
         $this->artisan('database:server:destroy', ['slug' => 'beast-mysql', '--force' => true, '--json' => true])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest())->toBeInstanceOf(DestroyDatabaseServerRequest::class);
+        $mockClient->assertSent(DestroyDatabaseServerRequest::class);
     });
 });
 
 it('sends Valkey driver and adoption options', function (): void {
-    $mockClient = MockClient::global([CreateDatabaseServerRequest::class => database_server_cli_response(201)]);
+    $mockClient = MockClient::global(database_server_cli_responses(CreateDatabaseServerRequest::class));
     $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--driver' => 'redis', '--process' => '93', '--connection' => 'cache', '--json' => true])->assertExitCode(0);
-    expect($mockClient->getLastRequest()?->body()->all())->toBe([
-        'slug' => 'cache', 'node_id' => 7, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache',
-    ]);
+    $mockClient->assertSent(static fn ($request): bool => $request instanceof CreateDatabaseServerRequest
+        && $request->body()->all() === [
+            'slug' => 'cache', 'node_id' => 7, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache',
+        ]);
 });
 
 it('refuses invalid server driver or Process before sending', function (array $options): void {
@@ -140,8 +129,8 @@ it('sends the close request and preserves the Gateway refusal', function (): voi
 });
 
 it('sends PostgreSQL and an explicit port through the SDK', function (): void {
-    $mock = MockClient::global([CreateDatabaseServerRequest::class => MockResponse::make(['data' => [...database_server_cli_data(), 'driver' => 'pgsql', 'tag' => '18', 'port' => 5434], 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']], 201)]);
+    $mock = MockClient::global(database_server_cli_responses(CreateDatabaseServerRequest::class));
     $tester = new CommandTester(app(Kernel::class)->all()['database:server:create']);
     expect($tester->execute(['slug' => 'services-postgres', '--node' => '17', '--driver' => 'pgsql', '--port' => '5434', '--json' => true]))->toBe(0);
-    $mock->assertSent(fn (CreateDatabaseServerRequest $request): bool => $request->body()->all() === ['slug' => 'services-postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql']);
+    $mock->assertSent(fn ($request): bool => $request instanceof CreateDatabaseServerRequest && $request->body()->all() === ['slug' => 'services-postgres', 'node_id' => 17, 'port' => 5434, 'driver' => 'pgsql']);
 });

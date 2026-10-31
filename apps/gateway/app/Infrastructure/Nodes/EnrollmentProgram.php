@@ -10,7 +10,7 @@ use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The stable names of the programs {@see NodeEnrollmentPrograms} renders for enrollment and image builds.
+ * Stable prerequisite names used by enrollment and image state.
  */
 final class EnrollmentProgram
 {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\UbuntuRelease;
@@ -23,7 +22,7 @@ use App\Models\Route;
 /** Pure input rendering. Swamp selects and orders the returned Node primitives. */
 final readonly class RouteWorkloadInput
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private ManagedUserAccountResolver $accounts,
+    public function __construct(private DevelopmentSiteRepository $sites,
         private SharedPhpPoolInput $pools, private RecipeLoader $recipes) {}
 
     /** @return array<string, mixed> */
@@ -43,7 +42,7 @@ final readonly class RouteWorkloadInput
             ->filter(static fn (DevelopmentSite $site): bool => $checkout !== '' && ($site->checkoutPath === $checkout || str_starts_with($site->checkoutPath, $checkout.'/')))->values();
         $plan = ['php' => $this->pools->forNode($instance->node)];
         if ($sites->isNotEmpty()) {
-            $plan['source_access'] = ['user' => $this->accounts->resolve($instance->node)->user,
+            $plan['source_access'] = ['user' => $instance->node->user,
                 'sites' => $sites->map(static fn (DevelopmentSite $site): array => [
                     'checkout' => StoragePath::parse($site->checkoutPath)->value,
                     'relative_root' => RelativeWebRoot::validate($site->documentRoot),

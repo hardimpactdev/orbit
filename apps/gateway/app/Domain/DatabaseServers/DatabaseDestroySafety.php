@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseServers;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\DatabaseServer;
+use App\Models\Operation;
+use Illuminate\Support\Arr;
 
 final readonly class DatabaseDestroySafety
 {
@@ -28,6 +31,33 @@ final readonly class DatabaseDestroySafety
                     $this->refuseSystemDatabase();
                 }
             }
+        }
+    }
+
+    public function assertAcceptsCreates(DatabaseServer $server): void
+    {
+        $operations = Operation::query()->whereIn('kind', ['database.destroy', 'database.destroy_owned', 'instance.destroy'])
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->get();
+        foreach ($operations as $operation) {
+            $direct = $operation->target_type === 'database_server' && $operation->target_id === $server->id;
+            $servers = $operation->kind === 'instance.destroy'
+                ? Arr::get($operation->input, 'direct_destroy.database.servers', [])
+                : ($operation->input['servers'] ?? []);
+            $owned = is_array($servers) && array_any($servers, static fn (mixed $entry): bool => is_array($entry) && ($entry['server_id'] ?? null) === $server->id);
+            if ($direct || $owned) {
+                throw new ResourceOperationException('database.server_in_use', 'Database removal is unfinished on this server.', 409);
+            }
+        }
+    }
+
+    public function assertAcceptsRemoval(DatabaseServer $server): void
+    {
+        if (Operation::query()->whereIn('kind', ['database.create', 'database_user.create', 'database.clone'])
+            ->where('target_type', 'database_server')->where('target_id', $server->id)
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()
+            || Operation::query()->where('kind', 'database.clone')->where('input->server_id', $server->id)
+                ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->exists()) {
+            throw new ResourceOperationException('database.server_in_use', 'Database creation is unfinished on this server.', 409);
         }
     }
 

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 use App\Domain\Routes\DirectRoutePublication;
+use App\Domain\Routes\NativeRouteRemovalAdmission;
+use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\RouteOperationProjection;
 
 $publication = [
@@ -12,6 +14,14 @@ $publication = [
 ];
 
 return [
+    'route.target_set' => [
+        'workflow' => 'operation-route-target-set', 'projection' => \App\Domain\Routes\NativeRouteTargetProjection::class,
+        'private_material' => \App\Domain\Routes\NativeRouteAdmission::privateMaterial(),
+    ],
+    ...array_fill_keys(['route.destroy', 'route.withdraw'], [
+        'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,
+        'private_material' => NativeRouteRemovalAdmission::privateMaterial(),
+    ]),
     'route.target_unset' => [
         'workflow' => 'operation-route-target-unset', 'writer_config' => 'swamp.direct_writers',
         'writer_state' => 'route_target_unset_writer', 'projection' => RouteOperationProjection::class,

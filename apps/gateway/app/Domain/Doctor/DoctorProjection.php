@@ -34,6 +34,9 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
             $nodes[] = $node;
         }
         $input['nodes'] = $nodes;
+        if ($input['collect_problems'] ?? false) {
+            $input['signals'] = app(ProblemCollector::class)->input();
+        }
 
         return $input;
     }
@@ -60,7 +63,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
             $nodes[] = $node;
         }
         $input['nodes'] = $nodes;
-        unset($input['logs']);
+        unset($input['logs'], $input['signals']);
 
         return $input;
     }
@@ -83,8 +86,8 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
                     $input = ValidatedData::object($operation->input['logs'] ?? []);
                     $collector->recordLogs(ValidatedData::object($native['logs']), isset($input['cursor']) ? ValidatedData::object($input['cursor']) : null);
                 }
-                foreach ($collector->collect() as $error) {
-                    report($error);
+                if (isset($native['signals'])) {
+                    $collector->recordSignals(ValidatedData::object($native['signals']));
                 }
             }
 

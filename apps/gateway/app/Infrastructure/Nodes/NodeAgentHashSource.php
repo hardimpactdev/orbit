@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes;
 
+use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
@@ -30,6 +31,17 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function ownerId(Operation $operation): ?int
     {
+        if ($operation->kind === 'node.role_add') {
+            return NodeRoleDirectInput::ownerId($operation);
+        }
+        $footprint = $operation->input['footprint'] ?? null;
+        if ($operation->kind === 'fleet.recipe' && DirectOperation::owns($operation)
+            && $operation->target_type === 'node' && $operation->target_id === $operation->node_id
+            && is_array($footprint) && ($footprint['node_id'] ?? null) === $operation->node_id
+            && Node::query()->whereKey($operation->node_id)->exists()) {
+            return $operation->node_id;
+        }
+
         if ($operation->kind === 'node.agent_rekey' && DirectOperation::owns($operation)
             && $operation->target_type === 'node' && $operation->node_id !== null && $operation->target_id === $operation->node_id) {
             $input = ValidatedData::object($operation->input['_agent_rekey'] ?? []);
@@ -71,7 +83,10 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function store(Operation $operation, int $ownerId, #[\SensitiveParameter] mixed $value): void
     {
-        if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
+        if (str_starts_with($operation->kind, 'node.role_')) {
+            throw new ResourceOperationException('operation.secret_output_unavailable', 'Role roots cannot store agent hashes.', 409);
+        }
+        if ($operation->kind === 'fleet.recipe' || $ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }
         app(NodeLocks::class)->renewHeld();

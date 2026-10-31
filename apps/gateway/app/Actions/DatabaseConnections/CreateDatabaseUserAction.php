@@ -8,6 +8,7 @@ use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseCommands;
+use App\Domain\DatabaseServers\DatabaseDestroySafety;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\DatabaseServers\PostgresStatements;
 use App\Domain\Shared\ResourceOperationException;
@@ -54,6 +55,8 @@ final readonly class CreateDatabaseUserAction
                 status: 422,
             );
         }
+
+        app(DatabaseDestroySafety::class)->assertAcceptsCreates($server);
 
         $ownsConnection = DatabaseConnection::query()
             ->where('database_server_id', $server->id)

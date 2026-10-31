@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Domain\Operations\OperationSecretSource;
+use App\Domain\Schedules\ScheduleInstanceMaterial;
 use App\Domain\Schedules\ScheduleOperationSecrets;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
@@ -22,6 +23,7 @@ final class SchedulesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->tag([ScheduleInstanceMaterial::class], OperationSecretSource::class);
         $this->app->bind('operation.secret.schedule.command', ScheduleOperationSecrets::class);
         $this->app->tag(['operation.secret.schedule.command'], OperationSecretSource::class);
     }

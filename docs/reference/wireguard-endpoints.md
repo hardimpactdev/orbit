@@ -6,6 +6,8 @@ covers:
   - apps/gateway/app/Infrastructure/WireGuard/VpnConfigurationRepository.php
   - apps/gateway/app/Console/Commands/BootstrapGatewayCommand.php
   - apps/gateway/app/Actions/Gateway/GatewayBootstrapIdentityValidator.php
+  - apps/gateway/app/Domain/Nodes/{NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput}.php
+  - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
 ---
 
 # WireGuard endpoints
@@ -39,6 +41,14 @@ The selected value must pass the same check before the Gateway renders the peer 
 ## Peer key changes
 
 [`node:wireguard-key`](/cli/node#orbit-nodewireguard-key) changes an unmanaged peer's desired public key and reconverges the hub. It preserves the peer's WireGuard address and endpoint override, and does not replace the stored Gateway endpoint. Use it for peer key recovery, not to repair an invalid endpoint. Peer key assignments share collision protection with native provisioning, so no two Nodes can claim the same key through those paths.
+
+## Native peer convergence
+
+The Gateway records one `node.network_converge` intent. Its native Swamp DAG prepares the peer key, records that public key, publishes the hub, then publishes and commits the peer configuration. Every effect uses the exact `orbit-node-<id>` target and matching `node` label. An unavailable worker waits in Swamp; another Node never takes its place.
+
+All parents use the native `wireguard-hub-<hub-id>` model lock. The locked method reads fresh peer records and the existing `node.vpn_configuration` private material. The hub private key remains inside that effect callback. Router LAN changes reuse the Routes family’s canonical system lower; peer DNS repair preserves the running tunnel when it succeeds.
+
+Failure recovery restores only the admitted peer transaction and original public key, then republishes the hub. A lost commit reply with matching active files and no pending transaction preserves the applied key. The parent still reports failure because that lost reply did not prove completion.
 
 ## Recover an invalid stored endpoint
 

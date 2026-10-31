@@ -15,7 +15,6 @@ use App\Models\ProblemFingerprint;
 use App\Models\Task;
 use App\Support\ValidatedData;
 use Carbon\CarbonInterface;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -34,28 +33,53 @@ final readonly class ProblemCollector
         private LogRedactor $redactor,
     ) {}
 
-    /** @return list<Throwable> */
-    public function collect(): array
+    /** Safe state read. Swamp owns classification, ordering and source selection.
+     * @return array<string,mixed>
+     */
+    public function input(): array
     {
-        if (ProblemCollectorState::query()->orderBy('id')->first() === null) {
-            ProblemCollectorState::query()->create([]);
-        }
+        $cursor = ProblemCollectorState::query()->orderBy('id')->value('activity_cursor');
+        $activities = $cursor === null ? [] : Activity::query()->where('id', '>', $cursor)->orderBy('id')->limit(500)->get(['id', 'command', 'error_code', 'exit_code', 'request_id', 'created_at', 'properties'])->map(function (Activity $row): array {
+            $message = $row->properties?->get('error_message');
 
-        $failures = [];
+            return [
+                'id' => $row->id, 'command' => $row->command, 'error_code' => $row->error_code, 'exit_code' => $row->exit_code,
+                'request_id' => $row->request_id, 'created_at' => $row->created_at?->toISOString(),
+                'path' => $row->properties?->get('path'), 'message' => is_string($message) ? $this->redactor->redact($message, []) : '',
+            ];
+        })->all();
 
-        try {
-            $this->collectActivity();
-        } catch (Throwable $exception) {
-            $failures[] = $exception;
-        }
+        return ['activity_cursor' => $cursor, 'activity_max' => StoredInteger::fromOrZero(Activity::query()->max('id')), 'activities' => $activities,
+            'assistance' => Task::query()->withoutGlobalScope('subtask')->where('assistance_requested', true)->orderBy('id')->get(['id', 'assistance_reason'])->map(fn (Task $task): array => [
+                'id' => $task->id, 'reason' => $task->assistance_reason === null ? null : $this->redactor->redact($task->assistance_reason, []),
+            ])->all(),
+            'stored_assistance_ids' => array_values(array_unique(ProblemFingerprint::query()->where('source', ProblemSource::Assist)->get(['evidence'])->flatMap(fn (ProblemFingerprint $row): array => $this->evidence->ints($row->evidence['assistance_task_ids'] ?? null))->all()))];
+    }
 
-        try {
-            $this->collectAssistance();
-        } catch (Throwable $exception) {
-            $failures[] = $exception;
-        }
-
-        return $failures;
+    /** Applies native-selected fingerprints and cursor under the owning state lock.
+     * @param  array<string,mixed>  $native
+     */
+    public function recordSignals(array $native): void
+    {
+        DB::transaction(function () use ($native): void {
+            $state = $this->lockedState();
+            if ($state->activity_cursor === ($native['activity_cursor_before'] ?? null)) {
+                foreach (Arr::array($native, 'activities', []) as $value) {
+                    $signal = ValidatedData::object($value);
+                    $this->record($this->fingerprint(ProblemSource::Activity, Arr::string($signal, 'key')), ProblemSource::Activity, Arr::array($signal, 'observation'), Carbon::parse(Arr::string($signal, 'seen_at')));
+                }
+                $state->activity_cursor = Arr::integer($native, 'activity_cursor_after');
+                $state->save();
+            }
+            $this->pruneAssistance($this->evidence->ints($native['open_assistance_ids'] ?? null));
+            foreach (Arr::array($native, 'assistance', []) as $value) {
+                $signal = ValidatedData::object($value);
+                $fingerprint = $this->fingerprint(ProblemSource::Assist, Arr::string($signal, 'key'));
+                if (! $this->assistanceIsFull($fingerprint)) {
+                    $this->record($fingerprint, ProblemSource::Assist, Arr::array($signal, 'observation'));
+                }
+            }
+        });
     }
 
     /**
@@ -98,59 +122,6 @@ final readonly class ProblemCollector
         });
     }
 
-    private function collectActivity(): void
-    {
-        DB::transaction(function (): void {
-            $state = $this->lockedState();
-
-            // The first run remembers the latest row and does not count history.
-            if ($state->activity_cursor === null) {
-                $state->activity_cursor = StoredInteger::fromOrZero(Activity::query()->max('id'));
-                $state->save();
-
-                return;
-            }
-
-            $rows = Activity::query()
-                ->where('id', '>', $state->activity_cursor)
-                ->orderBy('id')
-                ->limit(500)
-                ->get();
-
-            foreach ($rows as $row) {
-                if (! $this->isServerClass($row)) {
-                    continue;
-                }
-
-                $observation = [
-                    'request_ids' => $row->request_id !== '' ? [$row->request_id] : [],
-                    'activity_ids' => [$row->id],
-                    'paths' => $this->activityPaths($row),
-                ];
-                $message = $this->activityMessage($row);
-
-                if ($message !== null) {
-                    $observation['error_message'] = $message;
-                }
-
-                $createdAt = $row->getAttribute('created_at');
-                $this->record(
-                    $this->fingerprint(ProblemSource::Activity, $row->command.'|'.$this->activityCode($row)),
-                    ProblemSource::Activity,
-                    $observation,
-                    $createdAt instanceof CarbonInterface ? $createdAt : null,
-                );
-            }
-
-            $last = $rows->last();
-
-            if ($last instanceof Activity) {
-                $state->activity_cursor = $last->id;
-                $state->save();
-            }
-        });
-    }
-
     /**
      * @param  array<string, mixed>  $native
      * @param  array<string, mixed>|null  $expectedCursor
@@ -180,57 +151,6 @@ final readonly class ProblemCollector
                 $state->log_inode = Arr::integer($next, 'inode');
                 $state->log_offset = Arr::integer($next, 'offset');
                 $state->save();
-            }
-        });
-    }
-
-    private function collectAssistance(): void
-    {
-        DB::transaction(function (): void {
-            $this->lockedState();
-            $stored = $this->storedAssistanceIds();
-            $stillOpen = $stored === []
-                ? []
-                : array_values($this->tasks()
-                    ->whereIn('id', $stored)
-                    ->where('assistance_requested', true)
-                    ->orderBy('id')
-                    ->pluck('id')
-                    ->map(static fn (mixed $id): int => StoredInteger::from($id))
-                    ->all());
-            $this->pruneAssistance($stillOpen);
-
-            $fresh = $this->tasks()
-                ->where('assistance_requested', true)
-                ->whereNotNull('assistance_reason')
-                ->when($stillOpen !== [], fn ($query) => $query->whereNotIn('id', $stillOpen))
-                ->orderBy('id')
-                ->limit(200)
-                ->get(['id', 'assistance_reason']);
-
-            foreach ($fresh as $task) {
-                $reason = $task->assistance_reason;
-
-                if (! is_string($reason)) {
-                    continue;
-                }
-
-                $normalized = $this->normalizeReason($reason);
-
-                if ($normalized === '') {
-                    continue;
-                }
-
-                $fingerprint = $this->fingerprint(ProblemSource::Assist, $normalized);
-
-                if ($this->assistanceIsFull($fingerprint)) {
-                    continue;
-                }
-
-                $this->record($fingerprint, ProblemSource::Assist, [
-                    'assistance_task_ids' => [$task->id],
-                    'assistance_reason' => $reason,
-                ]);
             }
         });
     }
@@ -273,88 +193,6 @@ final readonly class ProblemCollector
         $segment = $resource === null || $resource === '' ? 'none' : (string) $resource;
 
         return $this->fingerprint(ProblemSource::Doctor, $issue->code.'|'.$issue->resourceType.'|'.$segment);
-    }
-
-    private function isServerClass(Activity $activity): bool
-    {
-        $code = $activity->error_code;
-
-        if ($code === 'gateway.unhandled' || $code === 'activity.interrupted') {
-            return true;
-        }
-
-        if (is_string($code) && (str_ends_with($code, '_failed') || str_ends_with($code, '.unavailable'))) {
-            return true;
-        }
-
-        if (is_string($code) && preg_match('/\Ahttp\.(\d{3})\z/', $code, $match) === 1 && (int) $match[1] >= 500) {
-            return true;
-        }
-
-        return $activity->exit_code !== null && $activity->exit_code !== 0;
-    }
-
-    private function activityCode(Activity $activity): string
-    {
-        if (is_string($activity->error_code) && $activity->error_code !== '') {
-            return $activity->error_code;
-        }
-
-        return 'exit';
-    }
-
-    /** @return list<string> */
-    private function activityPaths(Activity $activity): array
-    {
-        $path = $activity->properties?->get('path');
-
-        return is_string($path) && $path !== '' ? [$path] : [];
-    }
-
-    private function activityMessage(Activity $activity): ?string
-    {
-        $message = $activity->properties?->get('error_message');
-
-        if (! is_string($message) || $message === '') {
-            return null;
-        }
-
-        return $this->redactor->redact($message, []);
-    }
-
-    private function normalizeReason(string $reason): string
-    {
-        $normalized = mb_strtolower(trim($reason));
-        $normalized = preg_replace(
-            '/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i',
-            '#',
-            $normalized,
-        ) ?? $normalized;
-        $normalized = preg_replace('/\d+/', '#', $normalized) ?? $normalized;
-        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
-
-        return trim($normalized);
-    }
-
-    /** @return Builder<Task> */
-    private function tasks(): Builder
-    {
-        return Task::query()->withoutGlobalScope('subtask');
-    }
-
-    /** @return list<int> */
-    private function storedAssistanceIds(): array
-    {
-        $ids = [];
-        $rows = ProblemFingerprint::query()->where('source', ProblemSource::Assist)->get(['evidence']);
-
-        foreach ($rows as $row) {
-            foreach ($this->evidence->ints($row->evidence['assistance_task_ids'] ?? null) as $id) {
-                $ids[$id] = $id;
-            }
-        }
-
-        return array_values($ids);
     }
 
     /** @param list<int> $stillOpen */

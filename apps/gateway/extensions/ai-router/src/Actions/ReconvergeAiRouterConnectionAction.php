@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Actions;
 
 use App\Domain\DatabaseConnections\DatabaseConnectionUpdateHook;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use Orbit\Extensions\AiRouter\Domain\AiRouterPlacement;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
@@ -28,6 +29,7 @@ final readonly class ReconvergeAiRouterConnectionAction implements DatabaseConne
         }
         $this->placement->node($nodeId);
         $this->placement->validateConnection($connection);
+        throw new ResourceOperationException('operation.kind_unavailable', 'AI-router cache updates require native runtime reconvergence.', 503);
     }
 
     public function afterCommit(DatabaseConnection $connection): void

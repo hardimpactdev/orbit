@@ -3,28 +3,17 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
-use App\Actions\Processes\CascadeInstanceProcessesAction;
-use App\Actions\Processes\DestroyProcessAction;
-use App\Actions\Schedules\CascadeInstanceSchedulesAction;
-use App\Actions\Schedules\DestroyScheduleAction;
-use App\Data\Schedules\ScheduleLogsData;
 use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
-use App\Domain\Processes\ProcessRuntimeManager;
-use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Schedules\DesiredTimerState;
-use App\Domain\Schedules\ScheduleErrorCode;
-use App\Domain\Schedules\ScheduleOperationException;
-use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
@@ -60,9 +49,11 @@ beforeEach(function (): void {
     ]);
     $this->candidate = orb225_instance($this->orbitApp, $this->developmentNode, 'candidate', 'development');
     $this->target = orb225_instance($this->orbitApp, $this->node, 'target', 'production');
-    $this->processRuntime = new Orb225ProcessRuntimeManager;
-    $this->scheduleRuntime = new Orb225ScheduleRuntimeManager;
-    $this->action = orb225_action($this->processRuntime, $this->scheduleRuntime);
+    $runner = Mockery::mock(AgentCommandRunner::class);
+    $runner->shouldNotReceive('run');
+    $runner->shouldNotReceive('install');
+    app()->instance(AgentCommandRunner::class, $runner);
+    $this->action = app(InstantiateProjectRuntimeDefinitionsAction::class);
 });
 
 it('selects App production definitions instead of development or candidate overrides', function (): void {
@@ -79,7 +70,7 @@ it('selects App production definitions instead of development or candidate overr
     $scheduleDefinition = orb225_schedule_definition($this->orbitApp, 'cleanup');
     $candidate = orb225_process($this->candidate, 'queue', ['/usr/bin/php', 'artisan', 'queue:work', '--tries=1']);
 
-    $this->action->execute($this->target);
+    $this->action->captureForClone($this->target);
 
     $copy = Process::query()
         ->whereIn('owner_type', Instance::morphTypes())
@@ -95,11 +86,11 @@ it('selects App production definitions instead of development or candidate overr
         ->and($copy->runtime_config['command'])->toBe(['/usr/bin/php', 'artisan', 'queue:work', '--tries=3'])
         ->and($copy->keep_alive)->toBeTrue()
         ->and($copy->desired_state)->toBe(DesiredProcessState::Stopped)
-        ->and($copy->status)->toBe(LifecycleStatus::Active)
+        ->and($copy->status)->toBe(LifecycleStatus::Provisioning)
         ->and($schedule->source_definition_id)->toBe($scheduleDefinition->id)
         ->and($schedule->host_node_id)->toBe($this->target->node_id)
         ->and($schedule->desired_timer_state)->toBe(DesiredTimerState::Disabled)
-        ->and($schedule->status)->toBe(LifecycleStatus::Active)
+        ->and($schedule->status)->toBe(LifecycleStatus::Provisioning)
         ->and($candidate->refresh()->runtime_config['command'])
         ->toBe(['/usr/bin/php', 'artisan', 'queue:work', '--tries=1'])
         ->and(Process::query()->where('owner_id', $this->target->id)->where('name', 'vite')->exists())
@@ -124,7 +115,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
     ]);
     $definition = orb225_schedule_definition($this->orbitApp, 'report');
 
-    $this->action->execute($this->target);
+    $this->action->captureForClone($this->target);
 
     $copies = Process::query()
         ->whereIn('owner_type', Instance::morphTypes())
@@ -153,8 +144,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
         ->and($copies->pluck('desired_state')->unique()->all())->toBe([DesiredProcessState::Stopped])
         ->and($schedule->id)->not->toBe($definition->id)
         ->and($schedule->desired_timer_state)->toBe(DesiredTimerState::Disabled)
-        ->and($this->processRuntime->converged)->toBe(['queue', 'redis'])
-        ->and($this->scheduleRuntime->installed)->toBe(['report']);
+        ->and(Operation::query()->count())->toBe(0);
 });
 
 it('normalizes integer read_only values when instantiating stored process definitions', function (): void {
@@ -171,7 +161,7 @@ it('normalizes integer read_only values when instantiating stored process defini
         'volumes' => [['source' => 'writable-data', 'target' => '/data', 'read_only' => 0]],
     ]);
 
-    $this->action->execute($this->target);
+    $this->action->captureForClone($this->target);
 
     $copies = Process::query()->where('owner_id', $this->target->id)->get()->keyBy('name');
 
@@ -185,7 +175,7 @@ it('permits only captured copies to install before the production target becomes
         'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
     ]);
     $scheduleDefinition = orb225_schedule_definition($this->orbitApp, 'report');
-    $this->action->execute($this->target);
+    $this->action->captureForClone($this->target);
     $process = Process::query()->where('source_definition_id', $definition->id)->sole();
     $schedule = Schedule::query()->where('source_definition_id', $scheduleDefinition->id)->sole();
     $processTargets = new ProcessTargetResolver;
@@ -202,146 +192,37 @@ it('permits only captured copies to install before the production target becomes
 });
 
 it('captures an empty production selection once', function (): void {
-    $this->action->execute($this->target);
+    $this->action->captureForClone($this->target);
     $capturedAt = $this->target->refresh()->runtime_definitions_captured_at;
     orb225_process_definition($this->orbitApp, 'late-worker', ['production'], [
         'runtime' => 'systemd',
         'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
     ]);
 
-    $this->action->execute($this->target->refresh());
+    $this->action->captureForClone($this->target->refresh());
 
     expect($capturedAt)->not->toBeNull()
         ->and($this->target->refresh()->runtime_definitions_captured_at?->equalTo($capturedAt))->toBeTrue()
         ->and(Process::query()->where('owner_id', $this->target->id)->exists())->toBeFalse()
-        ->and($this->processRuntime->converged)->toBeEmpty()
-        ->and($this->scheduleRuntime->installed)->toBeEmpty();
+        ->and(Operation::query()->count())->toBe(0);
 });
 
-it('retries only unfinished captured copies after definitions and completed operator state change', function (): void {
-    $worker = orb225_process_definition($this->orbitApp, 'queue', ['production'], [
-        'runtime' => 'systemd',
-        'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
-    ]);
-    $scheduleDefinition = orb225_schedule_definition($this->orbitApp, 'report');
-    $this->scheduleRuntime->failName = 'report';
-
-    expect(fn () => $this->action->execute($this->target))
-        ->toThrow(ScheduleOperationException::class, 'Schedule artifact conflict.');
-
-    $process = Process::query()->where('owner_id', $this->target->id)->sole();
-    $schedule = Schedule::query()->where('target_id', $this->target->id)->sole();
-    $capturedAt = $this->target->refresh()->runtime_definitions_captured_at;
-
-    expect($process->restart_policy)->toBe('never');
-
-    $process->update([
-        'runtime_config' => [
-            'command' => ['/usr/bin/php', 'artisan', 'queue:listen'],
-            'environment_file' => '/home/acme-target/.env',
-        ],
-        'desired_state' => DesiredProcessState::Running,
-    ]);
-    $worker->delete();
-    $scheduleDefinition->delete();
-    orb225_process_definition($this->orbitApp, 'new-worker', ['production'], [
-        'runtime' => 'systemd',
-        'command' => ['/usr/bin/php', 'artisan', 'queue:work', '--new'],
-    ]);
-    $this->scheduleRuntime->failName = null;
-
-    $this->action->execute($this->target->refresh());
-
-    expect($this->target->refresh()->runtime_definitions_captured_at?->equalTo($capturedAt))->toBeTrue()
-        ->and($process->refresh()->runtime_config['command'])->toBe(['/usr/bin/php', 'artisan', 'queue:listen'])
-        ->and($process->desired_state)->toBe(DesiredProcessState::Running)
-        ->and($schedule->refresh()->status)->toBe(LifecycleStatus::Active)
-        ->and($schedule->source_definition_id)->toBe($scheduleDefinition->id)
-        ->and($this->processRuntime->converged)->toBe(['queue'])
-        ->and($this->scheduleRuntime->installed)->toBe(['report', 'report'])
-        ->and(Process::query()->where('owner_id', $this->target->id)->where('name', 'new-worker')->exists())
-        ->toBeFalse();
+it('keeps the original capture after definitions change and never adopts conflicting records', function (): void {
+    orb225_process_definition($this->orbitApp, 'queue', ['production'], ['runtime' => 'systemd', 'command' => ['/usr/bin/php', 'artisan', 'queue:work']]);
+    $candidate = orb225_process($this->target, 'queue', ['/usr/bin/true']);
+    expect(fn () => $this->action->captureForClone($this->target))->toThrow(ResourceOperationException::class);
+    expect($candidate->refresh()->source_definition_id)->toBeNull();
+    $candidate->delete();
+    $this->action->captureForClone($this->target);
+    $record = Process::query()->where('owner_id', $this->target->id)->sole();
+    $record->update(['desired_state' => DesiredProcessState::Running, 'status' => LifecycleStatus::Failed]);
+    orb225_process_definition($this->orbitApp, 'late', ['production'], ['runtime' => 'systemd', 'command' => ['/usr/bin/true']]);
+    $this->action->captureForClone($this->target->refresh());
+    expect(Process::query()->where('owner_id', $this->target->id)->count())->toBe(1)
+        ->and($record->refresh()->desired_state)->toBe(DesiredProcessState::Running)
+        ->and($record->status)->toBe(LifecycleStatus::Failed)
+        ->and(Operation::query()->count())->toBe(0);
 });
-
-it('refuses record and artifact conflicts without adoption and removes only target copies', function (): void {
-    $worker = orb225_process_definition($this->orbitApp, 'queue', ['production'], [
-        'runtime' => 'systemd',
-        'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
-    ]);
-    $scheduleDefinition = orb225_schedule_definition($this->orbitApp, 'report');
-    $candidate = orb225_process($this->candidate, 'candidate-worker', ['/usr/bin/php', 'artisan', 'queue:work']);
-    $collision = orb225_process($this->target, 'queue', ['/usr/bin/php', 'artisan', 'queue:listen']);
-    $scheduleCollision = orb225_schedule($this->target, 'report');
-
-    expect(fn () => $this->action->execute($this->target))
-        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'process.name_taken');
-
-    expect($this->target->refresh()->runtime_definitions_captured_at)->toBeNull()
-        ->and($collision->refresh()->source_definition_id)->toBeNull()
-        ->and($scheduleCollision->refresh()->source_definition_id)->toBeNull()
-        ->and($this->processRuntime->converged)->toBeEmpty()
-        ->and($this->scheduleRuntime->installed)->toBeEmpty();
-
-    $collision->delete();
-
-    expect(fn () => $this->action->execute($this->target->refresh()))
-        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.retry_conflict');
-
-    expect($this->target->refresh()->runtime_definitions_captured_at)->toBeNull()
-        ->and(Process::query()->where('owner_id', $this->target->id)->exists())->toBeFalse()
-        ->and($scheduleCollision->refresh()->source_definition_id)->toBeNull();
-
-    $scheduleCollision->delete();
-    $this->processRuntime->failName = 'queue';
-
-    expect(fn () => $this->action->execute($this->target->refresh()))
-        ->toThrow(ProcessOperationException::class, 'Process artifact conflict.');
-
-    $copy = Process::query()->where('owner_id', $this->target->id)->sole();
-    expect($copy->source_definition_id)->toBe($worker->id)
-        ->and($copy->status)->toBe(LifecycleStatus::Failed);
-
-    $this->processRuntime->failName = null;
-    $this->scheduleRuntime->failName = 'report';
-
-    expect(fn () => $this->action->execute($this->target->refresh()))
-        ->toThrow(ScheduleOperationException::class, 'Schedule artifact conflict.');
-
-    $schedule = Schedule::query()->where('target_id', $this->target->id)->sole();
-    expect($schedule->source_definition_id)->toBe($scheduleDefinition->id)
-        ->and($schedule->status)->toBe(LifecycleStatus::Failed);
-
-    $this->scheduleRuntime->failName = null;
-    $this->action->execute($this->target->refresh());
-    new CascadeInstanceProcessesAction(
-        new DestroyProcessAction($this->processRuntime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)),
-    )->execute($this->target->id);
-    new CascadeInstanceSchedulesAction(
-        new DestroyScheduleAction($this->scheduleRuntime),
-    )->execute($this->target->id);
-    $this->target->delete();
-
-    expect(Process::query()->where('owner_id', $this->target->id)->exists())->toBeFalse()
-        ->and(Schedule::query()->where('target_id', $this->target->id)->exists())->toBeFalse()
-        ->and($worker->fresh())->not->toBeNull()
-        ->and($scheduleDefinition->fresh())->not->toBeNull()
-        ->and($candidate->fresh())->not->toBeNull()
-        ->and($this->processRuntime->removed)->toBe(['queue'])
-        ->and($this->scheduleRuntime->removed)->toBe(['report']);
-});
-
-function orb225_action(
-    Orb225ProcessRuntimeManager $processRuntime,
-    Orb225ScheduleRuntimeManager $scheduleRuntime,
-): InstantiateProjectRuntimeDefinitionsAction {
-    return new InstantiateProjectRuntimeDefinitionsAction(
-        app(ProcessAdmissionLock::class),
-        new ProcessTargetResolver,
-        new ProcessSpecification,
-        $processRuntime,
-        $scheduleRuntime,
-    );
-}
 
 function orb225_instance(Project $project, Node $node, string $name, string $environment): Instance
 {
@@ -407,106 +288,4 @@ function orb225_schedule_definition(Project $project, string $name): ScheduleDef
             'timeout_seconds' => 60,
         ],
     ]);
-}
-
-function orb225_schedule(Instance $instance, string $name): Schedule
-{
-    return Schedule::query()->create([
-        'target_type' => Instance::MorphAlias,
-        'target_id' => $instance->id,
-        'host_node_id' => $instance->node_id,
-        'name' => $name,
-        'calendar' => 'daily',
-        'command' => '/usr/bin/php artisan schedule:run',
-        'timeout_seconds' => 60,
-        'desired_timer_state' => DesiredTimerState::Disabled,
-        'status' => LifecycleStatus::Active,
-    ]);
-}
-
-final class Orb225ProcessRuntimeManager implements ProcessRuntimeManager
-{
-    /** @var list<string> */
-    public array $converged = [];
-
-    /** @var list<string> */
-    public array $removed = [];
-
-    public ?string $failName = null;
-
-    public function assertCanStart(Process $process): void {}
-
-    public function converge(Process $process): void
-    {
-        $this->converged[] = $process->name;
-
-        if ($this->failName === $process->name) {
-            throw new ProcessOperationException(
-                step: 'inspect-artifacts',
-                errorCode: 'process.artifact_conflict',
-                message: 'Process artifact conflict.',
-            );
-        }
-    }
-
-    public function start(Process $process, bool $explicit = false): void {}
-
-    public function stop(Process $process): void {}
-
-    public function restart(Process $process): void {}
-
-    public function remove(Process $process): void
-    {
-        $this->removed[] = $process->name;
-    }
-
-    public function status(Process $process): string
-    {
-        return 'stopped';
-    }
-
-    public function logs(Process $process, int $lines): string
-    {
-        return '';
-    }
-}
-
-final class Orb225ScheduleRuntimeManager implements ScheduleRuntimeManager
-{
-    /** @var list<string> */
-    public array $installed = [];
-
-    /** @var list<string> */
-    public array $removed = [];
-
-    public ?string $failName = null;
-
-    public function install(Schedule $schedule): void
-    {
-        $this->installed[] = $schedule->name;
-
-        if ($this->failName === $schedule->name) {
-            throw new ScheduleOperationException(
-                step: 'inspect-artifacts',
-                error: ScheduleErrorCode::ArtifactConflict,
-                message: 'Schedule artifact conflict.',
-            );
-        }
-    }
-
-    public function activate(Schedule $schedule): void {}
-
-    public function run(Schedule $schedule): void {}
-
-    public function logs(Schedule $schedule, int $lines): ScheduleLogsData
-    {
-        return new ScheduleLogsData('', false);
-    }
-
-    public function remove(Schedule $schedule, bool $cascade): bool
-    {
-        $this->removed[] = $schedule->name;
-
-        return true;
-    }
 }

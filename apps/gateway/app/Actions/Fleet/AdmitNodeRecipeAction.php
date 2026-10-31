@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
-use App\Domain\Fleet\FleetVisitPrerequisites;
 use App\Domain\Fleet\FleetWindow;
+use App\Domain\Fleet\RecipeDirectInput;
 use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Releases\ReleaseIncident;
 use App\Domain\Shared\ResourceOperationException;
@@ -19,11 +19,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class AdmitNodeRecipeAction
 {
-    public function __construct(private PlanNodeRecipeAction $plan, private StartOperationAction $start, private FleetWindow $window, private RecipeMaintenanceAlerts $alerts, private FleetVisitPrerequisites $prerequisites) {}
+    public function __construct(private RecipeDirectInput $plan, private StartOperationAction $start, private FleetWindow $window, private RecipeMaintenanceAlerts $alerts) {}
 
     public function execute(Node $node, MachineRecipe $recipe, bool $automatic = false, ?int $buildId = null, ?string $triggeredBy = null, ?string $requestId = null): Operation
     {
-        $this->prerequisites->assertAvailable();
         $node->load('roles');
         if ($automatic && ! $this->window->allows($node)) {
             throw new ResourceOperationException('fleet.window_closed', 'Automatic fleet changes wait for 03:00–06:00 Europe/Amsterdam on this Node.', 409);
@@ -36,16 +35,9 @@ final readonly class AdmitNodeRecipeAction
             }
         }
         try {
-            $input = [...$this->plan->execute($node, $recipe, $automatic), 'build_id' => $buildId];
+            $input = [...$this->plan->capture($node, $recipe, $automatic), 'build_id' => $buildId];
         } catch (\Throwable $error) {
-            if ($buildId !== null && $error instanceof ResourceOperationException && $error->errorCode === 'node.recipe_docker_provider') {
-                $build = TaskVmImageBuild::query()->findOrFail($buildId);
-                $progress = $build->fleet_convergence ?? ['generation' => $build->recipe_generation, 'nodes' => []];
-                $completed = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
-                $completed[$node->id] = ['name' => $node->name, 'status' => 'skipped', 'reason' => 'docker-provider:docker-ce', 'finished_at' => now()->toIso8601String()];
-                $build->forceFill(['fleet_convergence' => [...$progress, 'nodes' => $completed, 'status' => 'ready']])->save();
-            }
-            if ($buildId !== null && ! ($error instanceof ResourceOperationException && $error->errorCode === 'node.recipe_docker_provider')) {
+            if ($buildId !== null) {
                 $build = TaskVmImageBuild::query()->findOrFail($buildId);
                 $code = $error instanceof ResourceOperationException ? $error->errorCode : 'fleet.recipe_plan_failed';
                 $summary = 'Machine recipe ['.$recipe->identity.'] halted while planning Node '.$node->id.': '.$code.'. No automatic rollback or retry.';
@@ -60,16 +52,13 @@ final readonly class AdmitNodeRecipeAction
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }
-            if ($input['automatic']) {
-                $operation->forceFill(['run_constraints' => FleetWindow::Constraints])->save();
-            }
             $settings = $node->settings ?? [];
             $pins = ValidatedData::stringMap($input['incus_hold']);
             if ($pins !== []) {
                 $fingerprint = hash('sha256', json_encode($pins, JSON_THROW_ON_ERROR));
                 if ((ValidatedData::object($settings['machine_recipe_incus_hold'] ?? [])['fingerprint'] ?? null) !== $fingerprint) {
                     $settings['machine_recipe_incus_hold'] = ['fingerprint' => $fingerprint, 'pins' => $pins, 'held_at' => now()->toIso8601String()];
-                    $this->alerts->halted("Node [{$node->id}: {$node->name}] holds Incus ".implode(', ', $pins).'. Until kit B, C, I and node.converge are installed, nightly recipe maintenance, fleet rollout and manual node:converge-recipe have no executor. After installation, drain task VMs, builders and CI runners before manual Incus convergence. Automatic visits keep Incus pinned.',
+                    $this->alerts->halted("Node [{$node->id}: {$node->name}] holds Incus ".implode(', ', $pins).'. Drain task VMs, builders and CI runners before manual Incus convergence. Automatic visits keep Incus pinned.',
                         target: 'machine-recipe-incus-'.$node->id.'-'.substr($fingerprint, 0, 24), incident: new ReleaseIncident('recipe-incus:'.$node->id, $fingerprint, 'upgrade_held'));
                 }
             }
