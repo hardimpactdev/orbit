@@ -35,7 +35,8 @@ final readonly class TaskVmProvisionIntent
         }
         $enrollment = $this->enrollment->capture($vm);
         $guest = $vm->node ?? throw new ResourceOperationException('task_vm.provision_refused', 'Provision requires its reserved guest Node.', 409);
-        $private = $this->enrollment->privateInput($vm, $host->id);
+        $private = $this->enrollment->privateInput($vm, $host->id, providerCreate: true);
+        $private['private_bindings']['upcloud_token'] = ['owner_node_id' => $host->id, 'read_node_ids' => $vm->provider === TaskVmProviderKind::UpCloud ? [$host->id] : [], 'write_node_ids' => []];
         $enrollment = [...$enrollment, 'network' => $private['network'],
             'gateway_node_id' => $private['gateway_node_id'], 'issuer_node_id' => $private['issuer_node_id'],
             'wireguard_public_key' => $guest->wireguard_public_key];
@@ -44,7 +45,6 @@ final readonly class TaskVmProvisionIntent
             'provider' => $vm->provider->value, 'provider_id' => $vm->provider_id, 'wireguard_ip' => $vm->wireguard_ip,
             'image_fingerprint' => $vm->image_fingerprint, 'recipe_identity' => $vm->recipe_identity,
             'agent_sha256' => $this->agents->pin($host), 'deadline_at' => now()->addSeconds(1500)->toIso8601String(),
-            'origin' => $vm->ai_router_origin ?? $this->settings->modelProxyOrigin,
             'gateway_public_key' => $this->keys->publicKey(), 'vm' => null, 'create' => null, 'upcloud' => null];
         if ($vm->provider === TaskVmProviderKind::Incus) {
             $location = $this->settings->host($host->id);

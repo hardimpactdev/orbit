@@ -2,18 +2,30 @@
 
 declare(strict_types=1);
 
+use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmImageProjection;
 use App\Domain\TaskVms\TaskVmIncusProjection;
 use App\Domain\TaskVms\TaskVmLifecycleIntentProjection;
 use App\Domain\TaskVms\TaskVmPackageCacheProjection;
+use App\Domain\TaskVms\TaskVmProvisionProjection;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloudImageProjection;
 
 return ['task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',
-    'projection' => \App\Domain\TaskVms\TaskVmProvisionProjection::class,
-    'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
-    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'],
+    'projection' => TaskVmProvisionProjection::class,
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+], 'task_vm.enroll' => [
+    'workflow' => 'operation-task-vm-enroll',
+    'projection' => TaskVmEnrollmentProjection::class,
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+], 'task_vm.prepare_runtime' => [
+    'workflow' => 'operation-task-vm-prepare-runtime',
+    'projection' => TaskVmEnrollmentProjection::class,
+    'private_material' => ['upcloud_token' => 'upcloud.api', 'installation' => 'task_vm.installation', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
+    'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
 ]] + array_fill_keys(TaskVmIncusProjection::Kinds, [
     'workflow' => 'operation-task-vm-incus',
     'writer_config' => 'swamp.direct_writers',
