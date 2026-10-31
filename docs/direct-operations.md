@@ -129,6 +129,44 @@ Sources:
 [failure semantics](https://swamp-club.com/manual/reference/remote-execution/failure-semantics),
 [idempotency](https://swamp-club.com/manual/how-to/make-workflows-idempotent).
 
+## Node agent recovery
+
+`operation-node-agent-rekey` executes the admitted `node.agent_rekey` intent on
+`orbit-node-N` with the matching `node=N` label. A native observation
+checkpoints cancellation before the write. Resume reuses that observation and
+reconciles an uncertain rotation before settlement. Any Gateway cancellation
+requested after observe is ignored by this attempt, including on resume. A native
+abort before invoke still cancels without a Node effect.
+The stable per-Node method lock covers local `agent.configure`, private hash
+storage and bounded projection.
+
+Swamp strictly validates the safe input, binary pin and exact Node worker
+configuration before dispatch. The configuration stays unchanged. Recovery
+permits explicit secret rotation and passes null worker credentials to preserve
+existing files. Only the effect callback sees the returned hash. The shared
+private-output client writes it to the owning Node; no native argument, resource
+or result contains it.
+
+Only an open, uncertain retained configure Operation can authorize recovery. A
+successful configure is not a recovery source. An existing parent-owned receipt
+keeps its original ownership checks; recovery creates no child. The Gateway
+records the operator's explicit attempt identity and checks ownership. It probes
+the original attempt's kernel lease at admission, intent read and hash storage;
+a live configure still holding that lease refuses. The probe uses the owning
+ancestor lease for retained children and releases it immediately. The Gateway
+runs no rekey SSH, agent command, child or wait and holds no execution lease
+across native recovery. Repeating the same attempt
+reuses admission. After a terminal refusal or cancellation, the operator
+supplies another attempt number. Known pre-effect refusals are bounded.
+Configure, worker-readiness, memory and storage errors that may follow rotation
+leave the intent unresolved. Workerless Nodes, including VPN/usexit, refuse
+rekey; no PHP execution path remains.
+
+`rekey_direct_native_test.py` uses the shared native harness and production
+`gatewayHttp` client, including a secret-bearing failed storage response. It
+scans stdout, stderr and every scratch file. Only the agent transport is fake;
+exact live worker placement and real recovery remain separate canary proof.
+
 ## Scoped GitHub credentials
 
 A checked-in declaration can add

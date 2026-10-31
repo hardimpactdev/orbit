@@ -1,0 +1,52 @@
+id: 8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e
+name: operation-node-agent-rekey
+description: Recover an admitted Node agent on its exact worker without Gateway execution.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum: [node.agent_rekey]
+  required: [operation_id, node_id, kind]
+  additionalProperties: false
+target: ${{ "orbit-node-" + string(inputs.node_id) }}
+labels:
+  node: ${{ string(inputs.node_id) }}
+jobs:
+  - name: recovery
+    steps:
+      - name: observe
+        writes: false
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-agent-rekey"
+          behaviorName: ${{ "node-agent-rekey-" + string(inputs.node_id) }}
+          methodName: observe
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            kind: ${{ inputs.kind }}
+            node_id: ${{ inputs.node_id }}
+            run_id: ${{ run.id }}
+      - name: rekey
+        writes: true
+        dependsOn:
+          - step: observe
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/node-agent-rekey"
+          behaviorName: ${{ "node-agent-rekey-" + string(inputs.node_id) }}
+          methodName: execute
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            kind: ${{ inputs.kind }}
+            node_id: ${{ inputs.node_id }}
+            run_id: ${{ run.id }}
+            observation: ${{ steps.observe.outputs }}
