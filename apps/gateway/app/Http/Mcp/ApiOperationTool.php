@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
-use App\Domain\Operations\OperationPoll;
 use Illuminate\Http\Request as HttpRequest;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -54,9 +53,7 @@ final class ApiOperationTool extends Tool
      */
     private static function startedOperation(array $json): array
     {
-        $operation = $json['data'];
-        $after = is_array($operation) && is_int($operation['poll_after_seconds'] ?? null) ? $operation['poll_after_seconds'] : OperationPoll::MinimumSeconds;
-        $started = ['operation' => $operation, 'poll' => ['tool' => 'operation-show', 'after_seconds' => $after]];
+        $started = ['operation' => $json['data'], 'poll' => ['tool' => 'operation-show', 'after_seconds' => 2]];
 
         return array_key_exists('meta', $json) ? [...$started, 'meta' => $json['meta']] : $started;
     }

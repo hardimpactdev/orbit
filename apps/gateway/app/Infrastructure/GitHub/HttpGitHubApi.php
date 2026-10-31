@@ -720,11 +720,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $id;
     }
 
-    public function squashPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
-    {
-        return $this->merge($token, $repository, $number, $sha, 'squash');
-    }
-
     public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
     {
         return $this->merge($token, $repository, $number, $sha, 'merge');

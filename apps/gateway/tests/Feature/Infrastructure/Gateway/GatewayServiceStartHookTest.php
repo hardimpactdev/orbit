@@ -11,6 +11,7 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
@@ -18,6 +19,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAgentCommandRunner;
+use Tests\Support\FakeRoutePublicationSocket;
 
 describe('production wiring', function (): void {
     beforeEach(function (): void {
@@ -81,6 +83,8 @@ describe('production wiring', function (): void {
     it('installs and runs the Documents hook before the reload in the release handoff', function (): void {
         $agents = new FakeAgentCommandRunner()->answer('gateway.converge-fpm', ['changed' => true, 'activated' => true]);
         app()->instance(AgentCommandRunner::class, $agents);
+        config(['swamp.run_token' => 'fixture-token']);
+        app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
         $result = app(GatewayRuntimeHandoff::class)->serve();
 
         expect($result['fpm'])->toBe('reloaded')

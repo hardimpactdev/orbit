@@ -7,6 +7,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Cluster;
@@ -22,6 +23,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeRouteRemovalProjector;
 use Tests\Support\Orb101ProjectUpdateFixture;
 use Tests\Support\Orb220DeploymentApiFixture;
@@ -124,9 +126,9 @@ describe('POST /mcp', function (): void {
 
         expect($response->json('result.serverInfo.name'))->toBe('Orbit Gateway')
             ->and($response->json('result.capabilities.tools'))->not->toBeNull()
-            ->and($response->json('result.instructions'))->toContain('WireGuard', 'operation-show', 'after_sequence')
+            ->and($response->json('result.instructions'))->toContain('WireGuard', 'operation-show', 'parent record')
             ->and($response->json('result.instructions'))->toContain('Each tool that starts an operation')
-            ->and($response->json('result.instructions'))->not->toContain('`events`');
+            ->and($response->json('result.instructions'))->not->toContain('`events`', 'after_sequence', 'poll_after_seconds', 'failed_step');
     });
 
     it('lists one tool for every manifest entry', function (): void {
@@ -527,3 +529,34 @@ it('creates a public Process hostname through the generated MCP tool and API val
         ->and($document['data']['process_id'])->toBe($process->id)
         ->and($document['data']['replacement_step'])->toBe('ingress-firewall');
 });
+
+it('returns a native admission through MCP without retired poll metadata', function (string $endpoint): void {
+    config(['swamp.run_token' => 'fixture-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    $socket->reply = static fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => $run,
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $node = Node::query()->create(['name' => 'native-tool-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.44.0.209',
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('a', 43)]);
+    $input = ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'hello', 'Idempotency-Key' => 'mcp.native.start'];
+
+    $document = mcp_tool($this, $endpoint, 'tool-install', $input);
+
+    expect($document['operation']['kind'])->toBe('tool.install')
+        ->and($document['operation']['status'])->toBe('running')
+        ->and($document['operation'])->not->toHaveKey('steps')
+        ->and($document['operation']['poll_after_seconds'] ?? null)->toBeNull()
+        ->and($document['poll'])->toBe(['tool' => 'operation-show', 'after_seconds' => 2])
+        ->and($document['meta']['request_id'])->toBeString();
+    $operation = Operation::query()->sole();
+    expect($document['operation']['id'])->toBe($operation->id)
+        ->and($operation->state['swamp_run_id'])->toBe($run)
+        ->and($socket->sent)->toHaveCount(1);
+    $replayed = mcp_tool($this, $endpoint, 'tool-install', $input);
+    expect($replayed['operation']['id'])->toBe($operation->id)
+        ->and(Operation::query()->count())->toBe(1)
+        ->and($socket->sent)->toHaveCount(1);
+})->with(['/mcp', '/mcp/search']);

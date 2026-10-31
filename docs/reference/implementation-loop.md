@@ -94,7 +94,7 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 `bin/ci-build-plan` owns build input selection. Gateway or SDK changes run generated contracts and Web; CLI or SDK changes build CLI binaries. Documentation changes run Docs. PHP changes run syntax and Composer validation. Shared workflow, script and tooling changes select all builds. Main always builds and uploads Web for Gateway delivery. The release workflow still builds the CLI for every published main commit and skips input selection when backfilling an older release.
 
-Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
+Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection and PHP syntax checks fetch only the event commit and its comparison base. A PR with changes under `apps/agent` builds the agent directly, without querying published releases. A PR without those changes starts no agent build or delivery work. Main still compares the published source tree to detect an unpublished agent change from an earlier merge.
 
 CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
 
@@ -122,7 +122,7 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
+Gateway test shards and the privileged, E2E, SDK, CLI, remote-program, Pi server, web and agent test jobs, including the native package boundary checks, do not run in CI. Their test files and local commands remain available. CI does not use the former project selection tool.
 
 ### Runner policy during the Swamp migration
 

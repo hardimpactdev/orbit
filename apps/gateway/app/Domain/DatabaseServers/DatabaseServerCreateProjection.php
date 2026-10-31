@@ -7,11 +7,9 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +22,7 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
     }
 
     /** @return array<string, mixed> */
-    private function admittedInput(Operation $operation, bool $checkPolicy = true): array
+    private function admittedInput(Operation $operation): array
     {
         $intent = $this->intent($operation);
         $input = ValidatedData::object($intent->payload['admission']['input'] ?? null);
@@ -32,27 +30,9 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
         if (array_diff(array_keys($container), ['image', 'command', 'restart', 'working_directory', 'ports', 'mounts']) !== []) {
             $this->invalid();
         }
-        if (! $operation->status->terminal()) {
-            $server = DatabaseServer::query()->find($operation->target_id);
-            $process = $server?->process;
-            if ($server === null || $server->status->value === 'removing' || $server->node_id !== $operation->node_id || $server->driver->value !== $input['driver']
-                || ($checkPolicy && $server->default_open !== $input['default_open']) || $server->process_id !== $input['process_id'] || $server->port !== $input['port'] || $server->node->wireguard_ip !== $input['host']
-                || $process === null || $process->runtime->value !== 'docker' || $process->owner_type !== Node::class || $process->owner_id !== $operation->node_id
-                || app(DockerProcessRenderer::class)->containerName($process) !== $input['container']) {
-                $this->invalid();
-            }
-            if ($input['adoption_connection_id'] !== null) {
-                $connection = DatabaseConnection::query()->find(ValidatedData::integer($input['adoption_connection_id']));
-                if ($connection === null || $connection->slug !== ($intent->payload['projection']['adopted_connection'] ?? null)
-                    || ($connection->database_server_id !== null && $connection->database_server_id !== $server->id)
-                    || $connection->host !== $input['host'] || ($connection->port ?? 6379) !== $input['port']) {
-                    $this->invalid();
-                }
-            }
-        }
 
         return [...array_intersect_key($input, array_flip(['driver', 'process_id', 'container', 'spec', 'scrub_spec', 'initialize', 'validate_existing', 'was_active', 'default_open', 'host', 'port', 'volume'])),
-            'container_input' => $container, 'agent_sha256' => $operation->input['agent_sha256']];
+            'container_input' => $container];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -68,16 +48,15 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
 
         return DB::transaction(function () use ($operation, $data, $result, $status, $code): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            $this->admittedInput($operation, in_array($status, ['running', 'succeeded'], true));
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             $server = DatabaseServer::query()->find($operation->target_id);
             if (! $terminal && $server !== null && $status === 'succeeded') {
                 $projection = $this->intent($operation)->payload['projection'];
                 $server->update($projection['server'] ?? []);
                 $server->process?->fill($projection['process'] ?? [])->fill(['status' => 'active', 'failed_step' => null, 'error_code' => null])->save();
                 if (($id = $this->intent($operation)->payload['admission']['input']['adoption_connection_id'] ?? null) !== null) {
-                    DatabaseConnection::query()->whereKey($id)->update(['database_server_id' => $server->id]);
+                    DatabaseConnection::query()->find(ValidatedData::integer($id))?->update(['database_server_id' => $server->id]);
                 }
             } elseif (! $terminal && $server !== null && in_array($status, ['failed', 'cancelled'], true)) {
                 $admitted = ValidatedData::object($this->intent($operation)->payload['admission']['input'] ?? null);
@@ -102,13 +81,6 @@ final readonly class DatabaseServerCreateProjection implements DirectOperationPr
             $this->invalid();
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        $command = $intent->payload['commands']['database-apply'] ?? [];
-        if (count($intent->payload['commands']) !== 1 || ($command['name'] ?? null) !== 'database.server-create'
-            || ($command['protected'] ?? []) !== ['password', 'environment', 'acl', 'payload']
-            || ($intent->payload['projection']['children'] ?? []) !== [] || ! isset($intent->payload['admission']['input'])
-            || ! is_string($operation->input['agent_sha256'] ?? null) || preg_match('/\A[0-9a-f]{64}\z/D', $operation->input['agent_sha256']) !== 1) {
-            $this->invalid();
-        }
 
         return $intent;
     }
