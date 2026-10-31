@@ -9,9 +9,9 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Infrastructure\TaskVms\TaskVmHostAudit;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Models\UpCloudTaskVmImageBuild;
@@ -44,6 +44,7 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
         $input['stray_vm_ids'] = $input['provider'] === 'incus'
             ? array_map(static fn (TaskVm $vm): int => $vm->id, TaskVmHostAudit::strayRecords(Node::query()->findOrFail($operation->node_id))) : [];
         $input['live_names'] = $query->orderBy('id')->pluck('name')->all();
+        $input['recorded_build_ids'] = TaskVmImageBuild::query()->where('host_node_id', $operation->node_id)->orderBy('id')->pluck('id')->all();
         $input['protected_build_ids'] = TaskVmImageBuild::query()->where('host_node_id', $operation->node_id)
             ->where(fn ($query) => $query->where('state', TaskVmImageBuildState::Running)
                 ->orWhere(fn ($query) => $query->where('state', TaskVmImageBuildState::Failed)->whereNull('cleanup_started_at')
@@ -61,12 +62,13 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         $result = ValidatedData::object($data['result'] ?? []);
         $code = $data['error_code'] ?? null;
-        $observe = $status === OperationStatus::Succeeded || $status === OperationStatus::Failed;
+        $observe = array_key_exists('observed_names', $result);
+        $failureFields = $observe ? ['error_code', 'observed_names', 'deleted_names'] : ['error_code'];
         if (($status === OperationStatus::Succeeded && ($code !== null || ($result['ready'] ?? null) !== true
                     || (count($result) !== 3 || array_diff(array_keys($result), ['ready', 'observed_names', 'deleted_names']) !== [])))
             || ($status === OperationStatus::Failed && ($code !== 'task_vm.host_command_failed' || ($result['error_code'] ?? null) !== $code
-                    || (count($result) !== 3 || array_diff(array_keys($result), ['error_code', 'observed_names', 'deleted_names']) !== [])))
-            || (! $observe && (! in_array($status, [OperationStatus::Running, OperationStatus::Cancelled], true) || $result !== [] || $code !== null))) {
+                    || (count($result) !== count($failureFields) || array_diff(array_keys($result), $failureFields) !== [])))
+            || (! in_array($status, [OperationStatus::Succeeded, OperationStatus::Failed], true) && (! in_array($status, [OperationStatus::Running, OperationStatus::Cancelled], true) || $result !== [] || $code !== null))) {
             $this->refuse();
         }
         $names = $observe ? ValidatedData::stringList($result['observed_names']) : [];
@@ -79,8 +81,10 @@ final readonly class TaskVmSweepProjection implements DirectOperationProjection
         }
 
         return DB::transaction(function () use ($operation, $data, $result, $observe, $names): Operation {
+            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $terminal = $operation->status->terminal();
             $projected = app(DirectOperation::class)->project($operation, $data, $result, 'sweep-host');
-            if ($observe) {
+            if ($observe && ! $terminal) {
                 $query = TaskVm::query()->live()->where('provider', $operation->input['provider']);
                 if ($operation->input['provider'] === 'incus') {
                     $query->where('host_node_id', $operation->node_id);

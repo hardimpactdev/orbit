@@ -707,7 +707,7 @@ Cancel or complete the group of a missing VM to destroy its Node, as for [a VM t
 
 The job changes only the host's configured Incus project, such as `orbit-tasks`. It reads the other projects only to [report strays](#report-strays).
 
-It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Admission records retirement of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders and rechecks running ownership before each effect. A builder without an admitted build row remains for operator inspection.
+It retains a base image builder `tvm-image-<build id>` and its smoke VM while the build row on that host is `running`, whatever its age, or is an unclaimed `failed` build updated within the last 24 hours. Admission records retirement of expired nonrunning builds before dispatch, using the same conditional update as resume. The native run deletes only those admitted builders and rechecks running ownership before each effect. An absent build row also permits cleanup, but a new row observed before deletion protects that name.
 
 The sweep never changes another project, an instance outside the task VM and base image builder names. Rows in `provisioning`, `failed`, or `destroying` are never missing: their own jobs check the VM.
 
@@ -1364,7 +1364,7 @@ These alternatives were also rejected:
 
 ## UpCloud overflow
 
-Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. Each Gateway delete primitive verifies the recorded name, label and stopped state, sends one request, and returns without polling. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
+Swamp waits for owned image-builder and orphan servers to stop before requesting deletion, then observes their absence. The native orphan sweep verifies the recorded name, label and stopped state and calls UpCloud directly. Image build cleanup still uses its retained Gateway delete primitive until the owning image root moves. Retained synchronous task VM lifecycle callers keep their existing provider until their parent/child cutover.
 
 
 When beast and shark have no free slot, a group of an opted-in Project may get its [task VM](#task-vms) at UpCloud. The overflow is off by default. It needs both the Gateway-wide switch `ORBIT_TASK_VMS_UPCLOUD_ENABLED=true` and the Project's ID in `ORBIT_TASK_VMS_UPCLOUD_PROJECTS`. Without both, the group waits with `Task VM: no capacity.` as before.
@@ -1393,7 +1393,7 @@ UpCloud has no trusted host that can read the guest's SSH host key, as Incus doe
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp orders UpCloud image cleanup and orphan sweeps. Each Gateway primitive submits one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp orders UpCloud image cleanup and orphan sweeps. The native sweep uses its Gateway worker and callback-local credential; retained image primitives each submit one fixed API action. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
 
 ### Build the UpCloud template
 

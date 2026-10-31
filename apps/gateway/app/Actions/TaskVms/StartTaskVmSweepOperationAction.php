@@ -46,7 +46,7 @@ final readonly class StartTaskVmSweepOperationAction
             // no remote inventory, execution claim or worker lease is created here.
             $retired = [];
             if ($provider === 'incus') {
-                foreach (TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', '!=', TaskVmImageBuildState::Running)->get() as $build) {
+                foreach (TaskVmImageBuild::query()->where('host_node_id', $node->id)->where('state', '!=', TaskVmImageBuildState::Running)->orderBy('id')->get() as $build) {
                     if ($build->builder_vm_name !== null && TaskVmHostAudit::claimBuildCleanup($node, $build->builder_vm_name)) {
                         $retired[] = $build->id;
                     }

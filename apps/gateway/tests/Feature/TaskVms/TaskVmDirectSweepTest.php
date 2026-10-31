@@ -8,8 +8,10 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -126,12 +128,11 @@ it('refuses explicit polled fallback before recording or retiring intent', funct
     expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
 });
 
-
 it('hydrates UpCloud material only for its bound exact Gateway sweep and omits the reference from safe input', function (): void {
-    $cloud = new App\Domain\TaskVms\TaskVmUpCloud(false, [], '/fixture/upcloud', 1, 'fi-hel1', '1xCPU-2GB', 20, '00000000-0000-4000-8000-000000000001');
+    $cloud = new TaskVmUpCloud(false, [], '/fixture/upcloud', 1, 'fi-hel1', '1xCPU-2GB', 20, '00000000-0000-4000-8000-000000000001');
     $settings = TaskVmSettingsBuilder::bind(['upcloud' => $cloud]);
-    $api = new App\Infrastructure\TaskVms\UpCloudApi($settings, 'ucat_fixture_private_sweep');
-    app()->instance(App\Infrastructure\TaskVms\UpCloudApi::class, $api);
+    $api = new UpCloudApi($settings, 'ucat_fixture_private_sweep');
+    app()->instance(UpCloudApi::class, $api);
     $operation = app(StartTaskVmSweepOperationAction::class)->execute($this->gateway->id, 'upcloud');
     $path = '/api/v1/direct-operations/'.$operation->id;
     $this->getJson($path.'?run_id='.$this->run)->assertOk()->assertJsonMissingPath('data.input.upcloud_token');
@@ -143,4 +144,26 @@ it('hydrates UpCloud material only for its bound exact Gateway sweep and omits t
         'finished_at' => '2026-10-31T00:00:01.000Z', 'result' => []])->assertOk();
     $this->getJson($path.'/private-material?run_id='.$this->run)->assertConflict();
     expect(json_encode($operation->fresh()->getAttributes()))->not->toContain('ucat_fixture_private_sweep');
+});
+
+it('never reprojects an old missing observation after a newer root found the VM', function (): void {
+    $vm = directSweepVm('ready', '10.44.0.129');
+    $old = directSweepAdmit();
+    directSweepProject($old);
+    directSweepProject(directSweepAdmit(), [$vm->name]);
+    directSweepProject($old);
+    directSweepProject(directSweepAdmit());
+    expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
+    directSweepProject(directSweepAdmit());
+    expect($vm->fresh()->state)->toBe(TaskVmState::Failed);
+});
+
+it('fails an unreadable native sweep without inventing a missing-VM observation', function (): void {
+    $vm = directSweepVm('ready', '10.44.0.129');
+    $operation = directSweepAdmit();
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->run, 'status' => 'failed',
+        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => '2026-10-31T00:00:01.000Z',
+        'result' => ['error_code' => 'task_vm.host_command_failed'], 'error_code' => 'task_vm.host_command_failed'])->assertOk();
+    directSweepProject(directSweepAdmit());
+    expect($vm->fresh()->state)->toBe(TaskVmState::Ready);
 });
