@@ -328,7 +328,7 @@ Every Process job targets exactly `orbit-node-<admitted Node ID>` with a matchin
 
 Process creation records its owned definition and starts one native Process DAG. Its safe input contains the admitted artifact identity, desired state, agent digest and specification hash. The exact owning Node reads installation material through the shared private endpoint; the Gateway checks that the stored definition still matches the admitted hash. Unit content and container command or environment values do not enter public workflow input, output or logs.
 
-A newly admitted Process starts with `systemd_activation_pending=false` in memory as well as in storage. The first public installation input therefore carries a boolean before any refresh. The Gateway admission test and native create schema use the same captured public shape.
+A newly admitted Process starts with `systemd_activation_pending=false` in memory as well as in storage. The first public installation input therefore carries a boolean before any refresh. The Gateway admission test and native create schema use the same captured public shape. The required Gateway PHP job runs the first-visit Pest regression. Swamp’s `reference-family` check runs the native Deno schema tests and compares its fixture SHA-256 with the Gateway fixture on public Orbit main.
 
 The Node installs the captured definition through the pinned local agent. If startup needs Vite publication, the same root uses the canonical Caddy behavior before activation. The final bounded result changes Process lifecycle state. Create has no polled executor, admission lease or receipt contract. Retained synchronous callers and executor recovery keep their current path until their owning conversion.
 

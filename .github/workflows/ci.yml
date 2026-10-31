@@ -39,6 +39,14 @@ jobs:
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=$(git merge-base origin/main HEAD); fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
 
+      - name: Install Process admission test dependencies
+        run: |
+          cp apps/gateway/.env.example apps/gateway/.env
+          composer install --working-dir=apps/gateway --no-interaction --prefer-dist
+      - name: Test real first-visit Process admission
+        working-directory: apps/gateway
+        run: vendor/bin/pest --compact --default-time-limit=5 tests/Feature/Api/ProcessOperationAdmissionTest.php --filter='real first-visit systemd input'
+
   cli:
     name: CLI build
     uses: ./.github/workflows/orbit-cli-binary.yml
