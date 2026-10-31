@@ -1,0 +1,12 @@
+manifestVersion: 1
+name: '@nckrtl/router-firewall-assets'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Canonical public Router firewall script assets.
+behaviors:
+  - operations/routes/firewall-command/assets.ts
+additionalFiles:
+  - scripts/firewall.py
+  - scripts/rules.py
+  - scripts/router_lan.py

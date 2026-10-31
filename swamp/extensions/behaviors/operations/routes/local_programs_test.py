@@ -13,7 +13,7 @@ import grp
 ROOT=Path(__file__).resolve().parent
 
 def program(name):
-    source=(ROOT/name).read_text().split('.raw`',1)[1].rsplit('`;',1)[0]
+    source=(ROOT/'firewall-command/scripts/firewall.py').read_text() if name=='firewall-program.ts' else (ROOT/name).read_text().split('.raw`',1)[1].rsplit('`;',1)[0]
     module=types.ModuleType(name);exec(compile(source,name,'exec'),module.__dict__)
     return module
 
@@ -183,7 +183,7 @@ class Firewall(unittest.TestCase):
         self.firewall.LOCK.unlink();self.firewall.LOCK.write_text('');self.firewall.LOCK.chmod(0o644)
         self.assertEqual(self.firewall.main({'mode':'route'}),{'error_code':'firewall.lock_failed'})
     def test_two_processes_serialize_observation_and_confirmation(self):
-        source=(ROOT/'firewall-program.ts').read_text().split('.raw`',1)[1].rsplit('`;',1)[0]
+        source=(ROOT/'firewall-command/scripts/firewall.py').read_text()
         script="import os,pathlib,sys; scope={'__name__':'fixture'}; exec("+repr(source)+",scope); scope['LOCK']=pathlib.Path(sys.argv[1]); scope['LOCK_UID']=os.getuid(); lock=scope['transaction_lock'](); lock.__enter__(); print('entered',flush=True); sys.stdin.readline(); lock.__exit__(None,None,None)"
         first=subprocess.Popen([sys.executable,'-c',script,str(self.firewall.LOCK)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
         second=None

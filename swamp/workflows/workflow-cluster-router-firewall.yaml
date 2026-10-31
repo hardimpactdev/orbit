@@ -1,0 +1,225 @@
+id: aa3b320a-572a-4fc6-93f0-442e123a9b13
+name: cluster-router-firewall
+description: Two separate canonical UFW actions for one admitted Router through official SSH.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: firewall
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/router-firewall-assets'
+      behaviorName: ${{ "router-firewall-assets-" + run.id }}
+      methodName: read
+      inputs:
+        firewall: ${{ inputs.intent.firewall }}
+        router_lan: ${{ inputs.intent.router_lan }}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: true
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "router-firewall-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "cluster-router-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0700'
+        - ${{ "/tmp/orbit-router-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "router-firewall-copy-" + run.id }}
+      methodName: copy
+      globalArgs:
+        name: ${{ "cluster-router-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-router-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: rules
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: true
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "router-firewall-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "cluster-router-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_ROUTER_INPUT=" + steps.assets.outputs.rules_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-router-" + run.id + "/scripts/rules.py" }}
+        sudo: true
+  - name: router-lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: true
+    dependsOn:
+    - step: rules
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "router-firewall-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "cluster-router-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ "ORBIT_ROUTER_INPUT=" + steps.assets.outputs.router_json }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-router-" + run.id + "/scripts/router_lan.py" }}
+        sudo: true
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    writes: true
+    dependsOn:
+    - step: router-lan
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "router-firewall-" + run.id }}
+      methodName: exec
+      globalArgs:
+        name: ${{ "cluster-router-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - ${{ "/tmp/orbit-router-" + run.id }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: cleanup-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/router-firewall-assets'
+      behaviorName: ${{ "router-firewall-result-" + run.id }}
+      methodName: decode
+      inputs:
+        rules_stdout: ${{ steps.rules.outputs.stdout }}
+        router_stdout: ${{ steps["router-lan"].outputs.stdout }}

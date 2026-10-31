@@ -1,10 +1,7 @@
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const coordinator = { target: "orbit-node-209", labels: { node: "209" } };
-const completed = {
-    type: "or",
-    conditions: [{ type: "succeeded" }, { type: "skipped" }],
-};
+const completed = { type: "always" };
 /** Compose native children under the real parent Operation, without callbacks or effects in TS. */
 export function routeMutationSteps(
     name: string,
@@ -14,8 +11,7 @@ export function routeMutationSteps(
 ): Fields[] {
     const side = `${intent}.${mode}`;
     const predicate = guard?.replace(/^\$\{\{\s*|\s*\}\}$/g, "");
-    const selected = (list: string) =>
-        expr(predicate ? `(${predicate}) ? ${list} : []` : list);
+    const selected = (list: string) => expr(list);
     const common = {
         operation_id: expr("inputs.operation_id"),
         node_id: expr("inputs.node_id"),
@@ -35,6 +31,13 @@ export function routeMutationSteps(
             name: childName,
             ...coordinator,
             forEach: { item: "part", in: selected(list) },
+            guard: expr(
+                `${
+                    predicate
+                        ? `!(${predicate}) || `
+                        : ""
+                }steps.exists(key, key.startsWith("${name}_") && steps[key].status == "failed")`,
+            ),
             dependsOn: steps.map((step) => ({
                 step: step.name,
                 condition: completed,
@@ -169,6 +172,7 @@ export function routeMutationSteps(
         name,
         ...coordinator,
         forEach: { item: "stage", in: selected(`[${side}]`) },
+        ...(predicate ? { guard: expr(`!(${predicate})`) } : {}),
         dependsOn: steps.map((step) => ({
             step: step.name,
             condition: completed,

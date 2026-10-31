@@ -116,6 +116,7 @@ final readonly class NativeClusterRouterIntent
             throw new ResourceOperationException('cluster.router_node_invalid', 'Router participants require a configured Linux Node account.', 422);
         }
 
-        return ['node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $this->agents->pin($node)];
+        return ['node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $this->agents->pin($node),
+            ...app(NativeCaddyPublicationInput::class)->connectionForNode($node)];
     }
 }

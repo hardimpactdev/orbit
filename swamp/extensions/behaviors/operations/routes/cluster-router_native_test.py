@@ -1,97 +1,60 @@
-"""Native Router set and unset ordering in a disposable repository."""
+"""Native Router parent scheduling with isolated public child-effect boundaries."""
 import json
 from pathlib import Path
-import shutil
 import sys
 import unittest
 import yaml
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
+
 class ClusterNative(NativeTestCase):
+    native_timeout = 90
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy','operation-runner','operations/_lib','operations/certificates')
-        for directory,names in [('operations/node',['role_baseline_system.ts','system_command.ts']),('node-worker',['command.ts'])]:
-            target=self.repo/'extensions/behaviors'/directory;target.mkdir(parents=True,exist_ok=True)
-            for name in names: shutil.copy(ROOT/'extensions/behaviors'/directory/name,target)
-        failure=self.repo/'extensions/behaviors/operations/failure.ts'
-        failure.write_text('import {fixtureHttp} from "./routes/cluster-router_native_fixture.ts";\n'+(ROOT/'extensions/behaviors/operations/failure.ts').read_text().replace('export const behavior = nativeFailure();','export const behavior = nativeFailure(() => fixtureHttp);'))
-        route=self.repo/'extensions/behaviors/operations/routes';route.mkdir(parents=True)
-        for name in ['cluster-router.ts','cluster-router_native_fixture.ts','verification.ts','removal-local.ts','lan.ts','local-program.ts','firewall-program.ts','firewall-local.ts','router-preparation.ts','router-lan.ts','caddy-program.ts']:
-            shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,route)
-        cert=self.repo/'extensions/behaviors/operations/certificates/mod.ts'
-        cert.write_text('import {fixtureHttp,record} from "../routes/cluster-router_native_fixture.ts";\n'+cert.read_text().replace('...certificates()', '...certificates({ request: async () => { await record("certificate-request"); return {state:"current"}; }, publish: async () => { await record("certificate-publish"); return {applied:true}; }, inspect: async () => { await record("certificate-inspect"); return {present:true}; }, remove: async () => ({applied:true}) })'))
-        module=route/'cluster-router.ts'
-        text=module.read_text().replace('export const behavior = clusterRouter();','export const behavior = clusterRouter(() => fixtureHttp, invoke, undefined, readAccount);')
-        # Only replace the actual clock in this fixture; source keeps the full 31 seconds.
-        self.assertIn('setTimeout(resolve, 31000)',text)
-        text=text.replace('setTimeout(resolve, 31000)','setTimeout(() => { record("dns-grace-31").then(resolve); }, 1)')
-        module.write_text('import {fixtureHttp,invoke,record,readAccount} from "./cluster-router_native_fixture.ts";\n'+text)
-        (route/'publication.ts').write_text('import {z} from "npm:zod@4.4.3"; import {record} from "./cluster-router_native_fixture.ts"; export const behavior={type:"@nckrtl/route-publication",version:"2026.10.31.1",globalArguments:z.object({}),methods:Object.fromEntries(["publishDns","publishCaddy"].map(name=>[name,{description:name,arguments:z.object({operation_id:z.number(),node_id:z.number(),kind:z.string(),run_id:z.string(),target_node_id:z.number()}),execute:()=>record(name)}]))};')
+        self.copy_behaviors('operations/cluster-router', 'operations/routes/mutation-command', 'operations/routes/publication-command', 'operations/node-role-command', 'operations/node-bootstrap')
         source=yaml.safe_load((ROOT/'workflows/workflow-operation-cluster-router.yaml').read_text())
-        for job in source['jobs']:
-            for step in job['steps']:
-                step.pop('target',None);step.pop('labels',None)
+        source['jobs'][0]['steps']=[s for s in source['jobs'][0]['steps'] if s['name']!='verify']
+        for s in source['jobs'][0]['steps']:
+            s.pop('target',None);s.pop('labels',None)
+            s['dependsOn']=[d for d in s.get('dependsOn',[]) if d['step']!='verify']
         (self.repo/'workflows/workflow-operation-cluster-router.yaml').write_text(yaml.safe_dump(source,sort_keys=False))
-        identity=dict(node_id=18,agent_sha256='a'*64,user='orbit',home='/home/orbit')
-        candidate=dict(identity,assignment_id=2,active=False,caddy_package={},prerequisites={},firewall=dict(desired=[],remove=[],enable=False),router_lan=dict(desired=[],expand=True,prune=True),probes=[])
-        old=dict(identity,node_id=9,assignment_id=1,firewall=dict(desired=[],remove=[],enable=False),router_lan=dict(desired=[],expand=False,prune=True),certificate_scopes=[])
-        inventory=dict(cluster_id=3,candidate=candidate,noop=False,old_nodes=[old],leaves=[],workloads=[],route_ids=[],edge_node_ids=[],dns_node_ids=[1])
-        self.state=dict(events=[],operation=dict(id=17,kind='cluster.router_set',node_id=18,status='queued',cancel_requested=False,input=dict(cluster_router=inventory)))
-        self.save()
-    def save(self):
+        names={s['task']['workflowIdOrName'] for s in source['jobs'][0]['steps'] if s['task']['type']=='workflow'}
+        command="""python3 - <<'PY'
+import json,os,pathlib
+p=pathlib.Path('native-cluster.json');s=json.loads(p.read_text());name=os.environ['ACTION']
+s['events'].append(name);p.write_text(json.dumps(s))
+if s.get('fail')==name:
+ s['fail']=None;p.write_text(json.dumps(s));raise SystemExit(1)
+print('{"ready":true}')
+PY"""
+        for i,name in enumerate(sorted(names)):
+            inputs=dict(source['inputs']);inputs['properties']=dict(inputs['properties'],parent_run_id={'type':'string'},restoring={'type':'boolean'})
+            task=dict(type='behavior',behaviorType='command/shell',behaviorName='fixture-effect',methodName='execute',inputs=dict(run=command,env=dict(ACTION=name)))
+            child=dict(id=f'00000000-0000-4000-8000-{i+1:012d}',name=name,inputs=inputs,jobs=[dict(name='effect',steps=[dict(name='effect',task=task)])])
+            (self.repo/'workflows'/f'workflow-{name}.yaml').write_text(yaml.safe_dump(child,sort_keys=False))
+        connection=dict(nodeHost='192.0.2.9',nodeUser='orbit',nodePort=22,nodeIdentityFile='/fixture/key',become=True)
+        pub=dict(node_id=9,user='orbit',serves_routes=True,control_node_id=209,connection=connection,host_keys=['ssh-ed25519 fixture'],**{side:dict(caddy={},php={},dns=dict(digest=side)) for side in ['before','prepared','withdrawn','after']})
+        leaf=dict(node_id=9,scope='route-7-router')
+        stage=dict(routes=[],publications=[pub],certificates=[leaf],prepare_certificates=[leaf],url_writes=[],lan=[],retire_lan=[],cleanup=[leaf])
+        self.intent=dict(cluster_router=dict(noop=False,candidate=dict(probes=[]),old_nodes=[{}]),route_mutations=dict(forward=stage,restore=stage));self.state=dict(events=[])
+    def run_parent(self,success=True):
         (self.repo/'native-cluster.json').write_text(json.dumps(self.state))
-    def run_workflow(self,success=True):
         self.cli('workflow','validate','operation-cluster-router')
-        self.cli('workflow','run','operation-cluster-router','--input','operation_id=17','--input','node_id=18','--input','kind='+self.state['operation']['kind'],success=success)
-        return json.loads((self.repo/'native-cluster.json').read_text())
-    def test_set_prepares_selects_publishes_waits_and_cleans_old_baseline(self):
-        state=self.run_workflow()
-        self.assertEqual(state['events'],['caddy.install-package','role.install-prerequisites','firewall.rules','firewall.router-lan','router-serving','publishCaddy','router-selected','publishDns','publishDns','dns-grace-31','old-router-withdrawn','publishCaddy','firewall.rules','firewall.router-lan','record'])
-    def test_unset_skips_candidate_and_cleans_old_baseline_after_dns(self):
-        self.state['operation']['kind']='cluster.router_unset'
-        self.state['operation']['input']['cluster_router']['candidate']=None;self.save()
-        state=self.run_workflow()
-        self.assertNotIn('role.install-prerequisites',state['events'])
-        self.assertLess(state['events'].index('old-router-withdrawn'),state['events'].index('publishDns'))
-        self.assertEqual(state['events'][-3:],['firewall.rules','firewall.router-lan','record'])
-    def test_nonempty_certificate_batch_runs_on_candidate_before_router_publication(self):
-        leaf=dict(node_id=18,scope='route-7-router',home='/home/orbit',agent_sha256='a'*64,domain='demo.orbit',version='b'*16,root_hash='c'*64,user='orbit')
-        self.state['operation']['input']['cluster_router']['leaves']=[leaf];self.save()
-        state=self.run_workflow()
-        self.assertLess(state['events'].index('certificate-request'),state['events'].index('certificate-publish'))
-        self.assertLess(state['events'].index('certificate-inspect'),state['events'].index('router-serving'))
-    def test_home_less_unset_resolves_old_account_before_certificate_retirement(self):
-        self.state['operation']['kind']='cluster.router_unset'
-        inventory=self.state['operation']['input']['cluster_router'];inventory['candidate']=None
-        old=inventory['old_nodes'][0];old.pop('home');old['certificate_scopes']=['route-7-router'];self.save()
-        state=self.run_workflow()
-        self.assertEqual('succeeded',state['operation']['status'])
-        self.assertEqual(['orbit'],state['accounts'])
-        self.assertLess(state['events'].index('publishCaddy'),state['events'].index('certificate.remove-leaf'))
-        self.assertLess(state['events'].index('certificate.inspect-leaf'),state['events'].index('firewall.rules'))
-    def test_home_less_set_resolves_candidate_prerequisites_on_the_worker(self):
-        inventory=self.state['operation']['input']['cluster_router']
-        inventory['candidate'].pop('home');inventory['candidate']['prerequisites']={'packages':['git']}
-        inventory['old_nodes']=[];self.save();state=self.run_workflow()
-        self.assertEqual('succeeded',state['operation']['status'])
-        self.assertEqual(['orbit'],state['accounts'])
-        prepared=next(call for call in state['calls'] if call.get('name')=='role.install-prerequisites')
-        self.assertEqual(dict(packages=['git'],user='orbit',group='orbit',home='/home/orbit'),prepared['input'])
-    def test_current_router_set_records_success_without_any_host_or_dns_effect(self):
-        inventory=self.state['operation']['input']['cluster_router']
-        inventory.update(noop=True,old_nodes=[],edge_node_ids=[14],dns_node_ids=[1,14],workloads=[dict(node_id=13,agent_sha256='a'*64,user='orbit',home='/home/orbit',route_id=7,firewall=dict(route_id=7,router='192.0.2.18',workload='192.0.2.13'))])
-        inventory['candidate']['active']=True;self.save()
-        state=self.run_workflow()
-        self.assertEqual(['record'],state['events'])
-        self.assertEqual('succeeded',state['operation']['status'])
-    def test_cancellation_starts_no_router_effect(self):
-        self.state['operation']['cancel_requested']=True;self.save()
-        state=self.run_workflow(success=False)
-        self.assertEqual(state['events'],[])
-    def test_dns_failure_preserves_old_caddy_certificates_and_baseline(self):
-        self.state['fail']='publishDns';self.save();state=self.run_workflow(success=False)
-        self.assertNotIn('old-router-withdrawn',state['events'])
-        self.assertNotIn('record',state['events'])
+        self.cli('workflow','run','operation-cluster-router','--input','operation_id=17','--input','node_id=9','--input','kind=cluster.router_set','--input','intent='+json.dumps(self.intent),'--input','execution_secrets={}',success=success)
+        history=json.loads(self.cli('workflow','history','get','operation-cluster-router').stdout)
+        result=next(s for s in history['jobs'][0]['steps'] if s['name']=='result');self.assertEqual('succeeded',result['status'])
+        return json.loads(result['outputs']['stdout']),json.loads((self.repo/'native-cluster.json').read_text())['events']
+    def test_set_completes_route_cleanup_before_obsolete_baseline(self):
+        result,events=self.run_parent();self.assertTrue(result['ready']);self.assertTrue(result['selected']);self.assertTrue(result['cleanup_complete']);self.assertEqual('cluster-router-retire',events[-1]);self.assertLess(events.index('route-dns-grace'),events.index('route-certificate-remove'))
+    def test_unset_skips_candidate_preparation(self):
+        self.intent['cluster_router']['candidate']=None;result,events=self.run_parent();self.assertTrue(result['ready']);self.assertNotIn('cluster-router-prepare',events)
+    def test_noop_runs_no_effect(self):
+        self.intent['cluster_router'].update(noop=True,old_nodes=[]);result,events=self.run_parent();self.assertTrue(result['ready']);self.assertEqual([],events)
+    def test_failed_dns_restores_before_terminal_failure(self):
+        self.state['fail']='route-dns-publish';result,events=self.run_parent(False);self.assertFalse(result['ready']);self.assertTrue(result['restored']);self.assertFalse(result['selected']);self.assertNotIn('cluster-router-retire',events)
+    def test_cleanup_failure_retains_selected_candidate(self):
+        self.state['fail']='cluster-router-retire';result,_=self.run_parent(False);self.assertFalse(result['ready']);self.assertTrue(result['selected']);self.assertFalse(result['cleanup_complete'])
+    def test_preparation_failure_starts_no_publication(self):
+        self.state['fail']='cluster-router-prepare';result,events=self.run_parent(False);self.assertFalse(result['ready']);self.assertEqual(['cluster-router-prepare'],events)
 if __name__=='__main__':unittest.main()

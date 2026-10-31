@@ -14,6 +14,9 @@ from native_harness import NativeTestCase
 class FirewallInspectionNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        shared=self.repo/"extensions/behaviors/operations/routes/firewall-command"
+        shared.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copytree(ROOT/"extensions/behaviors/operations/routes/firewall-command",shared)
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         modules = self.repo / 'extensions/behaviors'
         for folder, names in {

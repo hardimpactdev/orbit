@@ -17,6 +17,9 @@ from native_harness import NativeTestCase
 class NetworkNative(NativeTestCase):
     def setUp(self):
         super().setUp()
+        shared=self.repo/"extensions/behaviors/operations/routes/firewall-command"
+        shared.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copytree(ROOT/"extensions/behaviors/operations/routes/firewall-command",shared)
         self.secrets = (base64.b64encode(uuid.uuid4().bytes + uuid.uuid4().bytes).decode(),)
         self.copy_behaviors('automatic-deploy', 'operations/_lib')
         self.copy_behaviors('operations/node-bootstrap')
