@@ -31,7 +31,11 @@ final readonly class TaskTurnIntent
         }
 
         return DB::transaction(function () use ($group, $data, $caller, $request): Operation {
-            $group->refresh()->load('taskable', 'project');
+            $group->setRawAttributes(Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            if (($existing = $this->idempotency->replay('tasks.turn')) !== null) {
+                return $existing;
+            }
+            $group->load('taskable', 'project');
             $instance = $group->taskable;
             if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
                 throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);

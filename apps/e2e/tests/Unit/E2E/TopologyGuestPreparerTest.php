@@ -94,15 +94,6 @@ function settlingGuests(): FakeIncus
     return $incus;
 }
 
-function pnpmPreparer(): TopologyGuestPreparer
-{
-    $binary = tempnam(sys_get_temp_dir(), 'orbit-agent-test-');
-    file_put_contents($binary, 'source-built candidate');
-    test()->beforeApplicationDestroyed(static fn () => unlink($binary));
-
-    return new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0, agentBinary: $binary);
-}
-
 describe('mount.source', function () {
     it('proves the mount on every checkout role without writing to a guest', function () {
         $batches = [];
@@ -329,33 +320,7 @@ describe('prepare.schema', function () {
 });
 
 describe('settle', function () {
-    it('stages the source agent and sends exact pins without a guest source mount', function (): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => $argv[0] === 'sh' ? ["boot-ready\n", '', 0] : null);
-        $target = preparerTarget();
-
-        pnpmPreparer()->settle($target);
-
-        $preparations = array_values(array_filter($incus->execs, static fn (array $exec): bool => ($exec['argv'][2] ?? null) === 'recipe.install-javascript'));
-        expect($preparations)->toHaveCount(count($target->instances()));
-        foreach ($preparations as $preparation) {
-            $envelope = json_decode($preparation['stdin'], true, flags: JSON_THROW_ON_ERROR);
-            expect($envelope['agent_sha256'])->toBe(hash('sha256', 'source-built candidate'))
-                ->and($envelope['deadline_ms'])->toBe(900000)
-                ->and($envelope['input']['tools'])->toHaveKeys(['pnpm'])
-                ->and($envelope['input']['architecture'])->toBe('amd64')
-                ->and($envelope['input']['user'])->toBe('orbit')
-                ->and($preparation['argv'][0])->toStartWith('/run/orbit-e2e-pnpm-');
-        }
-        expect($incus->callsOf('file', 'push'))->toHaveCount(count($target->instances()));
-        $cleanups = array_values(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'rm'));
-        expect($cleanups)->toHaveCount(count($target->instances()));
-        foreach ($cleanups as $cleanup) {
-            expect($cleanup['argv'][3])->toBe(dirname($preparations[0]['argv'][0]));
-        }
-    });
-
-    it('sets public DNS once, waits through the first-boot reboot, then prepares pnpm', function (): void {
+    it('sets public DNS once and waits through the first-boot reboot without running software actions', function (): void {
         $incus = settlingGuests();
         $probes = [];
         $incus->respond(function (string $instance, array $argv) use (&$probes): ?array {
@@ -368,22 +333,16 @@ describe('settle', function () {
         });
         $target = preparerTarget();
 
-        pnpmPreparer()->settle($target);
+        new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0)->settle($target);
 
         $kinds = array_map(static fn (array $exec): string => match (true) {
             $exec['argv'][0] === 'bash' => 'dns',
-            ($exec['argv'][2] ?? null) === 'recipe.install-javascript' => 'pnpm',
-            $exec['argv'][0] === 'dpkg' => 'architecture',
-            $exec['argv'][0] === 'mkdir' => 'staging',
-            $exec['argv'][0] === 'install' => 'candidate',
-            $exec['argv'][0] === 'rm' => 'cleanup',
             default => 'probe',
         }, $incus->execs);
         $guests = count($target->instances());
 
-        expect(array_count_values($kinds))->toBe(['dns' => $guests, 'probe' => 3 * $guests, 'architecture' => $guests, 'staging' => $guests, 'candidate' => $guests, 'pnpm' => $guests, 'cleanup' => $guests])
+        expect(array_count_values($kinds))->toBe(['dns' => $guests, 'probe' => 3 * $guests])
             ->and(array_slice($kinds, 0, $guests))->toBe(array_fill(0, $guests, 'dns'))
-            ->and(array_slice($kinds, -$guests))->toBe(array_fill(0, $guests, 'cleanup'))
             ->and($probes)->toBe(array_fill_keys(array_values($target->instances()), 3));
     });
 
@@ -398,73 +357,10 @@ describe('settle', function () {
             return $argv[0] === 'sh' ? ["boot\n", '', 0] : null;
         });
 
-        pnpmPreparer()->settle(preparerTarget());
+        new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0)->settle(preparerTarget());
 
         expect($attempts)->toBe(2)
-            ->and(count(array_filter($incus->execs, static fn (array $exec): bool => ($exec['argv'][2] ?? null) === 'recipe.install-javascript')))->toBe(count(preparerTarget()->instances()));
-    });
-
-    it('names the guest whose pnpm preparation failed', function (): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => match (true) {
-            $argv[0] === 'sh' => ["boot\n", '', 0],
-            ($argv[2] ?? null) === 'recipe.install-javascript' && $instance === preparerTarget()->instance('operator') => ['', 'pinned artifact digest mismatch', 1],
-            default => null,
-        });
-
-        expect(fn () => pnpmPreparer()->settle(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed on '.preparerTarget()->instance('operator').'.');
-    });
-});
-
-describe('native pnpm preparation failures', function (): void {
-    it('refuses malformed or unsuccessful native results and cleans every staged candidate', function (string $output, int $exit): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => match (true) {
-            $argv[0] === 'sh' => ["boot\n", '', 0],
-            ($argv[2] ?? null) === 'recipe.install-javascript' => [$output, 'private diagnostics', $exit],
-            default => null,
-        });
-
-        expect(fn () => pnpmPreparer()->settle(preparerTarget()))->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed on');
-        expect(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'rm'))->toHaveCount(count(preparerTarget()->instances()));
-    })->with([
-        'invalid JSON' => ['invalid', 0],
-        'typed refusal' => ['{"ok":false,"error":{"code":"recipe.failed"}}', 0],
-        'missing output' => ['{"ok":true}', 0],
-        'invalid output fields' => ['{"ok":true,"data":{"changed":"yes","retired":[]}}', 0],
-        'process failure' => ['{"ok":true,"data":{"changed":false,"retired":[]}}', 1],
-    ]);
-
-    it('refuses an unsupported architecture before staging any binary', function (string $architecture): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => match ($argv[0]) {
-            'sh' => ["boot\n", '', 0],
-            'dpkg' => ["{$architecture}\n", '', 0],
-            default => null,
-        });
-
-        expect(fn () => pnpmPreparer()->settle(preparerTarget()))->toThrow(RuntimeException::class, 'Cannot determine the pnpm architecture')
-            ->and($incus->callsOf('file', 'push'))->toBe([])
-            ->and(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'mkdir'))->toBe([]);
-    })->with(['unsupported', 'arm64']);
-
-    it('requires the source build before staging on a guest', function (): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => $argv[0] === 'sh' ? ["boot\n", '', 0] : null);
-
-        expect(fn () => new TopologyGuestPreparer(new IncusHost, settleIntervalMicroseconds: 0, agentBinary: '/absent-orbit-agent-candidate')->settle(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'Build apps/agent with cargo build --release --locked')
             ->and($incus->callsOf('file', 'push'))->toBe([]);
     });
 
-    it('cleans staging when a binary transfer fails before running the command', function (): void {
-        $incus = settlingGuests();
-        $incus->respond(static fn (string $instance, array $argv): ?array => $argv[0] === 'sh' ? ["boot\n", '', 0] : null);
-        $incus->failWhen(static fn (array $argv): ?string => array_slice($argv, 0, 2) === ['file', 'push'] ? 'transfer failed' : null);
-
-        expect(fn () => pnpmPreparer()->settle(preparerTarget()))->toThrow(RuntimeException::class, 'Incus file push batch failed')
-            ->and(array_filter($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'rm'))->toHaveCount(count(preparerTarget()->instances()))
-            ->and(array_filter($incus->execs, static fn (array $exec): bool => ($exec['argv'][2] ?? null) === 'recipe.install-javascript'))->toBe([]);
-    });
 });

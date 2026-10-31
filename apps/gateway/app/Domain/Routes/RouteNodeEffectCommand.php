@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationGatewayCommand;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
@@ -19,47 +18,12 @@ use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
 
-/** Pure preparation for one narrow Node effect. All addresses come from Gateway placement. */
-final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
+/** Pure admission data for exact Node effects and probes. No executor command. */
+final readonly class RouteNodeEffectCommand
 {
     public function __construct(private RouteHopInput $hops, private SharedPhpPoolInput $php,
         private IngressSiteRepository $sites, private PublicProcessRouteFirewall $processFirewall,
         private NodeFirewallRuleCatalog $firewall) {}
-
-    public function schema(): array
-    {
-        return ['type' => 'object', 'additionalProperties' => false, 'required' => ['action'], 'properties' => [
-            'action' => ['enum' => ['prepare', 'prove']], 'route_id' => ['type' => 'integer', 'minimum' => 1],
-            'instance_id' => ['type' => 'integer', 'minimum' => 1], 'router_node_id' => ['type' => 'integer', 'minimum' => 1],
-            'transfer_id' => ['type' => 'string', 'minLength' => 1, 'maxLength' => 36]]];
-    }
-
-    public function run(Operation $operation, #[\SensitiveParameter] array $input): array
-    {
-        if (! in_array($operation->kind, RouteNodeEffectExecution::Kinds, true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'This kind has no Route Node effect.', 422);
-        }
-        $operation->refresh();
-        if ($input['action'] === 'prove') {
-            RouteExecutionProof::preceding($operation, app(RouteNodeEffectExecution::class)->context($operation)['descriptors'], 'node-effect-proof');
-
-            return ['ready' => true];
-        }
-        if (! is_array($operation->state['route_effect_plan'] ?? null)) {
-            try {
-                $plan = $this->prepare($operation);
-            } catch (ResourceOperationException $exception) {
-                if ($exception->errorCode !== 'route.upstream_firewall_mismatch') {
-                    throw $exception;
-                }
-
-                return ['error_code' => $exception->errorCode];
-            }
-            $operation->update(['state' => [...($operation->state ?? []), 'route_effect_plan' => $plan]]);
-        }
-
-        return ['prepared' => true];
-    }
 
     /** @return array<string, mixed> */
     public function prepare(Operation $operation): array

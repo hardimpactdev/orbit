@@ -940,7 +940,7 @@ The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's env
 
 ### Execution
 
-Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one ordered Node visit. The Gateway validates the release and maintenance window before it records the Operation. The release command and runtime handoff do not install or start a fleet service or timer.
+Swamp's fleet maintenance workflow reads the current Gateway plan each minute and admits one fleet-wide `fleet.rollout` Operation. The Gateway validates the serving release and captures the participants and their pinned release assets. Swamp owns order, maintenance windows and publication. The release command and runtime handoff do not install or start a fleet service or timer.
 
 During this conversion's deployment, stop and disable `orbit-fleet-converge.timer` and remove its service and timer files. Swamp's maintenance workflow owns further visits and catch-ups.
 
@@ -976,17 +976,11 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 
 Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
-The Gateway refuses recipe and rollout admission with `operation.kind_unavailable` until the kit loader advertises `children`, `list_of` and `receipts`, and the shared APIs, Operation child columns and `node.converge` kind are installed. Unsupported kinds are not registered. The plans return `unavailable` with the same error code. This check creates no Operation or Node hold. Fleet admission serializes all generations under one lock and refuses while any fleet visit remains open or a fleet Operation is queued, running or waiting.
+`fleet.rollout` starts `operation-fleet-rollout`, one native Swamp DAG for the admitted fleet. Each Node has a placed publication step. Native concurrency is one; each step requires successful prior Node outputs before acting. There are no child Operations, polled claims, target holds or execution receipts. `fleet.cli_converge` uses the same publication behavior in its own native DAG and updates only the CLI.
 
-Swamp schedules and runs fleet visits. The Gateway validates the release and target, records a `fleet.rollout` Operation, and projects its proven receipt onto the rollout row. Swamp installs and updates the CLI, starts a `node.converge` child for the footprint, and calls Gateway read primitives for Doctor and inventory checks. The child carries the owned-drift repair and first-Node Caddy policy. Each kind has a closed command allowlist, declared result fields and a completion contract. Unlisted commands, changed input and completion without evidence are refused.
+Each workload Node runs its step on its `orbit-node-ID` worker. vpn1 and usexit18 require lane 21's SSH proxy workers on Node 209. Each worker has the target Node's exact label. They receive no Swamp binary. Control steps run on Node 209. No step asks orbit-agent to act.
 
-Only app-dev-only Nodes start at any hour. App-prod and shared roles start from 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Mixed-role Nodes use the restricted window. An effect that started before 06:00 may finish. The Gateway checks its clock and current Node roles before every later run and refuses effects outside the window. A restricted visit that re-enters after an interruption with steps but no saved completion fails with `fleet.visit_interrupted` and halts the rollout. It runs no further effect.
-
-A durable wait on its own Gateway-verified footprint child may resume after that child settles. Later effects still require the current window. If the window closed during the wait, the parent fails with `fleet.visit_interrupted`.
-
-Interruption cleanup reads every active effect receipt first and retains the Node hold while any effect is running or unreadable. The admission lock closes visits with missing or terminal Operations. Open visits raise one stalled alert after 30 minutes; an alert does not release their holds.
-
-Automatic recipe and rollout admissions record the `fleet.window` run constraint. Kit B retains it on children and checks current target roles before hydration and dispatch, so a queued footprint child cannot perform daytime effects on a shared or production Node.
+App-dev-only Nodes may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later run.
 
 ### Desired state
 
@@ -1004,51 +998,17 @@ A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means
 
 ### One Node
 
-Each visit is one Node-bound Operation. The footprint runs as a child Operation owned by the Nodes family. Swamp records and resumes each of these steps. The `cli` and `footprint` steps also hold the Node's update lock, `/run/lock/orbit-self-update.lock`; `self-update` takes that lock itself, in between. So a Gateway step and a self-update never run on one Node at the same time. A self-update that keeps the lock longer than 5 minutes leaves the Node `deferred` with `node.update_busy`.
+The placed Node step checks the existing CLI without running a foreign file. It downloads the admitted release, verifies SHA-256 and its reported version as the Node user, publishes the root-owned executable and switches its link atomically. It writes the public root CLI profile when needed. A source build stays in place. A newer release stays in place for CLI-only convergence; a rollout may downgrade only to the exact release validated by the Gateway.
 
-| Step | Work |
-| --- | --- |
-| `ssh` | Open a new SSH connection. A Node that does not answer is `unreachable`, and nothing runs |
-| `node-lock` | Wait up to 2 minutes for the role lock. A busy Node is `deferred` |
-| `baseline` | Run Doctor's `node` and `role` families for the Node |
-| `cli` | [Install the CLI](/reference/node-provisioning#orbit-cli) when it is missing or an older release, and write the Node profile. A foreign CLI makes the Node `skipped` |
-| `self-update` | Run `sudo /usr/local/bin/orbit self-update --json` over SSH. `pending` or `incomplete` leaves the Node `waiting`; `self_update.busy` leaves it `deferred`; `failed` fails it |
-| `footprint` | [Re-apply the Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint) where its digest changed, and the artifact that repairs an owned issue the baseline shows |
-| `verify` | Wait up to 90 seconds for the agent to report the pinned version in presence, then run Doctor again |
+A rollout then verifies the observer binary digest, downloads and publishes the admitted agent when it differs, and restarts `orbit-agent.service`. It verifies that the running service executable has the admitted digest. It never reads the agent secret or changes observer configuration. Native resume repeats this inspection after an interrupted publication and starts the published observer if necessary.
 
-A step that fails while the Node still answers SSH runs once more, because a dropped channel or a timeout is usually transient. When the Node does not answer a new probe, it is `unreachable`. A `self-update` that answered with its JSON verdict is not retried. A step that meets a busy lock (`node_role.node_busy`, `node.update_busy`, `self_update.busy`, `agent.converge_busy`, `agent.converge_lock_lost`, `node.lock_lost`, `tool.operation_locked`) leaves the Node `deferred`.
+Full Node footprint convergence remains the Nodes family's operation. Release rollout changes only the CLI, its public connection profile and the observer binary. It does not apply Caddy, DNS, PHP or role configuration.
 
-The `php-runtime` artifact publishes the [PHP request and upload limits](/reference/php-runtime#request-and-upload-limits) on app Nodes and gracefully reloads valid active PHP-FPM masters. A Gateway release makes the new renderer and agent available; the footprint step applies them to existing Nodes. An absent PHP version is skipped; recipe convergence publishes its module after installation.
-
-The `caddy-package` artifact uses the shared [Caddy package step](/reference/node-provisioning#package-sources). Its source rename changes that artifact's digest once. The next footprint run repeats the step without reinstalling a Caddy at or above the floor.
-
-When the baseline shows an owned issue, the footprint step re-applies the artifact that repairs it even though its digest matches: `agent` for an agent issue, `caddy` for Caddy drift.
-
-A Caddyfile that the render refuses, because a site cannot be built, is `skipped`: the live Caddyfile stays, Doctor keeps reporting `role.caddy_build_drift`, and the verify tolerates that issue on this Node. A Caddyfile that `caddy validate` refuses can also be a fault in Orbit's own template or Caddy pin.
-
-When the Caddy digest changed, so Orbit's own Caddy code is new, a refusal on the first Node of a rollout, before any Node converged, fails the Node with `node.footprint_caddy_failed` and halts. A refusal on a later Node, or while the step only repairs live drift that the baseline showed, is `skipped` like a render refusal. The first skip in a rollout raises `rollout_caddy_skipped` once, so a kept Caddyfile is never silent.
-
-After a Gateway rollback, the desired CLI release is older than the Nodes' CLI, and `self-update` refuses with `self_update.downgrade_refused`. When the desired state belongs to a `verified` release record, the step runs `self-update` once more with `--allow-downgrade-to=<desired version>`, which allows a downgrade to exactly that version and to no other. An in-place Gateway has no release records, so it never passes the option.
-
-The verify fails when Doctor reports an issue that was not there in the baseline, or any issue the rollout owns: `node.ssh_unreachable`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_secret_mismatch`, `node.cli_foreign`, or `role.caddy_build_drift`. It checks Doctor three times, 10 seconds apart, before it fails, because a restarted agent or a reloaded Caddy settles within seconds. An older issue the rollout does not own, such as `node.disk_low`, is kept as evidence.
-
-The verify ignores the [task VM host](/reference/compute-drivers#sweep-task-vm-hosts) codes `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed`, `node.task_vm_parked`, and the [stray](/reference/compute-drivers#report-strays) codes `node.task_vm_stray_*`, because task VMs come and go during a rollout. The presence check fails only when the agent reports another version. Without an active `websocket` role, or without any report from the Node's agent, Doctor's binary check stands in for it.
-
-| Outcome | What the rollout does |
-| --- | --- |
-| `converged` | A step changed the Node and the verify passed. Continue |
-| `unchanged` | Nothing changed and the verify passed. Continue |
-| `unreachable` | Record it and continue. The catch-up visits the Node again |
-| `deferred` | Another operation held a lock the step needs. Continue; the catch-up visits the Node again |
-| `waiting` | `self-update` reported `pending`, because the CLI release is not published yet, or `incomplete`, because it skipped a step that should have run. Continue; the catch-up visits the Node again |
-| `failed` | The Node answered, but a step or the verify failed. Halt |
-| `skipped` | An operator resumed past the Node with `--skip`, or the Node has a foreign CLI and left the rollout set |
+A definite Node failure stops later Nodes through native DAG dependencies. A lost or unknown command result leaves the Operation unresolved; it is not reported as success. Native workflow resume owns recovery. The Gateway records only the resulting per-Node status and versions.
 
 ### Halt and resume
 
-At the first `failed` Node, the rollout stops. The Nodes after it stay as they were. The rollout record becomes `halted` with the Node, the error code, the message, and the step evidence: the CLI install result, the `self-update` report or its exit code and output, the footprint result, and the verify issues. The Gateway raises the `rollout_halted` [release alert](#release-alerts) once, with the target `fleet` and the release id `fleet-rollout-<id>`, and stores the receipt on the record.
-
-A Node whose `self-update` stays `incomplete` for 6 visits in a row, 30 minutes of catch-ups, raises `rollout_stalled` once, with the reasons in the step evidence. A `deferred` or `unreachable` visit in between keeps the count. It does not halt the rollout.
+At the first failed Node, native dependencies leave later Nodes untouched. The rollout record becomes `halted` with the Node and bounded error code. Swamp history keeps the native step results; Gateway rows keep the Operation and run identifiers.
 
 A halted rollout blocks every later rollout and the catch-up. Fix the cause, then resume:
 
@@ -1074,7 +1034,7 @@ After the rollout, every run visits some Nodes again, one at a time and with the
 | --- | --- |
 | `pending`, `unreachable`, `deferred`, or `waiting` | The rollout did not converge it |
 | New in the rollout set | It joined after the rollout opened |
-| `converged` or `unchanged`, but drifted | Its agent reports another version, its CLI version differs from the desired release, or its footprint digest differs from the one it last received |
+| `converged` or `unchanged`, but drifted | Its observer reports another version or its recorded CLI version differs from the desired release |
 
 So a Node that was offline is converged within 5 minutes after it returns.
 

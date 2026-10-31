@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeAgentHashSource;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\NodeWorkerEnrollment;
 use App\Models\Operation;
 use App\Models\Project;
@@ -113,4 +114,20 @@ it('denies foreign output owners invalid pairs terminal and undeclared kinds', f
     $this->operation->kind = 'task_vm.destroy';
     expect(fn () => $source->store($this->operation, $this->guest->id, $this->credentials))->toThrow(ResourceOperationException::class);
     expect(Cache::get('nodes:worker-enrollment:operation:'.$this->operation->id))->toBeNull();
+});
+
+it('refuses an agent hash write after its held Gateway Node lock is lost', function (): void {
+    $locks = new NodeLocks(Cache::store('array'));
+    app()->instance(NodeLocks::class, $locks);
+    $lock = $locks->lock('native-hash-owner', 600);
+    expect($lock->get())->toBeTrue();
+    $this->travel(601)->seconds();
+
+    try {
+        expect(fn () => app(NodeAgentHashSource::class)->store($this->operation, $this->guest->id, str_repeat('c', 64)))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.lock_lost'));
+        expect($this->guest->fresh()->agent_secret_hash)->toBeNull();
+    } finally {
+        $lock->release();
+    }
 });

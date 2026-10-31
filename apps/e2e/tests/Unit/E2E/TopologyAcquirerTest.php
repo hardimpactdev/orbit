@@ -12,7 +12,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyComposer;
 use App\E2E\TopologyGuestPreparer;
-use App\E2E\TopologyNodePrograms;
+use App\E2E\TopologyNodeRecipe;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
@@ -43,8 +43,8 @@ function acquirerWorktree(): string
     }
     file_put_contents($root.'/apps/gateway/artisan', <<<'PHP'
 <?php
-$programs = [['name' => 'bootstrap', 'arguments' => ['true', 'bootstrap'], 'input' => null], ['name' => 'caddy-package', 'arguments' => ['true', 'caddy-package'], 'input' => null], ['name' => 'vpn-prerequisites', 'arguments' => ['true', 'vpn-prerequisites'], 'input' => null]];
-echo json_encode(['agent' => ['path' => dirname(__DIR__, 2).'/apps/agent/orbit-agent', 'sha256' => str_repeat('a', 64)], 'programs' => array_map(static fn (array $p): array => $p + ['fingerprint' => hash('sha256', json_encode(['arguments' => $p['arguments'], 'input' => $p['input']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))], $programs)]);
+$roles = array_values(array_filter(array_slice($argv, 2), static fn (string $arg): bool => ! str_starts_with($arg, '--')));
+echo json_encode(['schema_version' => 1, 'node' => ['platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'home' => '/home/orbit', 'roles' => $roles], 'bootstrap' => ['user' => 'orbit'], 'recipe' => ['tools' => []], 'agent' => ['path' => dirname(__DIR__, 2).'/apps/agent/orbit-agent', 'sha256' => str_repeat('a', 64)]]);
 PHP);
     file_put_contents($root.'/apps/gateway/.env', "APP_KEY=base64:fixture\n");
     file_put_contents($root.'/.gitignore', "/.e2e/\n/apps/gateway/.env\nvendor/\n");
@@ -121,7 +121,7 @@ function acquirerFixture(?Closure $override = null, array &$steps = [], bool $te
         'acquirer' => new TopologyAcquirer(
             host: $host,
             networks: $networks,
-            composer: new TopologyComposer($host, $guests, new TopologyNodePrograms($worktree)),
+            composer: new TopologyComposer($host, $guests, new TopologyNodeRecipe($worktree)),
             synchronizer: new WorktreeSynchronizer($host, $worktree, $operation),
             verifier: new TopologyVerifier($host, 1, 0),
             guests: $guests,
@@ -200,9 +200,9 @@ describe('TopologyAcquirer', function () {
         expect(array_search($dns[0], $incus->execs, true))->toBeLessThan(array_find_key($incus->execs, static fn (array $exec): bool => str_contains($exec['argv'][2] ?? '', 'boot_id')));
         expect($dns[0]['argv'])->toBe(['bash', '-ceu', file_get_contents(dirname(__DIR__, 3).'/resources/guest/public-dns.sh')]);
         $programs = array_values(array_filter($incus->execs, static fn (array $exec): bool => in_array('true', $exec['argv'], true)));
-        expect(array_map(static fn (array $exec): array => array_slice($exec['argv'], 10), $programs))->toBe([['true', 'caddy-package'], ['true', 'vpn-prerequisites']]);
+        expect($programs)->toBe([]);
         $agent = array_find_key($incus->execs, static fn (array $exec): bool => $exec['argv'][0] === 'install' && end($exec['argv']) === '/usr/local/bin/orbit-agent');
-        expect($agent)->toBeInt()->toBeLessThan(array_search($programs[0], $incus->execs, true))
+        expect($agent)->toBeInt()
             ->and($incus->execs[$agent]['argv'])->toBe(['install', '-D', '-m', '0755', '-o', 'root', '-g', 'root', '--', '/home/orbit/orbit/apps/agent/orbit-agent', '/usr/local/bin/orbit-agent']);
 
         $guests = [];
@@ -253,22 +253,6 @@ describe('TopologyAcquirer', function () {
         expect($incus->guests())->toBe([])
             ->and($incus->instances)->toBe([IncusHost::TEMPLATE => $template])
             ->and(array_filter($incus->calls, static fn (array $call): bool => in_array('local:'.IncusHost::TEMPLATE, $call, true) && $call[0] !== 'copy'))->toBe([]);
-    });
-
-    it('fails composition and cleans up when a Gateway VPN program fails', function (): void {
-        extract(acquirerFixture(static fn (string $instance, array $argv): ?array => in_array('vpn-prerequisites', $argv, true) ? ['', 'failed', 1] : null));
-
-        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Gateway convergence program [vpn-prerequisites] failed.');
-        expect($incus->guests())->toBe([]);
-    });
-
-    it('reports recipe pnpm repair failure before enrollment and cleans its guests', function (): void {
-        extract(acquirerFixture(static fn (string $instance, array $argv, ?string $stdin): ?array => in_array('recipe.install-javascript', $argv, true) ? [json_encode(['ok' => false, 'error' => ['code' => 'recipe.operation_failed', 'message' => 'pinned artifact digest mismatch', 'details' => []]], JSON_THROW_ON_ERROR), '', 0] : null));
-
-        expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'Recipe pnpm preparation failed');
-        expect($incus->guests())->toBe([]);
     });
 
     it('enrolls every declared Node with its catalog role, TLD, and WireGuard address', function () {

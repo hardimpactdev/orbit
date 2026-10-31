@@ -4,94 +4,29 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskBroadcasts;
-use App\Domain\Tasks\TaskCheckException;
-use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskExecutionLock;
-use App\Domain\Tasks\TaskWorkspaceLease;
-use App\Models\Instance;
-use App\Models\Project;
+use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 
-/**
- * Stops a running Project check. The next tick gives the implementer its reminder
- * ([ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)).
- */
+/** Records cancellation intent. Swamp stops its owned check and projects the terminal row. */
 final readonly class CancelTaskCheckAction
 {
-    public function __construct(
-        private RequireTasksExtensionAction $requireExtension,
-        private TaskCheckRunner $checks,
-        private TaskBroadcasts $broadcasts,
-    ) {}
+    public function __construct(private RequireTasksExtensionAction $extension, private CancelOperationAction $cancel) {}
 
     public function execute(Task $group, Task $task, ?TaskCheck $check = null): TaskCheck
     {
-        $this->requireExtension->execute();
-
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): TaskCheck => $this->cancelWithLock($group->fresh(['taskable']) ?? $group, $task, $check), wait: false);
-    }
-
-    /** The caller holds the group execution lock. A fenced absent start has no check left to stop. */
-    public function recoverStart(Task $group, TaskCheck $check): ?TaskCheck
-    {
-        if ($check->pid === 0) {
-            app(TaskWorkspaceLease::class)->reconcile($group);
-            $check = $check->fresh();
-            if ($check instanceof TaskCheck && $check->pid === 0) {
-                throw new ResourceOperationException('tasks.check_unreachable', 'The check start could not be recovered to confirm its stop.', 502);
-            }
+        $this->extension->execute();
+        $checkId = $check?->id;
+        $check = $task->checks()->whereIn('status', [TaskCheckStatus::Running, TaskCheckStatus::Lost])->when($checkId !== null, fn ($query) => $query->whereKey($checkId))->latest('id')->first();
+        $operation = $check === null ? null : Operation::query()->where('kind', 'tasks.check')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('input->check_id', $check->id)->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
+        if (! $check instanceof TaskCheck || ! $operation instanceof Operation) {
+            throw new ResourceOperationException('tasks.check_not_running', 'The task has no running check.', 409);
         }
-
-        return $check;
-    }
-
-    private function cancelWithLock(Task $group, Task $task, ?TaskCheck $check): TaskCheck
-    {
-        $statuses = $check === null ? [TaskCheckStatus::Running] : [TaskCheckStatus::Running, TaskCheckStatus::Lost];
-        $check = $check?->refresh() ?? $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
-        $check = $check instanceof TaskCheck ? $this->recoverStart($group, $check) : null;
-        $instance = $group->taskable;
-        if (! $check instanceof TaskCheck || ! $instance instanceof Instance) {
-            throw new ResourceOperationException(
-                errorCode: 'tasks.check_not_running',
-                message: __('The task has no running check.'),
-                status: 409,
-            );
-        }
-        try {
-            // A zero PID is an unstarted baseline claim. Its starter observes cancellation
-            // and stops any process whose identity arrives after this locked request.
-            if ($check->pid > 0) {
-                $this->checks->cancel($instance, $check->process());
-                app(TaskWorkspaceLease::class)->invalidateCheck($instance, $check->process());
-                $reading = $this->checks->read($instance, $check->process());
-                if ($reading->state !== 'finished') {
-                    throw new TaskCheckException($reading->state === 'running'
-                        ? 'The check process is still running.'
-                        : 'The check supervisor is gone without a result. A child command may still be running.');
-                }
-            }
-        } catch (TaskCheckException $exception) {
-            throw new ResourceOperationException(
-                errorCode: 'tasks.check_unreachable',
-                message: __('The check remains running because its process could not be confirmed stopped: :reason', ['reason' => $exception->getMessage()]),
-                status: 502,
-            );
-        }
-        $claimed = TaskCheck::query()->whereKey($check->id)->whereIn('status', $statuses)
-            ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now()]);
-        if ($claimed === 0) {
-            throw new ResourceOperationException(
-                errorCode: 'tasks.check_not_running',
-                message: __('The task has no running check.'),
-                status: 409,
-            );
-        }
-        $this->broadcasts->groupChanged($group->id);
+        $this->cancel->execute($operation);
 
         return $check->refresh();
     }

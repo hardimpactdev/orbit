@@ -6,8 +6,8 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmEnrollmentOwner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\TaskVms\TaskVmEnrollmentMaterialSource;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -67,7 +67,7 @@ final readonly class NodeWireGuardInput
         $bindings = $operation->input['private_bindings'] ?? [];
         $binding = is_array($bindings) ? ($bindings['configuration'] ?? null) : null;
         $taskVmKind = in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true);
-        $vm = $taskVmKind ? TaskVmEnrollmentMaterialSource::owned($operation) : null;
+        $vm = $taskVmKind ? TaskVmEnrollmentOwner::owned($operation) : null;
         $taskVmContext = $operation->kind === 'task_vm.destroy'
             ? $operation->target_type === 'task_vm' && TaskVm::query()->whereKey($operation->target_id)->where('node_id', $snapshot['context_node_id'])->exists()
             : $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;

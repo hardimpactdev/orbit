@@ -6,6 +6,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmEnrollmentMaterialSource;
@@ -42,7 +43,7 @@ function enrollmentMaterialBindings(Operation $operation, string $field, int $ow
         {
             return isset($this->known['tasks.provision']) ? [] : ['tasks.provision' => [
                 'workflow' => 'operation-test-enrollment', 'projection' => TaskVmEnrollmentProjection::class,
-                'private_material' => ['installation' => 'task_vm.installation', 'first_visit' => 'task_vm.first_visit'],
+                'private_material' => ['installation' => 'task_vm.installation', 'first_visit' => 'task_vm.first_visit', 'model_router' => 'task_vm.model_router'],
             ]];
         }
     };
@@ -118,4 +119,20 @@ it('binds the provision parent cloud token to its actual UpCloud VM before any c
     expect($source->ownerId($operation))->toBe($vm->id);
     $operation->target_id++;
     expect($source->ownerId($operation))->toBeNull();
+});
+
+it('refuses model-router material when its top-level router differs from private ownership', function (): void {
+    [$vm, $operation] = enrollmentMaterialParent();
+    $router = Node::query()->create(['name' => 'router-material', 'public_ssh_host' => '192.0.2.3', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $keys = Mockery::mock(ModelKeyIssuer::class);
+    $keys->shouldReceive('ownerNodeId')->andReturn($router->id);
+    $keys->shouldNotReceive('privateMaterial');
+    app()->instance(ModelKeyIssuer::class, $keys);
+    $operation->input = [...$operation->input, 'model_router_node_id' => $router->id];
+    enrollmentMaterialBindings($operation, 'model_router', $router->id);
+    $source = new TaskVmSecretSource('task_vm.model_router');
+    expect($source->ownerId($operation))->toBe($vm->id);
+    $operation->input = [...$operation->input, 'model_router_node_id' => $router->id + 1];
+    expect($source->ownerId($operation))->toBeNull();
+    expect(fn () => $source->resolve($operation, $vm->id, '', 'model_router'))->toThrow(ResourceOperationException::class);
 });

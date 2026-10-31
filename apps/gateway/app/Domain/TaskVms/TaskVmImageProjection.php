@@ -25,14 +25,12 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
     public function input(Operation $operation): array
     {
         $build = $this->build($operation);
-        if (! $operation->status->terminal()) {
-            app(RecipeImageBuildSteps::class)->assertCurrent($build);
-        }
-
         $input = Arr::except($operation->input, ['caller_node_id', 'pi_artifact_file']);
         if (is_array($input['pi_artifact'] ?? null)) {
             $input['pi_artifact'] = Arr::only($input['pi_artifact'], ['sha256']);
         }
+
+        $input['current'] = app(RecipeImageBuildSteps::class)->current($build);
 
         return $input;
     }
@@ -137,7 +135,7 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             unset($entry);
             $build->update(['steps' => $steps]);
             DB::afterCommit(static fn () => app(RecipeMaintenanceAlerts::class)->halted(
-                "Image build [{$build->id}] failed on host [{$build->host_node_id}]. Inspect the Operation and retained builder, then resume or retry.",
+                "Image build [{$build->id}] failed on host [{$build->host_node_id}]. Inspect the Operation and native cleanup outcome, then start a fresh attempt.",
                 $build->id, incident: RecipeMaintenanceAlerts::imageIncident($build)));
         }
     }

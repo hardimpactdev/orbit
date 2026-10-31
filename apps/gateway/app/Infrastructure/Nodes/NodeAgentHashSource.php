@@ -6,7 +6,6 @@ namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\NodeEnrollmentPrivateOwner;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationAttemptLease;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationSecretOutputStore;
@@ -35,6 +34,14 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
         if (in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)) {
             return app(NodeEnrollmentPrivateOwner::class)->taskVm($operation, 'secret_hash');
         }
+        $footprint = $operation->input['footprint'] ?? null;
+        if ($operation->kind === 'fleet.recipe' && DirectOperation::owns($operation)
+            && $operation->target_type === 'node' && $operation->target_id === $operation->node_id
+            && is_array($footprint) && ($footprint['node_id'] ?? null) === $operation->node_id
+            && Node::query()->whereKey($operation->node_id)->exists()) {
+            return $operation->node_id;
+        }
+
         if ($operation->kind === 'node.agent_rekey' && DirectOperation::owns($operation)
             && $operation->target_type === 'node' && $operation->node_id !== null && $operation->target_id === $operation->node_id) {
             $input = ValidatedData::object($operation->input['_agent_rekey'] ?? []);
@@ -76,9 +83,10 @@ final readonly class NodeAgentHashSource implements OperationSecretOutputStore, 
 
     public function store(Operation $operation, int $ownerId, #[\SensitiveParameter] mixed $value): void
     {
-        if ($ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
+        if ($operation->kind === 'fleet.recipe' || $ownerId !== $this->ownerId($operation) || ! is_string($value) || preg_match('/\A[0-9a-f]{64}\z/D', $value) !== 1) {
             throw new ResourceOperationException('operation.secret_output_unavailable', 'The agent hash must belong to the admitted Node.', 409);
         }
+        app(NodeLocks::class)->renewHeld();
         Node::query()->findOrFail($ownerId)->forceFill(['agent_secret_hash' => $value])->save();
     }
 

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Clusters\ClusterRouterOperationLock;
-use App\Domain\Fleet\NodeCliConvergence;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -94,8 +93,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     private function convergeAgent(Node $node): void
     {
         ($this->agentConverger ?? app(NodeAgentRoleConverger::class))->converge($node);
-        // The Orbit CLI joins the agent on every Node of the rollout set (ADR 0202). Best effort.
-        app(NodeCliConvergence::class)->converge($node);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
