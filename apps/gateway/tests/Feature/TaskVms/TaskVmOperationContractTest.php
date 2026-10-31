@@ -23,12 +23,8 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AgentCommands\AgentGuest;
-use App\Infrastructure\AgentCommands\AgentSchemas;
-use App\Infrastructure\AgentCommands\GuestAgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\TaskVms\TaskVmGuestCommand;
 use App\Infrastructure\TaskVms\TaskVmLifecycleCommand;
 use App\Infrastructure\TaskVms\TaskVmUpCloudImageCommand;
 use App\Infrastructure\TaskVms\UpCloudApi;
@@ -85,30 +81,8 @@ function taskVmEffectClaim(Operation $operation): void
     test()->postJson('/api/v1/operation-executor/claim', ['kind' => $operation->kind, 'worker' => 'vm-workflow'])->assertOk()->assertJsonPath('data.id', $operation->id);
 }
 
-it('sends image inspection parameters without mutation receipt metadata', function (string $command, array $parameters): void {
-    $operation = taskVmEffectFixture();
-    $guest = ['project' => 'orbit-tasks', 'name' => $operation->input['vm']['name']];
-    $input = ['command' => $command, 'guest' => $guest, 'parameters_json' => json_encode((object) $parameters, JSON_THROW_ON_ERROR)];
-    $run = ['input' => $input, 'effect_key' => 'op-'.$operation->id.'.inspection', 'effect_metadata' => new EffectReceiptMetadata([], ['nonce' => str_repeat('a', 64), 'created_at' => now()->getTimestamp()])];
-    $runner = Mockery::mock(GuestAgentCommandRunner::class);
-    $runner->shouldReceive('runGuest')->once()->withArgs(function (AgentGuest $target, string $name, array $actual) use ($command, $parameters): bool {
-        AgentSchemas::assertInput($name, $actual);
-
-        return $name === $command && $actual === $parameters;
-    })->andReturn(['ready' => true]);
-    app()->instance(GuestAgentCommandRunner::class, $runner);
-
-    expect(app(TaskVmGuestCommand::class)->run($operation, $run, $input))->toBe(['ready' => true]);
-    expect(app(TaskVmUpCloudImageCommand::class)->effectful($operation, ['input' => ['action' => 'guest', 'command' => $command]]))->toBeFalse();
-})->with([
-    'owner' => ['image.owner', []],
-    'smoke check' => ['image.check', ['lean_boot' => true, 'firewall' => false]],
-]);
-
-it('keeps keyed receipt enforcement for image mutations on both providers', function (): void {
-    $operation = new Operation;
-    expect(app(TaskVmGuestCommand::class)->effectful($operation, ['input' => ['command' => 'image.boot']]))->toBeTrue();
-    expect(app(TaskVmUpCloudImageCommand::class)->effectful($operation, ['input' => ['action' => 'guest', 'command' => 'image.boot']]))->toBeTrue();
+it('keeps keyed receipt enforcement for the retained UpCloud image mutations', function (): void {
+    expect(app(TaskVmUpCloudImageCommand::class)->effectful(new Operation, ['input' => ['action' => 'guest', 'command' => 'image.boot']]))->toBeTrue();
 });
 
 it('records exact Incus intent without a PHP executor or queue', function (string $verb): void {

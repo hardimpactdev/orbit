@@ -106,7 +106,9 @@ One failed change does not stop the others. The run records its error, keeps tha
 
 ## Tear down
 
-[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes every Orbit item in the collection, recorded or not, then deletes the stored values and the record of published items. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
+
+Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 
 ## API
 
@@ -125,6 +127,7 @@ All operations need access to the Gateway.
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
+| `vault.item_shared` | 409 | A published teardown item also belongs to another collection. No item is deleted. |
 | `validation.failed` | 422 | The `url` is not an HTTPS origin on a `.orbit` host. |
 | `vault.sync_failed` | 502 | `vault:sync` could not make at least one change. `details` holds `failed` and `first_error`. |
 | `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |
@@ -188,16 +191,16 @@ When a credential is removed, its item is deleted permanently instead of moved t
 
 ## Operation execution
 
-Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The Gateway resolves the Operation's secret reference into an encrypted snapshot of the submitted credentials and wanted Database items. Swamp receives only safe metadata and the published item identifiers. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
+Setup, synchronization, and teardown record an Operation and return HTTP 202. Swamp runs the named Vault collection program on the recorded Gateway Node. The shared private-material route resolves the Operation's secret reference into its encrypted snapshot of the submitted credentials and wanted Database items. Only the exact recorded run on that Node can read it while the Operation is unfinished.
+
+Swamp uses the private material in memory and through protected stdin; only safe metadata and published item identifiers reach its resources. Credentials never enter Operation input, results, step output, or Swamp data. Terminal completion deletes its encrypted snapshot and snapshots without an unfinished Operation; only unfinished Operations retain their inputs for recovery.
 
 A retry reconciles the collection by `orbit.source` before it creates an item. It adopts an earlier create whose reply was lost, removes duplicates and orphans, and retains unrelated items. A failed teardown keeps its configuration and ledger for retry. Scheduled synchronization records intent; it does no network work in PHP.
 
-Teardown receipts, and direct setup and sync results, carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
-
-Merge waits for orbit-swamp#75 to run `operation-integrations` on a placed worker. A queued Operation keeps the Vault target hold until a worker completes it or the operator cancels it; the scheduler never silently drops that intent.
+Direct setup, sync, and teardown results carry only collection identifiers and ledger metadata. Each ledger list contains at most 4,096 entries; each entry string is at most 1 KiB, and the whole result is at most 256 KiB. The Gateway refuses an oversized result before projecting its ledger and stores no partial result.
 
 ## Direct Swamp writer
 
-`vault.sync` and `vault.setup` start `operation-vault-direct` through the shared helper and require their direct writers. An explicit `polled` setting refuses because its old execution contract is removed. Teardown retains its current path until its owning takeover. Rollback reverts the owning PR.
+`vault.sync`, `vault.setup`, and `vault.teardown` start `operation-vault-direct` through the shared helper and require their direct writers. An explicit `polled` setting refuses because its old execution contract is removed. Rollback reverts the owning PR.
 
-The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.
+The exact admitted Node worker retrieves the encrypted snapshot through the shared run-bound private-material endpoint. Credentials stay in the effect-only callback and protected stdin. The program keeps its 900-second overall deadline. It refuses protected values echoed into scalar or nested public metadata before any result request. The Gateway projects bounded ledger metadata through its existing completion and removes terminal credential snapshots. No family route, token or relay is added.

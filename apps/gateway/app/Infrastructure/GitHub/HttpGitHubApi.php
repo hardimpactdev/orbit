@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GitHub;
 
-use App\Domain\GitHub\DependencyReadToken;
+use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
@@ -24,6 +24,7 @@ use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewEvent;
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBranchUpdate;
 use DateTimeImmutable;
@@ -152,8 +153,15 @@ final readonly class HttpGitHubApi implements GitHubApi
     }
 
     /** Fresh, read-only credential for the Services peer; never enters the shared token cache. */
-    public function dependencyReadToken(GitHubAppCredentials $credentials, GitHubRepository $repository): DependencyReadToken
+    public function dependencyReadToken(GitHubAppCredentials $credentials, GitHubRepository $repository): GitHubAccessToken
     {
+        return $this->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $repository->owner.'/'.$repository->name, 'permissions' => ['contents' => 'read', 'pull_requests' => 'read']]));
+    }
+
+    public function scopedRepositoryToken(GitHubAppCredentials $credentials, GitHubTokenGrant $grant): GitHubAccessToken
+    {
+        $repository = $grant->repository;
+        $requestedPermissions = $grant->permissions;
         $deadline = microtime(true) + 5;
         try {
             $installation = $this->asApp($credentials)->withoutRedirecting()->timeout(5)->connectTimeout(5)
@@ -167,17 +175,16 @@ final readonly class HttpGitHubApi implements GitHubApi
             $response = $this->asApp($credentials)->withoutRedirecting()->timeout($remaining)->connectTimeout($remaining)
                 ->post("/app/installations/{$id}/access_tokens", [
                     'repositories' => [$repository->name],
-                    'permissions' => ['contents' => 'read', 'pull_requests' => 'read'],
+                    'permissions' => $requestedPermissions,
                 ]);
             $this->assertDependencyTokenResponse($response);
             $token = $response->json('token');
             $expires = $response->json('expires_at');
             $permissions = $response->json('permissions');
             $repos = $response->json('repositories');
-            if (! $response->successful() || ! is_string($token) || $token === '' || ! is_string($expires)
-                || ! is_array($permissions) || ($permissions['contents'] ?? null) !== 'read'
-                || ($permissions['pull_requests'] ?? null) !== 'read'
-                || array_diff_key($permissions, array_flip(['contents', 'pull_requests', 'metadata'])) !== []
+            if (! $response->successful() || ! is_string($token) || $token === '' || strlen($token) > 2048 || preg_match('/\A[A-Za-z0-9_-]+\z/D', $token) !== 1 || ! is_string($expires)
+                || ! is_array($permissions) || array_any($requestedPermissions, static fn (string $level, string $name): bool => ($permissions[$name] ?? null) !== $level)
+                || array_diff_key($permissions, $requestedPermissions + ['metadata' => 'read']) !== []
                 || (isset($permissions['metadata']) && $permissions['metadata'] !== 'read')
                 || ! is_array($repos) || count($repos) !== 1 || ! is_array($repos[0] ?? null)
                 || ! is_string($repos[0]['full_name'] ?? null)
@@ -190,7 +197,7 @@ final readonly class HttpGitHubApi implements GitHubApi
                 throw new \UnexpectedValueException;
             }
 
-            return new DependencyReadToken($token, $expires);
+            return new GitHubAccessToken($token, $expires);
         } catch (ResourceOperationException $exception) {
             throw $exception;
         } catch (Throwable) {
