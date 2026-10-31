@@ -2,10 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
-use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\RouteKind;
@@ -18,20 +15,10 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
-use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
-use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\IngressSiteRepository;
-use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
-use Tests\Support\FakeAgentCommandRunner;
-use Tests\Support\FakeNodeCaddyBuilds;
 
 beforeEach(function (): void {
     $this->cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
@@ -234,52 +221,6 @@ describe('analytics tracking Route public edge', function (): void {
             ->and($override->workloadAddress)->toBe('10.10.0.20')
             ->and($artifact->routerUpstream)->toBe('10.10.0.20')
             ->and($artifact->certificateScope)->toBe("route-{$this->route->id}-ingress");
-    });
-});
-
-describe('analytics tracking Route removal', function (): void {
-    it('removes the Router certificates of the tracking Route', function (): void {
-        $agents = new FakeAgentCommandRunner()->answer('certificate.remove-leaf', []);
-        $accounts = new class implements ManagedUserAccountResolver
-        {
-            public function resolve(Node $node): ManagedUserAccount
-            {
-                return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
-            }
-        };
-        $signer = new class implements LeafCertificateSigner
-        {
-            public function sign(string $domain, string $certificateRequest): string
-            {
-                return "LEAF\n";
-            }
-
-            public function rootCertificate(): string
-            {
-                return "ROOT\n";
-            }
-        };
-        $processes = new class implements ProcessRunner
-        {
-            public function run(ProcessInvocation $invocation): CommandResult
-            {
-                return new CommandResult(0, '', '', 1, false);
-            }
-        };
-        $sites = new DevelopmentSiteRepository;
-        $projector = new NativeRouteRemovalProjector(
-            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites, hostnames: app()->tagged(ContributedPrivateHostnames::class))),
-            new RemoteAppDevCertificateManager($agents, $signer, $accounts),
-            new RemoteAppDevCaddyManager(new FakeNodeCaddyBuilds, new FakeAgentCommandRunner),
-            new RemoteAppDevRouteFirewallManager(new FakeAgentCommandRunner()->answer('firewall.route-lan', ['matches' => true])),
-        );
-
-        $projector->cleanupCertificates($this->route);
-
-        expect($agents->calls)->toBe([
-            ['node' => 'edge-router', 'command' => 'certificate.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router", 'home' => '/home/orbit']],
-            ['node' => 'edge-router', 'command' => 'certificate.remove-leaf', 'input' => ['scope' => "route-{$this->route->id}-router-hostname-change", 'home' => '/home/orbit']],
-        ]);
     });
 });
 

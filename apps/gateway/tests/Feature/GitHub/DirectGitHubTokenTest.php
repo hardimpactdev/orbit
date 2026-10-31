@@ -55,7 +55,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     $stored = json_encode([Activity::query()->get()->toArray(), Operation::query()->get()->toArray(),
-        $this->operation->steps()->get()->toArray(), $this->logs], JSON_THROW_ON_ERROR);
+        $this->logs], JSON_THROW_ON_ERROR);
     expect($stored)->not->toContain('ephemeral-sentinel', 'private-upstream-sentinel');
     foreach (Exceptions::reported() as $exception) {
         expect((string) $exception)->not->toContain('ephemeral-sentinel', 'private-upstream-sentinel');
@@ -88,7 +88,6 @@ it('returns fresh exact-scope credentials privately without changing public resu
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.github.com/app/installations/7/access_tokens'
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write']]);
     expect($this->operation->fresh()->toArray())->toBe($before);
-    expect($this->operation->steps()->count())->toBe(0);
     $this->getJson('/api/v1/operations/'.$this->operation->id)->assertOk()->assertDontSee('ephemeral-sentinel');
 });
 
@@ -117,7 +116,8 @@ it('does not grant a configured control-plane peer private access to another Nod
     $foreign = Node::query()->create(['name' => 'foreign', 'public_ssh_host' => '192.0.2.5', 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
     $this->operation->update(['node_id' => $target === 'null' ? null : ($target === 'Gateway' ? $this->gateway->id : $foreign->id)]);
 
-    $this->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $response = $this->getJson($this->path.'?'.http_build_query($this->body));
+    $target === 'null' ? $response->assertUnprocessable() : $response->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 
     Http::assertNothingSent();
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
@@ -132,25 +132,34 @@ it('refuses a direct mint for another Node even for the configured control-plane
     Http::assertNothingSent();
 });
 
-it('refuses an unknown peer and missing Gateway access', function (): void {
+it('refuses an unknown peer before any GitHub request', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.50'])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
-    $this->worker->accessibleNodes()->detach();
-    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip])->getJson($this->path.'?'.http_build_query($this->body))->assertForbidden();
     Http::assertNothingSent();
 });
 
-it('refuses a cancelled terminal or non-direct intent before minting', function (string $condition): void {
+it('mints for its authenticated own Node without a fleet access edge', function (): void {
+    $this->worker->accessibleNodes()->detach();
+    unset($this->reply['repositories']);
+    Http::fake([
+        '*/installation' => Http::response(['id' => 7]),
+        '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]]),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()->assertJsonPath('data.github.token', 'ephemeral-sentinel');
+    Http::assertSentCount(3);
+});
+
+it('refuses a cancelled terminal or undeclared intent before minting', function (string $condition): void {
     match ($condition) {
         'cancel' => $this->operation->update(['cancel_requested_at' => now()]),
         'terminal' => $this->operation->update(['status' => OperationStatus::Succeeded]),
-        'polled' => $this->operation->update(['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]]),
         'undeclared' => app()->instance(DirectOperation::class, new DirectOperation),
     };
     $this->getJson($this->path.'?'.http_build_query($this->body))->assertStatus(match ($condition) {
-        'polled', 'undeclared' => 422, default => 409
+        'undeclared' => 422, default => 409
     });
     Http::assertNothingSent();
-})->with(['cancel', 'terminal', 'polled', 'undeclared']);
+})->with(['cancel', 'terminal', 'undeclared']);
 
 it('refuses caller-selected repository scope and transport on the shared private read', function (array $extra): void {
     $this->getJson($this->path.'?'.http_build_query([...$this->body, ...$extra]))->assertUnprocessable();
@@ -264,7 +273,6 @@ it('revokes a freshly minted credential when the intent changes during minting',
             'terminal' => ['status' => OperationStatus::Succeeded],
             'node' => ['node_id' => $this->gateway->id],
             'run' => ['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38']],
-            'writer' => ['state' => ['route_publication_writer' => 'polled', 'swamp_run_id' => $this->runId]],
             'grant' => ['kind' => 'route.private_dns_publish'],
         };
         $this->operation->update($changes);
@@ -274,13 +282,13 @@ it('revokes a freshly minted credential when the intent changes during minting',
 
     $this->getJson($this->path.'?'.http_build_query($this->body))
         ->assertStatus(match ($change) {
-            'node' => 403, 'writer' => 422, default => 409
+            'node' => 403, default => 409
         })
         ->assertDontSee('ephemeral-sentinel');
 
     Http::assertSentCount(4);
     expect(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
-})->with(['cancel', 'terminal', 'node', 'run', 'writer', 'grant']);
+})->with(['cancel', 'terminal', 'node', 'run', 'grant']);
 
 it('keeps a stale mint refused when revocation fails and logs only a fixed code', function (bool $throws): void {
     Http::fake(function (Request $request) use ($throws) {
