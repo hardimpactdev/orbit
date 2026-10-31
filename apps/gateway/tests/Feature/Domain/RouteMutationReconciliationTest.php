@@ -11,7 +11,6 @@ use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\DestroyRouteAction;
 use App\Actions\Routes\RouteTargetState;
-use App\Actions\Routes\SetRouteTargetAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Data\Routes\CreateRouteData;
@@ -21,7 +20,6 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -51,7 +49,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Tests\Support\FakeAnalyticsTrackingRouteProjector;
@@ -85,21 +82,6 @@ beforeEach(function (): void {
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
 });
 
-it('broadcasts a changed Route target before a metrics reconcile failure', function (): void {
-    Event::fake();
-    $route = reconciliation_route($this->orbitApp, 'set-before-reconcile.test', $this->node);
-    $replacement = reconciliation_instance($this->orbitApp, $this->node, 'replacement');
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
-    app()->instance(MetricsFleetReconciler::class, $metrics);
-
-    expect(fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id))
-        ->toThrow(RuntimeException::class, 'metrics unavailable');
-
-    Event::assertDispatched(RecordBroadcast::class);
-    expect($route->refresh()->targets->sole()->instance_id)->toBe($replacement->id);
-});
-
 it('reports association conflicts before active Route reconciliation refusals', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         projectId: $this->orbitApp->id,
@@ -118,7 +100,7 @@ it('reports association conflicts before active Route reconciliation refusals', 
     $before = $route->fresh(['targets'])->toArray();
 
     foreach ([
-        fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
+        fn () => app(RouteTargetState::class)->bind($route, $replacement->id, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all()),
         fn () => app(RouteTargetState::class)->clear($route, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all()),
         fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
@@ -1223,7 +1205,7 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
         ->toBe(0)
         ->and(fn () => app(CreateRouteAction::class)->ensureForInstance($memberTarget, null))
         ->toThrow(ResourceOperationException::class, 'requires one active Router')
-        ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
+        ->and(fn () => app(RouteTargetState::class)->bind($explicit, $memberTarget->id, $explicit->targets()->orderBy('instance_id')->pluck('instance_id')->all()))
         ->toThrow(ResourceOperationException::class, 'requires one active Router');
     expect($explicit->fresh(['targets'])->toArray())->toBe($before);
 
@@ -1239,7 +1221,7 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
 
     expect(app(CreateRouteAction::class)->ensureForInstance($memberTarget, null)->cluster_id)
         ->toBe($cluster->id)
-        ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
+        ->and(fn () => app(RouteTargetState::class)->bind($explicit, $memberTarget->id, $explicit->targets()->orderBy('instance_id')->pluck('instance_id')->all()))
         ->toThrow(
             ResourceOperationException::class,
             "Instance [{$memberTarget->id}] is already associated with Route",
@@ -2488,7 +2470,7 @@ it('retains reconciliation refusals for active Route changes without association
             $route,
             new UpdateRouteData(true, 'changed.example.test', false, null),
         ),
-        fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id),
+        fn () => app(RouteTargetState::class)->bind($route, $replacement->id, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all()),
         fn () => app(DestroyRouteAction::class)->execute($route),
     ] as $mutation) {
         expect($mutation)->toThrow(function (ResourceOperationException $exception): void {

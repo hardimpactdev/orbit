@@ -6,24 +6,150 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteExecutionProof;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
+use App\Domain\Routes\RouteReplacementStep;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
+use App\Domain\Routes\RouteTargetWebRoot;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /** Gateway-owned validation and Route state transitions. Contains no Node execution. */
 final readonly class RouteTargetState
 {
     public function __construct(private RouteTargetSetGuard $guard) {}
+
+    /** @param list<int> $expectedTargetIds */
+    public function bind(Route $route, int $instanceId, array $expectedTargetIds): Route
+    {
+        if (! $route->isApp()) {
+            throw new ResourceOperationException('route.kind_unsupported', 'Only a Project Route can own Instance targets.', 409);
+        }
+        try {
+            return DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
+                $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
+                $target = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instanceId);
+                $currentTargetIds = $locked
+                    ->targets()
+                    ->orderBy('instance_id')
+                    ->pluck('instance_id')
+                    ->map(static fn (mixed $id): int => StoredInteger::from($id))
+                    ->values()
+                    ->all();
+
+                if ($currentTargetIds !== $expectedTargetIds) {
+                    throw new ResourceOperationException(
+                        errorCode: 'env.owner_changed',
+                        message: 'The Instance environment owner changed during the operation.',
+                        status: 409,
+                    );
+                }
+
+                if ($locked->hasWebRoot()) {
+                    RouteWebRoot::assertRetargetable($target);
+                } else {
+                    RouteTargetWebRoot::assertSupported($target);
+                }
+
+                $currentTarget = $locked->targets()->first();
+
+                if ($currentTarget?->instance_id === $target->id) {
+                    return $locked->load('targets');
+                }
+
+                if ($target->project_id !== $locked->project_id) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.target_app_conflict',
+                        message: 'The Route target must belong to the Route Project.',
+                        status: 409,
+                    );
+                }
+
+                if ($target->status !== InstanceState::Active) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.target_inactive',
+                        message: 'The Route target must be active.',
+                        status: 409,
+                    );
+                }
+
+                $placement = app(RouteStateResolver::class)->forNode($target->node);
+
+                if ($placement->clusterId !== null) {
+                    app(RouteStateResolver::class)->assertRouter($placement->clusterId);
+                }
+
+                $attributes = [
+                    'node_id' => $placement->nodeId,
+                    'cluster_id' => $placement->clusterId,
+                ];
+
+                if ($locked->provenance === RouteProvenance::Generated) {
+                    $attributes['generation_basis_node_id'] = $target->node_id;
+                    $attributes['domain'] = app(RouteStateResolver::class)->generatedDomain(
+                        $target->project->slug,
+                        $target->name,
+                        $placement->effectiveTld,
+                    );
+                }
+
+                if (! $locked->hasWebRoot()) {
+                    app(RouteAssociationGuard::class)->assertTargetAssignable($locked, $target);
+                }
+
+                app(RouteAssociationGuard::class)->assertTargetsDetachable($locked);
+                app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
+
+                $nextDomain = $attributes['domain'] ?? $locked->domain;
+
+                if ($nextDomain !== $locked->domain) {
+                    $replacement = Route::query()->create([
+                        'project_id' => $locked->project_id,
+                        'node_id' => $attributes['node_id'],
+                        'cluster_id' => $attributes['cluster_id'],
+                        'generation_basis_node_id' => $attributes['generation_basis_node_id'] ?? null,
+                        'domain' => $nextDomain,
+                        'provenance' => $locked->provenance,
+                        'publication' => $locked->publication,
+                        'status' => RouteStatus::Pending,
+                        'replaces_route_id' => $locked->id,
+                        'replacement_step' => RouteReplacementStep::Reserved,
+                    ]);
+                    $replacement->targets()->create(['instance_id' => $target->id, 'position' => 0]);
+                    $locked->targets()->delete();
+                    $locked->delete();
+                    $replacement->update([
+                        'replaces_route_id' => null,
+                        'replacement_step' => null,
+                    ]);
+
+                    return $replacement->refresh()->load('targets');
+                }
+
+                unset($attributes['domain']);
+                $locked->update($attributes);
+                $locked->targets()->delete();
+                $locked->targets()->create(['instance_id' => $target->id, 'position' => 0]);
+
+                return $locked->refresh()->load('targets');
+            });
+        } catch (QueryException $exception) {
+            throw new ResourceOperationException('route.target_conflict', 'The Route target proposal conflicts with existing Route state.', 409, $exception);
+        }
+    }
 
     /** @param list<int> $expectedTargetIds */
     public function clear(Route $route, array $expectedTargetIds): Route

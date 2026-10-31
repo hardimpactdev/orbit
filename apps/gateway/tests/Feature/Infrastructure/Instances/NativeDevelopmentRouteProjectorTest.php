@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Actions\Routes\SetRouteTargetAction;
-use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Actions\Routes\RouteTargetState;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordBroadcast;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentSourceAccess;
@@ -27,7 +25,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
@@ -36,7 +33,6 @@ use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
-use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
@@ -45,7 +41,6 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
-use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -1065,127 +1060,7 @@ it('grants source access only to the converging checkout and checkouts nested in
     }
 });
 
-describe('setting a development Route target', function (): void {
-    it('grants source access to the new target checkout only', function (): void {
-        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-        $route->publishSites();
-        route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other');
-        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $agents, , $home] = orb127_route_projector();
-
-        try {
-            app(SetRouteTargetAction::class)->execute($route, $added->id);
-
-            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
-                ->and(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
-        } finally {
-            new Filesystem()->deleteDirectory($home);
-        }
-    });
-
-    it('grants again on a retry and walks nothing for the current target of an active Route', function (): void {
-        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-        $route->publishSites();
-        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $agents, , $home] = orb127_route_projector();
-
-        try {
-            app(SetRouteTargetAction::class)->execute($route, $added->id);
-            $agents->calls = [];
-            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
-
-            expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
-
-            $route->update(['status' => RouteStatus::Active]);
-            $agents->calls = [];
-            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
-
-            expect($agents->calls)->toBe([]);
-        } finally {
-            new Filesystem()->deleteDirectory($home);
-        }
-    });
-
-    it('walks nothing while the Route sites are unpublished', function (): void {
-        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $agents, , $home] = orb127_route_projector();
-
-        try {
-            app(SetRouteTargetAction::class)->execute($route, $added->id);
-
-            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
-                ->and($agents->calls)->toBe([]);
-        } finally {
-            new Filesystem()->deleteDirectory($home);
-        }
-    });
-
-    it('returns projection contention before it changes or announces anything', function (): void {
-        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-        $route->publishSites();
-        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        [, $agents, , $home] = orb127_route_projector();
-        new Filesystem()->ensureDirectoryExists($home, 0o700);
-        $holder = fopen($home.'/.dnsmasq-projections.lock', 'c+');
-        flock($holder, LOCK_EX);
-        $now = 0.0;
-        app()->instance(DevelopmentProjectionOperationLock::class, new NativeDevelopmentProjectionOperationLock(
-            orbitHome: $home,
-            deadline: app(CommandDeadline::class),
-            clock: static function () use (&$now): float {
-                return $now += 31.0;
-            },
-            wait: static function (int $microseconds): void {},
-        ));
-        Event::fake([RecordBroadcast::class]);
-
-        try {
-            expect(fn () => app(SetRouteTargetAction::class)->execute($route, $added->id))
-                ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app-dev.projection_busy')
-                    ->and($exception->status)->toBe(409));
-            expect($route->refresh()->targets->sole()->instance_id)->toBe($instance->id)
-                ->and($agents->calls)->toBe([]);
-            Event::assertNotDispatched(RecordBroadcast::class);
-        } finally {
-            flock($holder, LOCK_UN);
-            fclose($holder);
-            new Filesystem()->deleteDirectory($home);
-        }
-    });
-
-    it('stores and announces the target when the grant fails, and a retry of the same target grants', function (): void {
-        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-        $route->publishSites();
-        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
-        $fail = true;
-        [, $agents, , $home] = orb127_route_projector(failAccess: static function () use (&$fail): bool {
-            return $fail;
-        });
-        Event::fake([RecordBroadcast::class]);
-
-        try {
-            expect(fn () => app(SetRouteTargetAction::class)->execute($route, $added->id))
-                ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_access_failed')
-                    ->and($exception->step)->toBe('source-access')
-                    ->and($exception->getMessage())->toContain('The Route target is stored.')
-                    ->and($exception->getMessage())->toContain('Set the same target on Route [feature.acme.test] again'));
-            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id);
-            Event::assertDispatched(
-                RecordBroadcast::class,
-                fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated && $event->id === $route->id,
-            );
-
-            $fail = false;
-            $agents->calls = [];
-            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
-
-            expect(route_access_walked_checkouts($agents))->toBe(['/home/orbit/apps/acme/added']);
-        } finally {
-            new Filesystem()->deleteDirectory($home);
-        }
-    });
-
+describe('development Route target state', function (): void {
     it('hands a generated Route target to the replacement Route when the domain changes', function (): void {
         [$instance, $explicit, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
         $explicit->cluster->update(['tld' => 'acme.test']);
@@ -1202,17 +1077,14 @@ describe('setting a development Route target', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         try {
-            $replacement = app(SetRouteTargetAction::class)->execute($route, $added->id);
+            $replacement = app(RouteTargetState::class)->bind($route, $added->id, $route->targets()->orderBy('instance_id')->pluck('instance_id')->all());
 
             expect($replacement->id)->not->toBe($route->id)
                 ->and($replacement->domain)->toBe("added.{$instance->project->slug}.acme.test")
                 ->and($replacement->targets->sole()->instance_id)->toBe($added->id)
                 ->and(Route::query()->find($route->id))->toBeNull()
                 ->and($agents->calls)->toBe([]);
-            Event::assertDispatched(
-                RecordBroadcast::class,
-                fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated && $event->id === $replacement->id,
-            );
+
         } finally {
             new Filesystem()->deleteDirectory($home);
         }

@@ -142,10 +142,13 @@ final readonly class AdmitRouteOperationAction
     public function setTarget(Route $route, int $instanceId, ?Node $caller = null, ?string $requestId = null): Operation
     {
         RouteKitAvailability::kind('route.target_set');
+        $previous = array_values($route->targets()->orderBy('instance_id')->pluck('instance_id')->map(StoredInteger::from(...))->all());
 
-        return $this->owned([...$route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all(), $instanceId], function () use ($route, $instanceId, $caller, $requestId): Operation {
-            $previous = $route->targets()->pluck('instance_id')->map(StoredInteger::from(...))->values()->all();
-            $updated = app(SetRouteTargetAction::class)->execute($route, $instanceId, grantSourceAccess: false);
+        return $this->owned([...$previous, $instanceId], function () use ($route, $previous, $instanceId, $caller, $requestId): Operation {
+            $updated = $this->targets->bind($route, $instanceId, $previous);
+            DB::afterCommit(fn () => app(RecordEventBroadcaster::class)->broadcast(
+                RecordEventType::RouteUpdated, $updated->id, RouteData::fromModel($updated)->toArray(),
+            ));
 
             return $this->start('route.target_set', $updated, ['mode' => 'target', 'instance_id' => $instanceId, 'previous_target_instance_ids' => $previous], $caller, $requestId);
         });
