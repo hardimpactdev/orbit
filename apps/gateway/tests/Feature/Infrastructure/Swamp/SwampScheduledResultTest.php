@@ -213,3 +213,27 @@ it('projects a discovered native scheduled result end to end through the existin
     expect($this->operation->fresh()->state['swamp_scheduled_result']['run_id'])->toBe($this->scheduled);
     expect(array_column($this->socket->sent, 'type'))->toBe(['workflow.history.get']);
 });
+
+it('keeps a newer scheduled pending observation when startup replays the original admission result', function (): void {
+    $this->row['result']['ci']['observed'] = 'newer-observation';
+    $step = app(SwampCommandStep::class);
+    $step->projectScheduledTerminal(scheduledObservationDeclaration()['workflow_id'], ['id' => $this->scheduled]);
+    $sequence = $this->operation->fresh()->sequence;
+    $newerResult = $this->operation->fresh()->result;
+    $this->socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+        'id' => $this->original, 'workflowName' => 'operation-test-check', 'status' => 'succeeded',
+        'inputs' => ['operation_id' => $this->operation->id, 'node_id' => $this->operation->node_id, 'kind' => $this->operation->kind],
+        'startedAt' => '2026-10-31T23:59:00Z', 'completedAt' => '2026-10-31T23:59:01Z',
+        'jobs' => [['name' => 'check', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode(['check_id' => 17, 'pending' => true])]]]]],
+    ]]]];
+    config(['swamp.run_token' => 'fixture.events']);
+    $events = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($events, new NullLogger);
+    $subscriber->pass();
+    $attach = array_values(array_filter($events->sent, fn (array $message): bool => $message['type'] === 'run.attach' && $message['payload']['runId'] === $this->original))[0];
+    $events->push(['type' => 'error', 'id' => $attach['id'], 'error' => ['code' => 'not_found']]);
+    $subscriber->pass();
+    expect($this->operation->fresh()->result)->toBe($newerResult);
+    expect($this->operation->fresh()->sequence)->toBe($sequence);
+    expect($this->operation->fresh()->state['swamp_scheduled_result']['run_id'])->toBe($this->scheduled);
+});

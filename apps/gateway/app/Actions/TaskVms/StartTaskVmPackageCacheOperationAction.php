@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -21,7 +22,7 @@ final readonly class StartTaskVmPackageCacheOperationAction
         $this->settings->host($hostNodeId);
         Node::query()->whereKey($hostNodeId)->where('status', LifecycleStatus::Active)->firstOrFail();
         $existing = Operation::query()->where('kind', 'task_vm.fill_package_cache')->where('target_id', $hostNodeId)
-            ->where('target_type', 'task_vm_cache')->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
+            ->where('target_type', 'task_vm_cache')->whereNotIn('status', OperationStatus::terminalValues())->first();
         if ($existing !== null) {
             return $existing;
         }

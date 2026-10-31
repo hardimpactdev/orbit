@@ -6,6 +6,7 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
@@ -24,7 +25,7 @@ final readonly class StartTaskVmSweepOperationAction
 
     public function execute(int $nodeId, string $provider): Operation
     {
-        $existing = Operation::query()->where('kind', 'task_vm.sweep_host')->where('target_type', 'task_vm_sweep')->where('target_id', $nodeId)->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
+        $existing = Operation::query()->where('kind', 'task_vm.sweep_host')->where('target_type', 'task_vm_sweep')->where('target_id', $nodeId)->whereNotIn('status', OperationStatus::terminalValues())->first();
         if ($existing !== null) {
             return $existing;
         }

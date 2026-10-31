@@ -67,7 +67,7 @@ final readonly class SwampCommandStep
         return DB::transaction(function () use ($direct, $operation, $runId, $run, $status, $result): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $direct->assertRun($current, $runId);
-            if ($current->status->terminal()) {
+            if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
                 return $current;
             }
 

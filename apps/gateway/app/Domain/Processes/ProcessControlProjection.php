@@ -61,7 +61,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
         $reported = ValidatedData::object($data['result'] ?? []);
         $result = match ($status) {
             OperationStatus::Succeeded => ['ready' => true, ...($operation->kind === 'process.destroy' ? [] : ['state' => $reported['state'] ?? null])],
-            OperationStatus::Failed => ['error_code' => $code],
+            OperationStatus::Failed, OperationStatus::Interrupted => ['error_code' => $code],
             default => [],
         };
 
@@ -74,6 +74,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
                     OperationStatus::Succeeded => OperationOutcome::succeeded($result),
                     OperationStatus::Failed => OperationOutcome::failed(ValidatedData::string($code), $result),
                     OperationStatus::Cancelled => OperationOutcome::cancelled(),
+                    OperationStatus::Interrupted => OperationOutcome::interrupted($code, $result),
                     default => throw new \LogicException('A terminal Process status is required.'),
                 };
                 $this->completion->complete($projected, $outcome);
