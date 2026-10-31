@@ -106,7 +106,9 @@ One failed change does not stop the others. The run records its error, keeps tha
 
 ## Tear down
 
-[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes every Orbit item in the collection, recorded or not, then deletes the stored values and the record of published items. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
+[`vault:teardown`](/cli/vault#orbit-vaultteardown) permanently deletes published items whose recorded ID and decrypted `orbit.source` still match in the configured organization and collection, then deletes the stored configuration and publishing ledger. It preserves unrecorded copies, including copies with an `orbit.source` field, and items whose source differs from the ledger.
+
+Teardown refuses before deletion if a matching published item also belongs to another collection, because Vaultwarden deletes the whole item. It needs Vaultwarden to answer. With `--keep-items`, it leaves the items in Vaultwarden and does not contact it. A later setup on the same collection adopts or deletes those items. If Vaultwarden cannot delete an item, teardown fails and keeps the setup and the items it did not delete, so it can run again.
 
 ## API
 
@@ -125,6 +127,7 @@ All operations need access to the Gateway.
 | `vault.not_configured` | 409 | Sync or teardown while Vaultwarden is not set up. |
 | `vault.sync_busy` | 409 | Another setup, sync, or teardown is running. |
 | `vault.items_published` | 409 | Setup names another organization or collection while items are published. |
+| `vault.item_shared` | 409 | A published teardown item also belongs to another collection. No item is deleted. |
 | `validation.failed` | 422 | The `url` is not an HTTPS origin on a `.orbit` host. |
 | `vault.sync_failed` | 502 | `vault:sync` could not make at least one change. `details` holds `failed` and `first_error`. |
 | `vault.login_failed` | 422 | Vaultwarden refused the API key, or the master password does not unlock the account. |
