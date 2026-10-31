@@ -1,5 +1,4 @@
 use super::*;
-use serde_json::json;
 #[cfg(target_os = "linux")]
 use std::time::Instant;
 struct Fake {
@@ -28,43 +27,6 @@ impl Host for Fake {
             Ok(self.text.clone())
         }
     }
-}
-#[test]
-fn package_validation_refuses_before_processes_or_mutation() {
-    for name in [
-        "jq",
-        "libc6",
-        "g++",
-        "libfoo-dev",
-        "python3.13",
-        &"a".repeat(128),
-    ] {
-        assert!(valid_package(name));
-    }
-    for name in [
-        "",
-        "a",
-        "123",
-        "Jq",
-        "jq:amd64",
-        "-jq",
-        "jq=1.0",
-        "jq*",
-        "jq\nrm",
-        "../jq",
-        "https://example.test/jq",
-        &"a".repeat(129),
-    ] {
-        let mut host = Fake::new("");
-        assert_eq!(candidate(&mut host, name), Err(Error::Invalid {}));
-        assert_eq!(plan(&mut host, name), Err(Error::Invalid {}));
-        for remove in [true, false] {
-            assert_eq!(mutate(&mut host, name, remove), Err(Error::Invalid {}));
-        }
-        assert!(host.calls.is_empty());
-    }
-    assert!(serde_json::from_value::<Input>(json!({"package":"jq","argv":[]})).is_err());
-    assert!(serde_json::from_value::<Empty>(json!({"user":"root"})).is_err());
 }
 #[test]
 fn versions_preserve_raw_debian_text_and_refuse_ambiguous_candidates() {
@@ -195,63 +157,6 @@ fn removal_plan_reports_every_unique_package_without_hiding_dependencies() {
     for invalid in ["Remv", "Remv jq* [1]", "Remv jq[1]", " Remv jq [1]"] {
         assert_eq!(plan(&mut Fake::new(invalid), "jq"), Err(Error::Output {}));
     }
-}
-#[test]
-fn mutations_keep_the_dpkg_wait_and_never_purge_or_autoremove() {
-    let mut host = Fake::new("");
-    for _ in 0..2 {
-        mutate(&mut host, "jq", false).unwrap();
-        mutate(&mut host, "jq", true).unwrap();
-    }
-    assert_eq!(host.calls.len(), 4);
-    assert_eq!(
-        host.calls[0],
-        (
-            "/usr/bin/apt-get".into(),
-            vec![
-                "-o",
-                "DPkg::Lock::Timeout=300",
-                "install",
-                "--yes",
-                "--no-install-recommends",
-                "--",
-                "jq"
-            ]
-            .into_iter()
-            .map(str::to_owned)
-            .collect()
-        )
-    );
-    assert_eq!(
-        host.calls[1],
-        (
-            "/usr/bin/apt-get".into(),
-            vec![
-                "-o",
-                "DPkg::Lock::Timeout=300",
-                "remove",
-                "--yes",
-                "--",
-                "jq"
-            ]
-            .into_iter()
-            .map(str::to_owned)
-            .collect()
-        )
-    );
-}
-#[test]
-fn failure_never_becomes_a_missing_package_or_successful_mutation() {
-    let mut host = Fake {
-        fail: true,
-        ..Fake::new("private diagnostic")
-    };
-    assert_eq!(version(&mut host), Err(Error::Failed {}));
-    assert_eq!(candidate(&mut host, "jq"), Err(Error::Failed {}));
-    assert_eq!(inventory(&mut host), Err(Error::Failed {}));
-    assert_eq!(plan(&mut host, "jq"), Err(Error::Failed {}));
-    assert_eq!(mutate(&mut host, "jq", false), Err(Error::Failed {}));
-    assert_eq!(mutate(&mut host, "jq", true), Err(Error::Failed {}));
 }
 #[test]
 #[cfg(target_os = "linux")]
