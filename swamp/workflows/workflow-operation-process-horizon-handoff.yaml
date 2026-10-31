@@ -62,6 +62,7 @@ inputs:
   - node_id
   - kind
   - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: horizon
