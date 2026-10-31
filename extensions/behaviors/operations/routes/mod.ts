@@ -22,7 +22,6 @@ const nodeEffectKinds = [
   "route.router_lan_retire",
   "route.workload_firewall",
   "route.lan_converge",
-  "route.lan_remove",
   "route.public_firewall",
   "route.shared_php_withdraw",
   "route.transfer_php_withdraw",

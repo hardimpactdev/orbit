@@ -9,6 +9,7 @@ import {
 } from "../_lib/direct.ts";
 import { CaddyPublication, publishCaddy as applyCaddy } from "./caddy.ts";
 import { runNodeAgent } from "../_lib/node-agent.ts";
+import { removeLan } from "./lan.ts";
 
 const Args = DirectArgs.extend({
   kind: z.enum(["route.caddy_converge", "route.private_dns_publish"]),
@@ -43,9 +44,28 @@ export function publication(
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.30.4",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
+      removeLan: {
+        description:
+          "Remove and verify only the admitted Route's LAN allowance",
+        arguments: DirectArgs.extend({
+          kind: z.literal("route.lan_remove"),
+          node_id: z.number().int().positive(),
+        }),
+        execute: async (
+          args: z.infer<typeof DirectArgs> & { node_id: number },
+          ctx: Context,
+        ) =>
+          await directOperation(
+            args,
+            new GatewayOperation(makeHttp(ctx), args),
+            (input) => removeLan(input, invoke),
+            (result) => result,
+            ctx.signal,
+          ),
+      },
       publish: {
         description: "Publish one admitted Node's Caddy or private DNS intent",
         arguments: Args,
