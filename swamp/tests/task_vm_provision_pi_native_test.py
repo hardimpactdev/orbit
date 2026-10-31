@@ -59,7 +59,7 @@ class ProvisionPiNativeTest(pi_fixture.PiInstallNativeTest):
         self.assertEqual((self.home / ".local/bin/pi-server").read_bytes(), CONTENT)
         self.assertEqual(json.loads(steps["receipt"]["outputs"]["stdout"]),
                          {"task_vm_id": 42, "sha256": SHA, "installed": True})
-        child = reply(self.cli("workflow", "history", "get", steps["install"]["nestedRun"]["runId"],
+        child = reply(self.cli("workflow", "history", "get", "task-vm-pi-install",
                                *self.flags).stdout)
         self.assertEqual(child["inputs"]["node_id"], 9)
         self.assertEqual(child["inputs"]["kind"], "tasks.provision")
