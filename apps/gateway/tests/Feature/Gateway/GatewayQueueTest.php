@@ -220,7 +220,7 @@ describe(GatewayHorizon::class, function (): void {
 
     beforeEach(function (): void {
         app()->instance(WebSocketClient::class, $this->socket = new FakeRoutePublicationSocket);
-        config(['swamp.run_token' => 'fixture-token']);
+        config(['swamp.run_token' => 'fixture-token', 'swamp.read_token' => 'fixture-read-token']);
     });
 
     it('records Horizon beside the scheduler and admits one native handoff without Gateway effects', function (): void {

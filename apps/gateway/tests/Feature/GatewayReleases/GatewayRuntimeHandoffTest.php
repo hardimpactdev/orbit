@@ -100,10 +100,12 @@ final class RecordingHandoffUnits implements AgentViewConverger, GatewayReleaseU
 
 function handoff_gateway(): Node
 {
-    $node = Node::query()->create([
+    $node = Node::query()->forceCreate([
+        'id' => 14,
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.2',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.2',
