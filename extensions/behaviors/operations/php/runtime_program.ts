@@ -1,5 +1,6 @@
 // Fixed local program owned by Swamp; all material enters through stdin, never argv or logs.
-export const productionRuntimeProgram = String.raw`"""Production FPM effects owned by Swamp. Input is private stdin; diagnostics are bounded codes."""
+export const productionRuntimeProgram = String
+  .raw`"""Production FPM effects owned by Swamp. Input is private stdin; diagnostics are bounded codes."""
 import contextlib, fcntl, grp, hashlib, json, os, pathlib, pwd, re, shutil, socket, stat, struct, subprocess, sys, tempfile, time
 P = pathlib.Path
 PENDING = '.runtime-generation.pending'

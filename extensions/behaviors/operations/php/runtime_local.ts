@@ -62,7 +62,10 @@ const local: LocalPhpRuntimeRunner = async (command, signal) => {
     await writer.write(new TextEncoder().encode(command.stdin));
     await writer.close();
     const result = await child.output();
-    return { code: result.code, stdout: new TextDecoder().decode(result.stdout) };
+    return {
+      code: result.code,
+      stdout: new TextDecoder().decode(result.stdout),
+    };
   } finally {
     writer.releaseLock();
   }
@@ -99,9 +102,15 @@ export function convergeProductionRuntime(
   signal?: AbortSignal,
   runner?: LocalPhpRuntimeRunner,
 ): Promise<{ published: boolean }> {
-  return run("converge", ConvergeInput.parse(input), z.object({
-    published: z.boolean(),
-  }).strict(), signal, runner);
+  return run(
+    "converge",
+    ConvergeInput.parse(input),
+    z.object({
+      published: z.boolean(),
+    }).strict(),
+    signal,
+    runner,
+  );
 }
 /** Read the owned generated pool and its main+pool+local fingerprint. No service changes. */
 export function inspectProductionPool(
@@ -109,10 +118,16 @@ export function inspectProductionPool(
   signal?: AbortSignal,
   runner?: LocalPhpRuntimeRunner,
 ): Promise<{ pool: string; fingerprint: string }> {
-  return run("inspect", Identity.parse(input), z.object({
-    pool: Text,
-    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
-  }).strict(), signal, runner);
+  return run(
+    "inspect",
+    Identity.parse(input),
+    z.object({
+      pool: Text,
+      fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    }).strict(),
+    signal,
+    runner,
+  );
 }
 /** Keep the marker and operator tuning so a later recreation cannot adopt foreign files. */
 export function removeProductionRuntime(
@@ -120,9 +135,15 @@ export function removeProductionRuntime(
   signal?: AbortSignal,
   runner?: LocalPhpRuntimeRunner,
 ): Promise<{ removed: boolean }> {
-  return run("remove", Identity.parse(input), z.object({
-    removed: z.boolean(),
-  }).strict(), signal, runner);
+  return run(
+    "remove",
+    Identity.parse(input),
+    z.object({
+      removed: z.boolean(),
+    }).strict(),
+    signal,
+    runner,
+  );
 }
 /** Reset only this service's OPcache; validate FastCGI identity and observe completion. */
 export function refreshProductionCache(
@@ -130,7 +151,13 @@ export function refreshProductionCache(
   signal?: AbortSignal,
   runner?: LocalPhpRuntimeRunner,
 ): Promise<{ complete: true }> {
-  return run("refresh", RefreshInput.parse(input), z.object({
-    complete: z.literal(true),
-  }).strict(), signal, runner);
+  return run(
+    "refresh",
+    RefreshInput.parse(input),
+    z.object({
+      complete: z.literal(true),
+    }).strict(),
+    signal,
+    runner,
+  );
 }
