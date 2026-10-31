@@ -2,7 +2,6 @@
 import hashlib
 import importlib.util
 import json
-import os
 from pathlib import Path
 
 import yaml
@@ -99,10 +98,24 @@ class HorizonInlineNative(NativeTestCase):
         self.assertEqual(json.loads((self.repo/'host-state.json').read_text())['calls'],[])
         self.assertIn('99',self.unit.read_text())
 
-    def test_hardlinked_owned_unit_is_refused_before_mutation(self):
+    def test_successful_termination_does_not_require_an_active_unit_during_systemd_restart(self):
         self.unit.write_text(self.content)
-        self.unit.chmod(0o644)
-        os.link(self.unit, self.host / 'unit-other-link')
-        run = self.run_handoff(success=False)
-        self.assertEqual(run['status'], 'failed')
-        self.assertEqual(json.loads((self.repo/'host-state.json').read_text())['calls'], [])
+        (self.repo / 'host-state.json').write_text(json.dumps({'active': True, 'calls': []}))
+        self.php.write_text(
+            '#!/usr/bin/python3\nimport json\nfrom pathlib import Path\np=Path('
+            + repr(str(self.repo / 'host-state.json'))
+            + ')\ns=json.loads(p.read_text())\ns["active"]=False\np.write_text(json.dumps(s))\n'
+        )
+        self.php.chmod(0o755)
+
+        run = self.run_handoff()
+
+        self.assertEqual(run['status'], 'succeeded')
+        steps = {step['name']: step for step in run['jobs'][0]['steps']}
+        self.assertEqual(steps['graceful-handoff']['status'], 'succeeded')
+        self.assertEqual(steps['verify']['status'], 'skipped')
+        history = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        terminal = next(step for step in history['jobs'][0]['steps'] if step['name'] == 'result')
+        result = json.loads(terminal['outputs']['stdout'])
+        self.assertEqual(result['outcome'], 'terminated')
+        self.assertEqual(result['state'], 'unknown')

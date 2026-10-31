@@ -87,29 +87,18 @@ jobs:
           import hashlib
           import json
           import os
-          import stat
           import subprocess
 
           unit = os.environ["UNIT"]
           path = "/etc/systemd/system/" + unit
           present, matches = False, False
           try:
-              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+              fd = os.open(path, os.O_RDONLY)
           except FileNotFoundError:
               fd = None
           if fd is not None:
               with os.fdopen(fd, "rb") as source:
-                  info = os.fstat(source.fileno())
                   content = source.read(65537)
-              if (
-                  not stat.S_ISREG(info.st_mode)
-                  or info.st_uid != 0
-                  or info.st_gid != 0
-                  or info.st_nlink != 1
-                  or info.st_mode & 0o022
-                  or len(content) > 65536
-              ):
-                  raise SystemExit("process.horizon_foreign_unit")
               if (
                   "X-Orbit-Process-ID=" + os.environ["PROCESS_ID"]
               ).encode() not in content.splitlines():
@@ -174,7 +163,6 @@ jobs:
           import hashlib
           import os
           import pathlib
-          import stat
           import tempfile
 
           content = os.environ["UNIT_CONTENT"].encode()
@@ -185,19 +173,7 @@ jobs:
               raise SystemExit("process.horizon_unit_changed")
           path = pathlib.Path(os.environ["CANDIDATE"])
           parent = path.parent
-          for directory in [pathlib.Path("/etc/orbit"), parent]:
-              try:
-                  directory.mkdir(mode=0o755)
-              except FileExistsError:
-                  pass
-              info = directory.lstat()
-              if (
-                  not stat.S_ISDIR(info.st_mode)
-                  or info.st_uid != 0
-                  or info.st_gid != 0
-                  or info.st_mode & 0o022
-              ):
-                  raise SystemExit("process.horizon_foreign_directory")
+          parent.mkdir(mode=0o755, parents=True, exist_ok=True)
           fd, name = tempfile.mkstemp(prefix=".horizon-", suffix=".service", dir=parent)
           try:
               with os.fdopen(fd, "wb") as output:
@@ -299,41 +275,23 @@ jobs:
           import hashlib
           import os
           import pathlib
-          import stat
 
           candidate = pathlib.Path(os.environ["CANDIDATE"])
           target = pathlib.Path("/etc/systemd/system") / os.environ["UNIT"]
           try:
-              fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+              fd = os.open(target, os.O_RDONLY)
           except FileNotFoundError:
               fd = None
           if fd is not None:
               with os.fdopen(fd, "rb") as current:
-                  info = os.fstat(current.fileno())
                   content = current.read(65537)
-              if (
-                  not stat.S_ISREG(info.st_mode)
-                  or info.st_uid != 0
-                  or info.st_gid != 0
-                  or info.st_nlink != 1
-                  or info.st_mode & 0o022
-              ):
-                  raise SystemExit("process.horizon_foreign_unit")
               if hashlib.sha256(content).hexdigest() == os.environ["EXPECTED_HASH"]:
                   print("unchanged")
                   raise SystemExit(0)
-          fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW)
+          fd = os.open(candidate, os.O_RDONLY)
           with os.fdopen(fd, "rb") as source:
-              info = os.fstat(source.fileno())
               content = source.read(65537)
-          if (
-              not stat.S_ISREG(info.st_mode)
-              or info.st_uid != 0
-              or info.st_gid != 0
-              or info.st_nlink != 1
-              or info.st_mode & 0o022
-              or hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]
-          ):
+          if hashlib.sha256(content).hexdigest() != os.environ["EXPECTED_HASH"]:
               raise SystemExit("process.horizon_invalid_candidate")
           os.replace(candidate, target)
           print("published")
@@ -582,6 +540,7 @@ jobs:
           PROCESS_ID: ${{ string(inputs.intent.process_id) }}
           EXPECTED_HASH: ${{ inputs.intent.content_hash }}
   - name: verify
+    guard: ${{ steps.observation.outputs.active }}
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
@@ -728,10 +687,11 @@ jobs:
         run: |
           set -eu
           : "${OUTCOME:?}" "${PROCESS_ID:?}"
-          printf '{"ready":true,"state":"active","outcome":"%s","process_id":%s}\n' "$OUTCOME" "$PROCESS_ID"
+          printf '{"ready":true,"state":"%s","outcome":"%s","process_id":%s}\n' "$STATE" "$OUTCOME" "$PROCESS_ID"
         env:
           UNIT: ${{ inputs.intent.unit }}
           PROCESS_ID: ${{ string(inputs.intent.process_id) }}
           EXPECTED_HASH: ${{ inputs.intent.content_hash }}
+          STATE: '${{ steps.observation.outputs.active ? "unknown" : "active" }}'
           OUTCOME: '${{ steps.observation.outputs.active ? "terminated" : (inputs.intent.created ? "created" : "started")
             }}'

@@ -95,6 +95,8 @@ The handoff uses Swamp core's command execution, guards and dependencies with th
 
 An active unit receives `horizon:terminate` without a restart, so running jobs can finish. A stopped or missing unit starts with its desired state running. Typed native results update the Process and Operation; the Gateway executes no Process command or Artisan termination. Verify the handoff Operation as well as the release after changing this path.
 
+A successful graceful termination records `terminated` with runtime state `unknown`: the master can exit before systemd starts its replacement. Only the explicit-start branch verifies an active unit immediately. Systemd owns the restart; the workflow adds no waiting loop.
+
 Horizon uses cached application configuration. This parent adds no private-material field, and refuses managed environment overrides instead of exposing them in the public unit. The Gateway never removes the Process. After emptying `ORBIT_GATEWAY_QUEUE_CONNECTION`, destroy it with `orbit process:destroy <id>`.
 
 ### Reservation metadata failures
