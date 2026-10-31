@@ -588,12 +588,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/ai-router/source.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/analytics/clickhouse.ts",
       "rule": "multi-action",
       "count": 2,
