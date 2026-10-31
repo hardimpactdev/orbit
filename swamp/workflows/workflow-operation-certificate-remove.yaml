@@ -48,7 +48,8 @@ inputs:
           additionalProperties: false
         control_node_id:
           type: integer
-          minimum: 1
+          enum:
+          - 209
         connection:
           type: object
           properties:
@@ -62,10 +63,17 @@ inputs:
           - nodeHost
           - nodeUser
           - nodeIdentityFile
+        host_keys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          minItems: 1
       required:
       - leaf
       - control_node_id
       - connection
+      - host_keys
     execution_secrets:
       type: object
       additionalProperties: false
@@ -81,9 +89,9 @@ jobs:
 - name: certificate
   steps:
   - name: assets
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: &id001
-      node: ${{ string(inputs.intent.control_node_id) }}
+    target: orbit-node-209
+    labels:
+      node: '209'
     writes: true
     task:
       type: behavior
@@ -91,7 +99,7 @@ jobs:
       behaviorName: ${{ "certificate-assets-" + string(inputs.operation_id) }}
       methodName: read
       inputs:
-        node_id: ${{ inputs.node_id }}
+        node_id: ${{ inputs.intent.leaf.node_id }}
         intent: ${{ inputs.intent.leaf }}
   - name: prepare-assets
     writes: true
@@ -100,7 +108,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: &id002
+      globalArgs: &id001
         name: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
         transport:
           kind: ssh
@@ -109,14 +117,17 @@ jobs:
         hosts:
         - name: target
           address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
         argv:
         - mkdir
         - -p
         - ${{ "/tmp/orbit-certificate-" + run.id }}
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -128,22 +139,24 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: copy
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         src: ${{ steps.assets.outputs.scripts_directory }}
         dst: ${{ "/tmp/orbit-certificate-" + run.id + "/" }}
         direction: to
         recursive: true
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: prepare-assets
       condition:
         type: succeeded
   - name: reload-withdrawal
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     writes: true
     dependsOn:
     - step: copy-assets
@@ -154,7 +167,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -169,7 +182,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -179,8 +192,9 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/remove.py" }}
         sudo: true
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: reload-withdrawal
       condition:
@@ -192,7 +206,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
@@ -203,8 +217,9 @@ jobs:
         - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/inspect.py" }}
         sudo: true
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: remove
       condition:
@@ -216,15 +231,16 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "certificate-ssh-" + string(inputs.operation_id) }}
       methodName: exec
-      globalArgs: *id002
+      globalArgs: *id001
       inputs:
         hosts: name:target
         argv:
         - rm
         - -rf
         - ${{ "/tmp/orbit-certificate-" + run.id }}
-    target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
-    labels: *id001
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: inspect
       condition:

@@ -219,6 +219,8 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
                 ).read_text()
             )
             for step in production["jobs"][0]["steps"]:
+                self.assertEqual("orbit-node-209", step["target"])
+                self.assertEqual({"node": "209"}, step["labels"])
                 step.pop("target", None)
                 step.pop("labels", None)
                 task = step["task"]
@@ -258,7 +260,7 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
             ["openssl", *map(str, args)], check=True, capture_output=True
         ).stdout
 
-    def run_workflow(self, kind="converge", success=True):
+    def run_workflow(self, kind="converge", success=True, raw=False, **intent_changes):
         leaf = (
             self.leaf
             if kind == "converge"
@@ -272,34 +274,37 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         )
         intent = dict(
             leaf=leaf,
-            control_node_id=2,
+            control_node_id=209,
+            host_keys=[
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEV4aXN0aW5nUGlubmVkSG9zdElkZW50aXR5UHVibGlj"
+            ],
             connection=dict(
                 nodeHost="fixture",
                 nodeUser="orbit",
                 nodeIdentityFile=str(self.fixture / "existing-identity"),
             ),
         )
+        intent.update(intent_changes)
         (self.fixture / "existing-identity").write_text("synthetic identity never used")
         name = "operation-certificate-" + kind
         self.cli("workflow", "validate", name)
-        return json.loads(
-            self.cli(
-                "workflow",
-                "run",
-                name,
-                "--input",
-                "operation_id=19",
-                "--input",
-                "node_id=9",
-                "--input",
-                "kind=certificate." + kind,
-                "--input",
-                "intent=" + json.dumps(intent),
-                "--input",
-                "execution_secrets={}",
-                success=success,
-            ).stdout
+        result = self.cli(
+            "workflow",
+            "run",
+            name,
+            "--input",
+            "operation_id=19",
+            "--input",
+            "node_id=9",
+            "--input",
+            "kind=certificate." + kind,
+            "--input",
+            "intent=" + json.dumps(intent),
+            "--input",
+            "execution_secrets={}",
+            success=success,
         )
+        return result if raw else json.loads(result.stdout)
 
     def test_fresh_current_and_removal_use_official_ssh_and_one_parent_signer(self):
         first = self.run_workflow()
@@ -313,6 +318,11 @@ shutil.copytree(src,dst/src.name,dirs_exist_ok=True)
         self.assertEqual(1, len(self.signs))
         self.assertEqual("succeeded", self.run_workflow("remove")["status"])
         self.assertFalse((self.home / ".orbit/certificates/route-7-router").exists())
+        self.assertEqual([], list(self.fixture.glob("staging-*")))
+
+    def test_missing_pins_refuse_before_any_remote_action(self):
+        self.run_workflow(success=False, raw=True, host_keys=[])
+        self.assertEqual([], self.signs)
         self.assertEqual([], list(self.fixture.glob("staging-*")))
 
     def test_signer_refusal_makes_no_publication_or_hidden_callback(self):
