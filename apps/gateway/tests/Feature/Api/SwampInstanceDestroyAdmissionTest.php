@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
-use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
-use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -74,7 +71,7 @@ it('admits a fixed source set without executing teardown, deleting source or acc
     Queue::assertNothingPushed();
 })->with([false, true]);
 
-it('removes an executor Node Instance and its Process synchronously without admitting Operations', function (string $executor): void {
+it('admits executor Node removal through the same parent without running a Gateway remover', function (string $executor): void {
     config($executor === 'services'
         ? ['dependency_detection.services_node_id' => $this->node->id]
         : ['operation_executor.worker_node_ids' => [$this->node->id]]);
@@ -83,29 +80,22 @@ it('removes an executor Node Instance and its Process synchronously without admi
         'runtime_config' => ['command' => ['vp', 'dev']], 'restart_policy' => 'always',
         'desired_state' => 'running', 'status' => 'active']);
     $this->source->shouldReceive('inspect')->once()->andReturn(($this->inventory)());
-    $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);
-    $finalizer->shouldReceive('prepare')->once();
-    $finalizer->shouldReceive('revalidate')->andReturn(InstanceSourceRevalidationState::Present);
-    $finalizer->shouldReceive('finalize')->once()->andReturn(hash('sha256', 'executor-source-removed'));
-    app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
-    $projector = Mockery::mock(InstanceRemovalProjector::class);
-    $projector->shouldReceive('withdrawPhpPool')->once();
-    $projector->shouldReceive('cleanupRuntime')->once();
-    app()->instance(InstanceRemovalProjector::class, $projector);
     $runtime = Mockery::mock(ProcessRuntimeManager::class);
-    $runtime->shouldReceive('remove')->once()->withArgs(fn (Process $owned): bool => $owned->id === $process->id);
+    $runtime->shouldNotReceive('remove');
     app()->instance(ProcessRuntimeManager::class, $runtime);
 
-    $this->deleteJson($this->path, ['force' => true])->assertOk()
-        ->assertJsonPath('data.id', $this->instance->id)
-        ->assertJsonPath('data.status', 'completed')
-        ->assertJsonPath('data.completed', 1)
-        ->assertJsonPath('data.remaining', 0);
+    $operationId = $this->deleteJson($this->path, ['force' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy')
+        ->assertJsonPath('data.status', 'queued')->json('data.id');
 
-    $this->assertDatabaseMissing('instances', ['id' => $this->instance->id]);
-    $this->assertDatabaseMissing('processes', ['id' => $process->id]);
-    $this->assertDatabaseCount('operations', 0);
-    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
+    $this->assertModelExists($this->instance);
+    $this->assertModelExists($process);
+    $this->assertDatabaseCount('operations', 1);
+    $operation = Operation::query()->findOrFail($operationId);
+    expect($operation->input['force'])->toBeTrue()
+        ->and($operation->node_id)->toBe($this->node->id)
+        ->and($operation->target_id)->toBe($this->instance->id)
+        ->and(InstanceRemoval::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 })->with(['services', 'worker']);
 

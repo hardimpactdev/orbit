@@ -16,13 +16,13 @@ covers:
 
 Instance removal on a workload Node returns HTTP 202 with an Operation. Clients must follow that Operation to its terminal result. An older client that expects a synchronous removal response must update before using this endpoint. Admission returns `operation.kind_unavailable` (503) before recording intent if a declared child kind or its admission adapter is missing.
 
-Removal on a Swamp executor Node stays synchronous through `DestroyInstanceAction`, including owned Process and Schedule cleanup. It returns HTTP 200 with the completed removal receipt and admits no Operation, so removal does not depend on the executor that it may stop.
-
 `instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal deletes the production user, home, application data, and Instance source state after its runtime is gone. Swamp composes the owning Route and runtime child Operations; a missing production PHP service is reported as a bounded resource failure.
 
 Swamp removal records an Operation before effects. Retained Gateway callers keep the synchronous `DestroyInstanceAction` and its removal receipt until their owning cutover composes removal as a child. They do not admit an Operation and wait under the caller's lease.
 
 Cancellation is refused with `operation.cancel_refused` once the Gateway accepts removal, including when the acceptance reply is lost. The accepted removal must finish or resume. Before acceptance, a recorded cancellation closes an interrupted Gateway acceptance step without replaying its transaction; acceptance re-checks cancellation under the same lock. A single-target production Route may remain `retiring` after its withdrawal succeeds. Detach and retry accept that state only with the exact successful withdrawal child recorded for the same removal; an unrelated or unfinished withdrawal cannot authorize it.
+
+Development removal stops Schedules, then Processes, then owned databases before it finalizes the checkout. A refused database removal keeps the checkout and Instance record for recovery.
 
 Runtime cleanup uses the successful Gateway inventory receipt, with integer Process IDs and Schedule UUIDs. Swamp admits one recorded `process.destroy` or `schedule.destroy` child per record. The owning adapters accept only the lifecycle parent's recorded Instance and Node. Empty inventories need no child. Every recorded child must succeed and both owned runtime sets must be empty before database or home removal; a later record cannot be silently omitted.
 
@@ -34,7 +34,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 
 The CLI asks for default-No consent that names the Instance. `--yes` confirms without a prompt and is required for JSON and noninteractive calls. `--force` never gives consent.
 
-The API returns HTTP 202 with the admitted `instance.destroy` Operation. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
+The API returns HTTP 202 with the admitted `instance.destroy` Operation. This also applies when the Instance is on a configured executor or control Node; those requests use the same asynchronous admission and never execute removal in the Gateway request. The CLI follows it and returns the final Operation receipt in JSON mode. Reuse `--idempotency-key=KEY` to recover the same admission, including after the Instance row is gone. Access to the recorded owning Node is still required. Ctrl+C stops following and leaves removal running.
 
 ## Normal and forced removal
 
@@ -149,14 +149,14 @@ Existing Gateway callers keep synchronous removal until their owning workflow co
 
 ## Removal steps
 
-Once accepted, the Gateway marks each member `removing` and completes five steps per member, one member after another.
+Once accepted, the Gateway marks each member `removing`. Swamp finishes one member before the next. Development removal completes runtime and database cleanup before source finalization. Production removal clears its serving link before runtime cleanup, then deletes its home only after database cleanup. The receipt keeps these stage names:
 
 | Step | Work |
 | --- | --- |
 | `source_preparation` | Record the source identity. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | For development, withdraw PHP-FPM, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent. For production, clear the serving link. |
-| `runtime_cleanup` | Remove Processes, Schedules, PHP-FPM, Caddy, and other runtime files, then remove [owned databases](#owned-databases) through their child Operation before the production user, home, and source state. See [Runtime cleanup](#runtime-cleanup). |
+| `runtime_cleanup` | Stop Schedules, then Processes, withdraw runtime files, then remove [owned databases](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
+| `source_finalization` | For development, [stop checkout processes](#processes-inside-the-removed-instance), then delete the checkout and its empty parent after proven runtime and database cleanup. For production, clear the serving link before runtime cleanup. |
 | `row_deletion` | Delete the Instance record. |
 
 ### Runtime cleanup
@@ -167,7 +167,7 @@ A pending Route can publish a pool before activation, and `route:destroy` can de
 
 Removal ignores `app-dev.php_pool_directory_missing` from that convergence. The error names another site's pool, and the convergence has already removed the removed Instance's pool. Doctor keeps reporting the skipped pool.
 
-PHP-FPM refuses to start while any pool names a missing `chdir`, and all development Instances of one PHP version share one pool file. So `source_finalization` first converges PHP-FPM on the Node, which withdraws the Instance's pool and reloads PHP-FPM, and only then deletes the checkout. The live pool file never names the deleted directory. If that convergence fails, the checkout stays and the step stays open for retry. It ignores `app-dev.php_pool_directory_missing` for the same reason as `runtime_cleanup`.
+PHP-FPM refuses to start while any pool names a missing `chdir`, and all development Instances of one PHP version share one pool file. The asynchronous workflow completes its PHP withdrawal and `route.cleanup_instance` before it finalizes the checkout. Retained synchronous Task callers still withdraw PHP-FPM inside `source_finalization`, before their `runtime_cleanup` stage. Both withdraw the pool before deleting its directory. The live pool file never names the deleted directory. If that convergence fails, the checkout stays and the step stays open for retry. It ignores `app-dev.php_pool_directory_missing` for the same reason as `runtime_cleanup`.
 
 [PHP-FPM convergence](/reference/php-runtime#development-runtime) also never renders a pool for a missing directory and does not need PHP-FPM to start first, so it still repairs a Node whose source was deleted another way. Doctor reports such a pool as `role.php_pool_directory_missing`.
 

@@ -160,8 +160,9 @@ final readonly class InstanceRemovalState
     {
         $intent = app(RemovalLifecycleExecution::class)->intent($operation);
         $member = InstanceRemovalMember::query()->where('instance_removal_id', $intent['removal_id'])->where('instance_id', $id)->firstOrFail();
-        if ($member->source_finalized_at === null) {
-            throw new ResourceOperationException('operation.completion_unproven', 'Source finalization must finish before runtime cleanup.', 409);
+        if ($member->environment === 'production' ? $member->source_finalized_at === null
+            : $member->source_prepared_at === null || $member->route_cleared_at === null) {
+            throw new ResourceOperationException('operation.completion_unproven', 'Source preparation and Route withdrawal must finish before runtime cleanup.', 409);
         }
 
         return [

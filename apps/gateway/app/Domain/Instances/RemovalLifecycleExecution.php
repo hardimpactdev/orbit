@@ -102,14 +102,16 @@ final readonly class RemovalLifecycleExecution
         }
         if (preg_match('/\Aremoval-([1-9][0-9]*)-(route-clear|route-detach|database-intent|source-prepare|source-finalize|runtime-intent|home-remove|row-delete)\z/D', $run['key'], $match) === 1) {
             $execution->proven($operation, 'removal-accept');
+            $member = array_find(InstanceLifecycleInput::members($this->intent($operation)), static fn (array $member): bool => $member['instance_id'] === (int) $match[1]);
+            $development = ($member['environment'] ?? null) !== 'production';
             $previous = match ($match[2]) {
                 'route-clear' => "removal-{$match[1]}-source-prepare",
-                'source-finalize' => "removal-{$match[1]}-route-clear",
+                'source-finalize' => $development ? "removal-{$match[1]}-database-intent" : "removal-{$match[1]}-route-clear",
                 'database-intent' => "removal-{$match[1]}-runtime-intent",
-                'runtime-intent' => "removal-{$match[1]}-source-finalize",
+                'runtime-intent' => $development ? "removal-{$match[1]}-route-clear" : "removal-{$match[1]}-source-finalize",
                 'home-remove' => "removal-{$match[1]}-runtime-intent",
                 'route-detach' => "removal-{$match[1]}-source-prepare",
-                'row-delete' => "removal-{$match[1]}-runtime-intent",
+                'row-delete' => $development ? "removal-{$match[1]}-source-finalize" : "removal-{$match[1]}-runtime-intent",
                 default => null,
             };
             if ($previous !== null) {
@@ -135,7 +137,7 @@ final readonly class RemovalLifecycleExecution
                     }
                 }
             }
-            if (in_array($match[2], ['home-remove', 'row-delete'], true)) {
+            if (in_array($match[2], ['home-remove', 'row-delete'], true) || $development && $match[2] === 'source-finalize') {
                 app(InstanceRemovalRuntime::class)->assertRemoved($operation, (int) $match[1]);
                 $execution->assertChild($operation, "remove-databases-{$match[1]}", 'database.destroy_owned');
             }

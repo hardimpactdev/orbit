@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceRemovalState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Instances\RemovalLifecycleExecution;
+use App\Domain\Operations\OperationChildIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -93,3 +94,48 @@ it('refuses database preparation until runtime children have proven cleanup', fu
         ->toThrow(ResourceOperationException::class);
     expect($this->operation->refresh()->state)->not->toHaveKey('lifecycle_owned_databases');
 });
+
+it('captures development runtime inventory before checkout finalization after source and Route withdrawal', function (): void {
+    $result = app(InstanceRemovalState::class)->transition($this->operation, [
+        'action' => 'removal-runtime-intent', 'instance_id' => $this->instance->id,
+    ]);
+
+    expect($result)->toBe(['process_ids' => [], 'schedule_ids' => [], 'database_ids' => []]);
+    expect($this->member->refresh()->source_finalized_at)->toBeNull();
+    $this->assertModelExists($this->instance);
+});
+
+it('requires the successful database child before finalizing development checkout', function (string $status): void {
+    $execution = app(InstanceLifecycleExecution::class);
+    $prefix = 'removal-'.$this->instance->id;
+    foreach (['removal-accept', $prefix.'-route-clear', $prefix.'-runtime-intent', $prefix.'-database-intent'] as $key) {
+        $descriptor = $execution->descriptor($key, 'gateway', 'instance.lifecycle-state', ['action' => 'configuration', 'operation_id' => $this->operation->id]);
+        $state = $this->operation->state;
+        $state['lifecycle_bindings'][$key] = $descriptor;
+        $state['executor_runs'][$key] = [...$descriptor, 'result' => $key === $prefix.'-runtime-intent'
+            ? ['process_ids' => [], 'schedule_ids' => []] : ['ready' => true]];
+        $this->operation->update(['state' => $state]);
+        $this->operation->steps()->create(['name' => $key, 'status' => 'succeeded', 'position' => $this->operation->steps()->count() + 1, 'sequence' => 1, 'resumable' => true]);
+    }
+    if ($status !== 'missing') {
+        $key = 'remove-databases-'.$this->instance->id;
+        $identity = ['parent_operation_id' => $this->operation->id, 'key' => $key, 'kind' => 'database.destroy_owned',
+            'node_id' => $this->operation->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id,
+            'input' => ['owner_instance_id' => $this->instance->id], 'run_constraints' => []];
+        $snapshot = ['intent' => ['key' => $key, 'kind' => 'database.destroy_owned', 'node_id' => $this->operation->node_id,
+            'input' => $identity['input']], 'admitted' => $identity];
+        $this->operation->children()->make(['kind' => 'database.destroy_owned',
+            'node_id' => $this->operation->node_id, 'target_type' => 'instance', 'target_id' => $this->instance->id,
+            'input' => $identity['input'], 'status' => $status])->forceFill(['child_key' => $key, 'run_constraints' => [],
+                'child_admission' => $snapshot, 'child_fingerprint' => OperationChildIntent::fingerprint($snapshot)])->save();
+    }
+    $run = ['worker' => 'recovery-worker', ...($this->descriptor)()];
+
+    if ($status === 'succeeded') {
+        app(RemovalLifecycleExecution::class)->beforeRun($this->operation, $run);
+    } else {
+        expect(fn () => app(RemovalLifecycleExecution::class)->beforeRun($this->operation, $run))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.child_unproven'));
+    }
+    expect($this->member->refresh()->source_finalized_at)->toBeNull();
+})->with(['missing', 'failed', 'succeeded']);

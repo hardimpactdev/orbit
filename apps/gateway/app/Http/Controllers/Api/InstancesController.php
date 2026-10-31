@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RenameInstanceAction;
@@ -13,9 +12,7 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\UpdateInstanceAction;
 use App\Data\Instances\InstanceData;
-use App\Data\Instances\InstanceRemovalData;
 use App\Data\Operations\OperationData;
-use App\Domain\Processes\ProcessSwampSafety;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -112,12 +109,6 @@ final class InstancesController extends Controller
         StartInstanceDestroyAction $action,
     ): JsonResponse {
         $target = Instance::query()->findOrFail($instance);
-        if (app(ProcessSwampSafety::class)->requiresSynchronous($target->node)) {
-            return response()->json([
-                'data' => InstanceRemovalData::fromModel(app(DestroyInstanceAction::class)->execute($target, $request->force()))->toArray(),
-                'meta' => $this->meta($request),
-            ]);
-        }
         $operation = $action->execute($target, $request->force(),
             $this->caller($request), $request->attributes->getString('orbit.request_id'));
 
