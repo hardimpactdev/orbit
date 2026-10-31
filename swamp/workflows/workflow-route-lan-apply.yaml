@@ -1,6 +1,6 @@
 id: b14d2aa1-9248-43ef-a2f1-233044ec7cb6
 name: route-lan-apply
-description: One destination-scoped UFW transaction under the canonical tool host lock.
+description: Converge captured shared Route LAN tuples with the official firewall model.
 vaults: []
 inputs:
   type: object
@@ -47,128 +47,103 @@ inputs:
 jobs:
 - name: lan
   steps:
-  - name: assets
+  - name: input
     target: orbit-node-209
-    labels:
+    labels: &id001
       node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-assets-" + run.id }}
+      behaviorName: route-lan-input
       methodName: lan
       inputs:
         intent: ${{ inputs.intent.rule }}
-  - name: prepare-assets
+  - name: apply
     target: orbit-node-209
-    labels:
-      node: '209'
+    labels: *id001
+    forEach:
+      item: rule
+      in: ${{ inputs.intent.rule.rules }}
     dependsOn:
-    - step: assets
+    - step: input
       condition:
         type: succeeded
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
-      methodName: exec
-      globalArgs: &id001
-        name: ${{ "route-ssh-" + run.id }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/mkdir
-        - -p
-        - -m
-        - '0700'
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: copy-assets
+      behaviorType: '@swamp/cfgmgmt/firewall'
+      behaviorName: ${{ "route-lan-" + run.id + "-" + self.rule.model_name }}
+      methodName: apply
+      globalArgs:
+        nodeHost: ${{ inputs.intent.connection.nodeHost }}
+        nodeUser: ${{ inputs.intent.connection.nodeUser }}
+        nodePort: ${{ inputs.intent.connection.nodePort }}
+        nodeIdentityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+        become: ${{ inputs.intent.connection.become }}
+        port: ${{ self.rule.port }}
+        protocol: ${{ self.rule.protocol }}
+        source: ${{ self.rule.source }}
+        ensure: ${{ self.rule.ensure }}
+        action: allow
+        direction: in
+      inputs: {}
+  - name: verify-tuples
     target: orbit-node-209
-    labels:
-      node: '209'
+    labels: *id001
     dependsOn:
-    - step: prepare-assets
+    - step: input
       condition:
         type: succeeded
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
-      methodName: copy
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        src: ${{ steps.assets.outputs.scripts_directory }}
-        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
-        direction: to
-        recursive: true
-  - name: write
-    target: orbit-node-209
-    labels:
-      node: '209'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-write-" + run.id }}
-      methodName: exec
-      globalArgs: *id001
-      inputs:
-        hosts: name:target
-        argv:
-        - env
-        - ${{ 'ORBIT_ROUTE_INPUT=' + string(steps.assets.outputs.input_json) }}
-        - /usr/bin/python3
-        - -B
-        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/route_lan.py" }}
-        sudo: true
-    dependsOn:
-    - step: copy-assets
-      condition:
-        type: succeeded
-  - name: cleanup-assets
-    target: orbit-node-209
-    labels:
-      node: '209'
-    dependsOn:
-    - step: write
+    - step: apply
       condition:
         type: always
     task:
       type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
-      methodName: exec
-      globalArgs: *id001
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: route-lan-applied
+      methodName: lanApplied
       inputs:
-        hosts: name:target
-        argv:
-        - /usr/bin/rm
-        - -rf
-        - ${{ "/tmp/orbit-route-" + run.id }}
-  - name: result
+        plan: ${{ steps.input.outputs }}
+        outcomes: ${{ steps }}
+  - name: migrate
     target: orbit-node-209
-    labels:
-      node: '209'
+    labels: *id001
+    forEach:
+      item: plan
+      in: '${{ inputs.intent.rule.migrate ? [inputs.intent] : [] }}'
     dependsOn:
-    - step: write
+    - step: input
       condition:
         type: succeeded
-    - step: cleanup-assets
+    - step: verify-tuples
       condition:
         type: succeeded
     task:
+      type: workflow
+      workflowIdOrName: route-lan-migrate
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        intent: ${{ self.plan }}
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    - step: apply
+      condition:
+        type: always
+    - step: migrate
+      condition:
+        type: always
+    task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: ${{ "route-lan-result-" + run.id }}
+      behaviorName: route-lan-result
       methodName: lanResult
       inputs:
-        stdout: ${{ steps.write.outputs.stdout }}
+        plan: ${{ steps.input.outputs }}
+        outcomes: ${{ steps }}

@@ -1,6 +1,6 @@
 id: 7df4d92e-034f-4a2e-bd17-8265aec18b11
 name: operation-route-lan-remove
-description: Withdraw the exact destination-scoped Route LAN allowance under the UFW host lock.
+description: Withdraw only Route LAN tuples no published Route still needs, migrating legacy rules once.
 vaults: []
 inputs:
   properties:
@@ -24,9 +24,6 @@ inputs:
         node_id:
           type: integer
           minimum: 1
-        destination:
-          type: string
-          format: ipv4
         control_node_id:
           type: integer
           const: 209
@@ -37,13 +34,20 @@ inputs:
           items:
             type: string
           minItems: 1
+        rules:
+          type: array
+          items:
+            type: object
+        migrate:
+          type: boolean
       required:
       - route_id
       - node_id
-      - destination
       - control_node_id
       - connection
       - host_keys
+      - rules
+      - migrate
     execution_secrets:
       type: object
       additionalProperties: false
@@ -57,7 +61,7 @@ inputs:
 jobs:
 - name: withdrawal
   steps:
-  - name: remove-lan
+  - name: converge-lan
     target: orbit-node-209
     labels:
       node: '209'
@@ -75,7 +79,23 @@ jobs:
           host_keys: ${{ inputs.intent.host_keys }}
           rule:
             node_id: ${{ inputs.intent.node_id }}
-            route_id: ${{ inputs.intent.route_id }}
-            destination: ${{ inputs.intent.destination }}
-            operation: retire
-            keep: []
+            rules: ${{ inputs.intent.rules }}
+            migrate: ${{ inputs.intent.migrate }}
+  - name: remove-lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: converge-lan
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: route-lan-terminal
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$ORBIT_ROUTE_LAN_RESULT"
+        env:
+          ORBIT_ROUTE_LAN_RESULT: ${{ steps["converge-lan"].outputs.result.result_json }}
