@@ -24,9 +24,6 @@ final class SwampRunSubscriber
     /** @var array<string,int> */
     private array $requests = [];
 
-    /** @var array<int,string> Terminal events handed to the durable queue, awaiting projection. */
-    private array $settling = [];
-
     private bool $started = false;
 
     private float $nextConnection = 0.0;
@@ -63,14 +60,13 @@ final class SwampRunSubscriber
                 unset($this->requests[$request]);
             }
             unset($this->following[$operationId]);
-            unset($this->settling[$operationId]);
 
             return;
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
         $run = $operation->state['swamp_run_id'] ?? null;
         if (! isset($definition['terminal_result']) || ! is_string($run) || ! Str::isUuid($run)
-            || ($this->following[$operationId]['run'] ?? null) === $run || ($this->settling[$operationId] ?? null) === $run) {
+            || ($this->following[$operationId]['run'] ?? null) === $run) {
             return;
         }
         $old = $this->following[$operationId]['request'] ?? null;
@@ -80,7 +76,7 @@ final class SwampRunSubscriber
         $this->following[$operationId] = ['run' => $run, 'workflow' => $definition['workflow'], 'request' => null, 'attached' => false];
     }
 
-    /** One nonblocking pass beside the existing Gateway observer's Reverb receive loop. */
+    /** One pass beside the existing Gateway observer's Reverb receive loop. */
     public function pass(): void
     {
         if (! $this->started) {
@@ -154,7 +150,7 @@ final class SwampRunSubscriber
         if ($type === 'error') {
             $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
             if (($error['code'] ?? null) === 'not_found') {
-                $this->queue($operationId, null);
+                $this->project($operationId, null);
             } else {
                 $this->log->warning('The native terminal observer attach was refused.', ['operation_id' => $operationId]);
                 unset($this->following[$operationId], $this->requests[$id]);
@@ -177,14 +173,13 @@ final class SwampRunSubscriber
             || ! is_string($run['status'] ?? null) || ! in_array($run['status'], ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
             return;
         }
-        $this->queue($operationId, $run['status']);
+        $this->project($operationId, $run['status']);
     }
 
-    private function queue(int $operationId, ?string $status): void
+    private function project(int $operationId, ?string $status): void
     {
         $entry = $this->following[$operationId];
-        ProjectSwampTerminal::dispatch($operationId, $entry['run'], $status);
-        $this->settling[$operationId] = $entry['run'];
+        ProjectSwampTerminal::dispatchSync($operationId, $entry['run'], $status);
         unset($this->following[$operationId]);
         if ($entry['request'] !== null) {
             unset($this->requests[$entry['request']]);

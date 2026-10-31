@@ -28,7 +28,7 @@ use App\Models\Operation;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository as CacheRepository;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Bus;
 use Psr\Log\NullLogger;
 use Tests\Support\FakeSwampEventSocket;
 
@@ -996,7 +996,7 @@ describe('the shared native observer on the existing Gateway observer process', 
     afterEach(fn () => Carbon::setTestNow());
 
     it('signs the existing private record channel and discovers a binding from its committed record notice', function (): void {
-        Queue::fake([ProjectSwampTerminal::class]);
+        Bus::fake([ProjectSwampTerminal::class]);
         [, $credentials] = activate_websocket_role();
         registerSubscriberNativeKind();
         config(['swamp.run_token' => 'private-native-token']);
@@ -1022,11 +1022,11 @@ describe('the shared native observer on the existing Gateway observer process', 
             ['type' => 'event', 'id' => $id, 'event' => ['kind' => 'completed', 'seq' => 8,
                 'run' => ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-observer-record', 'status' => 'succeeded']]]);
         $subscriber->pass();
-        Queue::assertPushed(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
+        Bus::assertDispatchedSync(ProjectSwampTerminal::class, fn ($job): bool => $job->operationId === $operation->id && $job->status === 'succeeded');
     });
 
     it('covers a binding that was committed after startup but before the record subscription acknowledgement', function (): void {
-        Queue::fake([ProjectSwampTerminal::class]);
+        Bus::fake([ProjectSwampTerminal::class]);
         activate_websocket_role();
         registerSubscriberNativeKind();
         config(['swamp.run_token' => 'private-native-token']);
@@ -1046,7 +1046,7 @@ describe('the shared native observer on the existing Gateway observer process', 
     });
 
     it('does not accept an Operation notice from an unsigned public or presence channel', function (): void {
-        Queue::fake([ProjectSwampTerminal::class]);
+        Bus::fake([ProjectSwampTerminal::class]);
         activate_websocket_role();
         registerSubscriberNativeKind();
         config(['swamp.run_token' => 'private-native-token']);
@@ -1064,6 +1064,6 @@ describe('the shared native observer on the existing Gateway observer process', 
         $subscriber->pass();
 
         expect($native->sent)->toBeEmpty();
-        Queue::assertNothingPushed();
+        Bus::assertNothingDispatched();
     });
 });
