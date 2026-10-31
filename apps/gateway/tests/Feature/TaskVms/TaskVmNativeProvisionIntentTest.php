@@ -251,3 +251,17 @@ it('refused native admission rolls back ordinary allocation instead of stranding
         ->toThrow(TaskVmException::class);
     expect(TaskVm::forGroup($group))->toBeNull()->and(Operation::query()->count())->toBe(0);
 });
+
+it('captures placement for an owning Task root without starting another Operation or reserving enrollment', function (): void {
+    TaskVmRecipeImages::ready($this->host->id);
+    $group = Task::topLevel()->create(['project_id' => $this->vm->group->project_id, 'title' => 'Same-root provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
+    $placement = app(AllocateTaskVmAction::class);
+    $vm = $placement->capture($group);
+    expect($vm->state)->toBe(TaskVmState::Provisioning)
+        ->and($vm->node_id)->toBeNull()
+        ->and($vm->recipe_identity)->not->toBeNull()
+        ->and($vm->image_fingerprint)->not->toBeNull()
+        ->and($placement->capture($group)->id)->toBe($vm->id)
+        ->and(Operation::query()->count())->toBe(0)
+        ->and(Node::query()->count())->toBe(4);
+});

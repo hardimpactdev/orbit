@@ -17,6 +17,7 @@ use App\Infrastructure\TaskVms\UpCloudServers;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use Closure;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -35,6 +36,18 @@ final readonly class AllocateTaskVmAction
     /** @throws TaskCapacityException when no host has a free slot */
     public function execute(Task $group): TaskVm
     {
+        return $this->allocate($group, static fn (TaskVm $vm) => app(StartTaskVmProvisionAction::class)->execute($vm->id));
+    }
+
+    /** State-only placement for an owning Task admission transaction. Starts no Operation or job. */
+    public function capture(Task $group): TaskVm
+    {
+        return $this->allocate($group);
+    }
+
+    /** @param null|Closure(TaskVm):mixed $admit */
+    private function allocate(Task $group, ?Closure $admit = null): TaskVm
+    {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
 
@@ -42,7 +55,7 @@ final readonly class AllocateTaskVmAction
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
         try {
-            $vm = $this->place($group, $size);
+            $vm = $this->place($group, $size, $admit);
         } catch (Throwable $exception) {
             if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
                 throw $exception;
@@ -53,7 +66,8 @@ final readonly class AllocateTaskVmAction
         return $vm;
     }
 
-    private function place(Task $group, TaskVmSize $size): TaskVm
+    /** @param null|Closure(TaskVm):mixed $admit */
+    private function place(Task $group, TaskVmSize $size, ?Closure $admit): TaskVm
     {
         $resolvedIdentity = $this->images->currentRecipe()->identity;
         $template = null;
@@ -66,7 +80,7 @@ final readonly class AllocateTaskVmAction
             // Admission rechecks capacity under the row lock.
         }
 
-        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template): TaskVm {
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -107,7 +121,7 @@ final readonly class AllocateTaskVmAction
             }
             $vm = $this->record->execute($group, $target, $size);
             $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $fingerprint]);
-            app(StartTaskVmProvisionAction::class)->execute($vm->id);
+            $admit?->__invoke($vm);
 
             return $vm;
         });

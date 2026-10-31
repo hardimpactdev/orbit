@@ -16,3 +16,5 @@ The enrollment lane supplies the provider and enrollment lower actions. They run
 Private worker and runtime material uses the shared declared-participant path. Private values stay inside callbacks. Native outputs contain only public placement and bounded status.
 
 The Gateway records the native result and marks the VM ready or failed. It does not execute provider work or validate native stage receipts again. Cancellation and failure leave the VM available to its separate destruction intent; they never fabricate provider absence.
+
+`AllocateTaskVmAction::capture(Task $group): TaskVm` records placement for a Task parent without starting a separate VM Operation or reserving enrollment. The Task admission calls it inside its own transaction, then captures enrollment and private bindings with `providerCreate: true`. Ordinary VM admission uses `execute`, which records placement and its native VM parent in one transaction. Both paths share the same placement rules.
