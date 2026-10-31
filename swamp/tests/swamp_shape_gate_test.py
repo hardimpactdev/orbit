@@ -86,6 +86,26 @@ class ShapeGate(unittest.TestCase):
         result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
         self.assertTrue(any(row['rule'] == 'custom-control' for row in json.loads(result.stdout)))
 
+    def test_outer_lock_and_origin_bindings_include_loop_and_destructuring_writes(self):
+        def scan(source):
+            result = subprocess.run(["python3", str(ROOT / "bin/swamp-shape-python.py")], input=source, text=True, capture_output=True, check=True)
+            return json.loads(result.stdout)
+        lock = "import os,fcntl\nfd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\ndef acquire():\n    fcntl.flock(fd,fcntl.LOCK_EX)\n"
+        origin = "import urllib.request\nORIGIN='https://api.upcloud.com/1.3/'\ndef request(path):\n    urllib.request.Request(ORIGIN+path)\n"
+        for write in [
+            "for fd in [os.open('/tmp/workflow.lock',os.O_RDWR)]:\n    pass\n",
+            "fd,other=os.open('/tmp/workflow.lock',os.O_RDWR),None\n",
+            "with open('/tmp/workflow.lock') as fd:\n    pass\n",
+        ]:
+            self.assertTrue(any(row['rule'] == 'custom-control' for row in scan(lock + write + "acquire()\n")), write)
+        for write in [
+            "for ORIGIN in ['https://gateway.orbit/api/v1/']:\n    pass\n",
+            "ORIGIN,other='https://gateway.orbit/api/v1/',None\n",
+        ]:
+            self.assertTrue(any(row['rule'] == 'gateway-http' for row in scan(origin + write + "request('private-material')\n")), write)
+        asynchronous = "import fcntl,os\nasync def outer(items):\n    fd=os.open('/run/lock/orbit-firewall.lock',os.O_RDWR)\n    def acquire():\n        fcntl.flock(fd,fcntl.LOCK_EX)\n    async for fd in items:\n        pass\n    acquire()\n"
+        self.assertTrue(any(row['rule'] == 'custom-control' for row in scan(asynchronous)))
+
     def test_agent_executable_context_in_python_subprocesses_and_remote_commands(self):
         inventory = json.dumps({"agent.status": "observer", "cli.install": "action"})
         def scan(source):
