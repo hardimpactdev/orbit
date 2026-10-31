@@ -1,18 +1,26 @@
-# Local CLI convergence
+# Shared CLI installation on a Node
 
-`convergeCli` in `operations/fleet/cli_converge_local.ts` installs the public
-plan captured by `CliConvergePlan::input(Node)`. The owning root adds its
-admitted agent digest and runs the action on that Node's placed worker. This
-helper makes one fixed `cli.install` call, with native uncertainty propagated.
-It adds no Gateway request, child Operation, receipt, retry or dispatch path.
+Import `installCli` from `extensions/behaviors/operations/fleet/cli_install.ts`.
+It accepts `{ user, release, profile }` and optional `{ command, signal }`.
+`release` is null or the admitted `{ version, url, sha256 }` object. `command`
+is the parent root's `NodeCommand` runner. Pass the same placed runner for
+proxy Nodes. Omitting it uses the local Node worker. The lower starts no
+Operation, HTTP request, agent command, child run or workflow.
 
-The action preserves selected skips, planning failures, update-busy and missing
-release mappings. Success contains only the installed version and configuration
-outcome. An unexpected installed version or unknown refusal throws. A foreign
-CLI returns `cli.foreign_binary`; the owning root projection records the same
-foreign state through `NodeCliState`, without adopting or overwriting it.
+The result is `{ installed: string | null, configured: boolean }` or
+`{ error_code }`. A null `installed` means the Node kept its existing CLI.
+The installer preserves a current or newer CLI with self-update, and source
+builds with self-update. Missing or stale CLIs need an admitted release. Foreign
+links or binaries refuse before execution. It holds the shared self-update
+lock, rechecks the installed CLI after waiting, verifies HTTPS bytes against
+the admitted SHA-256, checks the candidate as the managed user, and switches
+`/usr/local/bin/orbit` with an atomic rename. A plain previous binary is kept as
+`orbit.orbit-previous`. Root's profile is published at mode 0600. Candidate
+failures leave the serving link unchanged. No diagnostic or profile contents
+enter the result.
 
-Callers may inject `invoke`, `signal` and `beforeEffect` to reuse their existing
-cancellation boundary. After the mutation starts, a late abort does not erase
-its outcome. The existing polled wrapper shares the install-error mapping; its
-execution and Gateway projection remain unchanged until its owning cutover.
+`convergeCli` in `cli_converge_local.ts` uses this lower after its admission
+skip, plan-error and cancellation checks. A recipe parent calls `installCli`
+directly as one step of its existing root. It owns cancellation before the
+effect; once the bounded atomic installation starts, the lower returns its
+actual outcome. Native execution failure remains uncertain and is thrown.

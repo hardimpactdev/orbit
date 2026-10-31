@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { type NodeCall, runNodeAgent } from "../_lib/node-agent.ts";
+import { installCli } from "./cli_install.ts";
 import { cliInstallError } from "./contract.ts";
 
 export const CliConvergePlan = z.object({
@@ -48,10 +48,13 @@ export const CliConvergeResult = z.union([
 /** One local action in its original placed root; no Gateway or child protocol. */
 export async function convergeCli(
   raw: z.infer<typeof CliConvergeLocalInput>,
-  { signal, beforeEffect, invoke = runNodeAgent }: {
+  { signal, beforeEffect, invoke = installCli }: {
     signal?: AbortSignal;
     beforeEffect?: () => Promise<void>;
-    invoke?: (call: NodeCall, signal?: AbortSignal) => Promise<unknown>;
+    invoke?: (
+      input: Parameters<typeof installCli>[0],
+      options?: Parameters<typeof installCli>[1],
+    ) => Promise<unknown>;
   } = {},
 ): Promise<z.infer<typeof CliConvergeResult>> {
   const input = CliConvergeLocalInput.parse(raw);
@@ -72,17 +75,10 @@ export async function convergeCli(
   signal?.throwIfAborted();
   const result = z.record(z.string(), z.unknown()).parse(
     await invoke({
-      name: "cli.install",
-      input: {
-        user: input.user,
-        release: input.release,
-        profile: input.profile,
-      },
-      pin: input.agent_sha256,
-      sudo: true,
-      mutates: true,
-      deadlineMs: 720000,
-    }, signal),
+      user: input.user,
+      release: input.release,
+      profile: input.profile,
+    }, { signal }),
   );
   const code = cliInstallError(result);
   if (code !== null) {

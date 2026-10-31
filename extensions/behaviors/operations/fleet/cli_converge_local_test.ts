@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { convergeCli } from "./cli_converge_local.ts";
-import type { NodeCall } from "../_lib/node-agent.ts";
+import { installCli } from "./cli_install.ts";
 
 const input = {
   user: "orbit",
@@ -17,7 +17,7 @@ const input = {
 };
 
 Deno.test("local CLI action invokes only the fixed admitted install and returns a bounded summary", async () => {
-  const calls: NodeCall[] = [];
+  const calls: Parameters<typeof installCli>[0][] = [];
   const order: string[] = [];
   const result = await convergeCli(input, {
     beforeEffect: () => {
@@ -35,12 +35,9 @@ Deno.test("local CLI action invokes only the fixed admitted install and returns 
     },
   });
   assertEquals(calls, [{
-    name: "cli.install",
-    input: { user: input.user, release: input.release, profile: input.profile },
-    pin: input.agent_sha256,
-    sudo: true,
-    mutates: true,
-    deadlineMs: 720000,
+    user: input.user,
+    release: input.release,
+    profile: input.profile,
   }]);
   assertEquals(order, ["cancel-check", "install"]);
   assertEquals(result, {
