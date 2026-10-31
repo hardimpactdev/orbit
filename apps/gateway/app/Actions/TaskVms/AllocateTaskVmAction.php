@@ -7,6 +7,7 @@ namespace App\Actions\TaskVms;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskWait;
 use App\Domain\TaskVms\TaskVmCapacity;
+use App\Domain\TaskVms\TaskVmEnrollmentIntent;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProviderKind;
@@ -14,10 +15,10 @@ use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\UpCloudServers;
-use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
+use Closure;
 use Illuminate\Contracts\Database\ConcurrencyErrorDetector;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -31,10 +32,23 @@ final readonly class AllocateTaskVmAction
         private TaskVmPlacementPolicy $policy,
         private RecordTaskVmAction $record,
         private RecipeImageBuilds $images,
+        private TaskVmEnrollmentIntent $enrollment,
     ) {}
 
     /** @throws TaskCapacityException when no host has a free slot */
     public function execute(Task $group): TaskVm
+    {
+        return $this->enrollment->admit(fn () => $this->allocate($group, static fn (TaskVm $vm) => app(StartTaskVmProvisionAction::class)->execute($vm->id)));
+    }
+
+    /** State-only placement for an owning Task admission transaction. Starts no Operation or job. */
+    public function capture(Task $group): TaskVm
+    {
+        return $this->allocate($group);
+    }
+
+    /** @param null|Closure(TaskVm):mixed $admit */
+    private function allocate(Task $group, ?Closure $admit = null): TaskVm
     {
         $existing = TaskVm::forGroup($group);
         if ($existing instanceof TaskVm) {
@@ -43,7 +57,7 @@ final readonly class AllocateTaskVmAction
         }
         $size = TaskVmSize::forGroup($group, $this->settings->mediumProjectIds);
         try {
-            $vm = $this->place($group, $size);
+            $vm = $this->place($group, $size, $admit);
         } catch (Throwable $exception) {
             if (! app(ConcurrencyErrorDetector::class)->causedByConcurrencyError($exception)) {
                 throw $exception;
@@ -51,14 +65,11 @@ final readonly class AllocateTaskVmAction
             throw new TaskCapacityException(TaskWait::Capacity, 'Task VM: another placement is running.');
         }
 
-        if ($vm->wasRecentlyCreated) {
-            ProvisionTaskVm::dispatch($vm->id);
-        }
-
         return $vm;
     }
 
-    private function place(Task $group, TaskVmSize $size): TaskVm
+    /** @param null|Closure(TaskVm):mixed $admit */
+    private function place(Task $group, TaskVmSize $size, ?Closure $admit): TaskVm
     {
         $resolvedIdentity = $this->images->currentRecipe()->identity;
         $template = null;
@@ -71,7 +82,7 @@ final readonly class AllocateTaskVmAction
             // Admission rechecks capacity under the row lock.
         }
 
-        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template): TaskVm {
+        return DB::transaction(function () use ($group, $size, $resolvedIdentity, $template, $admit): TaskVm {
             // Serialize admission with desired-recipe changes and image promotion.
             DB::table('task_vm_image_recipe')->where('id', 1)->update(['generation' => DB::raw('generation')]);
             $existing = TaskVm::forGroup($group);
@@ -112,6 +123,7 @@ final readonly class AllocateTaskVmAction
             }
             $vm = $this->record->execute($group, $target, $size);
             $vm->update(['recipe_identity' => $recipe->identity, 'image_fingerprint' => $fingerprint]);
+            $admit?->__invoke($vm);
 
             return $vm;
         });

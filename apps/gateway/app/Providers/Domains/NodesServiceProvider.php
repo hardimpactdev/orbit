@@ -70,6 +70,7 @@ final class NodesServiceProvider extends ServiceProvider
         $this->app->singleton(NodeWireGuardProjectionLock::class, static fn (): NodeWireGuardProjectionLock => new NodeWireGuardProjectionLock(Config::string('orbit.home')));
         $this->app->tag(NodeRoleRuntimeSource::class, OperationSecretSource::class);
         $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
+        $this->app->tag(NodeWorkerEnrollment::class, OperationSecretOutputStore::class);
         $this->app->singleton(
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(

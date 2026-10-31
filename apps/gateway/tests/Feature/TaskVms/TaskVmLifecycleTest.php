@@ -9,22 +9,16 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\FailTaskVmAction;
-use App\Domain\Clusters\ClusterState;
-use App\Domain\Instances\InstanceRemovalStatus;
+use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Nodes\NodeAgentRuntime;
-use App\Domain\Nodes\NodeConverger;
-use App\Domain\Nodes\NodeObservation;
-use App\Domain\Nodes\NodeProvisioningIdentity;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
@@ -53,20 +47,13 @@ use App\Domain\TaskVms\TaskVmPlacementPolicy;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Domain\TaskVms\VmObservation;
-use App\Domain\Tools\ToolManagerMaterializer;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmTopologyAdmission;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
-use App\Jobs\TaskVms\DestroyTaskVm;
-use App\Jobs\TaskVms\EnrollTaskVm;
-use App\Jobs\TaskVms\PrepareTaskVmRuntime;
-use App\Jobs\TaskVms\ProvisionTaskVm;
-use App\Jobs\TaskVms\ResumeTaskVm;
 use App\Models\Activity;
 use App\Models\AgentThread;
-use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -87,8 +74,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
 use Tests\Support\FakeAgentDriver;
-use Tests\Support\FakeNodeAgentRuntime;
-use Tests\Support\FakeToolManagerMaterializer;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\RecordingTaskVmProvider;
 use Tests\Support\TaskVmRecipeImages;
 use Tests\Support\TaskVmSettingsBuilder;
@@ -171,7 +157,7 @@ function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterI
 {
     TaskVmRecipeImages::ready(test()->host->id);
     TaskVmSettingsBuilder::bind([
-        'enabled' => $enabled, 'devClusterId' => $clusterId, 'modelProxyOrigin' => TVM_LIFE_ORIGIN,
+        'enabled' => $enabled, 'devClusterId' => $clusterId, 'modelProxyOrigin' => TVM_LIFE_ORIGIN, 'piArtifactSha256' => str_repeat('c', 64),
         'hosts' => [TaskVmSettingsBuilder::host(test()->host->id, ['maxVms' => $maxVms])],
     ]);
 }
@@ -217,12 +203,12 @@ beforeEach(function (): void {
 });
 
 describe('allocation', function (): void {
-    it('records a provisioning row named after its id and queues its creation once', function (): void {
+    it('captures one provisioning row without starting provider work', function (): void {
         Queue::fake();
         $group = tvm_life_group();
 
-        $vm = app(AllocateTaskVmAction::class)->execute($group);
-        $again = app(AllocateTaskVmAction::class)->execute($group);
+        $vm = app(AllocateTaskVmAction::class)->capture($group);
+        $again = app(AllocateTaskVmAction::class)->capture($group);
 
         expect($again->id)->toBe($vm->id)
             ->and($vm->name)->toBe('tvm-'.$vm->id)
@@ -230,28 +216,28 @@ describe('allocation', function (): void {
             ->and($vm->host_node_id)->toBe($this->host->id)
             ->and($vm->wireguard_ip)->toBe('10.44.0.129')
             ->and($vm->pi_token)->toMatch('/\A[a-f0-9]{64}\z/');
-        Queue::assertPushedOn('task-vms', ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id && $job->connection === 'gateway');
-        Queue::assertPushed(ProvisionTaskVm::class, 1);
+        Queue::assertNothingPushed();
+        expect(Operation::query()->count())->toBe(0)->and($this->provider->calls)->toBe([]);
     });
 
     it('gives each live task VM its own address and waits when every host is full', function (): void {
         Queue::fake();
-        $first = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
-        $second = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
+        $first = app(AllocateTaskVmAction::class)->capture(tvm_life_group());
+        $second = app(AllocateTaskVmAction::class)->capture(tvm_life_group());
 
         expect($second->wireguard_ip)->toBe('10.44.0.130')
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
+            ->and(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))
             ->toThrow(TaskCapacityException::class, 'Task VM: no capacity.');
 
         $first->update(['state' => TaskVmState::Destroyed]);
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->wireguard_ip)->toBe('10.44.0.129');
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_life_group())->wireguard_ip)->toBe('10.44.0.129');
     });
 
     it('places each new task VM on the active host with the most free slots, and never more than max_vms', function (): void {
         Queue::fake();
         $shark = tvm_life_node('shark', '10.44.0.8', 'nckrtl');
         tvm_life_hosts([[$this->host->id, 2], [$shark->id, 3]]);
-        $place = fn (): int => app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id;
+        $place = fn (): int => app(AllocateTaskVmAction::class)->capture(tvm_life_group())->host_node_id;
 
         // shark 3 free, beast 2 free -> shark; then 2/2: the tie keeps config order -> beast; then 1/2 -> shark; 1/1 -> beast; 0/1 -> shark.
         expect([$place(), $place(), $place(), $place(), $place()])
@@ -271,12 +257,12 @@ describe('allocation', function (): void {
             'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.140', 'pi_token' => str_repeat('p', 64),
         ]);
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($shark->id)
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_life_group())->host_node_id)->toBe($shark->id)
+            ->and(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))
             ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::Capacity)->and($wait->getMessage())->toBe('Task VM: no capacity.'));
 
         $parked->update(['state' => TaskVmState::Destroyed]);
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($this->host->id);
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_life_group())->host_node_id)->toBe($this->host->id);
     });
 
     it('gives a host whose max_vms dropped below its VMs no new VM and removes none', function (): void {
@@ -286,8 +272,8 @@ describe('allocation', function (): void {
         tvm_life_vm(tvm_life_group(TaskGroupStatus::Running), TaskVmState::Ready, wireguardIp: '10.44.0.130');
         tvm_life_hosts([[$this->host->id, 1], [$shark->id, 1]]);
 
-        expect(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->host_node_id)->toBe($shark->id)
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.')
+        expect(app(AllocateTaskVmAction::class)->capture(tvm_life_group())->host_node_id)->toBe($shark->id)
+            ->and(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))->toThrow(TaskCapacityException::class, 'Task VM: no capacity.')
             ->and(TaskVm::query()->live()->where('host_node_id', $this->host->id)->count())->toBe(2);
     });
 
@@ -304,22 +290,23 @@ describe('allocation', function (): void {
         expect(TaskTopology::forGroup($plain)->toArray())->toBe([])
             ->and(TaskTopology::forGroup($topology)->toArray())->toBe(['app-dev', 'app-prod+ingress']);
 
-        $large = app(AllocateTaskVmAction::class)->execute($topology);
-        $normal = app(AllocateTaskVmAction::class)->execute($plain);
+        $large = app(AllocateTaskVmAction::class)->capture($topology);
+        $normal = app(AllocateTaskVmAction::class)->capture($plain);
 
         expect($large->refresh()->size)->toBe(TaskVmSize::Large)
             ->and($normal->refresh()->size)->toBe(TaskVmSize::Normal)
             ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 0])
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
+            ->and(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::NoCapacity);
 
         $normal->update(['state' => TaskVmState::Destroyed]);
         $again = tvm_life_group();
         Task::query()->create(['parent_id' => $again->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev']]);
 
         // One slot is free, so a medium VM for one test node waits, while a normal one still fits.
-        expect(fn () => app(AllocateTaskVmAction::class)->execute($again))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium))
-            ->and(app(AllocateTaskVmAction::class)->execute(tvm_life_group())->size)->toBe(TaskVmSize::Normal);
-        Queue::assertPushed(ProvisionTaskVm::class, 3);
+        expect(fn () => app(AllocateTaskVmAction::class)->capture($again))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium))
+            ->and(app(AllocateTaskVmAction::class)->capture(tvm_life_group())->size)->toBe(TaskVmSize::Normal);
+        Queue::assertNothingPushed();
+        expect(Operation::query()->count())->toBe(0);
     });
 
     it('gives one test node a medium VM and more a large one, whatever roles they add', function (array $topology, TaskVmSize $size, int $slots): void {
@@ -328,7 +315,7 @@ describe('allocation', function (): void {
         $group = tvm_life_group();
         Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Nodes', 'brief' => 'Nodes', 'status' => TaskStatus::Todo, 'topology' => $topology]);
 
-        $vm = app(AllocateTaskVmAction::class)->execute($group)->refresh();
+        $vm = app(AllocateTaskVmAction::class)->capture($group)->refresh();
 
         expect($vm->size)->toBe($size)
             ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 4 - $slots]);
@@ -347,12 +334,12 @@ describe('allocation', function (): void {
         $topology = tvm_life_group();
         Task::query()->create(['parent_id' => $topology->id, 'position' => 1, 'title' => 'Dev', 'brief' => 'Dev', 'status' => TaskStatus::Todo, 'topology' => ['app-dev', 'app-prod']]);
 
-        $medium = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
+        $medium = app(AllocateTaskVmAction::class)->capture(tvm_life_group());
 
         expect($medium->refresh()->size)->toBe(TaskVmSize::Medium)
             ->and(TaskVmSize::forGroup($topology, [$this->project->id]))->toBe(TaskVmSize::Large)
             ->and(app(TaskVmCapacity::class)->freeSlots(app(TaskVmCapacity::class)->activeHosts()))->toBe([$this->host->id => 1])
-            ->and(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium));
+            ->and(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))->toThrow(TaskCapacityException::class, TaskVmPlacementPolicy::noCapacityFor(TaskVmSize::Medium));
     });
 
     it('allocates a new VM without the obsolete placement cache lock', function (): void {
@@ -362,10 +349,11 @@ describe('allocation', function (): void {
         expect($lock->get())->toBeTrue();
 
         try {
-            $vm = app(AllocateTaskVmAction::class)->execute(tvm_life_group());
+            $vm = app(AllocateTaskVmAction::class)->capture(tvm_life_group());
             expect($vm->state)->toBe(TaskVmState::Provisioning)
                 ->and(TaskVm::query()->count())->toBe(1);
-            Queue::assertPushed(ProvisionTaskVm::class, fn (ProvisionTaskVm $job): bool => $job->taskVmId === $vm->id);
+            Queue::assertNothingPushed();
+            expect(Operation::query()->count())->toBe(0);
         } finally {
             $lock->release();
         }
@@ -375,7 +363,7 @@ describe('allocation', function (): void {
         Queue::fake();
         $this->host->update(['status' => LifecycleStatus::Failed]);
 
-        expect(fn () => app(AllocateTaskVmAction::class)->execute(tvm_life_group()))->toThrow(TaskCapacityException::class)
+        expect(fn () => app(AllocateTaskVmAction::class)->capture(tvm_life_group()))->toThrow(TaskCapacityException::class)
             ->and(TaskVm::query()->count())->toBe(0);
     });
 });
@@ -405,9 +393,11 @@ describe('claim', function (): void {
         expect(fn () => $admission->prepare($group->refresh(), $subtask))->toThrow(TaskCapacityException::class, TaskVmTopologyAdmission::TooSmall);
     });
 
-    it('allocates on the first claim and waits until the task VM is ready', function (): void {
+    it('waits for a captured task VM and returns its Node only after native readiness', function (): void {
         Queue::fake();
         $group = tvm_life_group();
+
+        app(AllocateTaskVmAction::class)->capture($group);
 
         expect(fn () => app(TaskVmWorkspace::class)->node($group))
             ->toThrow(fn (TaskCapacityException $wait) => expect($wait->wait)->toBe(TaskWait::TaskVm)->and($wait->getMessage())->toBe('Task VM: provisioning.'));
@@ -423,266 +413,14 @@ describe('claim', function (): void {
     });
 });
 
-describe(ProvisionTaskVm::class, function (): void {
-    it('launches the VM with the Gateway key in its user-data, then queues enrollment', function (): void {
-        Queue::fake();
-        mock(SshKeyProvider::class)->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new ProvisionTaskVm($vm->id), 'handle']);
-
-        expect($this->provider->calls)->toBe(['create'])
-            ->and($this->provider->gatewayPublicKey)->toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
-    });
-
-    it('logs the wait for the worker as its own step, apart from the launch', function (): void {
-        Queue::fake();
-        Log::spy();
-        mock(SshKeyProvider::class)->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        $this->freezeTime();
-        $vm = tvm_life_vm(tvm_life_group());
-        $this->travel(150)->seconds();
-        $this->provider->onCreate = fn () => $this->travel(4)->seconds();
-
-        app()->call([new ProvisionTaskVm($vm->id), 'handle']);
-
-        // The row's time has whole seconds, so the queue step may count a fraction more.
-        foreach (['queue' => 150.0, 'create' => 4.0] as $step => $seconds) {
-            Log::shouldHaveReceived('info')->with('Task VM step done.', Mockery::on(static fn (array $context): bool => $context['task_vm'] === $vm->name
-                && $context['step'] === $step && $context['seconds'] >= $seconds && $context['seconds'] <= $seconds + 1));
-        }
-    });
-
-    it('never creates an enrolled or settled VM again', function (TaskVmState $state, bool $enrolled): void {
-        Queue::fake();
-        $group = tvm_life_group();
-        $vm = tvm_life_vm($group, $state, $enrolled ? tvm_life_node('tvm-node', '10.44.0.140', role: RoleName::AppDev) : null);
-
-        app()->call([new ProvisionTaskVm($vm->id), 'handle']);
-
-        expect($this->provider->calls)->toBe([]);
-        Queue::assertNotPushed(ProvisionTaskVm::class);
-    })->with([
-        'enrolled' => [TaskVmState::Provisioning, true],
-        'failed' => [TaskVmState::Failed, false],
-        'destroying' => [TaskVmState::Destroying, false],
-    ]);
-
-    it('records a provision failure without changing external assistance', function (): void {
-        $vm = tvm_life_vm($group = tvm_life_group(orchestration: TaskOrchestration::External));
-        $destroying = tvm_life_vm(tvm_life_group(), TaskVmState::Destroying, wireguardIp: '10.44.0.131');
-        $failure = new TaskVmException('task_vm.host_command_failed', '`incus launch` failed.', 502);
-
-        (new ProvisionTaskVm($vm->id))->failed($failure);
-        (new ProvisionTaskVm($destroying->id))->failed($failure);
-        (new EnrollTaskVm($vm->id, now()->getTimestamp()))->failed(new RuntimeException('boom'));
-
-        expect($vm->fresh()?->state)->toBe(TaskVmState::Failed)
-            ->and($vm->fresh()?->error_code)->toBe('task_vm.host_command_failed')
-            ->and($vm->fresh()?->error_message)->toBe('`incus launch` failed.')
-            ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($destroying->fresh()?->error_code)->toBeNull()
-            ->and($group->fresh()?->assistance_requested)->toBeFalse()
-            ->and($group->fresh()?->assistance_kind)->toBeNull()
-            ->and($group->fresh()?->assistance_reason)->toBeNull()
-            ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
-    });
-
-    it('retries a failed create once and is unique for its task VM', function (): void {
-        $job = new ProvisionTaskVm(7);
-
-        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms')
-            ->and($job->failOnTimeout)->toBeTrue()
-            ->and((new EnrollTaskVm(7, 0))->tries)->toBe(60)
-            ->and((new EnrollTaskVm(7, 0))->failOnTimeout)->toBeTrue()
-            ->and((new PrepareTaskVmRuntime(7))->failOnTimeout)->toBeTrue();
-    });
-});
-
-describe(EnrollTaskVm::class, function (): void {
-    beforeEach(function (): void {
-        Queue::fake();
-        Sleep::fake();
-        $this->converged = [];
-        app()->instance(NodeConverger::class, new class($this->converged) implements NodeConverger
-        {
-            /** @param list<array<string, mixed>> $converged */
-            public function __construct(private array &$converged) {}
-
-            public function converge(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint = null, bool $rolelessOperator = false, ?Closure $recordObservation = null): NodeObservation
-            {
-                $this->converged[] = [
-                    'host' => $node->public_ssh_host, 'jump' => $node->ssh_jump_node_id, 'wireguard_ip' => $node->wireguard_ip,
-                    'user' => $identity->bootstrapUser, 'fingerprint' => $expectedSshHostFingerprint,
-                    'linked' => TaskVm::query()->where('node_id', $node->id)->exists(),
-                ];
-
-                $observation = new NodeObservation('x86_64');
-                $recordObservation?->__invoke($observation);
-
-                return $observation;
-            }
-        });
-        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger
-        {
-            public function converge(Node $node, NodeRole $assignment): void {}
-
-            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-
-            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-        });
-        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
-        app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
-        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldReceive('reconcile')->getMock());
-        $this->cluster = Cluster::query()->create(['name' => 'development', 'tld' => 'test', 'state' => ClusterState::Active]);
-        tvm_life_settings(clusterId: $this->cluster->id);
-    });
-
-    it('polls while cloud-init runs, counting the boot limit from launch, not from the row', function (): void {
-        $this->provider->ready = false;
-        $vm = tvm_life_vm(tvm_life_group());
-        $vm->forceFill(['created_at' => now()->subMinutes(30)])->save();
-        $job = (new EnrollTaskVm($vm->id, now()->subMinutes(2)->getTimestamp()))->withFakeQueueInteractions();
-
-        app()->call([$job, 'handle']);
-
-        $job->assertReleased(15);
-        expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
-            ->and(array_count_values($this->provider->calls)['cloud-init'])->toBe(121);
-        Sleep::assertSleptTimes(120);
-    });
-
-    it('enrolls in the same run when cloud-init finishes during its polls', function (): void {
-        // Each poll reads the VM, then once more after cloud-init is done, until the host reports the address.
-        $this->provider->observations = array_fill(0, 4, new VmObservation(true, null));
-        $vm = tvm_life_vm(tvm_life_group());
-        $job = (new EnrollTaskVm($vm->id, now()->getTimestamp()))->withFakeQueueInteractions();
-
-        app()->call([$job, 'handle']);
-
-        $job->assertNotReleased();
-        Sleep::assertSleptTimes(2);
-        expect($vm->fresh()?->node_id)->not->toBeNull();
-    });
-
-    it('enrolls without a fleet Metrics reconcile and logs each step', function (): void {
-        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldNotReceive('reconcile')->getMock());
-        Log::spy();
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new EnrollTaskVm($vm->id, now()->subSeconds(14)->getTimestamp()), 'handle']);
-
-        $steps = [];
-        Log::shouldHaveReceived('info')->withArgs(function (string $message, array $context) use (&$steps, $vm): bool {
-            if ($message === 'Task VM step done.' && $context['task_vm'] === $vm->name) {
-                $steps[] = $context['step'];
-            }
-
-            return true;
-        });
-        expect($vm->fresh()?->node_id)->not->toBeNull()
-            ->and($steps)->toBe(['enroll-queue', 'boot', 'node-converge', 'apt-tool-manager', 'roles', 'router-lan-ingress', 'dns-selection', 'activate', 'enrolled']);
-    });
-
-    it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
-        $this->provider->observations = [new VmObservation(true, '10.251.77.20', str_repeat('b', 64))];
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        $node = Node::query()->where('name', $vm->name)->sole();
-        expect($this->converged)->toBe([[
-            'host' => '10.251.77.20', 'jump' => $this->host->id, 'wireguard_ip' => '10.44.0.129',
-            'user' => 'orbit', 'fingerprint' => TVM_LIFE_FINGERPRINT, 'linked' => true,
-        ]])
-            ->and($vm->fresh()?->node_id)->toBe($node->id)
-            ->and($vm->fresh()?->address)->toBe('10.251.77.20')
-            ->and($vm->fresh()?->image_fingerprint)->toBe(str_repeat('b', 64))
-            ->and($node->status)->toBe(LifecycleStatus::Active)
-            ->and($node->user)->toBe('orbit')
-            ->and($node->cluster_id)->toBe($this->cluster->id)
-            ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
-            ->and($this->provider->calls)->toBe(['observe', 'cloud-init', 'fingerprint']);
-        Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
-    });
-
-    it('links a warm pool VM before convergence too, before any claim', function (): void {
-        $vm = TaskVm::query()->create([
-            'group_id' => null, 'host_node_id' => $this->host->id, 'provider' => 'incus', 'name' => 'tvm-pending',
-            'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => null,
-        ]);
-        $vm->update(['name' => 'tvm-'.$vm->id]);
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        expect($this->converged[0]['linked'])->toBeTrue()
-            ->and($vm->fresh()?->group_id)->toBeNull();
-    });
-
-    it('checks cloud-init before the host reports the guest address', function (): void {
-        $this->provider->observations = [new VmObservation(true, null), new VmObservation(true, '10.251.77.20')];
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        expect($vm->fresh()?->address)->toBe('10.251.77.20')
-            ->and(array_slice($this->provider->calls, 0, 3))->toBe(['observe', 'cloud-init', 'observe']);
-    });
-
-    it('tolerates one stopped reading during a guest reboot', function (): void {
-        $this->provider->observations = [new VmObservation(false, null), new VmObservation(true, '10.251.77.20')];
-        $vm = tvm_life_vm(tvm_life_group());
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        Sleep::assertSleptTimes(1);
-        expect($vm->fresh()?->node_id)->not->toBeNull();
-    });
-
-    it('fails at once for a missing or stopped VM, a cloud-init error, or a slow boot', function (Closure $arrange, string $code): void {
-        $vm = tvm_life_vm(tvm_life_group());
-        $launchedAt = $arrange($this->provider, $vm);
-        $job = (new EnrollTaskVm($vm->id, is_int($launchedAt) ? $launchedAt : now()->getTimestamp()))->withFakeQueueInteractions();
-
-        app()->call([$job, 'handle']);
-
-        $job->assertFailedWith(fn (TaskVmException $exception): bool => $exception->errorCode === $code);
-        expect($this->converged)->toBe([]);
-    })->with([
-        'absent' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
-        'stopped' => [fn (RecordingTaskVmProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
-        'cloud-init error' => [fn (RecordingTaskVmProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed: apt failed'), 'task_vm.bootstrap_failed'],
-        'slow boot' => [function (RecordingTaskVmProvider $provider): int {
-            $provider->ready = false;
-
-            return now()->subMinutes(11)->getTimestamp();
-        }, 'task_vm.bootstrap_timeout'],
-    ]);
-
-    it('only queues the runtime for a VM whose Node is already active', function (): void {
-        $vm = tvm_life_vm(tvm_life_group(), node: tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
-
-        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
-
-        expect($this->provider->calls)->toBe([])->and($this->converged)->toBe([]);
-        Queue::assertPushed(PrepareTaskVmRuntime::class);
-    });
-});
-
-describe(PrepareTaskVmRuntime::class, function (): void {
-    it('refuses a task VM without an active Node', function (): void {
-        $vm = tvm_life_vm(tvm_life_group());
-
-        expect(fn () => app()->call([new PrepareTaskVmRuntime($vm->id), 'handle']))
-            ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.not_enrolled'));
-        expect($vm->fresh()?->state)->toBe(TaskVmState::Provisioning);
-    });
-});
-
 describe('retained task VM workspace removal', function (): void {
     beforeEach(function (): void {
         $this->gateway = tvm_life_node('gateway', '10.44.0.2', role: RoleName::Gateway);
+        config(['swamp.run_token' => 'fixture.fake']);
+        $socket = new FakeRoutePublicationSocket;
+        $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => 'operation-task-vm-resume', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+        app()->instance(WebSocketClient::class, $socket);
         $this->projector = new TaskVmLifecycleProjector;
         app()->instance(InstanceRemovalProjector::class, $this->projector);
         $keys = Mockery::mock(SshKeyProvider::class);
@@ -690,7 +428,7 @@ describe('retained task VM workspace removal', function (): void {
         app()->instance(SshKeyProvider::class, $keys);
     });
 
-    it('cancels a running group by deleting its VM with the workspace, then admits owning Node cleanup through Swamp', function (bool $earlierFailure): void {
+    it('keeps the group and its VM workspace when native destruction is unavailable', function (bool $earlierFailure): void {
         $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
         $group = tvm_life_group(TaskGroupStatus::Running);
         $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
@@ -710,25 +448,20 @@ describe('retained task VM workspace removal', function (): void {
         app()->instance(InstanceRemover::class, mock(InstanceRemover::class)->shouldReceive('execute')->never()->getMock());
         Queue::fake();
 
-        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+        expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+            ->toThrow(ResourceOperationException::class);
 
-        $member = InstanceRemovalMember::query()->sole();
-        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
-            ->and($cancelled->taskable_id)->toBeNull()
-            ->and($cancelled->assistance_requested)->toBeFalse()
-            ->and(Instance::query()->find($instance->id))->toBeNull()
-            ->and($member->source_identity)->toBe('task-vm:'.$vm->name)
-            ->and($member->removal->status)->toBe(InstanceRemovalStatus::Completed)
-            ->and($this->provider->calls)->toBe(['destroy'])
-            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying);
-        $operation = Operation::query()->where('kind', 'task_vm.destroy')->sole();
-        expect($operation->target_id)->toBe($vm->id)
-            ->and($operation->status->value)->toBe('queued')
-            ->and(Node::query()->whereKey($node->id)->exists())->toBeTrue();
+        $this->assertModelExists($instance);
+        expect($group->fresh()->status)->toBe(TaskGroupStatus::Running)
+            ->and($group->fresh()->taskable_id)->toBe($instance->id)
+            ->and($vm->fresh()->state)->toBe(TaskVmState::Ready)
+            ->and($vm->fresh()->pi_token)->not->toBeNull()
+            ->and($this->provider->calls)->toBe([])
+            ->and(Operation::query()->count())->toBe(0);
         Queue::assertNothingPushed();
     })->with(['first cancel' => false, 'retry after an earlier failure' => true]);
 
-    it('records an ordinary removal push before teardown so a later lost VM needs no push', function (): void {
+    it('retains the recorded removal push when native VM destruction is unavailable', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => TaskGroupStatus::Failed]);
         $task = $group->tasks()->create(['position' => 1, 'title' => 'Approved', 'brief' => 'Work', 'status' => TaskStatus::Completed]);
@@ -753,12 +486,12 @@ describe('retained task VM workspace removal', function (): void {
         $vm->update(['state' => TaskVmState::Failed, 'error_code' => 'task_vm.vm_missing', 'publish_state' => 'pushed', 'publish_commit' => $sha, 'publish_branch' => 'task-'.$group->id]);
         $this->provider->observation = null;
 
-        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+        expect(fn () => app(StartTaskVmLifecycleOperationAction::class)->execute($vm->id, 'destroy'))->toThrow(ResourceOperationException::class);
 
         $this->assertModelExists($instance);
         expect($vm->fresh()->state)->toBe(TaskVmState::Failed)
             ->and($task->fresh()->review_handled_comment_id)->toBe($approval->id)
-            ->and(Operation::query()->where('kind', 'task_vm.destroy')->sole()->status->value)->toBe('queued')
+            ->and(Operation::query()->where('kind', 'task_vm.destroy')->count())->toBe(0)
             ->and($this->provider->calls)->toBe([]);
     });
 
@@ -828,7 +561,8 @@ describe('retained task VM workspace removal', function (): void {
             ->toThrow(TaskVmException::class, 'parked');
 
         $this->assertModelExists($instance);
-        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        expect(Operation::query()->where('kind', 'task_vm.resume')->where('target_id', $vm->id)->count())->toBe(1);
+        Queue::assertNothingPushed();
         expect($this->provider->calls)->toBe([]);
     });
 
@@ -853,10 +587,11 @@ describe('retained task VM workspace removal', function (): void {
 
         $this->assertModelExists($instance);
         expect($group->fresh()->assistance_reason)->toContain('parked');
-        Queue::assertPushed(ResumeTaskVm::class, fn (ResumeTaskVm $job): bool => $job->taskVmId === $vm->id);
+        expect(Operation::query()->where('kind', 'task_vm.resume')->where('target_id', $vm->id)->count())->toBe(1);
+        Queue::assertNothingPushed();
     })->with(['cancel' => false, 'complete' => true]);
 
-    it('copies the agent transcripts to the Gateway before it deletes the VM, and skips a thread it cannot read', function (TaskOrchestration $mode): void {
+    it('archives proven transcripts and retains the workspace when native deletion is unavailable', function (TaskOrchestration $mode): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false, $mode);
         Storage::fake('local');
         $removal = app(RemoveTaskWorkspaceAction::class);
@@ -897,15 +632,15 @@ describe('retained task VM workspace removal', function (): void {
         ]);
         Queue::fake();
 
-        $removal->remove($group);
+        expect(fn () => $removal->remove($group))->toThrow(ResourceOperationException::class);
 
         expect($readable->providerCalls)->toBe([[], []])
-            ->and($this->provider->calls)->toBe(['destroy'])
+            ->and($this->provider->calls)->toBe([])
             ->and(json_decode((string) Storage::disk('local')->get(ArchiveAgentTranscriptsAction::path($kept)), true))
             ->toMatchArray(['state' => 'done', 'entries' => [['id' => 'm1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Approved.', 'at' => '2026-10-14T18:00:00Z']]])
             ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($broken)))->toBeFalse()
             ->and(Storage::disk('local')->exists(ArchiveAgentTranscriptsAction::path($pending)))->toBeFalse()
-            ->and(Instance::query()->find($instance->id))->toBeNull();
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue();
     })->with(TaskOrchestration::cases());
 
     it('keeps the VM and workspace when an unreadable actor has no authoritative completion', function (): void {
@@ -928,18 +663,21 @@ describe('retained task VM workspace removal', function (): void {
         Queue::assertNothingPushed();
     });
 
-    it('keeps the workspace and records the error on the VM when the VM cannot be deleted', function (): void {
+    it('refuses unported VM cleanup without changing the provider or clearing credentials', function (): void {
         [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
-        $this->provider->onDestroy = static fn () => throw new TaskVmException('task_vm.delete_failed', 'The VM could not be deleted.', 502);
         Queue::fake();
 
-        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))->toThrow(TaskVmException::class);
+        expect(fn () => app(RemoveTaskWorkspaceAction::class)->remove($group))
+            ->toThrow(ResourceOperationException::class);
 
-        expect(Instance::query()->find($instance->id))->not->toBeNull()
-            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($vm->fresh()?->error_code)->toBe('task_vm.delete_failed');
-        Queue::assertNotPushed(DestroyTaskVm::class);
+        $this->assertModelExists($instance);
+        expect($vm->fresh()->state)->toBe(TaskVmState::Ready)
+            ->and($vm->fresh()->pi_token)->not->toBeNull()
+            ->and($vm->fresh()->error_code)->toBeNull()
+            ->and($this->provider->calls)->toBe([]);
+        Queue::assertNothingPushed();
     });
+
 });
 
 describe(DestroyEndedTaskVmsAction::class, function (): void {});
@@ -979,11 +717,11 @@ describe('failed VM claims', function (): void {
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed);
     })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
 
-    it('clears the Pi token as soon as deletion removes the VM', function (): void {
+    it('keeps credentials when synchronous VM deletion is unavailable', function (): void {
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Ready);
 
-        app(DeleteTaskVmAction::class)->execute($vm);
-
-        expect($vm->fresh())->state->toBe(TaskVmState::Destroying)->pi_token->toBeNull();
+        $token = $vm->pi_token;
+        expect(fn () => app(DeleteTaskVmAction::class)->execute($vm))->toThrow(ResourceOperationException::class);
+        expect($vm->fresh())->state->toBe(TaskVmState::Ready)->pi_token->toBe($token);
     });
 });
