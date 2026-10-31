@@ -368,30 +368,9 @@ jobs:
       item: item
       in: ${{ steps.plan.outputs.writes }}
     concurrency: 1
-- name: sync
-  dependsOn:
-  - job: writes
-    condition:
-      type: always
-  steps:
-  - name: result
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/vault-sync-plan'
-      methodName: result
-      inputs:
-        plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs
-          : null }}'
-        writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status
-          == "succeeded").map(name, steps[name].outputs.stdout) }}
-        successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
-          steps[name].status != "failed" && steps[name].status != "cancelled") }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}
 - name: cleanup
   dependsOn:
-  - job: sync
+  - job: writes
     condition:
       type: always
   steps:
@@ -416,7 +395,6 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-logout" }}
-    allowFailure: true
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
   - name: remove-cache
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
@@ -442,3 +420,24 @@ jobs:
       condition:
         type: always
     guard: ${{ !("workspace" in steps) || !("stdout" in steps.workspace.outputs) }}
+- name: sync
+  dependsOn:
+  - job: cleanup
+    condition:
+      type: always
+  steps:
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/vault-sync-plan'
+      methodName: result
+      inputs:
+        plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs
+          : null }}'
+        writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status
+          == "succeeded").map(name, steps[name].outputs.stdout) }}
+        successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
+          steps[name].status != "failed" && steps[name].status != "cancelled") }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}

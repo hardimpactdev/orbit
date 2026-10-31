@@ -35,7 +35,7 @@ def cli(*args, payload=None, authenticate=None):
     elif session_file().exists():
         env["BW_SESSION"] = session_file().read_text()
     result = subprocess.run(
-        ["npx", "--yes", "--package=@bitwarden/cli@2026.10.1", "bw", *args],
+        ["npx", "--yes", "--package=@bitwarden/cli@2026.6.0", "bw", *args],
         input=payload,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

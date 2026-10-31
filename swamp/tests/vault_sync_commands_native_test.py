@@ -13,7 +13,9 @@ sys.path.insert(0, str(ROOT / "tests"))
 from native_harness import NativeTestCase
 
 
-class VaultSyncNative(NativeTestCase):
+class VaultSyncFixture(NativeTestCase):
+    native_timeout = 180
+
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/vault-sync")
@@ -155,6 +157,8 @@ class VaultSyncNative(NativeTestCase):
             )
         return run
 
+
+class VaultSyncNative(VaultSyncFixture):
     def test_missing_recorded_cipher_creates_one_without_adopting_copy(self):
         state = json.loads(self.state.read_text())
         state["ciphers"] = [
@@ -272,6 +276,21 @@ class VaultSyncNative(NativeTestCase):
                     json.loads(result["outputs"]["stdout"]),
                     {"error_code": "vault.sync_failed"},
                 )
+
+    def test_failed_logout_still_removes_cache_and_reports_failure(self):
+        state = json.loads(self.state.read_text())
+        state["fail_command"] = "logout"
+        self.state.write_text(json.dumps(state))
+        run = self.run_sync(success=False)
+        result = next(
+            step
+            for job in run["jobs"]
+            for step in job["steps"]
+            if step["name"] == "result"
+        )
+        self.assertEqual(
+            json.loads(result["outputs"]["stdout"]), {"error_code": "vault.sync_failed"}
+        )
 
     def test_native_resume_rebuilds_cleaned_workspace(self):
         state = json.loads(self.state.read_text())

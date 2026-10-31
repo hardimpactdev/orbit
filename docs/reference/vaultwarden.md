@@ -178,7 +178,7 @@ The existing setup program derives the account's keys with PBKDF2 and refuses an
 
 ### Sync uses the official CLI
 
-Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.10.1 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown retain their existing implementation until their owning rewrite.
+Sync uses the official Bitwarden CLI package @bitwarden/cli 2026.6.0 through native command steps. The CLI owns authentication, SDK cryptography and its encrypted cache. Each item mutation is a separate step. Setup and teardown retain their existing implementation until their owning rewrite.
 
 ### TLS verifies the server
 
@@ -202,25 +202,8 @@ Direct setup, sync, and teardown results carry only collection identifiers and l
 
 ### Native sync with the official Bitwarden CLI
 
-The Gateway starts operation-vault-sync with full public intent and a names-only
-configuration execution-copy descriptor. Intent contains the server, organization
-and collection IDs, wanted source/fingerprint pairs and the publishing ledger.
-Credentials and wanted item contents stay in the shared Swamp vault and reach
-action scripts through the whole environment expression. Steps make no Gateway
-calls. The fixed sync/result public JSON uses the existing terminal subscriber.
+The Gateway starts `operation-vault-sync` with full public intent. The configuration descriptor contains only its vault and key names. Intent contains the server, organization and collection IDs, wanted source/fingerprint pairs and the publishing ledger. Credentials and wanted item contents stay in the shared Swamp vault and reach action scripts through the whole environment expression. Steps make no Gateway calls. The fixed sync/result public JSON uses the existing terminal subscriber.
 
-Swamp core workflows and command execution fit. Official extensions were checked
-at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud
-secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies
-API-key login, password-env unlock, item JSON on stdin and permanent deletion.
-Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be
-available on the placed worker; normal npm package execution/cache resolves
-the pinned official CLI.
+Swamp core workflows and command execution fit. Official extensions were checked at d6f7afdcd6d04a63fdbc6ed56c403832770f67a6: the vault backends cover cloud secret stores, not Vaultwarden item reconciliation. The official bw CLI supplies API-key login, password-env unlock, item JSON on stdin and permanent deletion. Sync has no custom Vaultwarden HTTP or cryptography client. Node.js/npm must be available on the placed worker; normal npm package execution/cache resolves the pinned official CLI.
 
-One temporary CLI app-data directory belongs to each run. Its derived session
-key is a mode-0600 file passed only as BW_SESSION, never a step output or argument.
-Only public item metadata leaves the CLI boundary. Item steps use native
-concurrency 1 because they share the official CLI's writable cache. Logout and
-cache removal follow success or failure. Native resume must restart from the
-workspace step to rebuild this disposable session and inventory; it must not
-reuse a cleaned-up session. There is no custom retry loop or lock.
+One temporary CLI app-data directory belongs to each run. Its derived session key stays in a file with mode `0600`. The CLI receives it through `BW_SESSION`; it never enters step output or arguments. Only public item metadata leaves the CLI boundary. Item steps use native concurrency 1 because they share the official CLI's writable cache. Logout and cache removal follow success or failure. Native resume must restart from the workspace step to rebuild this disposable session and inventory; it must not reuse a cleaned-up session. There is no custom retry loop or lock.

@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-assert sys.argv[1:4] == ["--yes", "--package=@bitwarden/cli@2026.10.1", "bw"]
+assert sys.argv[1:4] == ["--yes", "--package=@bitwarden/cli@2026.6.0", "bw"]
 args = sys.argv[4:]
 state_path = Path(os.environ["ORBIT_BW_FIXTURE_STATE"])
 state = json.loads(state_path.read_text())
