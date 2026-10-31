@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationKinds;
-use Orbit\Extensions\Vault\Domain\VaultOperationCompletion;
 
 return (static function (): array {
     if (! OperationKinds::supports('list_of')) {
@@ -15,32 +14,6 @@ return (static function (): array {
         ...array_map(static fn (string $field): array => ['name' => 'data.'.$field, 'type' => 'list', 'items' => 'string', 'max' => 4096],
             ['sources', 'cipher_ids', 'revisions', 'fingerprints']),
     ];
-    $kinds = array_fill_keys(['vault.sync', 'vault.setup'], ['executor' => 'swamp', 'result_fields' => $resultFields]);
-    foreach (['teardown'] as $action) {
-        $kinds['vault.'.$action] = [
-            'executor' => 'swamp',
-            'completion' => VaultOperationCompletion::class,
-            'runs' => [['resumable' => true,
-                'transport' => 'remote_program', 'name' => 'vault.collection',
-                'input_fields' => ['configuration'], 'input_values' => ['action' => $action],
-                'secrets' => ['configuration' => 'vault.credentials'],
-                'input_schema' => [
-                    'type' => 'object', 'additionalProperties' => false,
-                    'required' => ['action', 'configuration'],
-                    'properties' => [
-                        'action' => ['const' => $action],
-                        'configuration' => ['type' => 'object'],
-                    ],
-                ],
-            ]],
-            'completion_contract' => [
-                'step' => 'vault-'.$action,
-                'transport' => 'remote_program', 'name' => 'vault.collection',
-                'result' => ['outcome' => 'succeeded'],
-            ],
-            'result_fields' => $resultFields,
-        ];
-    }
 
-    return $kinds;
+    return array_fill_keys(['vault.sync', 'vault.setup', 'vault.teardown'], ['executor' => 'swamp', 'result_fields' => $resultFields]);
 })();
