@@ -8,7 +8,6 @@ use App\Domain\Fleet\FleetCliChildAdmission;
 use App\Domain\Fleet\FleetKitCapabilities;
 use App\Domain\Fleet\FleetOperationExecution;
 use App\Domain\Fleet\RecipeOperationCompletion;
-use App\Domain\Fleet\RecipePrOperationCompletion;
 use App\Domain\Fleet\RolloutOperationCompletion;
 use App\Support\ValidatedData;
 
@@ -45,11 +44,7 @@ return (static function (): array {
         }
     }
     $kinds['fleet.recipe_pr'] = [
-        'executor' => 'swamp', 'completion' => RecipePrOperationCompletion::class,
-        'runs' => [['transport' => 'gateway', 'name' => 'github.recipe-pr', 'resumable' => true,
-            'input_fields' => ['action', 'variant', 'date', 'pull_number', 'head_sha', 'token'], 'input_values' => [],
-            'secrets' => ['token' => 'github.app']]],
-        'completion_contract' => ['step' => 'recipe-pr', 'transport' => 'gateway', 'name' => 'github.recipe-pr', 'result' => ['completed' => true]],
+        'executor' => 'swamp',
         'result_fields' => ['completed', 'outcome', 'url', 'error_code'],
     ];
     $kinds['fleet.rollout'] = [

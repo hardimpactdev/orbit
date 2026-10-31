@@ -16,6 +16,7 @@ use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 
 final readonly class DatabaseOperationCompletion implements OperationCompletion
 {
@@ -25,7 +26,22 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
     {
         $this->execution->assertCompletion($operation, $outcome);
         $server = $operation->target_type === 'database_server' ? DatabaseServer::query()->find($operation->target_id) : null;
+        $runs = ValidatedData::object($operation->state['executor_runs'] ?? []);
+        $preflight = ValidatedData::object($runs['preflight'] ?? []);
         if ($outcome->status !== OperationStatus::Succeeded) {
+            if (in_array($operation->kind, ['database.create', 'database.clone'], true)
+                && $outcome->errorCode === 'database.name_conflict'
+                && ($preflight['result'] ?? null) === ['error_code' => 'database.name_conflict']) {
+                $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
+                $effects = array_filter($runs, static fn (mixed $run, string $key): bool => ! ($intent->payload['commands'][$key]['read_only'] ?? false), ARRAY_FILTER_USE_BOTH);
+                if ($effects === [] && isset($intent->payload['projection']['created_connection'])) {
+                    $connection = DatabaseConnection::query()->find($intent->payload['projection']['created_connection']);
+                    if ($connection !== null && ! $connection->targets()->exists()) {
+                        $connection->delete();
+                    }
+                }
+            }
+
             if (str_starts_with($operation->kind, 'database_server.') && $server !== null) {
                 $server->update(['status' => $server->status->value === 'active' ? 'active' : 'failed', 'error_code' => $outcome->errorCode,
                     'failed_step' => $operation->steps()->where('status', 'failed')->value('name')]);
