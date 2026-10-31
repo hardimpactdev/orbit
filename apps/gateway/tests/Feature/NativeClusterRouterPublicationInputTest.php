@@ -1,0 +1,142 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Routes\NativeClusterRouterIntent;
+use App\Domain\Routes\NativeClusterRouterPublicationInput;
+use App\Domain\Routes\RoutePublicationSites;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Cluster;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Route;
+
+beforeEach(function (): void {
+    $manifest = tempnam(sys_get_temp_dir(), 'router-publication-agent-');
+    file_put_contents($manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, sys_get_temp_dir()));
+    $this->beforeApplicationDestroyed(static fn () => unlink($manifest));
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('public-root-fixture');
+    $this->mock(ManagedUserAccountResolver::class)->shouldNotReceive('resolve');
+    $this->cluster = Cluster::query()->create(['name' => 'Router phase capture', 'state' => 'active', 'tld' => 'cluster.test']);
+    $this->old = routerPublicationNode('router-before', '10.44.0.11', $this->cluster);
+    $this->candidate = routerPublicationNode('router-after', '10.44.0.12', $this->cluster);
+    $this->workload = routerPublicationNode('router-workload', '10.44.0.13', $this->cluster);
+    $this->dns = routerPublicationNode('router-dns', '10.44.0.14');
+    $this->oldRole = $this->old->roles()->create(['role' => 'router', 'cluster_id' => $this->cluster->id, 'status' => 'active']);
+    $this->candidateRole = $this->candidate->roles()->create(['role' => 'router', 'cluster_id' => $this->cluster->id, 'status' => 'provisioning']);
+    $this->workload->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+    $this->dns->roles()->create(['role' => 'vpn', 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Router phase', 'slug' => 'router-phase', 'repository_url' => 'https://example.test/router.git', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->workload->id, 'name' => 'development',
+        'checkout_path' => '/srv/router-phase', 'status' => 'active', 'source_is_laravel' => false]);
+    $this->route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $this->cluster->id, 'domain' => 'app.cluster.test',
+        'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $this->route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $this->route->update(['status' => 'active', 'sites_published' => true]);
+    $this->operation = new Operation(['kind' => 'cluster.router_set', 'node_id' => $this->candidate->id,
+        'input' => ['cluster_id' => $this->cluster->id, 'candidate_role_id' => $this->candidateRole->id]]);
+});
+
+function routerPublicationNode(string $name, string $address, ?Cluster $cluster = null): Node
+{
+    return Node::query()->create(['name' => $name, 'cluster_id' => $cluster?->id, 'user' => 'orbit', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'status' => 'active', 'wireguard_ip' => $address, 'public_ssh_host' => $address,
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'public-fixture-key']);
+}
+
+it('captures both Routers through DNS grace without selecting the candidate in the database', function (): void {
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $rows = collect($capture['route_mutations']['forward']['publications']);
+    $old = $rows->firstWhere('node_id', $this->old->id);
+    $candidate = $rows->firstWhere('node_id', $this->candidate->id);
+    $dns = $rows->firstWhere('node_id', $this->dns->id);
+    expect($old['before']['caddy']['content'])->toContain('app.cluster.test')
+        ->and($old['prepared']['caddy']['content'])->toContain('app.cluster.test')
+        ->and($old['after']['caddy']['content'])->not->toContain('app.cluster.test');
+    expect($candidate['before']['caddy']['content'])->not->toContain('app.cluster.test')
+        ->and($candidate['prepared']['caddy']['content'])->toContain('app.cluster.test')
+        ->and($candidate['after']['caddy']['content'])->toContain('app.cluster.test');
+    expect($dns['before']['dns']['records'])->toContain('host-record=app.cluster.test,10.44.0.11')
+        ->and($dns['prepared']['dns']['records'])->toContain('host-record=app.cluster.test,10.44.0.12')
+        ->and($dns['after']['dns']['records'])->toContain('host-record=app.cluster.test,10.44.0.12');
+    expect($capture['route_mutations']['forward']['cleanup'])->toContainEqual(['node_id' => $this->old->id, 'user' => 'orbit',
+        'scope' => 'route-'.$this->route->id.'-router', 'agent_sha256' => str_repeat('a', 64), 'in_use' => false]);
+    expect($candidate['control_node_id'])->toBe(209)->and($candidate['host_keys'])->toBe(['ssh-ed25519 public-fixture-key']);
+    expect($this->oldRole->fresh()->status->value)->toBe('active')
+        ->and($this->candidateRole->fresh()->status->value)->toBe('provisioning')
+        ->and($this->cluster->fresh()->routerAssignment->id)->toBe($this->oldRole->id)
+        ->and(Operation::query()->count())->toBe(0)->and(app(RoutePublicationSites::class)->current())->toBeNull();
+});
+
+it('keeps reverse publication and candidate cleanup available for native restoration', function (): void {
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $restore = $capture['route_mutations']['restore'];
+    expect($restore['cleanup'])->toContainEqual(['node_id' => $this->candidate->id, 'user' => 'orbit',
+        'scope' => 'route-'.$this->route->id.'-router', 'agent_sha256' => str_repeat('a', 64), 'in_use' => false]);
+    expect(collect($restore['certificates'])->contains(fn (array $leaf): bool => $leaf['node_id'] === $this->old->id
+        && $leaf['scope'] === 'route-'.$this->route->id.'-router'))->toBeTrue();
+    expect($capture['participant_node_ids'])->toContain(209, $this->old->id, $this->candidate->id, $this->workload->id, $this->dns->id);
+});
+
+it('captures destination-scoped LAN retirement with the selected source kept in each direction', function (): void {
+    $this->old->update(['lan_ip' => '192.168.6.11']);
+    $this->candidate->update(['lan_ip' => '192.168.6.12']);
+    $this->workload->update(['lan_ip' => '192.168.6.13']);
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $forward = $capture['route_mutations']['forward'];
+    $restore = $capture['route_mutations']['restore'];
+    expect($forward['lan'])->toBe([['node_id' => $this->workload->id, 'route_id' => $this->route->id, 'operation' => 'converge',
+        'router' => '192.168.6.12', 'destination' => '192.168.6.13']]);
+    expect($forward['retire_lan'])->toBe([['node_id' => $this->workload->id, 'route_id' => $this->route->id, 'destination' => '192.168.6.13',
+        'operation' => 'retire', 'keep' => ['192.168.6.12']]]);
+    expect($restore['retire_lan'][0]['keep'])->toBe(['192.168.6.11']);
+});
+
+it('captures unset by withdrawing Router sites and preserving the workload identity', function (): void {
+    $this->candidateRole->delete();
+    $this->operation->kind = 'cluster.router_unset';
+    $this->operation->node_id = $this->old->id;
+    $this->operation->input = ['cluster_id' => $this->cluster->id];
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $forward = $capture['route_mutations']['forward'];
+    $rows = collect($forward['publications']);
+    expect($rows->firstWhere('node_id', $this->old->id)['after']['caddy']['content'])->not->toContain('app.cluster.test');
+    expect($rows->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])->toContain('app.cluster.test');
+    expect($forward['routes'][0]['node_ids'])->toBe([$this->workload->id]);
+    expect($this->oldRole->fresh()->status->value)->toBe('active');
+});
+
+it('preserves unrelated private sites and excludes their leaf scopes from cleanup', function (): void {
+    $other = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $this->old->id, 'domain' => 'unrelated.private.test',
+        'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $other->customProxy()->create(['node_id' => $this->old->id, 'upstream' => 'http://127.0.0.1:4788']);
+    $other->publishSites();
+    $inventory = app(NativeClusterRouterIntent::class)->forOperation($this->operation);
+
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
+
+    $forward = $capture['route_mutations']['forward'];
+    $old = collect($forward['publications'])->firstWhere('node_id', $this->old->id);
+    foreach (['before', 'prepared', 'withdrawn', 'after'] as $phase) {
+        expect($old[$phase]['caddy']['content'])->toContain('unrelated.private.test');
+    }
+    expect(array_column($forward['cleanup'], 'scope'))->not->toContain('route-'.$other->id);
+});
