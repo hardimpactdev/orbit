@@ -1,6 +1,5 @@
 {
   "kinds": [
-    "vault.sync",
     "vault.setup",
     "vault.teardown"
   ],

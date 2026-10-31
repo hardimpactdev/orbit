@@ -161,43 +161,54 @@ export async function installRoleRuntime(
     throw new Error("Runtime material belongs to another Node");
   }
   signal?.throwIfAborted();
-  const privateMaterial: Pick<GatewayOperation, "withPrivateMaterial"> = {
-    withPrivateMaterial: (callback) =>
-      gateway.withPrivateMaterial((material) =>
-        callback(
-          z.record(z.string(), z.unknown()).parse(material.runtime_material),
-        )
-      ),
-  };
-  if (input.role === "websocket") {
-    return await installWebSocketRuntime(
-      {
-        node_id: input.node_id,
-        agent_sha256: input.agent_sha256,
-        user: input.user,
-        install_path: input.install_path,
-        repository: input.repository,
-        ref: input.ref,
-        port: input.port,
-      },
-      privateMaterial,
-      signal,
-      transport,
-    );
-  }
-  if (input.role === "analytics") {
-    if (
+  if (
+    input.role === "analytics" && (
       input.installation.agent_sha256 !== input.agent_sha256 ||
       input.installation.runtime !== "docker" ||
       input.installation.desired !== "running" ||
       input.installation.on_demand ||
       input.installation.name !==
         `orbit-process-${input.installation.process_id}-plausible`
-    ) throw new Error("Analytics installation differs from its admitted Node");
-    const installation = input.installation;
-    let outcome: Outcome | undefined;
-    try {
-      await privateMaterial.withPrivateMaterial(async (rawMaterial) => {
+    )
+  ) throw new Error("Analytics installation differs from its admitted Node");
+  const label = {
+    websocket: "WebSocket",
+    analytics: "Analytics",
+    metrics: "Metrics",
+  }[input.role];
+  let outcome: Outcome | undefined;
+  try {
+    await gateway.withPrivateMaterial(async (resolved) => {
+      const rawMaterial = z.record(z.string(), z.unknown()).parse(
+        resolved.runtime_material,
+      );
+      if (input.role === "websocket") {
+        if (signal?.aborted) {
+          outcome = { error_code: "operation.cancelled" };
+          return;
+        }
+        outcome = await installWebSocketRuntime(
+          {
+            node_id: input.node_id,
+            agent_sha256: input.agent_sha256,
+            user: input.user,
+            install_path: input.install_path,
+            repository: input.repository,
+            ref: input.ref,
+            port: input.port,
+          },
+          rawMaterial,
+          signal,
+          transport,
+        );
+        return;
+      }
+      if (input.role === "analytics") {
+        // The public checks above require a Docker installation before this callback.
+        const installation = input.installation as Extract<
+          z.infer<typeof ProcessInstallation>,
+          { runtime: "docker" }
+        >;
         const material = ProcessInstallationMaterial.parse(
           rawMaterial.installation,
         );
@@ -270,18 +281,8 @@ export async function installRoleRuntime(
           return;
         }
         outcome = { completed: true };
-      });
-    } catch {
-      throw new Error("Private Analytics installation did not complete");
-    }
-    if (outcome === undefined) {
-      throw new Error("Analytics runtime outcome is uncertain");
-    }
-    return outcome;
-  }
-  let outcome: Outcome | undefined;
-  try {
-    await privateMaterial.withPrivateMaterial(async (rawMaterial) => {
+        return;
+      }
       const material = RuntimeMaterial.parse(rawMaterial);
       signal?.throwIfAborted();
       const converged = await metrics.runtime({
@@ -314,10 +315,10 @@ export async function installRoleRuntime(
       outcome = { completed: true, changed };
     });
   } catch {
-    throw new Error("Private Metrics installation did not complete");
+    throw new Error(`Private ${label} installation did not complete`);
   }
   if (outcome === undefined) {
-    throw new Error("Metrics runtime outcome is uncertain");
+    throw new Error(`${label} runtime outcome is uncertain`);
   }
   return outcome;
 }
