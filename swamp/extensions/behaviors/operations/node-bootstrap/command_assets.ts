@@ -117,6 +117,12 @@ export const behavior = {
         },
     },
     methods: {
+        observer: {
+            description: "Read the canonical pinned observer delivery action",
+            arguments: Artifact,
+            execute: (args: z.infer<typeof Artifact>, ctx: Context) =>
+                script("observer", Artifact.parse(args), ctx),
+        },
         authorized_key: {
             description: "Read the tracked managed-account SSH access action",
             arguments: z.object({
