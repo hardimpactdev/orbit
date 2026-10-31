@@ -3,7 +3,7 @@ title: "Migrate an unmanaged Executor hostname"
 description: "Replace a hand-placed Caddy fragment for a Node Process, such as executor.test, with a Gateway-owned custom proxy Route."
 covers:
   - apps/cli/app/Commands/Routes/CreateRouteCommand.php
-  - apps/agent/src/commands/caddy_publication.rs
+  - apps/gateway/app/Domain/Routes/CaddyPublicationPlan.php
 ---
 
 # Migrate an unmanaged Executor hostname
@@ -26,7 +26,7 @@ orbit route:create executor.orbit --node=beast --process=executor
 
 Use `--upstream=http://127.0.0.1:4788` instead of `--process` when the Process listens on a known loopback port.
 
-The Gateway publishes private DNS for `executor.orbit`, issues an Orbit CA certificate on the Node, and writes the Caddy site. `route:list` and `route:show` include the Route. `route:destroy` removes only that Route.
+Swamp publishes private DNS for `executor.orbit`, issues an Orbit CA certificate on the Node, and writes the Caddy site. `route:list` and `route:show` include the Route. `route:destroy` removes only that Route.
 
 Move clients before the first [Node Caddy build](/reference/caddy-configuration#node-caddy-build) on that Node. The build moves the hand-placed fragment to `/etc/caddy/orbit-backups/` and stops serving `executor.test`. Orbit never deletes the hand-placed certificate files. When `https://executor.orbit` works, remove them by hand and drop `executor.test` from client configuration. [Custom proxy Routes](/reference/routes#custom-proxy-routes) describes uniqueness, DNS, Caddy, and removal.
 
