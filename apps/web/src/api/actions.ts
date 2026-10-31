@@ -1,7 +1,7 @@
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
-import { api, GatewayError } from "./client";
-import { instanceOperationsQuery, startDeploy } from "./operations";
+import { api } from "./client";
+import { instanceOperationsQuery, startDeploy, type Operation } from "./operations";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -38,20 +38,16 @@ const leaves = (label: string, command: string, description: string): Action => 
     description,
 });
 
-/** What the operator does after enabling: one DNS record per host, then the script tag. */
-const analyticsReport = (analytics: InstanceAnalytics): string =>
-    [
-        ...analytics.hosts.map(
-            (host) =>
-                `${host.host}  ${host.status}${host.error_code === null ? "" : ` (${host.error_code})`}` +
-                (host.dns === null
-                    ? ""
-                    : `\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`),
-        ),
-        "",
-        "Add this tag to the Project, and create the site in Plausible yourself:",
-        analytics.snippet ?? "",
-    ].join("\n");
+async function startAnalytics(instanceId: number, method: "POST" | "DELETE"): Promise<Operation> {
+    const operation = await api<Operation>(method, `/api/v1/instances/${instanceId}/analytics`, {});
+    await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["instance-analytics", instanceId] }),
+        queryClient.invalidateQueries({ queryKey: ["instance-analytics-stats", instanceId] }),
+        queryClient.invalidateQueries({ queryKey: instanceOperationsQuery(instanceId).queryKey }),
+    ]);
+
+    return operation;
+}
 
 /**
  * Enable while the instance has no tracking host and an analytics role exists; disable while it
@@ -73,18 +69,9 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                 destructive: true,
                 description: `Remove every analytics tracking host of [${target}]? Plausible stops receiving its visits.`,
                 run: async () => {
-                    queryClient.setQueryData(
-                        key,
-                        await api<InstanceAnalytics>(
-                            "DELETE",
-                            `/api/v1/instances/${instance.id}/analytics`,
-                        ),
-                    );
-                    queryClient.removeQueries({
-                        queryKey: ["instance-analytics-stats", instance.id],
-                    });
+                    const operation = await startAnalytics(instance.id, "DELETE");
 
-                    return `Analytics tracking disabled for [${target}].`;
+                    return `Analytics disable for [${target}] started as operation ${operation.id}.`;
                 },
             },
         ];
@@ -96,25 +83,10 @@ function analyticsActions(instance: Instance, target: string): Action[] {
               {
                   label: "enable analytics",
                   description: `Publish analytics.${analytics.domain ?? instance.domain} for [${target}].`,
-                  report: async () => {
-                      try {
-                          const enabled = await api<InstanceAnalytics>(
-                              "POST",
-                              `/api/v1/instances/${instance.id}/analytics`,
-                              {},
-                          );
-                          queryClient.setQueryData(key, enabled);
-                          queryClient.removeQueries({
-                              queryKey: ["instance-analytics-stats", instance.id],
-                          });
+                  run: async () => {
+                      const operation = await startAnalytics(instance.id, "POST");
 
-                          return { ok: true, output: analyticsReport(enabled) };
-                      } catch (error) {
-                          return {
-                              ok: false,
-                              output: error instanceof GatewayError ? error.message : String(error),
-                          };
-                      }
+                      return `Analytics enable for [${target}] started as operation ${operation.id}.`;
                   },
               },
           ];

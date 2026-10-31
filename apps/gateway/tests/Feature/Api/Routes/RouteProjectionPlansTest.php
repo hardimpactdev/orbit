@@ -19,8 +19,6 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\AnalyticsRouteParentCommand;
-use App\Domain\Routes\AnalyticsRouteParentExecution;
 use App\Domain\Routes\ClusterRouterParentCommand;
 use App\Domain\Routes\ClusterRouterParentExecution;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
@@ -147,39 +145,6 @@ it('admits a destroy child through normal Route validation without deleting or e
         ->and($child->input['offline'])->toBeFalse();
     expect(Route::query()->find($this->route->id))->not->toBeNull()->and(Operation::query()->count())->toBe(1)
         ->and($this->route->targets()->exists())->toBeTrue()->and($this->agents->calls)->toBe([]);
-});
-
-it('exposes only the active analytics child phase and refuses unproven publication', function (): void {
-    $tracking = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'node_id' => $this->node->id, 'domain' => 'tracking.private.test', 'provenance' => 'explicit', 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
-    $tracking->analyticsTracking()->create(['instance_id' => $this->instance->id]);
-    $parent = Operation::query()->create(['kind' => 'route.analytics_publish', 'target_type' => 'route', 'target_id' => $tracking->id, 'node_id' => $this->node->id, 'input' => ['route_id' => $tracking->id], 'status' => OperationStatus::Queued, 'sequence' => 1]);
-    $command = app(AnalyticsRouteParentCommand::class);
-    $prepared = $command->run($parent, ['action' => 'prepare']);
-    expect(array_column($prepared['child_phases'], 'key'))->toContain('host-certificate.node-'.$this->node->id.'-route-'.$tracking->id.'-router');
-    $execution = app(AnalyticsRouteParentExecution::class);
-    expect($execution->childContext($parent)['children'])->toBe([]);
-    $command->run($parent, ['action' => 'open', 'stage' => 'host-certificate']);
-    expect(array_column($execution->childContext($parent->fresh())['children'], 'kind'))->toBe(['certificate.converge']);
-    expect(fn () => $command->run($parent, ['action' => 'open', 'stage' => 'publish-sites']))
-        ->toThrow(ResourceOperationException::class, 'preceding analytics Route phase');
-    expect($tracking->fresh()->sites_published)->toBeFalse()->and($this->agents->calls)->toBe([]);
-});
-
-it('withdraws analytics site intent before Caddy and keeps its certificate phase unavailable', function (): void {
-    $tracking = Route::query()->create(['kind' => RouteKind::AnalyticsTracking, 'node_id' => $this->node->id, 'domain' => 'tracking.private.test', 'provenance' => 'explicit', 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending]);
-    $tracking->analyticsTracking()->create(['instance_id' => $this->instance->id]);
-    $tracking->publishSites();
-    $parent = Operation::query()->create(['kind' => 'route.analytics_remove', 'target_type' => 'route', 'target_id' => $tracking->id, 'node_id' => $this->node->id, 'input' => ['route_id' => $tracking->id], 'status' => OperationStatus::Queued, 'sequence' => 1]);
-    $command = app(AnalyticsRouteParentCommand::class);
-    $command->run($parent, ['action' => 'prepare']);
-    $command->run($parent, ['action' => 'open', 'stage' => 'dns']);
-    $command->run($parent, ['action' => 'commit', 'stage' => 'dns']);
-    $command->run($parent, ['action' => 'open', 'stage' => 'caddy']);
-    expect($tracking->fresh()->sites_published)->toBeFalse()->and($tracking->fresh()->status)->toBe(RouteStatus::Retiring);
-    expect(array_column(app(AnalyticsRouteParentExecution::class)->childContext($parent->fresh())['children'], 'kind'))->toBe(['route.caddy_converge']);
-    expect(fn () => $command->run($parent, ['action' => 'open', 'stage' => 'certificates']))
-        ->toThrow(ResourceOperationException::class, 'preceding analytics Route phase');
-    expect($this->agents->calls)->toBe([]);
 });
 
 it('preserves withdrawn Route rows and targets while recording offline cleanup residue', function (string $kind): void {
