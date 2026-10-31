@@ -146,6 +146,13 @@ export async function fillCacheHost(
     }
     return digest;
   };
+  const removeDownload = async (path: string) => {
+    try {
+      await Deno.remove(path);
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
+  };
   const scratch = await Deno.makeTempDir({ prefix: "orbit-cache-fill-" });
   const atomic = async (destination: string, content: string) => {
     const source = `${scratch}/${crypto.randomUUID()}`;
@@ -333,13 +340,7 @@ export async function fillCacheHost(
           ? (error as Error).message
           : "FillRefused";
       } finally {
-        if (temporary) {
-          try {
-            await Deno.remove(temporary);
-          } catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) throw error;
-          }
-        }
+        if (temporary) await removeDownload(temporary);
       }
     }
     return { hashes, failures };
