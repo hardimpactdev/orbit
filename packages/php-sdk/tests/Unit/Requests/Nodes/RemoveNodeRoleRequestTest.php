@@ -6,7 +6,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
-use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -29,53 +29,20 @@ describe(RemoveNodeRoleRequest::class, function (): void {
             ->toBe(['role' => 'ingress', 'converge_existing' => false]);
     });
 
-    it('uses the numeric node ID exact body and typed removal response', function (): void {
-        $mockClient = new MockClient([
-            RemoveNodeRoleRequest::class => MockResponse::make([
-                'data' => node_role_removed_gateway_data(),
-                'meta' => ['request_id' => node_role_request_id()],
-            ]),
-        ]);
-        $connector = node_role_gateway_connector($mockClient);
-        $request = new RemoveNodeRoleRequest(nodeId: 7, role: 'app-dev', force: true, purgeData: false);
-
-        $response = $connector->send($request)->dto();
-        $pendingRequest = $mockClient->getLastPendingRequest();
-
-        expect($request->getMethod())
-            ->toBe(Method::DELETE)
-            ->and($request->resolveEndpoint())
-            ->toBe('/api/v1/nodes/7/roles/app-dev')
-            ->and($pendingRequest?->headers()->get('X-Orbit-Request-Id'))
-            ->toBe('11111111-1111-4111-8111-111111111111')
-            ->and($pendingRequest?->body()->all())
-            ->toBe([
-                'force' => true,
-                'purge_data' => false,
-                'offline' => false,
-            ])
-            ->and($response)
-            ->toBeInstanceOf(NodeRoleMutationResponse::class)
-            ->and($response->requestId)
-            ->toBe(node_role_request_id())
-            ->and($response->toArray())
-            ->toBe([
-                'node_id' => 7,
-                'node_name' => 'app-1',
-                'role' => 'app-dev',
-                'assignment' => null,
-                'removed' => true,
-                'degradation' => null,
-                'retained_on_node' => [],
-                'follow_up' => null,
-                'request_id' => node_role_request_id(),
-            ]);
+    it('transports one native Operation with exact selectors and retry identity', function (): void {
+        $client = new MockClient([RemoveNodeRoleRequest::class => MockResponse::make(['data' => node_role_operation_data('node.role_remove'), 'meta' => ['request_id' => node_role_request_id()]], 202)]);
+        $request = new RemoveNodeRoleRequest(nodeId: 7, role: 'app-dev', force: true, purgeData: false, idempotencyKey: 'role-native-retry');
+        $response = node_role_gateway_connector($client)->send($request)->dto();
+        expect($request->getMethod())->toBe(Method::DELETE)->and($request->resolveEndpoint())->toBe('/api/v1/nodes/7/roles/app-dev')
+            ->and($client->getLastPendingRequest()?->headers()->get('Idempotency-Key'))->toBe('role-native-retry')
+            ->and($response)->toBeInstanceOf(OperationResponse::class)->and($response->kind)->toBe('node.role_remove')
+            ->and($response->id)->toBe(91)->and($response->status)->toBe('queued')->and($response->requestId)->toBe(node_role_request_id());
     });
 
     it('sends the offline claim in the request body', function (): void {
         $mockClient = new MockClient([
             RemoveNodeRoleRequest::class => MockResponse::make([
-                'data' => node_role_removed_gateway_data(),
+                'data' => node_role_operation_data('node.role_remove'),
                 'meta' => ['request_id' => node_role_request_id()],
             ]),
         ]);

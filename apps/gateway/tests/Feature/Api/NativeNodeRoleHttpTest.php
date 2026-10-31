@@ -81,3 +81,14 @@ it('serves each role publication participant fresh public data and denies privat
 })->with([
     ['node.role_add', '_role'],
 ]);
+
+it('replays converge_existing under the exact native convergence kind', function (): void {
+    $body = ['role' => 'app-dev', 'converge_existing' => true];
+    $first = $this->withHeader('Idempotency-Key', 'native-role-converge-once')
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", $body)->assertAccepted()
+        ->assertJsonPath('data.kind', 'node.role_converge');
+    $this->withHeader('Idempotency-Key', 'native-role-converge-once')
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", $body)->assertAccepted()
+        ->assertJsonPath('data.id', $first->json('data.id'));
+    expect(Operation::query()->where('kind', 'node.role_converge')->count())->toBe(1);
+});

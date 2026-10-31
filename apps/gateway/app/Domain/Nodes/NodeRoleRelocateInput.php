@@ -8,7 +8,6 @@ use App\Actions\Nodes\AssignRoleAction;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -44,7 +43,7 @@ final readonly class NodeRoleRelocateInput
             throw new NodeRoleValidationException('The source does not own this singleton transfer.', ['field' => 'from', 'role' => $role->value]);
         }
         foreach ([$source, $target] as $node) {
-            if ($node->status !== LifecycleStatus::Active || ! app(NodeWorkerRollout::class)->allows($node)) {
+            if ($node->status !== LifecycleStatus::Active || ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('swamp.node_worker_not_ready', 'Both relocation Nodes require their exact native worker.', 422);
             }
         }
@@ -76,11 +75,13 @@ final readonly class NodeRoleRelocateInput
         $ghost->setAttribute('id', $assignment->id);
         $ghost->setRelation('node', $source);
 
-        return ['schema_version' => 1, 'role' => $assignment->role->value, 'assignment_id' => $assignment->id,
+        return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'role' => $assignment->role->value, 'assignment_id' => $assignment->id,
             'publication' => app(NodeRolePublicationInput::class)->capture($target, $assignment->role, $source),
             'source_node_id' => $source->id, 'target_node_id' => $target->id,
             'target' => $this->target->capture($target, $assignment, false),
-            'source' => $this->source->capture($source, $ghost),
+            'certificates' => app(NodeRoleCertificateInput::class)->capture($target, $assignment->role, $source),
+            'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
+            'source' => $this->source->capture($source, $ghost, desiredAssignment: $assignment),
             'withdrawal_grace_seconds' => $assignment->role === RoleName::WebSocket ? PrivateDnsAnswerExpiry::WithdrawalGraceSeconds : 0];
     }
 
@@ -90,7 +91,13 @@ final readonly class NodeRoleRelocateInput
         $input = ValidatedData::object($operation->input['_relocate'] ?? []);
         if ($operation->kind !== 'node.role_relocate' || $operation->target_type !== 'node'
             || $operation->node_id === null || $operation->node_id !== $operation->target_id
-            || ($input['target_node_id'] ?? null) !== $operation->node_id) {
+            || ($input['target_node_id'] ?? null) !== $operation->node_id
+            || $operation->status->terminal()
+            || ! is_int($input['source_node_id'] ?? null) || $input['source_node_id'] === $operation->node_id
+            || (ValidatedData::object($input['target'] ?? [])['node_id'] ?? null) !== $operation->node_id
+            || (ValidatedData::object($input['source'] ?? [])['node_id'] ?? null) !== $input['source_node_id']
+            || ! NodeRole::query()->whereKey($input['assignment_id'] ?? null)->where('node_id', $operation->node_id)
+                ->where('role', $input['role'] ?? null)->exists()) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This relocation belongs to another native root.', 422);
         }
 

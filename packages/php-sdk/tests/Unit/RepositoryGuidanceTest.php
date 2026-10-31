@@ -48,6 +48,7 @@ use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
+use Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest;
 use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateProjectLifecycleStepRequest;
@@ -272,7 +273,7 @@ describe('repository guidance bootstrap', function (): void {
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
-            \Orbit\Sdk\Requests\GitHub\SyncGitHubAppRequest::class,
+            SyncGitHubAppRequest::class,
             DestroyGitHubAppRequest::class,
         ];
         $gatewayReleaseRequests = [
@@ -376,6 +377,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
             'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
+            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeNetworkRequest',
         ];
         $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($webSocketRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($aiRouterRequests) + count($vaultRequests) + count($taskRequests) + count($logRequests) + count($operationRequests) + 18;
         $expectedRequests = [

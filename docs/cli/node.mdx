@@ -514,3 +514,5 @@ hub uses its exact logical worker; it never runs on another Node as a fallback.
 A failed publication restores the saved peer configuration and resolver policy.
 An interrupted publication restores its transaction baseline before reapplying
 the complete desired configuration and DNS policy.
+
+Role removal and relocation return one native Operation. The CLI follows the parent through all source and target work. `node:role:add --converge` selects `node.role_converge` and uses the same target DAG. Each command accepts `--idempotency-key` for an admission retry. A confirmed relocation target remains active if later source cleanup fails; the parent reports that cleanup failure. Offline cleanup is unavailable until its owning native path can prove the retained effects.
