@@ -61,11 +61,20 @@ with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers, including disposable database effect tests.
 
-Runtime validation requires the existing Swamp account credentials. The old
-repo has `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`; Orbit needs an approved transfer
-before the caller can use this workflow. The reusable workflow declares both
-secrets. Pass them with `secrets: inherit` from the approved caller. No credential
-is printed, copied from local config or passed as argv.
+Swamp CI must never receive account credentials. The helper downloads the public,
+checksum-verified official artifact and launches it with an isolated configuration
+and a clean environment. Official e459 blocks `workflow validate` at its account
+startup gate before reading local extensions. Account verification uses
+`GET /api/whoami`; vendoring extensions does not remove that gate. The pinned
+command advertises no offline validation option.
+
+The callable reports this exact blocker as `SWAMP AUTH UNAVAILABLE` and
+`validation_ran=false`, with zero workflows validated. It fails normally. Only
+the caller-proven initial Orbit import PR or its first main push may set
+`allow-auth-unavailable: true`; the callable also checks the repository and event.
+Shape, placement and Deno checks remain required. Schema, download, checksum and
+other runtime failures never receive this exception. This is an explicit import
+limitation, not a claim that native validation passed.
 
 The gate prints current debt separately from base comparison. Retained historical
 agent actions are grandfathered; only growing counts or new action evidence fail.
