@@ -1,0 +1,553 @@
+id: 853e2df2-178c-462b-a653-c51bda04cb43
+name: automatic-production-smoke
+description: Draft native smoke preparation; no release/load trigger or alert authority.
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - production.smoke
+    node_id:
+      type: integer
+      minimum: 1
+    intent:
+      type: object
+      properties:
+        change:
+          type: object
+          properties:
+            source:
+              type: string
+              enum:
+              - gateway_release
+              - swamp_load
+            before_sha: &id001
+              type: string
+              pattern: ^[0-9a-f]{40}$
+            after_sha: *id001
+            changed_paths:
+              type: array
+              items:
+                type: string
+                minLength: 1
+            previous_release_id:
+              type: string
+            orbit_sha: *id001
+            swamp_tree_sha: *id001
+            source_mirror_path:
+              type: string
+            merge_mainline:
+              type: integer
+              minimum: 0
+              maximum: 1
+          required:
+          - source
+          - before_sha
+          - after_sha
+          - changed_paths
+          - previous_release_id
+          - orbit_sha
+          - swamp_tree_sha
+          - source_mirror_path
+          - merge_mainline
+          additionalProperties: false
+        sites:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              instance_id:
+                type: integer
+                minimum: 1
+              project_id:
+                type: integer
+                minimum: 1
+              worker_node_id:
+                type: integer
+                minimum: 1
+              mirror_path:
+                type: string
+                pattern: ^/[^\n\r]+$
+              commit: *id001
+              deployment_id:
+                type: integer
+                minimum: 1
+              base_url:
+                type: string
+                pattern: ^https://[a-z0-9.-]+/?$
+            required:
+            - instance_id
+            - project_id
+            - worker_node_id
+            - mirror_path
+            - commit
+            - deployment_id
+            - base_url
+            additionalProperties: false
+      required:
+      - change
+      - sites
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties: {}
+      additionalProperties: false
+  required:
+  - operation_id
+  - kind
+  - node_id
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: classification
+  steps:
+  - name: classify
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: &id004
+      node: ${{ string(inputs.node_id) }}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/production-smoke-data'
+      methodName: classify
+      inputs:
+        paths: ${{ inputs.intent.change.changed_paths }}
+      behaviorName: ${{ "ps-" + run.id + "-classify" }}
+- name: sites
+  dependsOn:
+  - job: classification
+    condition:
+      type: succeeded
+  steps:
+  - name: clone-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: &id002
+      node: ${{ string(self.site.worker_node_id) }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- git clone --no-hardlinks --no-checkout -- "$MIRROR" "$CLIENT"
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 60000
+      behaviorName: ${{ "ps-" + run.id + "-clone" + "-" + string(self._index) }}
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: checkout-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- git -C "$CLIENT" checkout --detach "$SMOKE_COMMIT"
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 60000
+      behaviorName: ${{ "ps-" + run.id + "-checkout" + "-" + string(self._index) }}
+    dependsOn:
+    - step: clone-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: install-php-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- composer --working-dir="$CLIENT" install --no-interaction --prefer-dist
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 600000
+      behaviorName: ${{ "ps-" + run.id + "-install-php" + "-" + string(self._index) }}
+    dependsOn:
+    - step: checkout-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: install-js-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- npm --prefix "$CLIENT" ci
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 600000
+      behaviorName: ${{ "ps-" + run.id + "-install-js" + "-" + string(self._index) }}
+    dependsOn:
+    - step: install-php-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: browser-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          cd "$CLIENT"
+          sudo -u orbit-swamp-package -- npx --no-install playwright install chromium
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 600000
+      behaviorName: ${{ "ps-" + run.id + "-browser" + "-" + string(self._index) }}
+    dependsOn:
+    - step: install-js-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: client-env-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- cp "$CLIENT/.env.example" "$CLIENT/.env"
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 60000
+      behaviorName: ${{ "ps-" + run.id + "-client-env" + "-" + string(self._index) }}
+    dependsOn:
+    - step: browser-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: smoke-${{ self.site.instance_id }}
+    forEach:
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- env SMOKE_BASE_URL="$SMOKE_BASE_URL" SMOKE_COMMIT="$SMOKE_COMMIT" SMOKE_DEPLOYMENT_ID="$SMOKE_DEPLOYMENT_ID" composer --working-dir="$CLIENT" test:smoke
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+        timeout: 600000
+        ignoreExitCode: true
+      behaviorName: ${{ "ps-" + run.id + "-smoke" + "-" + string(self._index) }}
+    dependsOn:
+    - step: client-env-${{ self.site.instance_id }}
+      condition:
+        type: succeeded
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: evidence-${{ self.site.instance_id }}
+    forEach: &id003
+      item: site
+      in: ${{ inputs.intent.sites }}
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    dependsOn:
+    - step: smoke-${{ self.site.instance_id }}
+      condition:
+        type: completed
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          result = {"instance_id": int(os.environ["INSTANCE_ID"]),
+                    "commit": os.environ["SMOKE_COMMIT"],
+                    "base_url": os.environ["SMOKE_BASE_URL"], "state": "unknown",
+                    "tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+          try:
+              report = Path(os.environ["CLIENT"]) / "storage/framework/testing/smoke.xml"
+              with report.open("rb") as handle:
+                  raw = handle.read(8 * 1024 * 1024 + 1)
+              if len(raw) > 8 * 1024 * 1024 or b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                  raise ValueError("invalid JUnit")
+              tree = ET.fromstring(raw)
+              cases = list(tree.iter("testcase"))
+              if not cases:
+                  raise ValueError("empty JUnit")
+              result.update(tests=len(cases),
+                            failures=sum(len(case.findall("failure")) for case in cases),
+                            errors=sum(len(case.findall("error")) for case in cases),
+                            skipped=sum(len(case.findall("skipped")) for case in cases))
+              if result["skipped"] == 0:
+                  if result["failures"] + result["errors"] > 0:
+                      result["state"] = "failed"
+                  elif os.environ["SMOKE_EXIT_CODE"] == "0":
+                      result["state"] = "passed"
+          except (OSError, ValueError, ET.ParseError):
+              pass
+          print(json.dumps(result))
+          PYTHON
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+          SMOKE_BASE_URL: ${{ self.site.base_url }}
+          SMOKE_COMMIT: ${{ self.site.commit }}
+          SMOKE_DEPLOYMENT_ID: ${{ string(self.site.deployment_id) }}
+          INSTANCE_ID: ${{ string(self.site.instance_id) }}
+          MIRROR: ${{ self.site.mirror_path }}
+          SMOKE_EXIT_CODE: '${{ ("outputs" in steps["smoke-" + string(self.site.instance_id)]) ? string(steps["smoke-"
+            + string(self.site.instance_id)].outputs.exitCode) : "unknown" }}'
+      behaviorName: ${{ "ps-" + run.id + "-evidence" + "-" + string(self._index) }}
+    guard: ${{ !steps.classify.outputs.required }}
+  - name: cleanup-${{ self.site.instance_id }}
+    forEach: *id003
+    target: ${{ "orbit-node-" + string(self.site.worker_node_id) }}
+    labels: *id002
+    allowFailure: true
+    guard: ${{ !steps.classify.outputs.required }}
+    dependsOn:
+    - step: evidence-${{ self.site.instance_id }}
+      condition:
+        type: completed
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-cleanup" + "-" + string(self._index) }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- rm -rf -- "$CLIENT"
+        env:
+          CLIENT: ${{ "/var/tmp/orbit-production-smoke-" + run.id + "/" + string(self.site.instance_id) }}
+- name: assessment
+  dependsOn:
+  - job: sites
+    condition:
+      type: completed
+  steps:
+  - name: summary
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/production-smoke-data'
+      methodName: summarize
+      inputs:
+        required: ${{ steps.classify.outputs.required }}
+        sites: '${{ inputs.intent.sites.map(site, {"instance_id": site.instance_id, "stdout": "outputs" in
+          steps["evidence-" + string(site.instance_id)] ? steps["evidence-" + string(site.instance_id)].outputs.stdout
+          : ""}) }}'
+      behaviorName: ${{ "ps-" + run.id + "-summary" }}
+- name: prepare-revert
+  description: Prepare a local revert only. Publication awaits the shared GitHub execution-copy helper and
+    canonical load relay.
+  dependsOn:
+  - job: assessment
+    condition:
+      type: succeeded
+  steps:
+  - name: revert-clone
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    guard: ${{ steps.summary.outputs.state != "failed" || inputs.intent.change.source != "swamp_load" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-revert-clone" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- git clone --no-hardlinks --no-checkout --branch main -- "$SOURCE_MIRROR" "$RECOVERY_CLIENT"
+        env: &id005
+          RECOVERY_CLIENT: ${{ "/var/tmp/orbit-smoke-revert-" + run.id }}
+          SOURCE_MIRROR: ${{ inputs.intent.change.source_mirror_path }}
+          CHANGE_SHA: ${{ inputs.intent.change.after_sha }}
+          MAINLINE: ${{ string(inputs.intent.change.merge_mainline) }}
+        timeout: 60000
+  - name: revert-checkout
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    guard: ${{ steps.summary.outputs.state != "failed" || inputs.intent.change.source != "swamp_load" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-revert-checkout" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- git -C "$RECOVERY_CLIENT" checkout main
+        env: *id005
+        timeout: 60000
+    dependsOn:
+    - step: revert-clone
+      condition:
+        type: succeeded
+  - name: revert-change
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    guard: ${{ steps.summary.outputs.state != "failed" || inputs.intent.change.source != "swamp_load" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-revert-change" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          set --
+          if [ "$MAINLINE" = 1 ]; then set -- -m 1; fi
+          sudo -u orbit-swamp-package -- git -C "$RECOVERY_CLIENT" -c user.name=Orbit -c user.email=orbit@localhost revert --no-edit "$@" "$CHANGE_SHA"
+        env: *id005
+        timeout: 60000
+    dependsOn:
+    - step: revert-checkout
+      condition:
+        type: succeeded
+  - name: revert-commit
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    guard: ${{ steps.summary.outputs.state != "failed" || inputs.intent.change.source != "swamp_load" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-revert-commit" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          sudo -u orbit-swamp-package -- git -C "$RECOVERY_CLIENT" rev-parse HEAD
+        env: *id005
+        timeout: 60000
+    dependsOn:
+    - step: revert-change
+      condition:
+        type: succeeded
+- name: result
+  dependsOn:
+  - job: prepare-revert
+    condition:
+      type: completed
+  steps:
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    task:
+      type: behavior
+      behaviorType: command/shell
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          printf '%s\n' "$RESULT"
+        env:
+          RESULT: ${{ steps.summary.outputs.json }}
+      behaviorName: ${{ "ps-" + run.id + "-result" }}
+  - name: verdict
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id004
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "ps-" + run.id + "-verdict" }}
+      methodName: execute
+      inputs:
+        run: |
+          set -eu
+          test "$STATE" = passed || test "$STATE" = skipped
+        env:
+          STATE: ${{ steps.summary.outputs.state }}
