@@ -1,18 +1,17 @@
+import { localSystemCommand, type SystemTransport } from "./system_command.ts";
+import { configureNodeAgent } from "./agent_configure_local.ts";
 import { z } from "npm:zod@4.4.3";
 import { NodeNetworkResultV1 } from "./network_direct.ts";
 import { GatewayOperation } from "../_lib/direct.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import type { configureNodeWorker } from "../../node-worker/install.ts";
+import type { FootprintAction } from "./footprint_local_actions.ts";
 import {
   Agent,
   Code,
   Outcome,
-  Path,
   Snapshot,
   Stage,
 } from "./converge_direct_contract.ts";
-
-import { caddyProgram } from "../routes/caddy-program.ts";
-import { runLocalProgram } from "../routes/local-program.ts";
 
 const ObjectInput = z.record(z.string(), z.unknown());
 const Changed = z.object({ changed: z.boolean() });
@@ -32,20 +31,10 @@ const Runtime = z.object({
   release: z.object({ id: z.string(), codenames: z.array(z.string()) })
     .strict(),
 }).strict();
-const Private = z.object({
-  secret_hash: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
-  worker_credentials: z.object({
-    enrollment_token: z.string(),
-    server_token: z.string(),
-  }).strict().nullable().optional(),
-}).strict();
-const Configured = z.object({
-  restarted: z.boolean(),
-  unclosed: z.array(z.string()),
-});
 export type LocalDependencies = {
-  agent: typeof runNodeAgent;
-  program?: typeof runLocalProgram;
+  system?: SystemTransport;
+  action: FootprintAction;
+  installWorker?: typeof configureNodeWorker;
   install: (
     snapshot: Snapshot,
     signal?: AbortSignal,
@@ -100,18 +89,9 @@ export function footprintActions(deps: LocalDependencies) {
     }
     const payload = snapshot.payloads[artifact.name];
     const call = (
-      name: string,
+      name: Parameters<FootprintAction>[0]["name"],
       input: Record<string, unknown>,
-      deadlineMs = 120000,
-    ) =>
-      deps.agent({
-        name,
-        input,
-        pin: snapshot.agent_sha256,
-        sudo: true,
-        mutates: true,
-        deadlineMs,
-      }, signal);
+    ) => deps.action({ name, input }, signal);
     if (stage === "agent-install") {
       const result = await deps.install(snapshot, signal);
       return result.error_code
@@ -119,41 +99,19 @@ export function footprintActions(deps: LocalDependencies) {
         : { stage, ok: true, binary_changed: result.changed };
     }
     if (stage === "agent") {
-      const input = Agent.parse(payload);
-      const account = await deps.account(input.user);
-      const root = Path.parse(
-        input.apps_root ?? `${Path.parse(account.home)}/apps`,
+      const result = await configureNodeAgent(
+        Agent.parse(payload),
+        snapshot.agent_sha256,
+        binaryChanged,
+        (action) => gateway.withPrivateMaterial(action),
+        deps.system ?? localSystemCommand,
+        deps.account,
+        signal,
+        deps.installWorker,
       );
-      const underHome = root.startsWith("/home/") || root.startsWith("/root/");
-      const unit = input.unit.replace(
-        /^ProtectHome=yes$/m,
-        "ProtectHome=tmpfs" + (underHome ? `\nBindReadOnlyPaths=-${root}` : ""),
-      );
-      let safe: z.infer<typeof Configured> | undefined;
-      let refusal: string | undefined;
-      await gateway.withPrivateMaterial(async (raw) => {
-        const material = Private.parse(raw);
-        const result = await call("agent.configure", {
-          configuration: input.configuration,
-          certificate: input.certificate,
-          unit,
-          checkouts: input.checkouts.filter((p) => p.startsWith(root + "/")),
-          binary_changed: binaryChanged,
-          allow_secret_rotation: false,
-          secret_hash: material.secret_hash,
-          ...(Object.hasOwn(material, "worker_credentials")
-            ? { worker_credentials: material.worker_credentials }
-            : {}),
-        }, 420000);
-        if (result.error_code !== undefined) {
-          refusal = Code.parse(result.error_code);
-        } else safe = Configured.parse(result); // The returned hash never escapes this callback.
-      });
-      if (refusal) return refused(refusal);
-      if (!safe) {
-        throw new Error("Agent configuration has no proven safe result");
-      }
-      return entry(binaryChanged || safe.restarted);
+      return result.error_code
+        ? refused(result.error_code)
+        : entry(result.changed);
     }
     if (stage === "peer-dns") {
       if (snapshot.network === null) {
@@ -179,11 +137,7 @@ export function footprintActions(deps: LocalDependencies) {
           },
         };
       }
-      const result = await (deps.program ?? runLocalProgram)(
-        caddyProgram,
-        Caddy.parse(payload),
-        signal,
-      );
+      const result = await call("caddy.publish", Caddy.parse(payload));
       if (
         result.error_code === "caddy.publication_failed" &&
         result.stage === "validate"

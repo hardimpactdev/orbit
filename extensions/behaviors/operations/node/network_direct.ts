@@ -1,6 +1,9 @@
 import { z } from "npm:zod@4.4.3";
-import { matchesPolicy } from "../fleet/contract.ts";
-import { PeerDnsRefusal, reconcilePeerDns } from "../fleet/peer_dns_local.ts";
+import {
+  convergeParticipantNetwork,
+  ParticipantNetworkOutcome,
+} from "./network_participant.ts";
+import { type NetworkSystem, runNetworkSystem } from "./network_system.ts";
 
 const Domain = z.string().min(1).max(253).regex(
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?![\s\S])/,
@@ -48,50 +51,45 @@ export const NodeNetworkResultV1 = z.discriminatedUnion("status", [
     schema_version: z.literal(1),
     name: z.literal("peer-dns"),
     status: z.literal("failed"),
-    error_code: PeerDnsRefusal.shape.error_code,
+    error_code: ParticipantNetworkOutcome.options[1].shape.error_code,
   }).strict(),
 ]);
 export type NodeNetworkResultV1 = z.infer<typeof NodeNetworkResultV1>;
 
-/** Inject the one Fleet implementation for tests; never duplicate its effects. */
-export function nodeNetwork(
-  reconcile: typeof reconcilePeerDns = reconcilePeerDns,
-) {
+/** Same-root direct-system DNS convergence; no observer command performs work. */
+export function nodeNetwork(invoke: NetworkSystem = runNetworkSystem) {
   return async (
     actionInput: NodeNetworkInputV1,
     signal?: AbortSignal,
   ): Promise<NodeNetworkResultV1> => {
     const input = NodeNetworkInputV1.parse(actionInput);
-    const policy = {
-      ...input.peer_dns,
-      server: input.peer_dns.dns_server,
-      node_id: input.node_id,
-      agent_sha256: input.agent_sha256,
-    };
-    const outcome = await reconcile(policy, { signal });
-    if ("error_code" in outcome.result) {
+    const outcome = await convergeParticipantNetwork(
+      {
+        schema_version: 1,
+        node_id: input.node_id,
+        agent_sha256: input.agent_sha256,
+        router_lan: null,
+        peer_dns: input.peer_dns,
+      },
+      invoke,
+      signal,
+    );
+    if (outcome.status === "failed") {
       return NodeNetworkResultV1.parse({
         schema_version: 1,
         name: "peer-dns",
         status: "failed",
-        error_code: outcome.result.error_code,
+        error_code: outcome.error_code,
       });
-    }
-    if (
-      !outcome.result.uplink || !matchesPolicy(policy, outcome.result) ||
-      typeof outcome.changed !== "boolean"
-    ) {
-      throw new Error("Peer DNS returned no verified policy");
     }
     return NodeNetworkResultV1.parse({
       schema_version: 1,
       name: "peer-dns",
-      status: outcome.changed ? "applied" : "unchanged",
+      status: "applied",
       policy: true,
       uplink: true,
     });
   };
 }
 
-/** Same-root local action: no Gateway read/project, child, run or private bytes. */
 export const convergeNodeNetwork = nodeNetwork();

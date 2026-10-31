@@ -8,10 +8,15 @@ authenticated candidate. See
 
 `fleet.peer_dns` uses its direct workflow on the exact admitted Node.
 
+`fleet.recipe` runs one native convergence root on its admitted Node worker.
+Fixed local system programs apply the recipe and PHP build; canonical Node
+footprint and CLI functions run as steps of that root. Each effect verifies its
+own result, followed by exact locked delivery verification. See
+[native recipe convergence](../../../../docs/fleet-recipe-direct.md).
+
 The former Fleet executor, polled schedule, claims, child Operations and
-completion receipts are deleted. `fleet.recipe`, `fleet.rollout` and
-`fleet.cli_converge` remain unavailable until their complete Swamp
-system-command ports land. They must not use orbit-agent action commands; the
+completion receipts are deleted. `fleet.rollout` and `fleet.cli_converge` have
+separate parent owners. Fleet must not use orbit-agent action commands; the
 agent is an observer.
 
 The maintenance producer remains a native admission schedule. It reads public

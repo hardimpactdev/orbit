@@ -1,7 +1,13 @@
-import { caddyProgram } from "../routes/caddy-program.ts";
-import { runLocalProgram } from "../routes/local-program.ts";
+import { certificateActions } from "../certificates/actions.ts";
+import { certificateProgram } from "../certificates/system.ts";
+import {
+  convergeFirewall,
+  convergeRouteLan,
+} from "../routes/firewall-local.ts";
 import { z } from "npm:zod@4.4.3";
-import { agentReply, runNodeAgent } from "../_lib/node-agent.ts";
+import { installObserver } from "./observer_install_system.ts";
+import { footprintLocalActions } from "./footprint_local_actions.ts";
+import { localSystemCommand, type SystemTransport } from "./system_command.ts";
 import {
   Agent,
   Code,
@@ -139,75 +145,13 @@ export async function downloadAgent(
   return bytes;
 }
 
-export async function installAgent(snapshot: Snapshot, signal?: AbortSignal) {
-  signal?.throwIfAborted();
-  for (const path of ["/usr", "/usr/local", "/usr/local/bin"]) {
-    const info = await Deno.lstat(path);
-    if (
-      info.isSymlink || !info.isDirectory || info.uid !== 0 ||
-      info.mode === null || (info.mode & 0o022) !== 0
-    ) {
-      throw new Error("The agent installation directory is not root owned");
-    }
-  }
-  let installed = true;
-  try {
-    await Deno.lstat("/usr/local/bin/orbit-agent");
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) installed = false;
-    else throw error;
-  }
-  const status = installed
-    ? await runNodeAgent({
-      name: "agent.status",
-      input: {},
-      pin: snapshot.agent_sha256,
-      sudo: true,
-      mutates: false,
-      deadlineMs: 30000,
-    }, signal)
-    : { error_code: "agent.version_mismatch" };
-  if (status.error_code !== "agent.version_mismatch") {
-    if (status.error_code) {
-      return { changed: false, error_code: Code.parse(status.error_code) };
-    }
-    return { changed: false };
-  }
+export function installAgent(
+  snapshot: Snapshot,
+  signal?: AbortSignal,
+  invoke: SystemTransport = localSystemCommand,
+) {
   const input = Agent.parse(snapshot.payloads.agent);
-  if (input.url === null) {
-    return { changed: false, error_code: "agent.release_unavailable" };
-  }
-  const bytes = await downloadAgent(input.url, snapshot.agent_sha256, signal);
-  const directory = await Deno.makeTempDir({ prefix: "orbit-converge-agent-" });
-  try {
-    const candidate = directory + "/orbit-agent";
-    await Deno.writeFile(candidate, bytes, { createNew: true, mode: 0o700 });
-    signal?.throwIfAborted();
-    const reply = await output("/usr/bin/sudo", [
-      "-n",
-      "--",
-      candidate,
-      "command",
-      "agent.install",
-    ], {
-      agent_sha256: snapshot.agent_sha256,
-      deadline_ms: 180000,
-      input: { candidate, sha256: snapshot.agent_sha256 },
-    }, 185000);
-    const installed = agentReply(reply.bytes, reply.success);
-    if (installed.error_code) {
-      return { changed: false, error_code: Code.parse(installed.error_code) };
-    }
-    const proven = z.object({ replaced: z.boolean(), sha256: Sha }).parse(
-      installed,
-    );
-    if (proven.sha256 !== snapshot.agent_sha256) {
-      throw new Error("Installed agent differs from the admitted digest");
-    }
-    return { changed: proven.replaced };
-  } finally {
-    await Deno.remove(directory, { recursive: true });
-  }
+  return installObserver(input.url, snapshot.agent_sha256, invoke, signal);
 }
 
 export async function publishDns(
@@ -262,21 +206,40 @@ async function cleanResidue(snapshot: Snapshot, signal?: AbortSignal) {
     dns: z.record(z.string(), z.unknown()).nullable(),
   }).strict().parse(snapshot.payloads["route-residue"]);
   if (input.rows.length === 0) return { changed: false };
-  const call = (name: string, value: Record<string, unknown>) =>
-    runNodeAgent({
-      name,
-      input: value,
-      pin: snapshot.agent_sha256,
-      sudo: true,
-      mutates: true,
-      deadlineMs: 120000,
+  const native = footprintLocalActions();
+  const program = async (
+    source: string,
+    value: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => {
+    const result = await localSystemCommand({
+      command: "/usr/bin/sudo",
+      args: ["-n", "--", "/usr/bin/python3", "-I", "-c", source],
+      stdin: JSON.stringify(value),
+      timeoutMs: 300000,
     }, signal);
+    if (!result.success) {
+      throw new Error("Route residue command has no confirmed outcome");
+    }
+    try {
+      return z.record(z.string(), z.unknown()).parse(JSON.parse(result.stdout));
+    } catch {
+      throw new Error("Route residue command returned no bounded outcome");
+    }
+  };
+  const certificates = certificateActions((call, signal) =>
+    program(certificateProgram, call, signal)
+  );
+  const call = (
+    name: Parameters<typeof native>[0]["name"],
+    input: Record<string, unknown>,
+  ) => native({ name, input }, signal);
   if (input.rows.some((r) => r.steps.includes("caddy"))) {
     if (input.caddy.error_code) {
       return { error_code: Code.parse(input.caddy.error_code) };
     }
-    const result = await runLocalProgram(caddyProgram, input.caddy, signal);
-    if (result.error_code) return result;
+    const result = await call("caddy.publish", input.caddy);
+    if ("error_code" in result) return result;
     z.object({ result: z.enum(["published", "unchanged"]) }).parse(result);
   }
   const account = input.php !== null || input.certificates.length
@@ -295,34 +258,38 @@ async function cleanResidue(snapshot: Snapshot, signal?: AbortSignal) {
       ]),
     );
     const result = await call("php.converge-shared-pools", { configurations });
-    if (result.error_code) return result;
+    if ("error_code" in result) return result;
     z.object({ changed: z.boolean() }).parse(result);
   }
   for (const scope of input.certificates) {
-    const result = await call("certificate.remove-leaf", {
+    const result = await certificates.remove({
+      node_id: snapshot.node_id,
+      agent_sha256: snapshot.agent_sha256,
       scope,
       home: account!.home,
-    });
-    if (result.error_code) return result;
+      in_use: false,
+    }, signal);
+    if ("error_code" in result) return result;
   }
   for (const rule of input.firewall) {
-    const result = await call("firewall.route-lan", rule);
-    if (result.error_code) return result;
+    const result = await convergeRouteLan(rule, program, signal);
+    if ("error_code" in result) return result;
   }
   if (input.ingress !== null) {
-    const result = await call("firewall.rules", input.ingress);
-    if (result.error_code) return result;
+    const result = await convergeFirewall(input.ingress, program, signal);
+    if ("error_code" in result) return result;
   }
   if (input.dns !== null) {
     const result = await publishDns(input.dns, signal);
-    if (result.error_code) return result;
+    if ("error_code" in result) return result;
     z.object({ ready: z.literal(true) }).parse(result);
   }
   return { changed: true };
 }
 
 export const convergeLocalDependencies: LocalDependencies = {
-  agent: runNodeAgent,
+  system: localSystemCommand,
+  action: footprintLocalActions(),
   install: installAgent,
   account: localAccount,
   dns: publishDns,
