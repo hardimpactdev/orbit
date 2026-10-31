@@ -46,22 +46,29 @@ final readonly class NativeRouteMutationPlan
                 if (($placement->nodeId === null) === ($placement->clusterId === null)) {
                     throw $this->conflict();
                 }
+                if ($route->domain === $domain && $route->node_id === $placement->nodeId && $route->cluster_id === $placement->clusterId) {
+                    continue;
+                }
                 $previous = $this->convergence->forRoute($route, ['mode' => 'placement']);
                 $before = array_intersect_key($route->getAttributes(), array_flip(['node_id', 'cluster_id', 'status', 'sites_published', 'replacement_step', 'failed_step', 'error_code']));
                 $candidate = $domain === $route->domain ? $this->state->candidateWithPlacement($route, $placement)
                     : $this->state->reserve($route, $domain, placement: $placement);
                 $desired = $this->convergence->forRoute($candidate, ['mode' => 'placement']);
                 if ($candidate->id === $route->id) {
-                    $desired['certificates'] = RouteExecutionProof::objects($desired['certificates']);
-                    foreach ($desired['certificates'] as &$leaf) {
-                        $leaf['scope'] = ValidatedData::string($leaf['scope']).'-hostname-change';
-                    }
-                    unset($leaf);
-                    $desired['workloads'] = RouteExecutionProof::objects($desired['workloads']);
-                    foreach ($desired['workloads'] as &$member) {
-                        $member['certificate_scope'] = ValidatedData::string($member['certificate_scope']).'-hostname-change';
+                    $members = RouteExecutionProof::objects($desired['workloads']);
+                    $scopes = [];
+                    foreach ($members as &$member) {
+                        $scope = 'app-instance-'.ValidatedData::integer($member['instance_id']).'-hostname-change';
+                        $scopes[ValidatedData::string($member['certificate_scope'])] = $scope;
+                        $member['certificate_scope'] = $scope;
                     }
                     unset($member);
+                    $desired['workloads'] = $members;
+                    $desired['certificates'] = array_map(static function (array $leaf) use ($scopes): array {
+                        $scope = ValidatedData::string($leaf['scope']);
+
+                        return [...$leaf, 'scope' => $scopes[$scope] ?? $scope.'-hostname-change'];
+                    }, RouteExecutionProof::objects($desired['certificates']));
                 }
                 $live = clone $candidate;
                 $live->replacement_step = RouteReplacementStep::Cleanup;
@@ -93,19 +100,45 @@ final readonly class NativeRouteMutationPlan
         DB::transaction(function () use ($batch, $stage): void {
             foreach (RouteExecutionProof::objects($batch['changes']) as $row) {
                 $source = Route::query()->lockForUpdate()->find(ValidatedData::integer($row['route_id']));
-                $route = Route::query()->lockForUpdate()->findOrFail(ValidatedData::integer($row['result_route_id']));
+                $route = Route::query()->lockForUpdate()->find(ValidatedData::integer($row['result_route_id']));
+                if ($route === null && $stage === 'rollback-complete' && $source !== null && $source->replaced_by_route_id === null) {
+                    continue;
+                }
+                if ($route === null) {
+                    throw $this->conflict();
+                }
                 $renamed = $row['route_id'] !== $route->id;
+                if (in_array($stage, ['workloads-prepared', 'router-prepared'], true)
+                    && ($route->replacement_step?->hasReached(RouteReplacementStep::DatabaseCutover) === true || ($renamed && $source === null))) {
+                    throw $this->conflict();
+                }
                 $before = ValidatedData::object($row['before']);
                 $placement = ValidatedData::object($row['placement']);
+                $complete = $route->status === RouteStatus::Active && $route->replacement_step === null && ! $route->hasPlacementTransition()
+                    && ($renamed ? $source === null && $route->replaces_route_id === null
+                        : ($route->node_id !== $before['node_id'] || $route->cluster_id !== $before['cluster_id']));
+                if ($complete) {
+                    if (str_starts_with($stage, 'rollback') || in_array($stage, ['workloads-prepared', 'router-prepared'], true)) {
+                        throw $this->conflict();
+                    }
+
+                    continue;
+                }
                 if (str_starts_with($stage, 'rollback') && ($route->replacement_step?->hasReached(RouteReplacementStep::DatabaseCutover) === true
                     || ($renamed && $source?->status === RouteStatus::Retiring)
                     || (! $renamed && ($route->node_id !== $before['node_id'] || $route->cluster_id !== $before['cluster_id'])))) {
                     throw $this->conflict();
                 }
                 if ($stage === 'workloads-prepared') {
+                    if ($route->replacement_step?->hasReached(RouteReplacementStep::WorkloadCertificate) === true) {
+                        continue;
+                    }
                     $route->update(['sites_published' => true, 'replacement_step' => RouteReplacementStep::WorkloadCertificate,
                         ...($renamed ? [] : ['transition_node_id' => $placement['node_id'], 'transition_cluster_id' => $placement['cluster_id']])]);
                 } elseif ($stage === 'router-prepared') {
+                    if ($route->replacement_step?->hasReached(RouteReplacementStep::RouterCertificate) === true) {
+                        continue;
+                    }
                     $route->update(['replacement_step' => RouteReplacementStep::RouterCertificate]);
                 } elseif ($stage === 'commit') {
                     if ($route->replacement_step?->hasReached(RouteReplacementStep::DatabaseCutover) === true) {
@@ -116,6 +149,7 @@ final readonly class NativeRouteMutationPlan
                             throw $this->conflict();
                         }
                         $this->state->cutover($source, $route);
+                        $source->update(['replacement_step' => RouteReplacementStep::DatabaseCutover]);
                     } else {
                         $this->state->cutoverPlacement($route, new RoutePlacement(
                             ($placement['node_id'] === null ? null : ValidatedData::integer($placement['node_id'])), ($placement['cluster_id'] === null ? null : ValidatedData::integer($placement['cluster_id'])), null));
@@ -182,12 +216,27 @@ final readonly class NativeRouteMutationPlan
             $workloads = array_map(static fn (array $member): array => ['route_id' => $intent['route_id'], ...$member], RouteExecutionProof::objects($view['workloads']));
             $old = ValidatedData::object($row['previous']);
             $removeRouteId = $rollback ? $row['result_route_id'] : $row['route_id'];
-            $removesLan = $row['route_id'] !== $row['result_route_id'] && ($rollback || $route->replacement_step === RouteReplacementStep::Cleanup)
+            $removesLan = ($rollback || $route->replacement_step === RouteReplacementStep::Cleanup)
                 && array_any(RouteExecutionProof::objects($old['workloads']), static fn (array $member): bool => $member['node_id'] === $nodeId);
+            $keep = [];
+            foreach ($workloads as $member) {
+                if (is_array($member['lan']) && $member['lan']['route_id'] === $removeRouteId) {
+                    $keep[] = array_intersect_key($member['lan'], array_flip(['router', 'workload']));
+                }
+            }
             $views[] = ['route_id' => $row['route_id'], ...$view, 'node_ids' => $row['node_ids'], 'workloads' => $workloads,
-                'cleanup_lan' => $removesLan ? [['operation' => 'remove', 'route_id' => $removeRouteId]] : [],
+                'cleanup_lan' => $removesLan ? [['operation' => 'retire', 'route_id' => $removeRouteId, 'keep' => $keep]] : [],
                 'cleanup' => array_values(array_unique($cleanup, SORT_REGULAR))];
         }
+        $environmentWorkloads = [];
+        foreach ($views as $view) {
+            $environmentWorkloads = [...$environmentWorkloads, ...RouteExecutionProof::objects($view['workloads'])];
+        }
+        $environmentWorkloads = array_values(array_unique($environmentWorkloads, SORT_REGULAR));
+        foreach ($views as &$view) {
+            $view['environment_workloads'] = $environmentWorkloads;
+        }
+        unset($view);
         $public = app(NativeRoutePublicationInput::class)->forNode(Node::query()->findOrFail($nodeId));
 
         return [...$public, 'participant_node_id' => $nodeId, 'publication' => ['node_id' => $nodeId], 'route_mutations' => $views];

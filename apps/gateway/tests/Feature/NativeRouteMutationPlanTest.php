@@ -5,12 +5,18 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Routes\NativeRouteAdmission;
+use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteMutationPlan;
+use App\Domain\Routes\RouteEnvironmentMaterialSource;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -95,6 +101,7 @@ it('reserves renames and restores the original association before removing a can
     $lower->checkpoint($plan, 'rollback');
     expect($candidate->fresh()->sites_published)->toBeFalse()->and($route->fresh()->status)->toBe(RouteStatus::Active);
     $lower->checkpoint($plan, 'rollback-complete');
+    $lower->checkpoint($plan, 'rollback-complete');
     $this->assertModelMissing($candidate);
     expect($route->fresh()->replaced_by_route_id)->toBeNull()->and($route->targets()->count())->toBe(1);
 });
@@ -131,9 +138,80 @@ it('commits a generated rename and placement without losing targets or the serve
     $lower->checkpoint($plan, 'router-prepared');
     $lower->checkpoint($plan, 'commit');
     expect($route->fresh()->status)->toBe(RouteStatus::Retiring);
+    $sites = app(DevelopmentSiteRepository::class)->forNode($node);
+    expect($sites->contains('domain', $route->domain))->toBeTrue();
     $lower->checkpoint($plan, 'withdraw');
+    expect(app(DevelopmentSiteRepository::class)->forNode($node)->contains('domain', $route->domain))->toBeFalse();
     $lower->checkpoint($plan, 'complete');
     $this->assertModelMissing($route);
+    $lower->checkpoint($plan, 'complete');
+    expect(fn () => $lower->checkpoint($plan, 'router-prepared'))->toThrow(ResourceOperationException::class);
     expect($candidate->fresh()->cluster_id)->toBe($cluster->id)->and($candidate->fresh()->targets()->count())->toBe(1)
         ->and($candidate->fresh()->web_root)->toBe('docs/public');
+});
+
+it('uses valid workload staging scopes for a web-root placement without a rename', function (): void {
+    [$route, $node, $router, $cluster] = mutation_batch_fixture();
+    $route->update(['web_root' => 'docs/public']);
+    $plan = app(NativeRouteMutationPlan::class)->capture([['route' => $route, 'domain' => $route->domain, 'placement' => new RoutePlacement(null, $cluster->id, null)]]);
+    $instanceId = $route->targets()->firstOrFail()->instance_id;
+    expect($plan['changes'][0]['desired']['certificates'][0]['scope'])->toBe('app-instance-'.$instanceId.'-hostname-change');
+});
+
+it('retires same-domain detached LAN rules after withdrawal', function (): void {
+    [$route, $node, $router, $cluster] = mutation_batch_fixture();
+    $route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
+    $node->update(['lan_ip' => '192.168.6.18']);
+    $router->update(['lan_ip' => '192.168.6.1']);
+    $lower = app(NativeRouteMutationPlan::class);
+    $plan = $lower->capture([['route' => $route->fresh(), 'domain' => $route->domain, 'placement' => new RoutePlacement($node->id, null, null)]]);
+    $lower->checkpoint($plan, 'workloads-prepared');
+    $lower->checkpoint($plan, 'router-prepared');
+    $lower->checkpoint($plan, 'commit');
+    $lower->checkpoint($plan, 'withdraw');
+    $operation = new Operation(['kind' => 'cluster.detach', 'node_id' => $node->id, 'input' => ['route_mutations' => $plan, 'participant_node_ids' => $plan['node_ids']]]);
+    expect($lower->publicInput($operation, $node->id)['route_mutations'][0]['cleanup_lan'])->toBe([['operation' => 'retire', 'route_id' => $route->id, 'keep' => []]]);
+});
+
+it('admits a batch environment owner union for separate Instances on the same Node', function (): void {
+    [$first, $node] = mutation_batch_fixture();
+    $project = Project::query()->create(['name' => 'Second Batch', 'slug' => 'second-batch', 'repository_url' => 'https://example.test/second.git', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'development', 'checkout_path' => '/srv/second', 'status' => 'active', 'source_is_laravel' => false]);
+    $second = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => 'second.private.test', 'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
+    $second->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $second->update(['status' => 'active', 'sites_published' => true]);
+    $lower = app(NativeRouteMutationPlan::class);
+    $plan = $lower->capture([['route' => $first, 'domain' => 'first-new.private.test'], ['route' => $second, 'domain' => 'second-new.private.test']]);
+    $operation = new Operation(['kind' => 'node.add', 'node_id' => $node->id, 'input' => ['route_mutations' => $plan, 'participant_node_ids' => $plan['node_ids']]]);
+    $view = $lower->publicInput($operation, $node->id);
+    expect(array_column($view['route_mutations'][0]['environment_workloads'], 'instance_id'))
+        ->toBe([$first->targets()->firstOrFail()->instance_id, $instance->id])
+        ->and($view['route_mutations'][1]['environment_workloads'])->toBe($view['route_mutations'][0]['environment_workloads']);
+});
+
+it('reuses declared environment custody for a truthful composing parent', function (): void {
+    [$route, $node, $router, $cluster] = mutation_batch_fixture();
+    $lower = app(NativeRouteMutationPlan::class);
+    $plan = $lower->capture([['route' => $route, 'domain' => 'new.private.test']]);
+    $contribution = new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['cluster.attach' => ['workflow' => 'operation-cluster-attach', 'projection' => NativeRouteConvergenceProjection::class,
+                'private_material' => NativeRouteAdmission::privateMaterial()]];
+        }
+    };
+    app()->instance(DirectOperation::class, new DirectOperation([$contribution]));
+    $input = ['route_mutations' => $plan, ...NativeRouteAdmission::environmentBindings($plan['node_ids'], $node->id, $cluster->id)];
+    $operation = new Operation(['kind' => 'cluster.attach', 'target_type' => 'cluster', 'target_id' => $cluster->id, 'node_id' => $node->id, 'input' => $input]);
+    $field = $input['environment_fields'][(string) $node->id];
+    $source = app(RouteEnvironmentMaterialSource::class);
+    expect($source->ownerId($operation))->toBe($cluster->id)
+        ->and($source->resolve($operation, $cluster->id, '', $field)->value)->toBe([]);
+    expect(fn () => $source->resolve($operation, $cluster->id + 1, '', $field))->toThrow(ResourceOperationException::class);
+    expect(fn () => $source->resolve($operation, $cluster->id, '', 'not_declared'))->toThrow(ResourceOperationException::class);
+    $foreign = clone $operation;
+    $foreign->kind = 'instance.transfer';
+    expect($source->ownerId($foreign))->toBeNull();
+    expect(fn () => NativeRouteAdmission::environmentBindings(range(1, 65), 1, 7))->toThrow(ResourceOperationException::class);
 });
