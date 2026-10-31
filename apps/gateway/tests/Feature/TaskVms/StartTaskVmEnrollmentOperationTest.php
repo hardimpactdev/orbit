@@ -5,13 +5,9 @@ declare(strict_types=1);
 use App\Actions\TaskVms\StartTaskVmEnrollmentOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\DirectOperationContribution;
-use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
-use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -61,24 +57,6 @@ function standaloneEnrollmentVm(): TaskVm
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Enroll', 'brief' => 'Prepare the VM', 'status' => 'reserved', 'orchestration' => 'external']);
     $vm = TaskVm::query()->create(['name' => 'pending', 'provider' => 'incus', 'state' => 'provisioning', 'group_id' => $group->id, 'host_node_id' => $host->id, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('b', 64)]);
     $vm->update(['name' => 'tvm-'.$vm->id]);
-
-    $known = app(DirectOperation::class)->definitions();
-    $contribution = new class($known) implements DirectOperationContribution
-    {
-        public function __construct(private array $known) {}
-
-        public function definitions(): array
-        {
-            return isset($this->known['task_vm.enroll']) ? [] : ['task_vm.enroll' => [
-                'workflow' => 'operation-task-vm-enroll', 'projection' => TaskVmEnrollmentProjection::class,
-                'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'installation' => 'task_vm.installation', 'model_key' => 'task_vm.model_key', 'pi_token' => 'task_vm.pi_token', 'model_router' => 'task_vm.model_router', 'pi_artifact_file' => 'task_vm.image_artifact', 'enrollment_network' => 'task_vm.enrollment_network', 'first_visit' => 'task_vm.first_visit', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
-                'secret_outputs' => ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials', 'provider_bootstrap' => 'task_vm.provider_bootstrap'],
-            ]];
-        }
-    };
-    $direct = new DirectOperation([$contribution]);
-    app()->instance(DirectOperation::class, $direct);
-    app()->instance(DirectOperationPrivateBindings::class, new DirectOperationPrivateBindings($direct));
 
     return $vm;
 }
