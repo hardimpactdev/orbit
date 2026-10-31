@@ -1,6 +1,7 @@
 id: 30f3bb33-0431-4fdf-9cd5-b54c5da45354
 name: operation-cluster-router
-description: Prepare, select and retire a Cluster Router in one native DAG.
+description: One immutable Router transition on209 through shared native publication children.
+vaults: []
 inputs:
   type: object
   properties:
@@ -12,785 +13,123 @@ inputs:
       minimum: 1
     kind:
       type: string
-      enum:
-      - cluster.router_set
-      - cluster.router_unset
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
-- name: admission
+- name: router
   steps:
-  - name: inventory
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  - name: prepare
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.node_id) }}
+      node: '209'
+    guard: ${{ inputs.intent.cluster_router.noop || inputs.intent.cluster_router.candidate == null }}
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-prepare
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent: ${{ inputs.intent.cluster_router.candidate }}
+  - name: forward
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: prepare, condition: {type: always}}
+    guard: ${{ inputs.intent.cluster_router.noop || steps.exists(key, key == "prepare" && steps[key].status == "failed")
+      }}
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-forward
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent: ${{ inputs.intent }}
+        parent_run_id: ${{ run.id }}
+  - name: restore
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: forward, condition: {type: always}}
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || steps.forward.outputs.result.ready
+      }}
+    task:
+      type: workflow
+      workflowIdOrName: cluster-router-restore
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent: ${{ inputs.intent }}
+        parent_run_id: ${{ run.id }}
+  - name: retire
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: forward, condition: {type: always}}
+    forEach:
+      item: old
+      in: ${{ inputs.intent.cluster_router.old_nodes }}
+    guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || !steps.forward.outputs.result.ready
+      }}
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent:
+          rule: ${{ self.old.firewall }}
+          control_node_id: 209
+          connection: ${{ self.old.connection }}
+          host_keys: ${{ self.old.host_keys }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - {step: prepare, condition: {type: always}}
+    - {step: forward, condition: {type: always}}
+    - {step: restore, condition: {type: always}}
+    - {step: retire, condition: {type: always}}
     task:
       type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
+      behaviorType: '@nckrtl/cluster-router-result'
+      behaviorName: ${{ "cluster-router-result-" + run.id }}
       methodName: read
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-- name: unset-selection
-  steps:
-  - name: unset-selection
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    guard: ${{ inputs.kind != "cluster.router_unset" }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: old-router-withdrawn
-  dependsOn:
-  - job: admission
-    condition:
-      type: succeeded
-- name: caddy-package
-  steps:
-  - name: caddy-package
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: installCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        node: ${{ steps.inventory.outputs.candidate }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: unset-selection
-    condition:
-      type: succeeded
-- name: prerequisites
-  steps:
-  - name: prerequisites
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: installPrerequisites
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        node: ${{ steps.inventory.outputs.candidate }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: caddy-package
-    condition:
-      type: succeeded
-- name: baseline-firewall
-  steps:
-  - name: baseline-firewall
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: firewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        node: ${{ steps.inventory.outputs.candidate }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: prerequisites
-    condition:
-      type: succeeded
-- name: baseline-lan
-  steps:
-  - name: baseline-lan
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: routerLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        node: ${{ steps.inventory.outputs.candidate }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: baseline-firewall
-    condition:
-      type: succeeded
-- name: leaf-request
-  steps:
-  - name: leaf-request
-    writes: true
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificates-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: requestAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        leaves: ${{ steps.inventory.outputs.leaves }}
-  dependsOn:
-  - job: baseline-lan
-    condition:
-      type: succeeded
-- name: leaf-sign
-  steps:
-  - name: leaf-sign-http-input
-    writes: true
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate == null || steps.inventory.outputs.noop
-      }}
-    target: orbit-node-209
-    labels:
-      node: '209'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: prepareSignBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        requests:
-        - ${{ steps["leaf-request"].outputs.requests }}
-        leaves: ${{ steps.inventory.outputs.leaves }}
-  - name: leaf-sign-http
-    writes: true
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate == null || steps.inventory.outputs.noop
-      }}
-    target: orbit-node-209
-    labels:
-      node: '209'
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: orbit-certificate-signing-http
-      methodName: execute
-      inputs:
-        run: |
-          #!/bin/sh
-          set -eu
-          /usr/bin/python3 - <<'PYTHON'
-          import json
-          import os
-          import re
-          import ssl
-          import sys
-          import urllib.request
-
-
-          class NoRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-
-
-          try:
-              operation = os.environ["ORBIT_CERTIFICATE_OPERATION_ID"]
-              run_id = os.environ["ORBIT_CERTIFICATE_RUN_ID"]
-              if not re.fullmatch(r"[1-9][0-9]*", operation):
-                  raise ValueError("Invalid operation")
-              raw = json.loads(os.environ["ORBIT_CERTIFICATE_REQUESTS"])
-              if os.environ["ORBIT_CERTIFICATE_MODE"] == "single":
-                  leaf = json.loads(os.environ["ORBIT_CERTIFICATE_LEAF"])
-                  raw = [dict(node_id=leaf["node_id"], scope=leaf["scope"], **raw)]
-              else:
-                  raw = [record for batch in raw for record in batch]
-              if len(raw) > 256:
-                  raise ValueError("Too many requests")
-              requests = [record for record in raw if record.get("state") == "request"]
-              if not requests:
-                  print(json.dumps({"certificates": []}))
-                  sys.exit(0)
-              body = {"run_id": run_id, "requests": requests}
-              if os.environ.get("ORBIT_CERTIFICATE_RESTORING") == "true":
-                  body["restoring"] = True
-              payload = json.dumps(body).encode()
-              url = (
-                  "https://gateway.orbit/api/v1/direct-operations/"
-                  + operation
-                  + "/certificates/sign"
-              )
-              request = urllib.request.Request(
-                  url,
-                  data=payload,
-                  method="POST",
-                  headers={
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                  },
-              )
-              context = ssl.create_default_context(
-                  cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"
-              )
-              opener = urllib.request.build_opener(
-                  NoRedirect(), urllib.request.HTTPSHandler(context=context)
-              )
-              with opener.open(request, timeout=60) as response:
-                  raw_response = response.read(16_777_217)
-                  if len(raw_response) > 16_777_216 or response.status != 200:
-                      raise ValueError("Invalid signing response")
-              result = json.loads(raw_response)["data"]
-              print(json.dumps(result))
-          except Exception:
-              print(json.dumps({"error_code": "app-dev.certificate_sign_failed"}))
-              sys.exit(1)
-          PYTHON
-        env:
-          ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
-          ORBIT_CERTIFICATE_RUN_ID: ${{ run.id }}
-          ORBIT_CERTIFICATE_MODE: batch
-          ORBIT_CERTIFICATE_REQUESTS: ${{ steps["leaf-sign-http-input"].outputs.requests_json }}
-    dependsOn:
-    - step: leaf-sign-http-input
-      condition:
-        type: succeeded
-  - name: leaf-sign
-    writes: true
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate == null || steps.inventory.outputs.noop
-      }}
-    target: orbit-node-209
-    labels:
-      node: '209'
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: orbit-certificate-signing
-      methodName: signBatch
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        requests:
-        - ${{ steps["leaf-request"].outputs.requests }}
-        leaves: ${{ steps.inventory.outputs.leaves }}
-        native_stdout: ${{ steps["leaf-sign-http"].outputs.stdout }}
-    dependsOn:
-    - step: leaf-sign-http
-      condition:
-        type: succeeded
-  dependsOn:
-  - job: leaf-request
-    condition:
-      type: succeeded
-- name: leaf-publish
-  steps:
-  - name: leaf-publish
-    writes: true
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/certificates'
-      behaviorName: ${{ "certificates-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: publishAll
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        leaves: ${{ steps.inventory.outputs.leaves }}
-        requests: ${{ steps["leaf-request"].outputs.requests }}
-        signed: ${{ steps["leaf-sign"].outputs.certificates }}
-  dependsOn:
-  - job: leaf-sign
-    condition:
-      type: succeeded
-- name: workload-lan
-  steps:
-  - name: workload-lan-${{ self.member.node_id }}-${{ self.member.route_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(self.member.node_id) }}
-      methodName: workloadLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-        node: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.workloads }}
-    guard: ${{ !has(self.member.firewall) || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: leaf-publish
-    condition:
-      type: succeeded
-- name: workload-verification
-  steps:
-  - name: workload-verification
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: verify
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-        node: ${{ steps.inventory.outputs.candidate }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: workload-lan
-    condition:
-      type: succeeded
-- name: router-serving
-  steps:
-  - name: router-serving
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: router-serving
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: workload-verification
-    condition:
-      type: succeeded
-- name: candidate-caddy
-  steps:
-  - name: candidate-caddy
-    writes: true
-    target: ${{ "orbit-node-" + string(steps.inventory.outputs.candidate.node_id)
-      }}
-    labels:
-      node: ${{ string(steps.inventory.outputs.candidate.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(steps.inventory.outputs.candidate.node_id)
-        }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ steps.inventory.outputs.candidate.node_id }}
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: router-serving
-    condition:
-      type: succeeded
-- name: router-selection
-  steps:
-  - name: router-selected
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: router-selected
-    guard: ${{ !has(steps.inventory.outputs.candidate) || steps.inventory.outputs.candidate
-      == null || steps.inventory.outputs.noop }}
-  dependsOn:
-  - job: candidate-caddy
-    condition:
-      type: succeeded
-- name: edge-caddy
-  steps:
-  - name: edge-caddy-${{ self.member }}
-    writes: true
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.edge_node_ids }}
-    target: ${{ "orbit-node-" + string(self.member) }}
-    labels:
-      node: ${{ string(self.member) }}
-    guard: ${{ steps.inventory.outputs.noop }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.member) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member }}
-  dependsOn:
-  - job: router-selection
-    condition:
-      type: succeeded
-- name: dns-publication
-  steps:
-  - name: dns-publication-${{ self.member }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member) }}
-    labels:
-      node: ${{ string(self.member) }}
-    guard: ${{ steps.inventory.outputs.noop }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.member) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.dns_node_ids }}
-  dependsOn:
-  - job: edge-caddy
-    condition:
-      type: succeeded
-- name: prune-dns
-  steps:
-  - name: prune-dns-${{ self.member }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member) }}
-    labels:
-      node: ${{ string(self.member) }}
-    guard: ${{ steps.inventory.outputs.noop }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.member) }}
-      methodName: publishDns
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.dns_node_ids }}
-  dependsOn:
-  - job: dns-publication
-    condition:
-      type: succeeded
-- name: old-dns-expiry
-  steps:
-  - name: old-dns-expiry
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: grace
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-    guard: ${{ steps.inventory.outputs.noop || size(steps.inventory.outputs.old_nodes)
-      == 0 }}
-  dependsOn:
-  - job: prune-dns
-    condition:
-      type: succeeded
-- name: old-withdrawal
-  steps:
-  - name: old-router-withdrawn
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    guard: ${{ steps.inventory.outputs.noop }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: checkpoint
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        checkpoint: old-router-withdrawn
-  dependsOn:
-  - job: old-dns-expiry
-    condition:
-      type: succeeded
-- name: old-caddy
-  steps:
-  - name: old-caddy-${{ self.member.node_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/route-publication'
-      behaviorName: ${{ "route-publication-node-" + string(self.member.node_id) }}
-      methodName: publishCaddy
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.old_nodes }}
-  dependsOn:
-  - job: old-withdrawal
-    condition:
-      type: succeeded
-- name: old-certificates
-  steps:
-  - name: old-certificates-${{ self.member.node_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(self.member.node_id) }}
-      methodName: certificates
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-        node: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.old_nodes }}
-  dependsOn:
-  - job: old-caddy
-    condition:
-      type: succeeded
-- name: old-workload-lan
-  steps:
-  - name: old-workload-lan-${{ self.member.node_id }}-${{ self.member.route_id }}-${{
-      self.member.retire_router_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(self.member.node_id) }}
-      methodName: retireLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-        node: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.workloads }}
-    guard: ${{ !has(self.member.retire_firewall) }}
-  dependsOn:
-  - job: old-certificates
-    condition:
-      type: succeeded
-- name: old-firewall
-  steps:
-  - name: old-firewall-${{ self.member.node_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(self.member.node_id) }}
-      methodName: firewall
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-        node: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.old_nodes }}
-  dependsOn:
-  - job: old-workload-lan
-    condition:
-      type: succeeded
-- name: old-router-lan
-  steps:
-  - name: old-router-lan-${{ self.member.node_id }}
-    writes: true
-    target: ${{ "orbit-node-" + string(self.member.node_id) }}
-    labels:
-      node: ${{ string(self.member.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(self.member.node_id) }}
-      methodName: routerLan
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        target_node_id: ${{ self.member.node_id }}
-        node: ${{ self.member }}
-    forEach:
-      item: member
-      in: ${{ steps.inventory.outputs.old_nodes }}
-  dependsOn:
-  - job: old-firewall
-    condition:
-      type: succeeded
-- name: completion
-  steps:
+        noop: ${{ inputs.intent.cluster_router.noop }}
+        old_count: ${{ size(inputs.intent.cluster_router.old_nodes) }}
+        steps: ${{ steps }}
   - name: complete
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    target: orbit-node-209
     labels:
-      node: ${{ string(inputs.node_id) }}
+      node: '209'
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
     task:
       type: behavior
-      behaviorType: '@nckrtl/cluster-router'
-      behaviorName: ${{ "cluster-router-node-" + string(inputs.node_id) }}
-      methodName: finish
+      behaviorType: '@nckrtl/cluster-router-result'
+      behaviorName: ${{ "cluster-router-complete-" + run.id }}
+      methodName: complete
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  dependsOn:
-  - job: old-router-lan
-    condition:
-      type: succeeded
-- name: terminal-failure
-  dependsOn:
-  - job: completion
-    condition:
-      type: or
-      conditions:
-      - type: failed
-      - type: skipped
-  steps:
-  - name: report-native-failure
-    writes: true
-    target: ${{ "orbit-node-" + string(inputs.node_id) }}
-    labels:
-      node: ${{ string(inputs.node_id) }}
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: certificate-cluster-failure
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        kind: ${{ inputs.kind }}
-        node_id: ${{ inputs.node_id }}
-        run_id: ${{ run.id }}
+        stdout: ${{ steps.result.outputs.stdout }}

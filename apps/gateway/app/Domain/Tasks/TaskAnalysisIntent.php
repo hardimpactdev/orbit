@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskAnalysisData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -48,6 +49,7 @@ final readonly class TaskAnalysisIntent
 
         return $this->start->execute('tasks.analyze', 'task_group', $group->id, $instance->node_id, [
             ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
+            'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'checkout_path' => $instance->checkout_path, 'ssr_port' => $instance->ssr_port, 'repository' => $pin['repository'], 'branch' => $pin['branch'],
         ], $caller, $request);
     }

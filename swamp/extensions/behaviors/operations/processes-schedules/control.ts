@@ -17,7 +17,7 @@ const InstallArgs = DirectArgs.extend({
   kind: z.literal("schedule.create"),
   node_id: z.number().int().positive(),
 });
-const Kind = z.enum(["schedule.enable", "schedule.run", "schedule.destroy"]);
+const Kind = z.enum(["schedule.enable", "schedule.destroy"]);
 const Args = DirectArgs.extend({
   kind: Kind,
   node_id: z.number().int().positive(),
@@ -50,11 +50,6 @@ export async function localControl(
           ...Removal.parse(input),
           command,
         }, signal);
-      } else if (kind === "schedule.run") {
-        const { calendar: _calendar, desired: _desired, ...run } =
-          ScheduleIntent
-            .parse(input);
-        outcome = await invoke("schedule.run", { ...run, command }, signal);
       } else {
         // Replace a verified obsolete runner before activating its public timer.
         outcome = await invoke(
@@ -86,7 +81,7 @@ export function scheduleControl(
 ) {
   return {
     type: "@nckrtl/schedule-control",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
       install: {

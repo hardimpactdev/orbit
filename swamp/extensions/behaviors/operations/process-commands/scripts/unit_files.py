@@ -5,6 +5,7 @@ import json
 import os
 import re
 import stat
+import sys
 import tempfile
 import unicodedata
 from pathlib import Path
@@ -42,8 +43,11 @@ def installation(value):
 
 def material(value, admitted):
     # A single existing installation value or the existing per-Process batch map.
-    # Remove the vault environment before any child command.
-    data = json.loads(os.environ.pop("ORBIT_PROCESS_MATERIAL"))
+    # Core command/shell supplies env. Official SSH exec selects stdin explicitly.
+    # Remove the vault environment before any child command in either mode.
+    environment = os.environ.pop("ORBIT_PROCESS_MATERIAL", None)
+    raw = sys.stdin.read() if "--material-stdin" in sys.argv[1:] else environment
+    data = json.loads(raw)
     if isinstance(data, dict) and str(value["process_id"]) in data:
         data = data[str(value["process_id"])]["installation"]
     if not isinstance(data, dict) or data.get("runtime") != admitted["runtime"]:

@@ -196,7 +196,7 @@ Only a succeeded `tasks.check` with `outcome: passed`, the matching handoff chec
 
 #### Run a tracked repository script
 
-`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement, workspace locking and execution. The script does not create a check, agent turn, commit, or dependency record.
+`POST /api/v1/task-groups/{group}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
 
 `script` is a relative repository path with no empty, `.` or `..` components. It must name a regular executable tracked as executable at HEAD, with unchanged file content and no symlink in its path. The native step checks the executable against tracked HEAD, snapshots the whole workspace, and runs the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
 
@@ -204,9 +204,11 @@ Arguments are strings, not shell source. There is no caller command, environment
 
 Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
 
-Swamp runs the script synchronously on the task VM's exact Node worker. The Gateway does not acquire a workspace lease, dispatch a detached process or poll it. Native history owns step completion and recovery.
+Each task group has its own VM and workspace. The run intent carries the workspace path, and every step uses that path. Steps add no ownership tokens, leases or cross-step locks. Native history owns step completion and recovery.
 
-The VM keeps an operation-keyed execution marker: a completed replay returns the same bounded result; an interrupted execution is refused as `tasks.script_interrupted` and is never dispatched again under that key. An unavailable tracked executable fails as `tasks.script_unavailable`. Cancellation stops the command process group and waits for it to end before reporting cancellation. A script has a fixed one-hour limit. A new attempt requires a new operation key.
+Script and analysis runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Separate native steps validate the tracked entrypoint, capture workspace snapshots, execute the program and return public evidence. The Gateway records the terminal output through the shared subscriber; execution steps make no Gateway requests.
+
+Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
 ## Analyze an external group's repository
 
@@ -214,7 +216,7 @@ The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an
 
 `POST /api/v1/task-groups/{group}/analyze` starts the native `operation-task-analyze` workflow with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller-selected command, environment, executable, report path or model.
 
-The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer on that VM under the shared task-workspace model lock. The worker must already be ready. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
+The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer through official SSH from a worker on Node 209. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
 
 ##### Complete typed plan
 
@@ -239,11 +241,11 @@ Provision calls `analysis-base` in the existing task-check program. It finds the
 
 Analysis performs no fetch, merge, or base adoption. Use the successful provision operation's [public pin](#public-provision-identity) for `base`, never infer it from `starting_commit` or a later remote ref. This contract exposes no base-update path. Any separately authorized future base-update contract must keep old evidence and require a new plan revision and analysis. After handoff, the candidate HEAD is `check.commit`, not the check result's pre-commit `head`.
 
-Swamp verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots under its native workspace lock before execution and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
+Swamp verifies the base object and ancestry and takes fresh HEAD and whole-worktree snapshots before execution and after completion. The existing snapshot includes uncommitted and unignored untracked files without changing the real index; clean HEAD alone is insufficient. Pin repository identity, actual branch, Instance, Node, operation identity, and the fixed entrypoint's tracked content digest. Ignored caches are not candidate evidence. Reports and run metadata live outside candidate paths and must not alter the analyzed tree.
 
 ##### Fixed execution and complete report
 
-One native step runs the tracked regular executable `bin/task-analyze`, with no arguments and the admitted plan and candidate on stdin. The step pins its tracked digest and uses the operation ID to derive a stable execution identity. It runs as the task account in a transient systemd cgroup with no model or GitHub credentials. Missing tooling is unavailable. The Gateway runs no script, lease, wait or cancellation handler.
+One native step runs the tracked regular executable `bin/task-analyze`, with no arguments and the admitted plan and candidate on stdin. The step pins its tracked digest and uses the operation ID to derive a stable execution identity. It runs through the admitted SSH account with no model or GitHub credentials. Missing tooling is unavailable. The Gateway runs no script, lease, wait or cancellation handler.
 
 Orbit's repository adapter calls the existing `DocsImpact::report(base, paths)` with the complete flattened inventory once. The scanner still unions planned paths, actual tracked changes, and untracked files, retaining deletions and both rename endpoints and inspecting current and base surfaces. Keep its mappings and payload validation in the repository, not Gateway policy. Validate all existing report fields: `base`, `paths`, `impacted_pages` with every reason, `surfaces` with ownership and generator status, `surfaces_handled_by_generator`, `errors`, and `verdict`. Reuse the existing report unchanged, not a second scanner or replacement docs report model. Validate its base and path union against input and actual workspace. Generator checks run in check mode only, never write mode.
 
@@ -265,11 +267,11 @@ Stdout is exactly one strict UTF-8 JSON envelope:
 
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
-Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Stderr is only a separate bounded, redacted diagnostic tail. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
+Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not retained. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
 
 On a nonzero exit, the adapter can instead emit a bounded failure object on stdout: `{schema: 1, error: {code, required_bytes}}`. The only codes are `tasks.analysis_unavailable` with null `required_bytes`, and `tasks.analysis_report_too_large` with the full envelope's required byte count above 65536. These are failures, never report artifacts.
 
-The existing runner carries the complete bytes unchanged. Swamp validates the closed shape and types and retains the typed code and size after the cgroup stops. The [public failure result](#public-analysis-failure-metadata) carries this safe diagnostic without exception text or stderr. The report bound is unchanged.
+The existing runner carries the complete bytes unchanged. Swamp validates the closed shape and types and retains the typed code and size after the execution step completes. The [public failure result](#public-analysis-failure-metadata) carries this safe diagnostic without exception text or stderr. The report bound is unchanged.
 
 | Valid repository report | Analysis status |
 | --- | --- |
@@ -285,9 +287,9 @@ Native provenance contains `operation_id`, `group`, `subtask`, repository, branc
 
 ##### Replay, stop, and fencing
 
-Analysis uses the same native task-workspace model as turns, scripts and checks, so their workspace effects do not overlap. Swamp owns cancellation and the process lifetime. Cancellation stops the owned cgroup before a terminal result is reported.
+Analysis uses the group's VM and workspace path from the run intent, as scripts do. It adds no cross-step ownership or locking. Cancellation uses native Swamp cancel and official SSH session teardown; normal group cleanup or VM destruction removes any remaining remote processes.
 
-Same-key replay returns the existing Operation before mutable admission. The VM retains one exact local result for that operation. A lost result reply reuses those bytes without another scanner invocation. An interrupted attempt without a saved result is refused; a new attempt needs a new operation key. No Gateway lease, tombstone, polling or execution checkpoint is involved.
+Same-key replay returns the existing Operation before mutable admission. Native history retains each completed step and its output. If evidence collection fails after execution succeeds, native resume reuses that execution output. An interrupted execution follows native failure and resume behavior. No Gateway lease, tombstone, polling or execution checkpoint is involved.
 
 Changing the plan, base, repository, entrypoint, candidate or workspace invalidates its use for a new turn. The native turn checks the complete artifact and fresh workspace identity before sending to Pi. Prior evidence stays immutable.
 
@@ -307,7 +309,7 @@ A validated nonzero adapter failure retains exactly `{schema: 1, error: {code, r
 
 If Swamp detects stdout overflow while retaining a bounded prefix, the required size is null. Strings, booleans, fractions, non-finite numbers, unknown codes, extra fields and zero-exit failure objects are invalid. Malformed or mismatched evidence fails with `tasks.analysis_report_invalid`. A known nonzero exit without a usable report fails with `tasks.analysis_failed`. Neither code is inferred from stderr or exception text.
 
-The worker saves the validated terminal result before returning it. Gateway result projection retains those bytes and metadata in the Operation. Repeated reads, keyed replay and VM cleanup preserve it. Cancellation reports cancellation after the local stop; it does not fabricate a failed report.
+Native history saves the validated result. The shared Gateway terminal reader projects those bytes and metadata into the Operation. Repeated reads, keyed replay and VM cleanup preserve it. A cancelled run reports cancellation without fabricating a report or proving that remote descendants stopped.
 
 | Condition | Response or terminal evidence |
 | --- | --- |
@@ -320,11 +322,11 @@ The worker saves the validated terminal result before returning it. Gateway resu
 | Envelope overflow | Failed `tasks.analysis_report_too_large`; no partial artifact |
 | Valid repository findings | `ready`, `action_required` or `blocked`; semantic meaning stays repository-owned |
 | Candidate movement during a valid report | Unusable `changed` result retained for inspection |
-| Interrupted attempt without a saved result | Failed `tasks.analysis_interrupted`; a new attempt needs a new key |
+| Interrupted execution | Native failed or cancelled run; use native resume for recovery |
 | Foreign, nonterminal or unusable analysis reference on a turn | HTTP 422 `tasks.analysis_not_usable` |
 | Stale evidence or prompt overflow before a Pi send | Failed `tasks.analysis_stale` or `tasks.analysis_prompt_too_large`; no send |
 
-The request and generic Operation read APIs stay unchanged. CLI JSON, PHP SDK and MCP carry the same result. Repository adapter tests keep payload semantics local; native filesystem and process tests cover execution, complete bytes, stale candidates, replay and cancellation.
+The request and generic Operation read APIs stay unchanged. CLI JSON, PHP SDK and MCP carry the same result. Repository adapter tests keep payload semantics local; native filesystem and workflow tests cover execution, complete bytes, stale candidates, result privacy and resume.
 
 #### Run an external turn
 
@@ -748,7 +750,9 @@ The group execution lock waits at most five seconds for every waiting caller, in
 
 ## Workspace lease
 
-One durable workspace lease coordinates every Orbit actor that reads a task checkout for a verdict or writes it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
+This section describes the retained lease consumers. Script and analysis operations use the native SSH contract above; these lease and systemd supervision rules do not apply to them.
+
+One durable workspace lease coordinates the retained actors that read a task checkout for a verdict or write it. The lease belongs to the Instance. Implementer and reviewer turns, candidate and handoff checks, deliverable commands, workspace fast-forwards, publication, settlement, and teardown use the same lease. The group execution lock still serializes admission and completion authorization; it does not replace workspace ownership. Callers in that group refuse promptly while completion authorization is busy. Durable scheduler workflows retry, and a failed synchronous request leaves no unconsumed workspace waiter.
 
 A busy workspace queues the next actor only when its owner has a durable workflow that will retry it. The merge-ready gate uses GitHub state and recorded review evidence, so it does not acquire a workspace lease or join its queue. Waiters retain their order across Gateway restarts. Queued intents retain the subtask phase and attempt they serve. Cancellation or a changed phase or assistance request withdraws an obsolete queued intent; it never discards a held actor.
 

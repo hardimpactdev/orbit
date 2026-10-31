@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
@@ -38,7 +39,8 @@ final readonly class WebSocketDnsTarget
     /** The site's Caddy build succeeded; DNS publication may still be pending. */
     public function isServing(int $nodeId): bool
     {
-        return $this->settings->get($this->scope($nodeId), self::SettingKey) !== null;
+        return app(RouteRenderContext::class)->roleCertificatePublished($nodeId, WebSocketCaddySiteSource::CertificateSlug)
+            ?? ($this->settings->get($this->scope($nodeId), self::SettingKey) !== null);
     }
 
     /** Before the build that withdraws the site, or when the Node can no longer be reached. */

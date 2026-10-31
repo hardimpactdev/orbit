@@ -1,0 +1,11 @@
+manifestVersion: 1
+name: '@nckrtl/schedule-run-scripts'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: One-action Schedule run checks and public asset metadata.
+behaviors:
+  - operations/schedule-run/assets.ts
+additionalFiles:
+  - scripts/account.py
+  - scripts/command_hash.py
