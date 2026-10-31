@@ -847,3 +847,64 @@ Deno.test("canonical proxy envelope preserves remote shell control and agent enf
     );
   }
 });
+Deno.test("Python command bindings use execution order and immutable lexical captures", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['sleep','30']\nsubprocess.run(cmd)\ncmd=['echo','done']\n",
+      "import subprocess\nbase=['sleep','30']\ncmd=base\nbase=['echo','done']\nsubprocess.run(cmd)\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "custom-control"
+      ),
+      source,
+    );
+    assert(
+      agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory).some(
+        (f) => f.rule === "custom-control",
+      ),
+      source,
+    );
+  }
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute(cmd):\n    subprocess.run(cmd)\nexecute(['sleep','30'])\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nfor cmd in [['sleep','30']]:\n    pass\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ncmd,other=['sleep','30'],None\nexecute()\n",
+    ]
+  ) {
+    assert(
+      agentPythonFindings(file, source, inventory).some((f) =>
+        f.rule === "unknown-command"
+      ),
+      source,
+    );
+  }
+});
+
+Deno.test("Python cross-scope and walrus writes invalidate captured command provenance", () => {
+  for (
+    const source of [
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nexecute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef execute():\n    subprocess.run(cmd)\nif (cmd := ['sleep','30']):\n    execute()\n",
+      "import subprocess\ncmd=['echo','safe']\ndef change():\n    global cmd\n    cmd=['sleep','30']\nchange()\nsubprocess.run(cmd)\n",
+      "import subprocess\ndef outer():\n    cmd=['echo','safe']\n    def execute():\n        subprocess.run(cmd)\n    def change():\n        nonlocal cmd\n        cmd=['sleep','30']\n    change()\n    execute()\nouter()\n",
+    ]
+  ) {
+    for (
+      const findings of [
+        agentPythonFindings(file, source, inventory),
+        agentShellFindings(file, `python3 <<'PY'\n${source}PY`, inventory),
+      ]
+    ) {
+      assert(
+        findings.some((finding) =>
+          finding.rule === "unknown-command" ||
+          finding.rule === "custom-control"
+        ),
+        source,
+      );
+    }
+  }
+});
