@@ -24,6 +24,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:list`](#orbit-nodelist) | List the Nodes. |
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
+| [`node:migrate-docker`](#orbit-nodemigrate-docker) | Plan or run a Docker provider migration during a maintenance window. |
 | [`node:rename`](#orbit-noderename) | Change the name of a Node. |
 | [`node:settings`](#orbit-nodesettings) | Set the apps root or task VM host configuration of a Node. |
 | [`node:wireguard-key`](#orbit-nodewireguard-key) | Set an unmanaged Node's WireGuard public key and reconverge the hub. |
@@ -150,6 +151,25 @@ The Gateway returns HTTP 202 with an Operation for every admitted target. The CL
 ```bash
 orbit node:converge beast
 ```
+
+## orbit node:migrate-docker
+
+Plan or run a migration from Docker CE to the recipe's Ubuntu `docker.io`, or restore container restart policies after manual CE recovery. This is a maintenance action that can stop containers. Follow the [Docker migration procedure](/reference/docker-provider-migration) before changing a Node.
+
+```bash
+orbit node:migrate-docker <node> [--dry-run] [--yes] [--fallback] [--restore-policies] [--recipe=RECIPE] [--idempotency-key=KEY] [--json]
+```
+
+`node` accepts an ID or exact Node name. The command records and follows one native Operation.
+
+| Option | Meaning |
+| --- | --- |
+| `--dry-run` | Read the migration plan without changing the Node. |
+| `--yes` | Confirm migration or policy recovery without a prompt. Required for mutations in noninteractive and JSON modes. |
+| `--fallback` | Authorize a fresh Docker engine if the recorded metadata is unreadable. |
+| `--restore-policies` | Restore policies after manual CE recovery. Cannot be combined with `--dry-run` or `--fallback`. |
+| `--recipe=RECIPE` | Require the exact serving recipe identity. |
+| `--idempotency-key=KEY` | Retry the same Operation admission after a lost response. |
 
 ## orbit node:rename
 

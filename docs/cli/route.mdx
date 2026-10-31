@@ -30,10 +30,10 @@ Every command accepts `--json`. Route, Project, Instance, and Cluster arguments 
 Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
 
 ```bash
-orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]
-orbit route:create <domain> --node=NODE --upstream=URL
-orbit route:create <domain> --node=NODE --process=PROCESS
-orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=public
+orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH] [--idempotency-key=KEY]
+orbit route:create <domain> --node=NODE --upstream=URL [--idempotency-key=KEY]
+orbit route:create <domain> --node=NODE --process=PROCESS [--idempotency-key=KEY]
+orbit route:create <domain> --process=PROCESS [--ingress=NODE] --publication=public [--idempotency-key=KEY]
 ```
 
 | Argument | Required | Meaning |
@@ -105,7 +105,7 @@ orbit route:show <route>
 Change the domain or the publication of an explicit Project Route, or the web root of a Route. Give at least one option. Send `--web-root` on its own.
 
 ```bash
-orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH]
+orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH] [--idempotency-key=KEY]
 ```
 
 | Option | Meaning |
@@ -146,7 +146,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 Set the Instance target, or send a complete production target set.
 
 ```bash
-orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]...
+orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--idempotency-key=KEY]
 ```
 
 | Argument | Required | Meaning |
@@ -172,7 +172,7 @@ Without pool options, the command sets one target. With them, it sends the compl
 Clear the target and keep the Route, its domain, scope, and publication.
 
 ```bash
-orbit route:target:unset <route> [--yes]
+orbit route:target:unset <route> [--yes] [--idempotency-key=KEY]
 ```
 
 Clearing an empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active Instance without a Route. On a [replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated), it returns `route.target_conflict` and names `route:destroy`.
@@ -182,7 +182,7 @@ Clearing an empty Route returns it unchanged. The Gateway returns `route.target_
 Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw the PHP-FPM pools of its development Instances. See [Remove a Route](/reference/routes#remove-a-route). On a `pending` or `failed` replacement Route that never activated, it abandons the domain change and keeps the Route it would replace. See [Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated).
 
 ```bash
-orbit route:destroy <route> [--yes] [--offline] [--json]
+orbit route:destroy <route> [--yes] [--offline] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
