@@ -1,5 +1,6 @@
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { dirname, resolve } from "node:path";
+import { effectivePlacement, selectsNode } from "./workflow-placement.ts";
 
 type Map = Record<string, unknown>;
 const object = (v: unknown): Map =>
@@ -124,14 +125,7 @@ for (const path of await files(`${root}/workflows`)) {
   if (!path.endsWith(".yaml")) continue;
   const workflow = object(parse(await Deno.readTextFile(path)));
   const walk = async (value: Map, inherited: Map) => {
-    const placement = {
-      ...inherited,
-      ...Object.fromEntries(
-        ["target", "labels"].filter((k) => k in value).map(
-          (k) => [k, value[k]],
-        ),
-      ),
-    };
+    const placement = effectivePlacement([value, inherited]);
     const labels = object(placement.labels);
     // Migration pools retain their old control-worker identity until their owning cutover.
     const node = typeof placement.target === "string" &&
@@ -140,11 +134,11 @@ for (const path of await files(`${root}/workflows`)) {
         (!("pool" in labels) || typeof placement.target === "string");
     if (node) {
       if (
-        typeof placement.target !== "string" || !("node" in labels) ||
-        typeof labels.node !== "string"
+        placement.target !== undefined && typeof placement.target !== "string" ||
+        "node" in labels && typeof labels.node !== "string"
       ) {
         errors.push(
-          `Node placement requires token target AND string node label: ${path}`,
+          `Node placement requires a token target or string node label: ${path}`,
         );
       }
       if (typeof placement.target === "string") {
@@ -155,8 +149,8 @@ for (const path of await files(`${root}/workflows`)) {
           ? /string\((.+)\)\s*\}\}$/s.exec(placement.target)
           : null;
         if (
-          literal && labels.node !== literal[1] ||
-          expression &&
+          literal && !selectsNode(placement, literal[1]) ||
+          expression && "node" in labels &&
             labels.node !== "${{ string(" + expression[1] + ") }}"
         ) errors.push(`Node target and label disagree: ${path}`);
       }
@@ -189,6 +183,7 @@ for (const path of await files(`${root}/workflows`)) {
           "@swamp/ssh",
           "@swamp/cfgmgmt/directory",
           "@swamp/cfgmgmt/file",
+          "@swamp/cfgmgmt/exec",
           "@swamp/cfgmgmt/firewall",
           "@swamp/cfgmgmt/systemd",
         ].includes(String(type))

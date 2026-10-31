@@ -1,7 +1,7 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { stringify } from "jsr:@std/yaml@1.0.12";
 
-Deno.test("placement lint accepts matching nested selectors and refuses a foreign Node label", async () => {
+Deno.test("placement lint accepts single inherited selectors and matching dual selectors", async () => {
   const root = await Deno.makeTempDir();
   try {
     for (
@@ -39,6 +39,34 @@ Deno.test("placement lint accepts matching nested selectors and refuses a foreig
       stringify(workflow),
     );
     assertEquals((await check()).success, true);
+    for (const scope of ["workflow", "job", "step"]) {
+      for (const selector of ["target", "labels"]) {
+        const single = structuredClone(workflow) as Record<
+          string,
+          unknown
+        >;
+        delete single.target;
+        delete single.labels;
+        const job = (single.jobs as Record<string, unknown>[])[0];
+        const step = (job.steps as Record<string, unknown>[])[0];
+        const placement = scope === "workflow"
+          ? single
+          : scope === "job"
+          ? job
+          : step;
+        placement[selector] = workflow[selector as "target" | "labels"];
+        await Deno.writeTextFile(
+          `${root}/workflows/fixture.yaml`,
+          stringify(single),
+        );
+        const result = await check();
+        assertEquals(
+          result.success,
+          true,
+          `${scope}/${selector}: ${new TextDecoder().decode(result.stderr)}`,
+        );
+      }
+    }
     workflow.labels.node = "${{ string(inputs.node_id) }}";
     await Deno.writeTextFile(
       `${root}/workflows/fixture.yaml`,
@@ -148,7 +176,7 @@ const checker = import.meta.resolve("./lint-node-workers.ts");
 
 async function check(
   task: Record<string, unknown>,
-  labels: Record<string, string> = { node: "209" },
+  labels: Record<string, string> | null = { node: "209" },
   guard?: string,
 ) {
   const root = await Deno.makeTempDir({ prefix: "node-worker-lint-" });
@@ -164,7 +192,7 @@ async function check(
           steps: [{
             name: "action",
             target: "orbit-node-209",
-            labels,
+            ...(labels === null ? {} : { labels }),
             task,
             ...(guard === undefined ? {} : { guard }),
           }],
@@ -231,6 +259,33 @@ Deno.test("native assertions still require expression, static message and Node p
 
 Deno.test("reviewed inline native shell is accepted on the matching Node", async () => {
   assertEquals((await check(shell)).success, true);
+});
+
+Deno.test("target-only Node 209 accepts native shell and exact official cfgmgmt exec", async () => {
+  for (
+    const task of [
+      shell,
+      {
+        type: "model_method",
+        modelType: "@swamp/cfgmgmt/exec",
+        methodName: "apply",
+      },
+      {
+        type: "behavior",
+        behaviorType: "@swamp/cfgmgmt/exec",
+        methodName: "apply",
+      },
+    ]
+  ) {
+    const result = await check(task, null);
+    assertEquals(result.success, true, result.diagnostic);
+  }
+  const unrelated = await check({
+    ...shell,
+    behaviorType: "@swamp/cfgmgmt/custom-exec",
+  }, null);
+  assertEquals(unrelated.success, false);
+  assertStringIncludes(unrelated.diagnostic, "not third-party extensions");
 });
 
 Deno.test("native shell keeps exact Node placement checks", async () => {

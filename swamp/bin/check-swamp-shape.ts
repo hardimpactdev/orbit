@@ -2,6 +2,7 @@ import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
+import { effectivePlacement, selectsNode } from "./workflow-placement.ts";
 import {
   movedLimits,
   proveProxyHttpMove,
@@ -1510,14 +1511,7 @@ export function analyzeYaml(
     const job = object(jobs[Number(path[1])]);
     const steps = Array.isArray(job.steps) ? job.steps : [];
     const step = object(steps[Number(path[3])]);
-    // Core merges each placement field independently: step, job, workflow.
-    const scopes = [step, job, data];
-    const target = scopes.find((scope) => scope.target !== undefined)?.target;
-    const labels = scopes.find((scope) => scope.labels !== undefined)?.labels;
-    // The native scheduler uses target before considering labels.
-    return target !== undefined
-      ? target === "orbit-node-209"
-      : object(labels).node === "209";
+    return selectsNode(effectivePlacement([step, job, data]), "209");
   };
   // Official @swamp/ssh 2026.10.23.1 consumes these transport fields natively.
   const sshIdentity = (path: string[]) => {
