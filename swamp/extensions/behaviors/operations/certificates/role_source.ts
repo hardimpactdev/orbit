@@ -9,7 +9,8 @@ export function roleSection(
     )[0];
 }
 export const roleHostProgram = roleSection(source, "HOST").replace(
-    "from role_paths import KEY_ROOT, role_paths\n", "",
+    "from role_paths import KEY_ROOT, role_paths\n",
+    "",
 );
 export const rolePairProgram = roleSection(source, "PAIR");
 export type ExtensionFile = (path: string) => string | Promise<string>;
