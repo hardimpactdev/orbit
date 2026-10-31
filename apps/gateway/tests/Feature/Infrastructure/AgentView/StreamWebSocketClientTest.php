@@ -121,6 +121,26 @@ describe(StreamWebSocketClient::class, function (): void {
         }
     });
 
+    it('bounds the native reader at 8 MiB even when a peer claims a larger frame', function (): void {
+        $server = ScriptedWebSocketServer::start('huge-native');
+
+        try {
+            $client = app(WebSocketClient::class);
+            $client->connect($server->endpoint(), 1.0);
+            $deadline = microtime(true) + 1.0;
+            $messages = [];
+            while ($client->isConnected() && microtime(true) < $deadline) {
+                array_push($messages, ...$client->receive(0.1));
+            }
+
+            expect($messages)->toBe([]);
+            expect($client->isConnected())->toBeFalse();
+            expect($server->waitFor('closed='))->toBe('closed=yes');
+        } finally {
+            $server->stop();
+        }
+    });
+
     it('treats a connection reset as a closed connection', function (): void {
         $server = ScriptedWebSocketServer::start('reset');
 
