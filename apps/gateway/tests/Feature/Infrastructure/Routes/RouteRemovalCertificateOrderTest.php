@@ -15,7 +15,6 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
-use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -37,7 +36,6 @@ use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentContract;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -57,6 +55,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
+use App\Infrastructure\Routes\RouteRemovalResidueCleaner;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -289,7 +288,7 @@ describe('Route removal certificate order', function (): void {
 
         expect($artifact->applies($worker))->toBeTrue()
             ->and($artifact->applies($router))->toBeFalse()
-            ->and($artifact->apply($worker))->toBeTrue()
+            ->and(app(RouteRemovalResidueCleaner::class)->clean($worker))->toBeTrue()
             ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
             ->and($this->php->converged)->toBe(['worker' => []])
             ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
@@ -297,30 +296,6 @@ describe('Route removal certificate order', function (): void {
             ->and($artifact->applies($worker))->toBeFalse()
             ->and($this->nodes->removedWhileNamed)->toBe([])
             ->and($this->nodes->validates('10.44.0.30'))->toBeTrue();
-    });
-
-    it('skips a failed residue cleanup without failing the converge and retries it next time', function (): void {
-        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
-        $this->nodes->down = ['10.44.0.7'];
-        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->completeRoute()->assertOk();
-        $footprint = new NodeFootprint(app(AgentDelivery::class), [app(RouteResidueFootprintArtifact::class)]);
-        // The Node answers the probe, but its Caddy publish still fails.
-        $this->nodes->down = [];
-        $this->nodes->failCaddy = '10.44.0.7';
-
-        $first = $footprint->converge($this->beast);
-
-        expect($first->skipped['route-residue']['reason'])->toBe(RouteResidueFootprintArtifact::CleanupFailed)
-            ->and(RouteRemovalResidue::query()->where('node_id', $this->beast->id)->sole()->attempts)->toBe(1)
-            ->and($footprint->drifted($this->beast))->toBeTrue();
-
-        $this->nodes->failCaddy = null;
-        $second = $footprint->converge($this->beast);
-
-        expect($second->skipped)->toBe([])
-            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
-            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
-            ->and($footprint->drifted($this->beast))->toBeFalse();
     });
 
     it('keeps the certificate and a retryable Route when the Caddy build fails', function (): void {
@@ -849,7 +824,7 @@ it('withdraws a public Process site on the Ingress and reconciles its firewall w
         expect($this->nodes->serves('10.44.0.4', 'sync.example.com'))->toBeTrue()
             ->and(RouteRemovalResidue::query()->exists())->toBeTrue();
         $this->nodes->down = [];
-        app(RouteResidueFootprintArtifact::class)->apply($ingress);
+        app(RouteRemovalResidueCleaner::class)->clean($ingress);
         expect(RouteRemovalResidue::query()->exists())->toBeFalse();
     } else {
         $this->deleteJson('/api/v1/routes/'.$id)->completeRoute()->assertOk();

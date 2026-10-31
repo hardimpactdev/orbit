@@ -6,12 +6,21 @@ use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'executor-safety', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
@@ -78,19 +87,19 @@ it('creates and reuses a Services deploy helper without admitting an Operation',
     $this->assertDatabaseCount('operations', 0);
 });
 
-it('fences an unconverted start if its Node becomes an executor before dispatch', function (): void {
+it('fences an unconverted restart if its Node becomes an executor before dispatch', function (): void {
     app()->instance(AgentCommandRunner::class, Mockery::mock(AgentCommandRunner::class));
-    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'start');
+    $operation = app(ProcessOperationAdmission::class)->execute($this->process, 'restart');
     config(['dependency_detection.services_node_id' => $this->node->id]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.start', 'worker' => 'safety-worker'])->assertOk();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'process.restart', 'worker' => 'safety-worker'])->assertOk();
 
     $this->postJson('/api/v1/operation-executor/'.$operation->id.'/run', [
-        'worker' => 'safety-worker', 'key' => 'process-start', 'transport' => 'agent', 'name' => 'process.control',
-        'input' => ['process_id' => $this->process->id, 'runtime' => 'systemd', 'name' => $operation->input['name'], 'on_demand' => false, 'operation' => 'start'],
+        'worker' => 'safety-worker', 'key' => 'process-restart', 'transport' => 'agent', 'name' => 'process.control',
+        'input' => ['process_id' => $this->process->id, 'runtime' => 'systemd', 'name' => $operation->input['name'], 'on_demand' => false, 'operation' => 'restart'],
     ])->assertConflict()->assertJsonPath('error.code', 'process.executor_dependency');
 
     expect($this->process->refresh()->desired_state->value)->toBe('running');
-    expect($operation->refresh()->state['executor_runs']['process-start']['started'] ?? false)->toBeFalse();
+    expect($operation->refresh()->state['executor_runs']['process-restart']['started'] ?? false)->toBeFalse();
 });
 
 it('also protects Instance-owned executor dependencies at child input admission', function (): void {

@@ -106,6 +106,14 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     /** @return array{configuration: string, certificate: string, unit: string, checkouts: list<string>} */
     public function configuration(Node $node): array
     {
+        return $this->configurationForRoot($node, $this->instanceRoot($node));
+    }
+
+    /** Pure template for an admitted root; null closes home access until the Node resolves it.
+     * @return array{configuration:string,certificate:string,unit:string,checkouts:list<string>}
+     */
+    public function configurationForRoot(Node $node, ?string $root): array
+    {
         $this->guardLinuxPlatform($node);
         $gatewayAddress = $this->gatewayAddress();
 
@@ -113,7 +121,6 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             throw new ResourceOperationException('agent.install_failed', 'The active Gateway has no managed WireGuard address.', 409);
         }
 
-        $root = $this->instanceRoot($node);
         $configuration = "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"{$gatewayAddress}\"\n";
         if (app(NodeWorkerRollout::class)->allows($node)) {
             $configuration .= "[swamp_worker]\nnode_id = {$node->id}\nuser = ".json_encode($node->user, JSON_THROW_ON_ERROR)."\n";
