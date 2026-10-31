@@ -226,7 +226,9 @@ Prometheus stays unpublished. Grafana's datasource proxy reuses the publication 
 
 `metrics.reconcile` records the complete fleet and starts one native Swamp DAG. Each Node runs its own exporter, service and Caddy stages. The Gateway records the native result without reconstructing execution proofs. The former PHP fleet orchestrator and all polled Metrics child registrations are deleted. Unported parent commands return `operation.kind_unavailable`.
 
-Admission retains every selected Node, including vpn1 and usexit18. Each command step uses that Node's exact worker target and label. Logical proxy Nodes require proven support for native command placement; an older TypeScript transport proof does not authorize built-in shell execution. Missing workers fail before snapshots or host changes. The Gateway supplies the complete public fleet and publication intent when it starts the run. The existing Grafana credential reaches only owner-placed command steps through a named Swamp vault execution copy. Steps do not fetch intent or post results to the Gateway. The Gateway records native terminal status and the selected public result output.
+Admission retains every selected Node, including vpn1 and usexit18. Each command step uses that Node's exact worker target and label. Logical proxy Nodes require proven support for native command placement; an older TypeScript transport proof does not authorize built-in shell execution. Missing workers fail before snapshots or host changes.
+
+The Gateway supplies the complete public fleet and publication intent when it starts the run. The existing Grafana credential reaches only owner-placed command steps through a named Swamp vault execution copy. Steps do not fetch intent or post results to the Gateway. The Gateway records native terminal status and the selected public result output.
 
 Caddy publication follows fresh desired state. Exporter, FPM and service snapshots can restore local runtime. Recovery does not claim to restore a Caddy snapshot or republish Caddy.
 

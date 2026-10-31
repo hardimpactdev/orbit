@@ -22,6 +22,7 @@ final readonly class MetricsFleetProjection implements DirectOperationProjection
 
     public function apply(Operation $operation, array $data): Operation
     {
-        return $this->direct->project($operation, $data, ValidatedData::object($data['result'] ?? []));
+        return $this->direct->project($operation, $data, array_intersect_key(ValidatedData::object($data['result'] ?? []),
+            array_flip(['ready', 'verified_node_ids', 'runtime_committed', 'error_code'])));
     }
 }

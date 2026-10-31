@@ -24,7 +24,7 @@ final readonly class MetricsFleetWorkflowIntent
                 throw new ResourceOperationException('metrics.no_worker', 'Every Metrics participant requires its exact worker.', 409);
             }
             if ($member['caddy_managed']) {
-                $publication = CaddyPublicationPlan::forNode(Node::query()->findOrFail($member['node_id']));
+                $publication = CaddyPublicationPlan::forNode(Node::query()->findOrFail(ValidatedData::integer($member['node_id'])));
                 if (isset($publication['error_code'])) {
                     throw new ResourceOperationException('caddy.render_failed', 'The admitted Metrics publication cannot be rendered.', 409);
                 }
