@@ -164,6 +164,7 @@ jobs:
         - env
         - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
         - /usr/bin/python3
+        - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/request.py" }}
         sudo: true
     target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
@@ -270,6 +271,7 @@ jobs:
         - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
         - ${{ "ORBIT_CERTIFICATE_SIGNED=" + steps["signed-result"].outputs.signed_json }}
         - /usr/bin/python3
+        - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/publish.py" }}
         sudo: true
     target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
@@ -293,6 +295,7 @@ jobs:
         - env
         - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
         - /usr/bin/python3
+        - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/trust.py" }}
         sudo: true
     target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
@@ -341,6 +344,7 @@ jobs:
         - ${{ "ORBIT_CERTIFICATE_INPUT=" + steps.assets.outputs.input_json }}
         - ${{ "ORBIT_CERTIFICATE_EXPECT_PRESENT=" + "true" }}
         - /usr/bin/python3
+        - -B
         - ${{ "/tmp/orbit-certificate-" + run.id + "/scripts/inspect.py" }}
         sudo: true
     target: ${{ "orbit-node-" + string(inputs.intent.control_node_id) }}
