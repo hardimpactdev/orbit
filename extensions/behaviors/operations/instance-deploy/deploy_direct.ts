@@ -91,16 +91,6 @@ export function deployDirect(ports: Ports = {}) {
               ctx,
             );
           const gateway = new GatewayOperation(http, args);
-          const row = z.object({
-            id: z.literal(args.operation_id),
-            kind: z.literal(args.kind),
-            node_id: z.literal(args.node_id),
-            status: z.string(),
-            input: z.object({ instance_id: z.number().int().positive() }),
-          }).parse(await gateway.read());
-          if (["succeeded", "failed", "cancelled"].includes(row.status)) {
-            return { status: row.status };
-          }
           const stored = await ctx.readResource(
             `execution-${args.operation_id}-${args.run_id}`,
           );
@@ -120,7 +110,6 @@ export function deployDirect(ports: Ports = {}) {
             finished_at: at,
             error_code: "deployment.interrupted",
             result: {
-              instance_id: row.input.instance_id,
               failed_step: "native_execution",
             },
           });

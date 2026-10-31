@@ -6,7 +6,13 @@ import {
   Globals as SharedGlobals,
 } from "../_lib/direct.ts";
 import { certificateActions } from "./actions.ts";
-import { type CertificateCaVault, signCertificateBatch } from "./signing.ts";
+import {
+  type CertificateCaVault,
+  signCertificateBatch,
+  SigningLeaf,
+} from "./signing.ts";
+import { RoleLeaf } from "./role-input.ts";
+import { roleCertificateActions } from "./role-actions.ts";
 import {
   Applied,
   Leaf,
@@ -69,6 +75,7 @@ export function certificates(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   actions = certificateActions(),
   signBatch = signCertificateBatch,
+  roleActions = roleCertificateActions(),
 ) {
   const custody = (ctx: Context): CertificateCaVault => {
     if (
@@ -103,7 +110,7 @@ export function certificates(
   });
   return {
     type: "@nckrtl/certificates",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     resources: {
       requests: {
@@ -149,6 +156,47 @@ export function certificates(
       },
     },
     methods: {
+      roleRequest: {
+        description:
+          "Prepare a fixed role pair key locally and return only its public CSR",
+        arguments: Args.extend({ leaf: RoleLeaf }),
+        execute: async (
+          args: ArgsType & { leaf: z.infer<typeof RoleLeaf> },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          const request = await roleActions.request(args.leaf, ctx.signal);
+          if ("error_code" in request) throw new Error(request.error_code);
+          return output(ctx, "request", request);
+        },
+      },
+      rolePublish: {
+        description:
+          "Publish a signed fixed role pair using only the key on this effect Node",
+        arguments: Args.extend({
+          leaf: RoleLeaf,
+          request: Request,
+          signed: Signed,
+        }),
+        execute: async (
+          args: ArgsType & {
+            leaf: z.infer<typeof RoleLeaf>;
+            request: z.infer<typeof Request>;
+            signed: z.infer<typeof Signed>;
+          },
+          ctx: Context,
+        ) => {
+          target(args, args.leaf);
+          const applied = await roleActions.publish(
+            args.leaf,
+            args.request,
+            args.signed,
+            ctx.signal,
+          );
+          if ("error_code" in applied) throw new Error(applied.error_code);
+          return output(ctx, "applied", applied);
+        },
+      },
       requestAll: {
         description: "Request all leaves placed on one admitted participant",
         arguments: Args.extend({ leaves: z.array(Leaf).max(256) }),
@@ -180,14 +228,14 @@ export function certificates(
         description:
           "Sign admitted public leaf requests in the control worker using Swamp vault custody",
         arguments: Args.extend({
-          leaves: z.array(Leaf).max(256),
+          leaves: z.array(SigningLeaf).max(256),
           requests: z.array(z.array(RequestRecord).max(256)).max(
             256,
           ),
         }),
         execute: async (
           args: z.infer<typeof Args> & {
-            leaves: z.infer<typeof Leaf>[];
+            leaves: z.infer<typeof SigningLeaf>[];
             requests: z.infer<typeof RequestRecord>[][];
           },
           ctx: Context,
@@ -210,10 +258,10 @@ export function certificates(
       sign: {
         description:
           "Sign one public request in the control worker without exporting CA material",
-        arguments: Args.extend({ leaf: Leaf, request: Request }),
+        arguments: Args.extend({ leaf: SigningLeaf, request: Request }),
         execute: async (
           args: z.infer<typeof Args> & {
-            leaf: z.infer<typeof Leaf>;
+            leaf: z.infer<typeof SigningLeaf>;
             request: z.infer<typeof Request>;
           },
           ctx: Context,

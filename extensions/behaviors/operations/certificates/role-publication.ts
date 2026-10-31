@@ -8,7 +8,7 @@ import ctypes, secrets
 OWNER_UID=0
 class CertificateRefusal(Exception): pass
 def certificate_scope(raw):
-    if not re.fullmatch(r'/etc/caddy/orbit-[a-z][a-z0-9-]{0,63}-cert-current',raw): raise CertificateRefusal('caddy.certificate_input_invalid')
+    if not re.fullmatch(r'/etc/caddy/orbit-(?:[a-z][a-z0-9-]{0,63}-)?cert-current',raw): raise CertificateRefusal('caddy.certificate_input_invalid')
     return ROOT/Path(raw).name
 def certificate_names(cert,key): return re.fullmatch(r'[a-z][a-z0-9_-]{0,63}\.pem',cert) is not None and key==cert[:-4]+'.key'
 def certificate_parents():
@@ -20,9 +20,19 @@ def certificate_parents():
 def previous_pair(path,gid):
     if not exists(path): return None
     meta=path.lstat()
+    if stat.S_ISLNK(meta.st_mode):
+        if meta.st_uid!=OWNER_UID: raise CertificateRefusal('caddy.certificate_unsafe')
+        versions=path.name.removesuffix('-current')+'-versions'
+        target=os.readlink(path)
+        match=re.fullmatch('/etc/caddy/'+re.escape(versions)+r'/([a-f0-9]{1,64})',target)
+        if match is None: raise CertificateRefusal('caddy.certificate_unsafe')
+        parent=ROOT/versions;meta=parent.lstat()
+        if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=OWNER_UID or meta.st_gid!=gid or stat.S_IMODE(meta.st_mode)!=0o750: raise CertificateRefusal('caddy.certificate_unsafe')
+        path=parent/match[1];meta=path.lstat()
     if not stat.S_ISDIR(meta.st_mode) or meta.st_uid!=OWNER_UID or meta.st_gid!=gid or stat.S_IMODE(meta.st_mode)!=0o750: raise CertificateRefusal('caddy.certificate_unsafe')
     names=sorted(p.name for p in path.iterdir())
-    if len(names)!=2 or not certificate_names(names[1],names[0]): raise CertificateRefusal('caddy.certificate_unsafe')
+    pair=[name for name in names if name!='root-ca.pem']
+    if len(pair)!=2 or len(names) not in (2,3) or not certificate_names(pair[1],pair[0]): raise CertificateRefusal('caddy.certificate_unsafe')
     result={}
     for name in names:
         meta=(path/name).lstat()
@@ -56,12 +66,13 @@ def role_certificate(payload):
     if payload['operation']=='remove' and not exists(current): return {}
     gid=grp.getgrnam('caddy').gr_gid;previous=previous_pair(current,gid)
     if payload['operation']=='remove':
-        if previous is not None: shutil.rmtree(current)
+        if previous is not None: remove(current)
         return {}
     if payload['operation']!='install' or payload['service']!='caddy' or not certificate_names(payload['certificate_file'],payload['key_file']): raise CertificateRefusal('caddy.certificate_input_invalid')
     values={payload['certificate_file']:payload['certificate'],payload['key_file']:payload['key']}
+    if 'root_certificate' in payload: values['root-ca.pem']=payload['root_certificate']
     if any(not isinstance(v,str) or not v or len(v)>65536 or '\x00' in v for v in values.values()): raise CertificateRefusal('caddy.certificate_input_invalid')
-    if previous is not None and set(previous)!=set(values): raise CertificateRefusal('caddy.certificate_unsafe')
+    if previous is not None and set(previous)-{'root-ca.pem'}!=set(values)-{'root-ca.pem'}: raise CertificateRefusal('caddy.certificate_unsafe')
     candidate=current.with_name(current.name+'.candidate.'+secrets.token_hex(8));candidate.mkdir(mode=0o750);os.chown(candidate,OWNER_UID,gid);candidate.chmod(0o750);recovery_failed=False
     try:
         for name,value in values.items(): certificate_write(candidate/name,value,gid)
@@ -81,7 +92,7 @@ def role_certificate(payload):
             raise CertificateRefusal('caddy.certificate_failed')
         return {'changed':True}
     finally:
-        if not recovery_failed and candidate.exists(): shutil.rmtree(candidate)
+        if not recovery_failed and exists(candidate): remove(candidate)
 `;
 export const RoleCertificateProgram = '__name__="orbit_role_certificate"\n' +
   caddyProgram + RoleCertificateExtension + String.raw`
