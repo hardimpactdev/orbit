@@ -9,13 +9,9 @@ use App\Data\GatewayProfile;
 use App\Support\Console\Animation;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\InterruptIntent;
-use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalText;
 use App\Support\Operations\OperationFollower;
-use App\Support\Operations\OperationOutputLine;
-use App\Support\Operations\OperationOutputTail;
-use App\Support\Operations\OperationStepLabels;
 use App\Support\Realtime\AuthorizedRealtimeChannel;
 use App\Support\Realtime\GatewayChannelAuthorizer;
 use App\Support\Realtime\RealtimeConnectionConfig;
@@ -25,36 +21,20 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
-use Orbit\Sdk\Responses\Operations\OperationStepResponse;
 use Throwable;
 
 /**
- * Follows an operation that a command started until it ends (docs/reference/operations.md): over the operation's
- * Reverb channel when it can, by polling `operation:show` when it cannot. Ctrl-C stops following, not the operation.
- * Human output shows the steps as a progress tree, with new output of each step above it: live while the Node agent
- * publishes it, otherwise from each read. `--json` prints only the final operation.
+ * Follows the parent native result. Ctrl-C stops following and leaves the Operation running.
  *
  * @phpstan-require-extends GatewayCommand
  */
 trait FollowsOperations
 {
-    /** @var array<string, OperationStepResponse> */
-    private array $operationSteps = [];
-
-    /** @var array<string, true> */
-    private array $settledSteps = [];
-
-    private ?OperationOutputTail $outputTail = null;
-
     protected function followOperation(GatewayConnector $connector, GatewayProfile $profile, OperationResponse $started, string $title, string $verb): int
     {
         $follower = new OperationFollower(
-            fn (int $afterSequence): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($started->id, $afterSequence), OperationResponse::class),
+            fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($started->id), OperationResponse::class),
             $this->operationSubscriber($connector, $profile, $started->id),
-            $this->option('json') === true ? null : function (OperationOutputLine $output): void {
-                $this->outputTail?->printedLive($output->step, $output->line);
-                $this->writeOperationOutputLine($output->step, $output->line);
-            },
         );
         $handlers = [];
         $async = null;
@@ -118,44 +98,20 @@ trait FollowsOperations
 
     private function followOperationHuman(OperationFollower $follower, OperationResponse $operation, string $title, string $verb): int
     {
-        $this->operationSteps = [];
-        $this->settledSteps = [];
-        $this->outputTail = new OperationOutputTail;
         $progress = $this->progressDisplay($title);
-        $progress->admit('queue', 'Start on a worker', 'Waiting for a worker', 'Started on a worker');
-        $operation = $progress->during('queue', function () use ($follower, $operation): OperationResponse {
-            while ($operation->status === 'queued') {
+        $progress->admit('native', $verb, "{$verb} running", "{$verb} complete");
+        $operation = $progress->during('native', function () use ($follower, $operation): OperationResponse {
+            while (! $operation->terminal()) {
                 $operation = $follower->next($operation);
             }
 
             return $operation;
         });
-        $progress->complete('queue', $operation->startedAt === null ? ProgressState::Skipped : ProgressState::Success, "Operation {$operation->id}.");
-        $this->absorb($progress, $operation);
-
-        while (! $operation->terminal()) {
-            $this->settleFinishedSteps($progress);
-            $running = $this->currentStep();
-
-            if ($running === null) {
-                $operation = $follower->next($operation);
-                $this->absorb($progress, $operation);
-
-                continue;
-            }
-
-            $operation = $progress->during($running, function () use ($follower, $operation, $progress, $running): OperationResponse {
-                do {
-                    $operation = $follower->next($operation);
-                    $this->absorb($progress, $operation);
-                } while (! $operation->terminal() && in_array($this->operationSteps[$running]->status ?? 'running', ['pending', 'running', 'waiting'], true));
-
-                return $operation;
-            });
-            $this->settleStep($progress, $running, started: true);
-        }
-
-        $this->settleFinishedSteps($progress, final: true);
+        $progress->complete('native', match ($operation->status) {
+            'succeeded' => ProgressState::Success,
+            'cancelled' => ProgressState::Skipped,
+            default => ProgressState::Failure,
+        }, $operation->errorCode ?? '');
         $progress->finish(match ($operation->status) {
             'succeeded' => $operation->kind === 'tasks.check' ? match ($operation->result['outcome'] ?? null) {
                 'passed' => 'Check passed.',
@@ -175,90 +131,6 @@ trait FollowsOperations
         $this->writeOperationSummary($operation);
 
         return $operation->succeeded() ? self::SUCCESS : self::FAILURE;
-    }
-
-    /** Merges the changed steps of a read, admits new ones, and prints their new output. */
-    private function absorb(ProgressDisplay $progress, OperationResponse $operation): void
-    {
-        $steps = $operation->steps;
-        usort($steps, static fn (OperationStepResponse $left, OperationStepResponse $right): int => $left->position <=> $right->position);
-
-        foreach ($steps as $step) {
-            if (! isset($this->operationSteps[$step->name])) {
-                $progress->admit($step->name, ...OperationStepLabels::for($step->name));
-            }
-
-            $this->operationSteps[$step->name] = $step;
-
-            foreach ($this->outputTail?->lines($step->name, $step->output) ?? [] as $line) {
-                $this->writeOperationOutputLine($step->name, $line);
-            }
-        }
-
-        uasort($this->operationSteps, static fn (OperationStepResponse $left, OperationStepResponse $right): int => $left->position <=> $right->position);
-    }
-
-    private function writeOperationOutputLine(string $step, string $line): void
-    {
-        $this->writeOperationOutput("{$step}: ".json_encode($line, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-    }
-
-    /** The first step that runs or waits to run, if it has not settled yet. */
-    private function currentStep(): ?string
-    {
-        foreach ($this->operationSteps as $name => $step) {
-            if (isset($this->settledSteps[$name])) {
-                continue;
-            }
-
-            if (in_array($step->status, ['running', 'waiting'], true)) {
-                return $name;
-            }
-
-            if ($step->status === 'pending') {
-                return null;
-            }
-        }
-
-        return null;
-    }
-
-    /** Settles, in order, every step that already ended between two reads. */
-    private function settleFinishedSteps(ProgressDisplay $progress, bool $final = false): void
-    {
-        foreach ($this->operationSteps as $name => $step) {
-            if (isset($this->settledSteps[$name])) {
-                continue;
-            }
-
-            if (! $final && in_array($step->status, ['pending', 'running', 'waiting'], true)) {
-                return;
-            }
-
-            $this->settleStep($progress, $name, started: false);
-        }
-    }
-
-    private function settleStep(ProgressDisplay $progress, string $name, bool $started): void
-    {
-        $step = $this->operationSteps[$name] ?? null;
-        $this->settledSteps[$name] = true;
-
-        if ($step === null || in_array($step->status, ['pending', 'cancelled'], true)) {
-            $progress->complete($name, ProgressState::Skipped, $step?->status === 'cancelled' ? 'Cancelled.' : 'Not reached.');
-
-            return;
-        }
-
-        if (! $started) {
-            $progress->during($name, static fn (): null => null);
-        }
-
-        $progress->complete($name, match ($step->status) {
-            'succeeded' => ProgressState::Success,
-            'running', 'waiting' => ProgressState::Warning,
-            default => ProgressState::Failure,
-        }, $step->errorCode ?? '');
     }
 
     private function writeOperationSummary(OperationResponse $operation): void
