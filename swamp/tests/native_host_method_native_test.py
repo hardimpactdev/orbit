@@ -38,7 +38,7 @@ class NativeHostMethodTest(NativeTestCase):
             shutil.copytree(REPO / 'extensions/behaviors/composer-maintenance', ext / 'composer-maintenance')
             shutil.copytree(REPO / 'extensions/behaviors/js-maintenance', ext / 'js-maintenance')
             source = (REPO / 'extensions/behaviors/native_host_method.ts').read_text()
-            source = source.replace('"/home/orbit/apps/orbit-swamp/default"', json.dumps(str(root)))
+            source = source.replace('"/home/orbit/apps/orbit-monorepo-staging/checkout/swamp"', json.dumps(str(root)))
             source = source.replace('const HOME = "/home/orbit"', 'const HOME = ' + json.dumps(str(Path.home())))
             source = source.replace('executable: `${HOME}/.local/bin/swamp`', 'executable: ' + json.dumps(shutil.which(CLI) or CLI))
             (ext / 'native_host_method.ts').write_text(source)
