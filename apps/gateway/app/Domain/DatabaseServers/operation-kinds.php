@@ -8,7 +8,7 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
-    $kinds = ['database.write' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code', 'row_count', 'truncated']], 'database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
+    $kinds = ['database_server.destroy' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.write' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code', 'row_count', 'truncated']], 'database_server.close' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database_user.create' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code']], 'database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
         return $kinds;
     }
@@ -26,8 +26,6 @@ return (static function (): array {
     $container = ['transport' => 'agent', 'name' => 'process.converge-container', 'input_fields' => [], 'input_values' => [],
         'secrets' => ['environment' => 'database.intent']];
     $acl = ['transport' => 'agent', 'name' => 'database.write-valkey-acl', 'input_fields' => [], 'input_values' => [], 'secrets' => ['acl' => 'database.intent']];
-    $serverAbsent = ['transport' => 'gateway', 'name' => 'database.server-absent', 'input_fields' => [], 'input_values' => []];
-    $remove = ['transport' => 'agent', 'name' => 'process.remove', 'input_fields' => [], 'input_values' => []];
     $copy = [...$sql, 'input_values' => ['operation' => 'copy'], 'secrets' => ['password' => 'database.intent'], 'resumable' => false];
     $sqliteCopy = ['transport' => 'agent', 'name' => 'instance.copy-sqlite', 'input_fields' => [], 'input_values' => []];
     $owned = ['transport' => 'gateway', 'name' => 'database.owned-ready', 'input_fields' => [], 'input_values' => []];
@@ -37,7 +35,6 @@ return (static function (): array {
     $seedTarget = ['transport' => 'agent', 'name' => 'instance.install-sqlite-seed', 'input_fields' => [], 'input_values' => []];
     foreach ([
         'database_server.create' => [$container, $acl, $ready, $valkey, $control],
-        'database_server.destroy' => [$remove, $serverAbsent],
         'database.create' => [$sql, $valkey],
         'database.destroy' => [[...$sql, 'transport' => 'database_removal'], $sql, $valkey],
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
