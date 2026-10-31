@@ -244,7 +244,8 @@ final readonly class TaskTopology implements Castable
 
             /**
              * @param  array<string, mixed>  $attributes
-             * @return list<string>
+             *
+             * @phpstan-return list<string>
              */
             public function serialize(Model $model, string $key, mixed $value, array $attributes): array
             {

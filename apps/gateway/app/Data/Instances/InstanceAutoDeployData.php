@@ -36,6 +36,7 @@ final class InstanceAutoDeployData extends Data
         /** @var list<string> */
         public array $blocked,
         public ?string $historyVersion,
+        public bool $eligible,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -51,11 +52,12 @@ final class InstanceAutoDeployData extends Data
         $active = $pause !== null && $pause['deployment_id'] > $instance->auto_deploy_resumed_after;
 
         return new self(
+            eligible: app(AutomaticDeployPolicyWriter::class)->eligibilityRefusal($instance) === null,
             resumedAfter: $instance->auto_deploy_resumed_after,
             blocked: $history === null ? $automatic->smokeBlocked() : array_values(array_unique([...$automatic->blocked(), ...$history->rolledAway])),
             historyVersion: $history?->version,
             enabled: $enabled,
-            policyOwner: $developmentDefault ? AutomaticDeployPolicyWriter::Gateway->value : app(AutomaticDeployPolicyWriter::class)->value,
+            policyOwner: app(AutomaticDeployPolicyWriter::class)->value,
             gate: $gate,
             warning: $enabled && ! $developmentDefault && $gate === null
                 ? 'The Project has no merge_check, so every new commit on the branch deploys without a check.'

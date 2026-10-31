@@ -21,6 +21,10 @@ Instance deploy, rollback, [task provision](/reference/tasks#provision-an-extern
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
+## Native public participants
+
+A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.
+
 ## The record
 
 `input` is the stored argument object. Operations with no arguments serialize it as an empty array (`[]`).
@@ -573,7 +577,9 @@ Read input comes only from the projection hook, never automatically from raw int
 
 A family may declare `github_token: {repository: "owner/name", permissions: {contents: "write", pull_requests: "write"}}` and `private_material: {github: "github.installation"}` in its checked-in declaration. Its admitted input records `github: {$secret: "github.installation", id: <Operation Node ID>}`. The shared `GET /api/v1/direct-operations/{operation}/private-material?run_id=UUID` resolves that owned reference and returns the credential under `data.github`. It refuses undeclared grants, cancelled intents and terminal Operations. Repository and permissions never come from workflow input. The closed permission names are `contents`, `pull_requests`, `checks`, `actions` and `metadata`; checks, actions and metadata are read-only. No mint route or family transport is added.
 
-The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates GitHub's returned repository, permissions and expiry (at most about one hour). The private `no-store` response contains `repository`, `permissions`, `token` and `expires_at`. This response bypasses public Operation result filtering without changing `result_fields`; the credential is never projected into an Operation, step, receipt, Activity or shared token cache. Each successful mint records one token-free Activity with the Operation, bound run, caller Node, repository, permissions and expiry.
+The Gateway keeps the GitHub App signing key and mints a fresh token for exactly that repository and permission map. It validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. The mint response may omit its optional repository list. A failed scope check refuses delivery and attempts to revoke the issued token.
+
+The private `no-store` response contains `repository`, `permissions`, `token` and `expires_at`. This response bypasses public Operation result filtering without changing `result_fields`; the credential is never projected into an Operation, step, receipt, Activity or shared token cache. Each successful mint records one token-free Activity with the Operation, bound run, caller Node, repository, permissions and expiry.
 
 Swamp mints once per native step through the effect-only private-material callback, outside any item loop, and uses the credential only in worker memory for fixed GitHub/git calls, never package or repository code. The shared client attempts to revoke it with `DELETE https://api.github.com/installation/token` when the callback ends, including failures. Revocation is best effort: a failure reports only `operation.github_token_revoke_failed`, preserves the GitHub action's result or refusal, and never changes a successful write into a failed step. A client instance permits only one mint attempt.
 

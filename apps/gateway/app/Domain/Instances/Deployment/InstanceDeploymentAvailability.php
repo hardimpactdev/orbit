@@ -44,17 +44,18 @@ final class InstanceDeploymentAvailability
     /** @param array<string,mixed> $intent */
     public static function assertAvailable(array $intent): void
     {
+        if (($intent['variant'] ?? null) === 'development') {
+            return;
+        }
         if (! OperationKinds::supports('children')) {
             throw self::unavailable();
         }
         $required = [];
-        if (($intent['variant'] ?? null) !== 'development') {
-            if (($intent['runtime_synchronous'] ?? false) !== true) {
-                $required[] = 'process.restart_instance';
-            }
-            if (($intent['php'] ?? false) === true) {
-                $required[] = 'node.prepare_php_packages';
-            }
+        if (($intent['runtime_synchronous'] ?? false) !== true) {
+            $required[] = 'process.restart_instance';
+        }
+        if (($intent['php'] ?? false) === true) {
+            $required[] = 'node.prepare_php_packages';
         }
         if (($intent['variant'] ?? null) === 'production') {
             $required[] = 'instance.sync_environment';
@@ -64,9 +65,6 @@ final class InstanceDeploymentAvailability
         }
         if (($intent['needs_vp'] ?? false) === true) {
             $required = [...$required, 'instance.prepare_vp_environment', 'tool.manager_converge'];
-        }
-        if (($intent['projection_route_id'] ?? null) !== null) {
-            $required[] = 'route.converge';
         }
         $definitions = OperationKinds::definitions();
         foreach ($required as $kind) {

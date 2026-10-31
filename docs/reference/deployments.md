@@ -3,10 +3,9 @@ title: "Instance releases"
 description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/Smoke/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
-  - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RunAutomaticDeploysAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
+  - apps/gateway/app/Actions/Instances/{StartInstanceDeployAction,StartInstanceRollbackAction,RestartInstanceProcessesAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceSmoke*Action,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/{GitHubInstanceSmoke,SmokeArtifactEvidence,RemoteProductionDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
-  - apps/gateway/app/Console/Commands/{AutoDeployCommand,CheckInstanceDeploymentOperationsCommand}.php
-  - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step}.rs
+  - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceSmokeController,InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
   - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
@@ -115,7 +114,7 @@ A step and Orbit's checkout take the lock that [setup and teardown steps](/refer
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
-A deployment records that the default's Route projection is pending before it converges the Route, and clears that mark when the converge succeeds. A tick reconverges a visitable default's Route only while the mark is set, so a crash or a failed converge is repaired on the next tick. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
+If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. A matching succeeded Route receipt clears that mark through the policy projection. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
 ### Seeds
 
@@ -135,7 +134,7 @@ Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lo
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
-The Node agent fetches the branch with `instance.resolve-development-target`, checks the commit out in place with `instance.checkout-development-default`, and runs each step with `instance.run-development-step`, all as the managed account. Checkout refuses tracked changes, which the deploy output lists, and a local branch with commits that the target lacks. A setup or teardown step that runs in the checkout makes each of them refuse with `instance.lifecycle_busy`.
+The Node agent fetches the branch with `instance.resolve-development-target` and checks the commit out in place with `instance.checkout-development-default`, all as the admitted Node account. Swamp runs each Project command through its shared sudo runner as that account. Checkout refuses tracked changes, which the deploy output lists, and a local branch with commits that the target lacks. A setup or teardown step that runs in the checkout makes each of them refuse with `instance.lifecycle_busy`.
 
 Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
@@ -200,7 +199,7 @@ Under the Instance lock, the automatic operation rechecks enablement, manual pau
 
 A manual deploy or rollback row pauses it regardless of whether that attempt is running, failed or succeeded. A rollback records its rolled-away block when its outcome is recorded, before history pruning, so resume and history pruning cannot lose it while Swamp is idle. `auto_deploy=true` resumes after the newest manual row and keeps the block. A paused operation ends with `deployment.paused`; a rolled-away commit ends with `deployment.commit_blocked`. A manual action that has already started and still holds the Instance makes a new start busy. A rollback may supersede an unclaimed queued deploy under the existing rules.
 
-These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns production policy and executes production and development deployment Operations. Development scheduling keeps its existing admission path.
+These primitives retain the existing operation receipt, history, output, recovery, target exclusion and cooperative cancellation. Swamp owns automatic policy for production and default development checkouts, and executes their deployment Operations. Both policies use the same keyed Gateway admission and receipt contracts.
 
 ### The deploy operation
 
@@ -308,12 +307,12 @@ After PHP refresh, a rollback restarts the same active, opted-in Instance Proces
 
 ## Automatic deployments
 
-Swamp runs the production automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role from the Gateway. The Gateway retains effects, locks, authorization, and history. Its `orbit:auto-deploy` scheduler runs every minute only for [development defaults](#development-defaults), on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command also accepts the alias `orbit:deploy-development-defaults`.
+Swamp runs automatic-deploy policy every minute at second 30 (`30 * * * * *`). It discovers enabled, active production Instances on Nodes with an active `app-prod` role and active default development checkouts on `app-dev` Nodes. The Gateway retains admission, locks, authorization and history. The PHP automatic-deploy command, alias and schedule are removed.
 
-Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Production policy uses the [Gateway source contracts](#swamp-policy-contracts); development defaults call the same credentialed reader locally. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
+Each policy tick reads the branch head through the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). Both policies use the [Gateway source contracts](#swamp-policy-contracts). Development follows the Project default branch. It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. Between token refreshes, each eligible Instance costs one `ls-remote` and no GitHub API call in a quiet minute. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
-- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit. The [origin label](#history) identifies Swamp or the Gateway development runner.
+- Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit. The [origin label](#history) identifies the policy that admitted it.
 - The deployment proves that the branch contains the commit and checks out exactly that commit. It fails with `deployment.commit_not_on_branch` otherwise.
 - Pushes that arrive meanwhile wait for the next tick. That tick reads the newest head, so intermediate commits coalesce.
 - While another operation holds the Instance, the tick skips it and reports `busy`. Its own operation that has not ended yet is `deploying`.
@@ -430,9 +429,13 @@ To switch policy back:
 
 ### One policy writer during the trial
 
-Swamp decides production automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: automatic deployment enabled, active Instance, production placement, and an active `app-prod` role. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects. There is no environment flag or runtime switch.
+Swamp decides production and default development automatic deployments. The code-owned writer is `swamp`; Instance list/show exposes it as `auto_deploy.policy_owner`. Swamp discovers eligible Instances with `GET /api/v1/instances?auto_deploy=true` and does nothing when the owner is `gateway`. The filter uses the same eligibility rule as automatic admission: automatic deployment enabled, active Instance, production placement, and an active `app-prod` role. An inactive or absent `app-prod` role refuses admission with `instance.auto_deploy_role_inactive`. The worker checks this rule again before effects. Unfiltered Instance listing still includes ineligible Instances. Automatic admission, publication, and event admission refuse with `instance.auto_deploy_policy_owner` under PHP ownership. The deploy and event workers check ownership again before effects.
 
-The cutover release removes the PHP production policy loop. Development defaults retain their PHP scheduler. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Drain old PHP policy work before activating the Gateway release. Swamp reconstructs policy and retries from the public projection and Gateway history. Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
+ There is no environment flag or runtime switch.
+
+The cutover release removes the PHP production policy loop. The development cutover also removes the PHP development scheduler and retry loop. Swamp discovers active default checkouts on app-dev Nodes through the public Node and Instance lists, without requiring the production auto-deploy flag. Deploy Swamp first: it stays idle until the Gateway reports Swamp ownership. Finish or cancel in-flight PHP work through its current owner before activating the Gateway release; existing `operation.target_busy` holds serialize admissions. Swamp reconstructs policy and retries from the public projection and Gateway history.
+
+ Alert deduplication starts in Swamp: the owner accepts one possible repeat alert at cutover. Orbit exposes no stored alert-key contract.
 
 Publication updates only the public projection in `auto_deploy_state`, preserves Gateway rollback blocks, and broadcasts the Instance DTO used by API, MCP, CLI, and web. The project owner waived the slice 1 shadow phase because Hauzer and Mealou have no users; its 14-day live window starts at this cutover.
 
@@ -458,8 +461,8 @@ Swamp deployment rows copy the authorized Gateway peer's Node ID from the operat
 
 | `triggered_by` | Meaning |
 | --- | --- |
-| `swamp:auto-deploy` | Swamp production policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Policy event operations and fenced automatic admission receipts use the same origin. |
-| `orbit:auto-deploy` | The PHP automatic runner's label, still used for development defaults. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
+| `swamp:auto-deploy` | Swamp production or development policy admitted through the automatic endpoint. `caller_node_id` identifies the authorized Gateway peer. Policy event operations and fenced automatic admission receipts use the same origin. |
+| `orbit:auto-deploy` | The previous PHP automatic runner's label. Existing rows keep this label, including early Swamp admissions. No labels or caller IDs are backfilled. |
 | A Node name | A manual deployment or rollback by that Node. |
 
 Both automatic labels count as automatic for pause and failure selection. A Swamp deployment never creates a manual-deploy pause. A rollback still pauses automatic deployment regardless of its label. Clients cannot set either automatic label or the caller ID on a deploy request.
@@ -525,7 +528,7 @@ A manual deployment means "deploy what the branch holds now". So it takes no com
 
 ### Poll, do not wait for a webhook
 
-Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts; PHP development defaults and automatic Gateway releases retain their native readers. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
+Automatic policy reads branch heads through the Gateway instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. Swamp uses the source-read contracts for production and default development Instances. Automatic Gateway releases retain their separate source reader. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The polling delay is up to one minute; failed-check caches, retry backoff, and the operation queue can add time.
 
 Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
 
@@ -539,7 +542,7 @@ A manual deployment or a rollback is a person's decision about what runs. A merg
 
 ### One operations worker for every deployment
 
-Automatic deployments and rollbacks run as operations on the one `operations` worker, like manual deployments. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A second worker for automatic deployments was rejected: it would let two deployments run at once and would need its own lock and recovery. A deployment or a rollback of one Instance can wait for another Instance's deployment, and Instances behind one Route deploy in turn.
+Development deployment runs in one native workflow placed on the admitted Node. Production deployment and rollback retain their current polled worker until their own cutovers. Manual and automatic admissions use the same Instance exclusion: `operation.target_busy` holds competing work until the current Operation finishes. Instances behind one Route also share publication exclusion.
 
 ### Three releases per home
 
@@ -704,3 +707,24 @@ A list admitted before the writer switch can be cancelled through the Operation 
 Development setup, teardown and deploy steps run as the admitted configured Node account, matching checkout ownership. Development Instances have no `orbit-app-<ProjectID>` account. The Gateway records the placement environment and derives the account and directory from the Instance and Node, rather than caller input. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Both use direct sudo from the Node-user worker, a cleared environment, checked directories and command digests, full step timeouts, bounded redacted output and process cleanup. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
 
 The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. A Node 209 worker may execute only an intent admitted to Node 209; it cannot substitute for another Node's worker.
+## Native development deployment
+
+Default development checkouts use `operation-instance-deploy-direct`, placed on the admitted Node and its matching Node label. The Gateway derives the environment and configured Node account, freezes the agent delivery digest and ordered Project command digests, and starts one native Swamp run. There is no polled development writer option. Production deploy and rollback keep their existing path until their own cutover. Development rollback continues to refuse `deployment_config.unavailable` because development checkouts have no retained releases.
+
+The native run fetches and checks out the admitted commit, prepares Vite+ when required, runs the Project's ordered development deploy steps as the admitted Node account, and verifies the checkout's origin, branch and commit locally. Required failures stop the list and project the runner’s redacted output tail, bounded to 2 KiB. Best-effort failures record a warning and allow later steps. Only verified success advances the Instance seed.
+
+A native checkpoint records each effect before it starts and clears only after its typed result. A restarted invocation never repeats an effect. With no active effect marker it records `deployment.interrupted` and releases the Instance hold; an uncertain active effect keeps the hold until settlement is proven.
+
+Each Project step also records its admitted name and an Operation/run-bound public runner identity. On operator cancellation after a restart, a read-only probe on the admitted Node must prove that runner is gone before the run records `failed`, `deployment.interrupted`, the saved `failed_step`, and `step_outcome: unknown`. A live runner, missing identity, or inconclusive probe keeps the hold. Recovery never repeats the step or claims it succeeded or was cancelled.
+
+Terminal projection releases the target lock for every direct kind through the shared OperationStore transition.
+
+Git credentials and Vite+ materialization input are delivered through the existing parent private-material callback. Public repositories use a null Git credential. Scripts come from the owning Project command reader and must match their admitted digests and timeouts. Private bytes stay outside workflow inputs, resources and public results. Vite+ records only public runtime pins and checking, active or failed reference state through the same parent result endpoint. Result projection updates records without a Node command or child admission.
+
+A pending default Route projection refuses manual deployment with `deployment.projection_pending`. Swamp settles pending publication through the normal Route update admission before admitting a newer commit. Its policy projection accepts only a successful Operation for the same authoritative Route. Native development deployment admits no Route or runtime child Operations.
+
+### Cutover and automatic policy
+
+Existing `operation.target_busy` holds serialize the cutover with in-flight work. Before either cutover merge, read queued, running and waiting polled development deployments and their children. Finish or cancel them through their current owner and verify terminal receipts before removing that executor. The cutover adds no drain or fencing machinery.
+
+Swamp owns development automatic-deploy discovery, branch checks, backoff, retry limits and admission. The existing automatic deployment workflow keeps its minute cadence. Discovery uses the Gateway’s canonical policy eligibility, including ambiguous or inactive role placement. The native deadline is 900 seconds plus the sum of admitted command timeouts, so every accepted Project list fits. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.

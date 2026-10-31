@@ -60,6 +60,21 @@ it('requires an active Services identity with Gateway access', function (): void
     $this->postJson('/api/v1/observation/collections/'.OBSERVATION_COLLECTION.'/plan')->assertForbidden();
 });
 
+it('does not grant fleet observation or housekeeping to a registered Node worker', function (): void {
+    observationServices($this);
+    $worker = observationPeer('node-worker', '10.44.0.3');
+    $gateway = Node::query()->where('name', 'gateway')->sole();
+    $worker->accessibleNodes()->attach($gateway);
+    config(['operation_executor.worker_node_ids' => [$worker->id]]);
+    $this->withServerVariables(['REMOTE_ADDR' => $worker->wireguard_ip]);
+
+    $this->postJson('/api/v1/observation/collections/'.OBSERVATION_COLLECTION.'/plan')
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    $this->postJson('/api/v1/observation/maintenance/activities', ['run_id' => OBSERVATION_COLLECTION])
+        ->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect(Cache::has('problems:collection:'.OBSERVATION_COLLECTION.':plan'))->toBeFalse();
+});
+
 it('returns an immutable resource plan and refuses supplied execution input', function (): void {
     observationServices($this);
     Queue::fake();
