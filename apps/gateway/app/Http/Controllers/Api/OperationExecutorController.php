@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationChildren;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationExecutorJson;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\SwampOperationExecutor;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -102,7 +103,7 @@ final class OperationExecutorController extends Controller
         return $this->json->operation($operation, [...OperationsController::withSteps($operation, null, null),
             'node_id' => app(OperationChildren::class)->nodeId($operation),
             'parent_operation_id' => $operation->parent_operation_id, 'child_key' => $operation->child_key,
-            ...(DirectOperation::owns($operation) ? [] : [
+            ...(DirectOperation::owns($operation) || app(OperationKinds::class)->directOnly($operation->kind) ? [] : [
                 'worker' => $operation->worker,
                 'lease_seconds' => $operation->status === OperationStatus::Waiting ? 0 : SwampOperationExecutor::LeaseSeconds,
                 'waiting_for' => array_map(static fn (mixed $tuple): array => ['key' => ValidatedData::object($tuple)['key'], 'id' => ValidatedData::object($tuple)['id']], $tuples),
