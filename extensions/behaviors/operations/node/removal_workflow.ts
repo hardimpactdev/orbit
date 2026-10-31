@@ -132,7 +132,7 @@ export function nodeRemovalWorkflow() {
         inputs: {
           ...root,
           snapshot: expr(input),
-          ...(restoring ? { restoring: true } : {}),
+          ...(restoring ? { recovery: true } : {}),
         },
       },
     }, {

@@ -1061,7 +1061,7 @@
               "node_id": "${{ inputs.node_id }}",
               "run_id": "${{ run.id }}",
               "snapshot": "${{ steps.admit.outputs.restore_hub }}",
-              "restoring": true
+              "recovery": true
             }
           }
         },

@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { nodeRemovalRoot } from "./removal_root.ts";
-const snapshot = () => ({
+import type { NodeRemovalSnapshot } from "./removal_local.ts";
+const snapshot = (): NodeRemovalSnapshot => ({
   schema_version: 1 as const,
   node_id: 212,
   name: "discarded",
@@ -534,4 +535,39 @@ Deno.test("macOS completion preserves its retained host state without guest reti
     "host-wireguard",
   ]);
   assertEquals(result.offline, false);
+});
+
+Deno.test("root admission preserves approved proxy placement for required Metrics members", async () => {
+  for (const proxy_node_ids of [[1], []]) {
+    const f = fixture();
+    f.set(
+      {
+        ...f.current,
+        input: {
+          ...f.current.input,
+          proxy_node_ids,
+          snapshot: { ...snapshot(), metrics: { node_id: 13, gateway_id: 14 } },
+          metrics_fleet: {
+            metrics_node_id: 13,
+            metrics_address: "10.44.0.13",
+            fleet: [1, 13].map((id) => ({
+              node_id: id,
+              address: `10.44.0.${id}`,
+              agent_sha256: "a".repeat(64),
+              worker: id !== 1,
+              selected: true,
+              caddy_managed: false,
+              fpm: false,
+              service: { config: null },
+              pools: [],
+            })),
+          },
+        },
+      } as typeof f.current,
+    );
+    const admission = await f.behavior.methods.admit.execute(f.args, f.ctx);
+    assertEquals(admission.ready, proxy_node_ids.length === 1);
+    assertEquals(admission.proxy_node_ids, proxy_node_ids);
+    assertEquals(f.calls, []);
+  }
 });

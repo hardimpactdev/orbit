@@ -1,5 +1,6 @@
 """Native removal DAG, real HTTP and synthetic fixed local effects; no fleet mutation."""
 import json
+import base64
 import hashlib
 from pathlib import Path
 import shutil
@@ -22,11 +23,15 @@ class NodeRemovalNative(NativeTestCase):
                           module.read_text().replace('export const behavior = nodeRemovalRoot();',
                                                    'export const behavior = nodeRemovalRoot(() => fixtureHttp, fixtureLocal, fixtureRetire, undefined, fixtureCertificates as never);'))
         metrics = self.repo / 'extensions/behaviors/operations/node/role_metrics.ts'
-        metrics.write_text('import {fixtureHttp,fixtureMetrics,fixtureMetricsRuntime} from "./removal_native_fixture.ts";\n' + metrics.read_text().replace('export const behavior = roleMetrics();', 'export const behavior = roleMetrics(() => fixtureHttp,fixtureMetrics as never,fixtureMetricsRuntime);'))
+        metrics.write_text('import {fixtureHttp,fixtureMetrics,fixtureMetricsRuntime} from "./removal_metrics_native_fixture.ts";\n' + metrics.read_text().replace('export const behavior = roleMetrics();', 'export const behavior = roleMetrics(() => fixtureHttp,fixtureMetrics as never,fixtureMetricsRuntime);'))
         certs = self.repo / 'extensions/behaviors/operations/certificates/mod.ts'
         certs.write_text('import {fixtureHttp} from "../node/removal_native_fixture.ts";\n' + certs.read_text().replace('...certificates(), type:', '...certificates(() => fixtureHttp), type:'))
         failure = self.repo / 'extensions/behaviors/operations/failure.ts'
         failure.write_text('import {fixtureHttp} from "./node/removal_native_fixture.ts";\n' + failure.read_text().replace('export const behavior = nativeFailure();', 'export const behavior = nativeFailure(() => fixtureHttp);'))
+        hub = self.repo / 'extensions/behaviors/operations/node/wireguard_direct.ts'
+        hub.write_text('import {fixtureHttp,fixtureHubSystem,fixtureHubSsh} from "./removal_native_fixture.ts";\n' + hub.read_text().replace(
+            'export const behavior = nodeWireGuard();',
+            'export const behavior = nodeWireGuard(undefined, () => fixtureHttp, fixtureHubSystem, fixtureHubSsh);'))
         self.workflow = json.loads((ROOT / 'workflows/workflow-operation-node-remove.yaml').read_text())
         def unplace(value):
             if isinstance(value, dict):
@@ -40,13 +45,14 @@ class NodeRemovalNative(NativeTestCase):
                          'roles': [], 'participants': [{'node_id': 13, 'peer': True, 'routes': False, 'residue': True, 'dns': False}],
                          'metrics': None, 'route_ids': []}
         self.operation = {'id': 7, 'kind': 'node.remove', 'node_id': 14, 'status': 'queued', 'cancel_requested': False,
-                          'input': {'snapshot': self.snapshot, 'placements': [{'effect_node_id': 13, 'execution_node_id': 13, 'transport': 'local'}], 'hub': None, 'retirement': None, 'host_retained': False, 'routes': {'routes': [], 'nodes': [], 'dns_node_ids': []}, 'metrics_fleet': None}}
+                          'input': {'proxy_node_ids': [], 'snapshot': self.snapshot, 'placements': [{'effect_node_id': 13, 'execution_node_id': 13, 'transport': 'local'}], 'hub': None, 'retirement': None, 'host_retained': False, 'routes': {'routes': [], 'nodes': [], 'dns_node_ids': []}, 'metrics_fleet': None}}
         self.route_workload = None
         self.effects = []
         self.results = []
         self.mode = 'success'
         self.private = '/synthetic-private/' + uuid.uuid4().hex
-        self.secrets = (self.private,)
+        self.hub_private = base64.b64encode(uuid.uuid4().bytes + uuid.uuid4().bytes).decode()
+        self.secrets = (self.private, self.hub_private)
         self.native_env['ORBIT_REMOVAL_PRIVATE_FIXTURE'] = self.private
         owner = self
         class Handler(BaseHTTPRequestHandler):
@@ -60,7 +66,12 @@ class NodeRemovalNative(NativeTestCase):
                 self.wfile.write(encoded)
             def do_GET(self):
                 if '/private-material?' in self.path:
-                    return self.respond({'data': {'bootstrap_identity': owner.private, 'metrics_runtime': {'runtime': {}, 'verify': {}}, 'removal_environment_0': [{'instance_id': 51, 'name': 'instance.write-directory-url', 'input': {'private': owner.private}}]}})
+                    hub = owner.operation['input'].get('restore_hub' if owner.operation.get('result', {}).get('restoring') else 'hub')
+                    configuration = None if hub is None else {'snapshot': hub, 'address': '10.44.0.1/24', 'port': 51820,
+                        'private_key': owner.hub_private, 'peers': [], 'connection': {'target': {'node_id': 1,
+                        'host': 'vpn.example.test', 'port': 22, 'user': 'orbit', 'fingerprint': 'SHA256:' + 'A' * 43},
+                        'identity': '/synthetic/existing-gateway-key'}}
+                    return self.respond({'data': {'configuration': configuration, 'bootstrap_identity': owner.private, 'metrics_runtime': {'runtime': {}, 'verify': {}}, 'removal_environment_0': [{'instance_id': 51, 'name': 'instance.write-directory-url', 'input': {'private': owner.private}}]}})
                 if self.path.startswith('/_retire?node='):
                     owner.effects.append('retire:' + self.path.split('=')[-1])
                     return self.respond({'ready': True})
@@ -89,11 +100,18 @@ class NodeRemovalNative(NativeTestCase):
                 self.respond({'data': data})
             def do_POST(self):
                 data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if self.path == '/_hub':
+                    owner.effects.append('hub:' + ('restore' if owner.operation.get('result', {}).get('restoring') else 'withdraw'))
+                    owner.assertEqual(data['target']['node_id'], 1)
+                    owner.assertEqual(data['input']['name'], 'wireguard.project-hub')
+                    return self.respond({})
                 owner.results.append(data)
                 if self.path.endswith('/failure'):
                     data = dict(data,status='failed',result={})
                 owner.operation['status'] = data['status']
                 owner.operation['result'] = data.get('result',{})
+                if owner.mode == 'cancel_after_begin' and owner.operation['result'].get('removing'):
+                    owner.operation['cancel_requested'] = True
                 self.respond({'data': owner.operation})
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -197,5 +215,20 @@ class NodeRemovalNative(NativeTestCase):
         self.assertEqual(self.effects, [])
         self.assertEqual(self.operation['status'], 'failed')
         self.assertEqual(self.results[-1]['result']['error_code'], 'node.removal_unavailable')
+
+    def test_cancelled_parent_restores_hub_after_membership_checkpoint_in_the_same_run(self):
+        self.mode = 'cancel_after_begin'
+        self.snapshot.update(hub_id=1, participants=[])
+        hub = {'schema_version': 1, 'executor_node_id': 14, 'hub_id': 1,
+               'context_node_id': 212, 'excluded_node_id': 212, 'agent_sha256': 'a' * 64}
+        self.operation['input'].update(hub=hub, restore_hub=dict(hub, excluded_node_id=None),
+            placements=[{'effect_node_id': 1, 'execution_node_id': 1, 'transport': 'local'}])
+        self.run_native(success=False)
+        self.assertEqual(self.effects, ['hub:restore'])
+        self.assertEqual([r['result'] for r in self.results if r['status'] == 'running'],
+                         [{'removing': True}, {'restoring': True}])
+        self.assertTrue(self.operation['cancel_requested'])
+        self.assertTrue(self.results[-1]['result']['restored'])
+        self.assertFalse(self.results[-1]['result']['removed'])
 
 if __name__ == '__main__': unittest.main()
