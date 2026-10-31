@@ -1,26 +1,171 @@
 id: 0f7caec5-264b-42a9-afca-2f30e914c956
 name: node-proxy-canary
-description: Read-only or disposable direct-command proof on one exact light Node proxy.
+description: Use official SSH from Node209 to verify a light Node and separate disposable file actions.
 inputs:
   type: object
   properties:
-    node_id: {type: integer, enum: [1, 18]}
-    effect: {type: boolean, default: false}
-  required: [node_id]
+    node_id:
+      type: integer
+      enum:
+      - 1
+      - 18
+    effect:
+      type: boolean
+      default: false
+  required:
+  - node_id
   additionalProperties: false
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-labels: {node: '${{ string(inputs.node_id) }}'}
 vaults: []
 jobs:
-  - name: canary
-    steps:
-      - name: prove
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/node-worker-canary'
-          behaviorName: '${{ "node-worker-canary-" + string(inputs.node_id) }}'
-          methodName: '${{ inputs.effect ? "exercise" : "inspect" }}'
-          inputs:
-            node_id: '${{ inputs.node_id }}'
-            user: orbit
+- name: canary
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: identity
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: &id002
+        name: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+        transport:
+          kind: ssh
+          user: orbit
+          identityFile: /etc/orbit/node-proxy/id_ed25519
+        hosts:
+        - name: vpn1
+          address: 10.44.0.1
+          transport:
+            hostKeys:
+            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG
+        - name: usexit18
+          address: 10.44.0.13
+          transport:
+            hostKeys:
+            - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKTqizm/h9dgo7Zab5NUC1RlLprBkRoUPrKQkF/b+DjF
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv:
+        - /usr/bin/hostname
+  - name: directory
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: identity
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv:
+        - /usr/bin/mkdir
+        - -m
+        - '700'
+        - --
+        - ${{ "/run/orbit-official-ssh-canary-" + run.id }}
+        sudo: true
+  - name: write
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: script
+      globalArgs: *id002
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        script: |
+          printf '%s\n' 'orbit-official-ssh-canary' > /run/orbit-official-ssh-canary-${{ run.id }}/proof
+        sudo: true
+  - name: read
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: write
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv:
+        - /usr/bin/cmp
+        - --
+        - '-'
+        - ${{ "/run/orbit-official-ssh-canary-" + run.id + "/proof" }}
+        sudo: true
+        stdin: |
+          orbit-official-ssh-canary
+  - name: remove-file
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    - step: read
+      condition:
+        type: always
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv:
+        - /usr/bin/rm
+        - -f
+        - --
+        - ${{ "/run/orbit-official-ssh-canary-" + run.id + "/proof" }}
+        sudo: true
+  - name: remove-directory
+    target: orbit-node-209
+    labels: *id001
+    writes: true
+    dependsOn:
+    - step: remove-file
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "node-ssh-canary-" + string(inputs.node_id) }}
+      methodName: exec
+      globalArgs: *id002
+      inputs:
+        hosts: '${{ inputs.node_id == 1 ? "name:vpn1" : "name:usexit18" }}'
+        argv:
+        - /usr/bin/rmdir
+        - --
+        - ${{ "/run/orbit-official-ssh-canary-" + run.id }}
+        sudo: true
