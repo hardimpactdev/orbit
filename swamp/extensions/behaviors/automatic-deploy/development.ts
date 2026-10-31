@@ -219,12 +219,14 @@ export async function tickDevelopment(
         const historyVisible =
           typeof operation.result?.deployment_id === "number" &&
           history.some((r) => r.id === operation.result?.deployment_id);
-        const startRefused = operation.status === "failed" &&
-          operation.error_code === "swamp.start_refused" &&
+        const startFailed = operation.status === "failed" &&
+          ["swamp.start_refused", "swamp.start_unavailable"].includes(
+            operation.error_code ?? "",
+          ) &&
           operation.attempts === 0 && operation.result === null;
         if (
           !historyVisible &&
-          !startRefused &&
+          !startFailed &&
           !isAdmissionFence(operation) &&
           manual <= intent.manual_after
         ) {
