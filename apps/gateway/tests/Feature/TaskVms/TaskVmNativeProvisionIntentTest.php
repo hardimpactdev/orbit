@@ -27,6 +27,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\TaskVmRecipeImages;
@@ -221,8 +222,17 @@ it('ordinary allocation records the native parent instead of dispatching provisi
     $group = Task::topLevel()->create(['project_id' => $this->vm->group->project_id, 'title' => 'New provision', 'brief' => 'Native provision', 'status' => 'reserved', 'orchestration' => 'external', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
     config(['swamp.run_token' => 'fixture.fake']);
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-task-vm-provision', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    $teardownCouldEnter = null;
+    $socket->reply = function (array $message) use (&$teardownCouldEnter): array {
+        $probe = Cache::lock(ModelKeyIssuer::Lock, 30);
+        $teardownCouldEnter = $probe->get();
+        if ($teardownCouldEnter) {
+            $probe->release();
+        }
+
+        return [['type' => 'event', 'id' => $message['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => 'operation-task-vm-provision', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    };
     app()->instance(WebSocketClient::class, $socket);
     $vm = app(AllocateTaskVmAction::class)->execute($group);
     $operation = Operation::query()->where('kind', 'task_vm.provision')->sole();
@@ -230,7 +240,8 @@ it('ordinary allocation records the native parent instead of dispatching provisi
         ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
         ->and($operation->input['guest_node_id'])->toBe($vm->fresh()->node_id)
         ->and(app(AllocateTaskVmAction::class)->execute($group)->id)->toBe($vm->id)
-        ->and(Operation::query()->count())->toBe(1);
+        ->and(Operation::query()->count())->toBe(1)
+        ->and($teardownCouldEnter)->toBeFalse();
 });
 
 it('refused native admission rolls back ordinary allocation instead of stranding a VM', function (): void {

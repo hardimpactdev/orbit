@@ -15,6 +15,8 @@ After network publication succeeds, the host root records `node.network_enrolled
 
 The enrollment lane supplies the provider and enrollment lower actions. They run inside the provision root. Missing preparation refuses before provider allocation. Provision does not admit a Node, Process or enrollment child Operation.
 
+Native admission requires the provider and enrollment snapshots to agree on the VM, executor, Gateway, issuer, guest, model router and hub snapshot before provider work starts.
+
 Private worker and runtime material uses the shared declared-participant path. Private values stay inside callbacks. Native outputs contain only public placement and bounded status.
 
 The Gateway records the native result and marks the VM ready or failed. It does not execute provider work or validate native stage receipts again. Cancellation and failure leave the VM available to its separate destruction intent; they never fabricate provider absence.
