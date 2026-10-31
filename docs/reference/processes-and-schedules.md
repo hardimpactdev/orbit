@@ -101,7 +101,11 @@ Names match `[A-Za-z_][A-Za-z0-9_]*`. Values are strings, including the empty st
 
 ## Environment of a systemd Process
 
+### Private managed values
+
 Managed environment values live in an immutable file at `/etc/orbit/processes/{id}/{sha256}.env`. The public unit contains only its `EnvironmentFile` reference. Swamp writes the directory as root `0700` and the file as root `0600`, verifies its digest before staging the unit, and retains the previous generation for rollback. The shared `process.installation` private material carries the rendered unit and environment content; neither belongs in native arguments, resources, results or public unit text.
+
+### Runtime environment
 
 The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker keeps the image's `WORKDIR`, and Node systemd Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
 
