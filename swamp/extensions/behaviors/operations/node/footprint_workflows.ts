@@ -345,7 +345,7 @@ export function generatedFootprintWorkflows() {
         import.meta.url,
       ),
       text:
-        "# deno-fmt-ignore-file\n# Generated: deno run --allow-write extensions/behaviors/operations/node/footprint_workflows.ts\n" +
+        "# deno-fmt-ignore-file\n# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts\n" +
         stringify(workflow, { flowLevel: 4, lineWidth: -1 }),
     };
   });
