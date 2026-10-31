@@ -16,7 +16,6 @@ use App\Http\Requests\Operations\DirectOperationRequest;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Http\JsonResponse;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class DirectOperationsController extends Controller
@@ -43,18 +42,8 @@ final class DirectOperationsController extends Controller
         return $this->respond($request, $this->operation($direct->projection($operation)->apply($operation, $request->validated())));
     }
 
-    public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse|BinaryFileResponse
+    public function privateMaterial(DirectOperationPrivateRequest $request, Operation $operation, DirectOperationPrivateMaterial $material): JsonResponse
     {
-        $field = $request->validated('artifact');
-        if (is_string($field)) {
-            $artifact = $material->artifact($operation, $field);
-
-            return response()->download($artifact->path, 'artifact-'.$artifact->sha256, [
-                'Content-Type' => 'application/octet-stream', 'Cache-Control' => 'private, no-store',
-                'X-Content-Type-Options' => 'nosniff', 'X-Artifact-Sha256' => $artifact->sha256,
-            ])->setPrivate();
-        }
-
         return $this->respond($request, $material->read($operation))->header('Cache-Control', 'no-store');
     }
 
