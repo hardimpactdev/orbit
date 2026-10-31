@@ -1,0 +1,122 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Routes\AdmitRouteOperationAction;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\NativeRouteRemovalAdmission;
+use App\Domain\Routes\RouteStatus;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Operation;
+use App\Models\Project;
+use App\Models\Route;
+use Illuminate\Support\Facades\Event;
+use Tests\Support\FakeRoutePublicationSocket;
+
+beforeEach(function (): void {
+    $this->manifest = tempnam(sys_get_temp_dir(), 'removal-agent-');
+    file_put_contents($this->manifest, json_encode(['commit' => str_repeat('b', 40), 'version' => '0.5.0', 'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('a', 64), 'url' => 'https://example.test/agent']]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($this->manifest, sys_get_temp_dir()));
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
+    $this->node = Node::query()->create(['name' => 'removal', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $this->control = Node::query()->create(['name' => 'control', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $this->control->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->node->accessibleNodes()->attach($this->control);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'Removal', 'slug' => 'removal', 'repository_url' => 'https://example.test/removal.git']);
+    $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'dev', 'checkout_path' => '/home/orbit/removal', 'status' => 'reserved']);
+    $this->route = Route::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'domain' => 'removal.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+    $this->socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $this->socket);
+    $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
+    config(['dependency_detection.services_node_id' => $this->control->id, 'swamp.run_token' => 'fixture.fake']);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+});
+
+afterEach(function (): void {
+    unlink($this->manifest);
+});
+
+it('admits complete withdrawal before dispatch and keeps targets until the native root succeeds', function (): void {
+    $this->deleteJson('/api/v1/routes/'.$this->route->id)->assertAccepted();
+    $operation = Operation::query()->sole();
+    expect($this->socket->sent)->toHaveCount(1)
+        ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-removal')
+        ->and($operation->state)->not->toHaveKey('route_plan')
+        ->and($operation->input['route_removal']['routes'][0]['route_id'])->toBe($this->route->id)
+        ->and($this->route->fresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($this->route->targets()->count())->toBe(1);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.node_id', $this->node->id)
+        ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)
+        ->assertJsonPath('data.input.route_removal.routes.0.route_id', $this->route->id);
+    Event::fake([RecordBroadcast::class]);
+    $terminal = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true, 'retained_on_nodes' => []]];
+    $this->postJson($path.'/result', $terminal)->assertOk();
+    $this->postJson($path.'/result', $terminal)->assertOk();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded);
+    expect(Event::dispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteDeleted))->toHaveCount(1);
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteDeleted && $event->id === $this->route->id);
+    $this->assertDatabaseMissing('routes', ['id' => $this->route->id]);
+    $this->assertDatabaseHas('instances', ['id' => $this->instance->id]);
+});
+
+it('keeps rows and associations when a native withdrawal fails', function (): void {
+    $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'error_code' => 'route.withdrawal_failed', 'result' => []])->assertOk();
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Failed)
+        ->and($this->route->targets()->count())->toBe(1)
+        ->and($operation->fresh()->status)->toBe(OperationStatus::Failed);
+});
+
+it('projects withdrawal without deleting the owning Route', function (): void {
+    $operation = app(NativeRouteRemovalAdmission::class)->start('route.withdraw', $this->route);
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($this->route->targets()->count())->toBe(1);
+});
+
+it('gives a foreign participant its public view while the parent keeps its truthful coordinator', function (): void {
+    $operation = app(NativeRouteRemovalAdmission::class)->start('route.destroy', $this->route, true);
+    expect($operation->node_id)->toBe($this->control->id);
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->getJson($path.'?run_id='.$this->runId)->assertOk()
+        ->assertJsonPath('data.node_id', $this->control->id)
+        ->assertJsonPath('data.input.participant_node_id', $this->node->id)
+        ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)->assertJsonMissingPath('data.result');
+    $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]])->assertForbidden();
+    $material = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk();
+    $field = $operation->input['environment_fields'][$this->node->id];
+    expect(array_keys($material->json('data')))->toBe([$field]);
+    expect($material->json('data.'.$field))->toBe([]);
+    $other = Node::query()->create(['name' => 'other', 'public_ssh_host' => '192.0.2.15', 'wireguard_ip' => '10.44.0.15', 'user' => 'orbit', 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+    $this->getJson($path.'?run_id='.$this->runId)->assertForbidden();
+    expect($this->route->targets()->count())->toBe(1);
+});
+
+it('keeps captured rows when cancellation is recorded and rejects a later conflicting success', function (): void {
+    $operation = app(AdmitRouteOperationAction::class)->destroy($this->route);
+    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
+    $result = ['run_id' => $this->runId, 'status' => 'cancelled', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => []];
+    $this->postJson($path, $result)->assertOk();
+    $this->postJson($path, [...$result, 'status' => 'succeeded', 'result' => ['ready' => true]])->assertConflict();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and($this->route->targets()->count())->toBe(1);
+});

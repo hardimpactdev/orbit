@@ -6,9 +6,9 @@ namespace App\Providers\Domains;
 
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Routes\CustomProxyRouteProjector;
-use App\Domain\Routes\PhpPoolInputSource;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteEnvironmentMaterialSource;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -33,7 +33,7 @@ final class RoutesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bindIf(WebSocketClient::class, StreamWebSocketClient::class);
-        $this->app->tag([PhpPoolInputSource::class], OperationSecretSource::class);
+        $this->app->tag([RouteEnvironmentMaterialSource::class], OperationSecretSource::class);
         $this->app->tag([RouteCaddySiteSource::class], NodeCaddySiteSource::class);
     }
 }
