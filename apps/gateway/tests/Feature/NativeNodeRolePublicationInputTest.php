@@ -3,15 +3,20 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeNodeRolePublicationInput;
+use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
+use App\Infrastructure\Caddy\Build\NodeCaddyListeners;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
@@ -128,3 +133,166 @@ it('captures ordinary role duties without manufacturing certificates', function 
         expect($capture['publications'])->toBe([]);
     }
 })->with([RoleName::Gateway, RoleName::Router, RoleName::Ingress, RoleName::AppDev, RoleName::AppProd, RoleName::Database]);
+
+function rolePublicationCandidate(Node $node, array $values = []): NodeEnrollmentCandidate
+{
+    return new NodeEnrollmentCandidate(
+        nodeId: $values['nodeId'] ?? $node->id,
+        name: $values['name'] ?? 'next-role-target',
+        user: $values['user'] ?? 'nextorbit',
+        platform: 'linux', architecture: 'x86_64',
+        wireguardIp: $values['wireguardIp'] ?? '10.44.0.201',
+        publicSshHost: '192.0.2.201', publicSshPort: 2222,
+        clusterId: $values['clusterId'] ?? null, tld: $values['tld'] ?? 'next.test',
+        lanIp: $values['lanIp'] ?? '10.77.0.201',
+        wireguardEndpointOverride: null, dnsServerOverride: null,
+    );
+}
+
+it('captures prospective account and complete app sites without reusing the actual catalog', function (): void {
+    $node = FleetFixtures::node('candidate-app', [RoleName::AppDev]);
+    $node->update(['tld' => 'prior.test']);
+    $project = Project::query()->create(['name' => 'Candidate App', 'slug' => 'candidate-app', 'repository_url' => 'https://example.test/candidate.git', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/srv/candidate', 'root' => 'public', 'selected_php_version' => '8.5', 'status' => 'active']);
+    $route = Route::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'domain' => 'literal.prior.test',
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $stored = $node->fresh()->getAttributes();
+    $roles = $node->roles()->get()->toArray();
+    $settings = Setting::query()->get()->toArray();
+
+    $capture = app(RoutePublicationSites::class)->render(collect(),
+        fn () => app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::AppDev, rolePublicationCandidate($node)));
+    $row = collect($capture['publications'])->firstWhere('node_id', $node->id);
+    $dns = collect($capture['publications'])->firstWhere('node_id', $this->gateway->id);
+
+    expect($row['before']['caddy']['content'])->toContain('bind '.$node->wireguard_ip)
+        ->and($row['after']['caddy']['content'])->toContain('bind 10.44.0.201')->toContain('literal.prior.test')
+        ->and($row['before']['php']['account_user'])->toBe('orbit')
+        ->and($row['after']['php']['account_user'])->toBe('nextorbit')
+        ->and(json_encode($row['after']['php']['configurations']))->toContain('user = nextorbit')
+        ->and($row['connection']['nodeHost'])->toBe('10.44.0.201')
+        ->and($row['connection']['nodeUser'])->toBe('nextorbit')
+        ->and($row['host_keys'])->toBe([$node->ssh_host_key_type.' '.$node->ssh_host_key])
+        ->and($dns['before']['dns']['records'])->toContain('address=/.prior.test/'.$node->wireguard_ip)
+        ->and($dns['after']['dns']['records'])->toContain('address=/.next.test/10.44.0.201')->toContain('host-record=literal.prior.test,10.44.0.201')
+        ->and($dns['after']['caddy'])->toBeNull()->and($dns['after']['php'])->toBeNull()
+        ->and($dns['host_keys'])->not->toBeNull()
+        ->and($node->fresh()->getAttributes())->toBe($stored)
+        ->and($node->roles()->get()->toArray())->toBe($roles)
+        ->and(Setting::query()->get()->toArray())->toBe($settings)
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('captures an explicitly pending same-node target with required native pin binding', function (): void {
+    $node = FleetFixtures::node('pending-websocket', [RoleName::WebSocket]);
+    $node->update(['status' => 'provisioning', 'wireguard_ip' => null, 'ssh_host_key_type' => null, 'ssh_host_key' => null]);
+    $node->roles()->update(['status' => 'provisioning']);
+    $stored = $node->fresh()->getAttributes();
+
+    $capture = app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::WebSocket, rolePublicationCandidate($node));
+    $row = collect($capture['publications'])->firstWhere('node_id', $node->id);
+    $dns = collect($capture['publications'])->firstWhere('node_id', $this->gateway->id);
+
+    expect($row['host_keys'])->toBeNull()
+        ->and($row['control_node_id'])->toBe(209)
+        ->and($row['connection'])->toBe(['nodeHost' => '10.44.0.201', 'nodeUser' => 'nextorbit', 'nodePort' => 22,
+            'nodeIdentityFile' => '/run/credentials/orbit-node-worker.service/proxy-ssh-identity'])
+        ->and($row['before']['caddy']['content'])->not->toContain('# orbit: websocket')
+        ->and($row['after']['caddy']['content'])->toContain('# orbit: websocket reverb.orbit')->toContain('10.44.0.201')
+        ->and($row['after']['php'])->toBeNull()
+        ->and($dns['before']['dns']['records'])->not->toContain('host-record=reverb.orbit,10.44.0.201')
+        ->and($dns['after']['dns']['records'])->toContain('host-record=reverb.orbit,10.44.0.201')
+        ->and($node->fresh()->getAttributes())->toBe($stored);
+});
+
+it('rejects a different prospective Node identity before publication capture', function (): void {
+    $node = FleetFixtures::node('candidate-identity', [RoleName::WebSocket]);
+    expect(fn () => app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::WebSocket,
+        rolePublicationCandidate($node, ['nodeId' => $this->gateway->id])))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('keeps actual before outside nested scopes and restores every render context', function (): void {
+    $node = FleetFixtures::node('nested-candidate', [RoleName::WebSocket]);
+    $context = app(RouteRenderContext::class);
+    $outer = rolePublicationCandidate($node, ['wireguardIp' => '10.44.0.202', 'name' => 'outer-target']);
+    $plan = ['leaves' => [['node_id' => $node->id, 'scope' => 'role-websocket']], 'withdrawals' => []];
+
+    $context->renderEnrollment($outer, function () use ($node, $context, $plan): void {
+        $context->renderRoleCertificates($plan, function () use ($node, $context): void {
+            $capture = app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::WebSocket, rolePublicationCandidate($node));
+            $row = collect($capture['publications'])->firstWhere('node_id', $node->id);
+            expect($row['before']['caddy']['content'])->not->toContain('# orbit: websocket')
+                ->and($row['after']['caddy']['content'])->toContain('10.44.0.201')
+                ->and($context->wireguardIp($node))->toBe('10.44.0.202')
+                ->and($context->name($node))->toBe('outer-target')
+                ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeTrue();
+            expect(fn () => $context->renderEnrollment(rolePublicationCandidate($node), fn () => throw new RuntimeException('candidate error')))
+                ->toThrow(RuntimeException::class, 'candidate error');
+            expect($context->name($node))->toBe('outer-target');
+        });
+        expect(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeFalse();
+    });
+    expect($context->nodeId())->toBeNull()->and($context->name($node))->toBe($node->name)
+        ->and($context->user($node))->toBe($node->user)->and($context->lanIp($node))->toBe($node->lan_ip);
+});
+
+it('renders prospective Gateway hostname and LAN listeners through canonical readers', function (): void {
+    $node = FleetFixtures::node('prior-gateway', [RoleName::Gateway]);
+    $node->update(['lan_ip' => '10.77.0.101']);
+    $capture = app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::Gateway, rolePublicationCandidate($node));
+    $row = collect($capture['publications'])->firstWhere('node_id', $node->id);
+    expect($row['before']['caddy']['content'])->toContain('prior-gateway.orbit')
+        ->and($row['after']['caddy']['content'])->toContain('next-role-target.orbit')->not->toContain('prior-gateway.orbit');
+    $listeners = app(RouteRenderContext::class)->renderEnrollment(rolePublicationCandidate($node),
+        fn () => NodeCaddyListeners::forSites($node));
+    expect($listeners->explicit)->toBe(['10.44.0.201', '10.77.0.201']);
+});
+
+it('uses candidate cluster membership and LAN in the DNS catalog while explicit overrides win', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'candidate-cluster', 'tld' => 'cluster.test', 'state' => 'active']);
+    $router = FleetFixtures::node('candidate-router');
+    $router->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.77.0.1']);
+    $router->roles()->create(['role' => RoleName::Router, 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $member = FleetFixtures::node('candidate-requester', [RoleName::AppDev]);
+    $member->update(['wireguard_public_key' => 'public-requester', 'lan_ip' => null, 'cluster_id' => null]);
+    $renderer = app(DevelopmentDnsConfigRenderer::class);
+    $context = app(RouteRenderContext::class);
+    $memberBefore = $member->fresh()->getAttributes();
+    $candidate = rolePublicationCandidate($member, ['clusterId' => $cluster->id]);
+
+    $catalog = $context->renderEnrollment($candidate, fn () => $renderer->catalog());
+    $overridden = $context->renderEnrollment($candidate, fn () => $renderer->catalog(null, [$member->id => ['cluster_id' => null]]));
+    expect($catalog->overrides['node:'.$member->id]['cluster.test'])->toBe('10.77.0.1')
+        ->and($overridden->overrides)->not->toHaveKey('node:'.$member->id)
+        ->and($renderer->catalog()->overrides)->not->toHaveKey('node:'.$member->id)
+        ->and($member->fresh()->getAttributes())->toBe($memberBefore);
+
+    $member->update(['cluster_id' => $cluster->id, 'lan_ip' => '10.77.0.2']);
+    $routerCandidate = rolePublicationCandidate($router, ['clusterId' => $cluster->id, 'lanIp' => '10.77.0.99']);
+    $catalog = $context->renderEnrollment($routerCandidate, fn () => $renderer->catalog());
+    $overridden = $context->renderEnrollment($routerCandidate, fn () => $renderer->catalog(null, [$router->id => ['lan_ip' => '10.77.0.88']]));
+    expect($catalog->overrides['node:'.$member->id]['cluster.test'])->toBe('10.77.0.99')
+        ->and($overridden->overrides['node:'.$member->id]['cluster.test'])->toBe('10.77.0.88');
+});
+
+it('restores outer identity and readiness when a publication participant cannot be captured', function (): void {
+    $node = FleetFixtures::node('failing-candidate', [RoleName::WebSocket]);
+    $this->gateway->update(['ssh_host_key' => null]);
+    $context = app(RouteRenderContext::class);
+    $outer = rolePublicationCandidate($node, ['name' => 'outer-failure']);
+    $plan = ['leaves' => [['node_id' => $node->id, 'scope' => 'role-websocket']], 'withdrawals' => []];
+    $context->renderEnrollment($outer, function () use ($node, $context, $plan): void {
+        $context->renderRoleCertificates($plan, function () use ($node, $context): void {
+            expect(fn () => app(NativeNodeRolePublicationInput::class)->capture($node, RoleName::WebSocket, rolePublicationCandidate($node)))
+                ->toThrow(ResourceOperationException::class);
+            expect($context->name($node))->toBe('outer-failure')
+                ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeTrue();
+        });
+    });
+    expect($context->nodeId())->toBeNull()
+        ->and(app(CaddySiteCertificates::class)->published($node->id, 'websocket'))->toBeFalse();
+});

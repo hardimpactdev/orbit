@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\RoleName;
@@ -31,27 +32,44 @@ final readonly class NativeNodeRolePublicationInput
     /** Certificates precede after-Caddy/PHP; after-DNS follows Caddy. Restore selects before.
      * @return array{certificates:CertificatePlan,publications:list<array<string,mixed>>,participant_node_ids:list<int>}
      */
-    public function capture(Node $node, RoleName $role): array
+    public function capture(Node $node, RoleName $role, ?NodeEnrollmentCandidate $candidate = null): array
     {
-        if (CaddySiteRoles::serving($role, $node->id) === []) {
-            throw new ResourceOperationException('node.role_publication_invalid', 'Role capture requires its existing admitted serving assignment.', 409);
+        if ($candidate !== null && $candidate->nodeId !== $node->id) {
+            throw new ResourceOperationException('node.role_publication_invalid', 'The prospective identity must name the actual admitted Node.', 422);
         }
-        $certificates = $this->certificates->capture($node, $role);
-        $duties = $this->roles->capture($node, $role);
-        $participants = NodeRolePublicationInput::participants($duties);
-        $sites = $this->sites->all();
-        $rows = [];
-        foreach ($participants as $nodeId) {
-            $participant = Node::query()->findOrFail($nodeId);
-            $before = $this->snapshot($participant, $sites, $duties);
-            $after = $this->render->renderRoleCertificates($certificates,
-                fn (): array => $this->snapshot($participant, $sites, $duties));
-            $rows[] = ['node_id' => $nodeId, ...$this->connections->connectionForNode($participant), 'before' => $before, 'after' => $after];
-        }
-        $participants = array_values(array_unique([$node->id, 209, ...$participants, ...NodeRoleCertificateInput::participants($certificates)]));
-        sort($participants);
 
-        return ['certificates' => $certificates, 'publications' => $rows, 'participant_node_ids' => $participants];
+        return $this->render->renderActual(function () use ($node, $role, $candidate): array {
+            if (CaddySiteRoles::serving($role, $node->id) === []) {
+                throw new ResourceOperationException('node.role_publication_invalid', 'Role capture requires its existing admitted serving assignment.', 409);
+            }
+            $certificates = $this->certificates->capture($node, $role);
+            $duties = $this->roles->capture($node, $role);
+            $participants = NodeRolePublicationInput::participants($duties);
+            $sites = $this->sites->renderAll();
+            $before = [];
+            foreach ($participants as $nodeId) {
+                $before[$nodeId] = $this->snapshot(Node::query()->findOrFail($nodeId), $sites, $duties);
+            }
+            $forward = fn (): array => $this->render->renderRoleCertificates($certificates, function () use ($participants, $before, $duties, $candidate): array {
+                $sites = $this->sites->renderAll();
+                $rows = [];
+                foreach ($participants as $nodeId) {
+                    $participant = Node::query()->findOrFail($nodeId);
+                    $connection = $candidate?->nodeId === $nodeId
+                        ? $this->connections->connectionForCandidate($participant, $candidate)
+                        : $this->connections->connectionForNode($participant);
+                    $rows[] = ['node_id' => $nodeId, ...$connection, 'before' => $before[$nodeId],
+                        'after' => $this->snapshot($participant, $sites, $duties)];
+                }
+
+                return $rows;
+            });
+            $rows = $candidate === null ? $forward() : $this->render->renderEnrollment($candidate, $forward);
+            $participants = array_values(array_unique([$node->id, 209, ...$participants, ...NodeRoleCertificateInput::participants($certificates)]));
+            sort($participants);
+
+            return ['certificates' => $certificates, 'publications' => $rows, 'participant_node_ids' => $participants];
+        });
     }
 
     /** @param Collection<int,DevelopmentSite> $sites
@@ -60,13 +78,15 @@ final readonly class NativeNodeRolePublicationInput
      */
     private function snapshot(Node $node, Collection $sites, array $duties): array
     {
-        $caddy = in_array($node->id, $duties['caddy_node_ids'], true);
-        $php = in_array($node->id, $duties['php_node_ids'], true);
-        $snapshot = $caddy || $php ? $this->publications->snapshot($node, $sites)
-            : ['caddy' => null, 'php' => null, 'certificate_scopes' => []];
+        return app(RoutePublicationSites::class)->render($sites, function () use ($node, $sites, $duties): array {
+            $caddy = in_array($node->id, $duties['caddy_node_ids'], true);
+            $php = in_array($node->id, $duties['php_node_ids'], true);
+            $snapshot = $caddy || $php ? $this->publications->snapshot($node, $sites)
+                : ['caddy' => null, 'php' => null, 'certificate_scopes' => []];
 
-        return [...$snapshot, 'caddy' => $caddy ? $snapshot['caddy'] : null,
-            'php' => $php ? $snapshot['php'] : null,
-            'dns' => in_array($node->id, $duties['dns_node_ids'], true) ? $this->publications->dns($node) : null];
+            return [...$snapshot, 'caddy' => $caddy ? $snapshot['caddy'] : null,
+                'php' => $php ? $snapshot['php'] : null,
+                'dns' => in_array($node->id, $duties['dns_node_ids'], true) ? $this->publications->dns($node) : null];
+        });
     }
 }
