@@ -1,1 +1,1 @@
-{"error":{"code":"tasks.subtask_not_running","message":"Only a todo or running subtask can be cancelled.","request_id":null}}
+{"error":{"code":"tasks.subtask_not_running","message":"Only a todo, running, or reviewing subtask in an open group can be cancelled.","request_id":null}}
