@@ -292,6 +292,10 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
         return Ok(Requested::Current {});
     }
     let versions = root.join("versions");
+    // A partly published version needs a fresh admission; never replace its committed key.
+    if fs::symlink_metadata(versions.join(&input.version)).is_ok() {
+        return Err(failed(step));
+    }
     let versions_text = versions.to_string_lossy().into_owned();
     host.as_user(
         &input.user,
@@ -299,14 +303,17 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
         &["-d", "-m", "0700", "--", &versions_text],
     )
     .ok_or_else(|| failed(step))?;
+    let candidate_name = format!("{}.candidate", input.version);
     if let Ok(entries) = fs::read_dir(&versions) {
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().ends_with(".candidate") {
+            if entry.file_name().to_string_lossy().ends_with(".candidate")
+                && entry.file_name() != std::ffi::OsStr::new(&candidate_name)
+            {
                 let _ = fs::remove_dir_all(entry.path());
             }
         }
     }
-    let candidate = versions.join(format!("{}.candidate", input.version));
+    let candidate = versions.join(candidate_name);
     let candidate_text = candidate.to_string_lossy().into_owned();
     let key = format!("{candidate_text}/key.pem");
     let request = format!("{candidate_text}/request.pem");
@@ -317,8 +324,18 @@ fn request(files: &Files, host: &mut impl Host, input: &LeafInput) -> Result<Req
         &["-d", "-m", "0700", "--", &candidate_text],
     )
     .ok_or_else(|| failed(step))?;
-    host.as_user(&input.user, "openssl", &["genrsa", "-out", &key, "2048"])
-        .ok_or_else(|| failed(step))?;
+    match fs::symlink_metadata(&key) {
+        Ok(metadata) => {
+            if !metadata.is_file() || !key_is_rsa_2048(&key) {
+                return Err(failed(step));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            host.as_user(&input.user, "openssl", &["genrsa", "-out", &key, "2048"])
+                .ok_or_else(|| failed(step))?;
+        }
+        Err(_) => return Err(failed(step)),
+    }
     host.as_user(&input.user, "chmod", &["0600", &key])
         .ok_or_else(|| failed(step))?;
     host.as_user(

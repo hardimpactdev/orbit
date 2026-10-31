@@ -511,7 +511,9 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
 | `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router drops its site |
 
-Swamp executes `certificate.converge` and `certificate.remove` on one recorded Node and certificate scope. A leaf request returns only a public CSR. The Gateway signs it, then resolves protected certificate references at publication. Completion requires the request, signing, publication and inspection receipts, or proof that the current leaf was inspected. Removal refuses a scope still used by a stored Caddy site. Lost replies recover the original sanitized target receipt without generating another key.
+Swamp executes `certificate.converge` and `certificate.remove` as separate native workflows on the exact admitted Node worker. Admission records the scope, account, domain, version, root hash and agent pin. The local agent keeps the leaf key and returns a public CSR. The existing Gateway signing primitive keeps the CA key on the Gateway and returns public certificates. Separate native steps request, sign, publish and inspect the leaf. Removal admits only a scope that no stored Caddy site uses, then removes and inspects it locally. Native Swamp locks and retries own execution.
+
+Route workflows reuse these local steps inside their parent run; they create no certificate child Operation. Gateway result projection stores only the bounded status and presence result.
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 

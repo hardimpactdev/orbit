@@ -9,31 +9,65 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Operation;
 
 /** Records one leaf intent. The signer and Node effects run later through Swamp. */
 final readonly class StartCertificateOperationAction
 {
-    public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer) {}
+    public function __construct(private StartOperationAction $operations, private ManagedUserAccountResolver $accounts, private LeafCertificateSigner $signer, private AgentDelivery $agents, private DevelopmentSiteRepository $sites) {}
 
     public function converge(Node $node, string $scope, string $domain, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
-        $this->assertScope($scope);
-        $account = $this->accounts->resolve($node);
-
         return $this->operations->execute('certificate.converge', 'node_certificate', $node->id, $node->id,
-            ['scope' => $scope, 'domain' => RouteDomain::validate($domain), 'version' => bin2hex(random_bytes(8)),
-                'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user, 'home' => $account->home],
-            $triggeredBy, $requestId);
+            $this->convergenceInput($node, $scope, $domain), $triggeredBy, $requestId);
     }
 
     public function remove(Node $node, string $scope, ?string $requestId = null, ?string $triggeredBy = 'operator'): Operation
     {
-        $this->assertScope($scope);
-
         return $this->operations->execute('certificate.remove', 'node_certificate', $node->id, $node->id,
-            ['scope' => $scope, 'home' => $this->accounts->resolve($node)->home], $triggeredBy, $requestId);
+            $this->removalInput($node, $scope), $triggeredBy, $requestId);
+    }
+
+    /** Admitted public leaf input, also used by Route parent workflows.
+     * @return array<string, mixed>
+     */
+    public function convergenceInput(Node $node, string $scope, string $domain): array
+    {
+        $input = $this->scopeInput($node, $scope);
+        $account = $this->accounts->resolve($node);
+
+        return [...$input, 'domain' => RouteDomain::validate($domain), 'version' => bin2hex(random_bytes(8)),
+            'root_hash' => hash('sha256', $this->signer->rootCertificate()), 'user' => $account->user];
+    }
+
+    /** Admission runs after the caller withdraws all stored sites for this scope.
+     * @return array<string, mixed>
+     */
+    public function removalInput(Node $node, string $scope): array
+    {
+        $input = $this->scopeInput($node, $scope);
+        if ($this->sites->forNode($node)->contains(
+            static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
+            throw new ResourceOperationException('app-dev.certificate_in_use', 'A stored Caddy site still uses this certificate.', 409);
+        }
+
+        return [...$input, 'in_use' => false];
+    }
+
+    /** @return array<string, mixed> */
+    private function scopeInput(Node $node, string $scope): array
+    {
+        $this->assertScope($scope);
+        if ($node->platform !== 'linux') {
+            throw new ResourceOperationException('certificate.node_unsupported', 'Certificate operations require a Linux Node.', 422);
+        }
+
+        return ['node_id' => $node->id, 'scope' => $scope, 'home' => $this->accounts->resolve($node)->home,
+            'agent_sha256' => $this->agents->pin($node)];
     }
 
     private function assertScope(string $scope): void
