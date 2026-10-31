@@ -168,7 +168,7 @@ it('refuses enrollment without a task group before reserving a Node or credentia
 it('keeps private references and credentials out of the worker input', function (): void {
     $vm = nativeEnrollmentVm();
     $intent = app(TaskVmEnrollmentIntent::class)->capture($vm);
-    $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id,
+    $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id, 'node_id' => $intent['execution_node_id'],
         'input' => [...$intent, 'model_key' => $vm->fresh()->model_key, 'pi_token' => $vm->pi_token,
             'pi_artifact_file' => ['$secret' => 'task_vm.pi_artifact', 'id' => $vm->id]]]);
 
@@ -215,7 +215,8 @@ it('admits immutable field custody without exporting private material or invokin
         expect($private)->not->toHaveKey('provider_bootstrap');
         expect($private['model_router_node_id'])->toBe($router->id);
         expect($private['model_origin'])->toBe($intent['runtime']['origin']);
-        $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id, 'input' => [...$intent, ...$private]]);
+        $operation = new Operation(['kind' => 'task_vm.enroll', 'target_type' => 'task_vm', 'target_id' => $vm->id,
+            'node_id' => $intent['execution_node_id'], 'input' => [...$intent, ...$private]]);
         $public = app(TaskVmEnrollmentProjection::class)->input($operation);
         expect(json_encode($public))->not->toContain('$secret')->not->toContain('PRIVATE-HUB')->not->toContain($vm->fresh()->model_key);
         expect(app(TaskVmEnrollmentIntent::class)->installation($vm)['environment'])->toContain('#');

@@ -1401,7 +1401,9 @@ Swamp renders cloud-init from the staged pair and the admitted Gateway public ke
 
 A park stops the server cleanly, and a hard stop follows after 150 seconds. UpCloud bills a stopped server for its storage only. A destroy stops the server, deletes it with its disk, and waits until it is gone.
 
-Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. Task VM provisioning, enrollment, resume, destruction and runtime preparation retain their synchronous jobs until the owning Node and Process child composition is installed. Their new admission actions refuse with `operation.kind_unavailable` while that composition is missing. A registered owning kind alone does not enable a parent that has no matching child declaration.
+Swamp owns UpCloud image cleanup and orphan sweeps. Both native workflows use the Gateway worker and callback-local credentials. These workflows stop a server before deletion and confirm absence afterward. An unported Task VM kind returns `operation.kind_unavailable`; it has no polled executor.
+
+Task VM enrollment captures the guest Node and Pi Process intent without executing either. One native root bootstraps through its admitted first-visit transport, records the public SSH identity, publishes the network, issues and installs the exact Node worker, then prepares Pi through the shared native Process installer. Readiness requires execution on that guest's trusted Node worker. The group worker cannot substitute for it. Model-key steps use the stable router behavior shared with teardown. Private credentials stay on the admitted private-material transport; the Gateway projects public results.
 
 ### Build the UpCloud template
 

@@ -26,7 +26,8 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
     public function input(Operation $operation): array
     {
         if (! in_array($operation->kind, ['task_vm.enroll', 'task_vm.prepare_runtime'], true)
-            || $operation->target_type !== 'task_vm' || ($operation->input['task_vm_id'] ?? null) !== $operation->target_id) {
+            || $operation->target_type !== 'task_vm' || ($operation->input['task_vm_id'] ?? null) !== $operation->target_id
+            || ($operation->input[$operation->kind === 'task_vm.prepare_runtime' ? 'guest_node_id' : 'execution_node_id'] ?? null) !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'Enrollment requires its admitted VM intent.', 422);
         }
 
