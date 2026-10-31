@@ -35,6 +35,11 @@ class NativePublication(harness.NativeTestCase):
         tasks = self.repo / "extensions/behaviors/operations/tasks"
         tasks.mkdir(parents=True)
         shutil.copy(ROOT / "extensions/behaviors/operations/tasks/publish.ts", tasks)
+        tasks = self.repo / "extensions/behaviors/operations/tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        for name in ("publish.ts", "check.ts"):
+            shutil.copy(ROOT / "extensions/behaviors/operations/tasks" / name, tasks)
+
         shutil.copy(
             ROOT / "extensions/behaviors/operations/task-repository/input.ts", target
         )

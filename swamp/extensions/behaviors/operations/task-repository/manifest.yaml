@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/task-repository-scripts'
-version: 2026.10.31.2
+version: 2026.10.31.3
 visibility: private
 license: MIT
 description: Public Tasks repository metadata and separate native script/analysis
@@ -8,6 +8,7 @@ description: Public Tasks repository metadata and separate native script/analysi
 behaviors:
 - operations/task-repository/assets.ts
 - operations/task-repository/publication.ts
+- operations/task-repository/check.ts
 additionalFiles:
 - scripts/repository_common.py
 - scripts/inspect.py
@@ -24,3 +25,11 @@ additionalFiles:
 - scripts/publish_pull_read.py
 - scripts/publish_pull_write.py
 - scripts/publish_revoke.py
+- scripts/check_common.py
+- scripts/check_validate.py
+- scripts/check_command.py
+- scripts/check_base_prepare.py
+- scripts/check_diff.py
+- scripts/check_commit.py
+- scripts/check_ci_caches.sh
+- scripts/check_ci_read.py

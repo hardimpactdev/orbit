@@ -3213,69 +3213,11 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tasks/check_program.ts",
-      "rule": "inline-script",
-      "count": 306,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/check_program.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "git",
-        "tar"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/check.ts",
-      "rule": "custom-control",
-      "count": 2,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/check.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/check.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/mod.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/tasks/provision.ts",
       "rule": "gateway-http",
       "count": 1,
       "evidence": [
         "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/script_program.ts",
-      "rule": "inline-script",
-      "count": 163,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/script_program.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "git",
-        "sudo"
       ]
     },
     {

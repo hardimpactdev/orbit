@@ -7,13 +7,17 @@ namespace App\Domain\Tasks;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /** Records board metadata and the owned workspace. Swamp executes the check. */
 final readonly class TaskCheckIntent
@@ -53,6 +57,20 @@ final readonly class TaskCheckIntent
             if ($ci !== null && $repository === null) {
                 throw new ResourceOperationException('tasks.repository_unavailable', 'Hosted CI requires a GitHub repository.', 422);
             }
+            $ssh = app(SwampSshExecutionInput::class)->forNode($instance->node);
+            $copies = [];
+            if ($ci !== null) {
+                $access = app(RepositoryPullRequestAccess::class);
+                $checksToken = $access->checksToken($repository);
+                if ($checksToken === null) {
+                    throw new ResourceOperationException('tasks.handoff_ci_unavailable', 'The repository requires Checks read access.', 503);
+                }
+                $key = (string) Str::uuid();
+                $copies = [
+                    'github_token' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-check-write-'.$key, $access->token($repository)),
+                    'checks_token' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'task-check-read-'.$key, $checksToken),
+                ];
+            }
             $check = $task->checks()->create(['kind' => $input->phase, 'status' => TaskCheckStatus::Running, 'pid' => 0, 'process_started' => '', 'head_before' => '', 'tree_before' => '', 'started_at' => now()]);
 
             return $this->start->execute('tasks.check', 'task_group', $group->id, $instance->node_id, [
@@ -64,7 +82,7 @@ final readonly class TaskCheckIntent
                 'base' => TaskReviewBase::commit($task), 'message' => TaskHandoffCiChecks::message($task),
                 'repository' => $repository === null ? null : $repository->owner.'/'.$repository->name,
                 'check_name' => $ci, 'branch' => TaskRemoteBranch::handoff($group),
-                'credentials' => ['$secret' => 'github.task_repository', 'id' => $group->project_id],
+                'ssh_execution' => $ssh, 'execution_secrets' => $copies, 'admitted_at' => now()->toISOString(),
             ], $caller, $request);
         });
     }

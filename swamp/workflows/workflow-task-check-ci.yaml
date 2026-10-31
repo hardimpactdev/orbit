@@ -1,0 +1,240 @@
+id: 4a2d9dd5-9f83-41d4-b8df-8e46367ed230
+name: task-check-ci
+description: One bounded Checks observation per pending handoff at each native schedule tick.
+trigger:
+  schedule: 0 * * * * *
+vaults:
+- orbit-control-inputs
+jobs:
+- name: checks
+  target: orbit-node-209
+  labels: &id001
+    node: '209'
+  steps:
+  - name: assets
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      methodName: assets
+      inputs: {}
+  - name: read-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-ci-read-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: execute
+      inputs:
+        run: 'python3 -B "$ORBIT_ACTION"
+
+          '
+        env:
+          ORBIT_ACTION: ${{ steps.assets.outputs.ci_script }}
+          ORBIT_PENDING_CHECK: ${{ self.check.attributes.input_json }}
+          ORBIT_GITHUB_TOKEN: ${{ vault.get(self.check.attributes.inputs.execution_secrets.checks_token.vault, self.check.attributes.inputs.execution_secrets.checks_token.key)
+            }}
+    forEach: &id002
+      item: check
+      in: ${{ data.query('modelType == "@nckrtl/task-check-data" && specName == "pending" && tags.task_check == "pending" && attributes.pending == true')
+        }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: ci-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      methodName: ci
+      inputs:
+        pending: ${{ self.check.attributes }}
+        reading: ${{ steps["read-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout }}
+    forEach: *id002
+    dependsOn:
+    - step: read-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: succeeded
+  - name: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: exec
+      globalArgs: &id003
+        name: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+        transport:
+          kind: ssh
+          user: ${{ self.check.attributes.inputs.intent.ssh_execution.target.user }}
+          port: ${{ self.check.attributes.inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ self.check.attributes.inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ self.check.attributes.inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ self.check.attributes.inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - mkdir
+        - -p
+        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+    dependsOn:
+    - step: ci-${{ self.check.attributes.inputs.operation_id }}
+      condition: &id004
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+  - name: copy_assets-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: copy
+      globalArgs: *id003
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/" }}
+        direction: to
+        recursive: true
+    dependsOn:
+    - step: prepare_remote-${{ self.check.attributes.inputs.operation_id }}
+      condition: *id004
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+  - name: snapshot-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id003
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) + "/scripts/snapshot.py" }}
+        stdin: ${{ self.check.attributes.inputs_json }}
+    dependsOn:
+    - step: copy_assets-${{ self.check.attributes.inputs.operation_id }}
+      condition: *id004
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+    allowFailure: true
+  - name: observed-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      methodName: observed
+      inputs:
+        value: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs }}
+        snapshot: '${{ "snapshot-" + string(self.check.attributes.inputs.operation_id) in steps && "outputs" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)]
+          && "stdout" in steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs ? steps["snapshot-" + string(self.check.attributes.inputs.operation_id)].outputs.stdout
+          : "{}" }}'
+    dependsOn:
+    - step: snapshot-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: always
+  - name: cleanup_remote-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels:
+      node: '209'
+    forEach: *id002
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-check-ci-ssh-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: exec
+      globalArgs: *id003
+      inputs:
+        hosts: name:target
+        argv:
+        - rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-check-ci-" + run.id + "-" + string(self.check.attributes.inputs.operation_id) }}
+    dependsOn:
+    - step: observed-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: always
+    guard: ${{ steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.pending || steps["ci-" + string(self.check.attributes.inputs.operation_id)].outputs.status
+      != "succeeded" }}
+    allowFailure: true
+  - name: settle-${{ self.check.attributes.inputs.operation_id }}
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-pending-" + string(self.check.attributes.inputs.operation_id) }}
+      methodName: settle
+      inputs:
+        value: ${{ steps["observed-" + string(self.check.attributes.inputs.operation_id)].outputs }}
+    forEach: *id002
+    dependsOn:
+    - step: observed-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: succeeded
+  - name: collect
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-check-data'
+      behaviorName: ${{ "task-check-ci-data-" + run.id }}
+      methodName: collect
+      inputs:
+        steps: ${{ steps }}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+    - step: settle-${{ self.check.attributes.inputs.operation_id }}
+      condition:
+        type: always
+  - name: result
+    target: orbit-node-209
+    labels: *id001
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "task-check-ci-result-" + run.id }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$ORBIT_RESULT"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.collect.outputs.result_json }}
+    dependsOn:
+    - step: collect
+      condition:
+        type: succeeded

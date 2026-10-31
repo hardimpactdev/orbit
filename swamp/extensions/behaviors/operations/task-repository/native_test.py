@@ -23,6 +23,11 @@ class NativeRepository(harness.NativeTestCase):
     def setUp(self):
         super().setUp()
         self.copy_behaviors("operations/task-repository")
+        tasks = self.repo / "extensions/behaviors/operations/tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        for name in ("publish.ts", "check.ts"):
+            shutil.copy(ROOT / "extensions/behaviors/operations/tasks" / name, tasks)
+
         official = self.repo / ".swamp/pulled-extensions/@swamp/ssh"
         official.parent.mkdir(parents=True)
         shutil.copytree(ROOT / ".swamp/pulled-extensions/@swamp/ssh", official)
