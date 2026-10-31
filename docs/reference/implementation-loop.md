@@ -96,6 +96,8 @@ CI runs builds and static checks only. It keeps every test file, but runs no tes
 
 Build jobs start in parallel and check their input scope before installing toolchains or dependencies. They do not wait for the agent-delivery selection job. Scope detection fetches only the event commit and its comparison base. A PR without changes under `apps/agent` starts no agent build or delivery work; main still compares the published source tree to detect an unpublished agent change from an earlier merge.
 
+CI wall time is measured from workflow creation to completion of `Required checks`, including queueing and the final gate.
+
 Installed Gateway runtime and CLI build dependencies use lock-based caches. Composer install and its current lifecycle scripts always rerun, including contract generation and autoload discovery. Download caches restore across lockfile changes. Source, generated contracts and release binaries are never restored as dependency caches.
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
