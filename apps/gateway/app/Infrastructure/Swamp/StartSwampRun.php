@@ -6,11 +6,13 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\ProjectSwampTerminal;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -47,6 +49,18 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.native_dispatch_failed', 'The native workflow ended before its start completed.', 503);
             }
             $outcome = 'started';
+            if (isset($declaration['terminal_result'], $response['terminal_run'])) {
+                try {
+                    ProjectSwampTerminal::dispatch($operation->id, $response['run_id'], $response['terminal_run']['status']);
+                } catch (Throwable $exception) {
+                    Log::warning('Swamp accepted start terminal result unavailable', [
+                        'operation_id' => $operation->id, 'exception_type' => $exception::class,
+                    ]);
+                    app(OperationBroadcaster::class)->changed($operation, true);
+                }
+            } elseif (isset($declaration['terminal_result'])) {
+                app(OperationBroadcaster::class)->changed($operation, true);
+            }
         } catch (Throwable $exception) {
             $safe = $exception instanceof ResourceOperationException
                 ? $exception : ($accepted ? $this->uncertain()
@@ -125,7 +139,7 @@ final readonly class StartSwampRun
     }
 
     /** @param array<string,mixed> $payload
-     * @return array{run_id:string,failed:bool}
+     * @return array{run_id:string,failed:bool,terminal_run:array{id:string,status:string}|null}
      */
     private function request(WebSocketEndpoint $endpoint, array $payload): array
     {
@@ -138,6 +152,8 @@ final readonly class StartSwampRun
             $stage = 'receive';
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+                $confirmed = null;
+                $terminals = [];
                 foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {
                     if (($message['id'] ?? null) !== $id) {
                         continue;
@@ -147,9 +163,17 @@ final readonly class StartSwampRun
                         && ($event['workflowName'] ?? null) === $payload['workflowIdOrName']
                         && is_string($event['runId'] ?? null) && Str::isUuid($event['runId'])
                         && in_array($event['kind'] ?? null, ['started', 'failed', 'cancelled'], true)) {
-                        return ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
+                        $confirmed ??= ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
                     }
-                    if (($message['type'] ?? null) === 'error') {
+                    $run = is_array($event) ? ($event['run'] ?? null) : null;
+                    if (($message['type'] ?? null) === 'event' && is_array($event) && ! isset($event['parentRunId'])
+                        && in_array($event['kind'] ?? null, ['completed', 'cancelled'], true) && is_array($run)
+                        && ($run['workflowName'] ?? null) === $payload['workflowIdOrName']
+                        && is_string($run['id'] ?? null) && Str::isUuid($run['id'])
+                        && in_array($run['status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+                        $terminals[$run['id']] = ['id' => $run['id'], 'status' => $run['status']];
+                    }
+                    if (($message['type'] ?? null) === 'error' && $confirmed === null) {
                         $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
                         $redact = static function (mixed $value, int $limit) use ($endpoint): string {
                             if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
@@ -167,6 +191,9 @@ final readonly class StartSwampRun
                         ]);
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }
+                }
+                if ($confirmed !== null) {
+                    return [...$confirmed, 'terminal_run' => $terminals[$confirmed['run_id']] ?? null];
                 }
             }
             throw $this->uncertain();
