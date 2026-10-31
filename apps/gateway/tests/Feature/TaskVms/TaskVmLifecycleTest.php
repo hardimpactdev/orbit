@@ -22,8 +22,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\InstanceProvisioning;
-use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskExtensionState;
@@ -683,20 +681,6 @@ describe('retained task VM workspace removal', function (): void {
 });
 
 describe(DestroyEndedTaskVmsAction::class, function (): void {});
-
-/** Binds a workspace provisioner for claims that runs the given closure. */
-function tvm_life_provision(Closure $provision): void
-{
-    app()->instance(InstanceProvisioning::class, new class($provision) implements InstanceProvisioning
-    {
-        public function __construct(private Closure $provision) {}
-
-        public function provision(InstanceProvisionIntent $intent): ?Instance
-        {
-            return ($this->provision)($intent);
-        }
-    });
-}
 
 function tvm_life_workspace(Task $group, Node $node): Instance
 {

@@ -48,8 +48,8 @@ final readonly class NodeWireGuardInput
      */
     public static function restorationSnapshot(array $cleanup): array
     {
-        if ($cleanup['excluded_node_id'] !== $cleanup['context_node_id']) {
-            throw new ResourceOperationException('node.network_unsupported', 'Hub restoration requires an admitted exclusion.', 422);
+        if ($cleanup['excluded_node_id'] !== null && $cleanup['excluded_node_id'] !== $cleanup['context_node_id']) {
+            throw new ResourceOperationException('node.network_unsupported', 'Hub restoration requires its admitted context.', 422);
         }
 
         return [...$cleanup, 'excluded_node_id' => null];
@@ -83,9 +83,9 @@ final readonly class NodeWireGuardInput
         }
         if ($restoring) {
             $restore = $operation->input['_wireguard_restore'] ?? null;
-            if (! in_array($operation->kind, ['node.remove', 'task_vm.destroy'], true)
+            if (! in_array($operation->kind, ['node.remove', 'task_vm.destroy', 'node.add'], true)
                 || ! is_array($snapshot) || ! is_array($restore)
-                || ($snapshot['excluded_node_id'] ?? null) !== ($snapshot['context_node_id'] ?? null)
+                || ($snapshot['excluded_node_id'] ?? null) !== ($operation->kind === 'node.add' ? null : ($snapshot['context_node_id'] ?? null))
                 || Arr::sortRecursive($restore) !== Arr::sortRecursive([...$snapshot, 'excluded_node_id' => null])
                 || Node::query()->whereKey($snapshot['context_node_id'] ?? null)->where('status', LifecycleStatus::Removing)->exists()) {
                 return null;
@@ -121,8 +121,14 @@ final readonly class NodeWireGuardInput
         $contextMatches = $taskVmKind || $operation->kind === 'task_vm.destroy'
             ? $taskVmContext
             : $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
+        $enrollment = $operation->input['_enrollment'] ?? [];
+        $enrollmentContext = is_array($enrollment) && $operation->kind === 'node.add' && $operation->target_type === 'node'
+            && $operation->target_id === $snapshot['context_node_id'] && $operation->node_id === $snapshot['executor_node_id']
+            && ($enrollment['node_id'] ?? null) === $snapshot['context_node_id']
+            && ($enrollment['executor_node_id'] ?? null) === $snapshot['executor_node_id']
+            && $snapshot['excluded_node_id'] === null;
         if ($snapshot['executor_node_id'] !== $snapshot['hub_id']
-            && (! $taskVmContext || ! self::gateway($snapshot['executor_node_id']))) {
+            && ((! $taskVmContext && ! $enrollmentContext) || ! self::gateway($snapshot['executor_node_id']))) {
             return null;
         }
         if (! $contextMatches || ! is_array($participants) || ! is_array($binding)

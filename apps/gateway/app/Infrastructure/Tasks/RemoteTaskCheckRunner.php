@@ -11,7 +11,6 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Projects\GatewaySetupSteps;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskAnalysisRunner;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
@@ -30,7 +29,7 @@ use Throwable;
 /**
  * Installs `.git/orbit/check` and drives it over SSH. Each call returns at once; the check itself runs detached.
  */
-final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCheckRunner
+final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
     /** Eleven 100 KiB records fit below 8 MiB even with sixfold JSON escaping; PHP redacts the raw windows before storing tails. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
@@ -102,18 +101,6 @@ final readonly class RemoteTaskCheckRunner implements TaskAnalysisRunner, TaskCh
         }
 
         return new TaskCheckProcess($pid, $started, $head, $tree, $runId);
-    }
-
-    public function initialAnalysisBase(Instance $instance): ?string
-    {
-        $script = TaskUnitProgram::read('tasks/check');
-        $result = $this->run($instance, [$instance->starting_commit ?? ''],
-            TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
-            'check_python "$dir/check" analysis-base "$checkout" "$2"',
-            'The initial analysis base could not be read.', 'The initial analysis base answer is invalid.');
-        $base = $result['base'] ?? null;
-
-        return is_string($base) && preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $base) === 1 ? $base : null;
     }
 
     public function recoverStart(Instance $instance, string $runId): ?TaskCheckProcess
