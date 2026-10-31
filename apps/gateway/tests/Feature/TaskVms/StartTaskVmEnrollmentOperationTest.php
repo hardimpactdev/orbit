@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\TaskVms\StartTaskVmEnrollmentOperationAction;
+use App\Actions\TaskVms\StartTaskVmRuntimeOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\ModelKeyIssuer;
+use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -94,7 +96,26 @@ it('records one host-placed enrollment root and starts its native DAG without ch
     Queue::assertNothingPushed();
 })->with(['incus', 'upcloud']);
 
+it('records runtime preparation on the reserved guest while retaining its admitted first-visit host', function (): void {
+    $vm = standaloneEnrollmentVm();
+    Queue::fake();
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
 
+    $operation = app(StartTaskVmRuntimeOperationAction::class)->execute($vm->id);
+
+    expect($operation->kind)->toBe('task_vm.prepare_runtime');
+    expect($operation->node_id)->toBe($vm->fresh()->node_id);
+    expect($operation->input['execution_node_id'])->toBe($vm->host_node_id);
+    expect(app(TaskVmEnrollmentProjection::class)->input($operation)['guest_node_id'])->toBe($operation->node_id);
+    app(StartSwampRun::class)->start($operation);
+    expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-task-vm-prepare-runtime');
+    expect($socket->sent[0]['payload']['inputs']['node_id'])->toBe($vm->fresh()->node_id);
+    $this->assertDatabaseCount('operations', 1);
+    expect($vm->fresh()->state)->toBe(TaskVmState::Provisioning);
+    Queue::assertNothingPushed();
+});
 
 it('ignores absent or terminal VMs without recording another intent', function (): void {
     expect(app(StartTaskVmEnrollmentOperationAction::class)->execute(PHP_INT_MAX))->toBeNull();
