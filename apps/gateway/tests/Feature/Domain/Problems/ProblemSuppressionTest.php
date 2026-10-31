@@ -6,13 +6,11 @@ use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\Activity;
 use App\Models\ProblemFingerprint;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Str;
 use Tests\Support\TestOrbitHome;
 
 it('ships problem suppression config beside tasks with empty fingerprint and path prefix lists', function (): void {
@@ -27,19 +25,12 @@ it('does not suppress a source path when the configured prefix is empty', functi
     config()->set('orbit.problems.suppressed_fingerprints', []);
     config()->set('orbit.problems.suppressed_path_prefixes', ['']);
     problem_suppression_sandbox();
-    problem_suppression_append('');
-    problem_suppression_collect();
-    problem_suppression_append(problem_suppression_record(
-        'RuntimeException',
-        base_path().'/app/Infrastructure/Example/Driver.php',
-        'App\\Infrastructure\\Example\\Driver->run()',
-        'req-empty',
-        'Example subscription ended.',
-        '2026-10-01 00:01:06',
-    ));
+    app(ProblemCollector::class)->recordLogs(['signals' => [[
+        'exception_class' => 'RuntimeException', 'frame' => 'app/Infrastructure/Example/Driver.php:App\\Infrastructure\\Example\\Driver->run',
+        'request_id' => 'req-empty', 'recorded_at' => '2026-10-01 00:01:06',
+    ]]]);
 
-    expect(problem_suppression_collect())->toBe(0)
-        ->and(ProblemFingerprint::query()->count())->toBe(1)
+    expect(ProblemFingerprint::query()->count())->toBe(1)
         ->and(ProblemFingerprint::query()->sole()->evidence['source_path'])->toBe('app/Infrastructure/Example/Driver.php');
 });
 
@@ -101,70 +92,6 @@ function problem_suppression_sandbox(): void
     mkdir($path.'/logs', 0700, true);
     app()->useStoragePath($path);
     app(TaskExtensionState::class)->enable();
-}
-
-function problem_suppression_activity(string $command, ?string $errorCode, ?int $exitCode, ?string $requestId = null): Activity
-{
-    return Activity::query()->create([
-        'log_name' => 'commands',
-        'description' => $command,
-        'request_id' => $requestId ?? (string) Str::uuid(),
-        'command' => $command,
-        'status' => 'failed',
-        'exit_code' => $exitCode,
-        'error_code' => $errorCode,
-        'properties' => [
-            'path' => '/resources/'.$command,
-            'error_message' => 'token=supersecretvalue',
-        ],
-    ]);
-}
-
-function problem_suppression_activity_at(
-    string $command,
-    ?string $errorCode,
-    ?int $exitCode,
-    Carbon $createdAt,
-    ?string $requestId = null,
-): Activity {
-    $activity = problem_suppression_activity($command, $errorCode, $exitCode, $requestId);
-    $activity->forceFill(['created_at' => $createdAt])->save();
-
-    return $activity;
-}
-
-function problem_suppression_append(string $contents): void
-{
-    $path = storage_path('logs/laravel.log');
-    $directory = dirname($path);
-
-    if (! is_dir($directory)) {
-        mkdir($directory, 0700, true);
-    }
-
-    file_put_contents($path, $contents, FILE_APPEND);
-}
-
-function problem_suppression_record(
-    string $class,
-    string $framePath,
-    string $call,
-    string $requestId,
-    string $message,
-    ?string $recordedAt = null,
-): string {
-    $loggedClass = str_replace('\\', '\\\\', $class);
-    $loggedCall = str_replace('\\', '\\\\', $call);
-    $timezone = config('app.timezone');
-    $stamp = $recordedAt ?? now()->timezone(is_string($timezone) && $timezone !== '' ? $timezone : 'UTC')->format('Y-m-d H:i:s');
-
-    return '['.$stamp.'] testing.ERROR: '.$message.' {"exception":"[object] ('.$loggedClass.'(code: 0): '.$message.' at '.$framePath.':1)
-[stacktrace]
-#0 '.$framePath.'(1): '.$loggedCall.'
-#1 /tmp/vendor/framework.php(1): ignore()
-#2 {main}
-","request_id":"'.$requestId.'"} 
-';
 }
 
 function problem_suppression_project(): Project
@@ -251,9 +178,4 @@ function problem_suppression_cancelled(int $projectId, string $title): Task
     Task::topLevel()->whereKey($task->id)->update(['updated_at' => '2026-09-16 08:30:00']);
 
     return $task;
-}
-
-function problem_suppression_collect(): int
-{
-    return app(ProblemCollector::class)->collect() === [] ? 0 : 1;
 }
