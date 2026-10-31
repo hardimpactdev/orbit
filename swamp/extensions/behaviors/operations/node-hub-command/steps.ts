@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
-const placement = { target: "orbit-node-209", labels: { node: "209" } };
+const placement = { target: "orbit-node-209" };
 export function hubSshGlobals(intent: string): Fields {
     const model = 'model["wireguard-hub-" + string(' + intent +
         ".hub_id)].input.globalArguments";

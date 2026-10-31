@@ -75,7 +75,8 @@ raise SystemExit(result.returncode)
                     "inputs": {"type": "object", "properties": {"intent": {"type": "object"}, "mode": {"type": "string"}}},
                     "jobs": [{"name": "hub", "steps": steps}]}
         for step in steps:
-            self.assertEqual((step.pop('target'), step.pop('labels')), ('orbit-node-209', {'node': '209'}))
+            self.assertEqual(step.pop('target'), 'orbit-node-209')
+            self.assertNotIn('labels', step)
             if step['task']['behaviorType'] == '@swamp/ssh':
                 self.assertTrue(step['writes'])
                 step['task']['globalArgs']['sshBinary'] = str(ssh)
