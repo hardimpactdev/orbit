@@ -1,26 +1,281 @@
 id: 0f7caec5-264b-42a9-afca-2f30e914c956
 name: node-proxy-canary
-description: Read-only or disposable direct-command proof on one exact light Node proxy.
+description: Native shared-SSH remote identity and separate disposable file actions on an approved light Node.
 inputs:
   type: object
   properties:
-    node_id: {type: integer, enum: [1, 18]}
-    effect: {type: boolean, default: false}
-  required: [node_id]
+    node_id:
+      type: integer
+      enum:
+      - 1
+      - 18
+    effect:
+      type: boolean
+      default: false
+  required:
+  - node_id
   additionalProperties: false
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-labels: {node: '${{ string(inputs.node_id) }}'}
 vaults: []
 jobs:
-  - name: canary
-    steps:
-      - name: prove
-        writes: true
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/node-worker-canary'
-          behaviorName: '${{ "node-worker-canary-" + string(inputs.node_id) }}'
-          methodName: '${{ inputs.effect ? "exercise" : "inspect" }}'
-          inputs:
-            node_id: '${{ inputs.node_id }}'
-            user: orbit
+- name: canary
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels:
+    node: ${{ string(inputs.node_id) }}
+  steps:
+  - name: proxy-assets
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-command-assets'
+      behaviorName: ${{ "node-command-assets-" + string(inputs.node_id) }}
+      methodName: read
+  - name: identity
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-identity-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --action-file "${{ steps["proxy-assets"].outputs.identity_script }}" --interpreter python3 --env ORBIT_EFFECT_NODE_ID
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+  - name: directory
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: identity
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-directory-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" <<'ORBIT_ACTION'
+          sudo -n /usr/bin/mktemp -d -p /run orbit-native-proxy-XXXXXXXX
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+  - name: write
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: directory
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-write-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --env ORBIT_CANARY_DIRECTORY <<'ORBIT_ACTION'
+          directory=$(printf '%s' "$ORBIT_CANARY_DIRECTORY")
+          case "$directory" in /run/orbit-native-proxy-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/python3 - "$directory" <<'PYTHON'
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          info = os.lstat(root)
+          if info.st_uid != 0 or not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
+              raise SystemExit('Canary directory custody refused')
+          proof = root / 'proof'
+          if proof.exists():
+              if proof.is_symlink() or proof.read_bytes() != b'orbit-native-proxy':
+                  raise SystemExit('Canary proof differs')
+          else:
+              with proof.open('xb') as stream:
+                  stream.write(b'orbit-native-proxy')
+                  stream.flush()
+                  os.fsync(stream.fileno())
+          PYTHON
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+          ORBIT_CANARY_DIRECTORY: ${{ steps.directory.outputs.stdout }}
+  - name: read
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: write
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-read-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --env ORBIT_CANARY_DIRECTORY <<'ORBIT_ACTION'
+          directory=$(printf '%s' "$ORBIT_CANARY_DIRECTORY")
+          case "$directory" in /run/orbit-native-proxy-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/python3 - "$directory" <<'PYTHON'
+          import sys
+          from pathlib import Path
+
+          proof = Path(sys.argv[1]) / 'proof'
+          if proof.is_symlink() or proof.read_bytes() != b'orbit-native-proxy':
+              raise SystemExit('Canary readback differs')
+          print('verified')
+          PYTHON
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+          ORBIT_CANARY_DIRECTORY: ${{ steps.directory.outputs.stdout }}
+  - name: remove-file
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: directory
+      condition:
+        type: succeeded
+    - step: read
+      condition:
+        type: always
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-remove-file-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --env ORBIT_CANARY_DIRECTORY <<'ORBIT_ACTION'
+          directory=$(printf '%s' "$ORBIT_CANARY_DIRECTORY")
+          case "$directory" in /run/orbit-native-proxy-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/rm -f -- "$directory/proof"
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+          ORBIT_CANARY_DIRECTORY: ${{ steps.directory.outputs.stdout }}
+  - name: remove-directory
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: directory
+      condition:
+        type: succeeded
+    - step: remove-file
+      condition:
+        type: succeeded
+    guard: ${{ !inputs.effect }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-remove-directory-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --env ORBIT_CANARY_DIRECTORY <<'ORBIT_ACTION'
+          directory=$(printf '%s' "$ORBIT_CANARY_DIRECTORY")
+          case "$directory" in /run/orbit-native-proxy-????????) ;; *) exit 1 ;; esac
+          sudo -n /usr/bin/python3 - "$directory" <<'PYTHON'
+          import os
+          import sys
+
+          try:
+              os.rmdir(sys.argv[1])
+          except FileNotFoundError:
+              pass
+          PYTHON
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+          ORBIT_CANARY_DIRECTORY: ${{ steps.directory.outputs.stdout }}
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels:
+      node: ${{ string(inputs.node_id) }}
+    writes: true
+    dependsOn:
+    - step: proxy-assets
+      condition:
+        type: succeeded
+    - step: identity
+      condition:
+        type: succeeded
+    - step: read
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: remove-directory
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proxy-canary-result-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: |
+          /usr/bin/python3 -I "${{ steps["proxy-assets"].outputs.runner }}" --node-id "$ORBIT_EFFECT_NODE_ID" --env ORBIT_CANARY_PROOF --env ORBIT_CANARY_EFFECT --env ORBIT_CANARY_READ_STATUS --env ORBIT_CANARY_CLEANUP_STATUS <<'ORBIT_ACTION'
+          /usr/bin/python3 - <<'PYTHON'
+          import json
+          import os
+
+          proof = json.loads(os.environ['ORBIT_CANARY_PROOF'])
+          if os.environ['ORBIT_CANARY_EFFECT'] == 'true':
+              if os.environ['ORBIT_CANARY_READ_STATUS'] != 'succeeded' or os.environ['ORBIT_CANARY_CLEANUP_STATUS'] != 'succeeded':
+                  raise SystemExit('Canary effect or cleanup is not proven')
+              proof.update(effect=True, cleaned=True)
+          print(json.dumps(proof))
+          PYTHON
+          ORBIT_ACTION
+        env:
+          ORBIT_EFFECT_NODE_ID: ${{ string(inputs.node_id) }}
+          ORBIT_CANARY_PROOF: ${{ steps.identity.outputs.stdout }}
+          ORBIT_CANARY_EFFECT: ${{ string(inputs.effect) }}
+          ORBIT_CANARY_READ_STATUS: ${{ steps.read.status }}
+          ORBIT_CANARY_CLEANUP_STATUS: ${{ steps["remove-directory"].status }}

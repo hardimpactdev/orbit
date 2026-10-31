@@ -311,12 +311,11 @@
     {
       "file": "extensions/behaviors/node-worker/canary.ts",
       "rule": "multi-action",
-      "count": 8,
+      "count": 7,
       "evidence": [
         "/usr/bin/cat",
         "/usr/bin/hostname",
         "/usr/bin/id",
-        "/usr/bin/python3",
         "/usr/bin/stat",
         "/usr/bin/sudo",
         "/usr/bin/systemctl",
