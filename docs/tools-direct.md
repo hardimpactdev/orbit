@@ -7,7 +7,7 @@ Gateway declares only fixed workflow names and `ToolIntentProjection` in its
 sole `direct-operations.php` registration. `StartOperationAction` starts the
 native root through `StartSwampRun` with the existing run token.
 
-The Gateway admits package identity, enrolled account, agent pin and public
+The Gateway admits package identity, enrolled account and public
 recipe data. Its read projection exposes only those safe inputs. Native Node
 policy selects fixed typed commands from the closed manager registry. Result
 projection stores bounded manager/package versions and refusal codes. It never
@@ -43,19 +43,16 @@ a started action must stop safely and retain an uncertain outcome if needed.
 
 ## Worker execution
 
-The worker runs as the Node's configured user with its existing passwordless
-sudo. Fixed policy commands run through the admitted, root-owned local agent;
-the step checks the binary path and digest before launch. Linux mutations and
-manager materialization start via `sudo -n --`; the frozen agent supervises the
-command under its declared root or enrolled-account identity. Account reads and
-macOS account commands run as the configured worker user. The existing package
-sandbox UID is not changed and gains no sudo.
+The worker runs fixed system programs from reviewed Swamp source. Linux uses
+its existing sudo authority to prepare shared prerequisites. Manager processes
+run as the exact admitted account with that account's home and fixed manager
+scope; this also preserves enrollment's candidate account before activation.
+macOS verifies the existing account-owned manager scope in place. No Tool write
+calls orbit-agent, and no agent digest is needed to admit a Tool write.
 
-The agent and workflow enforce time limits. Streamed output is bounded to4MiB;
-stderr, refusal details and malformed output never enter native resources. A
-started mutation finishes under its agent deadline even if workflow cancellation
-arrives; native recovery reconciles uncertain outcomes. No socket, broker,
-account, sudo rule, token, grant or runtime unit is installed by this family.
+The Python implementation uses fixed argv, bounded output and a process deadline.
+Raw manager stdout and stderr never enter native resources. The existing package
+sandbox account is unchanged. No broker, socket, token, grant or service is added.
 
 Each kind ships its direct start and Gateway execution deletion together. Its converted kind is also removed from legacy discovery
 and executor registration. Rollback is a revert PR. If the owning writer needs a
@@ -86,6 +83,10 @@ cancellation and native reconciliation. `direct_native_test.py` exercises the
 pinned native workflow with injected Gateway/Node fixtures: all kinds, lost
 projection and uncertain install/update/remove recovery. Placement is removed
 only in a disposable checkout; fixture success is not live canary proof.
+
+`system_program_test.py` covers package arguments, inventory and candidate
+parsers, exact removals, official bottles/casks, archive escapes and candidate
+UID/home selection. Run it with Python unittest discovery.
 
 Run Deno tests/check/lint/fmt for this directory and
 `SWAMP_BIN=/path/to/pinned/swamp python3 -m unittest discover -s extensions/behaviors/operations/tools -p direct_native_test.py`.

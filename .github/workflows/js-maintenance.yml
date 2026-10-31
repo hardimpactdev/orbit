@@ -21,6 +21,10 @@ on:
       - 'tests/batch_maintenance_test.ts'
       - '.github/workflows/js-maintenance.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 

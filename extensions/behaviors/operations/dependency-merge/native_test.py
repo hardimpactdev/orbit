@@ -1,57 +1,93 @@
-"""Native workflow recovery uses one keyed fake Gateway merge, without credentials."""
+"""Same-root native resume with shared harness; all GitHub effects are disposable fixtures."""
 import json
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import tempfile
+import secrets
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / "tests"))
+from native_harness import NativeTestCase
 
 
-class DependencyMergeNativeTest(unittest.TestCase):
-    def test_lost_effect_and_completion_replies_resume_without_another_merge(self):
-        for boundary in ("loseRun", "loseComplete"):
-            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory(prefix="dependency-merge-native-") as tmp:
-                repo = Path(tmp)
-                shutil.copy(ROOT / ".swamp.yaml", repo)
-                behavior = repo / "extensions/behaviors"
-                for name in ("automatic-deploy", "operation-runner", "_lib"):
-                    shutil.copytree(ROOT / "extensions/behaviors" / name, behavior / name)
-                family = behavior / "operations/dependency-merge"
-                family.mkdir(parents=True)
-                source = (ROOT / "extensions/behaviors/operations/dependency-merge/mod.ts").read_text()
-                source = 'import { fixtureHttp, fixtureConfiguration } from "../../_test/merge.ts";\n' + source.replace("behavior = dependencyMerge()", "behavior = dependencyMerge(() => fixtureHttp)").replace("const refreshed = await ctx.runModel(", "const refreshed = await fixtureConfiguration.runModel(").replace("const rows = await ctx.queryData(", "const rows = await fixtureConfiguration.queryData(")
-                (family / "mod.ts").write_text(source)
-                shutil.copy(ROOT / "extensions/behaviors/operations/dependency-merge/configuration.ts", family)
-                fixture = behavior / "_test/merge.ts"
-                fixture.parent.mkdir()
-                fixture.write_text((ROOT / "tests/fixtures/dependency-merge/executor.ts").read_text().replace('"../../../extensions/behaviors/automatic-deploy/gateway.ts"', '"../automatic-deploy/gateway.ts"'))
-                workflows = repo / "workflows"
-                workflows.mkdir()
-                shutil.copy(ROOT / "workflows/workflow-operation-dependency-merge.yaml", workflows)
-                state = {"operation": {"id": 7, "kind": "tasks.dependency_merge", "target_type": "task_group", "target_id": 91, "node_id": None, "cancel_requested": False,
-                         "input": {"project_id": 20, "repository": "acme/widgets", "default_branch": "main", "smoke_workflow": ".github/workflows/production-smoke.yml", "group_id": 91, "head_sha": "a" * 40, "token": {"$secret": "github.dependency_merge", "id": 20}}, "step_results": {}},
-                         "writes": 0, "runs": 0, "receipt": None, "completions": [], boundary: True}
-                state_file = repo / "native-merge.json"
-                state_file.write_text(json.dumps(state))
-                env = {key: value for key, value in os.environ.items() if not key.startswith("SWAMP_SERVER_") and key not in ("SWAMP_SERVE_URL", "SWAMP_SERVER_URL")}
-                env.update(SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
-                def run(*args):
-                    return subprocess.run(["swamp", "workflow", *args, "--json"], cwd=repo, env=env, text=True, capture_output=True, timeout=50)
-                discovery = behavior / "operation-runner/mod.ts"
-                discovery.write_text('import { fixtureHttp } from "../_test/merge.ts";\n' + discovery.read_text().replace("...operationDiscovery()", "...operationDiscovery(() => fixtureHttp)"))
-                first = run("run", "operation-dependency-merge")
-                self.assertNotEqual(first.returncode, 0, first.stdout + first.stderr)
-                self.assertEqual(json.loads(state_file.read_text())["writes"], 1, first.stdout + first.stderr)
-                resumed = run("resume", "operation-dependency-merge", "--run", json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"])
-                self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
-                final = json.loads(state_file.read_text())
-                self.assertEqual(final["writes"], 1)
-                self.assertEqual(final["operation"]["status"], "succeeded")
-                self.assertEqual(len(final["completions"]), 1)
-                self.assertEqual(final["runs"], 2 if boundary == "loseRun" else 1)
+class DependencyMergeNativeTest(NativeTestCase):
+    def prepare(self, boundary):
+        self.copy_behaviors("automatic-deploy", "operation-runner", "operations/_lib", "operations/dependency-merge", "_lib")
+        (self.repo / "extensions/behaviors/native_host_method.ts").write_text((ROOT / "extensions/behaviors/native_host_method.ts").read_text())
+        self.secrets = (secrets.token_urlsafe(32),)
+        self.native_env["DEPENDENCY_MERGE_TEST_TOKEN"] = self.secrets[0]
+        family = self.repo / "extensions/behaviors/operations/dependency-merge"
+        source = family / "mod.ts"
+        text = source.read_text().replace('import { callWorkerModel } from "../../_lib/worker_model.ts";',
+            'import { fixtureHttp, fixtureGithub, fixtureQuery as queryWorkerData, fixtureConfiguration as callWorkerModel } from "../../_test/merge.ts";')
+        source.write_text(text.replace('import { queryWorkerData } from "../../_lib/worker_query.ts";', "")
+                          .replace("...dependencyMerge()", "...dependencyMerge(() => fixtureHttp, fixtureGithub)"))
+        fixture = self.repo / "extensions/behaviors/_test/merge.ts"
+        fixture.parent.mkdir()
+        fixture.write_text((ROOT / "extensions/behaviors/operations/dependency-merge/native_fixture.ts").read_text()
+                           .replace('"../../automatic-deploy/gateway.ts"', '"../automatic-deploy/gateway.ts"')
+                           .replace('"./policy_fixture.ts"', '"../operations/dependency-merge/policy_fixture.ts"'))
+        workflow = ROOT / "workflows/workflow-operation-dependency-merge.yaml"
+        # Scratch dispatch is local; production retains exact target AND Node label.
+        (self.repo / "workflows" / workflow.name).write_text("\n".join(
+            line for line in workflow.read_text().splitlines() if not line.strip().startswith(("target:", "labels:"))) + "\n")
+        head = "a" * 40
+        self.state = self.repo / "native-merge.json"
+        self.state.write_text(json.dumps({"operation": {"id": 7, "kind": "tasks.dependency_merge", "node_id": 209,
+            "status": "queued", "result": None, "cancel_requested": False,
+            "input": {"node_id": 209, "project_id": 20, "group_id": 91, "publish_operation_id": 8,
+            "repository": "acme/widgets", "default_branch": "main", "smoke_workflow": ".github/workflows/production-smoke.yml", "pr_number": 3, "head_sha": head}},
+            "pr": {"number": 3, "state": "open", "merged": False, "merge_commit_sha": None,
+            "head": {"sha": head, "ref": "task-91", "repo": {"full_name": "acme/widgets"}},
+            "base": {"ref": "main", "repo": {"full_name": "acme/widgets"}}},
+            "calls": [], "writes": 0, boundary: True}))
+
+    def recover(self, boundary):
+        self.prepare(boundary)
+        self.cli("workflow", "validate", "operation-dependency-merge")
+        first = self.cli("workflow", "run", "operation-dependency-merge", "--input",
+                         json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
+        run_id = json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"]
+        self.assertEqual(json.loads(self.state.read_text())["writes"], 1, first.stdout + first.stderr)
+        state = json.loads(self.state.read_text())
+        state["disabled"] = True
+        self.state.write_text(json.dumps(state))
+        self.cli("workflow", "resume", "operation-dependency-merge", "--run", run_id)
+        final = json.loads(self.state.read_text())
+        self.assertEqual(final["writes"], 1)
+        self.assertEqual(final["refreshes"], 2)
+        self.assertEqual(final["operation"]["status"], "succeeded")
+        self.assertFalse(any("operation-executor" in call for call in final["calls"]))
+
+    def test_resume_refreshes_disabled_switch_before_an_unproven_put(self):
+        self.prepare("loseBeforeMerge")
+        first = self.cli("workflow", "run", "operation-dependency-merge", "--input",
+                         json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
+        run_id = json.JSONDecoder().raw_decode(first.stdout.lstrip())[0]["id"]
+        state = json.loads(self.state.read_text())
+        self.assertEqual(state["writes"], 0)
+        state["disabled"] = True
+        self.state.write_text(json.dumps(state))
+        self.cli("workflow", "resume", "operation-dependency-merge", "--run", run_id, success=False)
+        final = json.loads(self.state.read_text())
+        self.assertEqual(final["writes"], 0)
+        self.assertEqual(final["refreshes"], 2)
+        self.assertEqual(final["operation"]["result"], {"error_code": "dependency_merge.disabled"})
+
+    def test_failed_refresh_prevents_credentials_and_effect(self):
+        self.prepare("refreshFail")
+        self.cli("workflow", "run", "operation-dependency-merge", "--input",
+                 json.dumps({"operation_id": 7, "node_id": 209, "kind": "tasks.dependency_merge"}), success=False)
+        final = json.loads(self.state.read_text())
+        self.assertEqual(final["writes"], 0)
+        self.assertFalse(any("private-material" in call for call in final["calls"]))
+        self.assertEqual(final["operation"]["status"], "running")
+
+    def test_lost_merge_reply(self):
+        self.recover("loseMerge")
+
+    def test_lost_projection_reply(self):
+        self.recover("loseProjection")
 
 
 if __name__ == "__main__":

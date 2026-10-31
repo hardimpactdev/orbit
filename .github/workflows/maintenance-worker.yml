@@ -43,6 +43,10 @@ on:
       - '!tests/automatic_deploy_test.ts'
       - '!tests/_support/automatic_deploy.ts'
       - '.github/workflows/maintenance-worker.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

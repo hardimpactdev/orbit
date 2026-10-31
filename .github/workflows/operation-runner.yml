@@ -20,6 +20,10 @@ on:
       - 'tests/operation_runner_native_test.py'
       - 'tests/fixtures/operation-executor.ts'
       - '.github/workflows/operation-runner.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:
