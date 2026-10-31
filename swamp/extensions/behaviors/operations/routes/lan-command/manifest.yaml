@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: '@nckrtl/route-lan-commands'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Exact Route LAN withdrawal as a placed public command action.
+behaviors:
+  - operations/routes/lan-command/assets.ts
+additionalFiles:
+  - scripts/remove_route_lan.py
