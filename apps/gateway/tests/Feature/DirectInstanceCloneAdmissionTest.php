@@ -123,3 +123,10 @@ it('projects native source and completion through the destination without child 
     expect($target->refresh()->status->value)->toBe('active')->and($target->clone_completed_at)->toEqual($completed);
     expect($operation->refresh()->lock_key)->toBeNull();
 });
+
+it('refuses an unclassified candidate before reserving the destination or starting work', function (): void {
+    $this->candidate->update(['source_is_laravel' => null]);
+    expect(fn () => app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data))
+        ->toThrow(ResourceOperationException::class, 'no recorded source profile');
+    expect(Instance::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(0);
+});

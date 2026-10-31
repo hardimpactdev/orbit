@@ -179,7 +179,9 @@ cd /fast/apps/acme/feature
 orbit instance:register --project=12 --name=feature --yes
 ```
 
-Admission reserves an Instance and returns an `instance.register` Operation. Swamp inspects the real checkout on the admitted Node, verifies its origin against the Project, and adopts it in place. It preserves Git HEAD, the index, dirty files and private environment contents. It removes public permissions from an existing `.env`. Source facts in the native result activate the Instance; a failed adoption leaves it reserved for a later request.
+Admission reserves an Instance and returns an `instance.register` Operation. Swamp inspects the real checkout on the admitted Node, verifies its origin against the Project, and adopts it in place. It preserves Git HEAD, the index, dirty files and private environment contents. It removes public permissions from an existing `.env`.
+
+Native registration also classifies the application metadata and records its PHP version and Laravel marker, including an explicit false marker for non-PHP source. These facts make the registered Instance usable by environment synchronization and cloning. Source facts in the native result activate the Instance; a failed adoption leaves it reserved for a later request.
 
 Registration transfers source ownership to Orbit. A later `instance:destroy` deletes the checkout. There is no unregister command. The CLI asks for default-No consent that names the source; JSON and noninteractive calls need `--yes`.
 

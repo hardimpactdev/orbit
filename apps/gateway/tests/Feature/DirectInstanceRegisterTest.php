@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Data\Instances\RegisterInstanceData;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -21,13 +22,14 @@ beforeEach(function (): void {
     orbit_test_set_app_placement_role($this->node, false);
     $this->instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $this->node->id, 'name' => 'proof', 'checkout_path' => '/srv/apps/register-proof/proof', 'source_layout' => 'checkout', 'status' => 'reserved']);
     $this->operation = Operation::query()->create(['status' => 'queued', 'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676'], 'kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'input' => ['checkout' => $this->instance->checkout_path, 'repository' => $this->project->repository_url, 'repository_identity' => $this->project->repository_identity]]);
-    $this->result = ['registered' => true, 'branch' => 'feature', 'commit' => str_repeat('a', 40), 'detached' => false, 'digest' => str_repeat('b', 64), 'common' => $this->instance->checkout_path.'/.git', 'default_branch' => 'main', 'inferred_slug' => 'proof'];
+    $this->result = ['registered' => true, 'php_version' => null, 'laravel' => false, 'branch' => 'feature', 'commit' => str_repeat('a', 40), 'detached' => false, 'digest' => str_repeat('b', 64), 'common' => $this->instance->checkout_path.'/.git', 'default_branch' => 'main', 'inferred_slug' => 'proof'];
 });
 
 it('projects native adoption and source facts into the reserved Instance', function (): void {
     $hook = app(InstanceRegisterResult::class);
     $hook->apply($this->operation, ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded', 'started_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'finished_at' => now()->format('Y-m-d\TH:i:s.v\Z'), 'result' => $this->result]);
-    expect($this->instance->refresh()->status->value)->toBe('active')
+    expect($this->instance->refresh()->source_is_laravel)->toBeFalse();
+    expect($this->instance->status->value)->toBe('active')
         ->and($this->instance->branch)->toBe('feature')->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
         ->and($this->instance->registration_relocation_state)->toBe('relocated')->and($this->instance->registration_completed_at)->not->toBeNull();
 });
@@ -81,7 +83,9 @@ it('admits and completes in-place registration through one real native HTTP root
     $this->postJson('/api/v1/direct-operations/'.$id.'/result', $result)->assertOk()->assertJsonPath('data.status', 'succeeded');
     $this->postJson('/api/v1/direct-operations/'.$id.'/result', $result)->assertOk();
     expect($operation->refresh()->lock_key)->toBeNull();
-    expect($instance->refresh()->status->value)->toBe('active')->and($instance->branch)->toBe('feature');
+    expect($instance->refresh()->source_is_laravel)->toBeFalse();
+    expect(app(InstanceEnvironmentContextResolver::class)->resolve($instance, true)->laravel)->toBeFalse();
+    expect($instance->status->value)->toBe('active')->and($instance->branch)->toBe('feature');
     expect($instance->registration_completed_at)->not->toBeNull();
     expect($operation->input)->not->toHaveKey('agent_sha256');
 });
