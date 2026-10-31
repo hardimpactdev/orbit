@@ -1,13 +1,14 @@
 # Native Swamp retention
 
-Swamp owns retention. Gateway Operations store projected JSON results, not Swamp data-version handles. A completed native run's historical `dataArtifacts` are history, not permanent pins. Operation completion receipts contain the result itself; recovering a completion reads the latest named receipt rather than an old output's artifact handle.
+Swamp owns retention and garbage collection. Use its manual and CLI defaults.
+Record any measured exception and its removal condition in the execution plan;
+remove the exception when its reason no longer applies.
 
-Enable `autoGc: true` to enforce each resource's declared lifetime and version policy. Enable `garbageCollection.automatic` with `retention: 30d`, matching the native manual run-GC default. The Node209 measured deviation sets workflowRuns and outputs to1d; evaluated snapshots inherit outputs. At118,188 net inodes/hour,30-day history would outgrow the16.7M-inode datastore. Keep this bound in source while producer removal continues, then remove the deviation when measured growth permits the shared30-day policy. Leave bookkeeping unset to retain Swamp's native 24-hour grace. These two automatic switches are explicit opt-ins; they are not enabled by default in a new Swamp repository.
+Use native resources, data lifetimes, version collection and run history. The
+Gateway stores the projected operation result. Do not add an Orbit retention
+planner, custom pin or completion-receipt protocol to control Swamp's collector.
 
-Do not set `garbageCollection.data`. That option deletes every sufficiently old version, including a behavior's latest state. Native version collection already removes superseded versions according to each resource's policy without imposing a global age cutoff on current receipts, factory state, or dependency publications. Immutable dependency reports have their own names; their exact-version pointers do not require retaining unrelated resource history.
-
-Use `swamp data gc --dry-run --json` and `swamp run gc --dry-run --json` to preview the backlog. Use `swamp data gc --force --json` for the initial native resource-policy collection. Native automatic history collection uses its own 100-item batches, hourly interval and five-minute serve budget. Do not add an Orbit collector, reference graph, batch loop or scheduler for this work.
-
-Before the first live collection, verify the datastore backup and current durable receipt contents. After collection, compare the receipt hashes and run a real Operation. Historical output handles may stop resolving according to their native resource policy; that is expected. Current required evidence must be a retained resource, not an assumption that every historical native output lives forever.
-
-The pinned runtime manual defines [resource GC and history retention](https://github.com/swamp-club/swamp/blob/1602a6172fe5002133a56e8b2da31e90f3fb8b04/design/surfaces/repo.md#retention). Its default automatic switches are off; enabling them addresses the measured datastore inode growth. The custom runtime-retention workflow, behavior definitions, online reference planner and offline compactor are removed. No native pass reads or changes the old planner checkpoint. Remove only the obsolete paused schedule registration during activation; preserve other schedule pause states. Old receipt data and planner checkpoints are not source files and are not deleted by this cleanup.
+Read the [Data reference](https://swamp-club.com/manual/reference/data) and the
+binding [Swamp shape guide](swamp-shape.md). Runtime policy changes and live
+collection belong to the platform owner under the current plan. This page grants
+no live cleanup authority.

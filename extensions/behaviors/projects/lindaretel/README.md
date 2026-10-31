@@ -1,27 +1,15 @@
 # lindaretel
 
-Private maintenance config and schedules for Orbit Project 18. The shared
-Composer/JavaScript extensions perform package operations on the task worker.
-This extension contains no maintenance commands or PR-writing logic.
+Private project configuration lives beside this page in `mod.ts`, `config.ts`
+where present, and `manifest.yaml`. Preserve its repository, package paths,
+check, branch, policy and approval settings. Fixture data records the selected
+configuration; it is not live execution evidence.
 
-Config comes from
-[hardimpactdev/lindaretel at 9f596317ac17](https://github.com/hardimpactdev/lindaretel/tree/9f596317ac1730836774bf47018e4ec835e15c5f)
-and the Gateway's Project settings. The frozen source evidence is in
-tests/fixtures/project-extensions/fleet.json.
+Read the binding [Swamp shape guide](../../../../docs/swamp-shape.md) before
+writing or reviewing execution. Use full non-secret workflow inputs, native
+placed steps and vault references. Existing Gateway-client routines and
+task-driver adapters are grandfathered debt, not templates. The native pilot
+settles dispatch and terminal projection before conversions resume.
 
-Read the config without starting work:
-
-```bash
-swamp behavior run @nckrtl/project-lindaretel configuration project-lindaretel
-```
-
-Schedules use UTC: routine "0 4 * * 1", detection "0 5 * * *". Pause a schedule
-while reconciling active work:
-
-```bash
-swamp workflow schedule pause @nckrtl/project-lindaretel/detect --reason "Reconcile active work" --server wss://swamp.orbit
-```
-
-Deploy with the private orbit-swamp bundle after review and merge. Registry
-publication needs the orchestrator's approval. See docs/project-extensions.md
-for task admission, issue records, skip reasons and live acceptance.
+Keep private distribution and existing access boundaries. Configuration grants
+no authority to publish, start a live run or change production resources.

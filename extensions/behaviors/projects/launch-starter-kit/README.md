@@ -1,27 +1,15 @@
 # launch-starter-kit
 
-Private maintenance config and schedules for Orbit Project 30. The shared
-Composer/JavaScript extensions perform package operations on the task worker.
-This extension contains no maintenance commands or PR-writing logic.
+Private project configuration lives beside this page in `mod.ts`, `config.ts`
+where present, and `manifest.yaml`. Preserve its repository, package paths,
+check, branch, policy and approval settings. Fixture data records the selected
+configuration; it is not live execution evidence.
 
-Config comes from
-[nckrtl/launch-starter-kit at ff7889266555](https://github.com/nckrtl/launch-starter-kit/tree/ff78892665557b21e50b19d2f05fdc62d79fb1b2)
-and the Gateway's Project settings. The frozen source evidence is in
-tests/fixtures/project-extensions/fleet.json.
+Read the binding [Swamp shape guide](../../../../docs/swamp-shape.md) before
+writing or reviewing execution. Use full non-secret workflow inputs, native
+placed steps and vault references. Existing Gateway-client routines and
+task-driver adapters are grandfathered debt, not templates. The native pilot
+settles dispatch and terminal projection before conversions resume.
 
-Read the config without starting work:
-
-```bash
-swamp behavior run @nckrtl/project-launch-starter-kit configuration project-launch-starter-kit
-```
-
-Schedules use UTC: routine "10 2 * * 1", detection "10 3 * * *". Pause a
-schedule while reconciling active work:
-
-```bash
-swamp workflow schedule pause @nckrtl/project-launch-starter-kit/detect --reason "Reconcile active work" --server wss://swamp.orbit
-```
-
-Deploy with the private orbit-swamp bundle after review and merge. Registry
-publication needs the orchestrator's approval. See docs/project-extensions.md
-for task admission, issue records, skip reasons and live acceptance.
+Keep private distribution and existing access boundaries. Configuration grants
+no authority to publish, start a live run or change production resources.

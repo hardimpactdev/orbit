@@ -1,9 +1,8 @@
 # Maintained project extensions
 
-These entries use current default-branch repository config and Orbit Project
-settings, captured on 2026-10-27. The source commits and policy files are
-retained in tests/fixtures/project-extensions/fleet.json. No project repository
-is changed.
+These fixture entries record repository configuration and Orbit Project settings
+captured on 2026-10-27. The source commits and policy files are retained in
+tests/fixtures/project-extensions/fleet.json. No project repository is changed.
 
 | Project              | Orbit ID | Composer paths | JavaScript paths | Check                                         | Policy in days       |
 | -------------------- | -------- | -------------- | ---------------- | --------------------------------------------- | -------------------- |
@@ -26,17 +25,12 @@ is changed.
 | hauzer               | 16       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 | mealou               | 19       | .              | ., mobile        | composer check                                | .: 7, mobile: 7      |
 
-Operator keeps only server/web in its private extension config. Hauzer
-and Mealou include mobile for Expo. Other manifests outside configured paths
-(such as Operator mac/iOS, Operator Website Slack, and Platform11 design
-templates) do not expand this rollout. Four projects have no explicit age rule;
-their extensions preserve that absence rather than adding policy.
+Operator keeps only server/web in its private extension config. Hauzer and
+Mealou include mobile for Expo. Other manifests outside configured paths (such
+as Operator mac/iOS, Operator Website Slack, and Platform11 design templates) do
+not expand this rollout. Four projects have no explicit age rule; their
+extensions preserve that absence rather than adding policy.
 
-Each routine runs weekly on Monday and detection runs daily, in UTC. Fires are
-staggered by ten minutes from Project 20. Read each workflow for its exact cron.
-An unfinished maintenance group blocks another routine or package in the same
-Project. Services detection remains independent of that VM admission guard and
-publishes results even at the fleet cap. Scheduler issues and skips are
-queryable on orbit-gateway.
-
-Horizon New Dawn is excluded: its upstream-parity extension has its own owner.
+Execution follows the binding [Swamp shape guide](swamp-shape.md). This
+configuration snapshot does not make the older routines a conforming authoring
+template.
