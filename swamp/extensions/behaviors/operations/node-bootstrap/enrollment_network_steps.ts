@@ -22,10 +22,8 @@ function execution(
     const model = expr('"node-enrollment-" + string(' + intent + ".node_id)");
     return {
         placement: {
-            target: expr(
-                '"orbit-node-" + string(' + intent + ".executor_node_id)",
-            ),
-            labels: { node: expr("string(" + intent + ".executor_node_id)") },
+            target: "orbit-node-209",
+            labels: { node: "209" },
         },
         globalArgs: {
             name: model,
@@ -38,10 +36,7 @@ function execution(
                             : ".bootstrap.managed_user"),
                 ),
                 port: expr(intent + ".bootstrap.target.port"),
-                identityContent: expr(
-                    "vault.get(inputs.execution_secrets.bootstrap_identity.vault, " +
-                        "inputs.execution_secrets.bootstrap_identity.key)",
-                ),
+                identityFile: expr(intent + ".bootstrap.identity_file"),
                 hostKeys: expr(observation + ".host_keys"),
             },
             hosts: [{
