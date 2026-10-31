@@ -47,7 +47,7 @@ final readonly class InstanceDestroyPhpSecret implements OperationSecretSource
         if ($target->node->user !== $detail['node_user']) {
             throw new ResourceOperationException('instance.removal_conflict', 'The admitted Node account changed.', 409);
         }
-        $value = ['node_id' => $target->node_id, 'user' => ValidatedData::string($detail['node_user']), 'agent_sha256' => ValidatedData::string($detail['agent_sha256']),
+        $value = ['node_id' => $target->node_id, 'user' => ValidatedData::string($detail['node_user']),
             ...app(SharedPhpPoolInput::class)->forAccount($target->node, new ManagedUserAccount(RouteWithdrawalArtifacts::User, RouteWithdrawalArtifacts::Group, RouteWithdrawalArtifacts::Home))];
 
         return new OperationSecretValue($value, [json_encode($value, JSON_THROW_ON_ERROR)]);

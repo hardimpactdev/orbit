@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseServers;
 
+use App\Domain\DatabaseServers\DatabaseIntentSource;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -20,7 +21,7 @@ final readonly class PurgeDatabaseExecutionIntentsAction
                 ->orWhereNull('finished_at')->orWhere('finished_at', '>=', $cutoff);
         });
         foreach ($operations->cursor() as $operation) {
-            $id = $operation->input['intent_id'] ?? null;
+            $id = app(DatabaseIntentSource::class)->ownerId($operation);
             if (is_int($id)) {
                 $retained[] = $id;
             }

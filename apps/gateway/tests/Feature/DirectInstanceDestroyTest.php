@@ -139,17 +139,17 @@ it('refuses another lifecycle kind before exposing teardown', function (): void 
         ->toThrow(ResourceOperationException::class);
 });
 
-it('refuses managed database artifacts before recording any removal intent', function (string $driver): void {
+it('records managed database work without executing a child', function (string $driver): void {
     $server = DatabaseServer::query()->create(['slug' => 'managed-proof', 'node_id' => $this->node->id,
         'driver' => $driver, 'tag' => 'test', 'port' => 3306, 'root_password' => 'protected-server-password', 'status' => 'active']);
     $connection = DatabaseConnection::query()->create(['slug' => 'managed-proof', 'driver' => $driver,
         'database_server_id' => $server->id, 'owner_instance_id' => $this->instance->id]);
 
-    expect(fn () => app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance)))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.native_removal_unavailable'));
-
-    expect($this->instance->refresh()->status->value)->toBe('reserved')
-        ->and(InstanceRemoval::query()->count())->toBe(0)
+    $this->instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $recorded = app(DirectInstanceDestroyIntent::class)->record(directDestroyFixture($this->instance));
+    expect($recorded['direct_destroy']['database']['connection_ids'])->toBe([$connection->id])
+        ->and($recorded['direct_destroy']['database']['servers'][0]['server_id'])->toBe($server->id)
+        ->and(json_encode($recorded))->not->toContain('protected-server-password')
         ->and(Operation::query()->count())->toBe(0);
     $this->assertModelExists($connection);
 })->with(['mysql', 'pgsql', 'redis']);
@@ -163,11 +163,9 @@ it('stores the owning SQLite artifact and records desired state without executin
 
     $recorded = app(DirectInstanceDestroyIntent::class)->record($input);
 
-    expect($recorded['direct_destroy']['databases'])->toHaveCount(1)
-        ->and($recorded['direct_destroy']['databases'][0]['owner_instance_id'])->toBe($this->instance->id)
-        ->and($recorded['direct_destroy']['databases'][0]['connections'])->toBe([[
-            'connection_id' => $connection->id, 'slug' => $connection->slug, 'driver' => 'sqlite',
-            'node_id' => $this->node->id, 'path' => $connection->path,
+    expect($recorded['direct_destroy']['database']['owner_instance_id'])->toBe($this->instance->id)
+        ->and($recorded['direct_destroy']['database']['sqlite'])->toBe([[
+            'connection_id' => $connection->id, 'node_id' => $this->node->id, 'checkout' => $this->instance->checkout_path, 'path' => $connection->path,
         ]])->and($recorded['direct_destroy']['runtime'])->toBe(['processes' => [], 'schedules' => []])
         ->and($recorded['direct_destroy']['node_user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['user'])->toBe($this->node->user)
@@ -190,12 +188,12 @@ it('admits the complete database set before writing the first removal member', f
     $server = DatabaseServer::query()->create(['slug' => 'second-member', 'node_id' => $this->node->id,
         'tag' => 'test', 'port' => 3306, 'root_password' => 'protected-server-password', 'status' => 'active']);
     DatabaseConnection::query()->create(['slug' => 'second-member', 'driver' => 'mysql',
-        'database_server_id' => $server->id, 'owner_instance_id' => $other->id]);
+        'database_server_id' => $server->id, 'database' => 'mysql', 'owner_instance_id' => $other->id]);
     $input = directDestroyFixture($this->instance);
     $input['members'][] = directDestroyFixture($other)['members'][0];
 
     expect(fn () => app(DirectInstanceDestroyIntent::class)->record($input))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.native_removal_unavailable'));
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.system_database'));
 
     expect(InstanceRemoval::query()->count())->toBe(0)
         ->and($this->instance->refresh()->status->value)->toBe('reserved')
@@ -222,7 +220,7 @@ it('keeps its database snapshot closed to ownership saves after removal intent c
     expect(DatabaseConnection::query()->count())->toBe(1)
         ->and($connection->refresh()->owner_instance_id)->toBe($this->instance->id)
         ->and($connection->path)->toBe($this->instance->checkout_path.'/database.sqlite')
-        ->and(array_column($recorded['direct_destroy']['databases'][0]['connections'], 'connection_id'))->toBe([$connection->id])
+        ->and(array_column($recorded['direct_destroy']['database']['sqlite'], 'connection_id'))->toBe([$connection->id])
         ->and($this->instance->refresh()->status->value)->toBe('removing');
 })->with(['new', 'reassign', 'path']);
 
@@ -447,14 +445,8 @@ it('keeps the complete admitted Route inventory immutable before successful proj
 
 function directDestroyResult(array $intent, array $databaseIds = []): array
 {
-    $results = array_map(static fn (array $artifact): array => [
-        'artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => array_any($artifact['connections'], static fn (array $row): bool => $row['driver'] !== 'sqlite') ? 'record_only' : 'absent',
-    ], $intent['direct_destroy']['databases']);
-
     return ['removal_id' => $intent['removal_id'], 'removed' => true,
-        'instance_ids' => array_column($intent['direct_destroy']['members'], 'instance_id'),
-        'database_results_sha256' => hash('sha256', json_encode($results, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))];
+        'instance_ids' => array_column($intent['direct_destroy']['members'], 'instance_id')];
 }
 
 function directDestroyFixture(Instance $instance): array
@@ -592,5 +584,5 @@ it('upgrades a saved standalone worktree retry to independent forced removal', f
 
     expect($recorded['direct_destroy']['members'][0]['independent_worktree'])->toBeTrue();
     expect($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($initial['direct_destroy']['members'][0]['worktrees']);
-    expect($recorded['direct_destroy']['databases'])->toBe($initial['direct_destroy']['databases']);
+    expect($recorded['direct_destroy']['database'])->toBe($initial['direct_destroy']['database']);
 });

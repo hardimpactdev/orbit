@@ -52,7 +52,8 @@ it('selects only the authenticated participants own server credentials', functio
     expect(fn () => app(DatabaseDestroyOwnedMaterial::class)->resolve($operation, 11))->toThrow(ResourceOperationException::class);
 });
 
-it('serves disjoint owned server passwords through the real shared controller only to their admitted Nodes', function (): void {
+it('serves disjoint server passwords through the real shared controller for each native parent', function (bool $lifecycle): void {
+    $field = $lifecycle ? 'database_material' : 'payload';
     $readers = [];
     foreach ([31, 32] as $suffix) {
         $node = Node::query()->create(['name' => 'database-'.$suffix, 'status' => 'active', 'platform' => 'linux',
@@ -63,29 +64,40 @@ it('serves disjoint owned server passwords through the real shared controller on
     [$first, $second] = $readers;
     $root = $this->instance->node_id;
     $intent = DatabaseExecutionIntent::query()->create(['target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $root,
-        'payload' => ['commands' => ['database-apply' => ['protected' => ['payload'], 'input' => ['participant_passwords' => [
+        'payload' => ['commands' => ['database-apply' => ['protected' => [$field], 'input' => ['participant_passwords' => [
             $first->id => [42 => 'private-first-server'], $second->id => [43 => 'private-second-server'],
         ]]]], 'projection' => []]]);
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
-    $operation = Operation::query()->create(['kind' => 'database.destroy_owned', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+    $servers = [['server_id' => 42, 'node_id' => $first->id], ['server_id' => 43, 'node_id' => $second->id]];
+    $public = $lifecycle
+        ? ['direct_destroy' => ['database' => ['intent_id' => $intent->id, 'servers' => $servers, 'sqlite' => [], 'connection_ids' => [], 'owner_instance_id' => $this->instance->id]]]
+        : ['intent_id' => $intent->id, 'servers' => $servers, 'sqlite' => []];
+    $operation = Operation::query()->create(['kind' => $lifecycle ? 'instance.destroy' : 'database.destroy_owned', 'target_type' => 'instance', 'target_id' => $this->instance->id,
         'node_id' => $root, 'status' => 'running', 'state' => ['swamp_run_id' => $run], 'input' => [
-            'intent_id' => $intent->id, 'servers' => [['server_id' => 42, 'node_id' => $first->id], ['server_id' => 43, 'node_id' => $second->id]], 'sqlite' => [],
-            'participant_node_ids' => [$root, $first->id, $second->id],
-            'private_bindings' => ['payload' => ['owner_node_id' => $root, 'read_node_ids' => [$first->id, $second->id], 'write_node_ids' => []]],
-            'payload' => ['$secret' => 'database.intent', 'id' => $intent->id],
+            ...$public, 'participant_node_ids' => [$root, $first->id, $second->id],
+            'private_bindings' => [$field => ['owner_node_id' => $root, 'read_node_ids' => [$first->id, $second->id], 'write_node_ids' => []]],
+            $field => ['$secret' => 'database.intent', 'id' => $intent->id],
         ]]);
     $path = '/api/v1/direct-operations/'.$operation->id.'/private-material?run_id='.$run;
     foreach ([[$first, '42', 'private-first-server', 'private-second-server'], [$second, '43', 'private-second-server', 'private-first-server']] as [$node, $id, $own, $foreign]) {
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
         $this->getJson($path)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-            ->assertExactJsonStructure(['data' => ['payload' => ['passwords' => [$id]]], 'meta' => ['request_id']])
-            ->assertJsonPath('data.payload.passwords.'.$id, $own)->assertDontSee($foreign);
+            ->assertExactJsonStructure(['data' => [$field => ['passwords' => [$id]]], 'meta' => ['request_id']])
+            ->assertJsonPath('data.'.$field.'.passwords.'.$id, $own)->assertDontSee($foreign);
+        if ($lifecycle) {
+            $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$run)->assertOk()
+                ->assertJsonCount(1, 'data.input.direct_destroy.database.servers')
+                ->assertJsonPath('data.input.direct_destroy.database.servers.0.server_id', (int) $id)
+                ->assertDontSee($own)->assertDontSee($foreign);
+        }
     }
-    $this->withServerVariables(['REMOTE_ADDR' => $this->instance->node->wireguard_ip]);
-    $this->getJson($path)->assertForbidden();
+    if (! $lifecycle) {
+        $this->withServerVariables(['REMOTE_ADDR' => $this->instance->node->wireguard_ip]);
+        $this->getJson($path)->assertForbidden();
+    }
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->getJson($path)->assertForbidden();
     request()->setUserResolver(static fn () => null);
-    expect(fn () => app(DatabaseIntentSource::class)->resolve($operation, $intent->id, '', 'payload'))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(DatabaseIntentSource::class)->resolve($operation, $intent->id, '', $field))->toThrow(ResourceOperationException::class);
     expect(json_encode($operation->fresh()->toArray()))->not->toContain('private-first-server', 'private-second-server');
-});
+})->with([false, true]);

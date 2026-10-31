@@ -111,7 +111,7 @@ it('routes direct server adoption projection through owned identity admission', 
         admitDatabaseOwnerRemoval($this->instance);
         expect(fn () => app(DatabaseServerCreateProjection::class)->apply($operation, $data))
             ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.owner_removing'));
-        expect($operation->fresh()->status->value)->toBe('queued');
+        expect($operation->fresh()->status->value)->toBe('running');
         expect($this->owned->fresh()->database_server_id)->toBeNull();
     } else {
         app(DatabaseServerCreateProjection::class)->apply($operation, $data);
@@ -205,7 +205,7 @@ it('serializes owner admission and removal with a real SQLite transaction barrie
                             $artifact = app(PrepareOwnedDatabaseDestructionAction::class)->execute($owner);
                             admitDatabaseOwnerRemoval($owner);
 
-                            return ['connections' => array_column($artifact['connections'], 'connection_id')];
+                            return ['connections' => $artifact['connection_ids']];
                         });
                     }
                 } catch (ResourceOperationException $error) {

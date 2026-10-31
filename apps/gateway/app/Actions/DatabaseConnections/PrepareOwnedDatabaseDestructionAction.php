@@ -4,66 +4,36 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Actions\DatabaseServers\RecordDatabaseOperationAction;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Models\DatabaseConnection;
-use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Support\ValidatedData;
 
-/**
- * Public immutable artifact for one native DAG. The parent stores it once; no execution intent or child is created.
- *
- * @phpstan-type Connection array{connection_id:int,slug:string,driver:string,node_id:?int,path:?string}
- * @phpstan-type Artifact array{version:1,artifact_id:string,owner_instance_id:int,node_id:int,checkout:string,agent_sha256:string,connections:list<Connection>}
+/** One aggregate protected database intent owned by the requested lifecycle Instance.
+ * @phpstan-import-type Server from DropOwnedDatabasesAction
+ * @phpstan-import-type Sqlite from DropOwnedDatabasesAction
  */
 final readonly class PrepareOwnedDatabaseDestructionAction
 {
-    /** @return Artifact */
-    public function execute(Instance $target): array
+    public function __construct(private DropOwnedDatabasesAction $databases, private RecordDatabaseOperationAction $operations) {}
+
+    /** @param list<int> $memberIds
+     * @return array{owner_instance_id:int,intent_id:int,connection_ids:list<int>,servers:list<Server>,sqlite:list<Sqlite>}
+     */
+    public function execute(Instance $target, array $memberIds = []): array
     {
-        $connections = $this->snapshot($target);
-
-        return ['version' => 1, 'artifact_id' => bin2hex(random_bytes(32)), 'owner_instance_id' => $target->id,
-            'node_id' => $target->node_id, 'checkout' => $target->checkout_path,
-            'agent_sha256' => app(AgentDelivery::class)->pin($target->node), 'connections' => $connections];
-    }
-
-    /** @return list<Connection> */
-    public function snapshot(Instance $target, bool $lock = false): array
-    {
-        if ($target->defaultAppEnv() !== 'development' || $target->node->platform !== 'linux' || ! $this->path($target->checkout_path)) {
-            throw new ResourceOperationException('database.removal_conflict', 'Native database destruction requires its recorded development checkout.', 409);
+        $memberIds = $memberIds === [] ? [$target->id] : $memberIds;
+        $owners = Instance::query()->whereKey($memberIds)->orderBy('id')->get();
+        if (! in_array($target->id, $memberIds, true) || $owners->count() !== count(array_unique($memberIds))
+            || $owners->contains(static fn (Instance $owner): bool => $owner->project_id !== $target->project_id || $owner->node_id !== $target->node_id || $owner->defaultAppEnv() !== 'development')) {
+            throw new ResourceOperationException('database.removal_conflict', 'Database owners must belong to the admitted development removal set.', 409);
         }
-        $query = DatabaseConnection::query()->where('owner_instance_id', $target->id)->orderBy('id');
-        $connections = ($lock ? $query->lockForUpdate() : $query)->get();
-        if ($connections->count() > 1000) {
-            throw new ResourceOperationException('database.removal_conflict', 'The owned database set exceeds the native artifact bound.', 409);
-        }
-        if (DatabaseConnectionTarget::query()->whereIn('database_connection_id', $connections->modelKeys())->where('instance_id', '!=', $target->id)->exists()) {
-            throw new ResourceOperationException('database.removal_conflict', 'An owned database is attached to another Instance.', 409);
-        }
-        $snapshot = [];
-        foreach ($connections as $connection) {
-            // Even same-Node SQL stays closed until its owning native action and private material contract exist.
-            if ($connection->database_server_id !== null) {
-                throw new ResourceOperationException('database.native_removal_unavailable', 'Managed database destruction has no approved native artifact and private material wire.', 409);
-            }
-            if ($connection->driver === DatabaseDriver::Sqlite && ($connection->node_id !== $target->node_id
-                || ! is_string($connection->path) || ! $this->path($connection->path)
-                || ! str_starts_with($connection->path, $target->checkout_path.'/'))) {
-                throw new ResourceOperationException('database.removal_conflict', 'The owned SQLite database is outside its recorded checkout or Node.', 409);
-            }
-            $snapshot[] = ['connection_id' => $connection->id, 'slug' => $connection->slug, 'driver' => $connection->driver->value,
-                'node_id' => $connection->node_id, 'path' => $connection->path];
-        }
+        $snapshot = $this->databases->snapshot(array_values($owners->all()));
+        $passwords = $snapshot['passwords'];
+        unset($snapshot['passwords']);
+        $prepared = $this->operations->prepare('instance.destroy', 'instance', $target->id, $target->node_id, $snapshot,
+            ['database-apply' => ['name' => 'database.destroy_owned', 'input' => ['participant_passwords' => $passwords], 'protected' => ['database_material']]]);
 
-        return $snapshot;
-    }
-
-    private function path(string $path): bool
-    {
-        return str_starts_with($path, '/') && strlen($path) > 1 && ! str_ends_with($path, '/')
-            && ! preg_match('#[\x00-\x1f\x7f]|(?:^|/)\.{1,2}(?:/|$)|//#', $path);
+        return ['owner_instance_id' => $target->id, 'intent_id' => ValidatedData::integer($prepared->input['intent_id']), ...$snapshot];
     }
 }

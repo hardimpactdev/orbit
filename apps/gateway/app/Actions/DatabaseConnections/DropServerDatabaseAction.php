@@ -50,10 +50,12 @@ final readonly class DropServerDatabaseAction
 
     /** Protected snapshots also compose into an Instance's single native DAG.
      * @param  list<DatabaseConnection>  $connections
+     * @param  list<int>  $ownerInstanceIds
      * @return list<array{server_id:int,node_id:int,connection_ids:list<int>,input:array<string,mixed>,password:string}>
      */
-    public function snapshots(array $connections, ?int $ownerInstanceId = null): array
+    public function snapshots(array $connections, ?int $ownerInstanceId = null, array $ownerInstanceIds = []): array
     {
+        $ownerInstanceIds = $ownerInstanceIds === [] && $ownerInstanceId !== null ? [$ownerInstanceId] : $ownerInstanceIds;
         $groups = [];
         $ids = array_map(static fn (DatabaseConnection $connection): int => $connection->id, $connections);
         foreach ($connections as $connection) {
@@ -62,10 +64,10 @@ final readonly class DropServerDatabaseAction
                 throw new ResourceOperationException('database.server_required', 'Only managed databases have a remote drop.', 422);
             }
             app(DatabaseDestroySafety::class)->assertAcceptsRemoval($server);
-            if ($ownerInstanceId !== null && $connection->owner_instance_id !== $ownerInstanceId) {
+            if ($ownerInstanceIds !== [] && ! in_array($connection->owner_instance_id, $ownerInstanceIds, true)) {
                 throw new ResourceOperationException('database.ownership_unproven', 'The connection belongs to another Instance.', 409);
             }
-            if ($connection->targets()->whereNot('instance_id', $ownerInstanceId ?? 0)->exists()) {
+            if ($connection->targets()->whereNotIn('instance_id', $ownerInstanceIds)->exists()) {
                 throw new ResourceOperationException('database.connection_attached', 'Detach the connection before removal.', 409);
             }
             $redis = $server->driver === DatabaseDriver::Redis;

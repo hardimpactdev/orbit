@@ -29,7 +29,9 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
 
     public function ownerId(Operation $operation): ?int
     {
-        $id = $operation->input['intent_id'] ?? null;
+        $id = $operation->kind === 'instance.destroy'
+            ? Arr::get($operation->input, 'direct_destroy.database.intent_id')
+            : ($operation->input['intent_id'] ?? null);
         if (! is_int($id)) {
             return null;
         }
@@ -45,7 +47,8 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
             throw new ResourceOperationException('operation.execution_forbidden', 'The database intent belongs to another target.', 422);
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        if ($key === '' && $operation->kind === 'database.destroy_owned' && $parameter === 'payload'
+        if ($key === '' && (($operation->kind === 'database.destroy_owned' && $parameter === 'payload')
+                || ($operation->kind === 'instance.destroy' && $parameter === 'database_material'))
             && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
             $caller = (request()->getUserResolver())();
             if (! $caller instanceof Node || app(DirectOperationPrivateBindings::class)->ownerNode($operation, $parameter) !== $intent->node_id) {

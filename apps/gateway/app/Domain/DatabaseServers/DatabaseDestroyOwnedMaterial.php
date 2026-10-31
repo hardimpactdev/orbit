@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Arr;
 
 /** Called only by the shared private source with its authenticated participant Node. */
 final readonly class DatabaseDestroyOwnedMaterial
@@ -21,11 +22,11 @@ final readonly class DatabaseDestroyOwnedMaterial
                 $serverIds[] = ValidatedData::integer($server['server_id']);
             }
         }
-        if ($operation->kind !== 'database.destroy_owned' || $serverIds === []
+        if (! in_array($operation->kind, ['database.destroy_owned', 'instance.destroy'], true) || $serverIds === []
             || ! in_array($authenticatedNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             $this->forbidden();
         }
-        $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id'] ?? null);
+        $intent = DatabaseExecutionIntent::recorded(app(DatabaseIntentSource::class)->ownerId($operation));
         if ($intent->target_type !== $operation->target_type || $intent->target_id !== $operation->target_id || $intent->node_id !== $operation->node_id) {
             $this->forbidden();
         }
@@ -49,7 +50,9 @@ final readonly class DatabaseDestroyOwnedMaterial
     /** @return list<array<string, mixed>> */
     private function servers(Operation $operation): array
     {
-        $servers = $operation->input['servers'] ?? [];
+        $servers = $operation->kind === 'instance.destroy'
+            ? Arr::get($operation->input, 'direct_destroy.database.servers', [])
+            : ($operation->input['servers'] ?? []);
         if (! is_array($servers) || ! array_is_list($servers)) {
             $this->forbidden();
         }

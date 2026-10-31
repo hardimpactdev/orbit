@@ -54,25 +54,46 @@ final readonly class InstanceDestroyProjection implements DirectOperationProject
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
         $detail = ValidatedData::object($operation->input['direct_destroy']);
-        if (! in_array($callerNodeId, $operation->input['participant_node_ids'] ?? [], true)
-            || ! in_array($callerNodeId, $detail['publication_node_ids'], true)) {
-            throw new ResourceOperationException('operation.executor_forbidden', 'This Node is not an admitted publication participant.', 403);
+        $database = ValidatedData::object($detail['database'] ?? []);
+        $nodes = ValidatedData::integerList($detail['publication_node_ids'] ?? []);
+        foreach (['servers', 'sqlite'] as $field) {
+            foreach (InstanceLifecycleInput::members(['members' => $database[$field] ?? []]) as $work) {
+                $nodes[] = ValidatedData::integer($work['node_id']);
+            }
+        }
+        if (! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)
+            || ! in_array($callerNodeId, $nodes, true)) {
+            throw new ResourceOperationException('operation.executor_forbidden', 'This Node is not an admitted removal participant.', 403);
         }
     }
 
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
+        $detail = ValidatedData::object($operation->input['direct_destroy']);
+        $database = ValidatedData::object($detail['database'] ?? []);
+        $local = static fn (mixed $rows): array => array_values(array_filter(
+            InstanceLifecycleInput::members(['members' => $rows]), static fn (array $row): bool => ($row['node_id'] ?? null) === $callerNodeId,
+        ));
+        $view = ['instance_id' => $operation->target_id, 'removal_id' => $operation->input['removal_id'] ?? null,
+            'participant_node_ids' => $operation->input['participant_node_ids'],
+            'direct_destroy' => ['database' => [
+                ...array_intersect_key($database, array_flip(['owner_instance_id', 'intent_id'])),
+                'servers' => $local($database['servers'] ?? []), 'sqlite' => $local($database['sqlite'] ?? []),
+            ]]];
+        if (! in_array($callerNodeId, ValidatedData::integerList($detail['publication_node_ids'] ?? []), true)) {
+            return $view;
+        }
         $current = $this->input($operation);
-        $select = static function (array $rows) use ($callerNodeId): array {
-            return array_map(static fn (array $row): array => ['nodes' => array_values(array_filter($row['nodes'], static fn (array $node): bool => $node['node_id'] === $callerNodeId)),
-                'dns' => array_values(array_filter($row['dns'], static fn (array $node): bool => $node['node_id'] === $callerNodeId))], $rows);
+        $select = static function (mixed $rows) use ($local): array {
+            return array_map(static fn (array $row): array => ['nodes' => $local($row['nodes']), 'dns' => $local($row['dns'])], InstanceLifecycleInput::members(['members' => $rows]));
         };
+        $view['publication_node_id'] = $callerNodeId;
+        $view['caddy_publication'] = CaddyPublicationPlan::forNode(Node::query()->findOrFail($callerNodeId));
+        $view['withdrawal_publications'] = $select($current['withdrawal_publications'] ?? []);
+        $view['direct_destroy']['routes'] = $select($detail['routes']);
 
-        return ['participant_node_ids' => $current['participant_node_ids'], 'publication_node_id' => $callerNodeId,
-            'caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($callerNodeId)),
-            'withdrawal_publications' => $select($current['withdrawal_publications'] ?? []),
-            'direct_destroy' => ['routes' => $select(ValidatedData::object($operation->input['direct_destroy'])['routes'])]];
+        return $view;
     }
 
     public function apply(Operation $operation, array $data): Operation

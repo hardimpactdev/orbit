@@ -27,7 +27,7 @@ Create reserves names and credentials without probing a server. A matching retry
 
 ## Instance database steps
 
-Lifecycle composes Database actions as placed jobs in its own native DAG. It does not admit Database child Operations or wait in the Gateway. Managed MySQL clone resets and copies in one replayable native step. Swamp verifies the target's recorded owner and grants before reset. SQLite clone, seed and abandon use safe immutable source and target descriptors and exact Node placement.
+Lifecycle composes Database actions as placed jobs in its own native DAG. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords through the fixed private-material binding. It does not admit Database child Operations or wait in the Gateway. Managed MySQL clone resets and copies in one replayable native step. Swamp verifies the target's recorded owner and grants before reset. SQLite clone, seed and abandon use safe immutable source and target descriptors and exact Node placement.
 
 A SQLite source writes a private snapshot into a native file artifact. The target reads that exact version and verifies the size and digest before installation. Database bytes stay out of JSON resources and public history. Native retention owns the file. The current remote native reader buffers a snapshot in worker memory, so this path does not claim bounded memory for large files. Cleanup runs as native dependencies. Abandon derives only the owning recorded development-transfer attempt.
 
@@ -82,7 +82,7 @@ Deletion returns `database_connection.required_by_ai_router` (409) while [AI rou
 
 A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
-Updates to a configured AI-router cache connection return `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
+An update to the configured cache for AI router returns `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
 
 ## Inspect a registered connection
 

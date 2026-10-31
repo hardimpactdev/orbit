@@ -12,7 +12,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWithdrawalArtifacts;
 use App\Domain\Schedules\ScheduleOperationAdmission;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -72,9 +71,9 @@ final readonly class DirectInstanceDestroyIntent
             }
         }
         // Every owning artifact must be admitted before any desired-state write.
-        $databases = array_map(fn (array $member): array => $this->databases->execute(
-            Instance::query()->with('node')->findOrFail(ValidatedData::integer($member['instance_id'])),
-        ), $members);
+        $databases = $this->databases->execute(
+            Instance::query()->with('node')->findOrFail(ValidatedData::integer($input['instance_id'])), $ids,
+        );
         $routeIds = array_values(array_unique([...ValidatedData::integerList(array_values(array_filter(array_column($members, 'route_id')))), ...ValidatedData::integerList($input['additional_route_ids'])]));
         sort($routeIds);
         $attached = Route::query()->whereHas('targets', fn ($query) => $query->whereIn('instance_id', $ids))->orderBy('id')->get();
@@ -93,7 +92,6 @@ final readonly class DirectInstanceDestroyIntent
         if ($node->user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $node->user) !== 1) {
             throw new ResourceOperationException('instance.destroy_unsupported', 'Development removal requires its configured non-root Node account.', 409);
         }
-        $pin = app(AgentDelivery::class)->pin($node);
         $local = [];
         $runtime = ['processes' => [], 'schedules' => []];
         $teardown = [];
@@ -158,13 +156,18 @@ final readonly class DirectInstanceDestroyIntent
         $nodes = array_values(array_unique($nodes));
         sort($nodes);
 
-        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $nodes, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
+        $databaseNodes = array_values(array_unique(array_column($databases['servers'], 'node_id')));
+        $participants = array_values(array_unique([...$nodes, ...$databaseNodes]));
+
+        $recorded = [...$input, 'parent_owns_routes' => $parentOwnsRoutes, 'participant_node_ids' => $participants, 'environment' => 'development', 'git_read' => ['$secret' => 'instance.lifecycle_git', 'id' => $input['project_id']],
             'teardown' => ['$secret' => 'instance.destroy_teardown', 'id' => $input['instance_id']],
             'php' => ['$secret' => 'instance.destroy_php', 'id' => $input['instance_id']],
+            'database_material' => ['$secret' => 'database.intent', 'id' => $databases['intent_id']],
+            'private_bindings' => ['database_material' => ['owner_node_id' => $node->id, 'read_node_ids' => $databaseNodes, 'write_node_ids' => []]],
             'direct_destroy' => [
-                'node_id' => $node->id, 'node_user' => $node->user, 'agent_sha256' => $pin, 'members' => $local, 'runtime' => $runtime,
+                'node_id' => $node->id, 'node_user' => $node->user, 'members' => $local, 'runtime' => $runtime,
                 'teardown' => $teardown, 'routes' => $withdrawals, 'publication_node_ids' => $nodes,
-                'databases' => $databases,
+                'database' => $databases,
             ],
         ];
         $removal->update(['native_intent' => $recorded]);

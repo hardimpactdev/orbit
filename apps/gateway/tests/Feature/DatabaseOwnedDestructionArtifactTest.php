@@ -3,81 +3,61 @@
 declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\PrepareOwnedDatabaseDestructionAction;
-use App\Actions\DatabaseConnections\ProjectOwnedDatabaseDestructionAction;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
-use App\Models\Instance;
 use App\Models\Operation;
 
 require_once __DIR__.'/../Support/ServerDatabaseFixtures.php';
-
 uses(ServerDatabaseFixtures::class);
 
 beforeEach(function (): void {
     $this->prepareServerDatabaseFixtures();
-    $this->dbNode->update(['architecture' => 'amd64']);
     $this->prepare = app(PrepareOwnedDatabaseDestructionAction::class);
-    $this->project = app(ProjectOwnedDatabaseDestructionAction::class);
     $this->owned = DatabaseConnection::query()->create(['slug' => 'owned-sqlite', 'driver' => 'sqlite',
         'node_id' => $this->instance->node_id, 'path' => $this->instance->checkout_path.'/database.sqlite',
-        'owner_instance_id' => $this->instance->id, 'password' => 'not-in-artifact']);
+        'owner_instance_id' => $this->instance->id, 'password' => 'not-in-public-intent']);
 });
 
-function ownedDestructionResult(array $artifact): array
-{
-    return ['artifact_id' => $artifact['artifact_id'], 'owner_instance_id' => $artifact['owner_instance_id'],
-        'node_id' => $artifact['node_id'], 'removed_connection_ids' => array_column($artifact['connections'], 'connection_id'), 'backend' => array_any($artifact['connections'], static fn (array $row): bool => $row['driver'] !== 'sqlite') ? 'record_only' : 'absent'];
-}
-
-it('records only public owned local intent without any Gateway execution records or Node reads', function (): void {
-    $foreign = DatabaseConnection::query()->create(['slug' => 'attached-foreign', 'driver' => 'sqlite', 'path' => '/foreign/db.sqlite']);
-    DatabaseConnectionTarget::query()->create(['database_connection_id' => $foreign->id, 'instance_id' => $this->instance->id, 'prefix' => 'DB']);
-    $external = DatabaseConnection::query()->create(['slug' => 'owned-external', 'driver' => 'mysql', 'database' => 'external_db',
-        'username' => 'external', 'password' => 'private-external', 'owner_instance_id' => $this->instance->id]);
+it('records one aggregate encrypted intent without starting another Operation', function (): void {
     $artifact = $this->prepare->execute($this->instance);
-    expect(array_keys($artifact))->toBe(['version', 'artifact_id', 'owner_instance_id', 'node_id', 'checkout', 'agent_sha256', 'connections'])
-        ->and($artifact['connections'])->toBe([
-            ['connection_id' => $this->owned->id, 'slug' => 'owned-sqlite', 'driver' => 'sqlite', 'node_id' => $this->instance->node_id, 'path' => $this->owned->path],
-            ['connection_id' => $external->id, 'slug' => 'owned-external', 'driver' => 'mysql', 'node_id' => null, 'path' => null],
-        ])->and(json_encode($artifact))->not->toContain('not-in-artifact', 'private-external', 'external_db', 'external"')
-        ->and(Operation::query()->count())->toBe(0)->and(DatabaseExecutionIntent::query()->count())->toBe(0)
-        ->and($this->admin->statements)->toBe([]);
-    $this->assertModelExists($this->owned);
+    expect($artifact['owner_instance_id'])->toBe($this->instance->id)
+        ->and($artifact['connection_ids'])->toBe([$this->owned->id])
+        ->and($artifact['servers'])->toBe([])
+        ->and($artifact['sqlite'])->toBe([['connection_id' => $this->owned->id, 'node_id' => $this->instance->node_id,
+            'checkout' => $this->instance->checkout_path, 'path' => $this->owned->path]])
+        ->and(json_encode($artifact))->not->toContain('not-in-public-intent')
+        ->and(Operation::query()->count())->toBe(0)->and(DatabaseExecutionIntent::query()->count())->toBe(1);
 });
 
-it('projects the complete native result before Instance deletion and tolerates replay', function (): void {
-    $foreign = DatabaseConnection::query()->create(['slug' => 'foreign', 'driver' => 'sqlite', 'path' => '/foreign/db.sqlite']);
-    foreach ([$this->owned, $foreign] as $index => $connection) {
-        DatabaseConnectionTarget::query()->create(['database_connection_id' => $connection->id, 'instance_id' => $this->instance->id, 'prefix' => $index === 0 ? 'DB' : 'OTHER']);
+it('combines admitted owners on the same server and keeps its password encrypted', function (): void {
+    $other = $this->instance->replicate();
+    $other->name = 'other-database-owner';
+    $other->checkout_path .= '-other';
+    $other->save();
+    foreach ([$this->instance, $other] as $owner) {
+        DatabaseConnection::query()->create(['slug' => 'sql-'.$owner->id, 'driver' => 'mysql',
+            'database_server_id' => $this->server->id, 'database' => 'sql_'.$owner->id, 'username' => 'owner_'.$owner->id,
+            'owner_instance_id' => $owner->id]);
     }
-    $artifact = $this->prepare->execute($this->instance);
-    $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact));
-    $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact));
-    $this->assertModelMissing($this->owned);
-    $this->assertModelExists($foreign);
-    $this->assertModelExists($this->instance);
-    expect(DatabaseConnectionTarget::query()->pluck('database_connection_id')->all())->toBe([$foreign->id]);
+    $artifact = $this->prepare->execute($this->instance, [$this->instance->id, $other->id]);
+    $intent = DatabaseExecutionIntent::recorded($artifact['intent_id']);
+    expect($artifact['connection_ids'])->toHaveCount(3)->and($artifact['servers'])->toHaveCount(1)
+        ->and($artifact['servers'][0]['intent']['databases'])->toHaveCount(2)
+        ->and($intent->payload['commands']['database-apply']['input']['participant_passwords'][$this->server->node_id][$this->server->id])->toBe($this->server->root_password)
+        ->and(json_encode($artifact))->not->toContain($this->server->root_password);
 });
 
-it('supports empty ownership without an execution record', function (): void {
-    $this->owned->delete();
-    $artifact = $this->prepare->execute($this->instance);
-    expect($artifact['connections'])->toBe([]);
-    $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact));
-    expect(Operation::query()->count())->toBe(0)->and(DatabaseExecutionIntent::query()->count())->toBe(0);
+it('refuses a database attached outside the admitted owners before recording material', function (): void {
+    $other = $this->instance->replicate();
+    $other->name = 'foreign-consumer';
+    $other->checkout_path .= '-foreign';
+    $other->save();
+    DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id, 'instance_id' => $other->id, 'prefix' => 'DB']);
+    expect(fn () => $this->prepare->execute($this->instance))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseCount('database_execution_intents', 0);
 });
-
-it('refuses managed databases on either Node without querying live grants or preparing SQL', function (bool $sameNode): void {
-    if (! $sameNode) {
-        $this->server->update(['node_id' => $this->gateway->id]);
-    }
-    $this->owned->update(['driver' => 'mysql', 'database_server_id' => $this->server->id, 'path' => null, 'database' => 'foreign_db']);
-    expect(fn () => $this->prepare->execute($this->instance))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.native_removal_unavailable'));
-    expect($this->admin->statements)->toBe([])->and(DatabaseExecutionIntent::query()->count())->toBe(0);
-    $this->assertModelExists($this->owned);
-})->with([true, false]);
 
 it('refuses a foreign SQLite Node or unsafe path', function (string $change): void {
     $this->owned->update(match ($change) {
@@ -87,50 +67,5 @@ it('refuses a foreign SQLite Node or unsafe path', function (string $change): vo
         'checkout' => ['path' => $this->instance->checkout_path],
     });
     expect(fn () => $this->prepare->execute($this->instance))->toThrow(ResourceOperationException::class);
+    $this->assertDatabaseCount('database_execution_intents', 0);
 })->with(['node', 'outside', 'traversal', 'checkout']);
-
-it('refuses incomplete or altered native results without deleting a row', function (string $field): void {
-    $artifact = $this->prepare->execute($this->instance);
-    $result = ownedDestructionResult($artifact);
-    $result[$field] = match ($field) {
-        'artifact_id' => str_repeat('0', 64), 'backend' => 'active', 'removed_connection_ids' => [],
-        default => -1,
-    };
-    expect(fn () => $this->project->execute($this->instance, $artifact, $result))->toThrow(ResourceOperationException::class);
-    $this->assertModelExists($this->owned);
-})->with(['artifact_id', 'node_id', 'owner_instance_id', 'backend', 'removed_connection_ids', 'extra']);
-
-it('refuses changed placement or ownership as a set without deleting unchanged rows', function (string $change): void {
-    $artifact = $this->prepare->execute($this->instance);
-    match ($change) {
-        'checkout' => $this->instance->update(['checkout_path' => '/srv/changed']),
-        'node' => $this->instance->update(['node_id' => $this->gateway->id]),
-        'path' => $this->owned->update(['path' => $this->instance->checkout_path.'/new.sqlite']),
-        'owner' => $this->owned->update(['owner_instance_id' => null]),
-        'server' => $this->owned->update(['database_server_id' => $this->server->id]),
-        'added' => DatabaseConnection::query()->create(['slug' => 'new-owned', 'driver' => 'mysql', 'owner_instance_id' => $this->instance->id]),
-    };
-    expect(fn () => $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact)))
-        ->toThrow(ResourceOperationException::class);
-    $this->assertModelExists($this->owned);
-})->with(['checkout', 'node', 'path', 'owner', 'server', 'added']);
-
-it('refuses an owned database attached to a foreign Instance before deleting any target', function (): void {
-    $foreign = Instance::query()->create(['project_id' => $this->instance->project_id,
-        'node_id' => $this->instance->node_id, 'name' => 'foreign-target', 'checkout_path' => '/srv/apps/foreign-target',
-        'source_layout' => 'checkout', 'status' => 'reserved']);
-    $target = DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
-        'instance_id' => $foreign->id, 'prefix' => 'DB']);
-    expect(fn () => $this->prepare->execute($this->instance))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.removal_conflict'));
-    $target->delete();
-    $artifact = $this->prepare->execute($this->instance);
-    $target = DatabaseConnectionTarget::query()->create(['database_connection_id' => $this->owned->id,
-        'instance_id' => $foreign->id, 'prefix' => 'DB']);
-
-    expect(fn () => $this->project->execute($this->instance, $artifact, ownedDestructionResult($artifact)))
-        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('database.removal_conflict'));
-    $this->assertModelExists($target);
-    $this->assertModelExists($this->owned);
-    $this->assertModelExists($this->instance);
-});
