@@ -1,19 +1,21 @@
 import { z } from "npm:zod@4.4.3";
 
 export const ErrorCode = z.string().regex(/^[a-z0-9_.-]+$/);
-export const StepListResult = z.object({
-  outcome: z.enum([
-    "succeeded",
-    "busy",
-    "missing",
-    "failed",
-    "unconfirmed",
-    "deadline",
-    "cancelled",
-  ]),
-  error_code: ErrorCode.nullable(),
-  failed_step: z.string().nullable(),
-});
+export const StepListResult = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("succeeded") }),
+  z.object({
+    outcome: z.enum([
+      "busy",
+      "missing",
+      "failed",
+      "unconfirmed",
+      "deadline",
+      "cancelled",
+    ]),
+    error_code: ErrorCode.nullable(),
+    failed_step: z.string().nullable(),
+  }),
+]);
 export type Failure = {
   error_code: string;
   outcome: Exclude<z.infer<typeof StepListResult>["outcome"], "succeeded">;

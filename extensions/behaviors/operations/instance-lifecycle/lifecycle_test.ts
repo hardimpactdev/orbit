@@ -259,6 +259,25 @@ Deno.test("a cancelled unstarted teardown ends its parent without requiring a st
   assertEquals(f.calls, ["removal-inspect", "teardown-501"]);
 });
 
+Deno.test("a successful direct teardown needs no failed-step or error fields", async () => {
+  const f = new Fixture();
+  f.kind = "instance.destroy";
+  f.input.additional_route_ids = [];
+  f.input.members = [{
+    instance_id: 501,
+    route_id: null,
+    run_teardown: true,
+    teardown_digest: "b".repeat(64),
+  }];
+  f.results.set("teardown-501", {
+    instance_id: 501,
+    outcome: "succeeded",
+    no_op: true,
+  });
+  assertEquals((await lifecycle(f)).status, "succeeded");
+  assertEquals(f.calls.includes("removal-accept"), true);
+});
+
 Deno.test("teardown refusal stops removal before acceptance or Route withdrawal", async () => {
   const f = new Fixture();
   f.kind = "instance.destroy";

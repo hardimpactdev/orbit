@@ -45,6 +45,10 @@ Route activation. Clone captures definitions, then installs Processes stopped
 and Schedules disabled through the runtime family. Removal uses those same
 owning families to remove runtime before Route cleanup.
 
+A successful direct step-list result needs only its `succeeded` outcome; failure
+metadata belongs to failed outcomes. Failed results still require their bounded
+error code and failed-step field.
+
 A cancelled, never-started step-list child has no execution result. Its
 cancellation ends the parent before step-result validation; it cannot authorize
 source removal or rollback.
