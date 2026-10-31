@@ -1,4 +1,4 @@
-"""Official native asset resolution and exact UFW removal in a disposable fixture."""
+"""Run the production Route LAN workflow with disposable UFW and lock boundaries."""
 
 import json
 import os
@@ -11,13 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tests.native_harness import NativeTestCase
 
 ROOT = Path(__file__).resolve().parents[1]
-FAMILY = "operations/routes/lan-command"
+
 
 
 class RouteLanCommandNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors(FAMILY)
         self.state = self.repo / "ufw-state.json"
         self.audit = self.repo / "ufw-audit.jsonl"
         self.fake = self.repo / "ufw"
@@ -41,65 +40,16 @@ else:
     raise SystemExit(9)
 """)
         self.fake.chmod(0o700)
-        script = (
-            self.repo / "extensions/behaviors" / FAMILY / "scripts/remove_route_lan.py"
-        )
-        source = script.read_text().replace('"/usr/sbin/ufw"', repr(str(self.fake)))
-        source = source.replace(
-            '"/run/lock/orbit-firewall.lock"', repr(str(self.repo / "ufw.lock"))
-        )
-        source = source.replace("LOCK_UID = 0", f"LOCK_UID = {os.getuid()}")
-        script.write_text(source)
-        self.workflow = {
-            "id": "e4ded951-01de-4793-9ebd-f1cbbebd752b",
-            "name": "fixture-route-lan-command",
-            "vaults": [],
-            "inputs": {
-                "type": "object",
-                "properties": {"route_id": {"type": "integer", "minimum": 1}},
-                "required": ["route_id"],
-            },
-            "jobs": [
-                {
-                    "name": "withdrawal",
-                    "steps": [
-                        {
-                            "name": "assets",
-                            "task": {
-                                "type": "behavior",
-                                "behaviorType": "@nckrtl/route-lan-commands",
-                                "behaviorName": "fixture-route-lan-assets",
-                                "methodName": "assets",
-                                "inputs": {"route_id": "${{ inputs.route_id }}"},
-                            },
-                        },
-                        {
-                            "name": "remove-lan",
-                            "dependsOn": [
-                                {"step": "assets", "condition": {"type": "succeeded"}}
-                            ],
-                            "task": {
-                                "type": "behavior",
-                                "behaviorType": "command/shell",
-                                "behaviorName": "fixture-route-lan-remove",
-                                "methodName": "execute",
-                                "inputs": {
-                                    "run": 'set -eu\n/usr/bin/python3 "${{ steps.assets.outputs.remove_script }}"',
-                                    "env": {
-                                        "ORBIT_ROUTE_LAN_INPUT": "${{ steps.assets.outputs.input_json }}",
-                                        "FIXTURE_UFW_STATE": str(self.state),
-                                        "FIXTURE_UFW_AUDIT": str(self.audit),
-                                    },
-                                },
-                            },
-                        },
-                    ],
-                }
-            ],
-        }
-        (self.repo / "workflows/workflow-fixture-route-lan-command.yaml").write_text(
-            yaml.safe_dump(self.workflow, sort_keys=False)
-        )
+        self.workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-route-lan-remove.yaml').read_text())
+        step = self.workflow['jobs'][0]['steps'][0]
+        step.pop('target')
+        step.pop('labels')
+        command = step['task']['inputs']
+        command['run'] = command['run'].replace('sudo --preserve-env=ORBIT_ROUTE_ID,ORBIT_ROUTE_DESTINATION ', '')
+        command['run'] = command['run'].replace('"/usr/sbin/ufw"', repr(str(self.fake)))
+        command['run'] = command['run'].replace('"/run/lock/orbit-firewall.lock"', repr(str(self.repo / 'ufw.lock')))
+        command['env'].update({'FIXTURE_UFW_STATE': str(self.state), 'FIXTURE_UFW_AUDIT': str(self.audit)})
+        (self.repo / 'workflows/workflow-operation-route-lan-remove.yaml').write_text(yaml.safe_dump(self.workflow, sort_keys=False))
 
     def run_lan(self, rows, backend="active", success=True, ignore_delete=False):
         self.state.write_text(
@@ -110,9 +60,9 @@ else:
         result = self.cli(
             "workflow",
             "run",
-            "fixture-route-lan-command",
+            "operation-route-lan-remove",
             "--input",
-            json.dumps({"route_id": 47}),
+            json.dumps({"operation_id": 1, "node_id": 9, "kind": "route.lan_remove", "intent": {"route_id": 47, "node_id": 9, "destination": "10.44.0.9"}, "execution_secrets": {}}),
             success=success,
         )
         return (
@@ -128,11 +78,12 @@ else:
                 "[{number}] 10.44.0.9 443/tcp ALLOW IN 10.44.0.2 # orbit:route-470-lan",
                 "[{number}] 10.44.0.9 443/tcp ALLOW IN 10.44.0.3 # orbit:route-47-lan:foreign",
                 "[{number}] 10.44.0.9 443/tcp ALLOW IN 10.44.0.4 # orbit:route-47-lan",
+                "[{number}] 10.44.0.99 443/tcp ALLOW IN 10.44.0.4 # orbit:route-47-lan",
             ]
         )
         self.assertEqual(
             [row.rsplit("# ", 1)[1] for row in state["rows"]],
-            ["orbit:route-470-lan", "orbit:route-47-lan:foreign"],
+            ["orbit:route-470-lan", "orbit:route-47-lan:foreign", "orbit:route-47-lan"],
         )
         self.assertEqual(
             [call for call in calls if call[:2] == ["--force", "delete"]],

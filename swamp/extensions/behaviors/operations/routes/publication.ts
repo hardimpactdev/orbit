@@ -12,7 +12,6 @@ import { CaddyPublication, publishCaddy as applyCaddy } from "./caddy.ts";
 import { PhpPublication, publishPhp as applyPhp } from "./php.ts";
 import { runLocalProgram } from "./local-program.ts";
 import { DnsPublication, publishPrivateDns, runPrivateDns } from "./dns.ts";
-import { removeLan } from "./lan.ts";
 import { convergeFirewall } from "./firewall-local.ts";
 import { publishDestroyPhp } from "../instance-lifecycle/destroy_php.ts";
 
@@ -73,34 +72,14 @@ export function publication(
   invoke: Parameters<typeof applyCaddy>[1] = undefined,
   invokeDns = runPrivateDns,
   invokePhp = runLocalProgram,
-  invokeLan = runLocalProgram,
   invokeFirewall = runLocalProgram,
   destroyPhp = publishDestroyPhp,
 ) {
   return {
     type: "@nckrtl/route-publication",
-    version: "2026.10.31.8",
+    version: "2026.10.31.9",
     globalArguments: Globals,
     methods: {
-      removeLan: {
-        description:
-          "Remove and verify only the admitted Route's LAN allowance",
-        arguments: DirectArgs.extend({
-          kind: z.literal("route.lan_remove"),
-          node_id: z.number().int().positive(),
-        }),
-        execute: async (
-          args: z.infer<typeof DirectArgs> & { node_id: number },
-          ctx: Context,
-        ) =>
-          await directOperation(
-            args,
-            new GatewayOperation(makeHttp(ctx), args),
-            (input) => removeLan(input, invokeLan, ctx.signal),
-            (result) => result,
-            ctx.signal,
-          ),
-      },
       publish: {
         description: "Publish the admitted DNS owner's current private catalog",
         arguments: Args,
