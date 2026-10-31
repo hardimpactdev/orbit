@@ -8,6 +8,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationPrivateBindings;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Domain\WireGuard\VpnSettings;
@@ -15,6 +16,7 @@ use App\Infrastructure\Nodes\NodeVpnConfigurationSource;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Operation;
 use App\Models\TaskVm;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
@@ -139,4 +141,84 @@ it('serves hub SSH material only to the immutable Gateway reader through the sha
     $this->getJson($path.$query)->assertOk()
         ->assertDontSee('/private/gateway-identity', false)
         ->assertDontSee(base64_encode(str_repeat('p', 32)), false);
+});
+
+it('selects the admitted restore hub view and fresh peer data through the same private field', function (): void {
+    $operation = $this->operation;
+    $operation->kind = 'task_vm.destroy';
+    $input = $operation->input;
+    $input['_wireguard']['excluded_node_id'] = $this->guest->id;
+    $input['_wireguard_restore'] = NodeWireGuardInput::restorationSnapshot($input['_wireguard']);
+    $operation->input = $input;
+    $operation->save();
+    $this->guest->update(['status' => LifecycleStatus::Removing]);
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->twice()->andReturn('/private/gateway-identity');
+    app()->instance(SshKeyProvider::class, $keys);
+    $source = app(NodeVpnConfigurationSource::class);
+    $cleanup = $source->resolve($operation, $this->hub->id, '', 'configuration')->value;
+    expect($cleanup['snapshot']['excluded_node_id'])->toBe($this->guest->id);
+    expect(array_column($cleanup['peers'], 'node_id'))->not->toContain($this->guest->id);
+    $fresh = FleetFixtures::node('restore-fresh-peer');
+    $fresh->update(['wireguard_public_key' => base64_encode(str_repeat('r', 32))]);
+    DB::transaction(function () use ($operation): void {
+        $this->guest->update(['status' => LifecycleStatus::Active]);
+        NodeWireGuardInput::beginRestoration($operation);
+    });
+    $restored = $source->resolve($operation->fresh(), $this->hub->id, '', 'configuration')->value;
+    expect($operation->fresh()->input)->toBe($input);
+    expect($restored['snapshot'])->toBe($input['_wireguard_restore']);
+    expect(array_column($restored['peers'], 'node_id'))->toContain($this->guest->id, $fresh->id);
+    expect($restored['connection'])->toBe($cleanup['connection']);
+});
+
+it('refuses malformed or unowned hub restoration before selecting another private view', function (string $case): void {
+    $operation = $this->operation;
+    $operation->kind = 'task_vm.destroy';
+    $input = $operation->input;
+    $input['_wireguard']['excluded_node_id'] = $this->guest->id;
+    $input['_wireguard_restore'] = [...$input['_wireguard'], 'excluded_node_id' => null];
+    match ($case) {
+        'missing' => $input['_wireguard_restore'] = null,
+        'hub' => $input['_wireguard_restore']['hub_id'] = $this->guest->id,
+        'executor' => $input['_wireguard_restore']['executor_node_id'] = $this->guest->id,
+        'context' => $input['_wireguard_restore']['context_node_id'] = $this->hub->id,
+        'pin' => $input['_wireguard_restore']['agent_sha256'] = str_repeat('f', 64),
+        'excluded' => $input['_wireguard_restore']['excluded_node_id'] = $this->guest->id,
+        'kind' => $operation->kind = 'task_vm.enroll',
+        'terminal' => $operation->status = 'failed',
+        'removing' => $this->guest->update(['status' => LifecycleStatus::Removing]),
+    };
+    $operation->input = $input;
+    $operation->save();
+    expect(fn () => NodeWireGuardInput::beginRestoration($operation))->toThrow(ResourceOperationException::class);
+    expect($operation->fresh()->state)->not->toHaveKey('node_wireguard_restoring');
+    $operation->state = [...$operation->state, 'node_wireguard_restoring' => true];
+    if ($case !== 'terminal') {
+        expect(NodeWireGuardInput::bound($operation))->toBeNull();
+    }
+})->with(['missing', 'hub', 'executor', 'context', 'pin', 'excluded', 'kind', 'terminal', 'removing']);
+
+it('uses the same fresh restore view for an exact Gateway-rooted Node enrollment', function (): void {
+    $context = FleetFixtures::node('restore-enrollment-peer');
+    $snapshot = app(NodeWireGuardInput::class)->captureForTaskVm($context, $this->gateway);
+    $operation = $this->operation;
+    $operation->kind = 'node.add';
+    $operation->target_type = 'node';
+    $operation->target_id = $context->id;
+    $input = $operation->input;
+    $input['_wireguard'] = $snapshot;
+    $input['_wireguard_restore'] = NodeWireGuardInput::restorationSnapshot($snapshot);
+    $input['_enrollment'] = ['node_id' => $context->id, 'executor_node_id' => $this->gateway->id];
+    $input['participant_node_ids'][] = $context->id;
+    $operation->input = $input;
+    $operation->save();
+    expect(NodeWireGuardInput::bound($operation))->toBe($snapshot);
+    NodeWireGuardInput::beginRestoration($operation);
+    expect(NodeWireGuardInput::bound($operation->fresh()))->toBe($snapshot);
+    expect($operation->fresh()->input)->toBe($input);
+    expect($operation->fresh()->state['node_wireguard_restoring'])->toBeTrue();
+    $input['_enrollment']['executor_node_id'] = $this->hub->id;
+    $operation->input = $input;
+    expect(NodeWireGuardInput::bound($operation))->toBeNull();
 });
