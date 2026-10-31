@@ -6,7 +6,6 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -23,10 +22,8 @@ beforeEach(function (): void {
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->worker = Node::query()->create(['name' => 'services', 'public_ssh_host' => '192.0.2.17', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.17', 'status' => LifecycleStatus::Active]);
     $this->worker->accessibleNodes()->attach($gateway);
-    config(['dependency_detection.services_node_id' => $this->worker->id]);
     $this->node = Node::query()->create(['public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'name' => 'private-dev', 'architecture' => 'amd64', 'wireguard_ip' => '10.44.0.9', 'status' => LifecycleStatus::Active]);
     $this->node->accessibleNodes()->attach($gateway);
-    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->intent = DatabaseExecutionIntent::query()->create(['target_type' => 'instance', 'target_id' => $this->node->id, 'node_id' => $this->node->id, 'payload' => ['commands' => ['database-apply' => ['name' => 'instance.copy-sqlite', 'input' => ['operation' => 'cleanup', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa']]], 'projection' => []]]);
     $this->operation = Operation::query()->create(['kind' => 'database.sqlite_cleanup', 'target_type' => 'instance',
@@ -35,7 +32,7 @@ beforeEach(function (): void {
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $this->path = '/api/v1/direct-operations/'.$this->operation->id;
     $this->body = ['run_id' => $this->runId];
-    $this->agents = new FakeAgentCommandRunner()->answer('instance.copy-sqlite', ['state' => 'cleaned']);
+    $this->agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $this->agents);
 });
 
@@ -64,7 +61,6 @@ it('projects only typed safe Swamp results and associates the native run without
     expect($operation->state)->toHaveKey('swamp_run_id')->not->toHaveKeys(['steps', 'executor_runs', 'executor_effect_identity', 'executor_lease_node_id']);
     expect($operation->attempts)->toBe(0);
     expect($operation->worker)->toBeNull();
-    expect($operation->steps()->count())->toBe(0);
     expect(json_encode($operation->toArray()))->not->toContain('private-test-password');
 });
 
@@ -106,18 +102,6 @@ it('submits once after commit and records a native run without acquiring a targe
     ]]);
     expect($operation->fresh()->lock_key)->toBeNull();
     expect($operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
-    expect($socket->closed)->toBeTrue();
-});
-
-it('keeps an unreadable native history uncertain without resubmitting or reporting a false failure', function (): void {
-    $this->operation->update(['state' => array_diff_key($this->operation->state, ['swamp_run_id' => true])]);
-    $socket = new FakeRoutePublicationSocket(false);
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
-    expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class);
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run', 'workflow.run.search']);
-    expect($this->operation->fresh()->status)->toBe(OperationStatus::Queued);
-    expect($this->operation->fresh()->attempts)->toBe(0);
     expect($socket->closed)->toBeTrue();
 });
 
@@ -181,8 +165,7 @@ it('refuses first read and projection until the Gateway start response binds the
     expect($this->agents->calls)->toBe([]);
 });
 
-it('lets a configured Node worker read only its own bound cleanup', function (): void {
-    config(['operation_executor.worker_node_ids' => [$this->node->id, $this->worker->id], 'dependency_detection.services_node_id' => 999999]);
+it('lets an owning Node worker read only its own bound cleanup', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk();
     $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);

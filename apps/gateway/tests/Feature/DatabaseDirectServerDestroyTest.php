@@ -22,7 +22,7 @@ beforeEach(function (): void {
     $this->gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
     $this->node = Node::query()->create(['name' => 'database-dev', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.9', 'wireguard_ip' => '10.44.0.9']);
     $this->node->accessibleNodes()->attach($this->gateway);
-    config(['operation_executor.worker_node_ids' => [$this->node->id], 'swamp.run_token' => 'fake.token']);
+    config(['swamp.run_token' => 'fake.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->node->id, 'name' => 'proof', 'runtime' => 'docker', 'runtime_config' => [], 'restart_policy' => 'unless-stopped', 'desired_state' => 'running', 'status' => 'active']);
     $this->server = DatabaseServer::query()->create(['slug' => 'proof', 'driver' => 'pgsql', 'node_id' => $this->node->id, 'process_id' => $process->id, 'tag' => '18', 'port' => 5434, 'root_password' => 'private-root-sentinel', 'status' => 'active']);
@@ -57,7 +57,7 @@ it('projects admitted Process deletion without rechecking mutable server state',
     $this->postJson($this->path.'/result', $this->finished)->assertOk();
     $this->assertModelMissing($this->server);
     $this->assertDatabaseMissing('processes', ['id' => $processId]);
-    expect($this->operation->fresh()->steps()->count())->toBe(0);
+    expect($this->operation->fresh()->state)->not->toHaveKey('steps');
 });
 
 it('keeps records on a bounded failure and refuses fabricated success', function (): void {

@@ -587,11 +587,6 @@ mod tests {
             "recipe.apply",
             "recipe.install-javascript",
             "role.install-prerequisites",
-            "tool.apt-install",
-            "tool.apt-remove",
-            "tool.apt-update",
-            "tool.materialize-composer",
-            "tool.materialize-homebrew",
         ];
         let firewall = [
             "firewall.gateway-vpn",
