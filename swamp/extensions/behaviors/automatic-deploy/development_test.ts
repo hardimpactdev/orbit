@@ -204,6 +204,73 @@ Deno.test("terminal work without history cannot authorize a new effect", async (
     100,
   );
 });
+Deno.test("a definite refused start releases pending intent for the next scheduled admission", async () => {
+  for (const lost of [false, true]) {
+    const f = fixture();
+    if (lost) f.lost();
+    if (lost) await assertRejects(f.run);
+    else await f.run();
+    Object.assign(f.operation, {
+      status: "failed",
+      error_code: "swamp.start_refused",
+      attempts: 0,
+      result: null,
+    });
+    await f.run();
+    assertEquals(f.memory.get("development-7")?.pending, null);
+    assertEquals(f.starts.length, 1);
+    // End the lost-response fixture without another synthetic transport failure.
+    if (!lost) {
+      await f.run();
+      assertEquals(f.starts.length, 2);
+      assertEquals(f.starts[0] === f.starts[1], false);
+    }
+  }
+});
+
+Deno.test("an uncertain or executed failure without history retains pending intent", async () => {
+  for (
+    const receipt of [
+      {
+        status: "failed",
+        error_code: "swamp.start_uncertain",
+        attempts: 0,
+        result: null,
+      },
+      {
+        status: "failed",
+        error_code: "swamp.start_refused",
+        attempts: 1,
+        result: null,
+      },
+      {
+        status: "cancelled",
+        error_code: "swamp.start_refused",
+        attempts: 0,
+        result: null,
+      },
+      {
+        status: "failed",
+        error_code: "swamp.start_refused",
+        attempts: 0,
+        result: { deployment_id: 999 },
+      },
+    ]
+  ) {
+    const f = fixture();
+    await f.run();
+    Object.assign(f.operation, receipt);
+    await f.run();
+    await f.run();
+    assertEquals(f.starts.length, 1);
+    assertEquals(
+      (f.memory.get("development-7")?.pending as { operation_id: number })
+        .operation_id,
+      100,
+    );
+  }
+});
+
 Deno.test("development retries and backoff are owned by Swamp and reset after manual work", async () => {
   for (const count of [1, 2, 3]) {
     const f = fixture();
