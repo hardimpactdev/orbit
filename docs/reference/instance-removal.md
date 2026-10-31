@@ -272,6 +272,8 @@ After deploying this fix, the operator checks Instances 298 and 302 on beast and
 
 ## Removal tests
 
+The Instance removal Pest CI job runs the self-contained admission, retry, cancellation, ownership, rollback and production projection tests. The `swamp-integration` production fixture also runs locally against the pinned companion checkout. It requires that private repository; the CI job introduces no cross-repository credential.
+
 The Rust tests in `apps/agent/src/commands/instances_tests.rs` and its safety and recovery modules run each command against temporary checkouts and worktrees. They cover repository identity at deletion, unchanged Git state after inspection or refusal, process cleanup, and interrupted removal. Each case has its own writable origin and checkouts. The deletion tests use the shared repository identity fixtures in both normal and forced modes. Run them with `cargo test --lib instances` in `apps/agent`.
 
 Gateway command tests fake the agent and check its inputs, evidence validation, error mapping, and database checkpoints. They cover failed creation, lost preparation and finalization responses, registration evidence, and force retries. They also check that every removal passes the Instance's managed units, regardless of task names or workspace ownership. Domain tests cover cancellation and the fixed removal member set. Gateway tests do not build or run the agent.

@@ -448,7 +448,7 @@ it('finishes single-target production removal through the real withdrawal workfl
     $this->assertDatabaseMissing('routes', ['id' => $this->route->id]);
     expect($root->refresh()->status->value)->toBe('succeeded');
     expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
-});
+})->group('swamp-integration');
 
 it('resumes a Retiring Route using the same removal proven withdrawal and preserves its preparation checkpoint', function (): void {
     bind_task_node_reachability();
