@@ -12,7 +12,7 @@ from native_harness import NativeTestCase
 class RemovalNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib')
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/php')
         route = self.repo / 'extensions/behaviors/operations/routes'
         route.mkdir(parents=True)
         for name in ['removal.ts', 'removal-local.ts', 'lan.ts', 'removal_native_fixture.ts', 'route-workload-local.ts', 'firewall-local.ts', 'firewall-program.ts', 'local-program.ts']:

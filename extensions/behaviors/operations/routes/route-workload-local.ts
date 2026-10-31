@@ -1,4 +1,11 @@
 import { z } from "npm:zod@4.4.3";
+import { installPhpBuild, PhpBuildInput } from "../php/build_local.ts";
+import {
+  configurePhpRuntime,
+  PhpRuntimeProfileInput,
+} from "../php/profile_local.ts";
+import { convergeProductionRuntime as applyProductionRuntime } from "../php/runtime_local.ts";
+import type { LocalPhpRunner } from "../php/local.ts";
 
 const User = z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/);
 const Version = z.string().regex(/^[0-9]+\.[0-9]+$/);
@@ -371,7 +378,10 @@ function updatedUrl(
   return updated;
 }
 
-export function routeWorkloadLocal(host: RouteLocalHost = localRouteHost()) {
+export function routeWorkloadLocal(
+  host: RouteLocalHost = localRouteHost(),
+  phpRunner?: LocalPhpRunner,
+) {
   async function writeEnvironment(raw: unknown) {
     const input = z.object({
       mode: z.enum(["write", "merge"]),
@@ -730,229 +740,19 @@ export function routeWorkloadLocal(host: RouteLocalHost = localRouteHost()) {
     }
     return { ready: true };
   }
-  async function installPackages(raw: unknown) {
-    const Pin = z.object({
-      name: z.string().regex(/^[a-z0-9][a-z0-9+.-]+$/),
-      version: z.string().regex(/^[A-Za-z0-9.+:~_-]+$/),
-      architecture: z.literal("amd64"),
-      url: z.string().url(),
-      sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    });
-    const input = z.object({
-      versions: z.record(
-        Version,
-        z.object({
-          packages: z.array(Pin).min(1),
-          extensions: z.array(z.string()),
-        }),
-      ),
-      mirror: z.string().default(""),
-      extras: z.literal("keep"),
-      fpm: z.enum(["none", "shared"]),
-      pcov: z.boolean(),
-      opentelemetry: z.boolean(),
-      release: z.object({ id: z.string(), codenames: z.array(z.string()) })
-        .nullable(),
-    }).parse(raw);
-    const release = await host.read("/etc/os-release");
-    if (input.release) {
-      const fields = Object.fromEntries(
-        (release ?? "").split("\n").filter((line) => /^[A-Z_]+=/.test(line))
-          .map((line) => {
-            const index = line.indexOf("=");
-            return [
-              line.slice(0, index),
-              line.slice(index + 1).replace(/^"|"$/g, ""),
-            ];
-          }),
-      );
-      if (
-        fields.ID !== input.release.id ||
-        !input.release.codenames.includes(fields.VERSION_CODENAME)
-      ) throw new Error("php.build_platform_unsupported");
-    }
-    if (
-      (await required(host, "/usr/bin/dpkg", ["--print-architecture"]))
-        .trim() !== "amd64"
-    ) throw new Error("php.build_platform_unsupported");
-    const pins = new Map<string, z.infer<typeof Pin>>();
-    for (const build of Object.values(input.versions)) {
-      for (const pin of build.packages) {
-        const prior = pins.get(pin.name);
-        if (prior && JSON.stringify(prior) !== JSON.stringify(pin)) {
-          throw new Error("php.build_input_invalid");
-        }
-        pins.set(pin.name, pin);
-      }
-    }
-    const installed = await required(host, "/usr/bin/dpkg-query", [
-      "-W",
-      "-f=${Package}\t${Status}\t${Version}\n",
-    ]);
-    const versions = new Map(
-      installed.trim().split("\n").map((line) => {
-        const [name, status, version] = line.split("\t");
-        return [name, status === "install ok installed" ? version : ""];
-      }),
-    );
-    const pending = [...pins.values()].filter((pin) =>
-      versions.get(pin.name) !== pin.version
-    );
-    if (!pending.length) return { ready: true };
-    const files: string[] = [];
-    try {
-      for (const pin of pending) {
-        const url = input.mirror
-          ? input.mirror.replace(/\/$/, "") + "/" + pin.name + "_" +
-            pin.sha256 + ".deb"
-          : pin.url;
-        const file = await host.download(url, pin.sha256);
-        files.push(file);
-        const fields = await required(host, "/usr/bin/dpkg-deb", [
-          "--field",
-          file,
-          "Package",
-          "Version",
-          "Architecture",
-        ]);
-        const values = Object.fromEntries(
-          fields.trim().split("\n").map((line) => line.split(": ")),
-        );
-        if (
-          values.Package !== pin.name || values.Version !== pin.version ||
-          values.Architecture !== pin.architecture
-        ) throw new Error("php.build_download_failed");
-      }
-      await required(host, "/usr/bin/dpkg", [
-        "--force-confold",
-        "--install",
-        "--",
-        ...files,
-      ], { timeoutMs: 600000 });
-      for (const pin of pending) {
-        const actual = (await required(host, "/usr/bin/dpkg-query", [
-          "-W",
-          "-f=${Version}",
-          pin.name,
-        ])).trim();
-        if (actual !== pin.version) throw new Error("php.build_install_failed");
-      }
-      for (const version of Object.keys(input.versions)) {
-        await required(host, "/usr/bin/php" + version, ["-v"]);
-        if (input.fpm === "shared") {
-          await required(host, "/usr/sbin/php-fpm" + version, ["-t"]);
-        }
-      }
-    } finally {
-      for (const file of files) {
-        await required(host, "/usr/bin/rm", ["-f", "--", file]);
-      }
-    }
+  async function installPackages(raw: unknown, signal?: AbortSignal) {
+    await installPhpBuild(PhpBuildInput.parse(raw), signal, phpRunner);
     return { ready: true };
   }
-  async function configureRuntime(raw: unknown) {
-    const input = z.object({
-      version: Version,
-      runtime_ini: z.string().max(8192),
-      release: z.object({ id: z.string(), codenames: z.array(z.string()) }),
-    }).parse(raw);
-    const settings = new Map<string, string>();
-    for (
-      const line of input.runtime_ini.split("\n").map((line) => line.trim())
-        .filter((line) => line && !line.startsWith(";"))
-    ) {
-      const match = line.match(/^([A-Za-z_.]+)\s*=\s*(\S+)$/);
-      if (
-        !match || settings.has(match[1]) ||
-        ![
-          "post_max_size",
-          "upload_max_filesize",
-          "opcache.enable",
-          "opcache.memory_consumption",
-          "opcache.interned_strings_buffer",
-          "opcache.max_accelerated_files",
-          "opcache.jit",
-          "opcache.jit_buffer_size",
-        ].includes(match[1])
-      ) throw new Error("php.runtime_input_invalid");
-      settings.set(match[1], match[2]);
-    }
-    if (settings.size !== 8) throw new Error("php.runtime_input_invalid");
-    const binary = "/usr/sbin/php-fpm" + input.version;
-    if (!await host.stat(binary)) return { ready: true };
-    const base = "/etc/php/" + input.version;
-    const available = base + "/mods-available/orbit-runtime.ini",
-      link = base + "/fpm/conf.d/99-orbit-runtime.ini",
-      configuration = base + "/fpm/php-fpm.conf";
-    const previous = await host.read(available);
-    const shared = await host.read(configuration);
-    if (shared === null) throw new Error("php.runtime_configuration_failed");
-    const linkState = await host.stat(link);
-    if (linkState && linkState.kind !== "link") {
-      throw new Error("php.runtime_configuration_failed");
-    }
-    const changed = previous !== input.runtime_ini ||
-      await host.realPath(link) !== available;
-    await host.write(available, input.runtime_ini, "root", 0o644);
-    if (await host.realPath(link) !== available) {
-      if (linkState) await required(host, "/usr/bin/rm", ["--", link]);
-      await required(host, "/usr/bin/ln", [
-        "-s",
-        "--",
-        "../../mods-available/orbit-runtime.ini",
-        link,
-      ]);
-    }
-    let global = true;
-    let emitted = false;
-    const configLines: string[] = [];
-    for (const line of shared.split("\n")) {
-      if (/^\s*\[/.test(line)) global = line.trim() === "[global]";
-      if (line.trim() === "[global]") {
-        configLines.push(line, "process_control_timeout = 30s");
-        emitted = true;
-      } else if (!(global && /^\s*process_control_timeout\s*=/.test(line))) {
-        configLines.push(line);
-      }
-    }
-    if (!emitted) {
-      configLines.unshift("[global]", "process_control_timeout = 30s");
-    }
-    try {
-      await host.write(configuration, configLines.join("\n"), "root", 0o644);
-      await required(host, binary, ["-t"]);
-      const info = await required(host, binary, ["-i"]);
-      if (
-        !info.includes(link) ||
-        [...settings].some(([key, value]) =>
-          !info.split("\n").some((line) =>
-            line.trim() === `${key} => ${value} => ${value}`
-          )
-        )
-      ) throw new Error("php.runtime_configuration_failed");
-      if (
-        changed &&
-        (await host.run("/usr/bin/systemctl", [
-          "is-active",
-          "--quiet",
-          "php" + input.version + "-fpm.service",
-        ])).success
-      ) {
-        await required(host, "/usr/bin/systemctl", [
-          "reload",
-          "php" + input.version + "-fpm.service",
-        ]);
-      }
-    } catch (error) {
-      await host.write(configuration, shared, "root", 0o644);
-      if (previous !== null) {
-        await host.write(available, previous, "root", 0o644);
-      } else await required(host, "/usr/bin/rm", ["-f", "--", available]);
-      throw error;
-    }
+  async function configureRuntime(raw: unknown, signal?: AbortSignal) {
+    await configurePhpRuntime(
+      PhpRuntimeProfileInput.parse(raw),
+      signal,
+      phpRunner,
+    );
     return { ready: true };
   }
-  async function convergeProductionRuntime(raw: unknown) {
+  async function convergeProductionRuntime(raw: unknown, signal?: AbortSignal) {
     const input = z.object({
       mode: z.literal("converge"),
       user: User,
@@ -970,192 +770,10 @@ export function routeWorkloadLocal(host: RouteLocalHost = localRouteHost()) {
         initial_pool: z.string(),
       }),
     }).parse(raw);
-    const owner = await account(host, input.user);
-    if (input.home !== owner.home || input.home !== "/home/" + input.user) {
-      throw new Error("php.runtime_invalid");
-    }
-    await directory(host, input.home, owner.uid);
-    const root = "/etc/orbit/php-fpm/" + input.user,
-      generated = root + "/generated",
-      local = root + "/local.conf",
-      marker = root + "/orbit.identity",
-      unit = "/etc/systemd/system/orbit-" + input.user + "-php" +
-        input.version + "-fpm.service",
-      service = "orbit-" + input.user + "-php" + input.version + "-fpm.service";
-    const existing = await host.stat(root);
-    if (existing && (existing.kind !== "directory" || existing.uid !== 0)) {
-      throw new Error("php.runtime_invalid");
-    }
-    const identity = await host.read(marker);
-    if (identity !== null && identity !== input.marker) {
-      throw new Error("php.runtime_invalid");
-    }
-    if (
-      identity === null &&
-      (await host.stat(generated) || await host.stat(local) ||
-        await host.stat(unit))
-    ) throw new Error("php.runtime_invalid");
-    await mkdir(host, root, "root", 0o755);
-    if (identity === null) {
-      await host.write(marker, input.marker, "root", 0o644);
-    }
-    await regular(host, marker, 0);
-    await regular(host, local, 0);
-    if (!await host.stat(local)) {
-      await host.write(
-        local,
-        input.configuration.local_defaults,
-        "root",
-        0o644,
-      );
-    }
-    const localText = await host.read(local) ?? "";
-    for (
-      const line of localText.split("\n").map((line) => line.trim()).filter((
-        line,
-      ) => line && !/^[;#]/.test(line))
-    ) {
-      if (line.startsWith("[")) {
-        if (line !== `[orbit-${input.user}]`) {
-          throw new Error("php.runtime_invalid");
-        }
-      } else if (
-        /^(?:include|pid|user|group|listen(?:\.[a-z]+)?|chdir|chroot|env\[(?:home|user)\])\s*=/i
-          .test(line)
-      ) throw new Error("php.runtime_invalid");
-    }
-    const selected = await selectedRelease(input.user, input.home);
-    const application = selected
-      ? input.application
-      : input.initial_application;
-    const resolved = await host.realPath(application);
-    const expected = selected
-      ? selected.release +
-        input.application.slice((input.home + "/current").length)
-      : input.initial_application;
-    if (!resolved || resolved !== expected) {
-      throw new Error("php.runtime_invalid");
-    }
-    await directory(host, resolved, owner.uid);
-    const pool =
-      (selected ? input.configuration.pool : input.configuration.initial_pool) +
-      "\n; Orbit application release: " + resolved + "\n";
-    for (
-      const line of pool.split("\n").filter((line) =>
-        line.startsWith("chdir = ")
-      )
-    ) {
-      const path = line.slice(8);
-      const actual = await host.realPath(path);
-      if (!actual || !actual.startsWith(input.home + "/releases/")) {
-        throw new Error("php.runtime_invalid");
-      }
-    }
-    const work = root + "/.native-validation";
-    await mkdir(host, work, "root", 0o700);
-    const localDigest = Array.from(
-      new Uint8Array(
-        await crypto.subtle.digest("SHA-256", encoder.encode(localText)),
-      ),
-      (b) => b.toString(16).padStart(2, "0"),
-    ).join("");
-    const desired: { [key: string]: string } = {
-      "php-fpm.conf": input.configuration.main,
-      "pool.conf": pool,
-      "master.ini": input.configuration.master_ini,
-      "local.sha256": localDigest + "\n",
-    };
-    const validation = input.configuration.main.replaceAll(
-      generated + "/pool.conf",
-      work + "/pool.conf",
-    ).replaceAll(local, work + "/local.conf");
-    for (
-      const [name, content] of Object.entries({
-        ...desired,
-        "php-fpm.validate.conf": validation,
-        "local.conf": localText,
-      })
-    ) await host.write(work + "/" + name, content, "root", 0o644);
-    const before = new Map<string, string | null>();
-    for (const name of Object.keys(desired)) {
-      await regular(host, generated + "/" + name, 0);
-      before.set(
-        generated + "/" + name,
-        await host.read(generated + "/" + name),
-      );
-    }
-    await regular(host, unit, 0);
-    before.set(unit, await host.read(unit));
-    const active =
-      (await host.run("/usr/bin/systemctl", ["is-active", "--quiet", service]))
-        .success;
-    try {
-      await required(host, "/usr/bin/env", [
-        "PHP_INI_SCAN_DIR=/etc/php/" + input.version + "/fpm/conf.d:" + work,
-        "/usr/sbin/php-fpm" + input.version,
-        "-y",
-        work + "/php-fpm.validate.conf",
-        "-t",
-      ]);
-      await mkdir(host, generated, "root", 0o755);
-      for (const [name, content] of Object.entries(desired)) {
-        await host.write(generated + "/" + name, content, "root", 0o644);
-      }
-      await host.write(unit, input.configuration.unit, "root", 0o644);
-      await required(host, "/usr/bin/systemctl", ["daemon-reload"]);
-      await required(host, "/usr/bin/systemctl", ["enable", service]);
-      await required(host, "/usr/bin/systemctl", [
-        active ? "restart" : "start",
-        service,
-      ]);
-      await required(host, "/usr/bin/systemctl", [
-        "is-active",
-        "--quiet",
-        service,
-      ]);
-      const pid = (await required(host, "/usr/bin/systemctl", [
-        "show",
-        "--property=MainPID",
-        "--value",
-        service,
-      ])).trim();
-      if (
-        !/^[1-9][0-9]+$/.test(pid) ||
-        await host.realPath("/proc/" + pid + "/exe") !==
-          "/usr/sbin/php-fpm" + input.version
-      ) throw new Error("php.runtime_invalid");
-      const caddy =
-        (await required(host, "/usr/bin/getent", ["group", "caddy"])).trim()
-          .split(":")[2];
-      for (
-        const line of pool.split("\n").filter((line) =>
-          line.startsWith("listen = ")
-        )
-      ) {
-        const socket = await host.stat(line.slice(9));
-        if (
-          socket?.kind !== "socket" || socket.uid !== owner.uid ||
-          socket.gid !== Number(caddy) || socket.mode !== 0o660
-        ) throw new Error("php.runtime_invalid");
-      }
-    } catch (error) {
-      await host.run("/usr/bin/systemctl", ["stop", service]);
-      for (const [path, content] of before) {
-        if (content === null) {
-          await required(host, "/usr/bin/rm", ["-f", "--", path]);
-        } else await host.write(path, content, "root", 0o644);
-      }
-      await required(host, "/usr/bin/systemctl", ["daemon-reload"]);
-      if (active) {
-        await required(host, "/usr/bin/systemctl", ["start", service]);
-      }
-      throw error;
-    } finally {
-      await required(host, "/usr/bin/rm", ["-rf", "--", work]);
-    }
+    await applyProductionRuntime(input, signal, phpRunner);
     return { ready: true };
   }
-  async function prepareRuntime(raw: unknown) {
+  async function prepareRuntime(raw: unknown, signal?: AbortSignal) {
     const input = z.object({
       production: z.boolean(),
       runtime: ObjectInput.nullable().optional(),
@@ -1168,9 +786,9 @@ export function routeWorkloadLocal(host: RouteLocalHost = localRouteHost()) {
           install: ObjectInput,
           configure: z.array(ObjectInput),
         }).parse(input.packages);
-        await installPackages(packages.install);
+        await installPackages(packages.install, signal);
         for (const profile of packages.configure) {
-          await configureRuntime(profile);
+          await configureRuntime(profile, signal);
         }
       }
       return { ready: true };
@@ -1178,9 +796,9 @@ export function routeWorkloadLocal(host: RouteLocalHost = localRouteHost()) {
     if (input.runtime === null || input.runtime === undefined) {
       return { ready: true };
     }
-    await installPackages(input.packages);
-    await configureRuntime(input.profile);
-    return await convergeProductionRuntime(input.runtime);
+    await installPackages(input.packages, signal);
+    await configureRuntime(input.profile, signal);
+    return await convergeProductionRuntime(input.runtime, signal);
   }
   async function synchronizeEnvironment(raw: unknown) {
     const writes = z.array(z.object({

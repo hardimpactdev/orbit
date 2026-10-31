@@ -213,7 +213,7 @@ export function removal(
           const current = await effect(args, ctx);
           for (const workload of current.workloads) {
             if (workload.production === true) {
-              await workloadActions.prepareRuntime(workload);
+              await workloadActions.prepareRuntime(workload, ctx.signal);
             }
           }
           return { ready: true };

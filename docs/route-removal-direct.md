@@ -14,7 +14,9 @@ rules use the shared UFW program and host transaction lock.
 `routeWorkloadLocal().prepareRuntime({production,runtime,profile,packages})` and
 `routeWorkloadLocal().synchronizeEnvironment(writes)` are reusable local steps.
 The caller keeps private writes inside its material callback. They invoke fixed
-system programs as the Node user with sudo and return only `{ready:true}`.
+system programs as the Node user with sudo and return only `{ready:true}`. PHP
+package, profile and dedicated-runtime work delegates to the canonical `php/`
+lower APIs; Route code owns source access and URL placement only.
 
 Only the root posts the terminal result. Failed dependency jobs report through
 the shared native failure callback. The Gateway records the result and deletes
