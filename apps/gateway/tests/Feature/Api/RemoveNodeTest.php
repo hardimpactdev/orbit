@@ -71,7 +71,7 @@ beforeEach(function (): void {
     $this->agent = new FakeNodeAgentRuntime;
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
-    app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
+    app()->instance(GatewayPeerProjectionManager::class, $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
     app()->instance(ProcessRuntimeManager::class, $this->processRuntime);
     app()->instance(NodeAgentRuntime::class, $this->agent);
@@ -110,7 +110,7 @@ it('rejects removal contention before remote effects or state writes', function 
 it('re-reads identity after acquiring the lifecycle guard', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
-    app()->instance(NodeProvisioningLock::class, new class($target) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new readonly class($target) implements NodeProvisioningLock
     {
         public function __construct(private Node $target) {}
 
@@ -144,7 +144,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    app()->instance(NodeProvisioningLock::class, new class($target, $project) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new readonly class($target, $project) implements NodeProvisioningLock
     {
         public function __construct(private Node $target, private Project $project) {}
 
@@ -1285,10 +1285,10 @@ final class RemoveNodeUnreachableExporterRuntime implements MetricsCadvisorRunti
     }
 }
 
-final class RemoveNodeFakeReachability implements NodeReachabilityProbe
+final readonly class RemoveNodeFakeReachability implements NodeReachabilityProbe
 {
     public function __construct(
-        private readonly ?int $unreachableNodeId,
+        private ?int $unreachableNodeId,
     ) {}
 
     public function degradation(Node $node): ?ExporterDegradationReason

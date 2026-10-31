@@ -1053,7 +1053,7 @@ it('composes one public Caddy site when Ingress shares a Node and uses LAN witho
     $sites = new DevelopmentSiteRepository;
     $renderer = new DevelopmentCaddyConfigRenderer;
 
-    $separate = $renderer->render($sites->forNode($ingress, $route));
+    $separate = $renderer->render($sites->forNode($ingress));
     expect($separate)
         ->toContain("{$route->domain} {")
         ->toContain("reverse_proxy https://{$router->lan_ip}")
@@ -1068,7 +1068,7 @@ it('composes one public Caddy site when Ingress shares a Node and uses LAN witho
     $router->roles()->where('role', RoleName::Router)->update(['node_id' => $colocated->id, 'cluster_id' => $cluster->id]);
     $ingress->roles()->where('role', RoleName::Ingress)->update(['node_id' => $colocated->id, 'cluster_id' => $cluster->id]);
     $route->refresh()->load(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'targets.instance.node']);
-    $composed = $renderer->render($sites->forNode($colocated, $route));
+    $composed = $renderer->render($sites->forNode($colocated));
     expect($composed)
         ->toContain("{$route->domain} {")
         ->toContain("reverse_proxy https://{$workload->lan_ip}")
