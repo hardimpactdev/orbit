@@ -9,4 +9,3 @@ jobs:
   checks:
     name: Swamp checks
     uses: ./.github/workflows/swamp-shape.yml
-    secrets: inherit

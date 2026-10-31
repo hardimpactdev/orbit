@@ -1,11 +1,6 @@
 name: Swamp shape
 on:
   workflow_call:
-    secrets:
-      SWAMP_API_KEY:
-        required: true
-      SWAMP_SIGNIN_TOKEN:
-        required: true
     inputs:
       working-directory:
         type: string
@@ -13,6 +8,11 @@ on:
       base-ref:
         type: string
         default: ""
+    secrets:
+      SWAMP_API_KEY:
+        required: true
+      SWAMP_SIGNIN_TOKEN:
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -46,6 +46,7 @@ jobs:
         run: |
           deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
           python3 tests/swamp_shape_gate_test.py
+          python3 tests/swamp_validate_ci_test.py
       - name: Reject new violations with current and base rules
         env:
           SHAPE_BASE: ${{ inputs.base-ref || github.event.pull_request.base.sha || github.event.before }}
@@ -82,12 +83,13 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
-      - name: Validate every workflow on pinned Swamp
+      - name: Native workflow validation with dedicated registry-read credentials
         env:
-          SWAMP_API_KEY: ${{ secrets.SWAMP_API_KEY }}
-          SWAMP_SIGNIN_TOKEN: ${{ secrets.SWAMP_SIGNIN_TOKEN }}
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
         run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - name: Check placement on every step
+        if: always()
         run: deno run --allow-read bin/lint-workflow-placement.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
