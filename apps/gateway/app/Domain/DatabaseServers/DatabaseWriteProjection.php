@@ -14,37 +14,28 @@ use App\Support\ValidatedData;
 
 final readonly class DatabaseWriteProjection implements DirectOperationProjection
 {
-    /** Full native inputs; the shared start path owns submission and terminal subscription.
-     * @return array<string, mixed>
-     */
-    public function workflowInputs(Operation $operation): array
-    {
-        $intent = DatabaseExecutionIntent::recorded(app(DatabaseIntentSource::class)->ownerId($operation));
-        $material = array_intersect_key($intent->payload['commands']['database-apply']['input'], array_flip(['password', 'sql', 'dsn', 'username']));
-
-        return [
-            'operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind,
-            'intent' => ['connection_id' => $operation->input['connection_id'], ...$this->input($operation)],
-            'execution_secrets' => ['database_write' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'database-write-intent-'.$intent->id, json_encode($material, JSON_THROW_ON_ERROR))],
-        ];
-    }
-
     public function input(Operation $operation): array
     {
         $id = app(DatabaseIntentSource::class)->ownerId($operation);
         $intent = $id === null ? null : DatabaseExecutionIntent::recorded($id);
-        $command = $intent?->payload['commands']['database-apply'] ?? [];
-        $input = $command['input'] ?? [];
+        $input = $intent?->payload['commands']['database-apply']['input'] ?? [];
         $driver = $operation->input['driver'] ?? null;
         if ($operation->kind !== 'database.write' || $operation->target_type !== 'database_connection' || $intent === null
             || ! in_array($driver, ['mysql', 'pgsql', 'sqlite'], true)) {
             $this->invalid();
         }
+        $public = ['connection_id' => $operation->input['connection_id'], 'driver' => $driver];
         if ($driver === 'sqlite') {
-            return ['driver' => $driver, 'owner' => ValidatedData::string($input['owner']), 'path' => ValidatedData::string($input['path'])];
+            $public += ['owner' => ValidatedData::string($input['owner']), 'path' => ValidatedData::string($input['path'])];
         }
+        $material = array_intersect_key($input, array_flip(['password', 'sql', 'dsn', 'username']));
 
-        return ['driver' => $driver];
+        return [
+            'intent' => $public,
+            'execution_secrets' => ['database_write' => app(SwampCommandStep::class)->executionCopy(
+                'orbit-control-inputs', 'database-write-intent-'.$intent->id, json_encode($material, JSON_THROW_ON_ERROR),
+            )],
+        ];
     }
 
     public function apply(Operation $operation, array $data): Operation

@@ -3,18 +3,21 @@
 declare(strict_types=1);
 
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeRoutePublicationSocket;
+use Tests\Support\RecordingProcessRunner;
 
 const DATABASE_INSPECTION_SECRET = 'db-query-secret-6c2e';
 
 beforeEach(function (): void {
-    $this->node = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1']));
+    $this->node = $this->markAsGateway(Node::query()->forceCreate(['id' => 14, 'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'amd64', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     config(['swamp.run_token' => 'fake.token']);
+    app()->instance(ProcessRunner::class, $this->runner = new RecordingProcessRunner);
     $this->runId = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = fn (array $sent): array => [['type' => 'event', 'id' => $sent['id'], 'event' => ['kind' => 'started', 'workflowName' => $sent['payload']['workflowIdOrName'], 'runId' => $this->runId]]];
@@ -43,6 +46,7 @@ it('keeps write gating and stacked SQL refusal before native admission', functio
     $this->postJson('/api/v1/database-connections/app/query', ['sql' => 'SELECT 1; DELETE FROM users'])->assertUnprocessable()->assertJsonPath('error.code', 'database.sql_multiple_statements');
     expect(Operation::query()->count())->toBe(0);
     $this->postJson('/api/v1/database-connections/app/query', ['sql' => 'DELETE FROM users', 'write' => true])->assertAccepted()->assertJsonPath('data.kind', 'database.write');
+    expect($this->runner->ran)->toHaveCount(1);
 });
 
 it('starts table schema and describe reads as native Operations and records their bounded results', function (string $suffix, string $mode, array $result): void {

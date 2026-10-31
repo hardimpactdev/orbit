@@ -227,7 +227,7 @@ The worker runs as the Node's configured user. Clone cleanup removes only its ow
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` with the complete non-secret intent and vault/key references. SQLite runs one inline command as its admitted file owner. MySQL and PostgreSQL run one inline PDO command on the Gateway Node. Both read private SQL and credentials from the Swamp vault through the shared command-step boundary. No write step reads intent or reports a result over Gateway HTTP. Each step targets only its admitted `orbit-node-ID` worker and matching Node label.
+`database:query --write` starts `operation-database-write` with the complete non-secret intent and vault/key references. SQLite runs one inline command as its admitted file owner. MySQL and PostgreSQL run one inline PDO command on the Gateway Node. Both read private SQL and credentials from the Swamp vault through the shared command-step boundary. No write step reads intent or reports a result over Gateway HTTP. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. Writes on proxy Nodes 1 and 18 are refused until the shared command transport can execute on the logical Node.
 
 The write action saves its bounded row count or refusal in native outputs. A separate result step emits the public JSON selected by the shared Gateway terminal projector. Native resume can finish result delivery without repeating a completed write. A saved action refusal remains a refusal if a vault value later changes. Inspect an interrupted effect before another admission; do not restart uncertain SQL blindly.
 

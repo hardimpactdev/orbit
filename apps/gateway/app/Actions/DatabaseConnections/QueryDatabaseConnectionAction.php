@@ -47,6 +47,11 @@ final readonly class QueryDatabaseConnectionAction
             throw new ResourceOperationException('database.node_missing', 'The database execution Node is missing.', 422);
         }
 
+        // Built-in shell currently executes proxy identities on their physical worker.
+        if (in_array($nodeId, [1, 18], true)) {
+            throw new ResourceOperationException('database.worker_transport_unavailable', 'SQL writes require a worker on the admitted Node.', 422);
+        }
+
         return $this->operations->execute('database.write', 'database_connection', $connection->id, $nodeId,
             ['connection_id' => $connection->id, 'driver' => $connection->driver->value, 'connection_node_id' => $connection->node_id], ['database-apply' => $command]);
     }
