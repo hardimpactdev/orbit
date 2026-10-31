@@ -116,19 +116,16 @@ Deno.test("non-admitted commands are rejected before the Node action", async () 
   assertEquals(f.seen, []);
 });
 
-Deno.test("destroy passes only admitted removal fields to the Node action", async () => {
+Deno.test("retired create and destroy kinds cannot enter the old control", () => {
   const f = fixture();
-  f.current.kind = "schedule.destroy";
-  const removal = { ...input, cascade: false };
-  Object.assign(f.current, { input: removal });
-  assertEquals(
-    await f.control.methods.control.execute({
-      ...args,
-      kind: "schedule.destroy",
-    }, f.ctx),
-    { status: "succeeded" },
-  );
-  assertEquals(f.seen, [{ kind: "schedule.destroy", input: removal }]);
+  for (const kind of ["schedule.create", "schedule.destroy"]) {
+    assertEquals(
+      f.control.methods.control.arguments.safeParse({ ...args, kind })
+        .success,
+      false,
+    );
+  }
+  assertEquals(f.calls, []);
 });
 Deno.test("missing admitted command hash refuses before the local action", async () => {
   const f = fixture();

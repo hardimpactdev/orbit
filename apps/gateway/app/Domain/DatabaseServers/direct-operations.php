@@ -23,7 +23,9 @@ return ['database.update' => [
 ], 'database.read' => [
     'workflow' => 'operation-database-read',
     'projection' => DatabaseReadProjection::class,
-    'private_material' => array_fill_keys(['password', 'sql', 'dsn', 'username'], 'database.intent'),
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'read', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-read-intent-[1-9][0-9]*$']],
 ], 'database.create' => [
     'workflow' => 'operation-database-create',
     'projection' => DatabaseCreateProjection::class,

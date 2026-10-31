@@ -8,7 +8,6 @@ RESERVE = 1048576
 FICLONE = 0x40049409
 class Refused(Exception): pass
 class Unconfirmed(Exception): pass
-class QueryFailed(Exception): pass
 
 def require(ok):
     if not ok: raise Refused()
@@ -447,70 +446,22 @@ def target_seed(raw):
     except BaseException: raise Unconfirmed()
     return {'state':'changed'}
 
-def read_database(data):
-    require(set(data)=={'owner','path','sql','mode','table'})
-    mode=data['mode'];require(mode in ('query','tables','schema','describe'))
-    sql=data['sql'];require(isinstance(sql,str) and len(sql.encode())<=16384 and '\x00' not in sql)
-    selected=path(data['path']);require(len(str(selected))<=1024)
-    user=account(data['owner'])
-    with as_account(user):
-        fd=opened(selected,os.O_RDONLY);os.close(fd)
-        with contextlib.closing(sqlite3.connect('file:'+quote(str(selected),safe='/')+'?mode=ro',uri=True)) as db:
-            db.execute('PRAGMA query_only=ON');db.execute('PRAGMA busy_timeout=10000')
-            db.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED,0)
-            db.set_progress_handler(lambda: time.monotonic()>=DEADLINE,1000)
-            pragmas={'collation_list','compile_options','database_list','foreign_key_list','function_list','index_info','index_list','index_xinfo','module_list','pragma_list','table_info','table_list','table_xinfo'}
-            def authorize(action,one,two,unused_db,unused_trigger):
-                if action==sqlite3.SQLITE_PRAGMA: return sqlite3.SQLITE_OK if (one or '').lower() in pragmas else sqlite3.SQLITE_DENY
-                if action==sqlite3.SQLITE_FUNCTION and (two or '').lower() in ('load_extension','writefile','readfile'): return sqlite3.SQLITE_DENY
-                return sqlite3.SQLITE_OK if action in (sqlite3.SQLITE_SELECT,sqlite3.SQLITE_READ,sqlite3.SQLITE_FUNCTION,sqlite3.SQLITE_RECURSIVE) else sqlite3.SQLITE_DENY
-            db.set_authorizer(authorize)
-            def query(statement):
-                cursor=db.execute(statement);columns=[str(c[0]) for c in cursor.description or []]
-                rows=[];truncated=False
-                for record in cursor:
-                    row={name:(value.decode('utf-8') if isinstance(value,bytes) else value) for name,value in zip(columns,record)}
-                    if len(rows)>=500 or len(json.dumps([columns,rows,row],ensure_ascii=False).encode())>11000:
-                        truncated=True;break
-                    rows.append(row)
-                cursor.close()
-                return {'columns':columns,'rows':rows,'row_count':len(rows),'truncated':truncated}
-            def names():
-                return [row['name'] for row in query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")['rows']]
-            def columns(table):
-                require(isinstance(table,str) and table and len(table)<=255 and '\x00' not in table)
-                result=query('PRAGMA table_info("'+table.replace('"','""')+'")')['rows']
-                if not result: return None
-                return [{'name':row['name'],'type':row['type'],'nullable':not bool(row['notnull']),'default':row['dflt_value'],'primary':bool(row['pk'])} for row in result]
-            if mode=='query': return query(sql)
-            if mode=='tables': result={'tables':names()}
-            elif mode=='describe':
-                value=columns(data['table'])
-                if value is None: return {'error_code':'database.table_missing'}
-                result={'table':data['table'],'columns':value}
-            else: result={'tables':[{'name':name,'columns':columns(name)} for name in names()]}
-            if len(json.dumps(result,ensure_ascii=False).encode())>12000: raise QueryFailed()
-            return result
-
 DEADLINE=time.monotonic()+float(sys.argv[2]) if len(sys.argv)>2 else time.monotonic()+120
 if __name__=='__main__':
     action=sys.argv[1] if len(sys.argv)>1 else ''
-    family='database.query' if action=='read' else 'instance.sqlite_copy' if action=='copy' else 'instance.sqlite_seed'
+    family='instance.sqlite_copy' if action=='copy' else 'instance.sqlite_seed'
     try:
         os.umask(0o077)
-        if action=='read':
-            def read_timeout(signum,frame): raise QueryFailed()
-            signal.signal(signal.SIGALRM,read_timeout)
         signal.alarm(max(1,int(DEADLINE-time.monotonic())))
         raw=sys.stdin.buffer.read(65537);require(len(raw)<=65536)
         data=json.loads(raw);require(isinstance(data,dict))
-        result={'copy':copy_database,'seedSource':source_seed,'seedTarget':target_seed,'read':read_database}[action](data)
+        result={'copy':copy_database,'seedSource':source_seed,'seedTarget':target_seed}[action](data)
         sys.stdout.write(json.dumps({'ok':True,'data':result},separators=(',',':')))
     except Unconfirmed: sys.stdout.write('{"ok":false,"error_code":"instance.sqlite_seed_unconfirmed"}')
     except (Refused,PermissionError,FileNotFoundError,KeyError,TypeError,ValueError):
-        code='database.sqlite_unreadable' if action=='read' else family+'_refused'
+        code=family+'_refused'
         sys.stdout.write(json.dumps({'ok':False,'error_code':code},separators=(',',':')))
     except BaseException:
-        code='database.query_failed' if action=='read' else family+'_failed'
+        code=family+'_failed'
         sys.stdout.write(json.dumps({'ok':False,'error_code':code},separators=(',',':')))
 `;

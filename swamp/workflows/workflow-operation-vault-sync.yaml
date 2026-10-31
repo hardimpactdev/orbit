@@ -363,7 +363,7 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-write-" + string(self._index) }}
     forEach:
       item: item
       in: ${{ steps.plan.outputs.writes }}
@@ -437,7 +437,7 @@ jobs:
         plan: '${{ "plan" in steps && steps.plan.status == "succeeded" ? steps.plan.outputs
           : null }}'
         writes: ${{ steps.filter(name, name.startsWith("write-") && steps[name].status
-          == "succeeded").map(name, steps[name].outputs.stdout) }}
+          == "succeeded" && "outputs" in steps[name] && "stdout" in steps[name].outputs).map(name, steps[name].outputs.stdout) }}
         successful: ${{ "plan" in steps && steps.plan.status == "succeeded" && steps.all(name,
           steps[name].status != "failed" && steps[name].status != "cancelled") }}
       behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-result" }}

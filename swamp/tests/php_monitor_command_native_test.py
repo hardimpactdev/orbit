@@ -76,12 +76,14 @@ if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
                     )
                 if step["name"] == "validate":
                     values = step["task"]["inputs"]["argv"]
-                    step["task"]["inputs"]["argv"] = [
-                        "ORBIT_PHP_MAIN=" + str(self.directory / "php-fpm.conf")
-                        if isinstance(value, str) and "ORBIT_PHP_MAIN=" in value
-                        else value
-                        for value in values
-                    ]
+                    if values[0] == "/usr/bin/env":
+                        values[-1] = str(self.directory / "php-fpm.conf")
+                    else:
+                        step["task"]["inputs"]["argv"] = [
+                            "ORBIT_PHP_MAIN=" + str(self.directory / "php-fpm.conf")
+                            if isinstance(value, str) and "ORBIT_PHP_MAIN=" in value else value
+                            for value in values
+                        ]
         (self.repo / "workflows/workflow-operation-php-monitor.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
@@ -212,3 +214,12 @@ if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
         self.assertEqual(
             (self.directory / "pool.conf").read_text(), "desired monitoring pool"
         )
+
+    def test_validation_sets_public_scan_path_after_sudo_without_environment_forwarding(self):
+        ssh = self.repo / "ssh-tools/ssh"
+        source = ssh.read_text().replace("args=sys.argv[1:]", "args=sys.argv[1:]\nif any('--preserve-env' in arg for arg in args):raise SystemExit('Fixture refuses environment forwarding')")
+        ssh.write_text(source)
+        fpm = self.repo / "commands/php-fpm8.5"
+        fpm.write_text(fpm.read_text() + "\nif not os.environ.get('PHP_INI_SCAN_DIR','').startswith('/etc/php/8.5/fpm/conf.d:'):raise SystemExit('Explicit public scan path missing')\n")
+        self.assertEqual(self.run_monitor()["status"], "succeeded")
+        self.assertIn("php-fpm8.5", self.audit.read_text())

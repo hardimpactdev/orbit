@@ -1,3 +1,5 @@
+import { ipv4, LocalMetricsError, sameState } from "./metrics_policy.ts";
+export { ipv4, LocalMetricsError, sameState } from "./metrics_policy.ts";
 import { run } from "../_lib/node-commands.ts";
 import type { SystemTransport } from "../node/system_command.ts";
 
@@ -35,11 +37,6 @@ export type Runner = (
   args: string[],
   options?: RunOptions,
 ) => Promise<{ code: number; stdout: string }>;
-export class LocalMetricsError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-  }
-}
 export const runMetricsProcess: Runner = async (
   program,
   args,
@@ -202,18 +199,4 @@ export function metricsSystem(
     remove,
     download,
   };
-}
-export function ipv4(value: unknown): value is string {
-  return typeof value === "string" &&
-    /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/.test(value) &&
-    value.split(".").every((part) => Number(part) < 256);
-}
-export function sameState(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
-  const entries = Object.entries(a);
-  return entries.length === Object.keys(b).length &&
-    entries.every(([key, value]) =>
-      key in b && sameState(value, (b as Record<string, unknown>)[key])
-    );
 }

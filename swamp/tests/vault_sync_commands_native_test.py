@@ -155,6 +155,87 @@ class VaultSyncFixture(NativeTestCase):
 
 
 class VaultSyncNative(VaultSyncFixture):
+    def prepare_twelve_writes(self):
+        self.intent["ledger"] = []
+        self.intent["wanted"] = [
+            {"source": f"database-user:{index}", "fingerprint": "new"}
+            for index in range(1, 13)
+        ]
+        template = self.private["wanted"][0]
+        self.private["wanted"] = []
+        for wanted in self.intent["wanted"]:
+            item = json.loads(json.dumps(template))
+            item.update(wanted)
+            item["cipher"]["fields"][0]["value"] = wanted["source"]
+            self.private["wanted"].append(item)
+        self.input_file.write_text(json.dumps(self.inputs))
+        self.cli(
+            "vault",
+            "put",
+            "orbit-control-inputs",
+            "vault-sync-fixture",
+            "--force",
+            input=json.dumps(self.private),
+        )
+
+    def test_summary_retry_restores_more_than_ten_write_receipts(self):
+        self.prepare_twelve_writes()
+        path = self.repo / "workflows/workflow-operation-vault-sync.yaml"
+        original = path.read_text()
+        workflow = yaml.safe_load(original)
+        # Fail only JSON decoding in the summary, after all CLI effects finish.
+        workflow["jobs"][-1]["steps"][0]["task"]["inputs"]["writes"] = ["invalid-json"]
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        first = self.run_sync(success=False)
+        self.assertEqual(len(json.loads(self.state.read_text())["writes"]), 12)
+        path.write_text(original)
+        result = self.cli(
+            "workflow",
+            "resume",
+            "operation-vault-sync",
+            "--run",
+            first["id"],
+            "--from",
+            "result",
+        )
+        run = json.JSONDecoder().raw_decode(result.stdout.lstrip())[0]
+        self.assertEqual(run["status"], "succeeded")
+        history = json.loads(self.cli("workflow", "history", "get", first["id"]).stdout)
+        output = history["jobs"][-1]["steps"][0]["outputs"]["stdout"]
+        self.assertEqual(len(json.loads(output)["data"]["sources"]), 12)
+        self.assertEqual(len(json.loads(self.state.read_text())["writes"]), 12)
+
+    def test_failure_summary_retry_tolerates_missing_old_write_outputs(self):
+        self.prepare_twelve_writes()
+        # Reproduce the original shared behavior, whose first two results expire.
+        path = self.repo / "workflows/workflow-operation-vault-sync.yaml"
+        workflow = yaml.safe_load(path.read_text())
+        workflow["jobs"][2]["steps"][0]["task"]["behaviorName"] = (
+            '${{ "vault-sync-" + string(inputs.operation_id) + "-write" }}'
+        )
+        path.write_text(yaml.safe_dump(workflow, sort_keys=False))
+        state = json.loads(self.state.read_text())
+        state["fail_command"] = "logout"
+        self.state.write_text(json.dumps(state))
+        first = self.run_sync(success=False)
+        self.cli(
+            "workflow",
+            "resume",
+            "operation-vault-sync",
+            "--run",
+            first["id"],
+            "--from",
+            "result",
+            success=False,
+        )
+        history = json.loads(self.cli("workflow", "history", "get", first["id"]).stdout)
+        result = history["jobs"][-1]["steps"][0]
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(
+            json.loads(result["outputs"]["stdout"]), {"error_code": "vault.sync_failed"}
+        )
+        self.assertEqual(len(json.loads(self.state.read_text())["writes"]), 12)
+
     def test_missing_recorded_cipher_creates_one_without_adopting_copy(self):
         state = json.loads(self.state.read_text())
         state["ciphers"] = [
