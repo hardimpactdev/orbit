@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/metrics-command-steps'
+version: 2026.10.31.1
+visibility: private
+license: MIT
+description: Public Metrics intent for placed native command steps.
+behaviors:
+  - operations/metrics/intent.ts

@@ -7,6 +7,8 @@ namespace App\Domain\Metrics;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +29,11 @@ final readonly class AdmitMetricsFleetAction
             if (! is_int($nodeId)) {
                 throw new ResourceOperationException('metrics.assignment_missing', 'The native Metrics root needs its serving Node.', 409);
             }
-            $input = ['participant_node_ids' => array_column(MetricsFleetCapture::members($plan), 'node_id'), 'metrics_fleet' => $plan, 'fleet_runtime' => ['$secret' => 'metrics.fleet_runtime', 'id' => $nodeId]];
+            $input = app(MetricsFleetWorkflowIntent::class)->capture($plan);
+            $password = app(MetricsCredentialManager::class)->passwordForConvergence(Node::query()->findOrFail($nodeId));
+            $input['execution_secrets'] = ['grafana_password' => app(SwampCommandStep::class)->executionCopy(
+                'orbit-control-inputs', 'metrics-grafana-node-'.$nodeId.'-active', $password,
+            )];
 
             return $this->operations->execute('metrics.reconcile', 'metrics', $nodeId, $nodeId, $input, 'operator', null);
         });
