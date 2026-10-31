@@ -6,8 +6,6 @@ namespace App\Actions\TaskVms;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -17,7 +15,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\TaskVms\RecipeImageInput;
 use App\Infrastructure\TaskVms\RecipeImagePruning;
-use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
 
@@ -40,17 +37,17 @@ final readonly class StartTaskVmImageOperationAction
         $payload = $this->inputs->payload(AgentGuest::incus($node, $host->project, (string) $build->builder_vm_name), $recipe, 'base');
         $architecture = $payload['recipe']['architecture'];
         $pi = $recipe->tools['pi']->artifacts[$architecture] ?? null;
-        $artifactNode = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
 
         return $this->start->execute('task_vm.image_build', 'task_vm_image', $build->id, $node->id, [
             'build_id' => $build->id, 'attempt' => $build->attempt, 'host_node_id' => $node->id,
-            'agent_sha256' => $this->delivery->pin($node), 'artifact_node_id' => $artifactNode->id, 'identity' => $recipe->identity, 'generation' => $build->recipe_generation,
+            'agent_sha256' => $this->delivery->pin($node), 'identity' => $recipe->identity, 'generation' => $build->recipe_generation,
             'project' => $host->project, 'name' => $build->builder_vm_name, 'cidr' => $host->cidr, 'pool' => $host->pool,
             'network' => $host->network, 'cpus' => $host->cpus, 'memory' => $host->memory, 'disk' => $host->disk,
             'source' => $build->source_fingerprint ?? TaskVmHost::SourceImage,
             'candidate_alias' => $build->images['base']['alias'] ?? RecipeImageBuilds::alias($host->imageAlias, $recipe->identity, 'base', $build->id),
             'base_alias' => $host->imageAlias, 'gateway_public_key' => $this->keys->publicKey(), 'certificate' => $this->certificates->rootCertificate(),
             'recipe' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), 'pi_artifact' => $pi === null ? null : ['path' => config()->string('orbit.home').'/sandbox-artifacts/'.$pi->location, 'sha256' => $pi->digest],
+            'pi_artifact_file' => ['$secret' => 'task_vm.image_artifact', 'id' => $build->id],
             'prune' => $this->pruning->input($build),
         ], 'task-vm-image', null);
     }

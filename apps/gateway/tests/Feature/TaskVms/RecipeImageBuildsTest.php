@@ -145,7 +145,8 @@ function nativeImageResult(array $result, string $status = 'running'): array
 it('starts one native image run with bound safe input and rejects the removed child executor', function (): void {
     $op = nativeImageOperation();
     $this->getJson('/api/v1/direct-operations/'.$op->id.'?run_id=878a384f-8b8a-4066-bd17-dcad8eac3e86')
-        ->assertOk()->assertJsonPath('data.input.host_node_id', $op->node_id)->assertJsonMissingPath('data.input.resume_from');
+        ->assertOk()->assertJsonPath('data.input.host_node_id', $op->node_id)->assertJsonMissingPath('data.input.resume_from')
+        ->assertJsonMissingPath('data.input.pi_artifact_file')->assertJsonMissingPath('data.input.pi_artifact.path');
     $this->postJson('/api/v1/operation-executor/claim', ['kind' => $op->kind, 'worker' => 'obsolete'])->assertStatus(422);
     expect(app(OperationKinds::class)->definition('task_vm.image_finish_seed'))->toBeNull();
     expect(app(OperationKinds::class)->definition('task_vm.guest_image_start_phase'))->toBeNull();

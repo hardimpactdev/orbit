@@ -28,4 +28,5 @@ return array_fill_keys(TaskVmIncusProjection::Kinds, [
     'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'task_vm_image_writer',
     'projection' => TaskVmImageProjection::class,
+    'private_material' => ['pi_artifact_file' => 'task_vm.image_artifact'],
 ]];

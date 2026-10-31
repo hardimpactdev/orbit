@@ -29,7 +29,12 @@ final readonly class TaskVmImageProjection implements DirectOperationProjection
             app(RecipeImageBuildSteps::class)->assertCurrent($build);
         }
 
-        return Arr::except($operation->input, ['caller_node_id']);
+        $input = Arr::except($operation->input, ['caller_node_id', 'pi_artifact_file']);
+        if (is_array($input['pi_artifact'] ?? null)) {
+            $input['pi_artifact'] = Arr::only($input['pi_artifact'], ['sha256']);
+        }
+
+        return $input;
     }
 
     private function build(Operation $operation): TaskVmImageBuild
