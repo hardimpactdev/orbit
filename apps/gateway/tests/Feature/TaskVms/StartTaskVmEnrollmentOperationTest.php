@@ -94,8 +94,6 @@ it('records one host-placed enrollment root and starts its native DAG without ch
     Queue::assertNothingPushed();
 })->with(['incus', 'upcloud']);
 
-
-
 it('ignores absent or terminal VMs without recording another intent', function (): void {
     expect(app(StartTaskVmEnrollmentOperationAction::class)->execute(PHP_INT_MAX))->toBeNull();
     $vm = standaloneEnrollmentVm();
@@ -122,4 +120,31 @@ it('permits a new enrollment intent after a failed admission without replacing t
     $this->assertDatabaseCount('operations', 2);
     $this->assertDatabaseCount('nodes', 4);
     $this->assertDatabaseCount('processes', 1);
+});
+
+it('lets the admitted Gateway hub executor read cancellation while keeping result writes on the root', function (): void {
+    $vm = standaloneEnrollmentVm();
+    $host = $vm->incusHostNode();
+    $host->roles()->where('role', RoleName::Gateway)->delete();
+    $gateway = Node::query()->create(['name' => 'hub-executor', 'status' => LifecycleStatus::Active,
+        'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.14']);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app()->instance(WebSocketClient::class, new FakeRoutePublicationSocket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+    $operation = app(StartTaskVmEnrollmentOperationAction::class)->execute($vm->id);
+    $run = $operation->state['swamp_run_id'];
+    $path = '/api/v1/direct-operations/'.$operation->id;
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
+
+    $this->getJson($path.'?run_id='.$run)->assertOk()
+        ->assertJsonPath('data.node_id', $host->id)
+        ->assertJsonPath('data.input._wireguard.executor_node_id', $gateway->id)
+        ->assertJsonPath('data.cancel_requested', false)
+        ->assertJsonMissingPath('data.input.configuration')->assertJsonMissingPath('data.input.model_key');
+    $operation->update(['cancel_requested_at' => now()]);
+    $this->getJson($path.'?run_id='.$run)->assertOk()->assertJsonPath('data.cancel_requested', true);
+    $this->postJson($path.'/result', ['run_id' => $run, 'status' => 'running',
+        'started_at' => now()->toISOString(), 'result' => []])->assertForbidden()
+        ->assertJsonPath('error.code', 'operation.executor_forbidden');
 });
