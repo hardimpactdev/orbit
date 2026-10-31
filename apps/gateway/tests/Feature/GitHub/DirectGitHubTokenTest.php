@@ -376,3 +376,18 @@ it('logs only a fixed refusal phase and HTTP status without changing mint reques
         'installation' => 1, 'token_format' => 2, 'repository_scope' => 4, default => 3,
     });
 })->with(['installation', 'token_format', 'permission_scope', 'expiry_format', 'expiry_lifetime', 'repository_scope']);
+
+it('accepts stateless installation JWT tokens without changing scope or private custody', function (): void {
+    $token = 'ghs_123_eyJhbGciOiJSUzI1NiJ9.eyJpYXQiOjF9.signature_-';
+    $this->reply['token'] = $token;
+    Http::fake([
+        '*/installation' => Http::response(['id' => 7]),
+        '*/access_tokens' => Http::response($this->reply, 201),
+        '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]]),
+    ]);
+    $this->getJson($this->path.'?'.http_build_query($this->body))->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.github.token', $token);
+    Http::assertSentCount(3);
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/installation/repositories') && $request->header('Authorization') === ['Bearer '.$token]);
+    expect(json_encode([Activity::query()->get()->toArray(), $this->operation->fresh()->toArray(), $this->logs], JSON_THROW_ON_ERROR))->not->toContain($token);
+});
