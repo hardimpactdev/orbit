@@ -260,6 +260,57 @@ export function planServiceRules(
         allow: additions.filter((r) => !r.deny).reverse(),
     };
 }
+export const ScriptFiles: Record<string, string> = {
+    "verify-existing-credential": "scripts/verify-existing-credential.py",
+    "inspect-exporter-files": "scripts/inspect-exporter-files.py",
+    "inspect-exporter-service": "scripts/inspect-exporter-service.py",
+    "inspect-exporter-firewall": "scripts/inspect-exporter-firewall.py",
+    "inspect-fpm-exporter": "scripts/inspect-fpm-exporter.py",
+    "inspect-service-firewall": "scripts/inspect-service-firewall.py",
+    "inspect-runtime-container": "scripts/inspect-runtime-container.py",
+    "check-runtime-recovery": "scripts/check-runtime-recovery.py",
+    "pull-runtime-image": "scripts/pull-runtime-image.py",
+    "validate-prometheus-config": "scripts/validate-prometheus-config.py",
+    "inspect-runtime-files": "scripts/inspect-runtime-files.py",
+    "inspect-exporter-binaries": "scripts/inspect-exporter-binaries.py",
+    "download-cadvisor": "scripts/download-cadvisor.py",
+    "verify-cadvisor-digest": "scripts/verify-cadvisor-digest.py",
+    "publish-cadvisor-binary": "scripts/publish-cadvisor-binary.py",
+    "stop-exporter": "scripts/stop-exporter.py",
+    "disable-exporter": "scripts/disable-exporter.py",
+    "publish-exporter-configuration":
+        "scripts/publish-exporter-configuration.py",
+    "enable-exporter": "scripts/enable-exporter.py",
+    "restart-exporter": "scripts/restart-exporter.py",
+    "remove-obsolete-exporter-rule": "scripts/remove-obsolete-exporter-rule.py",
+    "admit-exporter-rule": "scripts/admit-exporter-rule.py",
+    "verify-exporter-endpoint": "scripts/verify-exporter-endpoint.py",
+    "stop-fpm-exporter": "scripts/stop-fpm-exporter.py",
+    "disable-fpm-exporter": "scripts/disable-fpm-exporter.py",
+    "publish-fpm-exporter-file": "scripts/publish-fpm-exporter-file.py",
+    "download-fpm-exporter": "scripts/download-fpm-exporter.py",
+    "verify-fpm-exporter-digest": "scripts/verify-fpm-exporter-digest.py",
+    "publish-fpm-exporter-binary": "scripts/publish-fpm-exporter-binary.py",
+    "enable-fpm-exporter": "scripts/enable-fpm-exporter.py",
+    "restart-fpm-exporter": "scripts/restart-fpm-exporter.py",
+    "remove-service-rule": "scripts/remove-service-rule.py",
+    "admit-service-deny": "scripts/admit-service-deny.py",
+    "admit-service-allow": "scripts/admit-service-allow.py",
+    "verify-fpm-exporter": "scripts/verify-fpm-exporter.py",
+    "remove-cadvisor-binary": "scripts/remove-cadvisor-binary.py",
+    "remove-fpm-exporter-binary": "scripts/remove-fpm-exporter-binary.py",
+    "publish-runtime-files": "scripts/publish-runtime-files.py",
+    "publish-grafana-password": "scripts/publish-grafana-password.py",
+    "create-runtime-volume": "scripts/create-runtime-volume.py",
+    "stop-runtime-container": "scripts/stop-runtime-container.py",
+    "preserve-runtime-container": "scripts/preserve-runtime-container.py",
+    "create-runtime-container": "scripts/create-runtime-container.py",
+    "start-runtime-container": "scripts/start-runtime-container.py",
+    "verify-runtime-health": "scripts/verify-runtime-health.py",
+    "verify-final-credential": "scripts/verify-final-credential.py",
+    "retire-runtime-backup": "scripts/retire-runtime-backup.py",
+    "result": "scripts/result.py",
+};
 export const behavior = {
     type: "@nckrtl/metrics-fleet-intent",
     version: "2026.10.31.1",
@@ -271,6 +322,32 @@ export const behavior = {
         },
     },
     methods: {
+        assets: {
+            description:
+                "Resolve shipped one-action script paths on this exact worker",
+            arguments: z.object({}),
+            execute: async (
+                _args: Record<string, never>,
+                ctx: {
+                    extensionFile: (name: string) => string;
+                    writeResource: (
+                        kind: string,
+                        name: string,
+                        value: unknown,
+                    ) => Promise<unknown>;
+                },
+            ) => {
+                const result = {
+                    scripts: Object.fromEntries(
+                        Object.entries(ScriptFiles).map((
+                            [key, path],
+                        ) => [key, ctx.extensionFile(path)]),
+                    ),
+                };
+                await ctx.writeResource("intent", "assets", result);
+                return result;
+            },
+        },
         serviceRules: {
             description:
                 "Read managed service-firewall snapshots and public desired rules",

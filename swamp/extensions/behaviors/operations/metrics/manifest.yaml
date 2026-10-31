@@ -3,6 +3,55 @@ name: '@nckrtl/metrics-command-steps'
 version: 2026.10.31.1
 visibility: private
 license: MIT
-description: Public Metrics intent for placed native command steps.
+description: Public Metrics intent and placed single-action scripts.
 behaviors:
-  - operations/metrics/intent.ts
+- operations/metrics/intent.ts
+additionalFiles:
+- scripts/verify-existing-credential.py
+- scripts/inspect-exporter-files.py
+- scripts/inspect-exporter-service.py
+- scripts/inspect-exporter-firewall.py
+- scripts/inspect-fpm-exporter.py
+- scripts/inspect-service-firewall.py
+- scripts/inspect-runtime-container.py
+- scripts/check-runtime-recovery.py
+- scripts/pull-runtime-image.py
+- scripts/validate-prometheus-config.py
+- scripts/inspect-runtime-files.py
+- scripts/inspect-exporter-binaries.py
+- scripts/download-cadvisor.py
+- scripts/verify-cadvisor-digest.py
+- scripts/publish-cadvisor-binary.py
+- scripts/stop-exporter.py
+- scripts/disable-exporter.py
+- scripts/publish-exporter-configuration.py
+- scripts/enable-exporter.py
+- scripts/restart-exporter.py
+- scripts/remove-obsolete-exporter-rule.py
+- scripts/admit-exporter-rule.py
+- scripts/verify-exporter-endpoint.py
+- scripts/stop-fpm-exporter.py
+- scripts/disable-fpm-exporter.py
+- scripts/publish-fpm-exporter-file.py
+- scripts/download-fpm-exporter.py
+- scripts/verify-fpm-exporter-digest.py
+- scripts/publish-fpm-exporter-binary.py
+- scripts/enable-fpm-exporter.py
+- scripts/restart-fpm-exporter.py
+- scripts/remove-service-rule.py
+- scripts/admit-service-deny.py
+- scripts/admit-service-allow.py
+- scripts/verify-fpm-exporter.py
+- scripts/remove-cadvisor-binary.py
+- scripts/remove-fpm-exporter-binary.py
+- scripts/publish-runtime-files.py
+- scripts/publish-grafana-password.py
+- scripts/create-runtime-volume.py
+- scripts/stop-runtime-container.py
+- scripts/preserve-runtime-container.py
+- scripts/create-runtime-container.py
+- scripts/start-runtime-container.py
+- scripts/verify-runtime-health.py
+- scripts/verify-final-credential.py
+- scripts/retire-runtime-backup.py
+- scripts/result.py
