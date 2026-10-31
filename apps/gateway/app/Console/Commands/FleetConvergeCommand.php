@@ -12,6 +12,7 @@ final class FleetConvergeCommand extends Command
 {
     #[\Override]
     protected $signature = 'orbit:fleet-converge';
+
     #[\Override]
     protected $description = 'Record one fleet rollout Operation for Swamp.';
 
