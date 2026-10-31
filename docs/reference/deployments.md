@@ -19,6 +19,12 @@ Production deployment uses the same direct parent with a release layout and the 
 
 The production release layout and serving data described below remain in place while management kinds are ported. Swamp runs production commands as the admitted `orbit-app-<ProjectID>` account. It never asks the agent to act.
 
+## Development deployment in Swamp
+
+The Gateway admits the complete development intent and starts one native Swamp run. Each source action and each application command is a placed `command/shell` step. The native DAG keeps the configured command order and timeouts. Commands run as the Node's configured account in its admitted checkout. Steps do not read mutable intent or scripts from the Gateway.
+
+The shared `SwampCommandStep` boundary copies protected commands and repository credentials into the execution vault. Workflow inputs contain only public intent and vault/key names. The Gateway records the terminal run output through the shared result subscriber. It keeps deployment history and the successful seed commit; Swamp owns execution, cancellation, and recovery. Production deployment records intent but returns `operation.kind_unavailable` without Node effects until its native-shape DAG lands. Retained-release rollback keeps its current implementation until its own rewrite.
+
 ## The production home
 
 Each production Instance has a home, `/home/<production-user>`, with these paths.
@@ -206,11 +212,11 @@ The operation's steps follow the phases below. Each name is a phase, or a phase 
 
 The admitted configuration stays fixed for the Operation. A changed script, target, release identity or command input cannot replace that intent during execution.
 
-A development default has `source_preparation` and one `before_activation.<step>` for each [development deploy step](#development-deploy-steps). `php_refresh` appears only for an Instance that serves PHP.
+A development default shows its source inspection, fetch, commit resolution and selection as separate native steps, followed by runtime preparation and one `application-N` step for each [development deploy step](#development-deploy-steps). Each command retains its admitted name in the public result.
 
 When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. Read the full log of the run from its [history row](#history).
 
-Swamp records public progress in native resources. A restarted run never repeats an interrupted effect. Unknown effects remain active until their owner can settle them; cancellation during a deploy command requires a read-only probe proving that exact runner is gone. Only an inactive checkpoint can project interruption and release its active marker. A completed root can repeat its bounded result callback without running another Node command.
+Development deployment uses native step history, timeouts, cancellation and explicit resume. It has no family checkpoint, runner-absence probe or result callback. The shared terminal reader projects the public result once the native run ends. Retained-release rollback keeps its current recovery path until its rewrite.
 
 ### The rollback operation
 
@@ -528,7 +534,7 @@ A manual deployment or a rollback is a person's decision about what runs. A merg
 
 ### One native root for every deployment
 
-Development and production deployment use one native workflow placed on the admitted Node. Manual and automatic runs share the same native model writer. An unresolved effect marker prevents another root from starting effects until the owning run settles it. Rollback joins that model in its own native cutover; no polled executor remains.
+Manual and automatic development deployment use the same placed native DAG. The Gateway admits one Instance operation at a time, and terminal projection releases its target lock. Native dependencies and command timeouts control execution; no family lock or checkpoint engine sits inside a step. Production deployment returns unavailable during its rewrite. No polled executor remains.
 
 ### Three releases per home
 
@@ -683,28 +689,26 @@ Development setup, teardown and deploy steps run as the admitted configured Node
 The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. A Node 209 worker may execute only an intent admitted to Node 209; it cannot substitute for another Node's worker.
 ## Native development deployment
 
-Default development checkouts use `operation-instance-deploy-direct`, placed on the admitted Node and its matching Node label. The Gateway derives the environment and configured Node account, freezes the Node platform and architecture and ordered Project command digests, and starts one native Swamp run. There is no polled development writer option. Production uses the same parent-native workflow with immutable release, environment, PHP and Process/Schedule member inputs. Development rollback continues to refuse `deployment_config.unavailable` because development checkouts have no retained releases.
+Default development checkouts use `operation-instance-deploy-direct`. Each step declares the admitted Node label. The Gateway freezes the configured Node account, checkout, repository, branch, protocol allowlist, command digests and timeouts. It copies each command through the shared vault helper at admission. A later Project edit does not change an admitted run. Development rollback continues to refuse `deployment_config.unavailable` because development checkouts have no retained releases.
 
-The native run fetches and checks out the admitted commit, prepares Vite+ when required, runs the Project's ordered development deploy steps as the admitted Node account, and verifies the checkout's origin, branch and commit locally. Swamp owns the fixed Git, Vite+ store and runner commands; it calls no agent action. Required failures stop the list and project the runner’s redacted output tail, bounded to 2 KiB. Best-effort failures record a warning and allow later steps. Only verified success advances the Instance seed.
+Separate shell steps inspect the checkout, fetch the branch, resolve and select the commit, prepare the Vite+ environment, run each application command, and verify the final checkout. A native `forEach` with concurrency one preserves Project order. Guards skip later effects after a required command fails. Optional failures count as warnings. Native timeouts stop application commands. Only verified success advances the Instance seed.
 
-A native checkpoint records each effect before it starts and clears only after its typed result. A restarted invocation never repeats an effect. With no active effect marker it records `deployment.interrupted` and releases the Instance hold; an uncertain active effect keeps the hold until settlement is proven.
+The application runner reads a bounded regular `.env` file owned by the admitted account, refuses symlinks and group/world writable files, and clears the child environment. Commands arrive through vault-backed environment delivery, then an anonymous protected file descriptor. Secret bytes never enter command arguments. It retains complete redacted lines within a 2 KiB output tail and drains additional output without retaining it.
 
-Each Project step also records its admitted name and an Operation/run-bound public runner identity. On operator cancellation after a restart, a read-only probe on the admitted Node must prove that runner is gone before the run records `failed`, `deployment.interrupted`, the saved `failed_step`, and `step_outcome: unknown`. A live runner, missing identity, or inconclusive probe keeps the hold. Recovery never repeats the step or claims it succeeded or was cancelled.
+The only TypeScript behavior parses public runtime pins, checks the observed manager version, and summarizes native outputs. The result shell step prints one public JSON object. The fixed shared terminal selector is `deployment/result`; it records deployment history, selected commit and public Vite+ references. Steps make no Gateway calls. The shared terminal Operation transition releases the Instance lock.
 
-Terminal projection releases the target lock for every direct kind through the shared OperationStore transition.
-
-Git credentials and Vite+ materialization input are delivered through the existing parent private-material callback. Public repositories use a null Git credential. Scripts come from the owning Project command reader and must match their admitted digests and timeouts. Private bytes stay outside workflow inputs, resources and public results. Vite+ records only public runtime pins and checking, active or failed reference state through the same parent result endpoint. Result projection updates records without a Node command or child admission.
+The rewrite currently requires a pre-existing compatible Vite+ store. Native manager materialization, receipt-backed runtime installation and private registry configuration must be completed before this draft cutover can ship.
 
 A pending default Route projection refuses manual deployment with `deployment.projection_pending`. Swamp settles pending publication through the normal Route update admission before admitting a newer commit. Its policy projection accepts only a successful Operation for the same authoritative Route. Native development deployment admits no Route or runtime child Operations.
 
 ### Cutover and automatic policy
 
-Writable native deploy calls share the per-Node model lock. A native active-effect marker prevents a successor from starting while an interrupted root has an unresolved effect. Only the matching root clears it after a settled outcome or the exact runner-absence cancellation check. The Gateway keeps no target hold, lease or drain ledger.
+The Gateway's existing `operation.target_busy` admission prevents overlapping Instance mutations. There is no separate drain ledger or family runtime lock. The native workflow uses the default worker queue timeout and admitted per-command timeouts.
 
-Swamp owns development automatic-deploy discovery, branch checks, backoff, retry limits and admission. The existing automatic deployment workflow keeps its minute cadence. Discovery uses the Gateway’s canonical policy eligibility, including ambiguous or inactive role placement. The native deadline is 900 seconds plus the sum of admitted command timeouts, so every accepted Project list fits. The Gateway exposes records and projects the public decision; its PHP automatic-deploy command and scheduler entry are removed.
+The automatic policy keeps its existing cadence and admits the same development workflow as a manual request. This rewrite does not change policy scheduling or add a retry loop.
 
 ## Native production deployment
 
 Production admission captures canonical Project Process and Schedule definitions in the same transaction as the parent Operation. A refused parent leaves no copied definitions. Public input fixes the Project-owned `orbit-app-<ProjectID>` account, its home, release layout, command digests, package plan and member identities. Protected commands and environment values use the existing `instance.deployment` private path. The Gateway does not execute a command, look up an account remotely, admit a child Operation or verify an execution receipt.
 
-One native Swamp root prepares the release, synchronizes environment files, installs the admitted PHP runtime, runs application steps, selects the release, installs captured definitions and restarts existing Processes. Every production application command runs through sudo as the admitted Project account. Schedule account lookup and validation happen locally on its Node. The parent result records deployment history, selected checkout, public Vite pins and owned member outcomes. A failed deployment preserves the native result’s selected release and reported completed member outcomes; the Gateway performs no compensating runtime work.
+Production admission remains available for immutable intent capture. Its workflow currently returns `operation.kind_unavailable` without Node effects while the production command DAG is rewritten. Serving files, selected releases, data and production accounts remain untouched. The production rewrite will compose release preparation, environment, PHP, application commands, runtime definitions and Process restart as native steps, with commands run through `sudo -u orbit-app-<ProjectID>`.

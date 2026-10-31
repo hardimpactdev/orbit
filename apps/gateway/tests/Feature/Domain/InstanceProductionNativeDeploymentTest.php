@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
-use App\Domain\Instances\Deployment\InstanceDeploymentDirectInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
@@ -58,7 +57,7 @@ beforeEach(function (): void {
 it('admits one production parent with canonical account and private captured members', function (): void {
     $instance = production_native_deploy_target();
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $public = app(InstanceDeploymentDirectInput::class)->input($operation);
+    $public = app(InstanceDeployProjection::class)->input($operation)['intent'];
     $secrets = app(InstanceDeploymentSecrets::class);
     $environment = $secrets->resolve($operation, $instance->id, '', 'environment_material')->value;
     $members = $secrets->resolve($operation, $instance->id, '', 'definitions_material')->value;
@@ -93,7 +92,7 @@ it('captures the canonical pinned PHP package-only profile and dedicated runtime
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');
     $instance->update(['selected_php_version' => '8.5', ...$identity->attributes()]);
     $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
-    $php = app(InstanceDeploymentDirectInput::class)->input($operation)['php_input'];
+    $php = app(InstanceDeployProjection::class)->input($operation)['intent']['php_input'];
 
     expect($php['packages']['fpm'])->toBe('none')
         ->and($php['packages']['versions']['8.5']['packages'])->not->toBeEmpty()

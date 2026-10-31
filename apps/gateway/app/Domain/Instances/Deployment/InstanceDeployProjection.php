@@ -19,7 +19,6 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 {
     public function __construct(
         private DirectOperation $direct,
-        private InstanceDeploymentDirectInput $intent,
         private InstanceDeploymentRecorder $history,
         private InstanceRuntimeDefinitions $members,
         private InstanceVpEnvironmentMaterial $vp,
@@ -27,7 +26,15 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        return $this->intent->admitted($operation);
+        $input = $operation->input;
+        $deployment = ValidatedData::object($input['deployment']);
+        $intent = ['instance_id' => $operation->target_id, 'project_id' => ValidatedData::integer($deployment['project_id']),
+            'node_id' => $operation->node_id, 'platform' => ValidatedData::string($input['platform']),
+            'architecture' => ValidatedData::string($input['architecture']), 'deployment' => $deployment,
+            'commit' => InstanceDeploymentIntent::commit($operation) ?? '', 'release_name' => InstanceDeploymentIntent::releaseName($operation),
+            ...array_intersect_key($input, array_flip(['environment', 'php_input', 'runtime_definitions']))];
+
+        return ['intent' => $intent, 'execution_secrets' => $input['execution_secrets'] ?? []];
     }
 
     public function apply(Operation $operation, array $data): Operation

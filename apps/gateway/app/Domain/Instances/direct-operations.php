@@ -35,6 +35,8 @@ return [
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'deployment', 'step' => 'result'],
         'projection' => InstanceDeployProjection::class,
         'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
             'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],

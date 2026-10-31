@@ -9,6 +9,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\InstanceDeploymentEnvironmentMaterial;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDevelopmentWorkflowInput;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
@@ -64,6 +65,10 @@ final readonly class StartInstanceDeployAction
             }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;
+            }
+            if ($development) {
+                $input = app(InstanceDevelopmentWorkflowInput::class)->capture($instance, array_diff_key($input,
+                    array_flip(['git_read', 'vp_materialize', 'environment_material', 'definitions_material'])));
             }
 
             return $this->operations->execute(OperationKinds::InstanceDeploy, OperationKinds::InstanceTarget, $instance->id,

@@ -12,6 +12,9 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
@@ -63,7 +66,7 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
 it('returns immutable Node execution intent without an agent action digest', function (): void {
     [, $operation, $path, $body] = native_deploy_projection_fixture($this);
     $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()
-        ->assertJsonPath('data.input.platform', 'linux')->assertJsonPath('data.input.architecture', 'x86_64');
+        ->assertJsonPath('data.input.intent.platform', 'linux')->assertJsonPath('data.input.intent.architecture', 'x86_64');
     expect($operation->fresh()->input)->not->toHaveKey('agent_sha256');
 });
 
@@ -85,7 +88,7 @@ it('projects native checkout success and keeps terminal replay independent of la
         ->and(InstanceDeployment::query()->findOrFail($historyId)->status)->toBe('succeeded');
     $original = $instance->checkout_path;
     $instance->update(['checkout_path' => '/changed/after/completion', 'seed_commit' => str_repeat('b', 40)]);
-    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()->assertJsonPath('data.input.deployment.home', $original);
+    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()->assertJsonPath('data.input.intent.deployment.home', $original);
     $this->postJson($path.'/result', $body)->assertOk();
     expect($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
         ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
@@ -129,6 +132,13 @@ it('admits the real dev writer with only a native start and no Gateway step exec
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.dev-deploy.fixture']);
+    app()->instance(ProcessRunner::class, new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, '{}', '', 1, false);
+        }
+    });
     $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip]);
 
     $response = $this->call('POST', '/api/v1/instances/'.$instance->id.'/deploy', server: [
@@ -142,8 +152,9 @@ it('admits the real dev writer with only a native start and no Gateway step exec
         ->and(InstanceDeployment::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
     app(StartSwampRun::class)->start($operation);
     expect($socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-instance-deploy-direct')
-        ->and($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id,
-            'kind' => 'instance.deploy', 'node_id' => $instance->node_id]);
+        ->and($socket->sent[0]['payload']['inputs'])->toMatchArray(['operation_id' => $operation->id,
+            'kind' => 'instance.deploy', 'node_id' => $instance->node_id])
+        ->and($socket->sent[0]['payload']['inputs']['intent']['deployment']['home'])->toBe($instance->checkout_path);
 });
 
 it('uses the sole native declaration even when a retired writer flag is set', function (): void {
@@ -328,6 +339,13 @@ it('admits an automatic dev commit once and dispatches the direct root', functio
     $socket = new FakeRoutePublicationSocket;
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.dev-deploy.fixture']);
+    app()->instance(ProcessRunner::class, new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, '{}', '', 1, false);
+        }
+    });
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $path = '/api/v1/instances/'.$instance->id.'/deploy/automatic';
     $body = ['commit' => str_repeat('a', 40)];
