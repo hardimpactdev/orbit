@@ -24,10 +24,12 @@ const CaddyArgs = Placement.extend({
     before: Section,
     after: Section,
     current: z.string(),
+    alternatives: z.array(Section).default([]),
+    retain_removed: z.boolean().default(false),
 }).strict();
 export async function composeCaddy(raw: unknown) {
     const value = CaddyArgs.parse(raw);
-    for (const caddy of [value.before, value.after]) {
+    for (const caddy of [value.before, value.after, ...value.alternatives]) {
         const { blocks: _blocks, ...input } = caddy;
         await prepareCaddyInput({
             node_id: value.node_id,
@@ -40,7 +42,13 @@ export async function composeCaddy(raw: unknown) {
     const [before, after] = value.direction === "forward"
         ? [value.before, value.after]
         : [value.after, value.before];
-    const content = mergeCaddy(before.content, after.content, value.current);
+    const content = mergeCaddy(
+        before.content,
+        after.content,
+        value.current,
+        value.alternatives.map((state) => state.content),
+        value.retain_removed,
+    );
     const version = Array.from(
         new Uint8Array(
             await crypto.subtle.digest(
@@ -156,7 +164,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.10.31.2",
+    version: "2026.10.31.3",
     resources: {
         caddy: {
             schema: CaddyPublication,
