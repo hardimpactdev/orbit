@@ -11,6 +11,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\ContributedPrivateHostnames;
 use App\Domain\Routes\ReservedPrivateHostname;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
@@ -40,7 +41,8 @@ final readonly class DevelopmentDnsConfigRenderer
     ): string {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
-                $q->where('status', LifecycleStatus::Active->value);
+                $q->where('status', LifecycleStatus::Active->value)
+                    ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0);
                 if (
                     $pendingNode instanceof Node
                     && $pendingNode->exists
@@ -53,16 +55,21 @@ final readonly class DevelopmentDnsConfigRenderer
                 'role',
                 RoleName::AppDev->value,
             )->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]))
-            ->whereNotNull('wireguard_ip')
-            ->whereNotNull('tld')
+
             ->get();
         $clusterTlds = $this->selection->clusterTlds($nodeOverrides, $clusterOverrides);
         $nodes = $nodes
             ->flatMap(static function (Node $n) use ($clusterTlds): array {
-                $records = ["local=/{$n->tld}/"];
+                $identity = app(RouteRenderContext::class);
+                $tld = $identity->tld($n);
+                $address = $identity->wireguardIp($n);
+                if ($tld === null || $address === null) {
+                    return [];
+                }
+                $records = ["local=/{$tld}/"];
 
-                if (! in_array(rtrim(strtolower((string) $n->tld), '.'), $clusterTlds, true)) {
-                    $records[] = "address=/.{$n->tld}/{$n->wireguard_ip}";
+                if (! in_array(rtrim(strtolower($tld), '.'), $clusterTlds, true)) {
+                    $records[] = "address=/.{$tld}/{$address}";
                 }
 
                 return $records;
@@ -88,7 +95,8 @@ final readonly class DevelopmentDnsConfigRenderer
         foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $gatewayStatus) {
             $gateway ??= Node::query()
                 ->where('status', LifecycleStatus::Active->value)
-                ->whereNotNull('wireguard_ip')
+                ->where(static fn (Builder $query): Builder => $query->whereNotNull('wireguard_ip')
+                    ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0))
                 ->whereHas('roles', static fn (Builder $q): Builder => $q->where('role', RoleName::Gateway->value)->where(
                     'status',
                     $gatewayStatus->value,
@@ -96,24 +104,24 @@ final readonly class DevelopmentDnsConfigRenderer
                 ->first();
         }
         if ($gateway instanceof Node) {
-            $records->push('host-record='.ReservedPrivateHostname::Gateway.",{$gateway->wireguard_ip}");
+            $records->push('host-record='.ReservedPrivateHostname::Gateway.','.app(RouteRenderContext::class)->wireguardIp($gateway));
 
             $metrics = $this->roleNode(RoleName::Metrics, $pendingNode);
             if ($metrics instanceof Node) {
-                $records->push('host-record='.ReservedPrivateHostname::Metrics.",{$gateway->wireguard_ip}");
+                $records->push('host-record='.ReservedPrivateHostname::Metrics.','.app(RouteRenderContext::class)->wireguardIp($gateway));
             }
         }
 
         $websocket = $this->websocket->node($this->roleNode(RoleName::WebSocket, $pendingNode));
 
         if ($websocket instanceof Node) {
-            $records->push('host-record='.WebSocketHostname::Value.",{$websocket->wireguard_ip}");
+            $records->push('host-record='.WebSocketHostname::Value.','.app(RouteRenderContext::class)->wireguardIp($websocket));
         }
 
         $analytics = $this->roleNode(RoleName::Analytics, $pendingNode);
 
         if ($analytics instanceof Node) {
-            $records->push('host-record='.AnalyticsHostname::Value.",{$analytics->wireguard_ip}");
+            $records->push('host-record='.AnalyticsHostname::Value.','.app(RouteRenderContext::class)->wireguardIp($analytics));
         }
 
         foreach ($this->hostnames as $contribution) {
@@ -143,13 +151,15 @@ final readonly class DevelopmentDnsConfigRenderer
         foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $status) {
             $node ??= Node::query()
                 ->where(static function (Builder $q) use ($pendingNode): void {
-                    $q->where('status', LifecycleStatus::Active->value);
+                    $q->where('status', LifecycleStatus::Active->value)
+                        ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0);
 
                     if ($pendingNode instanceof Node && $pendingNode->exists) {
                         $q->orWhere('id', $pendingNode->id);
                     }
                 })
-                ->whereNotNull('wireguard_ip')
+                ->where(static fn (Builder $query): Builder => $query->whereNotNull('wireguard_ip')
+                    ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0))
                 ->whereHas('roles', static fn (Builder $q): Builder => $q
                     ->where('role', $role->value)
                     ->where('status', $status->value))
@@ -240,12 +250,14 @@ final readonly class DevelopmentDnsConfigRenderer
         $requesters = [];
 
         Node::query()
-            ->where('status', LifecycleStatus::Active->value)
-            ->whereNotNull('wireguard_ip')
+            ->where(static fn (Builder $query): Builder => $query->where('status', LifecycleStatus::Active->value)
+                ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0))
+            ->where(static fn (Builder $query): Builder => $query->whereNotNull('wireguard_ip')
+                ->orWhereKey(app(RouteRenderContext::class)->nodeId() ?? 0))
             ->orderBy('id')
             ->get()
             ->each(static function (Node $node) use (&$requesters): void {
-                $address = DnsAddress::normalize((string) $node->wireguard_ip);
+                $address = DnsAddress::normalize((string) app(RouteRenderContext::class)->wireguardIp($node));
                 if ($address === null) {
                     return;
                 }

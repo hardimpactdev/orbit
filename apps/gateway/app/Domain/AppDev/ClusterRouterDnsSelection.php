@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteRemovalStep;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -90,7 +91,7 @@ final readonly class ClusterRouterDnsSelection
             $names = $this->selectedNames($projection['cluster_id'], $tld);
 
             foreach ($projection['eligible'] as $requester) {
-                $key = DnsRequester::registered($requester->id, (string) $requester->wireguard_ip)->cacheKey();
+                $key = DnsRequester::registered($requester->id, (string) app(RouteRenderContext::class)->wireguardIp($requester))->cacheKey();
                 $requesterOverrides = $overrides[$key] ?? [];
 
                 foreach ($names as $name) {
@@ -129,7 +130,7 @@ final readonly class ClusterRouterDnsSelection
                 continue;
             }
 
-            $routerWireguard = $this->ipv4($router->wireguard_ip);
+            $routerWireguard = $this->ipv4(app(RouteRenderContext::class)->wireguardIp($router));
             $routerLan = $this->ipv4($router->lan_ip);
             $tld = array_key_exists('tld', $clusterOverrides[$cluster->id] ?? [])
                 ? $this->tld($clusterOverrides[$cluster->id]['tld'] ?? null)
@@ -275,7 +276,7 @@ final readonly class ClusterRouterDnsSelection
             && $member->cluster_id === $clusterId
             && $member->status === LifecycleStatus::Active
             && $this->ipv4($member->lan_ip) !== null
-            && $this->ipv4($member->wireguard_ip) !== null
+            && $this->ipv4(app(RouteRenderContext::class)->wireguardIp($member)) !== null
             && is_string($member->wireguard_public_key)
             && $member->wireguard_public_key !== '';
     }

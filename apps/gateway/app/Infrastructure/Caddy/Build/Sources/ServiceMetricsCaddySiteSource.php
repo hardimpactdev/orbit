@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build\Sources;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
@@ -36,7 +37,7 @@ final readonly class ServiceMetricsCaddySiteSource implements NodeCaddySiteSourc
             return [];
         }
 
-        $address = (string) $node->wireguard_ip;
+        $address = (string) app(RouteRenderContext::class)->wireguardIp($node);
 
         return [new CaddySite(
             source: 'service-metrics',
@@ -44,7 +45,7 @@ final readonly class ServiceMetricsCaddySiteSource implements NodeCaddySiteSourc
             listener: CaddyListenerRule::WireGuard,
             hosts: [$address],
             port: (int) ServiceMetricsConfigRenderer::CaddyPort,
-            body: $this->renderer->caddy($address, (string) $metrics[0]->node->wireguard_ip),
+            body: $this->renderer->caddy($address, (string) app(RouteRenderContext::class)->wireguardIp($metrics[0]->node)),
         )];
     }
 }

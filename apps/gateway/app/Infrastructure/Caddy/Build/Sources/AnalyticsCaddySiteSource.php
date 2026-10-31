@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build\Sources;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRenderContext;
 use App\Infrastructure\Analytics\AnalyticsCaddySiteRenderer;
 use App\Infrastructure\Analytics\AnalyticsFootprint;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
@@ -38,7 +39,7 @@ final readonly class AnalyticsCaddySiteSource implements NodeCaddySiteSource
             return [];
         }
 
-        $address = $node->wireguard_ip;
+        $address = app(RouteRenderContext::class)->wireguardIp($node);
 
         if (! is_string($address) || $address === '') {
             throw NodeCaddySiteUnavailable::wireGuardAddressMissing('analytics', $node->name);

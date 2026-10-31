@@ -29,7 +29,9 @@ Create reserves names and credentials without probing a server. A matching retry
 
 Lifecycle composes Database actions as placed jobs in its own native DAG. Grouped removal records one aggregate database intent for the admitted Instance set, with one entry per SQL server. Each server Node receives only its own passwords through the fixed private-material binding. It does not admit Database child Operations or wait in the Gateway. Managed MySQL clone resets and copies in one replayable native step. Swamp verifies the target's recorded owner and grants before reset. SQLite clone, seed and abandon use safe immutable source and target descriptors and exact Node placement.
 
-A SQLite source writes a private snapshot into a native file artifact. The target reads that exact version and verifies the size and digest before installation. Database bytes stay out of JSON resources and public history. Native retention owns the file. The current remote native reader buffers a snapshot in worker memory, so this path does not claim bounded memory for large files. Cleanup runs as native dependencies. Abandon derives only the owning recorded development-transfer attempt.
+A SQLite source writes a private snapshot into a native file artifact. The target reads that exact version and verifies the size and digest before installation. Database bytes stay out of JSON resources and public history. Native retention owns the file. The current remote native reader buffers a snapshot in worker memory, so this path does not claim bounded memory for large files. Cleanup runs as native dependencies.
+
+Clone steps refresh admitted cancellation before effects. Cancellation after export still cleans its source snapshot. Final projection waits for cleanup and uses the saved copy outcome; missing native outcomes record failure without attaching the target. Abandon derives only the owning recorded development-transfer attempt.
 
 Successful projections make bounded record changes: attach a created or cloned connection, mark its clone complete, or remove the admitted connection records. They do not re-run SQL, inspect a Node, check receipts or validate native execution.
 
