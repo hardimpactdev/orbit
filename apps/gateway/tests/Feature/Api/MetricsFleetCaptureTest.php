@@ -8,6 +8,7 @@ use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Metrics\MetricsRoleReconcileImpact;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -100,4 +101,15 @@ it('refuses a stale post-role capture instead of silently missing another desire
     $plan = app(MetricsFleetCapture::class)->capture();
     $this->nodes[13]->update(['name' => 'changed-after-capture']);
     expect(fn () => app(MetricsRoleReconcileImpact::class)->compare($plan, $plan))->toThrow(ResourceOperationException::class);
+});
+
+it('retains managed Ingress publication when desired Caddy monitoring is disabled', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'metrics-ingress-fixture']);
+    $this->nodes[13]->update(['cluster_id' => $cluster->id]);
+    $this->nodes[13]->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    app(ExporterPreferenceRepository::class)->put(13, ExporterPreference::Disabled);
+    $plan = app(MetricsFleetCapture::class)->capture();
+    $members = array_column($plan['fleet'], null, 'node_id');
+    expect($members[13]['caddy'])->toBeFalse()->and($members[13]['caddy_managed'])->toBeTrue()
+        ->and($members[18]['caddy_managed'])->toBeFalse();
 });

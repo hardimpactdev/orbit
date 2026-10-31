@@ -7,7 +7,9 @@ namespace App\Domain\Metrics;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -24,7 +26,10 @@ final readonly class MetricsFleetProjection implements DirectOperationProjection
             $this->refuse();
         }
 
-        return ['metrics_fleet' => $plan, ...(isset($operation->input['canary_node_ids']) ? ['canary_node_ids' => $operation->input['canary_node_ids']] : [])];
+        $member = array_find(MetricsFleetCapture::members($plan), static fn (array $node): bool => $node['node_id'] === $operation->node_id);
+        $publication = ($member['caddy_managed'] ?? false) === true ? ['caddy_publication' => CaddyPublicationPlan::forNode(Node::query()->findOrFail($operation->node_id))] : [];
+
+        return [...$publication, 'metrics_fleet' => $plan, ...(isset($operation->input['canary_node_ids']) ? ['canary_node_ids' => $operation->input['canary_node_ids']] : [])];
     }
 
     public function apply(Operation $operation, array $data): Operation

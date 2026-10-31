@@ -48,7 +48,7 @@ final readonly class MetricsRoleReconcileImpact
         // Every member and its selection remains in this comparison, including worker-free Nodes.
         unset($capture['digest']);
         foreach ($members as &$member) {
-            unset($member['worker'], $member['agent_sha256'], $member['selection_reason']);
+            unset($member['worker'], $member['agent_sha256'], $member['selection_reason'], $member['caddy_managed']);
         }
         unset($member);
         $capture['fleet'] = $members;

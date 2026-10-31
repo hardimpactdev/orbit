@@ -10,6 +10,7 @@ use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
@@ -48,7 +49,7 @@ final readonly class MetricsFleetCapture
             $members[] = ['node_id' => $node->id, 'name' => $node->name, 'address' => $node->wireguard_ip,
                 'agent_sha256' => $this->agents->pin($node), 'worker' => $this->workers->allows($node),
                 'selected' => $item->selection->selected, 'selection_reason' => $item->selection->reason->value,
-                'caddy' => $service->caddy, 'fpm' => $service->fpm, 'hosts' => $service->hosts,
+                'caddy' => $service->caddy, 'caddy_managed' => CaddySiteRoles::nodeServes($node->id, RoleName::Ingress), 'fpm' => $service->fpm, 'hosts' => $service->hosts,
                 'instance_ids' => array_map(static fn ($instance): int => $instance->id, $service->instances),
                 'service' => $this->service($service, (string) $metrics->wireguard_ip), 'pools' => $this->pools($service)];
             if ($item->selection->selected) {
@@ -100,12 +101,12 @@ final readonly class MetricsFleetCapture
             throw new ResourceOperationException('metrics.snapshot_changed', 'The public Metrics capture is incomplete.', 422);
         }
         foreach (self::members($snapshot) as $member) {
-            $keys = ['node_id', 'name', 'address', 'agent_sha256', 'worker', 'selected', 'selection_reason', 'caddy', 'fpm', 'hosts', 'instance_ids', 'service', 'pools'];
+            $keys = ['node_id', 'name', 'address', 'agent_sha256', 'worker', 'selected', 'selection_reason', 'caddy', 'caddy_managed', 'fpm', 'hosts', 'instance_ids', 'service', 'pools'];
             if (array_diff($keys, array_keys($member)) !== [] || array_diff(array_keys($member), $keys) !== []
                 || ! is_string($member['name']) || ! is_string($member['address']) || filter_var($member['address'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
                 || ! is_string($member['agent_sha256']) || preg_match('/\A[a-f0-9]{64}\z/D', $member['agent_sha256']) !== 1
                 || ! is_string($member['selection_reason']) || ExporterSelectionReason::tryFrom($member['selection_reason']) === null
-                || ! is_bool($member['selected']) || ! is_bool($member['caddy']) || ! is_bool($member['fpm'])
+                || ! is_bool($member['selected']) || ! is_bool($member['caddy']) || ! is_bool($member['caddy_managed']) || ! is_bool($member['fpm'])
                 || ! is_array($member['hosts']) || ! array_is_list($member['hosts']) || array_any($member['hosts'], static fn (mixed $value): bool => ! is_string($value))
                 || ! is_array($member['instance_ids']) || ! array_is_list($member['instance_ids']) || array_any($member['instance_ids'], static fn (mixed $value): bool => ! is_int($value) || $value < 1)
                 || ! is_array($member['service']) || ! is_array($member['pools']) || ! array_is_list($member['pools'])) {
