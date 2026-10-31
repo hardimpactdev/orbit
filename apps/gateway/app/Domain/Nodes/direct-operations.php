@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeAgentRekeyProjection;
 use App\Domain\Nodes\NodeConvergeProjection;
-use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeNetworkProjection;
+use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeSettingsProjection;
 
 return [...(require __DIR__.'/bootstrap-direct-operations.php'), 'node.network_converge' => [
