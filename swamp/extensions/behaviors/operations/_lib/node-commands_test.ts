@@ -13,6 +13,21 @@ const proxy = {
   user: "orbit" as const,
 };
 
+Deno.test("proxy Gateway curl uses the configured public CA instead of the agent-private path", () => {
+  const ca = "/usr/local/share/ca-certificates/custom-role-root.crt";
+  const config = proxyHttpConfig(
+    "https://gateway.orbit",
+    "GET",
+    "/api/v1/direct-operations/6081?run_id=public-run",
+    undefined,
+    undefined,
+    60000,
+    ca,
+  );
+  assertEquals(config.includes(`cacert = ${JSON.stringify(ca)}`), true);
+  assertEquals(config.includes("/etc/orbit/agent/ca.pem"), false);
+});
+
 Deno.test("only an exact approved systemd proxy cgroup selects the effect Node", () => {
   assertEquals(
     proxyNode("0::/system.slice/orbit-node-proxy-worker-1.service\n"),
@@ -136,8 +151,16 @@ Deno.test("Gateway requests originate on the effect Node with private bytes only
     "POST",
     "/api/v1/direct-operations/7/secret-output",
     { outputs: { token: 'private-needle\\"\n' }, run_id: "public-id" },
+    undefined,
+    60000,
+    "/usr/local/share/ca-certificates/orbit-root.crt",
   );
-  assertEquals(config.includes('cacert = "/etc/orbit/agent/ca.pem"'), true);
+  assertEquals(
+    config.includes(
+      'cacert = "/usr/local/share/ca-certificates/orbit-root.crt"',
+    ),
+    true,
+  );
   assertEquals(config.includes("private-needle"), true);
   const launch = proxyLaunch(proxy, ["/usr/bin/curl", "--config", "-"]);
   assertEquals(JSON.stringify(launch).includes("private-needle"), false);
@@ -148,6 +171,9 @@ Deno.test("Gateway requests originate on the effect Node with private bytes only
       "POST",
       "https://foreign.test/api/v1/send",
       {},
+      undefined,
+      60000,
+      "/usr/local/share/ca-certificates/orbit-root.crt",
     )
   );
   assertThrows(() =>
@@ -157,6 +183,8 @@ Deno.test("Gateway requests originate on the effect Node with private bytes only
       "/api/v1/x",
       {},
       "key\r\nInjected: yes",
+      60000,
+      "/usr/local/share/ca-certificates/orbit-root.crt",
     )
   );
 });
@@ -169,6 +197,7 @@ Deno.test("proxy Gateway requests retain the caller's long request budget", () =
     undefined,
     undefined,
     600001,
+    "/usr/local/share/ca-certificates/orbit-root.crt",
   );
   assertEquals(config.includes("max-time = 601"), true);
   for (const value of [0, -1, NaN, Infinity]) {
@@ -180,6 +209,7 @@ Deno.test("proxy Gateway requests retain the caller's long request budget", () =
         undefined,
         undefined,
         value,
+        "/usr/local/share/ca-certificates/orbit-root.crt",
       )
     );
   }
