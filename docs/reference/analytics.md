@@ -194,7 +194,7 @@ The fleet does not have to own its public edge. A tracking host mirrors the Inst
 
 ### Native workflows manage sites
 
-Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, Node users and participant Nodes. The placed worker resolves its own account home with local `getent`; the Gateway performs no account lookup. Placed steps reuse the shared Route publication and certificate behaviors. A control step on Node 209 signs public requests with the CA in the Swamp vault; Node private keys stay on their Nodes. The Gateway neither signs certificates nor stores signing requests.
+Enabling Analytics converges the Plausible site and its tracking Routes in one native DAG. Admission fixes the site domain, timezone, goals, Node users and participant Nodes. The placed worker resolves its own account home with local `getent`; the Gateway performs no account lookup. Placed steps reuse the shared Route publication and certificate behaviors. The canonical Gateway sign primitive signs the public CSR for its admitted Operation. The CA private key stays only in the Gateway; each leaf private key stays on its Node.
 
 Only the Router receives an Orbit certificate; public Ingress uses automatic public certificates. Swamp publishes the Router, verifies its private TLS endpoint from Ingress, then activates the public handler and applies the Ingress firewall. Private DNS publication precedes a native 31-second grace period before old placements are withdrawn.
 
@@ -221,3 +221,12 @@ The Route parent stores that capture in its immutable input. Its own result proj
 The parent admits the returned union `node_ids`, plus its own root and other effect Nodes. Publish and cleanup must use the union of both host plans, including the previous Ingress when a host changes from public to private. A new private publication plan alone does not list that old public listener.
 
 Rollback plans include candidate Router leaves that do not belong to the original active placement. After restoring stored state and republishing it, the parent builds each fresh participant view with `cleanupForNode($rollbackPlan, $callerNodeId)`. The method accepts the persisted parent plan, decodes its cleanup through the shared Analytics leaf decoder, and filters it against the Node's currently rendered certificate scopes. A scope used by any restored or newly published site is preserved. The native step removes only leaves in that fresh view.
+
+
+### Public host-preparation contract
+
+The command-step rewrite uses one public tracking-leaf schema. The Node and Route IDs bind the scope to `route-<route_id>-router`; the worker resolves an omitted home locally. Requesting a leaf requires its admitted version and public root hash. No credential or CA key is part of this input.
+
+The pure output method parses one canonical request command result. It returns the exact admitted Node ID and scope with either `state: current` or a public CSR encoded as base64. It refuses private keys, extra result fields, malformed CSR envelopes and unbounded error codes before writing a native resource. It performs no host action or Gateway call.
+
+The canonical certificate script owns key creation and current-certificate checks. Its asset method and the placed command must run on the same Node. The parent continues to own signing, publication and terminal projection; this contract adds no public child Operation.
