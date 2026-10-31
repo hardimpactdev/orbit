@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Actions\Nodes\AdmitWorkerKnownHostsAction;
 use App\Console\Commands\RekeyNodeAgentCommand;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -18,6 +19,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Nodes\WorkerKnownHostsPublisher;
 use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
@@ -38,6 +40,7 @@ use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
+use App\Models\Node;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -46,6 +49,7 @@ final class NodesServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        WorkerKnownHostsPublisher::class => AdmitWorkerKnownHostsAction::class,
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => AgentNodeStorageRootPreparer::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
@@ -59,6 +63,16 @@ final class NodesServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Node::created(static function (Node $node): void {
+            if ($node->wireguard_ip && $node->ssh_host_key_type && $node->ssh_host_key) {
+                app(WorkerKnownHostsPublisher::class)->publish();
+            }
+        });
+        Node::updated(static function (Node $node): void {
+            if ($node->wasChanged(['wireguard_ip', 'ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint'])) {
+                app(WorkerKnownHostsPublisher::class)->publish();
+            }
+        });
         if ($this->app->runningInConsole()) {
             $this->commands([RekeyNodeAgentCommand::class]);
         }

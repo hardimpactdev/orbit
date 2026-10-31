@@ -1,0 +1,60 @@
+id: 2b9f1d87-8208-4c3a-b656-96606bdad3da
+name: operation-node-worker-known-hosts
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+    node_id:
+      type: integer
+      enum: [209]
+    kind:
+      type: string
+      enum: [node.worker_known_hosts]
+    execution_secrets:
+      type: object
+      additionalProperties: false
+    intent:
+      type: object
+      properties:
+        control_node_id:
+          type: integer
+          enum: [209]
+        known_hosts_content:
+          type: string
+        digest:
+          type: string
+      required: [control_node_id, known_hosts_content, digest]
+      additionalProperties: false
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: known_hosts
+    target: orbit-node-209
+    labels: {node: '209'}
+    steps:
+      - name: assets
+        target: orbit-node-209
+        labels: {node: '209'}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-worker-assets'
+          behaviorName: worker-known-hosts-assets
+          methodName: known_hosts
+          inputs: {node_id: 209}
+      - name: write
+        target: orbit-node-209
+        labels: {node: '209'}
+        writes: true
+        dependsOn:
+          - step: assets
+            condition: {type: succeeded}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: worker-known-hosts-writer
+          methodName: execute
+          inputs:
+            run: /usr/bin/python3 '${{ steps.assets.outputs.script_path }}'
+            env:
+              ORBIT_KNOWN_HOSTS_CONTENT: '${{ inputs.intent.known_hosts_content }}'

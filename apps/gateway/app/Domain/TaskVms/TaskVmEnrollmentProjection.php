@@ -81,7 +81,7 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
             $attributes['status'] = LifecycleStatus::Active;
         }
         if ($attributes !== []) {
-            Node::query()->whereKey(ValidatedData::integer($intent['guest_node_id']))->where('name', $vm->name)->update($attributes);
+            Node::query()->whereKey(ValidatedData::integer($intent['guest_node_id']))->where('name', $vm->name)->first()?->update($attributes);
         }
     }
 
@@ -99,7 +99,7 @@ final readonly class TaskVmEnrollmentProjection implements DirectOperationProjec
         $runtime = ValidatedData::object($intent['runtime']);
         $process = ValidatedData::object($runtime['process']);
         $node = ValidatedData::object($result['node'] ?? []);
-        Node::query()->whereKey($nodeId)->update([
+        Node::query()->findOrFail($nodeId)->update([
             ...Arr::only($node, ['ssh_host_key_type', 'ssh_host_key', 'ssh_host_fingerprint', 'wireguard_public_key', 'architecture']),
             ...isset($node['address']) ? ['public_ssh_host' => $node['address']] : [],
             'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
