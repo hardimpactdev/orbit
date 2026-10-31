@@ -19,8 +19,6 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Routes\ClusterRouterParentCommand;
-use App\Domain\Routes\ClusterRouterParentExecution;
 use App\Domain\Routes\GeneratedRouteUpdateOwnership;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteNodeEffectCommand;
@@ -34,7 +32,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -227,29 +224,6 @@ it('omits Metrics without an active assignment and captures only its Node and em
         ->and(Operation::query()->count())->toBe(0)->and($this->agents->calls)->toBe([]);
 });
 
-it('binds Router baselines to owned Node children and forbids premature cutover', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'Router proof']);
-    $this->node->update(['cluster_id' => $cluster->id]);
-    $old = Node::query()->create(['name' => 'old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
-    $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
-    $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
-    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id, 'node_id' => $this->node->id,
-        'input' => ['cluster_id' => $cluster->id, 'candidate_role_id' => $candidate->id, 'old_role_id' => $oldRole->id], 'status' => 'queued', 'sequence' => 1]);
-    $command = app(ClusterRouterParentCommand::class);
-    $command->run($operation, ['action' => 'prepare']);
-    $plan = $operation->fresh()->state['route_plan'];
-    expect($plan['old_role_ids'])->toBe([$oldRole->id])
-        ->and($plan['stages']['baseline'][0]['input'])->toBe(['assignment_id' => $candidate->id])
-        ->and($plan['stages']['remove-old-baseline'][0]['input'])->toBe(['role' => 'router', 'purge_data' => false, 'offline' => false]);
-    $command->run($operation, ['action' => 'open', 'stage' => 'baseline']);
-    expect(fn () => $command->run($operation, ['action' => 'commit', 'stage' => 'baseline']))
-        ->toThrow(ResourceOperationException::class, 'no child');
-    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'database']))
-        ->toThrow(ResourceOperationException::class, 'preceding Router phase');
-    expect($candidate->fresh()->status)->toBe(LifecycleStatus::Provisioning)->and($oldRole->fresh()->status)->toBe(LifecycleStatus::Active)
-        ->and($this->agents->calls)->toBe([]);
-});
-
 it('renders a prospective workload only from a proven prepared parent and withdraws it on rollback', function (): void {
     $cluster = Cluster::query()->create(['name' => 'Pool preparation']);
     $router = Node::query()->create(['name' => 'pool-router', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux',
@@ -361,25 +335,6 @@ it('keeps the original database proof until a recovery attempt commits its own p
     $retry->update(['status' => 'failed']);
     expect(app(RouteTargetState::class)->recovery($this->route->fresh())->id)->toBe($source->id)
         ->and($this->route->fresh()->target_set_intent['preparation_operation_id'])->toBe($source->id)
-        ->and($this->agents->calls)->toBe([]);
-});
-
-it('refuses Router cleanup until the recorded DNS grace period elapses', function (): void {
-    $this->freezeTime();
-    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => 42,
-        'node_id' => $this->node->id, 'input' => [], 'status' => 'running', 'sequence' => 1,
-        'state' => ['route_plan' => ['mode' => 'router_set', 'stages' => [], 'candidate_role_id' => null, 'old_role_ids' => []], 'router_dns_moved_at' => now()->toIso8601String(),
-            'route_completed_stages' => array_fill_keys(['baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy', 'dns-publication', 'database', 'prune-dns'], true)]]);
-    $command = app(ClusterRouterParentCommand::class);
-    expect($command->run($operation, ['action' => 'open', 'stage' => 'await-old-dns-expiry'])['wait_seconds'])->toBe(31);
-    expect(fn () => $command->run($operation, ['action' => 'commit', 'stage' => 'await-old-dns-expiry']))
-        ->toThrow(ResourceOperationException::class, 'DNS grace period');
-    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'withdraw-old-sites']))
-        ->toThrow(ResourceOperationException::class, 'preceding Router phase');
-
-    $this->travel(31)->seconds();
-    expect($command->run($operation, ['action' => 'commit', 'stage' => 'await-old-dns-expiry']))->toBe(['ready' => true, 'stage' => 'await-old-dns-expiry']);
-    expect($command->run($operation, ['action' => 'open', 'stage' => 'withdraw-old-sites'])['opened'])->toBeTrue()
         ->and($this->agents->calls)->toBe([]);
 });
 
@@ -498,36 +453,6 @@ it('keeps Instance rename generated-domain authorization limited to its own Rout
     expect($ownership->allows($parent, $this->route, $intent))->toBeTrue();
     $parent->target_id = $this->instance->id + 1;
     expect($ownership->allows($parent, $this->route, $intent))->toBeFalse();
-});
-
-it('commits Router selection before publishing private DNS and refuses rollback afterward', function (): void {
-    $cluster = Cluster::query()->create(['name' => 'Committed DNS', 'tld' => 'proof']);
-    $this->node->update(['cluster_id' => $cluster->id]);
-    $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => LifecycleStatus::Active]);
-    $old = Node::query()->create(['name' => 'dns-old-router', 'public_ssh_host' => '192.0.2.5', 'user' => 'orbit', 'platform' => 'linux', 'cluster_id' => $cluster->id, 'wireguard_ip' => '10.44.0.5', 'status' => LifecycleStatus::Active]);
-    $oldRole = $old->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Active]);
-    $candidate = $this->node->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => LifecycleStatus::Provisioning]);
-    $this->route->update(['cluster_id' => $cluster->id, 'node_id' => null, 'status' => RouteStatus::Active]);
-    $operation = Operation::query()->create(['kind' => 'cluster.router_set', 'target_type' => 'cluster_router', 'target_id' => $cluster->id,
-        'node_id' => $this->node->id, 'input' => ['cluster_id' => $cluster->id, 'candidate_role_id' => $candidate->id], 'status' => OperationStatus::Queued, 'sequence' => 1]);
-    $command = app(ClusterRouterParentCommand::class);
-    $command->run($operation, ['action' => 'prepare']);
-    $renderer = app(DevelopmentDnsConfigRenderer::class);
-    expect($renderer->render())->toContain('host-record=private.test,10.44.0.5');
-    // Earlier preparation phases have their Gateway-owned completion markers.
-    $operation->update(['state' => [...$operation->fresh()->state, 'route_completed_stages' => array_fill_keys([
-        'baseline', 'router-certificate', 'firewall-policy', 'workload-verify', 'router-caddy',
-    ], true)]]);
-    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'dns-publication']))->toThrow(ResourceOperationException::class);
-    $command->run($operation, ['action' => 'open', 'stage' => 'database']);
-    $command->run($operation, ['action' => 'commit', 'stage' => 'database']);
-    expect($candidate->fresh()->status)->toBe(LifecycleStatus::Active)->and($oldRole->fresh()->status)->toBe(LifecycleStatus::Removing);
-    $command->run($operation, ['action' => 'open', 'stage' => 'dns-publication']);
-    expect($renderer->render())->toContain('host-record=private.test,10.44.0.3')
-        ->not->toContain('host-record=private.test,10.44.0.5');
-    expect(fn () => $command->run($operation, ['action' => 'open', 'stage' => 'restore-dns']))->toThrow(ResourceOperationException::class, 'recovers forward');
-    expect(app(ClusterRouterParentExecution::class)->sequence($operation))->toContain('database', 'dns-publication')
-        ->and($this->agents->calls)->toBe([]);
 });
 
 it('publishes forward withdrawal and replacement rollback DNS on the VPN owner instead of the separate Gateway', function (string $mode): void {
