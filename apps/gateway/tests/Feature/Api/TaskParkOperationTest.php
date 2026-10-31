@@ -4,40 +4,39 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationRun;
-use App\Domain\Operations\OperationRunner;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStepStatus;
-use App\Domain\Operations\OperationStore;
-use App\Domain\Operations\OperationSweeper;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Tasks\TaskParkOperation;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\TaskVms\TaskVmProvider;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\TaskVms\VmObservation;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\OperationStep;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskWorkspaceLeaseRecord;
-use Illuminate\Support\Carbon;
-use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Requests\Tasks\ParkTaskGroupRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\RecordingTaskVmProvider;
+use Tests\Support\TaskVmSettingsBuilder;
 
 beforeEach(function (): void {
     enable_operation_queue();
     app(TaskExtensionState::class)->enable();
-    $node = $this->markAsGateway(Node::query()->create(['name' => 'park-gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit']));
+    $node = $this->markAsGateway(Node::query()->create(['name' => 'park-gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.1', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit']));
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     $project = Project::query()->create(['name' => 'Park', 'slug' => 'park', 'repository_url' => 'git@github.com:acme/park.git']);
     $this->group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Batch', 'brief' => 'Batch', 'orchestration' => TaskOrchestration::External,
@@ -50,64 +49,83 @@ beforeEach(function (): void {
     $this->provider = new RecordingTaskVmProvider;
     $this->provider->observations = [new VmObservation(true, null), new VmObservation(false, null)];
     app()->instance(TaskVmProvider::class, $this->provider);
+    TaskVmSettingsBuilder::bind(['hosts' => [TaskVmSettingsBuilder::host($node->id)]]);
+    config(['swamp.run_token' => 'fixture.fake', 'dependency_detection.services_node_id' => $node->id]);
+    $this->vm->update(['name' => 'tvm-'.$this->vm->id]);
+    $this->run = '3fc3ad54-423a-4b4b-8187-99514098426b';
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-task-park', 'runId' => $this->run]]];
+    app()->instance(WebSocketClient::class, $socket);
     $this->url = '/api/v1/task-groups/'.$this->group->id.'/park';
 });
 
-it('parks only after provider confirmation, preserves the workspace and replays the same key', function (): void {
+function parkResult(int $operationId, string $status = 'succeeded', ?array $result = null): TestResponse
+{
+    $result ??= ['group_id' => test()->group->id, 'task_vm_id' => test()->vm->id, 'instance_id' => test()->group->taskable_id,
+        'status' => 'waiting_for_review', 'power' => 'stopped'];
+
+    return test()->postJson('/api/v1/direct-operations/'.$operationId.'/result', ['run_id' => test()->run, 'status' => $status,
+        'started_at' => '2026-10-31T00:00:00.000Z', 'finished_at' => $status === 'running' ? null : '2026-10-31T00:00:01.000Z',
+        'result' => $result, 'error_code' => $status === 'failed' ? $result['error_code'] : null]);
+}
+
+it('admits one exact Node root and projects stopped proof without PHP execution', function (): void {
     $id = $this->withHeader('Idempotency-Key', 'review.park.1')->postJson($this->url)->assertAccepted()->json('data.id');
-    expect($this->provider->calls)->toBe([]);
-    run_operation_jobs();
     $operation = Operation::query()->findOrFail($id);
-    expect($operation->status)->toBe(OperationStatus::Succeeded)
-        ->and($operation->kind)->toBe(OperationKinds::TasksPark)
-        ->and($operation->result)->toBe(['group_id' => $this->group->id, 'task_vm_id' => $this->vm->id, 'instance_id' => $this->group->taskable_id, 'status' => 'waiting_for_review', 'power' => 'stopped'])
+    expect($operation->state['task_park_writer'])->toBe('direct')->and($operation->node_id)->toBe($this->vm->host_node_id)
+        ->and($operation->lock_key)->toBeNull()->and($operation->worker)->toBeNull()->and($operation->children()->count())->toBe(0)
+        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull()
+        ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)->and($this->provider->calls)->toBe([]);
+    $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.eligible', true);
+    parkResult($id)->assertOk();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)->and($this->vm->fresh()->stop_confirmed_at)->not->toBeNull()
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)
-        ->and(Instance::query()->find($this->group->taskable_id))->not->toBeNull()
-        ->and($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
+        ->and(Instance::query()->find($this->group->taskable_id))->not->toBeNull()->and($this->provider->calls)->toBe([]);
     $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);
-    run_operation_jobs();
-    expect($this->provider->calls)->toBe(['observe', 'stop', 'observe']);
+    foreach (['task_vm.park', 'task_vm.confirm_stopped'] as $kind) {
+        expect(app(OperationKinds::class)->definition($kind))->toBeNull();
+    }
 });
 
-it('observes an already parked guest without sending another stop', function (): void {
-    $this->vm->update(['state' => TaskVmState::Parked]);
-    $this->provider->observations = [new VmObservation(false, null)];
-    $id = $this->withHeader('Idempotency-Key', 'review.already')->postJson($this->url)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    expect(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded)->and($this->provider->calls)->toBe(['observe']);
+it('reports changed eligibility without an effect or a false board transition', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'review.changed')->postJson($this->url)->assertAccepted()->json('data.id');
+    $this->child->update(['status' => TaskStatus::Running]);
+    $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertOk()->assertJsonPath('data.input.eligible', false);
+    parkResult($id, 'failed', ['error_code' => 'tasks.park_refused'])->assertOk();
+    expect($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull()
+        ->and($this->vm->fresh()->error_code)->toBe('tasks.park_refused')->and($this->provider->calls)->toBe([]);
 });
 
-it('reconciles a lost stop reply using observed stopped power', function (): void {
-    $this->provider->stopError = new RuntimeException('lost stop reply');
-    $id = $this->withHeader('Idempotency-Key', 'review.lost')->postJson($this->url)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    expect(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Succeeded);
+it('refuses foreign stopped proof and a late running result without changing park rows', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'review.proof')->postJson($this->url)->assertAccepted()->json('data.id');
+    parkResult($id, result: ['group_id' => $this->group->id, 'task_vm_id' => $this->vm->id + 1, 'instance_id' => $this->group->taskable_id,
+        'status' => 'waiting_for_review', 'power' => 'stopped'])->assertUnprocessable();
+    expect($this->vm->fresh()->stop_confirmed_at)->toBeNull();
+    parkResult($id)->assertOk();
+    $before = $this->vm->fresh()->getRawOriginal();
+    parkResult($id, 'running', [])->assertConflict();
+    expect($this->vm->fresh()->getRawOriginal())->toBe($before);
 });
 
-it('retains failure when a lost stop reply cannot be confirmed by a settled observation', function (): void {
-    $provider = Mockery::mock(TaskVmProvider::class);
-    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(true, null));
-    $provider->expects('stop')->once()->ordered()->andThrow(new RuntimeException('lost stop reply'));
-    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(false, null, settled: false));
-    app()->instance(TaskVmProvider::class, $provider);
-    $id = $this->withHeader('Idempotency-Key', 'review.transition')->postJson($this->url)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    expect(Operation::query()->findOrFail($id)->status)->toBe(OperationStatus::Failed)
-        ->and(Operation::query()->findOrFail($id)->error_code)->toBe('task_vm.not_settled');
+it('refuses a workspace owner change before private material or result projection', function (): void {
+    $id = $this->withHeader('Idempotency-Key', 'review.owner')->postJson($this->url)->assertAccepted()->json('data.id');
+    Instance::query()->whereKey($this->group->taskable_id)->update(['task_workspace_owner_id' => null]);
+    $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertUnprocessable();
+    parkResult($id)->assertUnprocessable();
+    expect($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)->and($this->vm->fresh()->stop_confirmed_at)->toBeNull();
 });
 
-it('never reports parking success for missing or still running guests', function (bool $missing): void {
-    $this->provider->observations = $missing ? [null] : [new VmObservation(true, null), new VmObservation(true, null)];
-    $id = $this->withHeader('Idempotency-Key', 'review.failed')->postJson($this->url)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    $operation = Operation::query()->findOrFail($id);
-    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe($missing ? 'task_vm.vm_missing' : 'task_vm.park_failed')
-        ->and($operation->result['power'] ?? null)->not->toBe('stopped')
-        ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)
-        ->and($this->vm->fresh()->error_code)->toBe($operation->error_code);
-})->with([true, false]);
+it('keeps UpCloud credentials behind the exact same-root private callback', function (): void {
+    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'provider_id' => '8330af24-e530-48a0-810c-803f101c70ec']);
+    TaskVmSettingsBuilder::bind(['upcloud' => new TaskVmUpCloud(false, [], '/fixture/upcloud', 1, 'fi-hel1', '1xCPU-2GB', 20, '00000000-0000-4000-8000-000000000001')]);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'ucat_fixture_PRIVATE'));
+    $id = $this->withHeader('Idempotency-Key', 'review.private')->postJson($this->url)->assertAccepted()->json('data.id');
+    $this->getJson('/api/v1/direct-operations/'.$id.'?run_id='.$this->run)->assertOk()->assertJsonMissing(['upcloud_token' => 'ucat_fixture_PRIVATE']);
+    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertOk()->assertJsonPath('data.upcloud_token', 'ucat_fixture_PRIVATE');
+    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id=920c3e86-2e22-46ce-9716-91aa0c3eec46')->assertConflict();
+    Instance::query()->whereKey($this->group->taskable_id)->update(['task_workspace_owner_id' => null]);
+    $this->getJson('/api/v1/direct-operations/'.$id.'/private-material?run_id='.$this->run)->assertUnprocessable();
+});
 
 it('refuses unsafe review parking without changing status or touching the provider', function (string $reason): void {
     match ($reason) {
@@ -124,14 +142,7 @@ it('refuses unsafe review parking without changing status or touching the provid
     expect($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)->and($this->provider->calls)->toBe([]);
 })->with(['child', 'preview', 'assistance', 'child assistance', 'workspace owner', 'no PR', 'closed PR', 'lease']);
 
-it('rechecks eligibility when queued work starts', function (): void {
-    $id = $this->withHeader('Idempotency-Key', 'review.changed')->postJson($this->url)->assertAccepted()->json('data.id');
-    $this->child->update(['status' => TaskStatus::Running]);
-    run_operation_jobs();
-    expect(Operation::query()->findOrFail($id)->error_code)->toBe('tasks.park_refused')->and($this->provider->calls)->toBe([]);
-});
-
-it('requires an empty body and key, authenticates the peer and keeps the group operation lock', function (): void {
+it('requires an empty body and key, authenticates the peer and refuses another open group intent', function (): void {
     $this->postJson($this->url)->assertUnprocessable();
     $this->withHeader('Idempotency-Key', 'review.body')->postJson($this->url, ['command' => 'stop'])->assertUnprocessable();
     $this->withHeader('Idempotency-Key', 'review.busy')->postJson($this->url)->assertAccepted();
@@ -139,57 +150,23 @@ it('requires an empty body and key, authenticates the peer and keeps the group o
     $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.15'])->postJson($this->url)->assertForbidden();
 });
 
-it('records the parking contract Fixtures', function (): void {
-    $this->travelTo(Carbon::parse('2026-10-28T12:00:00Z'));
-    $queued = $this->withHeader('Idempotency-Key', 'review.fixture')->postJson($this->url)->assertAccepted();
-    record_fixture($queued, 'tasks-park-queued', ParkTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/park');
-    $id = $queued->json('data.id');
-    run_operation_jobs();
-    record_fixture($this->getJson('/api/v1/operations/'.$id)->assertOk(), 'tasks-park-succeeded', ShowOperationRequest::class, 'GET /api/v1/operations/{operation}');
-    $this->child->update(['status' => TaskStatus::Running]);
-    record_fixture($this->withHeader('Idempotency-Key', 'review.refused')->postJson($this->url)->assertConflict(), 'tasks-park-refused', ParkTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/park');
-});
+it('commits admission and projection before releasing the shared group execution lock', function (): void {
+    $baseline = DB::transactionLevel();
+    $lock = new class implements TaskExecutionLock
+    {
+        public array $levels = [];
 
-it('refuses eligibility that changes during provider stop and preserves the prior group status', function (string $race): void {
-    $provider = Mockery::mock(TaskVmProvider::class);
-    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(true, null));
-    $provider->expects('stop')->once()->ordered()->andReturnUsing(function () use ($race): void {
-        if ($race === 'child') {
-            Task::query()->create(['parent_id' => $this->group->id, 'position' => 2, 'title' => 'New work', 'brief' => 'New work', 'status' => TaskStatus::Todo]);
-        } else {
-            TaskAssistance::apply($this->group, AssistanceKind::Direction, 'Review', 'Review');
-        }
-    });
-    $provider->expects('observe')->once()->ordered()->andReturn(new VmObservation(false, null));
-    app()->instance(TaskVmProvider::class, $provider);
-    $id = $this->withHeader('Idempotency-Key', 'review.race')->postJson($this->url)->assertAccepted()->json('data.id');
-    run_operation_jobs();
-    $operation = Operation::query()->findOrFail($id);
-    expect($operation->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('tasks.park_refused')
-        ->and($operation->result)->toBeNull()->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and($this->vm->fresh()->state)->toBe(TaskVmState::Parked)->and($this->vm->fresh()->error_code)->toBe('tasks.park_refused');
-})->with(['child', 'assistance']);
+        public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
+        {
+            $before = DB::transactionLevel();
+            $result = $operation();
+            $this->levels[] = [$groupId, $before, DB::transactionLevel()];
 
-it('recovers a lost worker before the resumable park checkpoint by observing power without another stop', function (): void {
-    $id = $this->withHeader('Idempotency-Key', 'review.worker-lost')->postJson($this->url)->assertAccepted()->json('data.id');
-    $operation = Operation::query()->findOrFail($id);
-    $crash = true;
-    OperationStep::updating(function (OperationStep $step) use (&$crash): void {
-        if ($crash && $step->name === 'park' && $step->status === OperationStepStatus::Succeeded) {
-            throw new RuntimeException('Lost park worker before checkpoint.');
+            return $result;
         }
-    });
-    $store = app(OperationStore::class);
-    $store->claim($operation, 'gone-host:4242:1');
-    expect(fn () => app(TaskParkOperation::class)->run($operation, new OperationRun($operation, $store)))
-        ->toThrow(RuntimeException::class, 'Lost park worker before checkpoint.');
-    $crash = false;
-    $this->provider->observation = new VmObservation(false, null);
-    expect($operation->fresh()->current_step)->toBe('park')
-        ->and($operation->steps()->sole()->status)->toBe(OperationStepStatus::Running);
-    expect(app(OperationSweeper::class)->sweep())->toBe(1);
-    app(OperationRunner::class)->run($id);
-    expect($operation->fresh()->status)->toBe(OperationStatus::Succeeded)
-        ->and($this->provider->calls)->toBe(['observe', 'stop', 'observe', 'observe']);
-    $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);
+    };
+    app()->instance(TaskExecutionLock::class, $lock);
+    $id = $this->withHeader('Idempotency-Key', 'review.serialized')->postJson($this->url)->assertAccepted()->json('data.id');
+    parkResult($id)->assertOk();
+    expect($lock->levels)->toBe([[$this->group->id, $baseline, $baseline], [$this->group->id, $baseline, $baseline]]);
 });

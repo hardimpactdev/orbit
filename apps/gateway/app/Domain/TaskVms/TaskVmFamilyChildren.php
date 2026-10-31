@@ -53,7 +53,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
             'task_vm.provision' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-create' => 'task_vm.'.$provider.'_create', ...($provider === 'upcloud' ? ['provider-start' => 'task_vm.upcloud_start'] : []), 'prepare-enrollment' => 'task_vm.prepare_enrollment', 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
             'task_vm.enroll' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'prepare-enrollment' => 'task_vm.prepare_enrollment', 'enroll' => 'task_vm.enroll_node', 'runtime' => 'task_vm.prepare_runtime'],
             'task_vm.resume' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-start' => 'task_vm.'.$provider.'_start', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
-            'task_vm.park' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-stop' => 'task_vm.'.$provider.'_stop', 'confirm-stopped' => 'task_vm.confirm_stopped'],
             'task_vm.destroy' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'destroy-intent' => 'task_vm.mark_destroying', 'provider-delete' => 'task_vm.'.$provider.'_delete', 'forget-workspaces' => 'task_vm.forget_workspaces', 'forget-records' => 'task_vm.destroy_records', ...(($operation->input['key'] ?? null) === null ? [] : ['revoke-model-key' => 'task_vm.model_revoke'])],
             'task_vm.prepare_runtime' => ['model-key' => 'task_vm.model_issue', 'pi-configure' => 'task_vm.configure_runtime', 'pi-process-owner' => 'process.create', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
             'task_vm.upcloud_image_build' => ['delete-smoke' => 'task_vm.upcloud_image_delete_smoke'],
@@ -213,7 +212,7 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
                 $children[] = $this->child($key, 'task_vm.upcloud_hard_stop', ValidatedData::integer($input['gateway_node_id']), ['task_vm_id' => $vm->id, 'token' => ['$secret' => 'upcloud.api', 'id' => $vm->id]]);
             }
         }
-        foreach (['lifecycle-intent' => 'lifecycle_intent', 'prepare-enrollment' => 'prepare_enrollment', 'enroll' => 'enroll_node', 'confirm-stopped' => 'confirm_stopped', 'destroy-intent' => 'mark_destroying', 'forget-workspaces' => 'forget_workspaces', 'forget-records' => 'destroy_records'] as $key => $verb) {
+        foreach (['lifecycle-intent' => 'lifecycle_intent', 'prepare-enrollment' => 'prepare_enrollment', 'enroll' => 'enroll_node', 'destroy-intent' => 'mark_destroying', 'forget-workspaces' => 'forget_workspaces', 'forget-records' => 'destroy_records'] as $key => $verb) {
             $children[] = $this->child($key, 'task_vm.'.$verb, $node, ['task_vm_id' => $vm->id]);
         }
         if ($vm->node_id !== null) {

@@ -10,13 +10,13 @@ use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Data\Tasks\TaskWorkerData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\TaskWorkerEnrollment;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use Closure;
+use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 use Throwable;
 
@@ -58,14 +58,15 @@ final readonly class TaskOperations
     /**
      * @param  array<string, mixed>  $input
      * @param  Closure(Task): void  $validate
+     * @param  null|Closure(Task): array{node_id:int,input:array<string,mixed>}  $intent
      */
-    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId): Operation
+    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId, ?Closure $intent = null): Operation
     {
         if (($replay = $this->admitTarget($group, $kind)) !== null) {
             return $replay;
         }
 
-        return $this->execution->synchronized($group->id, function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId): Operation {
+        $admit = function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId, $intent): Operation {
             if (($replay = $this->admitTarget($group, $kind)) !== null) {
                 return $replay;
             }
@@ -73,8 +74,12 @@ final readonly class TaskOperations
             $this->requireOpenExternal($group);
             $validate($group);
 
-            return $this->start->execute($kind, OperationKinds::TaskGroupTarget, $group->id, null, $input, $triggeredBy, $requestId);
-        });
+            $admitted = $intent === null ? ['node_id' => null, 'input' => $input] : $intent($group);
+
+            return $this->start->execute($kind, OperationKinds::TaskGroupTarget, $group->id, $admitted['node_id'], $admitted['input'], $triggeredBy, $requestId);
+        };
+
+        return $this->execution->synchronized($group->id, fn (): Operation => $intent === null ? $admit() : DB::transaction($admit));
     }
 
     /** Returns a keyed replay, refuses a busy target, or admits a new start. */
@@ -83,7 +88,8 @@ final readonly class TaskOperations
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
-        $holder = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))->first();
+        $holder = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])->first();
         if ($holder instanceof Operation) {
             // The holder may have appeared after the replay read.
             return $this->idempotency->replay($kind)
@@ -118,7 +124,8 @@ final readonly class TaskOperations
 
     public function cancelOpen(Task $group, ?int $subtask = null): void
     {
-        $operation = Operation::query()->where('lock_key', OperationStore::lockKey(OperationKinds::TaskGroupTarget, $group->id))
+        $operation = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->whereNotIn('status', ['succeeded', 'failed', 'cancelled'])
             ->when($subtask !== null, fn ($query) => $query->where('input->subtask', $subtask))->first();
         if ($operation instanceof Operation) {
             $this->extension->execute();

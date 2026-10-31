@@ -683,7 +683,9 @@ The checkout keeps the Project repository URL as `origin`. After setup ends, the
 
 ### Park and resume
 
-Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner, stops the VM through its provider and records `waiting_for_review` only after stopped power is confirmed. It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting.
+Swamp requests review parking through the keyed `tasks.park` operation. The Gateway checks that the published group has no open work, assistance or workspace owner and records an immutable park intent. One native Swamp root stops and observes the admitted VM on its exact Incus host or Gateway Node for UpCloud. The result projection records `waiting_for_review` only after stopped power is confirmed.
+
+It does not run automatic idle parking or retry a failed park. Swamp owns retry policy and execution-slot accounting. Parking has one dispatch path: the native `tasks.park` root replaces its PHP stop executor and the unused internal `task_vm.park` parent and `task_vm.confirm_stopped` child. The same root owns soft-stop, hard-stop and observation; it starts no child Operations.
 
 The row enters `parked` before the provider stop. Its `vm_power` stays unknown until `stop_confirmed_at` records a confirmed stop. A failed stop clears that proof and retains the error. A resource observation job refreshes proof every minute for parked VMs in every group status, including assistance and ended groups. Running, missing, unsettled or unreadable power clears the proof. Observation never starts or stops a VM.
 
