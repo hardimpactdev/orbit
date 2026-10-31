@@ -204,11 +204,11 @@ Arguments are strings, not shell source. There is no caller command, environment
 
 Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` combines stdout and stderr into a redacted tail of at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
 
-Swamp runs the script synchronously on the task VM's exact Node worker. The Gateway does not acquire a workspace lease, dispatch a detached process or poll it. Native history owns step completion and recovery.
+The Gateway does not acquire a workspace lease, dispatch a detached process or poll it. Native history owns step completion and recovery.
 
 Script and analysis runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Separate native steps validate the tracked entrypoint, capture workspace snapshots, execute the program and return public evidence. The Gateway records the terminal output through the shared subscriber; execution steps make no Gateway requests.
 
-Swamp owns cancellation and resume. A successful execution step is not repeated when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. The existing one-hour repository execution bound remains; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
+Swamp owns cancellation and resume. A successful execution step is not repeated when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
 
 ## Analyze an external group's repository
 
@@ -216,7 +216,7 @@ The fixed read-only analysis operation follows [ADR 0229](/decisions/0229-let-an
 
 `POST /api/v1/task-groups/{group}/analyze` starts the native `operation-task-analyze` workflow with target `task_group`. It requires `Idempotency-Key` and accepts exactly `{subtask, plan, plan_sha256, base, head, tree}`. The complete JSON request is at most 48 KiB. Unknown fields refuse. There is no caller-selected command, environment, executable, report path or model.
 
-The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer on that VM under the shared task-workspace model lock. The worker must already be ready. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
+The Gateway admits the open group, its current child, owned VM and immutable provision base. Swamp runs the fixed repository analyzer through official SSH from a worker on Node 209. Analysis changes no board or child state, starts no Pi turn, creates no check candidate and pushes nothing. Follow or cancel it through the existing [operation routes](/reference/operations#read-an-operation).
 
 ##### Complete typed plan
 

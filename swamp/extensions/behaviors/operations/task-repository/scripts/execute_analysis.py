@@ -9,7 +9,15 @@ import sys
 import tempfile
 import time
 
-from repository_common import Refusal, checkout, emit, executable, program_environment
+from analysis_result import strict_json
+from repository_common import (
+    Refusal,
+    checkout,
+    emit,
+    executable,
+    program_environment,
+    redact_text,
+)
 
 
 def execute():
@@ -20,7 +28,11 @@ def execute():
     if before != {key: value[key] for key in ("head", "tree")}:
         raise Refusal("tasks.analysis_stale")
     root = checkout(value)
-    if executable(root, "bin/task-analyze") != prepared["entrypoint_sha256"]:
+    try:
+        digest = executable(root, "bin/task-analyze")
+    except Refusal:
+        raise Refusal("tasks.analysis_unavailable") from None
+    if digest != prepared["entrypoint_sha256"]:
         raise Refusal("tasks.analysis_stale")
     admitted = {
         key: value[key] for key in ("plan", "plan_sha256", "base", "head", "tree")
@@ -57,8 +69,13 @@ def execute():
             },
         }
     try:
+        parsed = strict_json(report)
         report = report.decode("utf-8", errors="strict")
-    except UnicodeError:
+        # Check before SSH publishes stdout into native history, including escaped field names.
+        public = json.dumps(parsed, ensure_ascii=False)
+        if redact_text(report) != report or redact_text(public) != public:
+            raise Refusal("tasks.analysis_report_invalid")
+    except (UnicodeError, ValueError, TypeError):
         raise Refusal("tasks.analysis_report_invalid") from None
     return {
         "report": report,

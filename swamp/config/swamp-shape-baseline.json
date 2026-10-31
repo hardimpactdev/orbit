@@ -3274,20 +3274,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/tasks/analysis_program.ts",
-      "rule": "inline-script",
-      "count": 201,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/analysis.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/tasks/cancellation.ts",
       "rule": "custom-control",
       "count": 1,
@@ -3375,14 +3361,6 @@
       "evidence": [
         "git",
         "sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tasks/script.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
       ]
     },
     {

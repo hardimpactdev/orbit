@@ -64,7 +64,9 @@ def report(raw, identity, code):
     if code != 0 and isinstance(value, dict) and "error" in value:
         object_fields(value, ["schema", "error"])
         error = object_fields(value["error"], ["code", "required_bytes"])
-        if (not isinstance(value["schema"], int) or isinstance(value["schema"], bool)) or value["schema"] != 1:
+        if (
+            not isinstance(value["schema"], int) or isinstance(value["schema"], bool)
+        ) or value["schema"] != 1:
             raise ValueError("Invalid version")
         if (
             error["code"] == "tasks.analysis_unavailable"
@@ -73,7 +75,8 @@ def report(raw, identity, code):
             return {**value, "error_code": error["code"]}
         if (
             error["code"] == "tasks.analysis_report_too_large"
-            and isinstance(error["required_bytes"], int) and not isinstance(error["required_bytes"], bool)
+            and isinstance(error["required_bytes"], int)
+            and not isinstance(error["required_bytes"], bool)
             and MAX_REPORT < error["required_bytes"] <= 9007199254740991
         ):
             return {**value, "error_code": error["code"]}

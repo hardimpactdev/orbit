@@ -106,9 +106,20 @@ class NativeRepository(harness.NativeTestCase):
                 task_inputs = step["task"].get("inputs", {})
                 for key, value in task_inputs.items():
                     if isinstance(value, str):
-                        task_inputs[key] = value.replace("/tmp/orbit-task-repository-", str(self.repo / "remote-assets-"))
+                        task_inputs[key] = value.replace(
+                            "/tmp/orbit-task-repository-",
+                            str(self.repo / "remote-assets-"),
+                        )
                 if "argv" in task_inputs:
-                    task_inputs["argv"] = [v.replace("/tmp/orbit-task-repository-", str(self.repo / "remote-assets-")) if isinstance(v, str) else v for v in task_inputs["argv"]]
+                    task_inputs["argv"] = [
+                        v.replace(
+                            "/tmp/orbit-task-repository-",
+                            str(self.repo / "remote-assets-"),
+                        )
+                        if isinstance(v, str)
+                        else v
+                        for v in task_inputs["argv"]
+                    ]
         self.write_workflow()
 
     def write_workflow(self):
@@ -163,9 +174,9 @@ class NativeRepository(harness.NativeTestCase):
         )
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         result = json.loads(
-            next(step for step in history["jobs"][0]["steps"] if step["name"] == "result")[
-                "outputs"
-            ]["stdout"]
+            next(
+                step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+            )["outputs"]["stdout"]
         )
         self.assertEqual(result["outcome"], "failed")
         self.assertEqual(result["exit_code"], 23)
@@ -218,12 +229,41 @@ class NativeRepository(harness.NativeTestCase):
         self.assertEqual(run["status"], "succeeded")
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         result = json.loads(
-            next(step for step in history["jobs"][0]["steps"] if step["name"] == "result")[
-                "outputs"
-            ]["stdout"]
+            next(
+                step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+            )["outputs"]["stdout"]
         )
         self.assertEqual(result["outcome"], "ready")
         self.assertEqual(result["provenance"]["node_id"], 3)
+
+    def test_private_analysis_is_refused_before_native_history(self):
+        self.install(
+            '#!/usr/bin/python3\nimport json\nprint(json.dumps({"API_KEY":"synthetic-private-report-value"}))\n',
+            "bin/task-analyze",
+        )
+        head = self.git("rev-parse", "HEAD")
+        self.inputs["intent"].update(
+            plan={"id": "test", "revision": 1},
+            plan_sha256="b" * 64,
+            base=head,
+            head=head,
+            tree=self.git("rev-parse", "HEAD^{tree}"),
+            branch="task-1",
+            repository="https://github.com/acme/test.git",
+        )
+        self.workflow("analyze")
+        run = self.run_workflow(success=False)
+        self.assertEqual(run["status"], "failed")
+        raw = self.cli("workflow", "history", "get", run["id"]).stdout
+        self.assertNotIn("synthetic-private-report-value", raw)
+        history = json.loads(raw)
+        result = next(
+            step for step in history["jobs"][0]["steps"] if step["name"] == "result"
+        )
+        self.assertEqual(
+            json.loads(result["outputs"]["stdout"]),
+            {"error_code": "tasks.analysis_report_invalid"},
+        )
 
 
 if __name__ == "__main__":

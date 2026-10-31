@@ -163,10 +163,15 @@ class ScriptActions(RepositoryFixture):
 
 
 class AnalysisActions(RepositoryFixture):
-    def analyzer(self, suffix=""):
-        self.install(
+    def analyzer(self, suffix="", report=None):
+        source = (
             '#!/usr/bin/python3\nimport json,sys\nv=json.load(sys.stdin)\nr={k:v[k] for k in ("execution_id","plan_sha256","base","head","tree")}\nr.update(schema=1,status="ready",diagnostics=[],report={"schema":"test.v1","data":{"complete":"é" * 6000}})\nprint(json.dumps(r,ensure_ascii=False))\n'
-            + suffix,
+            + suffix
+        )
+        if report is not None:
+            source = "#!/usr/bin/python3\nprint(" + repr(report) + ")\n"
+        self.install(
+            source,
             "bin/task-analyze",
         )
         self.input.update(
@@ -214,6 +219,48 @@ class AnalysisActions(RepositoryFixture):
             self.action("execute_analysis.py", prepared, before),
             {"error_code": "tasks.analysis_stale"},
         )
+
+    def test_missing_base_and_changed_repository_refuse_as_stale(self):
+        self.analyzer()
+        original = self.input.copy()
+        for field, replacement in (
+            ("base", "f" * 40),
+            ("repository", "https://github.com/acme/other.git"),
+            ("branch", "other"),
+        ):
+            with self.subTest(field=field):
+                self.input = {**original, field: replacement}
+                self.assertEqual(
+                    self.action("inspect.py"), {"error_code": "tasks.analysis_stale"}
+                )
+
+    def test_changed_analyzer_never_executes(self):
+        self.analyzer()
+        prepared = self.action("inspect.py")
+        before = self.action("snapshot.py")
+        (self.root / "bin/task-analyze").write_text("#!/bin/sh\ntouch invoked\n")
+        self.assertEqual(
+            self.action("execute_analysis.py", prepared, before),
+            {"error_code": "tasks.analysis_unavailable"},
+        )
+        self.assertFalse((self.root / "invoked").exists())
+
+    def test_private_reports_are_refused_before_ssh_stdout(self):
+        for report in (
+            '{"API_KEY":"synthetic-private-value"}',
+            r'{"API\u005fKEY":"synthetic-private-value"}',
+            r'{"API\u005fKEY":"synthetic-private-value","API_KEY":"public"}',
+            '{"message":"Authorization: Bearer synthetic-private-value"}',
+        ):
+            with self.subTest(report=report):
+                self.analyzer(report=report)
+                prepared = self.action("inspect.py")
+                before = self.action("snapshot.py")
+                execution = self.action("execute_analysis.py", prepared, before)
+                self.assertEqual(
+                    execution, {"error_code": "tasks.analysis_report_invalid"}
+                )
+                self.assertNotIn("synthetic-private-value", json.dumps(execution))
 
     def test_analyzer_mutation_is_changed(self):
         self.analyzer('\nfrom pathlib import Path\nPath("changed").write_text("yes")\n')
