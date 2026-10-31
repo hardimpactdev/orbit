@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/node-role-converge-command"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Native Node role convergence actions through official SSH on209.
+behaviors:
+  - operations/node-role-converge-command/firewall_assets.ts
