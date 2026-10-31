@@ -7,6 +7,7 @@ namespace App\Infrastructure\WireGuard;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
@@ -34,7 +35,7 @@ final readonly class PeerDnsPolicy
 
     public function server(Node $node, ?string $vpnAddress = null): string
     {
-        return $this->serverForOverride($node->dns_server_override, $vpnAddress);
+        return $this->serverForOverride(app(RouteRenderContext::class)->dnsServerOverride($node), $vpnAddress);
     }
 
     public function serverForOverride(?string $override, ?string $vpnAddress = null): string
@@ -78,12 +79,15 @@ final readonly class PeerDnsPolicy
      */
     private function renderDomains(Node|Cluster|Route|null $pendingNode, bool $removing, bool $enforceLimit, ?array $admittedNode = null): array
     {
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $admittedNode ??= $candidate === null ? null : ['id' => $candidate->nodeId, 'tld' => $candidate->tld];
         $names = [$this->settings->domain(), 'orbit'];
         foreach ([Cluster::class, Node::class, Route::class] as $model) {
             $query = $model::query();
             if ($model === Node::class && $admittedNode !== null) {
                 $query->whereKeyNot($admittedNode['id']);
-            } elseif ($pendingNode instanceof $model && $pendingNode->exists) {
+            }
+            if ($pendingNode instanceof $model && $pendingNode->exists) {
                 $query->whereKeyNot($pendingNode->getKey());
             }
             if ($model === Route::class) {
@@ -95,10 +99,10 @@ final readonly class PeerDnsPolicy
             if ($pendingNode->publication === RoutePublication::Private) {
                 $names[] = $pendingNode->domain;
             }
-        } elseif (! $removing && $pendingNode !== null) {
+        } elseif (! $removing && $pendingNode !== null && ! ($pendingNode instanceof Node && $pendingNode->id === ($admittedNode['id'] ?? null))) {
             $names[] = $pendingNode->tld;
         }
-        if ($admittedNode !== null) {
+        if ($admittedNode !== null && ! ($removing && $pendingNode instanceof Node && $pendingNode->id === $admittedNode['id'])) {
             $names[] = $admittedNode['tld'];
         }
         $domains = [];

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentCommands;
 
+use App\Domain\Nodes\MachineArchitecture;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Models\Node;
 use Illuminate\Support\Facades\Http;
 use JsonException;
@@ -34,12 +36,14 @@ final class AgentDelivery
      * The artifact key of a Node, such as `linux-x86_64`. Only macOS has an ARM build: Apple silicon reports
      * `arm64` and maps to `macos-aarch64`. Linux Nodes are x86_64 only, so a Linux ARM Node has no build.
      */
-    public static function key(Node|AgentGuest $node): string
+    public static function key(Node|AgentGuest|NodeEnrollmentCandidate $node): string
     {
+        $desired = $node instanceof NodeEnrollmentCandidate && $node->platform === 'linux' && $node->architecture === null
+            ? MachineArchitecture::Linux : $node->architecture;
         $architecture = match (true) {
-            in_array($node->architecture, ['amd64', 'x86_64'], true) => 'x86_64',
-            $node->platform === 'macos' && in_array($node->architecture, ['arm64', 'aarch64'], true) => 'aarch64',
-            default => (string) $node->architecture,
+            in_array($desired, ['amd64', 'x86_64'], true) => 'x86_64',
+            $node->platform === 'macos' && in_array($desired, ['arm64', 'aarch64'], true) => 'aarch64',
+            default => (string) $desired,
         };
 
         return "{$node->platform}-{$architecture}";
@@ -78,7 +82,7 @@ final class AgentDelivery
     }
 
     /** The pinned SHA-256 for a Node. */
-    public function pin(Node|AgentGuest $node): string
+    public function pin(Node|AgentGuest|NodeEnrollmentCandidate $node): string
     {
         return $this->artifact(self::key($node))['sha256'];
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
@@ -45,7 +46,10 @@ final readonly class NodeFootprint
 
     private function artifactDigest(NodeFootprintArtifact $artifact, Node $node): string
     {
-        return hash('sha256', $this->delivery->pin($node)."\0".$artifact->digest($node));
+        $candidate = app(RouteRenderContext::class)->enrollment();
+        $target = $candidate?->nodeId === $node->id ? $candidate : $node;
+
+        return hash('sha256', $this->delivery->pin($target)."\0".$artifact->digest($node));
     }
 
     /** The footprint the Node last received, or null when it never received one. */
