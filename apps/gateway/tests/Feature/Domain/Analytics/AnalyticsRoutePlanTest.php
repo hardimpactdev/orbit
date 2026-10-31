@@ -127,12 +127,14 @@ it('selects all published hosts of the authoritative app Route and ignores other
     $other->update(['status' => RouteStatus::Active]);
     $default = instance_analytics_tracking($instance, 'default-tracker.example.com');
     $custom = instance_analytics_tracking($instance, 'custom-tracker.example.com');
+    $failed = instance_analytics_tracking($instance, 'failed-tracker.example.com');
+    $failed->update(['status' => RouteStatus::Failed, 'failed_step' => 'old-publication', 'error_code' => 'analytics.old_failure']);
     $pending = instance_analytics_tracking($instance, 'pending-tracker.example.com');
     $pending->update(['status' => RouteStatus::Retiring, 'sites_published' => false]);
 
     $plans = app(AnalyticsRoutePlan::class);
 
-    expect(array_map(static fn (Route $route): int => $route->id, $plans->associated($owner)))->toBe([$default->id, $custom->id]);
+    expect(array_map(static fn (Route $route): int => $route->id, $plans->associated($owner)))->toBe([$default->id, $custom->id, $failed->id]);
     expect($plans->associated($other))->toBe([]);
     expect($plans->associated($default))->toBe([]);
 });

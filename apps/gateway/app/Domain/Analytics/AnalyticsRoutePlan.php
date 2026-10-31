@@ -89,7 +89,7 @@ final readonly class AnalyticsRoutePlan
                 continue;
             }
             foreach ($this->show->trackingRoutes($instance) as $tracking) {
-                if ($tracking->sites_published && $tracking->isAuthoritative()) {
+                if ($tracking->sites_published && $tracking->status !== RouteStatus::Retiring) {
                     $routes[$tracking->id] = $tracking;
                 }
             }
@@ -117,7 +117,7 @@ final readonly class AnalyticsRoutePlan
             $moved = $tracking->node_id !== $candidate->node_id || $tracking->cluster_id !== $candidate->cluster_id;
             $next->fill(['node_id' => $candidate->node_id, 'cluster_id' => $candidate->cluster_id,
                 'publication' => $candidate->publication, 'status' => RouteStatus::Activating,
-                'replacement_step' => null, 'sites_published' => true,
+                'replacement_step' => null, 'sites_published' => true, 'failed_step' => null, 'error_code' => null,
                 ...($moved ? ['transition_node_id' => $tracking->node_id, 'transition_cluster_id' => $tracking->cluster_id,
                     'transition_dns_moved_at' => null] : [])]);
             $publish = $this->capture($next);
