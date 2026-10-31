@@ -18,6 +18,9 @@ final class StreamWebSocketClient implements WebSocketClient
 {
     public const int MaxMessageBytes = 65_536;
 
+    /** Full native run events and history include the public intent and every step's metadata. */
+    public const int SwampMessageBytes = 8_388_608;
+
     private const int MaxFrameBytes = 1_048_576;
 
     private const int OPCODE_CONTINUATION = 0x0;
@@ -50,6 +53,11 @@ final class StreamWebSocketClient implements WebSocketClient
         private readonly int $maxMessageBytes = self::MaxMessageBytes,
         private readonly int $maxFrameBytes = self::MaxFrameBytes,
     ) {}
+
+    public static function forSwamp(): self
+    {
+        return new self(self::SwampMessageBytes, self::SwampMessageBytes);
+    }
 
     #[\Override]
     public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
