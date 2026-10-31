@@ -1,9 +1,7 @@
 """Native dedicated-pool monitoring with unmodified official file actions."""
 
-import grp
 import json
 import os
-import pwd
 import shutil
 import subprocess
 import sys
@@ -12,8 +10,8 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tests.cfgmgmt_fixture import install_cfgmgmt
 from tests.native_harness import NativeTestCase
+from tests.route_ssh_fixture import PIN, install_ssh
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,7 +21,7 @@ class PhpMonitorCommandNative(NativeTestCase):
         super().setUp()
         self.copy_behaviors("operations/php/monitor-command")
         self.connection = dict(
-            install_cfgmgmt(self), nodeIdentityFile="/unused/fixture-key", become=True
+            install_ssh(self), nodeIdentityFile="/unused/fixture-key", become=True
         )
         self.host = self.repo / "php"
         self.directory = self.host / "orbit-app-9/generated"
@@ -51,42 +49,39 @@ if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
         workflow = yaml.safe_load(
             (ROOT / "workflows/workflow-operation-php-monitor.yaml").read_text()
         )
+
+        def patch_strings(value):
+            if isinstance(value, str):
+                return (
+                    value.replace("/etc/orbit/php-fpm", str(self.host))
+                    .replace("/usr/sbin/php-fpm", str(commands / "php-fpm"))
+                    .replace("/usr/bin/systemctl", str(commands / "systemctl"))
+                )
+            if isinstance(value, list):
+                return [patch_strings(item) for item in value]
+            if isinstance(value, dict):
+                return {key: patch_strings(item) for key, item in value.items()}
+            return value
+
+        workflow = patch_strings(workflow)
         for job in workflow["jobs"]:
             job.pop("target")
             job.pop("labels")
             for step in job["steps"]:
-                self.assertIn("target", step)
-                self.assertIn("labels", step)
-                step.pop("target")
-                step.pop("labels")
-                task = step["task"]
-                if task["behaviorType"] == "@swamp/cfgmgmt/file":
-                    task["globalArgs"].update(
-                        path=str(self.directory / "pool.conf"),
-                        owner=pwd.getpwuid(os.getuid()).pw_name,
-                        group=grp.getgrgid(os.getgid()).gr_name,
-                        become=False,
+                self.assertEqual(step.pop("target"), "orbit-node-209")
+                self.assertEqual(step.pop("labels"), {"node": "209"})
+                if step["name"] == "apply-pool":
+                    step["task"]["inputs"]["argv"][-1] = str(
+                        self.directory / "pool.conf"
                     )
-                if task["behaviorType"] == "command/shell":
-                    original_probe = (
-                        task["inputs"]["run"] if step["name"] == "probe" else None
-                    )
-                    task["inputs"]["run"] = (
-                        task["inputs"]["run"]
-                        .replace("sudo --preserve-env=PHP_INI_SCAN_DIR ", "")
-                        .replace("sudo ", "")
-                        .replace("/etc/orbit/php-fpm", str(self.host))
-                        .replace("/usr/sbin/php-fpm", str(commands / "php-fpm"))
-                        .replace("/usr/bin/systemctl", str(commands / "systemctl"))
-                    )
-                    if original_probe is not None:
-                        task["inputs"]["run"] = original_probe.replace(
-                            "/etc/orbit/php-fpm", str(self.host)
-                        )
-                    if step["name"] == "validate":
-                        task["inputs"]["env"]["ORBIT_PHP_MAIN"] = str(
-                            self.directory / "php-fpm.conf"
-                        )
+                if step["name"] == "validate":
+                    values = step["task"]["inputs"]["argv"]
+                    step["task"]["inputs"]["argv"] = [
+                        "ORBIT_PHP_MAIN=" + str(self.directory / "php-fpm.conf")
+                        if isinstance(value, str) and "ORBIT_PHP_MAIN=" in value
+                        else value
+                        for value in values
+                    ]
         (self.repo / "workflows/workflow-operation-php-monitor.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
@@ -116,7 +111,8 @@ if name=='php-fpm8.5' and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
             "execution_secrets": {},
             "intent": {
                 "node_id": 9,
-                "control_node_id": 14,
+                "control_node_id": 209,
+                "host_keys": [PIN],
                 "connection": self.connection,
                 "php_runtime": self.runtime,
             },

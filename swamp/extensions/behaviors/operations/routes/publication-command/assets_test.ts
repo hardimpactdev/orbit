@@ -13,9 +13,11 @@ const config = (...blocks: string[]) =>
 const placement = {
     node_id: 9,
     user: "orbit",
-    control_node_id: 14,
+    control_node_id: 209,
+    host_keys: ["ssh-ed25519 synthetic-public-fixture"],
     connection: {
         nodeHost: "10.44.0.9",
+        nodePort: 22,
         nodeUser: "orbit",
         nodeIdentityFile: "/existing/key",
         become: true,
@@ -129,8 +131,15 @@ Deno.test("Caddy metadata preserves the canonical connection without encoding or
         })
     );
     for (const node_id of [1, 18]) {
-        await assertRejects(() =>
-            composeCaddy({ ...placement, node_id, before, after, current: "" })
+        assertEquals(
+            (await composeCaddy({
+                ...placement,
+                node_id,
+                before,
+                after,
+                current: "",
+            })).control_node_id,
+            209,
         );
     }
 });

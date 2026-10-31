@@ -13,9 +13,11 @@ async function input(content = "# Managed by Orbit: Node Caddy build\n{ }\n") {
     return {
         node_id: 9,
         user: "orbit",
-        control_node_id: 14,
+        control_node_id: 209,
+        host_keys: ["ssh-ed25519 synthetic-public-fixture"],
         connection: {
             nodeHost: "10.44.0.9",
+            nodePort: 22,
             nodeUser: "orbit",
             nodeIdentityFile: "/gateway/ssh/id_ed25519",
             become: true,
@@ -47,10 +49,13 @@ Deno.test("Caddy refuses a mismatched digest and unmanaged config before file ap
         prepareCaddyInput(await input("arbitrary config"))
     );
 });
-Deno.test("Caddy refuses logical proxies and excessive configuration", async () => {
+Deno.test("Caddy accepts light target Nodes through 209 and refuses excessive configuration", async () => {
     const value = await input();
     for (const node_id of [1, 18]) {
-        await assertRejects(() => prepareCaddyInput({ ...value, node_id }));
+        assertEquals(
+            (await prepareCaddyInput({ ...value, node_id })).control_node_id,
+            209,
+        );
     }
     await assertRejects(async () =>
         prepareCaddyInput(await input("x".repeat(4194305)))

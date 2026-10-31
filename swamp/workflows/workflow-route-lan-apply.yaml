@@ -1,7 +1,6 @@
 id: b14d2aa1-9248-43ef-a2f1-233044ec7cb6
 name: route-lan-apply
-description: One destination-scoped UFW transaction under the canonical tool host
-  lock.
+description: One destination-scoped UFW transaction under the canonical tool host lock.
 vaults: []
 inputs:
   type: object
@@ -16,6 +15,25 @@ inputs:
       type: string
     intent:
       type: object
+      properties:
+        rule:
+          type: object
+        control_node_id:
+          type: integer
+          const: 209
+        connection:
+          type: object
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
+      required:
+      - rule
+      - control_node_id
+      - connection
+      - host_keys
+      additionalProperties: false
     execution_secrets:
       type: object
       additionalProperties: false
@@ -30,32 +48,127 @@ jobs:
 - name: lan
   steps:
   - name: assets
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: &id001
-      node: ${{ string(inputs.intent.node_id) }}
+    target: orbit-node-209
+    labels:
+      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
       behaviorName: ${{ "route-assets-" + run.id }}
       methodName: lan
       inputs:
-        intent: ${{ inputs.intent }}
-  - name: write
-    target: ${{ "orbit-node-" + string(inputs.intent.node_id) }}
-    labels: *id001
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "route-write-" + run.id }}
-      methodName: execute
-      inputs:
-        run: 'set -eu
-
-          sudo --preserve-env=ORBIT_ROUTE_INPUT /usr/bin/python3 -B "${{ steps.assets.outputs.script
-          }}"'
-        env:
-          ORBIT_ROUTE_INPUT: ${{ steps.assets.outputs.input_json }}
+        intent: ${{ inputs.intent.rule }}
+  - name: prepare-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
     dependsOn:
     - step: assets
       condition:
         type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-prepare-assets-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "route-ssh-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - -m
+        - '0700'
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: copy-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: prepare-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-copy-assets-" + run.id }}
+      methodName: copy
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        src: ${{ steps.assets.outputs.scripts_directory }}
+        dst: ${{ "/tmp/orbit-route-" + run.id + "/" }}
+        direction: to
+        recursive: true
+  - name: write
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-write-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - env
+        - ${{ 'ORBIT_ROUTE_INPUT=' + string(steps.assets.outputs.input_json) }}
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-route-" + run.id + "/scripts/route_lan.py" }}
+        sudo: true
+    dependsOn:
+    - step: copy-assets
+      condition:
+        type: succeeded
+  - name: cleanup-assets
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: write
+      condition:
+        type: always
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "route-ssh-cleanup-assets-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - ${{ "/tmp/orbit-route-" + run.id }}
+  - name: result
+    target: orbit-node-209
+    labels:
+      node: '209'
+    dependsOn:
+    - step: write
+      condition:
+        type: succeeded
+    - step: cleanup-assets
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/route-mutation-command'
+      behaviorName: ${{ "route-lan-result-" + run.id }}
+      methodName: lanResult
+      inputs:
+        stdout: ${{ steps.write.outputs.stdout }}

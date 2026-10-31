@@ -4,84 +4,78 @@ description: Withdraw the exact destination-scoped Route LAN allowance under the
 vaults: []
 inputs:
   properties:
-    operation_id: {type: integer, minimum: 1}
-    node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [route.lan_remove]}
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - route.lan_remove
     intent:
       type: object
       additionalProperties: false
       properties:
-        route_id: {type: integer, minimum: 1}
-        node_id: {type: integer, minimum: 1}
-        destination: {type: string, format: ipv4}
-      required: [route_id, node_id, destination]
-    execution_secrets: {type: object, additionalProperties: false, properties: {}}
-  required: [operation_id, node_id, kind, intent, execution_secrets]
+        route_id:
+          type: integer
+          minimum: 1
+        node_id:
+          type: integer
+          minimum: 1
+        destination:
+          type: string
+          format: ipv4
+        control_node_id:
+          type: integer
+          const: 209
+        connection:
+          type: object
+        host_keys:
+          type: array
+          items:
+            type: string
+          minItems: 1
+      required:
+      - route_id
+      - node_id
+      - destination
+      - control_node_id
+      - connection
+      - host_keys
+    execution_secrets:
+      type: object
+      additionalProperties: false
+      properties: {}
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
 jobs:
-  - name: withdrawal
-    steps:
-      - name: remove-lan
-        target: '${{ "orbit-node-" + string(inputs.intent.node_id) }}'
-        labels: {node: '${{ string(inputs.intent.node_id) }}'}
-        task:
-          type: behavior
-          behaviorType: command/shell
-          behaviorName: '${{ "route-lan-remove-" + string(inputs.intent.node_id) }}'
-          methodName: execute
-          inputs:
-            env:
-              ORBIT_ROUTE_ID: '${{ string(inputs.intent.route_id) }}'
-              ORBIT_ROUTE_DESTINATION: '${{ inputs.intent.destination }}'
-            run: |
-              set -eu
-              sudo --preserve-env=ORBIT_ROUTE_ID,ORBIT_ROUTE_DESTINATION /usr/bin/python3 - <<'PYTHON'
-              import fcntl
-              import ipaddress
-              import json
-              import os
-              import re
-              import subprocess
-
-
-              def ufw(*args):
-                  result = subprocess.run(["/usr/sbin/ufw", *args], capture_output=True, text=True, check=True)
-                  return result.stdout
-
-
-              def matching_rules(destination, comment):
-                  status = ufw("status", "numbered")
-                  if not re.search(r"(?m)^Status: active$", status):
-                      raise ValueError("UFW must be active")
-                  numbers = []
-                  for line in status.splitlines():
-                      rule, separator, tag = line.partition("#")
-                      if not separator or tag.strip() != comment:
-                          continue
-                      match = re.fullmatch(r"\s*\[\s*([1-9][0-9]*)\]\s+(\S+)\s+443/tcp\s+ALLOW IN\s+\S+\s*", rule)
-                      if match is None:
-                          raise ValueError("Malformed Route allowance")
-                      if match[2] == destination:
-                          numbers.append(int(match[1]))
-                  return sorted(set(numbers), reverse=True)
-
-
-              try:
-                  route_id = os.environ["ORBIT_ROUTE_ID"]
-                  if re.fullmatch(r"[1-9][0-9]*", route_id) is None:
-                      raise ValueError("Invalid Route ID")
-                  destination = str(ipaddress.IPv4Address(os.environ["ORBIT_ROUTE_DESTINATION"]))
-                  comment = "orbit:route-" + route_id + "-lan"
-                  descriptor = os.open("/run/lock/orbit-firewall.lock", os.O_RDWR | os.O_CREAT, 0o600)
-                  try:
-                      fcntl.flock(descriptor, fcntl.LOCK_EX)
-                      for number in matching_rules(destination, comment):
-                          ufw("--force", "delete", str(number))
-                      if matching_rules(destination, comment):
-                          raise ValueError("Route allowance remains")
-                  finally:
-                      os.close(descriptor)
-              except (KeyError, ValueError, OSError, subprocess.SubprocessError):
-                  print(json.dumps({"error_code": "firewall.withdrawal_failed"}))
-                  raise SystemExit(1) from None
-              print(json.dumps({"ready": True}))
-              PYTHON
+- name: withdrawal
+  steps:
+  - name: remove-lan
+    target: orbit-node-209
+    labels:
+      node: '209'
+    task:
+      type: workflow
+      workflowIdOrName: route-lan-apply
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        execution_secrets: {}
+        intent:
+          control_node_id: 209
+          connection: ${{ inputs.intent.connection }}
+          host_keys: ${{ inputs.intent.host_keys }}
+          rule:
+            node_id: ${{ inputs.intent.node_id }}
+            route_id: ${{ inputs.intent.route_id }}
+            destination: ${{ inputs.intent.destination }}
+            operation: retire
+            keep: []

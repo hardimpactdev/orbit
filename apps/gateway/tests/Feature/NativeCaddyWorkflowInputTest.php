@@ -10,17 +10,17 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    $this->node = Node::unguarded(fn (): Node => Node::query()->create(['id' => 9, 'name' => 'native-caddy', 'public_ssh_host' => '192.0.2.9',
+    $this->node = Node::unguarded(fn (): Node => Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'id' => 9, 'name' => 'native-caddy', 'public_ssh_host' => '192.0.2.9',
         'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']));
-    $this->gateway = Node::unguarded(fn (): Node => Node::query()->create(['id' => 14, 'name' => 'gateway',
+    $this->gateway = Node::unguarded(fn (): Node => Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'id' => 14, 'name' => 'gateway',
         'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']));
     $this->gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
     $this->operation = Operation::query()->create(['kind' => 'route.caddy_converge', 'target_type' => 'node_route_projection',
@@ -36,25 +36,25 @@ it('captures the complete canonical public config without a worker callback or a
     $publication = $input['caddy_publication'];
     expect($publication)->toHaveKeys(['node_id', 'user', 'caddy', 'control_node_id', 'connection'])->not->toHaveKey('agent_sha256')
         ->and($publication['node_id'])->toBe($this->node->id)
-        ->and($publication['control_node_id'])->toBe(14)
-        ->and($publication['connection'])->toBe(['nodeHost' => '10.44.0.9', 'nodeUser' => 'orbit',
-            'nodeIdentityFile' => app(SshKeyProvider::class)->privateKeyPath(), 'become' => true])
+        ->and($publication['control_node_id'])->toBe(209)
+        ->and($publication['host_keys'])->toBe(['ssh-ed25519 fixture-host-key'])
+        ->and($publication['connection'])->toBe(['nodeHost' => '10.44.0.9', 'nodeUser' => 'orbit', 'nodePort' => 22,
+            'nodeIdentityFile' => app(SwampSshExecutionInput::class)->identity()['identity_file'], 'become' => true])
         ->and($publication['caddy']['content'])->toStartWith('# Managed by Orbit: Node Caddy build')
         ->and($publication['caddy']['version'])->toBe(substr(hash('sha256', $publication['caddy']['content']), 0, 32))
         ->and($this->agents->calls)->toBe([])
         ->and($this->operation->fresh()->input)->toBe(['reason' => 'public-native-test']);
 });
 
-it('refuses logical proxy identities before rendering for built-in shell', function (int $nodeId): void {
-    Node::unguarded(fn (): Node => Node::query()->create(['id' => $nodeId, 'name' => 'proxy-'.$nodeId, 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.'.$nodeId]));
-    $this->operation->node_id = $nodeId;
-    try {
-        app(NativeCaddyPublicationInput::class)->forOperation($this->operation);
-        test()->fail('A built-in shell step cannot run locally for a logical proxy.');
-    } catch (ResourceOperationException $error) {
-        expect($error->errorCode)->toBe('caddy.placement_unavailable');
-    }
-    expect($this->agents->calls)->toBe([]);
+it('captures light targets through the same pinned SSH control worker', function (int $nodeId): void {
+    $node = Node::unguarded(fn (): Node => Node::query()->create(['id' => $nodeId, 'name' => 'light-'.$nodeId,
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-light-key',
+        'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.'.$nodeId, 'user' => 'orbit', 'status' => 'active', 'public_ssh_host' => '192.0.2.'.$nodeId]));
+    $publication = app(NativeCaddyPublicationInput::class)->forNode($node);
+    expect($publication['node_id'])->toBe($nodeId)
+        ->and($publication['control_node_id'])->toBe(209)
+        ->and($publication['host_keys'])->toBe(['ssh-ed25519 fixture-light-key'])
+        ->and($this->agents->calls)->toBe([]);
 })->with([1, 18]);
 
 it('does not expose publication data for another kind or an unplaced operation', function (): void {
@@ -104,10 +104,12 @@ it('dispatches canonical public input through the shared builder with no executi
         ->and($this->agents->calls)->toBe([]);
 });
 
-it('refuses dispatch without an active Gateway worker or admitted Node address', function (): void {
+it('requires stored address and pins without a Gateway worker dependency', function (): void {
     $this->gateway->roles()->delete();
+    expect(app(NativeCaddyPublicationInput::class)->connectionForNode($this->node)['control_node_id'])->toBe(209);
+    $this->node->ssh_host_key = null;
     expect(fn () => app(NativeCaddyPublicationInput::class)->connectionForNode($this->node))->toThrow(ResourceOperationException::class);
-    $this->gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
+    $this->node->ssh_host_key = 'fixture-host-key';
     $this->node->wireguard_ip = null;
     expect(fn () => app(NativeCaddyPublicationInput::class)->connectionForNode($this->node))->toThrow(ResourceOperationException::class);
 });
