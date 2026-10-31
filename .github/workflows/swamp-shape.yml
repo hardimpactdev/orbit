@@ -2,16 +2,17 @@ name: Swamp shape
 on:
   workflow_call:
     inputs:
-      allow-auth-unavailable:
-        description: "Only the caller-proven initial Orbit import PR or first main push may report unavailable auth"
-        type: boolean
-        default: false
       working-directory:
         type: string
         default: "."
       base-ref:
         type: string
         default: ""
+    secrets:
+      SWAMP_API_KEY:
+        required: true
+      SWAMP_SIGNIN_TOKEN:
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -82,31 +83,11 @@ jobs:
         with:
           path: ~/.cache/orbit-shape-runtime
           key: shape-runtime-${{ runner.os }}-${{ hashFiles('**/extensions/behaviors/node-worker/install.ts') }}
-      - name: Native workflow validation without account credentials
-        id: native_validate
-        continue-on-error: true
-        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
-      - name: Require validation or explicitly report the initial import blocker
-        if: always()
+      - name: Native workflow validation with dedicated registry-read credentials
         env:
-          SHAPE_NATIVE_OUTCOME: ${{ steps.native_validate.outcome }}
-          SHAPE_IMPORT_AUTH_EXCEPTION: ${{ inputs.allow-auth-unavailable }}
-          SHAPE_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
-        run: |
-          report="$RUNNER_TEMP/workflow-validation.json"
-          if [[ -f "$report" ]] && python3 -c 'import json,sys;sys.exit(json.load(open(sys.argv[1])).get("status") != "auth_unavailable")' "$report"; then
-            message='SWAMP AUTH UNAVAILABLE: official account startup gate; local workflow validation NOT RUN'
-            echo "::warning::$message"
-            echo "### $message" >> "$GITHUB_STEP_SUMMARY"
-            echo 'WORKFLOW-VALIDATE status=auth_unavailable workflows_validated=0 validation_ran=false'
-            if [[ "$SHAPE_IMPORT_AUTH_EXCEPTION" != 'true' || "$GITHUB_REPOSITORY" != 'hardimpactdev/orbit' ]] || ! [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "$SHAPE_PR_NUMBER" == '2002' || "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' ]]; then
-              echo '::error::Native validation did not run; only the caller-proven initial import may proceed.'
-              exit 1
-            fi
-          elif [[ "$SHAPE_NATIVE_OUTCOME" != 'success' ]]; then
-            echo '::error::Native workflow validation failed.'
-            exit 1
-          fi
+          SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_API_KEY || '' }}
+          SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+        run: python3 bin/validate-swamp-workflows.py --cache "$HOME/.cache/orbit-shape-runtime" --report "$RUNNER_TEMP/workflow-validation.json"
       - name: Check placement on every step
         if: always()
         run: deno run --allow-read bin/lint-workflow-placement.ts
