@@ -12,7 +12,6 @@ $control = [
 ];
 
 return [
-    'schedule.enable' => $control,
     'schedule.run' => $control,
-    'schedule.destroy' => [...$control, 'writer_scope' => ['parent_operation_id' => null]],
+    'schedule.destroy' => $control,
 ];

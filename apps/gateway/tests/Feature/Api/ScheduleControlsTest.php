@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Actions\Schedules\RunScheduleAction;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -15,6 +17,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
@@ -37,7 +40,7 @@ beforeEach(function (): void {
 it('exposes only admitted safe input through the shared endpoint and declares no relay', function (): void {
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'user' => 'orbit', 'working_directory' => '/home/orbit', 'agent_sha256' => str_repeat('a', 64)]);
     $this->postJson($this->path.'/primitive', ['run_id' => $this->runId])->assertUnprocessable();
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'schedule.run', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
 });
 
 it('projects safe native results once and refuses conflicting or unproven completion', function (): void {
@@ -95,31 +98,52 @@ it('restricts Node workers to their admitted Node and preserves the control-plan
 });
 
 it('projects a bounded failure without enabling the timer', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
     $this->schedule->update(['desired_timer_state' => 'disabled']);
-    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.activation_failed', 'result' => ['error_code' => 'other.failure']];
+    $body = ['run_id' => $this->runId, 'status' => 'failed', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'error_code' => 'schedule.run_failed', 'result' => ['error_code' => 'other.failure']];
     $this->postJson($this->path.'/result', $body)->assertUnprocessable();
-    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.activation_failed']])->assertOk();
-    expect($this->schedule->fresh()->error_code)->toBe('schedule.activation_failed');
+    $this->postJson($this->path.'/result', [...$body, 'result' => ['error_code' => 'schedule.run_failed']])->assertOk();
+    expect($this->schedule->fresh()->error_code)->toBe('schedule.run_failed');
     expect($this->schedule->fresh()->desired_timer_state->value)->toBe('disabled');
 });
 
-it('projects a successful enable into desired timer state', function (): void {
-    $this->operation->update(['kind' => 'schedule.enable']);
-    $this->schedule->update(['desired_timer_state' => 'disabled']);
-    $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]])->assertOk();
-    expect($this->schedule->fresh()->desired_timer_state->value)->toBe('enabled');
-    expect($this->schedule->fresh()->error_code)->toBeNull();
+it('keeps unconverted enable polled even with a stale direct setting', function (): void {
+    config(['swamp.direct_writers' => ['schedule.enable' => 'direct']]);
+    expect(app(DirectOperation::class)->writer('schedule.enable'))->toBeNull();
 });
 
 it('exposes admitted removal input and deletes the Schedule only on native success', function (): void {
     $this->operation->update(['kind' => 'schedule.destroy', 'input' => ['id' => $this->schedule->id, 'agent_sha256' => str_repeat('a', 64), 'group' => 'orbit', 'cascade' => false, 'command' => 'private-command']]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['id' => $this->schedule->id, 'agent_sha256' => str_repeat('a', 64), 'group' => 'orbit', 'cascade' => false]);
     expect($this->schedule->fresh())->not->toBeNull();
+    Event::fake([RecordBroadcast::class]);
     $body = ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['ready' => true]];
     $this->postJson($this->path.'/result', $body)->assertOk();
     expect($this->schedule->fresh())->toBeNull();
     $this->postJson($this->path.'/result', $body)->assertOk();
+    Event::assertDispatched(RecordBroadcast::class, fn (RecordBroadcast $event): bool => $event->type === RecordEventType::ScheduleDeleted && $event->id === $this->schedule->id);
+});
+
+it('admits destroy on a worker Node without invoking the PHP runtime', function (): void {
+    config(['operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $id = $this->deleteJson('/api/v1/schedules/'.$this->schedule->id)->assertAccepted()->assertJsonPath('data.kind', 'schedule.destroy')->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->state['schedule_control_writer'])->toBe('direct');
+    expect($operation->state['swamp_run_id'])->toBe($this->runId);
+    expect($operation->lock_key)->toBeNull();
+    expect($this->schedule->fresh()->status->value)->toBe('removing');
+    expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('keeps a refused native removal recorded for a later retry', function (): void {
+    $this->operation->update(['kind' => 'schedule.destroy']);
+    $this->postJson($this->path.'/result', ['run_id' => $this->runId, 'status' => 'failed',
+        'started_at' => '2026-10-30T12:00:00.000Z', 'finished_at' => '2026-10-30T12:00:01.000Z',
+        'error_code' => 'schedule.run_active', 'result' => ['error_code' => 'schedule.run_active']])->assertOk();
+    expect($this->schedule->fresh()->status->value)->toBe('removing');
+    expect($this->schedule->fresh()->error_code)->toBe('schedule.run_active');
 });
 
 it('captures the delivered agent digest during direct Schedule admission', function (): void {
@@ -131,11 +155,10 @@ it('captures the delivered agent digest during direct Schedule admission', funct
     expect($operation->lock_key)->toBeNull();
 });
 
-it('keeps Instance child removals polled while standalone destroy can select direct', function (): void {
-    config(['swamp.direct_writers' => ['schedule.destroy' => 'direct']]);
+it('uses direct destroy for standalone and existing Instance child admission', function (): void {
     expect(app(DirectOperation::class)->writer('schedule.destroy'))->toBe('direct');
     app(OperationIdempotency::class)->parent = $this->operation;
-    expect(app(DirectOperation::class)->writer('schedule.destroy'))->toBe('polled');
+    expect(app(DirectOperation::class)->writer('schedule.destroy'))->toBe('direct');
 });
 
 it('admits manual runs directly on a worker Node without PHP runtime execution', function (): void {
@@ -148,4 +171,23 @@ it('admits manual runs directly on a worker Node without PHP runtime execution',
     expect($admitted->state['swamp_run_id'])->toBe($this->runId);
     expect($admitted->lock_key)->toBeNull();
     expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('starts a manual run natively when the shared writer map is empty', function (): void {
+    config(['swamp.direct_writers' => [], 'operation_executor.worker_node_ids' => [$this->node->id]]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    app()->instance(ScheduleRuntimeManager::class, Mockery::mock(ScheduleRuntimeManager::class));
+    $id = $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertAccepted()->json('data.id');
+    $operation = Operation::query()->findOrFail($id);
+    expect($operation->state['schedule_control_writer'])->toBe('direct')
+        ->and($operation->state['swamp_run_id'])->toBe($this->runId)
+        ->and($this->socket->sent)->toHaveCount(1);
+});
+
+it('refuses a polled manual run override before recording another intent', function (): void {
+    config(['swamp.direct_writers' => ['schedule.run' => 'polled']]);
+    app()->instance(ScheduleRuntimeAccountResolver::class, new FakeScheduleRuntimeAccountResolver);
+    $count = Operation::query()->count();
+    $this->postJson('/api/v1/schedules/'.$this->schedule->id.'/run')->assertStatus(503)->assertJsonPath('error.code', 'operation.writer_invalid');
+    expect(Operation::query()->count())->toBe($count)->and($this->socket->sent)->toBe([]);
 });

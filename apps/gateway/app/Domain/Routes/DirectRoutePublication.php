@@ -23,11 +23,6 @@ final readonly class DirectRoutePublication implements DirectOperationPrimitive
         return in_array($kind, self::Kinds, true);
     }
 
-    public static function writer(string $kind): string
-    {
-        return app(DirectOperation::class)->writer($kind) ?? 'polled';
-    }
-
     public static function owns(Operation $operation): bool
     {
         return self::handles($operation->kind) && DirectOperation::owns($operation);

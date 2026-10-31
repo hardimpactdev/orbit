@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationExecutionContract;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
-use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -23,7 +23,7 @@ use Tests\Support\FakeAgentCommandRunner;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
-    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
+    config(['swamp.direct_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'direct']]);
     $gateway = Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.1', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.1', 'status' => LifecycleStatus::Active]);
     NodeRole::query()->create(['node_id' => $gateway->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->gateway = $gateway;
@@ -110,8 +110,8 @@ it('refuses missing peers malformed run IDs and undeclared kinds on shared endpo
 
 it('excludes direct publications from discovery and refuses the replaced executor paths', function (): void {
     $response = $this->getJson('/api/v1/operation-executor/claimable')->assertOk();
-    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'route.caddy_converge')['claimable'])->toBe(0);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertOk()->assertJsonPath('data', null);
+    expect(collect($response->json('data.kinds'))->firstWhere('kind', 'route.caddy_converge'))->toBeNull();
+    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'route.caddy_converge', 'worker' => 'old', 'operation_id' => $this->operation->id])->assertUnprocessable();
     $this->postJson('/api/v1/operation-executor/'.$this->operation->id.'/heartbeat', ['worker' => 'old'])->assertUnprocessable();
     expect($this->agents->calls)->toBe([]);
 });
@@ -192,42 +192,19 @@ it('keeps an unreadable native history uncertain without resubmitting or reporti
     expect($socket->closed)->toBeTrue();
 });
 
-it('keeps the recorded direct writer even when selection is later disabled', function (): void {
-    config(['swamp.route_publication_writers' => []]);
-    $socket = new FakeRoutePublicationSocket;
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'fake.token']);
-    $start = app(StartOperationAction::class);
-    $polled = $start->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'before switch'], 'test', null);
-    expect($polled->state['route_publication_writer'])->toBe('polled');
-    expect($socket->sent)->toBe([]);
-    $this->postJson('/api/v1/direct-operations/'.$polled->id.'/primitive', $this->body)->assertUnprocessable();
-
-    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct']]);
-    $direct = $start->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'canary'], 'test', null);
-    expect($direct->fresh()->state['route_publication_writer'])->toBe('direct');
-    expect($socket->sent)->toHaveCount(1);
-    expect(app(OperationExecutionContract::class)->context($polled)['descriptors'])->toBe([]);
-
-    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'polled']]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => $direct->kind, 'worker' => 'previous', 'operation_id' => $direct->id])->assertOk()->assertJsonPath('data', null);
-    $this->postJson('/api/v1/direct-operations/'.$direct->id.'/primitive', ['run_id' => $direct->fresh()->state['swamp_run_id']])->assertOk()->assertJsonPath('data.ready', true);
-    expect($this->agents->calls)->toHaveCount(1);
-});
-
-it('selects writers per kind and refuses invalid configuration before admission', function (): void {
-    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'direct', 'route.private_dns_publish' => 'polled']]);
-    expect(DirectRoutePublication::writer('route.caddy_converge'))->toBe('direct');
-    expect(DirectRoutePublication::writer('route.private_dns_publish'))->toBe('polled');
-    config(['swamp.route_publication_writers' => ['route.caddy_converge' => 'php']]);
+it('defaults each proven direct Route kind to its only writer and refuses the removed writer', function (string $kind): void {
+    config(['swamp.direct_writers' => []]);
+    expect(app(DirectOperation::class)->writer($kind))->toBe('direct');
+    config(['swamp.direct_writers' => [$kind => 'polled']]);
     $before = Operation::query()->count();
-    expect(fn () => app(StartOperationAction::class)->execute('route.caddy_converge', 'node_route_projection', $this->node->id, $this->node->id, ['reason' => 'invalid'], 'test', null))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(StartOperationAction::class)->execute($kind, 'node_route_projection', $this->node->id, $this->node->id, [], 'test', null))->toThrow(ResourceOperationException::class);
     expect(Operation::query()->count())->toBe($before);
-});
+    expect($this->agents->calls)->toBe([]);
+})->with(['route.caddy_converge', 'route.private_dns_publish', 'route.workload_verify', 'route.public_verify']);
 
 it('gives pre-rollout Operations no removed publication executor', function (): void {
     $this->operation->update(['state' => null]);
     $this->postJson($this->path.'/primitive', $this->body)->assertUnprocessable();
-    expect(app(OperationExecutionContract::class)->context($this->operation->fresh())['descriptors'])->toBe([]);
+    expect(fn () => app(OperationExecutionContract::class)->context($this->operation->fresh()))->toThrow(ResourceOperationException::class, 'no Gateway execution contract');
     expect($this->agents->calls)->toBe([]);
 });

@@ -27,6 +27,7 @@ const UPDATE_WAIT: Duration = Duration::from_secs(300);
 command_errors! {
     pub enum FootprintError {
         UpdateBusy {} => "agent.update_busy", "A self-update held the update lock for too long.";
+        WorkerNotReady {} => "swamp.node_worker_not_ready", "The Node worker credentials are missing or unsafe.";
         Failed { step: String } => "agent.configure_failed", "An agent file or unit step failed.";
     }
 }
@@ -131,6 +132,7 @@ pub struct ConfigureInput {
     pub checkouts: Vec<PathBuf>,
     /// The binary changed just before, so the observer restarts.
     pub binary_changed: bool,
+    pub worker_credentials: Option<super::node_worker::Credentials>,
 }
 
 #[derive(schemars::JsonSchema, Debug, Serialize, PartialEq)]
@@ -242,23 +244,41 @@ impl Command for ConfigureAgent {
     }
 
     fn run(input: ConfigureInput, context: &Context) -> Result<Configured, FootprintError> {
-        let worker = worker_enabled(&input.configuration)?;
+        let worker = worker_configuration(&input.configuration)?;
         let configured = configure(
             &Files::system(),
             &mut Native,
             &input,
             lock::answer_by(context.deadline()).min(Instant::now() + UPDATE_WAIT),
         )?;
-        super::node_worker::configure_native(context, worker).map_err(|_| failed("node-worker"))?;
+        super::node_worker::configure_native(
+            context,
+            worker.as_ref(),
+            input.worker_credentials.as_ref(),
+        )
+        .map_err(|error| match error {
+            super::node_worker::Error::NotReady {} => FootprintError::WorkerNotReady {},
+            _ => failed("node-worker"),
+        })?;
         Ok(configured)
     }
 }
 
-fn worker_enabled(configuration: &str) -> Result<bool, FootprintError> {
+fn worker_configuration(
+    configuration: &str,
+) -> Result<Option<crate::NodeWorkerConfig>, FootprintError> {
     let value: toml::Value = toml::from_str(configuration).map_err(|_| failed("node-worker"))?;
-    value.get("swamp_worker").map_or(Ok(false), |v| {
-        v.as_bool().ok_or_else(|| failed("node-worker"))
-    })
+    let worker: Option<crate::NodeWorkerConfig> = value
+        .get("swamp_worker")
+        .map(|v| v.clone().try_into().map_err(|_| failed("node-worker")))
+        .transpose()?;
+    if worker
+        .as_ref()
+        .is_some_and(|w| !super::node_worker::valid(w))
+    {
+        return Err(failed("node-worker"));
+    }
+    Ok(worker)
 }
 
 pub struct RemoveAgent;
@@ -280,7 +300,7 @@ impl Command for RemoveAgent {
     }
 
     fn run(_: RemoveInput, context: &Context) -> Result<Removed, FootprintError> {
-        super::node_worker::configure_native(context, false)
+        super::node_worker::configure_native(context, None, None)
             .map_err(|_| failed("node-worker-stop"))?;
         remove(
             &Files::system(),

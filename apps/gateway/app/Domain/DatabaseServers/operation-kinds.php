@@ -8,8 +8,9 @@ use App\Domain\DatabaseServers\DatabaseOperationExecution;
 use App\Domain\Operations\OperationKinds;
 
 return (static function (): array {
+    $kinds = ['database.sqlite_cleanup' => ['executor' => 'swamp', 'result_fields' => ['backend', 'error_code'], 'admission' => DatabaseChildAdmission::class]];
     if (! OperationKinds::supports('children') || ! OperationKinds::supports('receipts')) {
-        return [];
+        return $kinds;
     }
     $string = ['type' => 'string'];
     $object = ['type' => 'object'];
@@ -39,7 +40,6 @@ return (static function (): array {
     $control = ['transport' => 'agent', 'name' => 'process.control', 'input_fields' => [], 'input_values' => ['operation' => 'restart']];
     $seedSource = ['transport' => 'agent', 'name' => 'instance.prepare-sqlite-seed', 'input_fields' => [], 'input_values' => []];
     $seedTarget = ['transport' => 'agent', 'name' => 'instance.install-sqlite-seed', 'input_fields' => [], 'input_values' => []];
-    $kinds = [];
     foreach ([
         'database_server.create' => [$container, $acl, $ready, $valkey, $control],
         'database_server.destroy' => [$remove, $serverAbsent],
@@ -50,7 +50,6 @@ return (static function (): array {
         'database.clone' => [$sql, $copy, $sqliteCopy, $relay],
         'database.destroy_owned' => [$sqliteCopy, $owned],
         'database.sqlite_export' => [$sqliteCopy, $seedSource],
-        'database.sqlite_cleanup' => [$sqliteCopy, $seedSource],
         'database.sqlite_seed' => [$seedTarget, $relay],
         'database.sqlite_seed_abandon' => [$seedTarget],
         'database.write' => [$sqlite, $pdo],
@@ -68,13 +67,9 @@ return (static function (): array {
             },
             'completion_contract' => ['step' => 'database-complete', 'transport' => 'gateway', 'name' => 'database.proven', 'result' => []],
             'result_fields' => ['backend', 'error_code', 'row_count', 'truncated', 'bytes', 'sha256', 'mode', 'incoming', 'state']];
+        $kinds[$kind]['admission'] = DatabaseChildAdmission::class;
+        $kinds[$kind]['runs'][] = ['transport' => 'gateway', 'name' => 'database.proven', 'input_fields' => ['intent_id'], 'input_values' => [], 'resumable' => true];
     }
-
-    foreach ($kinds as &$definition) {
-        $definition['admission'] = DatabaseChildAdmission::class;
-        $definition['runs'][] = ['transport' => 'gateway', 'name' => 'database.proven', 'input_fields' => ['intent_id'], 'input_values' => [], 'resumable' => true];
-    }
-    unset($definition);
 
     return $kinds;
 })();

@@ -13,6 +13,6 @@ $control = [
 ];
 
 return [
-    ...array_fill_keys(['process.start', 'process.restart', 'process.destroy'], $control),
+    'process.destroy' => [...$control, 'writer_scope' => []],
     'process.stop' => [...$control, 'writer_scope' => []],
 ];

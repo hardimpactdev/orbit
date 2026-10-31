@@ -185,7 +185,7 @@ it('replays a keyed destroy after the Schedule record is removed', function (): 
 
     expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
     $this->withHeader('Idempotency-Key', 'schedule-destroy-replay')->deleteJson($url)->assertAccepted()->assertJsonPath('data.id', $id);
-    expect($this->agents->commands())->toBe(['schedule.remove']);
+    expect($this->agents->commands())->toBe([]);
 });
 
 it('rejects malformed duplicate escaped-duplicate unknown and wrongly typed add members without mutation', function (

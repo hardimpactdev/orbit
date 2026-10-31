@@ -242,7 +242,6 @@ pub fn all() -> Vec<Entry> {
         entry::<pi_artifact::Inspect>(),
         entry::<pi_runtime::Configure>(),
         entry::<swamp_worker::Start>(),
-        entry::<node_worker::issuer::Issue>(),
         entry::<swamp_worker::Stop>(),
         entry::<swamp_worker::Trust>(),
         entry::<gateway_web::PrepareDirectory>(),

@@ -65,21 +65,19 @@ final readonly class ProcessRuntimeChildAdmission implements OperationChildAdmis
     {
         $owner = app(InstanceRemovalRuntime::class)->owner($parent, $intent);
 
-        return app(ProcessAdmissionLock::class)->run([$owner], function () use ($parent, $intent, $owner): Operation {
-            return DB::transaction(function () use ($parent, $intent, $owner): Operation {
-                $id = $intent['input']['process_id'] ?? null;
-                if (! is_int($id) || $intent['kind'] !== 'process.destroy'
-                    || ! OperationChildIntent::same($intent['input'], ['process_id' => $id])) {
-                    $this->refuse();
-                }
-                $process = Process::query()->whereKey($id)->lockForUpdate()->firstOrFail();
-                if (! Instance::isMorphType($process->owner_type) || $process->owner_id !== $owner
-                    || $this->targets->forRemoval($process)->node->id !== $parent->node_id) {
-                    $this->refuse();
-                }
+        return DB::transaction(function () use ($parent, $intent, $owner): Operation {
+            $id = $intent['input']['process_id'] ?? null;
+            if (! is_int($id) || $intent['kind'] !== 'process.destroy'
+                || ! OperationChildIntent::same($intent['input'], ['process_id' => $id])) {
+                $this->refuse();
+            }
+            $process = Process::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+            if (! Instance::isMorphType($process->owner_type) || $process->owner_id !== $owner
+                || $this->targets->forRemoval($process)->node->id !== $parent->node_id) {
+                $this->refuse();
+            }
 
-                return $this->admission->execute($process, 'destroy');
-            });
+            return $this->admission->execute($process, 'destroy');
         });
     }
 

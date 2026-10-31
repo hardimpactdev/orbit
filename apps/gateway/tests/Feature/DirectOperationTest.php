@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -11,6 +12,7 @@ use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -252,3 +254,59 @@ it('recovers a connection failure through native history before submitting', fun
     expect($socket->connections)->toBe([15.0, 15.0, 15.0]);
     expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
+
+it('recovers an existing unbound replay after commit with one submission only after confirmed empty history', function (): void {
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => $request['type'] === 'workflow.run.search'
+        ? [['type' => 'workflow.run.search', 'id' => $request['id'], 'payload' => ['total' => 0, 'data' => ['results' => []]]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started',
+            'workflowName' => 'operation-route-publication', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    $this->operation->update(['idempotency_key' => 'same-intent', 'idempotency_fingerprint' => str_repeat('a', 64)]);
+    $identity = app(OperationIdempotency::class);
+    $identity->kind = $this->operation->kind;
+    $identity->key = 'same-intent';
+    $identity->fingerprint = str_repeat('a', 64);
+    DB::beginTransaction();
+    $replayed = $identity->replay($this->operation->kind);
+    expect($replayed->id)->toBe($this->operation->id);
+    expect($socket->sent)->toBe([]);
+    DB::commit();
+
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run.search', 'workflow.run']);
+    expect($socket->sent[1]['payload'])->toBe(['workflowIdOrName' => 'operation-route-publication',
+        'inputs' => ['operation_id' => $this->operation->id, 'kind' => $this->operation->kind, 'node_id' => $this->operation->node_id],
+        'runtimeTags' => ['orbit_start_key' => 'operation:'.$this->operation->id]]);
+    expect($this->operation->fresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+});
+
+it('does not resubmit an existing intent when its history remains unavailable', function (): void {
+    $socket = new FakeRoutePublicationSocket(false);
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    expect(fn () => app(StartSwampRun::class)->recover($this->operation))->toThrow(ResourceOperationException::class, 'Swamp did not confirm');
+
+    expect(array_column($socket->sent, 'type'))->toBe(['workflow.run.search']);
+    expect($this->operation->fresh()->state)->not->toHaveKey('swamp_run_id');
+});
+
+it('leaves bound terminal running and cancellation-requested intents alone during recovery', function (array $changes): void {
+    $this->operation->update($changes);
+    $socket = new FakeRoutePublicationSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.scoped.fixture']);
+
+    app(StartSwampRun::class)->recover($this->operation);
+
+    expect($socket->connections)->toBe([]);
+})->with([
+    'bound' => [['state' => ['route_publication_writer' => 'direct', 'swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]],
+    'succeeded' => [['status' => OperationStatus::Succeeded]],
+    'failed' => [['status' => OperationStatus::Failed]],
+    'cancelled' => [['status' => OperationStatus::Cancelled]],
+    'running' => [['status' => OperationStatus::Running]],
+    'cancellation requested' => [fn (): array => ['cancel_requested_at' => now()]],
+]);

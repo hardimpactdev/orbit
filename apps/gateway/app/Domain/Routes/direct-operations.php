@@ -7,7 +7,7 @@ use App\Domain\Routes\RouteVerificationProjection;
 
 $publication = [
     'workflow' => 'operation-route-publication',
-    'writer_config' => 'swamp.route_publication_writers',
+    'writer_config' => 'swamp.direct_writers',
     'writer_state' => 'route_publication_writer',
     'projection' => RoutePublicationProjection::class,
     'primitive' => DirectRoutePublication::class,

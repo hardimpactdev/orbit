@@ -76,18 +76,15 @@ $definitions = [
     ]),
 
     ...array_fill_keys(['route.workload_verify', 'route.public_verify'], [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
-        'completion_contract' => ['step' => 'route-verified', 'transport' => 'swamp', 'name' => 'operation-route-verification', 'result' => ['ready' => true]],
+        'executor' => 'swamp',
         'result_fields' => ['ready', 'error_code'],
     ]),
     'route.caddy_converge' => [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
-        'completion_contract' => ['step' => 'caddy-publish', 'transport' => 'swamp', 'name' => 'operation-route-publication', 'result' => ['ready' => true]],
+        'executor' => 'swamp',
         'result_fields' => ['version', 'result', 'ready', 'stage', 'error_code'],
     ],
     'route.private_dns_publish' => [
-        'executor' => 'swamp', 'completion' => CaddyOperationCompletion::class, 'runs' => [],
-        'completion_contract' => ['step' => 'private-dns-publish', 'transport' => 'swamp', 'name' => 'operation-route-publication', 'result' => ['ready' => true]],
+        'executor' => 'swamp',
         'result_fields' => ['outcome', 'data.ready', 'data.digest', 'ready', 'error_code'],
     ],
 ];

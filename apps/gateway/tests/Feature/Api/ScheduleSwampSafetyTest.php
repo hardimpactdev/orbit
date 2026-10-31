@@ -56,12 +56,11 @@ it('keeps unconverted executor Node Schedule mutations synchronous', function (s
     } else {
         $enabled->assertUnprocessable()->assertJsonPath('error.code', 'schedule.target_invalid');
     }
-    $this->deleteJson('/api/v1/schedules/'.$id)->assertOk()->assertJsonPath('data.id', $id);
 
     expect($this->runtime->installed)->toBe([$id, $id])
         ->and($this->runtime->activated)->toBe($owner === 'instance' ? [$id] : [])
-        ->and($this->runtime->removed)->toBe([['id' => $id, 'cascade' => false]]);
-    $this->assertDatabaseMissing('schedules', ['id' => $id]);
+        ->and($this->runtime->removed)->toBe([]);
+    $this->assertDatabaseHas('schedules', ['id' => $id]);
     $this->assertDatabaseCount('operations', 0);
 })->with(['services', 'worker'])->with(['node', 'instance']);
 
