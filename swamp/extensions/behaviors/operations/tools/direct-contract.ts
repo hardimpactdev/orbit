@@ -1,13 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import { Input } from "./contract.ts";
 
-export const Globals = z.object({
-  gatewayUrl: z.string().url().default("https://gateway.orbit"),
-  caFile: z.string().min(1).default(
-    "/usr/local/share/ca-certificates/orbit-root.crt",
-  ),
-});
-
 export const Kind = z.enum([
   "tool.install",
   "tool.update",
