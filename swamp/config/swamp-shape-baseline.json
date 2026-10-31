@@ -802,12 +802,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/server_destroy.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/sqlite_native.ts",
       "rule": "gateway-http",
       "count": 3,
