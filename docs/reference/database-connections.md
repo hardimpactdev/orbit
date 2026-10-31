@@ -21,7 +21,7 @@ Database writes that change a Node return one [Operation](/reference/operations)
 
 Each direct declaration names a workflow and a small result projection. There are no executor claims, child Operations, step receipts or polled Database schedules. An unavailable native kind returns `operation.kind_unavailable`.
 
-Passwords and SQL use the shared private-material API for the exact root run and admitted Node custody. They remain inside the effect callback. They do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
+SQL writes use the shared Swamp execution vault. The Gateway supplies the full non-secret intent and vault/key references, and the command step resolves its private material into the process environment. Other Database kinds still use the shared private-material API during their conversion. Passwords and SQL do not enter Operation public input, results, native JSON resources or logs. The Gateway deletes encrypted intent after the Operation and its 24-hour retry window finish. Public Operation history remains.
 
 Create reserves names and credentials without probing a server. A matching retry reuses them. Swamp checks the live owner and grants before creating or adopting existing names. A MySQL exact grant escapes underscores. Destruction refuses system names and prefixes, attached connections and foreign owners. PostgreSQL destruction fences admission and restores it after a refused or failed drop. Create and user admission refuse while removal targets the same server; removal refuses while creation is unfinished.
 
@@ -98,7 +98,7 @@ Network reads accept one SELECT, WITH, SHOW, EXPLAIN or DESCRIBE statement and a
 
 | Driver | Where it runs |
 | --- | --- |
-| `mysql`, `pgsql` | A fixed PDO program on the exact Gateway Node worker, with SQL and credentials on protected stdin. |
+| `mysql`, `pgsql` | Fixed PDO on the exact Gateway Node worker. Write steps read SQL and credentials from the Swamp execution vault through their environment. |
 | `sqlite` | A fixed Python SQLite program on the linked Node worker, as the admitted file owner. |
 | `redis` | Not supported. Admission returns `database.driver_unsupported` (422). |
 
@@ -213,7 +213,7 @@ Swamp runs fixed PDO programs for MySQL and PostgreSQL on the Gateway Node worke
 
 ### Secrets stay off the command line
 
-SQL and credentials travel through the run-bound private-material callback and protected standard input. They do not appear in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
+Write SQL and credentials reach the placed command step through a whole-value vault expression in its environment. Read workflows still use their run-bound private-material callback during conversion. Neither path puts private values in command arguments, native output or public Operation history. Each job runs only on its admitted Node worker.
 
 ## Direct SQLite cleanup
 
@@ -227,7 +227,9 @@ The worker runs as the Node's configured user. Clone cleanup removes only its ow
 
 ### Direct SQL writes
 
-`database:query --write` starts `operation-database-write` directly. SQLite runs the fixed native SQLite program as its admitted owner. MySQL and PostgreSQL use a fixed local PDO program on the Gateway Node. SQL and connection credentials stay in the private-material callback and protected stdin. Each step targets only its admitted `orbit-node-ID` worker and matching Node label. Neither path invokes an agent action or requires an agent pin. Native projection resumes from its saved row count without repeating SQL.
+`database:query --write` starts `operation-database-write` with the complete non-secret intent and vault/key references. SQLite runs one inline command as its admitted file owner. MySQL and PostgreSQL run one inline PDO command on the Gateway Node. Both read private SQL and credentials from the Swamp vault through the shared command-step boundary. No write step reads intent or reports a result over Gateway HTTP. Each step targets only its admitted `orbit-node-ID` worker and matching Node label.
+
+The write action saves its bounded row count or refusal in native outputs. A separate result step emits the public JSON selected by the shared Gateway terminal projector. Native resume can finish result delivery without repeating a completed write. A saved action refusal remains a refusal if a vault value later changes. Inspect an interrupted effect before another admission; do not restart uncertain SQL blindly.
 
 SQL writes are limited to 16,384 characters. MySQL refuses multiple statements in one call. A failure before the SQL effect is invoked projects failed with `database.write_outcome_unknown`; an exception after invocation requires inspection before another effect. Read-only inspection uses its own native database.read Operation.
 

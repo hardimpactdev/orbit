@@ -7,12 +7,28 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
 final readonly class DatabaseWriteProjection implements DirectOperationProjection
 {
+    /** Full native inputs; the shared start path owns submission and terminal subscription.
+     * @return array<string, mixed>
+     */
+    public function workflowInputs(Operation $operation): array
+    {
+        $intent = DatabaseExecutionIntent::recorded(app(DatabaseIntentSource::class)->ownerId($operation));
+        $material = array_intersect_key($intent->payload['commands']['database-apply']['input'], array_flip(['password', 'sql', 'dsn', 'username']));
+
+        return [
+            'operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind,
+            'intent' => ['connection_id' => $operation->input['connection_id'], ...$this->input($operation)],
+            'execution_secrets' => ['database_write' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'database-write-intent-'.$intent->id, json_encode($material, JSON_THROW_ON_ERROR))],
+        ];
+    }
+
     public function input(Operation $operation): array
     {
         $id = app(DatabaseIntentSource::class)->ownerId($operation);

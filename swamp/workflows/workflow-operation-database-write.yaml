@@ -1,12 +1,11 @@
 id: e947ab58-40c6-405d-9c74-2c14210e4511
 name: operation-database-write
-description: Apply one admitted private SQL write and project only its row count.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Execute one admitted write as a placed command step; the Gateway projects terminal stdout.
 writes: true
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
+  type: object
   properties:
     operation_id:
       type: integer
@@ -18,59 +17,262 @@ inputs:
       type: string
       enum:
       - database.write
+    intent:
+      type: object
+      properties:
+        driver:
+          type: string
+          enum:
+          - mysql
+          - pgsql
+          - sqlite
+        connection_id:
+          type: integer
+          minimum: 1
+        owner:
+          type: string
+        path:
+          type: string
+      required:
+      - driver
+      - connection_id
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        database_write:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^database-write-intent-[1-9][0-9]*$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - database_write
+      additionalProperties: false
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
 jobs:
-- name: server
+- name: write
+  target: ${{ "orbit-node-" + string(inputs.node_id) }}
+  labels: &id001
+    node: ${{ string(inputs.node_id) }}
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: sql
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    writes: true
+    guard: ${{ inputs.intent.driver == "sqlite" }}
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-write'
-      behaviorName: ${{ "database-write-" + string(inputs.node_id) }}
-      methodName: apply
+      behaviorType: command/shell
+      behaviorName: ${{ "database-write-sql-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/php -d display_errors=0 -d log_errors=0 <<'PHP'
+          <?php
+          declare(strict_types=1);
+
+          $errorCode = 'database.write_outcome_unknown';
+          try {
+              $driver = getenv('ORBIT_DATABASE_DRIVER');
+              $material = json_decode(getenv('ORBIT_DATABASE_MATERIAL'), true, flags: JSON_THROW_ON_ERROR);
+              $sql = $material['sql'];
+              $dsn = $material['dsn'];
+              $username = $material['username'];
+              $credential = $material['password'];
+              if (!in_array($driver, ['mysql', 'pgsql'], true)
+                  || !is_string($sql) || trim($sql) === '' || strlen($sql) > 16384
+                  || !is_string($dsn) || strlen($dsn) > 4096
+                  || !str_starts_with($dsn, $driver.':')
+                  || (!is_null($username) && (!is_string($username) || strlen($username) > 128))
+                  || !is_string($credential) || strlen($credential) > 16384
+                  || str_contains($sql.$dsn.($username ?? '').$credential, "\0")) {
+                  throw new RuntimeException('Invalid admitted write.');
+              }
+              $options = [
+                  PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                  PDO::ATTR_TIMEOUT => 10,
+                  PDO::ATTR_EMULATE_PREPARES => false,
+              ];
+              if ($driver === 'mysql') {
+                  $options[PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+              }
+              $errorCode = 'database.query_failed';
+              $database = new PDO($dsn, $username, $credential, $options);
+              $statement = $database->query($sql);
+              echo json_encode([
+                  'backend' => 'active',
+                  'row_count' => max(0, $statement->rowCount()),
+                  'truncated' => false,
+              ], JSON_THROW_ON_ERROR)."\n";
+          } catch (Throwable $error) {
+              echo json_encode(['error_code' => $errorCode], JSON_THROW_ON_ERROR)."\n";
+              exit(1);
+          }
+          PHP
+        timeout: 45000
+        env:
+          ORBIT_DATABASE_MATERIAL: ${{ vault.get(inputs.execution_secrets.database_write.vault, inputs.execution_secrets.database_write.key)
+            }}
+          ORBIT_DATABASE_DRIVER: ${{ inputs.intent.driver }}
+        ignoreExitCode: true
+    allowFailure: true
+  - name: sqlite
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    writes: true
+    guard: ${{ inputs.intent.driver != "sqlite" }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "database-write-sqlite-" + run.id }}
+      methodName: execute
+      inputs:
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/sudo -n --preserve-env=ORBIT_DATABASE_MATERIAL,ORBIT_DATABASE_PATH,ORBIT_DATABASE_OWNER -u "$ORBIT_DATABASE_OWNER" -- /usr/bin/python3 -I - <<'PY'
+          import contextlib
+          import json
+          import os
+          import pwd
+          import sqlite3
+          import stat
+          import sys
+          from pathlib import Path
+          from urllib.parse import quote
+
+          error = 'database.write_outcome_unknown'
+          try:
+              material = json.loads(os.environ.pop('ORBIT_DATABASE_MATERIAL'))
+              if set(material) != {'sql', 'dsn', 'username', 'password'}:
+                  raise ValueError('invalid admitted material')
+              if material['dsn'] != '' or material['username'] is not None or material['password'] != '':
+                  raise ValueError('foreign SQLite material')
+              sql = material['sql']
+              if not isinstance(sql, str):
+                  raise ValueError('invalid statement')
+              selected = os.environ['ORBIT_DATABASE_PATH']
+              owner = os.environ['ORBIT_DATABASE_OWNER']
+              if not sql.strip() or len(sql.encode()) > 16384 or '\0' in sql:
+                  raise ValueError('invalid statement')
+              path = Path(selected)
+              if (not path.is_absolute() or len(selected) > 1024
+                      or any(part in ('.', '..') for part in selected.split('/'))
+                      or any(char in selected for char in ('\0', '\r', '\n'))
+                      or '//' in selected or selected.endswith('/')):
+                  raise ValueError('invalid path')
+              if os.geteuid() == 0 or pwd.getpwuid(os.geteuid()).pw_name != owner:
+                  raise ValueError('wrong execution account')
+              error = 'database.sqlite_unreadable'
+              if path.resolve(strict=True) != path:
+                  raise ValueError('symlink path')
+              before = path.lstat()
+              if not stat.S_ISREG(before.st_mode):
+                  raise ValueError('not a regular database')
+              descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+              try:
+                  opened = os.fstat(descriptor)
+                  if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+                      raise ValueError('database changed')
+              finally:
+                  os.close(descriptor)
+              with contextlib.closing(sqlite3.connect(
+                      'file:' + quote(str(path), safe='/') + '?mode=rw',
+                      uri=True, isolation_level=None, timeout=10)) as database:
+                  database.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED, 0)
+                  database.execute('PRAGMA busy_timeout=10000')
+                  error = 'database.query_failed'
+                  cursor = database.execute(sql.strip())
+                  truncated = (cursor.description is not None
+                               and len(cursor.fetchmany(501)) > 500)
+                  cursor.close()
+                  count = database.execute('SELECT changes()').fetchone()[0]
+              print(json.dumps({'backend': 'active', 'row_count': max(0, count),
+                                'truncated': truncated}))
+          except Exception:
+              print(json.dumps({'error_code': error}))
+              sys.exit(1)
+          PY
+        timeout: 45000
+        env:
+          ORBIT_DATABASE_MATERIAL: ${{ vault.get(inputs.execution_secrets.database_write.vault, inputs.execution_secrets.database_write.key)
+            }}
+          ORBIT_DATABASE_OWNER: ${{ inputs.intent.owner }}
+          ORBIT_DATABASE_PATH: ${{ inputs.intent.path }}
+        ignoreExitCode: true
+    allowFailure: true
+  - name: result
+    target: ${{ "orbit-node-" + string(inputs.node_id) }}
+    labels: *id001
+    writes: false
     dependsOn:
-    - step: apply
+    - step: sql
       condition:
-        type: succeeded
+        type: always
+    - step: sqlite
+      condition:
+        type: always
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-write'
-      behaviorName: ${{ "database-write-" + string(inputs.node_id) }}
-      methodName: project
+      behaviorType: command/shell
+      behaviorName: ${{ "database-write-result-" + run.id }}
+      methodName: execute
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
-  - name: failure-apply
+        run: |
+          #!/bin/sh
+          set -eu
+          exec /usr/bin/python3 -I - <<'PY'
+          import json
+          import os
+          import sys
+
+          result = {'error_code': 'database.write_outcome_unknown'}
+          try:
+              value = json.loads(os.environ['ORBIT_DATABASE_RESULT'])
+              if value == {'error_code': value.get('error_code')} and value['error_code'] in (
+                      'database.write_outcome_unknown', 'database.sqlite_unreadable', 'database.query_failed'):
+                  result = value
+              elif (set(value) == {'backend', 'row_count', 'truncated'}
+                    and value['backend'] == 'active' and type(value['row_count']) is int
+                    and value['row_count'] >= 0 and type(value['truncated']) is bool):
+                  result = value
+          except (KeyError, TypeError, ValueError, AttributeError):
+              pass
+          print(json.dumps(result))
+          sys.exit(1 if 'error_code' in result else 0)
+          PY
+        env:
+          ORBIT_DATABASE_RESULT: '${{ inputs.intent.driver == "sqlite" ? (has(steps.sqlite.outputs) && has(steps.sqlite.outputs.stdout)
+            ? steps.sqlite.outputs.stdout : "") : (has(steps.sql.outputs) && has(steps.sql.outputs.stdout) ? steps.sql.outputs.stdout
+            : "") }}'
+        ignoreExitCode: true
+  - name: accept_result
     target: ${{ "orbit-node-" + string(inputs.node_id) }}
     labels:
       node: ${{ string(inputs.node_id) }}
     dependsOn:
-    - step: apply
+    - step: result
       condition:
-        type: failed
+        type: succeeded
     task:
-      type: behavior
-      behaviorType: '@nckrtl/operation-failure'
-      behaviorName: ${{ "database-failure-" + string(inputs.operation_id) }}
-      methodName: report
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: The Database write did not complete successfully.

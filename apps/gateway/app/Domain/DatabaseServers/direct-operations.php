@@ -38,7 +38,7 @@ return ['database.update' => [
 ], 'database.write' => [
     'workflow' => 'operation-database-write',
     'projection' => DatabaseWriteProjection::class,
-    'private_material' => ['password' => 'database.intent', 'sql' => 'database.intent', 'dsn' => 'database.intent', 'username' => 'database.intent'],
+    // Shared terminal_result selector: ['job' => 'write', 'step' => 'result'].
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'projection' => DatabaseServerCloseProjection::class,

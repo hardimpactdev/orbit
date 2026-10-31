@@ -447,27 +447,6 @@ def target_seed(raw):
     except BaseException: raise Unconfirmed()
     return {'state':'changed'}
 
-def write_database(data):
-    require(set(data)=={'owner','path','sql'})
-    sql=data['sql']
-    if not (isinstance(sql,str) and sql.strip() and len(sql.strip().encode())<=16384 and '\x00' not in sql): raise QueryFailed()
-    selected=path(data['path']);require(len(str(selected))<=1024)
-    user=account(data['owner'])
-    with as_account(user):
-        fd=opened(selected,os.O_RDWR);os.close(fd)
-        with contextlib.closing(connect(selected)) as db:
-            db.setlimit(sqlite3.SQLITE_LIMIT_ATTACHED,0)
-            db.execute('PRAGMA busy_timeout=10000')
-            # execute accepts exactly one statement. SQL is never returned or logged.
-            cursor=db.execute(sql.strip())
-            truncated=False
-            if cursor.description is not None:
-                truncated=len(cursor.fetchmany(501))>500
-            count=db.execute('SELECT changes()').fetchone()[0]
-            cursor.close()
-            return {'row_count':max(0,count),'truncated':truncated}
-
-
 def read_database(data):
     require(set(data)=={'owner','path','sql','mode','table'})
     mode=data['mode'];require(mode in ('query','tables','schema','describe'))
@@ -516,7 +495,7 @@ def read_database(data):
 DEADLINE=time.monotonic()+float(sys.argv[2]) if len(sys.argv)>2 else time.monotonic()+120
 if __name__=='__main__':
     action=sys.argv[1] if len(sys.argv)>1 else ''
-    family='database.query' if action in ('write','read') else 'instance.sqlite_copy' if action=='copy' else 'instance.sqlite_seed'
+    family='database.query' if action == 'read' else 'instance.sqlite_copy' if action=='copy' else 'instance.sqlite_seed'
     try:
         os.umask(0o077)
         if action=='read':
@@ -525,13 +504,13 @@ if __name__=='__main__':
         signal.alarm(max(1,int(DEADLINE-time.monotonic())))
         raw=sys.stdin.buffer.read(65537);require(len(raw)<=65536)
         data=json.loads(raw);require(isinstance(data,dict))
-        result={'copy':copy_database,'seedSource':source_seed,'seedTarget':target_seed,'write':write_database,'read':read_database}[action](data)
+        result={'copy':copy_database,'seedSource':source_seed,'seedTarget':target_seed,'read':read_database}[action](data)
         sys.stdout.write(json.dumps({'ok':True,'data':result},separators=(',',':')))
     except Unconfirmed: sys.stdout.write('{"ok":false,"error_code":"instance.sqlite_seed_unconfirmed"}')
     except (Refused,PermissionError,FileNotFoundError,KeyError,TypeError,ValueError):
-        code='database.sqlite_unreadable' if action in ('write','read') else family+'_refused'
+        code='database.sqlite_unreadable' if action == 'read' else family+'_refused'
         sys.stdout.write(json.dumps({'ok':False,'error_code':code},separators=(',',':')))
     except BaseException:
-        code='database.query_failed' if action in ('write','read') else family+'_failed'
+        code='database.query_failed' if action == 'read' else family+'_failed'
         sys.stdout.write(json.dumps({'ok':False,'error_code':code},separators=(',',':')))
 `;
