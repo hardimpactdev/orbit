@@ -138,7 +138,7 @@ final readonly class RouteNodeEffectCommand implements OperationGatewayCommand
      */
     public function networkVerification(Operation $operation): array
     {
-        if (! in_array($operation->kind, RouteOperationProjection::Kinds, true) || $operation->node_id === null) {
+        if (! in_array($operation->kind, RouteVerificationProjection::Kinds, true) || $operation->node_id === null) {
             throw new ResourceOperationException('operation.execution_forbidden', 'A Route network verification is required.', 422);
         }
         $route = Route::query()->with('targets.instance')->findOrFail(ValidatedData::integer($operation->input['route_id']));
