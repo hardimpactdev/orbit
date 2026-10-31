@@ -1,3 +1,7 @@
+import {
+  localCommand,
+  localFilesystem,
+} from "./operations/_lib/local-worker.ts";
 import { z } from "npm:zod@4";
 import { PackageTargetSchema } from "./_lib/package_target.ts";
 
@@ -101,7 +105,7 @@ async function executeInvocation(
   signal?.throwIfAborted();
   // The pinned compiled Swamp CLI forbids direct /proc reads. This fixed
   // read-only child inherits our cgroup; no caller selects its path or args.
-  const cgroup = await new Deno.Command("/usr/bin/cat", {
+  const cgroup = await localCommand("/usr/bin/cat", {
     args: ["/proc/self/cgroup"],
     stdout: "piped",
     stderr: "null",
@@ -112,13 +116,17 @@ async function executeInvocation(
     membership,
   )?.[1];
   if (!parent) throw new Error("native_host_lifetime_unavailable");
-  const scratch = await Deno.makeTempDir({ prefix: "orbit-host-method-" });
+
+  const scratch = await localFilesystem().makeTempDir({
+    prefix: "orbit-host-method-",
+  });
   let child: Deno.ChildProcess | undefined;
   const unit = `orbit-swamp-host-${
     crypto.randomUUID().replaceAll("-", "")
   }.service`;
   const lease = `${scratch}/active`;
-  await Deno.writeTextFile(lease, "active\n", { mode: 0o600 });
+
+  await localFilesystem().writeTextFile(lease, "active\n", { mode: 0o600 });
   let abort: (() => void) | undefined;
   let errorText = "";
   let readErrors: Promise<void> | undefined;
@@ -127,7 +135,7 @@ async function executeInvocation(
     AbortSignal.timeout(seconds * 1000),
   ]);
   const stopNativeHost = async () => {
-    const stopped = await new Deno.Command("/usr/bin/sudo", {
+    const stopped = await localCommand("/usr/bin/sudo", {
       args: ["-n", "/usr/bin/systemctl", "stop", unit],
       stdin: "null",
       stdout: "null",
@@ -136,7 +144,7 @@ async function executeInvocation(
     await child!.status;
     await readErrors;
     if (!stopped.success) {
-      const state = await new Deno.Command("/usr/bin/sudo", {
+      const state = await localCommand("/usr/bin/sudo", {
         args: [
           "-n",
           "/usr/bin/systemctl",
@@ -156,7 +164,7 @@ async function executeInvocation(
     }
   };
   try {
-    child = new Deno.Command("/usr/bin/sudo", {
+    child = localCommand("/usr/bin/sudo", {
       args: [
         "-n",
         "/usr/bin/systemd-run",
@@ -269,7 +277,7 @@ async function executeInvocation(
     }
     return;
   } finally {
-    await Deno.remove(lease).catch((error) => {
+    await localFilesystem().remove(lease).catch((error) => {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     });
     if (child) {
@@ -277,7 +285,8 @@ async function executeInvocation(
       await stopNativeHost();
     }
     if (abort) stop.removeEventListener("abort", abort);
-    await Deno.remove(scratch, { recursive: true });
+
+    await localFilesystem().remove(scratch, { recursive: true });
   }
 }
 

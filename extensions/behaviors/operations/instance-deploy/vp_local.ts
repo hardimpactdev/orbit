@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { VP_LOCAL } from "./vp_local_python.ts";
 export type VpLocalMode =
   | "project"
@@ -41,7 +42,7 @@ export const vpLocal: VpLocal = async (mode, input, options) => {
   const abort = () => controller.abort();
   options.signal?.addEventListener("abort", abort, { once: true });
   try {
-    const child = new Deno.Command(
+    const child = localCommand(
       options.fixture?.unprivileged ? "python3" : "sudo",
       {
         args: [

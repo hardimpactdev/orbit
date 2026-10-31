@@ -1,4 +1,6 @@
+import { localCommand } from "./local-worker.ts";
 import { z } from "npm:zod@4.4.3";
+import { runtimeNodeProxy } from "./node-proxy.ts";
 
 export type NodeCall = {
   name: string;
@@ -62,6 +64,9 @@ export function agentReply(bytes: Uint8Array, success: boolean) {
 /** Agent supervision bounds the effect; native workflow recovery owns uncertainty. */
 export async function runNodeAgent(call: NodeCall, signal?: AbortSignal) {
   signal?.throwIfAborted();
+  if (await runtimeNodeProxy()) {
+    throw new Error("Agent actions are not supported on command proxy workers");
+  }
   for (const path of ["/usr", "/usr/local", "/usr/local/bin", binary]) {
     const file = await Deno.lstat(path);
     if (
@@ -79,7 +84,7 @@ export async function runNodeAgent(call: NodeCall, signal?: AbortSignal) {
   signal?.throwIfAborted();
   const launch = agentLaunch(call);
   const timeout = AbortSignal.timeout(call.deadlineMs + 5000);
-  const child = new Deno.Command(launch.command, {
+  const child = localCommand(launch.command, {
     args: launch.args,
     stdin: "piped",
     stdout: "piped",

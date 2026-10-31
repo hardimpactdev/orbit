@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { productionRuntimeProgram } from "./runtime_program.ts";
 
@@ -50,7 +51,7 @@ export class PhpRuntimeError extends Error {
   }
 }
 const local: LocalPhpRuntimeRunner = async (command, signal) => {
-  const child = new Deno.Command(command.executable, {
+  const child = localCommand(command.executable, {
     args: command.args,
     stdin: "piped",
     stdout: "piped",

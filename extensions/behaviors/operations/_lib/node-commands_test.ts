@@ -3,76 +3,120 @@ import {
   assertRejects,
   assertThrows,
 } from "jsr:@std/assert@1.0.14";
-import { commandLaunch, requireLocalWorker, run } from "./node-commands.ts";
-import { commandOutput } from "./node-command-process.ts";
+import { commandLaunch, run } from "./node-commands.ts";
+import { ProxyIdentity } from "./node-proxy-config.ts";
+import { proxyHttpConfig, proxyLaunch, proxyNode } from "./node-proxy.ts";
 
-Deno.test("the local runner keeps explicit sudo accounts and refuses agent actions or caller shell selection", () => {
-  assertEquals(commandLaunch(["/usr/bin/id", "-u"], "node"), {
+const proxy = {
+  node_id: 1 as const,
+  host: "10.44.0.1",
+  user: "orbit" as const,
+};
+
+Deno.test("only an exact approved systemd proxy cgroup selects the effect Node", () => {
+  assertEquals(
+    proxyNode("0::/system.slice/orbit-node-proxy-worker-1.service\n"),
+    1,
+  );
+  assertEquals(
+    proxyNode("0::/system.slice/orbit-node-proxy-worker-18.service/child\n"),
+    18,
+  );
+  assertEquals(proxyNode("0::/system.slice/orbit-node-worker.service\n"), null);
+  assertEquals(proxyNode("0::/user.slice/node-1.service\n"), null);
+  assertThrows(() =>
+    proxyNode("0::/system.slice/orbit-node-proxy-worker-209.service\n")
+  );
+});
+
+Deno.test("commands use the existing Node user or explicit sudo locally and over pinned SSH", () => {
+  assertEquals(commandLaunch(["/usr/bin/id", "-u"], "node", null), {
     command: "/usr/bin/id",
     args: ["-u"],
   });
-  assertEquals(commandLaunch(["/usr/bin/id"], "root"), {
+  assertEquals(commandLaunch(["/usr/bin/id", "-u"], "root", null), {
     command: "/usr/bin/sudo",
-    args: ["-n", "--", "/usr/bin/id"],
+    args: ["-n", "--", "/usr/bin/id", "-u"],
   });
-  assertEquals(commandLaunch(["/usr/bin/id"], "orbit-app-7"), {
-    command: "/usr/bin/sudo",
-    args: ["-n", "-u", "orbit-app-7", "--", "/usr/bin/id"],
-  });
-  for (const account of ["--root", "a;id", "root\n"]) {
-    assertThrows(() => commandLaunch(["/usr/bin/id"], account));
+  const remote = commandLaunch(["/usr/bin/id", "-u"], "root", proxy);
+  assertEquals(remote.command, "/usr/bin/sudo");
+  assertEquals(
+    remote.args.at(-1)?.endsWith(
+      "'/usr/bin/sudo' '-n' '--' '/usr/bin/id' '-u'",
+    ),
+    true,
+  );
+  assertEquals(remote.args.includes("orbit@10.44.0.1"), true);
+  for (
+    const flag of [
+      "ForwardAgent=no",
+      "IdentityAgent=none",
+      "ClearAllForwardings=yes",
+      "StrictHostKeyChecking=yes",
+      "ConnectTimeout=8",
+      "IdentitiesOnly=yes",
+    ]
+  ) {
+    assertEquals(remote.args.includes(flag), true);
+  }
+  assertEquals(
+    remote.args.includes(
+      "UserKnownHostsFile=/etc/orbit/node-proxy/known_hosts",
+    ),
+    true,
+  );
+  assertEquals(
+    commandLaunch(["/usr/bin/id"], "orbit-app-7", proxy).args.at(-1)?.endsWith(
+      "'/usr/bin/sudo' '-n' '-u' 'orbit-app-7' '--' '/usr/bin/id'",
+    ),
+    true,
+  );
+});
+
+Deno.test("caller input cannot select an SSH host, shell option or agent action", () => {
+  for (const user of ["--root", "root;id", "a\nroot"]) {
+    assertThrows(() => commandLaunch(["/usr/bin/id"], user, proxy));
   }
   for (
-    const cmd of [["id"], [
+    const command of [["id"], ["/usr/bin/id\0bad"], [
       "/usr/local/bin/orbit-agent",
       "command",
-      "agent.configure",
-    ], ["/usr/bin/id\0bad"]]
-  ) assertThrows(() => commandLaunch(cmd, "node"));
-});
-Deno.test("every proxy unit refuses local execution instead of acting on209", () => {
-  requireLocalWorker("0::/system.slice/orbit-node-worker.service\n");
-  for (const node of [1, 18, 209]) {
-    assertThrows(() =>
-      requireLocalWorker(
-        `0::/system.slice/orbit-node-proxy-worker-${node}.service/child\n`,
-      )
-    );
+      "firewall.rule",
+    ]]
+  ) {
+    assertThrows(() => commandLaunch(command, "root", proxy));
   }
+  assertThrows(() =>
+    proxyLaunch({ ...proxy, host: "10.44.0.1;id" }, ["/usr/bin/id"])
+  );
+  assertThrows(() =>
+    ProxyIdentity.parse({ ...proxy, user: "-oProxyCommand=id" })
+  );
+  assertEquals(
+    proxyLaunch(proxy, ["/usr/bin/printf", "one'two"]).args.at(-1)?.endsWith(
+      "'/usr/bin/printf' 'one'\\''two'",
+    ),
+    true,
+  );
 });
-Deno.test("private stdin roundtrips and nonzero exit status is preserved", async () => {
-  const source = new TextEncoder().encode("private-stdin-needle\n");
-  const output = await run(
+
+Deno.test("private command input stays on stdin and nonzero exits remain truthful", async () => {
+  const privateInput = new TextEncoder().encode("private-command-needle\n");
+  const result = await run(
     [
       "/usr/bin/python3",
       "-c",
-      "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read());sys.exit(37)",
+      "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()); sys.exit(37)",
     ],
-    source,
+    privateInput,
     "node",
   );
-  assertEquals(output.stdout, source);
-  assertEquals(output.code, 37);
-  assertEquals(output.success, false);
+  assertEquals(result.success, false);
+  assertEquals(result.code, 37);
+  assertEquals(result.stdout, privateInput);
 });
-Deno.test("full duplex drains while writing and timeout/output refusal contains no private bytes", async () => {
-  const output = await commandOutput(
-    {
-      command: "/usr/bin/python3",
-      args: [
-        "-c",
-        "import sys;sys.stdout.buffer.write(b'x'*262144);sys.stdout.flush();data=sys.stdin.buffer.read();sys.stdout.write(str(len(data)))",
-      ],
-    },
-    new Uint8Array(262144),
-    300000,
-    AbortSignal.timeout(3000),
-  );
-  assertEquals(output.success, true);
-  assertEquals(new TextDecoder().decode(output.stdout.slice(-6)), "262144");
-  await assertRejects(() =>
-    run(["/usr/bin/sleep", "5"], undefined, "node", { deadlineMs: 10 })
-  );
+
+Deno.test("bounded command failures never expose stdout or input in diagnostics", async () => {
   const error = await assertRejects(
     () =>
       run(["/usr/bin/printf", "private-output-needle"], undefined, "node", {
@@ -81,31 +125,62 @@ Deno.test("full duplex drains while writing and timeout/output refusal contains 
     Error,
   );
   assertEquals(error.message.includes("private-output-needle"), false);
+  await assertRejects(() =>
+    run(["/usr/bin/sleep", "5"], undefined, "node", { deadlineMs: 10 })
+  );
 });
-Deno.test("the runner works under compiled-style denied /proc read permissions", async () => {
-  const fixture = await Deno.makeTempFile({ suffix: ".ts" });
-  const url = new URL("./node-commands.ts", import.meta.url).href;
-  try {
-    await Deno.writeTextFile(
-      fixture,
-      `import {run} from ${
-        JSON.stringify(url)
-      };const r=await run(['/usr/bin/printf','ready'],undefined,'node');console.log(new TextDecoder().decode(r.stdout));`,
+
+Deno.test("Gateway requests originate on the effect Node with private bytes only in curl stdin", () => {
+  const config = proxyHttpConfig(
+    "https://gateway.orbit",
+    "POST",
+    "/api/v1/direct-operations/7/secret-output",
+    { outputs: { token: 'private-needle\\"\n' }, run_id: "public-id" },
+  );
+  assertEquals(config.includes('cacert = "/etc/orbit/agent/ca.pem"'), true);
+  assertEquals(config.includes("private-needle"), true);
+  const launch = proxyLaunch(proxy, ["/usr/bin/curl", "--config", "-"]);
+  assertEquals(JSON.stringify(launch).includes("private-needle"), false);
+  assertEquals(JSON.stringify(launch).includes("ORBIT_AGENT"), false);
+  assertThrows(() =>
+    proxyHttpConfig(
+      "https://gateway.orbit",
+      "POST",
+      "https://foreign.test/api/v1/send",
+      {},
+    )
+  );
+  assertThrows(() =>
+    proxyHttpConfig(
+      "https://gateway.orbit",
+      "POST",
+      "/api/v1/x",
+      {},
+      "key\r\nInjected: yes",
+    )
+  );
+});
+
+Deno.test("proxy Gateway requests retain the caller's long request budget", () => {
+  const config = proxyHttpConfig(
+    "https://gateway.orbit",
+    "GET",
+    "/api/v1/nodes/1",
+    undefined,
+    undefined,
+    600001,
+  );
+  assertEquals(config.includes("max-time = 601"), true);
+  for (const value of [0, -1, NaN, Infinity]) {
+    assertThrows(() =>
+      proxyHttpConfig(
+        "https://gateway.orbit",
+        "GET",
+        "/api/v1/nodes/1",
+        undefined,
+        undefined,
+        value,
+      )
     );
-    const child = await new Deno.Command(Deno.execPath(), {
-      args: [
-        "run",
-        "--no-prompt",
-        "--deny-read",
-        "--allow-run=/usr/bin/cat,/usr/bin/printf",
-        fixture,
-      ],
-      stdout: "piped",
-      stderr: "piped",
-    }).output();
-    assertEquals(child.success, true, new TextDecoder().decode(child.stderr));
-    assertEquals(new TextDecoder().decode(child.stdout).trim(), "ready");
-  } finally {
-    await Deno.remove(fixture);
   }
 });

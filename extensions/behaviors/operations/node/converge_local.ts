@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { certificateActions } from "../certificates/actions.ts";
 import { certificateProgram } from "../certificates/system.ts";
 import {
@@ -26,7 +27,7 @@ async function output(
   stdin?: unknown,
   deadline = 60000,
 ) {
-  const child = new Deno.Command(command, {
+  const child = localCommand(command, {
     args,
     stdin: stdin === undefined ? "null" : "piped",
     stdout: "piped",

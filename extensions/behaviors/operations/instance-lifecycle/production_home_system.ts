@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { sourceGitCommand } from "./source_system.ts";
@@ -362,7 +363,7 @@ const executeProductionHome: ProductionHomeExecutor = async (
   signal,
 ) => {
   signal?.throwIfAborted();
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: ["-n", "--", "/usr/bin/python3", "-I", "-c", `${program}\nmain()\n`],
     cwd: "/",
     clearEnv: true,

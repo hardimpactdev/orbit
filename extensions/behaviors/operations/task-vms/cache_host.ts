@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 export type CacheArtifact = {
@@ -79,7 +80,7 @@ export async function cacheIntegrity(
   return { algorithm: match[1], wanted: hex(bytes) };
 }
 const command: Run = async (program, args, signal) => {
-  const result = await new Deno.Command(program, {
+  const result = await localCommand(program, {
     args,
     stdin: "null",
     stderr: "null",
@@ -148,16 +149,20 @@ export async function fillCacheHost(
   };
   const removeDownload = async (path: string) => {
     try {
-      await Deno.remove(path);
+      await localFilesystem().remove(path);
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
   };
-  const scratch = await Deno.makeTempDir({ prefix: "orbit-cache-fill-" });
+
+  const scratch = await localFilesystem().makeTempDir({
+    prefix: "orbit-cache-fill-",
+  });
   const atomic = async (destination: string, content: string) => {
     const source = `${scratch}/${crypto.randomUUID()}`;
     const staging = `${destination}.tmp-${crypto.randomUUID()}`;
-    await Deno.writeTextFile(source, content, { mode: 0o600 });
+
+    await localFilesystem().writeTextFile(source, content, { mode: 0o600 });
     try {
       await sudo("install", "-m", "0644", "--", source, staging);
       await sudo("mv", "-fT", "--", staging, destination);
@@ -276,7 +281,7 @@ export async function fillCacheHost(
             await response.body?.cancel();
             throw new Error(`HTTP ${response.status}`);
           }
-          const file = await Deno.open(temporary, {
+          const file = await localFilesystem().open(temporary, {
             write: true,
             createNew: true,
             mode: 0o600,
@@ -345,6 +350,6 @@ export async function fillCacheHost(
     }
     return { hashes, failures };
   } finally {
-    await Deno.remove(scratch, { recursive: true });
+    await localFilesystem().remove(scratch, { recursive: true });
   }
 }

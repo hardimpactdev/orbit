@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 /** Instance source effects run on their placed native worker, never through orbit-agent. */
 import { z } from "npm:zod@4.4.3";
 import { createHash } from "node:crypto";
@@ -86,7 +87,7 @@ async function execute(
   signal?: AbortSignal,
   env: Record<string, string> = {},
 ) {
-  const child = new Deno.Command(program, {
+  const child = localCommand(program, {
     args,
     clearEnv: true,
     env: { ...fixedEnvironment, ...env },
@@ -329,8 +330,13 @@ async function prepare(
     await sourceInspect(source, true, signal);
     return { created: false };
   }
-  await Deno.mkdir(parent(source.checkout), { recursive: true, mode: 0o755 });
-  await Deno.mkdir(source.checkout, { mode: 0o755 });
+
+  await localFilesystem().mkdir(parent(source.checkout), {
+    recursive: true,
+    mode: 0o755,
+  });
+
+  await localFilesystem().mkdir(source.checkout, { mode: 0o755 });
   if (source.seed_repository && input.seed_commit) {
     await parentChain(source.seed_repository);
     refuse(
@@ -385,7 +391,8 @@ async function prepare(
       signal,
     ))!;
     const info = await Deno.lstat(source.checkout);
-    await Deno.writeTextFile(
+
+    await localFilesystem().writeTextFile(
       `${directory}/orbit-source-prepare`,
       `${source.prepare_id}:${info.dev}:${info.ino}\n`,
       { createNew: true, mode: 0o600 },
@@ -593,6 +600,7 @@ async function template(
   return { environment_template: decoder.decode(blob.output) };
 }
 async function registrationDigest(root: string, signal?: AbortSignal) {
+  const filesystem = localFilesystem();
   const hash = createHash("sha256");
   for (
     const args of [
@@ -624,7 +632,7 @@ async function registrationDigest(root: string, signal?: AbortSignal) {
         hash.update(await Deno.readLink(path));
       } else if (info.isFile) {
         hash.update("F");
-        const file = await Deno.open(path, { read: true });
+        const file = await filesystem.open(path, { read: true });
         try {
           for await (const part of file.readable) hash.update(part);
         } finally {
@@ -780,7 +788,7 @@ async function adopt(raw: Record<string, unknown>, signal?: AbortSignal) {
     await parentChain(member.application);
     const path = `${member.application}/.env`, entry = await stat(path);
     if (entry?.isFile && !entry.isSymlink && (entry.mode ?? 0) & 0o007) {
-      await Deno.chmod(path, (entry.mode ?? 0) & 0o770);
+      await localFilesystem().chmod(path, (entry.mode ?? 0) & 0o770);
     }
   }
   return { identities: [] };
@@ -845,7 +853,10 @@ async function candidate(raw: Record<string, unknown>, signal?: AbortSignal) {
       signal,
     ),
   );
-  const scratch = await Deno.makeTempDir({ prefix: "orbit-clone-candidate-" });
+
+  const scratch = await localFilesystem().makeTempDir({
+    prefix: "orbit-clone-candidate-",
+  });
   try {
     const bare = `${scratch}/repository.git`;
     await runGit(["init", "--quiet", "--bare", "--", bare], signal);
@@ -876,7 +887,7 @@ async function candidate(raw: Record<string, unknown>, signal?: AbortSignal) {
       `refs/remotes/origin/${input.target_branch}`,
     ], signal);
   } finally {
-    await Deno.remove(scratch, { recursive: true });
+    await localFilesystem().remove(scratch, { recursive: true });
   }
   return { source: input.base, commit };
 }

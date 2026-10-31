@@ -1,3 +1,4 @@
+import { localFilesystem } from "../../operations/_lib/local-worker.ts";
 // @deno-types="npm:@types/semver@7.7.1"
 import { satisfies, validRange } from "npm:semver@7.7.2";
 import { z } from "npm:zod@4";
@@ -418,7 +419,10 @@ export async function scratch(
   root: string,
   signal?: AbortSignal,
 ): Promise<{ root: string; close: () => Promise<void> }> {
-  const temp = await Deno.makeTempDir({ prefix: "maintenance-plan-" });
+  const filesystem = localFilesystem();
+  const temp = await filesystem.makeTempDir({
+    prefix: "maintenance-plan-",
+  });
   try {
     root = await Deno.realPath(root);
     const result = await command(root, "git", ["ls-files", "-z"], signal);
@@ -447,7 +451,10 @@ export async function scratch(
         );
       }
       const to = `${temp}/${file}`;
-      await Deno.mkdir(to.slice(0, to.lastIndexOf("/")), { recursive: true });
+
+      await filesystem.mkdir(to.slice(0, to.lastIndexOf("/")), {
+        recursive: true,
+      });
       if (stat.isSymlink) {
         const target = await Deno.readLink(from);
         // An internal absolute link must point into the copy, not the source tree.
@@ -456,17 +463,21 @@ export async function scratch(
             target.slice(root.length + 1)
           }`
           : target;
-        await Deno.symlink(link, to);
+
+        await filesystem.symlink(link, to);
         symlinks.push(file);
-      } else await Deno.copyFile(from, to);
+      } else await filesystem.copyFile(from, to);
     }
     // Omitted untracked links can change how a relative target traverses ../.
     for (const file of symlinks) {
       await internalPath(temp, `${temp}/${file}`, file);
     }
-    return { root: temp, close: () => Deno.remove(temp, { recursive: true }) };
+    return {
+      root: temp,
+      close: () => filesystem.remove(temp, { recursive: true }),
+    };
   } catch (e) {
-    await Deno.remove(temp, { recursive: true });
+    await filesystem.remove(temp, { recursive: true });
     throw e;
   }
 }

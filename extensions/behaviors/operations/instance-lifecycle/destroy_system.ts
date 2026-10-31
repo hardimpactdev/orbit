@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 export type DestroyReadCall = {
   name: string;
@@ -106,7 +107,7 @@ async function runSystemProgram(
   limit = 524288,
 ) {
   signal?.throwIfAborted();
-  const child = new Deno.Command(executable, {
+  const child = localCommand(executable, {
     args,
     stdin: "null",
     stdout: "piped",
@@ -271,7 +272,7 @@ async function state(input: Source, owner: Owner) {
 }
 async function writeOnce(path: string, contents: string, owner: Owner) {
   const temporary = parent(path) + "/.write-" + crypto.randomUUID();
-  const handle = await Deno.open(temporary, {
+  const handle = await localFilesystem().open(temporary, {
     createNew: true,
     write: true,
     mode: 0o600,
@@ -286,15 +287,15 @@ async function writeOnce(path: string, contents: string, owner: Owner) {
   }
   try {
     try {
-      await Deno.link(temporary, path);
+      await localFilesystem().link(temporary, path);
     } catch (error) {
       if (!(error instanceof Deno.errors.AlreadyExists)) throw error;
     }
   } finally {
-    await Deno.remove(temporary);
+    await localFilesystem().remove(temporary);
   }
   await file(path, owner, contents);
-  const dir = await Deno.open(parent(path), { read: true });
+  const dir = await localFilesystem().open(parent(path), { read: true });
   try {
     await dir.sync();
   } finally {
@@ -318,7 +319,7 @@ async function grouping(input: ReceiptInput, owner: Owner) {
     await Deno.realPath(input.grouping_directory) === input.grouping_directory,
   );
   for await (const _ of Deno.readDir(input.grouping_directory)) return;
-  await Deno.remove(input.grouping_directory);
+  await localFilesystem().remove(input.grouping_directory);
 }
 
 /** Read-only preparation uses exactly the same source checks as finalization. */
@@ -472,8 +473,10 @@ export async function checkDestroyPublication(
   );
   require(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(commit));
   const material = GitRead.parse(rawRead);
-  const scratch = await Deno.makeTempDir({ prefix: "orbit-publication-" });
-  await Deno.chmod(scratch, 0o700);
+  const scratch = await localFilesystem().makeTempDir({
+    prefix: "orbit-publication-",
+  });
+  await localFilesystem().chmod(scratch, 0o700);
   try {
     const repository = scratch + "/repository.git";
     require(
@@ -529,7 +532,7 @@ export async function checkDestroyPublication(
     }
     return false;
   } finally {
-    await Deno.remove(scratch, { recursive: true });
+    await localFilesystem().remove(scratch, { recursive: true });
   }
 }
 
@@ -538,7 +541,7 @@ async function prepare(input: Source, signal?: AbortSignal) {
   const p = destroySourcePaths(input);
   if (!await stat(p.state)) {
     try {
-      await Deno.mkdir(p.state, { mode: 0o700 });
+      await localFilesystem().mkdir(p.state, { mode: 0o700 });
     } catch (e) {
       if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
     }
@@ -715,9 +718,13 @@ async function cleanup(input: ReceiptInput, signal?: AbortSignal) {
   }
   if (input.layout === "worktree") {
     const admin = await recovery(input, owner);
-    if (await stat(admin)) await Deno.remove(admin, { recursive: true });
+    if (await stat(admin)) {
+      await localFilesystem().remove(admin, { recursive: true });
+    }
   } else require(!await stat(p.recovery));
-  if (quarantine) await Deno.remove(p.quarantine, { recursive: true });
+  if (quarantine) {
+    await localFilesystem().remove(p.quarantine, { recursive: true });
+  }
   require(!await stat(p.quarantine));
   await grouping(input, owner);
   return { receipt: input.receipt };
@@ -867,7 +874,7 @@ async function finalize(input: FinalizeInput, signal?: AbortSignal) {
           p.quarantine,
         ], signal)).success,
       );
-    } else await Deno.rename(physical, p.quarantine);
+    } else await localFilesystem().rename(physical, p.quarantine);
     physical = p.quarantine;
   }
   require(identity(await directory(physical, owner)) === input.source_identity);

@@ -7,21 +7,22 @@ import {
   plan,
 } from "./rotation.ts";
 import type { Http } from "../automatic-deploy/gateway.ts";
-const day = 86400000;
-Deno.test("rotation is due at day20 while ten days of native lifetime remain", async () => {
+const hour = 3600000;
+const day = 24 * hour;
+Deno.test("rotation is due at hour20 while four hours of native lifetime remain", async () => {
   const now = Date.now();
   const token = {
     name: "orbit-node-9",
     state: "enrolled",
-    createdAt: new Date(now - 20 * day).toISOString(),
-    expiresAt: new Date(now + 10 * day).toISOString(),
+    createdAt: new Date(now - 20 * hour).toISOString(),
+    expiresAt: new Date(now + 4 * hour).toISOString(),
   };
   assertEquals(due(token, now), true);
   assertEquals(
     due({
       ...token,
-      createdAt: new Date(now - day).toISOString(),
-      expiresAt: new Date(now + 29 * day).toISOString(),
+      createdAt: new Date(now - hour).toISOString(),
+      expiresAt: new Date(now + 23 * hour).toISOString(),
     }, now),
     false,
   );
@@ -38,8 +39,8 @@ Deno.test("rotation and failed-delivery recovery mint through native commands an
   let token = {
     name: "orbit-node-9",
     state: "enrolled",
-    createdAt: new Date(now - 21 * day).toISOString(),
-    expiresAt: new Date(now + 9 * day).toISOString(),
+    createdAt: new Date(now - 21 * hour).toISOString(),
+    expiresAt: new Date(now + 3 * hour).toISOString(),
     vaultName: "_token-secrets",
     secretKey: "worker-token-orbit-node-9",
   };
@@ -59,7 +60,7 @@ Deno.test("rotation and failed-delivery recovery mint through native commands an
         ...token,
         state: "unused",
         createdAt: new Date(now).toISOString(),
-        expiresAt: new Date(now + 30 * day).toISOString(),
+        expiresAt: new Date(now + 24 * hour).toISOString(),
       };
       return { token: "orbit-node-9.abcdefghijklmnop" };
     }
@@ -130,7 +131,7 @@ Deno.test("rotation and failed-delivery recovery mint through native commands an
       "create",
       "orbit-node-9",
       "--duration",
-      "30d",
+      "24h",
     ]),
   );
   assertEquals(
@@ -166,8 +167,8 @@ Deno.test("rotation recovers fresh undelivered enrollment but leaves connected f
   const fresh = {
     name: "orbit-node-9",
     state: "enrolled",
-    createdAt: new Date(now - day).toISOString(),
-    expiresAt: new Date(now + 29 * day).toISOString(),
+    createdAt: new Date(now - hour).toISOString(),
+    expiresAt: new Date(now + 23 * hour).toISOString(),
   };
   let workers: unknown[] = [];
   const call: Native = async (args) =>
@@ -316,4 +317,16 @@ Deno.test("public queued convergence accepts terminal null polling and retains o
         operation_id: 12,
       });}
   }
+});
+
+Deno.test("old week-long access tokens and invalid timestamps are due for bounded replacement", () => {
+  const now = Date.parse("2026-10-31T07:00:00Z");
+  const token = {
+    name: "orbit-node-9",
+    state: "active",
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + 30 * 24 * hour).toISOString(),
+  };
+  assertEquals(due(token, now), true);
+  assertEquals(due({ ...token, createdAt: "invalid" }, now), true);
 });

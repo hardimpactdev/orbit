@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { privateDnsProgram } from "./dns-publication.ts";
 
@@ -36,7 +37,7 @@ export const dnsLaunch = () => ({
 /** Fixed local code and data on stdin. No RemoteProgram, SSH or Gateway execution relay. */
 export async function runPrivateDns(input: z.infer<typeof DnsPublication>) {
   const launch = dnsLaunch();
-  const child = new Deno.Command(launch.command, {
+  const child = localCommand(launch.command, {
     args: launch.args,
     stdin: "piped",
     stdout: "piped",

@@ -1,3 +1,4 @@
+import { localCommand } from "../operations/_lib/local-worker.ts";
 import {
   type Family,
   type FamilyReport,
@@ -694,7 +695,7 @@ export async function readDatabaseServer(
       "--batch",
       "--skip-column-names",
     ];
-  const child = new Deno.Command(pg ? "psql" : "mysql", {
+  const child = localCommand(pg ? "psql" : "mysql", {
     args,
     env: { [pg ? "PGPASSWORD" : "MYSQL_PWD"]: password },
     stdin: "piped",

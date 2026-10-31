@@ -1,3 +1,4 @@
+import { localFilesystem } from "../_lib/local-worker.ts";
 import { cleanupPayload } from "./cleanup_contract.ts";
 import { cleanupSeed } from "./cleanup_seed.ts";
 
@@ -31,11 +32,13 @@ export async function cleanupAsOwner(
       if (!file.isFile || file.isSymlink || file.uid !== uid) {
         return { error_code: "database.sqlite_cleanup_refused" };
       }
-      await Deno.remove(snapshot);
+
+      await localFilesystem().remove(snapshot);
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
-    await Deno.remove(input.directory);
+
+    await localFilesystem().remove(input.directory);
     return { backend: "absent" };
   } catch {
     return { error_code: "database.sqlite_cleanup_failed" };

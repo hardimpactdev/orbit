@@ -1,3 +1,4 @@
+import { localCommand } from "../operations/_lib/local-worker.ts";
 import { queryWorkerData } from "./worker_query.ts";
 import { callWorkerModel, type WorkerModelContext } from "./worker_model.ts";
 import {
@@ -55,7 +56,7 @@ export async function workflowCommand(
   input?: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const g = context.globalArgs;
-  const child = new Deno.Command(Deno.execPath(), {
+  const child = localCommand(Deno.execPath(), {
     args: [
       ...args,
       "--server",

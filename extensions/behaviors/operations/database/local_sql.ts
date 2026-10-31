@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 /** Fixed database action envelope. No agent binary, pin, request or receipt is used. */
@@ -147,7 +148,7 @@ export async function runSqlProcess(
   const signal = process.signal
     ? AbortSignal.any([process.signal, deadline])
     : deadline;
-  const child = new Deno.Command(process.command, {
+  const child = localCommand(process.command, {
     args: process.args,
     stdin: "piped",
     stdout: "piped",

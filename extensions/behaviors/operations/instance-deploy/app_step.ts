@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import type { Http } from "../../automatic-deploy/gateway.ts";
 import { appStepRuntime } from "./app_step_runtime.ts";
@@ -137,7 +138,7 @@ export async function sudoAppStep(
     await sha256(script) !== step.command_digest
   ) return { error_code: "instance.step_not_admitted" };
   signal?.throwIfAborted();
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: [
       "-n",
       "-u",

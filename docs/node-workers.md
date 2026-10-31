@@ -1,7 +1,6 @@
 # Per-Node workers
 
-Every local family step accepts an admitted positive integer `node_id`. Always use both the native string label `node=<node_id>` and the unique
-single-machine token target `orbit-node-<node_id>`:
+Each Node step uses both its exact native token target and its string Node label:
 
 ```yaml
 target: '${{ "orbit-node-" + string(inputs.node_id) }}'
@@ -9,114 +8,56 @@ labels:
   node: '${{ string(inputs.node_id) }}'
 ```
 
-A child that changes Node sets its own placement. It must not inherit the
-parent's migration pool or another Node's target. Do not override queueTimeout:
-Swamp queues an unavailable Node and fails at its native deadline (600s at
-1602a617). There is no local, migration-worker or other-Node fallback. Labels
-are selectors, not authentication; each Node has its own single-machine token.
-Never reuse the fleet enrollment secret.
+A step that changes Node sets its own placement. It does not inherit another Node's target or migration pool. Swamp queues an unavailable Node until its native deadline; there is no local or other-Node fallback. Labels select workers; a separate single-machine enrollment token authenticates each worker.
 
-The Gateway stores desired state and the admitted Node identity. Existing
-`node.converge` executes `agent.configure` through Swamp's footprint step. That
-installs the pinned binary, Orbit root CA, and persistent
-`orbit-node-worker.service`. The service uses the Node's configured user and
-existing passwordless sudo. It creates no account or sudo rule. Third-party
-packages continue through the `orbit-swamp-package` sandbox without sudo.
+## System commands
 
-Native enrollment uses `swamp worker token create orbit-node-N --duration 30d`.
-Duration is required. Nick chose 30d instead of the manual's 24h example to avoid
-a fleet outage at a short hard deadline. Keep native max-enrollments 1,
-concurrency 1 and the worker-principal access-token default 30d, without grants.
-The new enrollment does not use the old issuer, operator credential or recovery
-envelope. The issuer recovery-note save is no longer a Sabre enrollment gate;
-keep existing issuer custody until separately reviewed retirement.
+Behaviors import `run` from `extensions/behaviors/operations/_lib/node-commands.ts`. Its contract is `run(command, stdin, as_user, options?)`: the command is a reviewed absolute executable and argv array; private values use byte-stream stdin; the account is `node`, `root`, or a fixed admitted account. The result contains bounded `stdout`, `success`, and `code`. The helper does not retry or project results. Swamp performs actions directly; orbit-agent observes the Node.
 
-`node-worker-enroll` runs on 209's existing services worker. It reads the admitted
-Node and its `swamp_worker_selected` intent before touching credentials, mints native enrollment and obtains the access credential, then submits protected `worker_credentials` to
-`POST /api/v1/nodes/N/converge`. Gateway stores only an opaque reference to an
-encrypted 30-minute staging entry. The existing protected agent-input transport
-hydrates the pair for `agent.configure`, never durable intent or receipts.
-A failed attempt invokes native create again and sends its replacement pair through converge. Credentials are
-root-owned 0600 under root 0700 `/etc/orbit/swamp-worker`; systemd loads them
-privately and the fixed root pre-start service checks their custody on every
-start. Persistent machine cache lives under `/var/lib/orbit-node-worker`.
-Connect outbound to `wss://swamp.orbit` with the Orbit root CA and normal hostname
-validation. Keep serve's empty dispatch environment allowlist.
+Commands run locally on ordinary workers and over pinned SSH on light Node proxies. Systemd cgroup membership selects the root-owned proxy mapping. Workflow arguments and environment variables cannot select a host. One bounded fixed Python subprocess reads the inherited cgroup and validates public configuration custody, because the compiled native runtime forbids direct `/proc` reads. Metadata failures refuse execution. Stdin and stdout drain concurrently to avoid pipe backpressure deadlocks.
 
-`node-worker-rotation` runs hourly on 209, using the same native token commands.
-It rotates by day 20 or when <=10 days remain, delivers through Node converge,
-and repeats the exact canary. A missing worker or a worker predating the current
-enrollment selects recovery too. A failed delivery is retried with a newly minted enrollment; native create
-is the only supported way to obtain its plaintext. Native access-token rotation keeps its default 30days.
-No Gateway renewal scheduler, issuer, Node lock or root broker participates.
+Gateway HTTP also runs on the effect Node over SSH, using its installed CA. The Gateway sees that Node's WireGuard peer identity. No identity header or authorization exception is added. Unported agent-action adapters refuse proxy execution; each family must port its effects before using a proxy.
 
-Worker start/restart and opt-out stop use `systemctl --no-block`: converge on N
-must not wait for its own worker to drain. Missing or unsafe files fail not-ready.
-`StartLimitBurst=3` in 300s bounds repeated failures; stdout/stderr go to journal.
-Doctor flags `node.worker_failed`; the metrics exporter includes the worker's
-systemd state.
+## Persistent local workers
 
-Node workers run reviewed orbit-swamp code only. Third-party extensions must
-not run in-process. CI checks every Node placement for both target and string
-node label and traces the local behavior imports. The UpCloud image behavior
-has one credential-reviewed library exception: the official SSH operations source
-at commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`. The linter accepts only its
-exact immutable URL. It does not permit extension loading or third-party workflow
-execution. Other third-party packages stay in the `orbit-swamp-package` sandbox
-without sudo.
+`node-worker/install.ts::configureNodeWorker(config, credentials, invoke)` is the shared lower installer. Config is the admitted `{node_id, user}` or null for opt-out. A null credential pair preserves existing files. The installer creates no user or sudo rule; it checks the configured account's existing passwordless sudo. TaskVM owners may compose this lower action for their admitted guest without adding it to persistent fleet selection.
 
-Update each Node to the released agent before selecting that Node. Old agents
-cannot parse the bool-to-table `[swamp_worker]` change. Select it immediately
-before enrollment. Rollout intent is the JSON array
-`ORBIT_SWAMP_WORKER_NODES`, initially `[]`. The Node API projects that selection
-as `swamp_worker_selected`; schedules never enroll opt-out Nodes.
+Before changes, available RAM must cover the pinned Swamp artifact byte size plus 256 MiB. A download is staged beside the destination and its pinned SHA-256 is verified before publication. A mismatch removes staging and publishes nothing. Nodes 1 and 18 refuse local installation.
 
-After orchestrator approval, enroll in the current demand order: beast 9,
-gateway 14, services 17, shark 13, sabre 12, app-prod 4, usexit 18, vpn 1, then
-Swamp 209. Read the current Node
-record for `user`; currently 9/13/12 use nckrtl, and 17/4/18/1/14 use orbit.
-Never infer the account from the host name. macOS has no installer in this
-slice; its launchd path is deferred.
+Enrollment and server tokens live in root-owned 0600 files below root-owned 0700 `/etc/orbit/swamp-worker`. Systemd reads them with `LoadCredential`. A standalone prestart checker validates RAM and custody without invoking an agent action. The Node user's private cache lives under `/var/lib/orbit-node-worker`.
 
-For each Node, validate `node-worker-canary`, then run it with `node_id=N` and
-`user=<configured user>`. This changes no host state: it verifies the expected Node ID and user against
-root-owned 0644 `/etc/orbit/agent/config.toml`, reads hostname and effective
-account, and runs `sudo -n id -u`. Inspect the native run placement and the
-`proof` resource; require the expected worker name/label, user and
-`sudo_ready: true`. Record the run ID, worker instance identity, hostname,
-user, sudo result and timestamp in `~/swamp-execution/THREADS.md` before
-announcing that Node live to lanes 2, 9, 10, 6, 5 and 12. Lane 12 owns only
-Metrics and WebSocket. No live success is implied by source validation.
+`orbit-node-worker.service` runs as the configured Node user with sudo available. It uses `Restart=on-failure`, `RestartSec=15`, and `StartLimitIntervalSec=0`, so a prolonged Serve outage does not exhaust recovery. Starts, restarts, and opt-out stops use `--no-block`. An operator mask is preserved. Stdout and stderr go to the journal. Third-party package work stays in the `orbit-swamp-package` sandbox without sudo.
 
-The switch is `swamp_workers.nodes` from `ORBIT_SWAMP_WORKER_NODES` (default empty). Remove a Node from that
-intent and converge to disable/remove its unit; preserve its secrets and cache
-for recovery. Existing family writers remain selected until each family has
-a passing canary and a reversible writer switch. Delete its previous path
-after its first production success.
+## Light Node proxies
 
+`swamp_workers.proxy_nodes` selects VPN1 and usexit18 for dispatch without installing Swamp on either box. Their local worker units remain masked. Two workers on Node209 use exact targets `orbit-node-1` and `orbit-node-18`, matching string Node labels, and pool `light-node-proxy`. Their state, caches, and credentials are separate.
 
-## Unplaced steps and rotation limits
+`node-proxy-workers-setup` is an administrative native workflow. On209 it checks capacity for two artifact-plus-headroom budgets and generates or reuses one dedicated ed25519 key. The private key is root-owned 0600 at `/etc/orbit/node-proxy/id_ed25519` and never leaves209. Only its public key enters native resources.
 
-The [Swamp placement manual](https://swamp-club.com/manual/reference/remote-execution/workflow-placement)
-states: “Steps without any effective placement run locally on the orchestrator.”
-Effective placement inherits workflow, job and step fields. Omitting only
-`target` does not make a step local: labels or platform can dispatch it.
-Node steps always use the exact token target and matching string Node label.
+Gateway's existing Node14 worker authorizes that public key on the two exact configured `orbit` accounts through its existing managed SSH authority. Authorization checks the effect Node's WireGuard address and requires its local worker to remain masked and stopped. It preserves other authorized keys. The new entry uses `restrict,from="10.44.0.15"`. No Swamp binary or worker unit is installed on either light Node.
 
-At the pinned1602a617 version, native enrollment mint refuses an active token
-name until it is revoked or expired (`enrollment_token_model.ts:179–187`).
-Connect provides no alternate registered name. Minting and delivering a new
-enrollment before revoking the old one while retaining `orbit-node-ID` therefore
-requires native support for overlapping credential generations. This ordering
-is an outstanding follow-up; the scheduledday20 rotation does not provide it.
-Do not change the exact placement identity or add a custom issuer to hide this
-limit. Initial enrollment is unaffected.
+Node209 verifies the recorded Ed25519 key bytes against Orbit's recorded fingerprints before writing its root-owned `known_hosts`. SSH disables forwarding, agents, user configuration, and trust on first use. It uses strict host checks, an eight-second connection timeout, one attempt, and bounded keepalive detection. Private command input stays on stdin.
 
-The native runtime merges global arguments into method arguments. Lifecycle methods
-accept the declared `gatewayUrl` and `caFile` alongside their method input, while
-rejecting undeclared keys. Both enrollment and the scheduled rotation planner use
-this boundary before reaching any token or Gateway effect.
+The setup workflow composes `node/enrollment_issuer.ts::nodeEnrollmentIssuer`; it adds no issuer API. Credential plaintext stays callback-local and enters only root-owned files through stdin. The installer checks the existing pinned Swamp binary on209 before starting either proxy unit. Source validation alone does not prove that either proxy is installed or ready.
 
-Enrollment checks the public Operation `kind`, `target_type: node` and
-`target_id` against the selected Node on admission and each status read. The
-public Operation API does not expose a `node_id` field.
+## Credentials and readiness
+
+The shared issuer creates exact `orbit-node-N` enrollment and `orbit-node-N-access` worker-principal tokens with explicit 24-hour lifetimes. The canonical rotation policy marks credentials due after 20 hours or with four hours remaining. Invalid lifetimes and lifetimes above 24 hours are due. A saved pair is reused by its owning native step's retry. At pinned1602, native create refuses an active name, so rotation revokes the old enrollment before minting its replacement; it does not support overlapping generations.
+
+Validate `node-worker-canary` before running it with an admitted Node and configured user. It reads Node identity, hostname, effective account, and sudo readiness. On a proxy it also verifies the remote WireGuard address and the preserved local worker mask. Inspect the native dispatch target, string label, worker instance, and proof resource before announcing readiness.
+
+`node-proxy-canary` accepts only Node1 or18. Its default read-only mode uses the same shared transport. Explicit effect mode writes, reads, and removes one disposable file under `/run`. Verify VPN read-only first, then VPN effect, then usexit. Retain actual native run IDs; do not infer live success from source tests.
+
+All Node code is reviewed orbit-swamp source. CI traces behavior imports and checks exact placement. The sole third-party Node library exception is the reviewed official SSH source at immutable commit `d6f7afdcd6d04a63fdbc6ed56c403832770f67a6`; mutable imports and extension loading in Node processes are refused.
+
+Legacy local executors use the shared `localCommand` and `localFilesystem` refusals before each process or filesystem effect. Node workflow lint rejects raw process and filesystem mutations outside the reviewed primitives. A route or process-control task placed in a proxy cgroup therefore fails before touching209. Only code using the shared `run` transport can execute a proxy command. The same guard covers local-only package and maintenance helpers reachable from Node workflows.
+
+Remote commands run inside a root-owned GNU timeout supervisor, then drop to the configured Node user before the reviewed argv. Explicit sudo inside that argv retains the admitted account semantics. A client timeout or cancellation leaves an uncertain outcome; the remote supervisor bounds the process lifetime and kills its group after the deadline plus five seconds. Native recovery must reconcile that outcome before retrying.
+
+Proxy credential renewal stays on209. The canonical rotation planner includes only proxy selections whose installed public mapping and unit retain root custody. Renewal validates the exact Node, existing key and credential custody, reuses a stored pair only when the canonical token policy says it is current and both files postdate the current native generations, and otherwise composes the existing issuer. It writes the protected pair under `/etc/orbit/node-proxy/credentials/N` and restarts only `orbit-node-proxy-worker-N.service` without blocking. It never posts a light Node to Gateway local-worker converge. The shared24-hour duration and20-hour/four-hour rotation thresholds remain the approved canonical policy.
+
+The agent is frozen during the port. Existing Rust action code remains in place for one final observer strip; this proxy implementation and its fixes change no `apps/agent` source or agent delivery pin.
+
+The installer publishes each managed proxy selection marker only after its credentials, state, unit and systemd registration are ready. A partial first installation therefore cannot select an unfinished proxy for rotation. Proxied Gateway requests use the caller's full deadline, including requests longer than60seconds. Legacy Vite port probes and log scans refuse proxy placement before host reads or network probes. Bulk filesystem operations check placement once before their loops. Import lint also rejects direct Node filesystem/process/network libraries, unguarded create/utime calls, and access to the raw command primitive outside its reviewed adapters.
+
+Before any production work is admitted to either proxy, run the read-only `node-proxy-canary` on that exact worker and require its remote Node identity to match. This proves the runtime retained the worker cgroup and selected the intended transport. Then run the disposable effect canary; source checks alone do not prove runtime placement.

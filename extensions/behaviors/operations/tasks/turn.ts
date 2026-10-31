@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { withTaskCancellation } from "./cancellation.ts";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
@@ -210,7 +211,7 @@ with open(directory+'/receipt.json','w') as f: json.dump(result,f)
 
 export function localWorkspace(cwd: string): Workspace {
   const git = async (...args: string[]) => {
-    const result = await new Deno.Command("git", {
+    const result = await localCommand("git", {
       cwd,
       args,
       stdout: "piped",
@@ -233,10 +234,16 @@ export function localWorkspace(cwd: string): Workspace {
     prepare: async (input) => {
       const before = await snapshot();
       const root = await directory();
-      await Deno.mkdir(root, { recursive: true, mode: 0o700 });
-      await Deno.writeTextFile(root + "/turn", helper, { mode: 0o700 });
-      await Deno.chmod(root + "/turn", 0o700);
-      await Deno.writeTextFile(
+
+      await localFilesystem().mkdir(root, { recursive: true, mode: 0o700 });
+
+      await localFilesystem().writeTextFile(root + "/turn", helper, {
+        mode: 0o700,
+      });
+
+      await localFilesystem().chmod(root + "/turn", 0o700);
+
+      await localFilesystem().writeTextFile(
         root + "/turn.json",
         JSON.stringify({
           thread: input.thread_id,
@@ -246,7 +253,7 @@ export function localWorkspace(cwd: string): Workspace {
         { mode: 0o600 },
       );
       try {
-        await Deno.remove(root + "/receipt.json");
+        await localFilesystem().remove(root + "/receipt.json");
       } catch (error) {
         if (!(error instanceof Deno.errors.NotFound)) throw error;
       }

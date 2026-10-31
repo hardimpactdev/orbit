@@ -1,3 +1,7 @@
+import {
+  localCommand,
+  localFilesystem,
+} from "../../operations/_lib/local-worker.ts";
 import { resolve } from "node:path";
 import { z } from "npm:zod@4";
 import { serviceToolPolicy, toolOptions } from "./tool_policy.ts";
@@ -57,7 +61,10 @@ export async function readJson(path: string): Promise<Record<string, unknown>> {
 }
 
 export async function writeJson(path: string, value: unknown): Promise<void> {
-  await Deno.writeTextFile(path, JSON.stringify(value, null, 4) + "\n");
+  await localFilesystem().writeTextFile(
+    path,
+    JSON.stringify(value, null, 4) + "\n",
+  );
 }
 
 async function realPath(path: string, label: string): Promise<string> {
@@ -157,7 +164,7 @@ export async function command(
       throw new MaintenanceFailure(`Missing executable ${binary}`, 127);
     }
     // Services and task workers are Linux. A private session lets cancellation reap descendants too.
-    const child = new Deno.Command(signal ? "/usr/bin/setsid" : executable, {
+    const child = localCommand(signal ? "/usr/bin/setsid" : executable, {
       args: signal
         ? ["--wait", "--", executable, ...options.args]
         : options.args,

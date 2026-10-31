@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { agentReply } from "../_lib/node-agent.ts";
 
 const agent = "/usr/local/bin/orbit-agent";
@@ -46,7 +47,7 @@ export async function incusProcess(
   input: Uint8Array,
   seconds: number,
 ) {
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args,
     stdin: "piped",
     stdout: "piped",

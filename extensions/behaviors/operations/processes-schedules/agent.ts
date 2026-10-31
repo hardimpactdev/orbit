@@ -1,3 +1,4 @@
+import { assertLocalExecution, localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 /** Verify the admitted build before allowing the Node user's sudo action. */
@@ -38,6 +39,7 @@ export async function localAgent(
   admittedDigest: string,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
+  assertLocalExecution();
   const binary = "/usr/local/bin/orbit-agent";
   try {
     const file = await Deno.lstat(binary);
@@ -56,7 +58,7 @@ export async function localAgent(
   }
   const deadline = Budgets[name];
   const bounded = AbortSignal.timeout(deadline);
-  const process = new Deno.Command("/usr/bin/sudo", {
+  const process = localCommand("/usr/bin/sudo", {
     args: ["-n", "--", binary, "command", name],
     stdin: "piped",
     stdout: "piped",

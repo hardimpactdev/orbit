@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { environmentProgram } from "./local_runtime.ts";
 
@@ -39,7 +40,7 @@ export const invokeLocalEnvironment: EnvironmentInvoke = async (
     : undefined;
   if (data === undefined) throw new Error("env.configuration_invalid");
   signal?.throwIfAborted();
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: ["-n", "--", "/usr/bin/python3", "-I", "-c", environmentProgram],
     cwd: "/",
     clearEnv: true,

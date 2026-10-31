@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import type { ToolIntentInput } from "./direct-contract.ts";
 import { toolSystemProgram } from "./system_program.ts";
@@ -61,7 +62,7 @@ async function nativeSystem(
 ): Promise<Record<string, unknown>> {
   signal?.throwIfAborted();
   const linux = call.node.platform === "linux";
-  const child = new Deno.Command(linux ? "/usr/bin/sudo" : "/usr/bin/python3", {
+  const child = localCommand(linux ? "/usr/bin/sudo" : "/usr/bin/python3", {
     args: linux
       ? ["-n", "--", "/usr/bin/python3", "-c", toolProgram]
       : ["-c", toolProgram],

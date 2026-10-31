@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 const Runner = z.string().regex(
@@ -39,7 +40,7 @@ export async function inspectDeployRunner(
 ) {
   Runner.parse(runner);
   signal?.throwIfAborted();
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: [
       "-n",
       "--",

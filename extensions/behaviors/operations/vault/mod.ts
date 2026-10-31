@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../../automatic-deploy/gateway.ts";
 import { type Context, Globals } from "../../operation-runner/mod.ts";
@@ -70,7 +71,7 @@ export async function localCollection(
 ): Promise<unknown> {
   const deadline = makeDeadline(900_000);
   const overall = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  const child = new Deno.Command("/usr/bin/python3", {
+  const child = localCommand("/usr/bin/python3", {
     args: ["-c", collection],
     stdin: "piped",
     stdout: "piped",

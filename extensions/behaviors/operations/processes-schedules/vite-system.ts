@@ -1,3 +1,4 @@
+import { assertLocalExecution } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { type SystemCommand, systemCommand } from "./system.ts";
 
@@ -37,6 +38,7 @@ const Traffic = z.discriminatedUnion("operation", [
 export async function selectVitePort(
   input: unknown,
 ): Promise<Record<string, unknown>> {
+  assertLocalExecution();
   const { preferred, excluded } = Select.parse(input);
   const held = new Set(excluded);
   for (const path of ["/proc/net/tcp", "/proc/net/tcp6"]) {

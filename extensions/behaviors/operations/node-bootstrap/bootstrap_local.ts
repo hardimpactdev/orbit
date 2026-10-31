@@ -1,3 +1,4 @@
+import { localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 import { downloadAgent } from "./artifact.ts";
@@ -368,14 +369,14 @@ export function nodeBootstrapActions(
         artifact.sha256,
         signal,
       );
-      const local = await Deno.makeTempDir({
+      const local = await localFilesystem().makeTempDir({
         prefix: "orbit-bootstrap-agent-",
       });
       let remote: string | undefined;
       let changed: boolean;
       try {
         const candidate = local + "/agent";
-        await Deno.writeFile(candidate, bytes, {
+        await localFilesystem().writeFile(candidate, bytes, {
           createNew: true,
           mode: 0o700,
         });
@@ -435,7 +436,7 @@ export function nodeBootstrapActions(
         }).parse(installed);
         changed = result.replaced;
       } finally {
-        await Deno.remove(local, { recursive: true });
+        await localFilesystem().remove(local, { recursive: true });
         if (
           remote &&
           /^\/tmp\/orbit-bootstrap-agent-[A-Za-z0-9]{12}$/.test(remote)

@@ -14,10 +14,16 @@ export async function required(
 
 const inspect = `import os,sys,json,stat
 try:
- s=os.lstat(sys.argv[1]);print(json.dumps({'uid':s.st_uid,'gid':s.st_gid,'mode':stat.S_IMODE(s.st_mode),'kind':'directory' if stat.S_ISDIR(s.st_mode) else 'file' if stat.S_ISREG(s.st_mode) else 'other'}))
+ s=os.lstat(sys.argv[1]);print(json.dumps({'uid':s.st_uid,'gid':s.st_gid,'mode':stat.S_IMODE(s.st_mode),'mtime_ms':s.st_mtime_ns/1000000,'kind':'directory' if stat.S_ISDIR(s.st_mode) else 'file' if stat.S_ISREG(s.st_mode) else 'other'}))
 except FileNotFoundError: print('null')
 `;
-export type Metadata = { uid: number; gid: number; mode: number; kind: string };
+export type Metadata = {
+  uid: number;
+  gid: number;
+  mode: number;
+  kind: string;
+  mtime_ms?: number;
+};
 export async function metadata(
   invoke: NodeCommand,
   path: string,

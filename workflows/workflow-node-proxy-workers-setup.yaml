@@ -1,0 +1,50 @@
+id: 4e6dc6ab-e96d-4082-9576-8cf9cdfefe19
+name: node-proxy-workers-setup
+description: Configure the two approved light Node proxy workers without installing Swamp on either light Node.
+target: orbit-node-209
+labels: {node: "209"}
+vaults: []
+jobs:
+  - name: configure
+    steps:
+      - name: prepare_key
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: prepare_key
+      - name: authorize_vpn
+        target: orbit-node-14
+        labels: {node: "14"}
+        writes: true
+        dependsOn: [{step: prepare_key, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: authorize
+          inputs:
+            node_id: 1
+            public_key: '${{ steps.prepare_key.outputs.public_key }}'
+      - name: authorize_exit
+        target: orbit-node-14
+        labels: {node: "14"}
+        writes: true
+        dependsOn: [{step: authorize_vpn, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: authorize
+          inputs:
+            node_id: 18
+            public_key: '${{ steps.prepare_key.outputs.public_key }}'
+      - name: activate
+        writes: true
+        dependsOn: [{step: authorize_exit, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/node-proxy-workers'
+          behaviorName: node-proxy-workers
+          methodName: activate

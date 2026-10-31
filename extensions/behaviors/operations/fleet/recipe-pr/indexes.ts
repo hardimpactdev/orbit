@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { parseRecipe, rewriteSnapshot, same } from "./contents.ts";
 import { requirePolicy } from "./policy.ts";
@@ -42,7 +43,7 @@ async function command(
   args: string[],
   input?: Uint8Array,
 ) {
-  const child = new Deno.Command(name, {
+  const child = localCommand(name, {
     args,
     stdin: input ? "piped" : "null",
     stdout: "piped",
@@ -71,9 +72,14 @@ async function verifiedRelease(
   keyring: string,
 ) {
   const path = directory + "/InRelease";
-  await Deno.writeFile(path, await download(url, 2 * 1024 * 1024), {
-    mode: 0o600,
-  });
+
+  await localFilesystem().writeFile(
+    path,
+    await download(url, 2 * 1024 * 1024),
+    {
+      mode: 0o600,
+    },
+  );
   return new TextDecoder().decode(
     await command("/usr/bin/gpgv", [
       "--homedir",
@@ -186,7 +192,10 @@ export async function snapshotVersions(content: string, next: string) {
     Object.entries(recipe.tools).filter(([, tool]) => tool.source === "ubuntu")
       .map(([name]) => name),
   );
-  const directory = await Deno.makeTempDir({ prefix: "orbit-ubuntu-index-" });
+
+  const directory = await localFilesystem().makeTempDir({
+    prefix: "orbit-ubuntu-index-",
+  });
   try {
     for (
       const pocket of ["resolute", "resolute-updates", "resolute-security"]
@@ -220,7 +229,7 @@ export async function snapshotVersions(content: string, next: string) {
     requirePolicy([...packages].every((name) => versions[name]));
     return versions;
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await localFilesystem().remove(directory, { recursive: true });
   }
 }
 export async function bumpSnapshot(content: string, next: string) {
@@ -241,11 +250,17 @@ export async function artifactIndexes(content: string, verifyFiles = false) {
       ),
     ]),
   ];
-  const directory = await Deno.makeTempDir({ prefix: "orbit-artifact-index-" });
+
+  const directory = await localFilesystem().makeTempDir({
+    prefix: "orbit-artifact-index-",
+  });
   try {
     const suryKey = await download(Sury + "apt.gpg", 1024 * 1024);
     requirePolicy(await sha256(suryKey) === SuryKey);
-    await Deno.writeFile(directory + "/sury.gpg", suryKey, { mode: 0o600 });
+
+    await localFilesystem().writeFile(directory + "/sury.gpg", suryKey, {
+      mode: 0o600,
+    });
     const suryRelease = await verifiedRelease(
       Sury + "dists/resolute/InRelease",
       directory,
@@ -292,7 +307,8 @@ export async function artifactIndexes(content: string, verifyFiles = false) {
       1024 * 1024,
     );
     requirePolicy(await sha256(zabblyKey) === ZabblyKey);
-    await Deno.writeFile(
+
+    await localFilesystem().writeFile(
       directory + "/zabbly.gpg",
       await command("/usr/bin/gpg", [
         "--batch",
@@ -364,7 +380,7 @@ export async function artifactIndexes(content: string, verifyFiles = false) {
     parseRecipe(updated);
     return updated;
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await localFilesystem().remove(directory, { recursive: true });
   }
 }
 
@@ -374,7 +390,7 @@ async function verifyDebianFile(url: string, expected: string, path: string) {
     signal: AbortSignal.timeout(60000),
   });
   requirePolicy(response.ok && response.body);
-  const file = await Deno.open(path, {
+  const file = await localFilesystem().open(path, {
     createNew: true,
     write: true,
     mode: 0o600,

@@ -48,6 +48,33 @@ async function reviewed(path: string) {
     return;
   }
   const text = await Deno.readTextFile(path);
+  const rawProcess = new Set([
+    `${root}/extensions/behaviors/operations/_lib/node-command-process.ts`,
+    `${root}/extensions/behaviors/operations/_lib/local-worker.ts`,
+  ]);
+  if (/new\s+Deno\.Command\s*\(/.test(text) && !rawProcess.has(path)) {
+    errors.push(
+      `Node subprocess must use the shared command runner or guarded localCommand: ${path}`,
+    );
+  }
+  if (
+    /Deno\.(?:open(?:Sync)?|create(?:Sync)?|write\w*|mkdir(?:Sync)?|makeTemp\w*|remove(?:Sync)?|rename(?:Sync)?|chmod(?:Sync)?|chown(?:Sync)?|copyFile(?:Sync)?|symlink(?:Sync)?|link(?:Sync)?|truncate(?:Sync)?|utime(?:Sync)?)\s*\(/
+      .test(text)
+  ) {
+    errors.push(
+      `Node filesystem effect needs the shared local refusal: ${path}`,
+    );
+  }
+  if (
+    /\bcommandOutput\b/.test(text) &&
+    !["node-command-process.ts", "node-commands.ts", "node-proxy.ts"].some((
+      name,
+    ) => path === `${root}/extensions/behaviors/operations/_lib/${name}`)
+  ) {
+    errors.push(
+      `Raw Node command transport is restricted to reviewed adapters: ${path}`,
+    );
+  }
   if (/pulled-extensions|\.runModel\s*\(|\bextends:\s*["']@/.test(text)) {
     errors.push(`Node code can load an extension in-process: ${path}`);
   }
@@ -57,6 +84,21 @@ async function reviewed(path: string) {
     )
   ) {
     const dependency = match[1];
+    if (/^node:(?:fs(?:\/|$)|child_process$|net$|dgram$)/.test(dependency)) {
+      errors.push(
+        `Node host APIs must use the shared command runner or local refusal: ${path}`,
+      );
+    }
+    if (
+      /node-command-process\.ts$/.test(dependency) &&
+      !["node-commands.ts", "node-proxy.ts"].some((name) =>
+        path === `${root}/extensions/behaviors/operations/_lib/${name}`
+      )
+    ) {
+      errors.push(
+        `Raw Node command transport is restricted to reviewed adapters: ${path}`,
+      );
+    }
     if (dependency.startsWith(".")) {
       await reviewed(
         resolve(dirname(path), dependency),

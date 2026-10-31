@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import {
   type FleetContext,
@@ -230,11 +231,15 @@ export async function imageHostKeys(
   if (!/^tvm-image-[0-9]{14}$/.test(name)) {
     throw new Error("task_vm.host_key_failed");
   }
-  const dir = await Deno.makeTempDir({ prefix: "orbit-image-host-key-" });
-  await Deno.chmod(dir, 0o700);
+
+  const dir = await localFilesystem().makeTempDir({
+    prefix: "orbit-image-host-key-",
+  });
+
+  await localFilesystem().chmod(dir, 0o700);
   const pair = async (slot: string) => {
     const path = dir + "/" + slot;
-    const result = await new Deno.Command("/usr/bin/ssh-keygen", {
+    const result = await localCommand("/usr/bin/ssh-keygen", {
       args: [
         "-q",
         "-t",
@@ -262,6 +267,6 @@ export async function imageHostKeys(
       smoke: await pair("smoke"),
     });
   } finally {
-    await Deno.remove(dir, { recursive: true });
+    await localFilesystem().remove(dir, { recursive: true });
   }
 }

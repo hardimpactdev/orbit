@@ -1,3 +1,7 @@
+import {
+  localCommand,
+  localFilesystem,
+} from "../operations/_lib/local-worker.ts";
 import { basename, relative, resolve } from "node:path";
 import { z } from "npm:zod@4.4.3";
 
@@ -28,7 +32,7 @@ export const packageCall: Call = async (input, signal) => {
     stream_bytes: body.byteLength,
     input: descriptor,
   }) + "\n";
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: ["-n", Binary, "command", "package.session"],
     clearEnv: true,
     env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" },
@@ -183,7 +187,8 @@ export class PackageSandboxes {
         } catch (error) {
           if (!(error instanceof Deno.errors.NotFound)) throw error;
         }
-        await Deno.writeTextFile(path, value);
+
+        await localFilesystem().writeTextFile(path, value);
       }
       return {
         code: result.code,

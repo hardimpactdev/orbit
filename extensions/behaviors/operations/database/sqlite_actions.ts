@@ -1,3 +1,4 @@
+import { localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { createHash } from "node:crypto";
 import { userInfo } from "node:os";
@@ -108,7 +109,7 @@ async function privateFile(path: string, write = false) {
   ) {
     throw new Error("database.sqlite_file_refused");
   }
-  const file = await Deno.open(path, { read: !write, write });
+  const file = await localFilesystem().open(path, { read: !write, write });
   const after = await file.stat();
   if (
     before.ino !== after.ino || before.dev !== after.dev || !after.isFile ||
@@ -184,7 +185,7 @@ async function cloneCleanupPreflight(source: z.infer<typeof CloneSource>) {
     file.close();
     if (entry.name !== "snapshot.sqlite") partials.push(path);
   }
-  for (const path of partials) await Deno.remove(path);
+  for (const path of partials) await localFilesystem().remove(path);
 }
 
 async function command(
@@ -247,13 +248,14 @@ export async function exportSnapshot(
     const writer = ctx.createFileWriter("snapshot", name);
     const nativePath = await writer.getFilePath();
     // Local writer allocation returns an absent path; remote spool allocation creates it.
-    nativeFile = await Deno.open(nativePath, {
+    nativeFile = await localFilesystem().open(nativePath, {
       create: true,
       truncate: true,
       write: true,
       mode: 0o600,
     });
-    await Deno.chmod(nativePath, 0o600);
+
+    await localFilesystem().chmod(nativePath, 0o600);
     await copy(sourceFile.readable, nativeFile, output);
     nativeFile.close();
     nativeFile = undefined;
@@ -309,7 +311,7 @@ export async function receiveSnapshot(
         throw new Error("foreign parent");
       }
       try {
-        const created = await Deno.open(target.path, {
+        const created = await localFilesystem().open(target.path, {
           createNew: true,
           write: true,
           mode: 0o600,

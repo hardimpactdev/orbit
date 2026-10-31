@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { RecipeProgram } from "./recipe_program.ts";
 
@@ -20,7 +21,7 @@ export type RecipeProgramRunner = (
 export const runRecipeProgram: RecipeProgramRunner = async (call, signal) => {
   signal?.throwIfAborted();
   const timeout = AbortSignal.timeout(call.timeoutMs);
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: ["-n", "--", "/usr/bin/python3", "-c", call.program],
     stdin: "piped",
     stdout: "piped",

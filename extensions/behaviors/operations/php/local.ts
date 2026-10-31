@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 export const PhpVersion = z.string().regex(/^[0-9]+\.[0-9]+$/);
@@ -32,7 +33,7 @@ export class PhpLocalError extends Error {
 }
 const local: LocalPhpRunner = async (command, signal) => {
   signal?.throwIfAborted();
-  const child = new Deno.Command(command.executable, {
+  const child = localCommand(command.executable, {
     args: command.args,
     stdin: "piped",
     stdout: "piped",

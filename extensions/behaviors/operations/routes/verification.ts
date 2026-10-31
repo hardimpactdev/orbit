@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
@@ -38,7 +39,7 @@ export async function verifyLocal(
       ? `[${address}]:${port}`
       : `${address}:${port}`;
     const process = admitted.protocol === "tls"
-      ? new Deno.Command("/usr/bin/timeout", {
+      ? localCommand("/usr/bin/timeout", {
         args: [
           "10",
           "/usr/bin/openssl",
@@ -56,7 +57,7 @@ export async function verifyLocal(
         stderr: "null",
         signal: AbortSignal.timeout(15000),
       })
-      : new Deno.Command("/usr/bin/curl", {
+      : localCommand("/usr/bin/curl", {
         args: [
           "--head",
           "--noproxy",

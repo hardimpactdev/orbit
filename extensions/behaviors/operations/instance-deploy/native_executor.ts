@@ -1,3 +1,4 @@
+import { localFilesystem } from "../_lib/local-worker.ts";
 /** Fake Gateway for fresh-process recovery tests, confined to a disposable repo. */
 export async function fixtureHttp(
   _method: string,
@@ -11,7 +12,11 @@ export async function fixtureHttp(
     const key = decodeURIComponent(path.split("/receipts/")[1]);
     const result = state.receipts[key] ?? null;
     state.receiptReads = [...(state.receiptReads ?? []), key];
-    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+
+    await localFilesystem().writeTextFile(
+      "native-executor.json",
+      JSON.stringify(state),
+    );
     return {
       status: 200,
       body: {
@@ -47,7 +52,11 @@ export async function fixtureHttp(
     if (body.kind !== operation.kind) throw new Error("Wrong claim kind");
     state.claims = (state.claims ?? 0) + 1;
     operation.status = "running";
-    await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+
+    await localFilesystem().writeTextFile(
+      "native-executor.json",
+      JSON.stringify(state),
+    );
   }
   if (body.worker !== operation.worker) {
     return { status: 409, body: { error: { code: "operation.lease_lost" } } };
@@ -94,7 +103,11 @@ export async function fixtureHttp(
     data = state.receipts[key];
     if (state.loseRunReply === key) {
       state.loseRunReply = null;
-      await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+
+      await localFilesystem().writeTextFile(
+        "native-executor.json",
+        JSON.stringify(state),
+      );
       return {
         status: 409,
         body: { error: { code: "operation.execution_uncertain" } },
@@ -117,10 +130,18 @@ export async function fixtureHttp(
     state.completions.push(body);
     if (state.loseCompletionReply) {
       state.loseCompletionReply = false;
-      await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+
+      await localFilesystem().writeTextFile(
+        "native-executor.json",
+        JSON.stringify(state),
+      );
       throw new Error("Lost reply after completion");
     }
   }
-  await Deno.writeTextFile("native-executor.json", JSON.stringify(state));
+
+  await localFilesystem().writeTextFile(
+    "native-executor.json",
+    JSON.stringify(state),
+  );
   return { status: 200, body: { data } };
 }

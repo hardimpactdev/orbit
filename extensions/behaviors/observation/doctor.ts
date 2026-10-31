@@ -1,3 +1,4 @@
+import { localCommand } from "../operations/_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 import {
@@ -123,7 +124,7 @@ export function summarize(nodes: z.infer<typeof NodeOutput>[]) {
   };
 }
 export async function localRead(argv: string[]): Promise<string> {
-  const result = await new Deno.Command(argv[0], {
+  const result = await localCommand(argv[0], {
     args: argv.slice(1),
     stdin: "null",
     stdout: "piped",

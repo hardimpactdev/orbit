@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import {
@@ -48,7 +49,7 @@ export async function workspaceProgram(
   signal?: AbortSignal,
 ): Promise<unknown> {
   signal?.throwIfAborted();
-  const process = new Deno.Command("/usr/bin/python3", {
+  const process = localCommand("/usr/bin/python3", {
     args: ["-c", program],
     stdin: "piped",
     stdout: "piped",

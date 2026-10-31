@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { nativeEffect } from "./native_effect.ts";
 import { runSqliteLocal } from "./sqlite_local.ts";
@@ -104,7 +105,7 @@ export async function pdoRead(
   } catch {
     return { error_code: "database.query_failed" };
   }
-  const child = new Deno.Command("/usr/bin/php", {
+  const child = localCommand("/usr/bin/php", {
     args: ["-r", php],
     stdin: "piped",
     stdout: "piped",

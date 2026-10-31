@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { userInfo } from "node:os";
 import { sqliteProgram } from "./sqlite_program.ts";
@@ -54,7 +55,7 @@ export const runSqliteLocal: SqliteInvoke = async (call, signal) => {
   const launch = sqliteLaunch(call);
   const bytes = new TextEncoder().encode(JSON.stringify(call.input));
   if (bytes.length > 65536) throw new Error("database.sqlite_input_invalid");
-  const child = new Deno.Command(launch.command, {
+  const child = localCommand(launch.command, {
     args: launch.args,
     clearEnv: true,
     env: { PATH: "/usr/bin:/bin", LANG: "C.UTF-8" },

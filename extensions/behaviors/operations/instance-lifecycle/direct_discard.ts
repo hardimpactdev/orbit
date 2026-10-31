@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
@@ -32,7 +33,7 @@ export async function discardDestination(input: z.infer<typeof DiscardInput>) {
       throw error;
     }
   }
-  const child = new Deno.Command("/usr/bin/sudo", {
+  const child = localCommand("/usr/bin/sudo", {
     args: [
       "-n",
       "/usr/local/bin/orbit-agent",

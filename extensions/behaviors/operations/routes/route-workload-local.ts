@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { installPhpBuild, PhpBuildInput } from "../php/build_local.ts";
 import {
@@ -55,7 +56,7 @@ export function localRouteHost(): RouteLocalHost {
     args: string[],
     options: LocalOptions = {},
   ): Promise<LocalReply> {
-    const child = new Deno.Command("/usr/bin/sudo", {
+    const child = localCommand("/usr/bin/sudo", {
       args: [
         "-n",
         ...(options.user ? ["-u", User.parse(options.user)] : []),
@@ -151,13 +152,13 @@ export function localRouteHost(): RouteLocalHost {
     async write(path, value, user, mode) {
       Path.parse(path);
       if (user !== "root") User.parse(user);
-      const temporary = await Deno.makeTempFile({
+      const temporary = await localFilesystem().makeTempFile({
         prefix: "orbit-route-private-",
       });
       const candidate = path + ".orbit-" + crypto.randomUUID();
       try {
-        await Deno.chmod(temporary, 0o600);
-        await Deno.writeTextFile(temporary, value);
+        await localFilesystem().chmod(temporary, 0o600);
+        await localFilesystem().writeTextFile(temporary, value);
         await required("/usr/bin/install", [
           "-m",
           mode.toString(8),
@@ -172,7 +173,7 @@ export function localRouteHost(): RouteLocalHost {
         ]);
         await required("/usr/bin/mv", ["-fT", "--", candidate, path]);
       } finally {
-        await Deno.remove(temporary).catch(() => {});
+        await localFilesystem().remove(temporary).catch(() => {});
         await run("/usr/bin/rm", ["-f", "--", candidate]);
       }
     },
@@ -197,12 +198,12 @@ export function localRouteHost(): RouteLocalHost {
       if (!response.ok || !response.body) {
         throw new Error("php.build_download_failed");
       }
-      const file = await Deno.makeTempFile({
+      const file = await localFilesystem().makeTempFile({
         prefix: "orbit-route-php-",
         suffix: ".deb",
       });
       try {
-        const output = await Deno.open(file, { write: true });
+        const output = await localFilesystem().open(file, { write: true });
         let count = 0;
         try {
           for await (const chunk of response.body) {
@@ -222,7 +223,7 @@ export function localRouteHost(): RouteLocalHost {
         if (digest !== sha256) throw new Error("php.build_download_failed");
         return file;
       } catch (error) {
-        await Deno.remove(file).catch(() => {});
+        await localFilesystem().remove(file).catch(() => {});
         throw error;
       }
     },

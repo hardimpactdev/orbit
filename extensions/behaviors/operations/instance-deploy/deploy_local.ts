@@ -1,3 +1,4 @@
+import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 /** Node-local deployment effects. Git credentials live only in child-process environment. */
 export type GitRead = { github_token: string | null };
 export type LocalRelease = { name: string; commit: string };
@@ -123,7 +124,7 @@ export function localDeploySource(options: LocalOptions): DeploySourceLocal {
     const abort = () => stop.abort();
     options.signal?.addEventListener("abort", abort, { once: true });
     try {
-      const child = new Deno.Command(executable, {
+      const child = localCommand(executable, {
         args: argv,
         env: {
           PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -658,7 +659,7 @@ export function localDeploySource(options: LocalOptions): DeploySourceLocal {
       await developmentGuard(home);
       await branchCheck(home, target.branch);
       require(commitValid(target.commit));
-      const directory = await Deno.open(home.home, { read: true });
+      const directory = await localFilesystem().open(home.home, { read: true });
       try {
         try {
           require(await directory.tryLock(true), "instance.lifecycle_busy");

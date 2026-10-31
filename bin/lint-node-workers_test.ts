@@ -52,3 +52,89 @@ Deno.test("placement lint accepts matching nested selectors and refuses a foreig
     await Deno.remove(root, { recursive: true });
   }
 });
+
+Deno.test("Node workflow imports cannot launch unguarded local processes or filesystem writes", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    for (const folder of ["models", "workflows", "extensions/behaviors"]) {
+      await Deno.mkdir(root + "/" + folder, { recursive: true });
+    }
+    await Deno.writeTextFile(
+      root + "/workflows/fixture.yaml",
+      stringify({
+        target: "orbit-node-1",
+        labels: { node: "1" },
+        jobs: [{
+          name: "job",
+          steps: [{
+            name: "effect",
+            task: {
+              type: "behavior",
+              behaviorType: "@fixture/local",
+              methodName: "execute",
+            },
+          }],
+        }],
+      }),
+    );
+    for (
+      const [effect, reason] of [
+        [
+          "new Deno.Command('/usr/bin/id').spawn()",
+          "must use the shared command runner or guarded localCommand",
+        ],
+        [
+          "Deno.open('/tmp/foreign', {write:true,create:true})",
+          "filesystem effect needs the shared local refusal",
+        ],
+        [
+          "Deno.create('/tmp/foreign')",
+          "filesystem effect needs the shared local refusal",
+        ],
+        [
+          "Deno.utime('/tmp/foreign',0,0)",
+          "filesystem effect needs the shared local refusal",
+        ],
+        [
+          "import('node:fs/promises')",
+          "Node host APIs must use the shared command runner or local refusal",
+        ],
+        [
+          "import('node:child_process')",
+          "Node host APIs must use the shared command runner or local refusal",
+        ],
+        [
+          "import('node:net')",
+          "Node host APIs must use the shared command runner or local refusal",
+        ],
+        [
+          "import('node:dgram')",
+          "Node host APIs must use the shared command runner or local refusal",
+        ],
+        [
+          "commandOutput()",
+          "Raw Node command transport is restricted to reviewed adapters",
+        ],
+      ]
+    ) {
+      await Deno.writeTextFile(
+        root + "/extensions/behaviors/local.ts",
+        `export const behavior={type:"@fixture/local"}; export const execute=()=>${effect};`,
+      );
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "--allow-read",
+          import.meta.resolve("./lint-node-workers.ts"),
+          root,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assertEquals(result.success, false);
+      assertStringIncludes(new TextDecoder().decode(result.stderr), reason);
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});

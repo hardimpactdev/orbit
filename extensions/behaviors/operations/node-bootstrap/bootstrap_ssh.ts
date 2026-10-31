@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import {
   type FleetContext,
@@ -36,7 +37,7 @@ const PublicKey = z.string().regex(
 export async function bootstrapHostKey(
   target: BootstrapTarget,
   scan = async (argv: string[], signal?: AbortSignal) => {
-    const result = await new Deno.Command("/usr/bin/ssh-keyscan", {
+    const result = await localCommand("/usr/bin/ssh-keyscan", {
       args: argv,
       stdout: "piped",
       stderr: "null",

@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 
 const Path = z.string().startsWith("/").max(4096).refine((path) =>
@@ -144,7 +145,7 @@ export const invokeLocalVp: VpInvoke = async (call, signal) => {
       throw new Error("deployment.vp_store_failed");
   }
   signal?.throwIfAborted();
-  const child = new Deno.Command(user ? "/usr/bin/sudo" : "/usr/bin/python3", {
+  const child = localCommand(user ? "/usr/bin/sudo" : "/usr/bin/python3", {
     args: [
       ...(user ? ["-n", "-u", user, "--", "/usr/bin/python3"] : []),
       "-I",

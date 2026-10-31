@@ -1,7 +1,9 @@
+import { localCommand } from "../operations/_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp, type Http } from "../automatic-deploy/gateway.ts";
 
-const day = 86400000;
+const hour = 3600000;
+export const WorkerCredentialDuration = "24h";
 export const Token = z.object({
   name: z.string(),
   state: z.string(),
@@ -12,14 +14,17 @@ export const Token = z.object({
 }).passthrough();
 type Token = z.infer<typeof Token>;
 export function due(token: Token, now = Date.now()) {
+  const created = Date.parse(token.createdAt),
+    expires = Date.parse(token.expiresAt);
   return ["revoked", "expired"].includes(token.state) ||
-    now >= Date.parse(token.createdAt) + 20 * day ||
-    Date.parse(token.expiresAt) - now <= 10 * day;
+    !Number.isFinite(created) || !Number.isFinite(expires) ||
+    expires - created > 24 * hour || now >= created + 20 * hour ||
+    expires - now <= 4 * hour;
 }
 export type Native = (args: string[]) => Promise<unknown>;
 /** Native CLI owns token custody, single-machine binding and transitions. No issuer or Node keys. */
 export const native: Native = async (args) => {
-  const result = await new Deno.Command("/home/orbit/.local/bin/swamp", {
+  const result = await localCommand("/home/orbit/.local/bin/swamp", {
     args: [
       ...args,
       "--repo-dir",
@@ -74,7 +79,7 @@ const Node = z.object({
   user: z.string(),
   status: z.literal("active"),
   platform: z.literal("linux"),
-  swamp_worker_selected: z.literal(true),
+  swamp_worker_selected: z.boolean(),
 }).passthrough();
 const Intent = z.object({
   id: z.number().int().positive(),
@@ -102,11 +107,36 @@ export async function convergeWorker(
   http: Http,
   call: Native = native,
   signal?: AbortSignal,
+  proxyAdapter?: {
+    selected: () => Promise<(1 | 18)[]>;
+    renew: (
+      node: 1 | 18,
+      call: Native,
+      signal?: AbortSignal,
+    ) => Promise<{ node_id: number; user: string; proxy_refreshed: boolean }>;
+  },
 ) {
   const node = Node.parse(
     await data(http, "GET", `/api/v1/nodes/${args.node_id}`),
   );
   if (node.id !== args.node_id) throw new Error("Node identity changed");
+  if (node.id === 1 || node.id === 18) {
+    let lower = proxyAdapter;
+    if (lower === undefined) {
+      const module = await import("./proxy.ts");
+      lower = {
+        selected: module.configuredProxyNodes,
+        renew: module.renewProxyWorker,
+      };
+    }
+    if (node.user !== "orbit" || !(await lower.selected()).includes(node.id)) {
+      throw new Error("Proxy worker is not selected");
+    }
+    return await lower.renew(node.id, call, signal);
+  }
+  if (!node.swamp_worker_selected) {
+    throw new Error("Node worker is not selected");
+  }
   const name = `orbit-node-${node.id}`;
   const enrollment = (await list(call, "worker")).find((t) => t.name === name);
   // Enrollment plaintext is shown only at native create. Recovery re-mints;
@@ -115,7 +145,14 @@ export async function convergeWorker(
     await call(["worker", "token", "revoke", name]);
   }
   const enrollmentToken = z.object({ token: z.string() }).parse(
-    await call(["worker", "token", "create", name, "--duration", "30d"]),
+    await call([
+      "worker",
+      "token",
+      "create",
+      name,
+      "--duration",
+      WorkerCredentialDuration,
+    ]),
   ).token;
   const accessName = `${name}-access`;
   const access = (await list(call, "access")).find((t) =>
@@ -129,8 +166,19 @@ export async function convergeWorker(
       accessName,
       "--principal",
       `worker:${name}`,
+      "--duration",
+      WorkerCredentialDuration,
     ]);
-  } else if (due(access)) await call(["access", "token", "rotate", accessName]);
+  } else if (due(access)) {
+    await call([
+      "access",
+      "token",
+      "rotate",
+      accessName,
+      "--duration",
+      WorkerCredentialDuration,
+    ]);
+  }
   const serverToken = z.object({ token: z.string() }).parse(
     await call(["access", "token", "reveal", accessName, "--yes"]),
   ).token;
@@ -190,7 +238,7 @@ type Context = {
 };
 export const behavior = {
   type: "@nckrtl/node-worker-lifecycle",
-  version: "2026.10.30.3",
+  version: "2026.10.31.3",
   globalArguments: Globals,
   resources: {
     work: {
@@ -203,7 +251,8 @@ export const behavior = {
       description: "Public Node worker converge identity",
       schema: Args.extend({
         user: z.string(),
-        operation_id: z.number().int().positive(),
+        operation_id: z.number().int().positive().optional(),
+        proxy_refreshed: z.boolean().optional(),
       }),
       lifetime: "infinite",
       garbageCollection: 10,
@@ -211,7 +260,8 @@ export const behavior = {
   },
   methods: {
     plan: {
-      description: "Select native Node enrollments due for rotation by day20",
+      description:
+        "Select native Node enrollments due for canonical 24-hour rotation",
       arguments: Globals.strict(),
       execute: async (_args: unknown, ctx: Context) => {
         const http = gatewayHttp(
@@ -228,6 +278,9 @@ export const behavior = {
         const selected = new Set(
           nodes.filter((n) => n.swamp_worker_selected).map((n) => n.id),
         );
+        for (
+          const id of await (await import("./proxy.ts")).configuredProxyNodes()
+        ) selected.add(id);
         return {
           dataHandles: [
             await ctx.writeResource("work", "work", {

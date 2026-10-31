@@ -1,3 +1,4 @@
+import { localCommand } from "../_lib/local-worker.ts";
 import { z } from "npm:zod@4.4.3";
 import { runSqliteLocal, type SqliteCall } from "./sqlite_local.ts";
 import { nativeEffect } from "./native_effect.ts";
@@ -47,7 +48,7 @@ try {
 } catch (Throwable $error) { exit(1); }
 `;
 export async function pdoWrite(input: z.infer<typeof Material>) {
-  const child = new Deno.Command("/usr/bin/php", {
+  const child = localCommand("/usr/bin/php", {
     args: ["-r", php],
     stdin: "piped",
     stdout: "piped",

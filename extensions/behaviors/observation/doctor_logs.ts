@@ -1,3 +1,4 @@
+import { localFilesystem } from "../operations/_lib/local-worker.ts";
 import type { Row } from "./doctor_contract.ts";
 
 const budget = 1048576;
@@ -9,6 +10,7 @@ type Cursor = { path: string; inode: number; offset: number };
 
 /** Bounded local log reads. Only exception identity and a normalized app frame leave this action. */
 export async function collectLogs(input: Row): Promise<Row> {
+  const filesystem = localFilesystem();
   if (
     typeof input.log_directory !== "string" ||
     typeof input.base_directory !== "string" ||
@@ -65,7 +67,7 @@ export async function collectLogs(input: Row): Promise<Row> {
   const reading = known ?? current;
   if (!reading) return { cursor, signals: [] };
   const start = known ? Math.min(cursor.offset, reading.size) : 0;
-  const handle = await Deno.open(reading.path, { read: true });
+  const handle = await filesystem.open(reading.path, { read: true });
   let records: string[] = [];
   let consumed = 0;
   try {

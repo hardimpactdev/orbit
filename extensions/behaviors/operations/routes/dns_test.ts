@@ -73,12 +73,14 @@ Deno.test("DNS program is fixed local sudo with a hard timeout, data only on std
     "-c",
   ]);
   let received = "";
+  const Command = Deno.Command;
   using _command = stub(
     Deno as unknown as {
       Command: (command: string, options: Deno.CommandOptions) => unknown;
     },
     "Command",
     function (command: string, options: Deno.CommandOptions) {
+      if (command === "/usr/bin/timeout") return new Command(command, options);
       assertEquals(command, launch.command);
       assertEquals(options.args, launch.args);
       assertEquals(options.stderr, "null");
