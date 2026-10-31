@@ -19,3 +19,7 @@ First contact runs on the exact admitted Gateway worker because the candidate No
 `node.prepare_php_packages` installs the recipe's exact selected PHP builds on the target's worker. It preserves extra extensions and does not restart FPM masters. Its parent deploy or runtime DAG owns subsequent configuration and pool publication. The Gateway keeps version validation and recipe selection; Swamp owns downloads, package effects and recovery.
 
 Each workflow has a separate failure callback on its root Node. It settles the original Operation when native execution fails before the family callback and preserves an already recorded terminal result. The Gateway records native results without step receipts, claims, child admission or execution transports. Frozen Rust action code is left for the final observer pass.
+
+## Swamp execution copies
+
+The Gateway remains the source of truth for bootstrap SSH credentials. `SwampVaultExecutionCopy::synchronize` pushes a changed value through native `swamp vault put --server` with protected stdin and the existing Gateway run credential. It returns only the vault and key names. The Gateway retains only the synchronization digest; a failed write records no successful synchronization. The process arguments, public intent and exception messages contain no value. Native put-only authorization and an exact key condition keep the execution-copy writer separate from the CA, issuer, outputs and vault administration.
