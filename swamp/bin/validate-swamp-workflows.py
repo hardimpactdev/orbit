@@ -44,7 +44,8 @@ def main():
             candidate.unlink(missing_ok=True)
     # Validation must never use the developer/runner account or its credential files.
     with tempfile.TemporaryDirectory(prefix="swamp-validate-no-auth-") as config:
-        env = {"PATH": os.environ.get("PATH", os.defpath), "SWAMP_CONFIG_DIR": config,
+        env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": config,
+               "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": config, "SWAMP_CONFIG_DIR": config,
                "SWAMP_NO_UPDATE_CHECK": "1", "SWAMP_NO_TELEMETRY": "1"}
         actual = subprocess.run([str(binary), "--version"], capture_output=True, text=True, env=env, check=True)
         if version not in actual.stdout:
