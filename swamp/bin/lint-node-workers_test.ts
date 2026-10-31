@@ -214,3 +214,16 @@ Deno.test("third-party behavior types remain refused", async () => {
   assertEquals(result.success, false);
   assertStringIncludes(result.diagnostic, "not third-party extensions");
 });
+
+Deno.test("official SSH methods are accepted directly without a local adapter", async () => {
+  for (const methodName of ["exec", "script"]) {
+    const result = await check({
+      type: "behavior",
+      behaviorType: "@swamp/ssh",
+      behaviorName: "node-light-ssh",
+      methodName,
+      inputs: { hosts: "name:vpn1", script: "id -u" },
+    });
+    assertEquals(result.success, true, result.diagnostic);
+  }
+});
