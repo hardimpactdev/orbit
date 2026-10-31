@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Operations;
 
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -37,8 +38,18 @@ class DirectOperationRequest extends ExecutorRequest
         $peer = $this->peerNodeId();
         $operation = $this->route('operation');
         if ($operation instanceof Operation) {
-            if (! in_array(config('dependency_detection.services_node_id'), [$peer, (string) $peer], true) && $operation->node_id !== $peer) {
-                throw new ResourceOperationException('operation.executor_forbidden', 'A Node worker may access only its own Node intent.', 403);
+            if ($operation->node_id !== $peer) {
+                $projection = app(DirectOperation::class)->projection($operation);
+                $participants = $operation->input['participant_node_ids'] ?? [];
+                if ($this->route()?->getActionMethod() !== 'show'
+                    || ! is_array($participants) || ! in_array($peer, $participants, true)
+                    || ! $projection instanceof DirectOperationPublicView) {
+                    throw new ResourceOperationException('operation.executor_forbidden', 'Only the root Node may mutate its intent; public participants may read their own public view.', 403);
+                }
+                if ($operation->status->terminal()) {
+                    throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
+                }
+                $projection->assertPublicParticipant($operation, $peer);
             }
         }
 
