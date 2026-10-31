@@ -608,14 +608,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/certificates/mod.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/role-actions.ts",
       "rule": "custom-control",
       "count": 3,
@@ -1836,18 +1828,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/agent_configure_local.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/node/agent_configure_system.ts",
@@ -3641,18 +3621,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-dependency-results-prune.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -3671,18 +3639,6 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-horizon-new-dawn-detect.yaml",
-      "rule": "unknown-behavior",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-maintenance-workers.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-production-smoke.yaml",
       "rule": "unknown-behavior",
       "count": 4,
@@ -3695,50 +3651,8 @@
       "evidence": []
     },
     {
-      "file": "workflows/workflow-stage-consult.yaml",
-      "rule": "unknown-behavior",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-handoff.yaml",
-      "rule": "unknown-behavior",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "unknown-behavior",
-      "count": 5,
-      "evidence": []
-    },
-    {
       "file": "workflows/workflow-stage-implement.yaml",
       "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-mechanical.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-review.yaml",
-      "rule": "unknown-behavior",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-subtask-driver.yaml",
-      "rule": "unknown-behavior",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-subtasks-driver.yaml",
-      "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
     }

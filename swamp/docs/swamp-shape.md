@@ -70,6 +70,8 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
 
 Existing violations are on a grandfather list that may only shrink.
 
+The gate follows static model references by name or UUID into their model definitions and type dependencies. Missing, ambiguous or dynamic references, and models without a supported static type, remain unknown.
+
 ## Before and after
 
 Wrong (today's typical port):

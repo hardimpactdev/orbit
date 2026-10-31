@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { DirectArgs } from "../_lib/direct.ts";
+import { DirectArgs } from "../_lib/direct-input.ts";
 import { NodeNetworkInputV1 } from "./network_direct.ts";
 
 export const Sha = z.string().regex(/^[a-f0-9]{64}$/);

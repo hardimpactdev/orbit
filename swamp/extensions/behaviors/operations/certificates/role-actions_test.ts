@@ -68,7 +68,6 @@ Deno.test("role stages compose in one parent with the canonical signer and publi
   });
   const definition = certificates(
     undefined,
-    undefined,
     async (leaves, requests, response) => {
       events.push("sign");
       return await signCertificateBatch(leaves, requests, response);
@@ -137,7 +136,6 @@ Deno.test("role native methods fail before dependents when local preparation or 
     Promise.resolve({ error_code: "certificate.role_unsafe" })
   );
   const definition = certificates(
-    undefined,
     undefined,
     signCertificateBatch,
     actions,

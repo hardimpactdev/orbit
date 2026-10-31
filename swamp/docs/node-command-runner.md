@@ -13,5 +13,13 @@ Use native timeout, cancellation, guards and resume. Do not build another
 subprocess supervisor or Gateway client. The pilot settles script-file delivery
 and the exact vault-to-environment syntax before new conversions use them.
 
+Node input contracts and local actions import public schemas and the
+cancellation type from `operations/_lib/direct-input.ts`. These imports keep
+input validation independent of the Gateway execution client.
+
+The Node footprint parent resolves protected agent configuration data before
+calling the shared configuration lower. The lower takes that data directly and
+returns only the public change or refusal result.
+
 See [worker placement](node-workers.md) and
 [app accounts](instance-sudo-steps.md).

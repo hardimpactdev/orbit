@@ -21,7 +21,7 @@ class ClusterNative(NativeTestCase):
         for name in ['cluster-router.ts','cluster-router_native_fixture.ts','verification.ts','removal-local.ts','lan.ts','local-program.ts','firewall-program.ts','firewall-local.ts','router-preparation.ts','router-lan.ts','caddy-program.ts']:
             shutil.copy(ROOT/'extensions/behaviors/operations/routes'/name,route)
         cert=self.repo/'extensions/behaviors/operations/certificates/mod.ts'
-        cert.write_text('import {fixtureHttp,record} from "../routes/cluster-router_native_fixture.ts";\n'+cert.read_text().replace('...certificates()', '...certificates(() => fixtureHttp, { request: async () => { await record("certificate-request"); return {state:"current"}; }, publish: async () => { await record("certificate-publish"); return {applied:true}; }, inspect: async () => { await record("certificate-inspect"); return {present:true}; }, remove: async () => ({applied:true}) })'))
+        cert.write_text('import {fixtureHttp,record} from "../routes/cluster-router_native_fixture.ts";\n'+cert.read_text().replace('...certificates()', '...certificates({ request: async () => { await record("certificate-request"); return {state:"current"}; }, publish: async () => { await record("certificate-publish"); return {applied:true}; }, inspect: async () => { await record("certificate-inspect"); return {present:true}; }, remove: async () => ({applied:true}) })'))
         module=route/'cluster-router.ts'
         text=module.read_text().replace('export const behavior = clusterRouter();','export const behavior = clusterRouter(() => fixtureHttp, invoke, undefined, readAccount);')
         # Only replace the actual clock in this fixture; source keeps the full 31 seconds.

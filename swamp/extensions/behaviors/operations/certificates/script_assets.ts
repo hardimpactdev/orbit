@@ -10,6 +10,7 @@ const Assets = z.object({
   remove_script: z.string(),
   inspect_script: z.string(),
   trust_script: z.string(),
+  scripts_directory: z.string(),
 });
 const RequestOutput = z.object({
   request: Request,
@@ -52,11 +53,15 @@ export const behavior = {
   type: "@nckrtl/certificate-script-assets",
   version: "2026.10.31.1",
   resources: {
-    assets: { schema: Assets, lifetime: "1d", garbageCollection: 10 },
-    request: { schema: RequestOutput, lifetime: "1d", garbageCollection: 10 },
+    assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
+    request: {
+      schema: RequestOutput,
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
     signed: {
       schema: z.object({ signed_json: z.string() }),
-      lifetime: "1d",
+      lifetime: "infinite",
       garbageCollection: 10,
     },
   },
@@ -83,6 +88,10 @@ export const behavior = {
           remove_script: ctx.extensionFile("scripts/remove.py"),
           inspect_script: ctx.extensionFile("scripts/inspect.py"),
           trust_script: ctx.extensionFile("scripts/trust.py"),
+          scripts_directory: ctx.extensionFile("scripts/request.py").replace(
+            /\/[^/]+$/,
+            "",
+          ),
         });
         await ctx.writeResource("assets", "assets", assets);
         return assets;
