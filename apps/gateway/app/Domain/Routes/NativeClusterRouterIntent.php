@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Actions\Routes\StartCertificateOperationAction;
-use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\NodeConvergeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -22,8 +23,8 @@ use App\Models\Route;
 /** Immutable public Router inventory; native Swamp owns transition sequencing. */
 final readonly class NativeClusterRouterIntent
 {
-    public function __construct(private ManagedUserAccountResolver $accounts, private AgentDelivery $agents,
-        private NodeRoleFirewallInput $firewall, private RolePrerequisites $prerequisites, private StartCertificateOperationAction $certificates) {}
+    public function __construct(private AgentDelivery $agents,
+        private NodeRoleFirewallInput $firewall, private RolePrerequisites $prerequisites, private NativeRouteCertificateInput $certificates) {}
 
     /** @return array<string,mixed> */
     public function forOperation(Operation $operation): array
@@ -88,7 +89,7 @@ final readonly class NativeClusterRouterIntent
         $workloads = array_values($uniqueWorkloads);
         $candidateInput = $candidate === null ? null : [...$this->identity($candidate->node), 'assignment_id' => $candidate->id,
             'active' => $candidate->status === LifecycleStatus::Active, 'caddy_package' => AgentCaddyPackage::input(),
-            'prerequisites' => $this->prerequisites->input($candidate->node, RoleName::Router, $this->accounts->resolve($candidate->node)),
+            'prerequisites' => $this->prerequisiteInput($candidate->node),
             'firewall' => $this->firewall->converge($candidate->node, RoleName::Router), 'router_lan' => $this->firewall->routerLan($candidate->node), 'probes' => $probes];
 
         return ['cluster_id' => $operation->input['cluster_id'], 'candidate' => $candidateInput,
@@ -98,11 +99,23 @@ final readonly class NativeClusterRouterIntent
             'dns_node_ids' => PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all()];
     }
 
-    /** @return array{node_id:int,user:string,home:string,agent_sha256:string} */
+    /** @return array<string,mixed> */
+    private function prerequisiteInput(Node $node): array
+    {
+        $input = $this->prerequisites->input($node, RoleName::Router,
+            new ManagedUserAccount($node->user, NodeConvergeInput::GroupToken, NodeConvergeInput::HomeToken));
+        unset($input['group'], $input['home']);
+
+        return $input;
+    }
+
+    /** @return array{node_id:int,user:string,agent_sha256:string} */
     private function identity(Node $node): array
     {
-        $account = $this->accounts->resolve($node);
+        if ($node->platform !== 'linux' || ! LinuxUserName::isValid($node->user)) {
+            throw new ResourceOperationException('cluster.router_node_invalid', 'Router participants require a configured Linux Node account.', 422);
+        }
 
-        return ['node_id' => $node->id, 'user' => $account->user, 'home' => $account->home, 'agent_sha256' => $this->agents->pin($node)];
+        return ['node_id' => $node->id, 'user' => $node->user, 'agent_sha256' => $this->agents->pin($node)];
     }
 }
