@@ -5,11 +5,17 @@ declare(strict_types=1);
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\ModelKeyIssuer;
 use App\Domain\TaskVms\TaskVmModelKeyInputs;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
 use App\Models\TaskVm;
 
 final class ModelKeyStepIssuer implements ModelKeyIssuer
 {
+    public function __construct(private int $nodeId = 3) {}
+
     /** @var list<array{origin:string,node_id:int}> */
     public array $reads = [];
 
@@ -22,7 +28,7 @@ final class ModelKeyStepIssuer implements ModelKeyIssuer
 
     public function ownerNodeId(): int
     {
-        return 3;
+        return $this->nodeId;
     }
 
     public function privateMaterial(string $origin, int $ownerNodeId): array
@@ -136,4 +142,41 @@ it('stops capture when the shared vault helper refuses instead of returning part
 
     expect(fn () => (new TaskVmModelKeyInputs($issuer))->capture($vm, 14, $copy))->toThrow(ResourceOperationException::class)
         ->and($calls)->toBe(1);
+});
+
+it('refuses an invalid router owner before reading private material or copying secrets', function (): void {
+    $vm = (new TaskVm)->forceFill(['id' => 42, 'model_key' => str_repeat('1', 64), 'ai_router_origin' => 'http://10.44.0.3:8317']);
+    $issuer = new ModelKeyStepIssuer(0);
+    $copy = static fn (): never => throw new LogicException('Invalid placement must not reach the vault.');
+
+    expect(fn () => (new TaskVmModelKeyInputs($issuer))->capture($vm, 14, $copy))->toThrow(ResourceOperationException::class)
+        ->and($issuer->reads)->toBe([]);
+});
+
+it('uses the real shared execution-copy helper without a family transport', function (): void {
+    config()->set(['swamp.run_token' => 'synthetic-swamp-run-token', 'swamp.ca_path' => '/fixture/ca.pem']);
+    $runner = new class implements ProcessRunner
+    {
+        /** @var list<array{arguments:list<string>,value:string}> */
+        public array $calls = [];
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $input = $invocation->protectedInput ?? throw new LogicException('Protected input is required.');
+            $this->calls[] = ['arguments' => $invocation->arguments, 'value' => stream_get_contents($input->stream())];
+
+            return new CommandResult(0, '{}', '', 1, false);
+        }
+    };
+    app()->instance(ProcessRunner::class, $runner);
+    $shared = app(SwampCommandStep::class);
+    $vm = (new TaskVm)->forceFill(['id' => 42, 'model_key' => str_repeat('1', 64), 'ai_router_origin' => 'http://10.44.0.3:8317']);
+    $capture = (new TaskVmModelKeyInputs(new ModelKeyStepIssuer))->capture($vm, 14, $shared->executionCopy(...));
+
+    expect($capture['execution_secrets'])->toBe(modelKeyStepDescriptors())->and($runner->calls)->toHaveCount(3);
+    foreach ($runner->calls as $call) {
+        expect(array_slice($call['arguments'], 1, 3))->toBe(['vault', 'put', 'orbit-control-inputs'])
+            ->and(str_contains(json_encode($call['arguments'], JSON_THROW_ON_ERROR), $call['value']))->toBeFalse();
+    }
+    expect(array_column($runner->calls, 'value'))->toBe([str_repeat('1', 64), 'synthetic-management', str_repeat('2', 64)]);
 });

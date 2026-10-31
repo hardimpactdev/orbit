@@ -28,8 +28,11 @@ final readonly class TaskVmModelKeyInputs
             throw $this->unavailable();
         }
         $routerNodeId = $this->issuer->ownerNodeId();
+        if ($routerNodeId < 1) {
+            throw $this->unavailable();
+        }
         $router = $this->issuer->privateMaterial($origin, $routerNodeId);
-        if ($routerNodeId < 1 || $key === $router['anchor_key']) {
+        if ($key === $router['anchor_key']) {
             throw $this->unavailable();
         }
 

@@ -27,6 +27,9 @@ class Router:
         self.drop_other = False
         self.apply = True
         self.anonymous_status = 401
+        self.requests = []
+        self.on_request = lambda: None
+        self.barrier = lambda: None
 
     def __enter__(self):
         owner = self
@@ -36,7 +39,12 @@ class Router:
                 pass
 
             def do_GET(self):
-                if self.path == "/v0/management/api-keys":
+                owner.requests.append(("GET", self.path))
+                owner.on_request()
+                if self.path == "/_test/held":
+                    owner.barrier()
+                    self.reply(200)
+                elif self.path == "/v0/management/api-keys":
                     if self.headers.get("Authorization") != "Bearer " + owner.management:
                         self.reply(401)
                     else:
@@ -59,6 +67,7 @@ class Router:
                     self.reply(403)
                     return
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                owner.requests.append((method, self.path))
                 owner.calls.append((method, copy.deepcopy(body)))
                 if not owner.false_ack:
                     if method == "PUT":
