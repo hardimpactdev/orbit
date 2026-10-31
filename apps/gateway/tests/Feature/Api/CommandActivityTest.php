@@ -868,7 +868,9 @@ it('records node role commands against the node with bounded inputs and stable f
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.21',
         'wireguard_ip' => '10.44.0.21',
+        'architecture' => 'x86_64',
     ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $lifecycle = new CommandActivityNodeRoleLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $lifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $lifecycle);
@@ -888,9 +890,9 @@ it('records node role commands against the node with bounded inputs and stable f
         ->withHeader('X-Orbit-Request-Id', $addRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/roles", [
             'role' => 'app-dev',
-            'converge_existing' => false,
+            'converge_existing' => true,
         ])
-        ->assertCreated();
+        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.kind_unavailable');
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $removeRequestId)
@@ -917,9 +919,9 @@ it('records node role commands against the node with bounded inputs and stable f
         ->subject_type->toBe(Node::class)
         ->subject_id->toBe($node->id)
         ->target_node_id->toBe($node->id)
-        ->status->toBe('succeeded')->and($activities[$addRequestId]->properties?->get('input'))->toBe([
+        ->status->toBe('failed')->error_code->toBe('operation.kind_unavailable')->and($activities[$addRequestId]->properties?->get('input'))->toBe([
             'role' => 'app-dev',
-            'converge_existing' => false,
+            'converge_existing' => true,
         ])->and($activities[$removeRequestId])
         ->command->toBe('node:role:remove')
         ->subject_type->toBe(Node::class)
