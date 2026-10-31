@@ -23,6 +23,14 @@ final readonly class NativeRouteRemovalIntent
      */
     public function forRoute(Route $route, array $input = []): array
     {
+        $this->beginWithdrawal($route);
+
+        return [...$this->capture($route), 'offline' => ($input['offline'] ?? false) === true];
+    }
+
+    /** Records desired withdrawal only; resolves no Node account and performs no host effect. */
+    public function beginWithdrawal(Route $route): void
+    {
         if ($route->isUnactivatedReplacement()) {
             $route->update(['status' => RouteStatus::Failed, 'sites_published' => false,
                 'failed_step' => $route->failed_step ?? 'withdrawal', 'error_code' => $route->error_code ?? 'route.replacement_withdrawn']);
@@ -30,7 +38,6 @@ final readonly class NativeRouteRemovalIntent
             $this->removal->beginRemoval($route);
         }
 
-        return [...$this->capture($route), 'offline' => ($input['offline'] ?? false) === true];
     }
 
     /** @param array<string,mixed> $input
@@ -43,15 +50,16 @@ final readonly class NativeRouteRemovalIntent
 
     /** Pure capture. The admitting parent records withdrawal before it starts Swamp.
      * @param  Collection<int,Route>  $routes
+     * @param  list<int>  $excludedEffectNodeIds  Explicit parent-owned offline/provider-absent effect Nodes only.
      * @param  list<Node>  $alwaysPhpNodes  Include the workload Node even when it has no Route.
      * @return array<string,mixed>
      */
-    public function captureMany(Collection $routes, array $alwaysPhpNodes = []): array
+    public function captureMany(Collection $routes, array $alwaysPhpNodes = [], array $excludedEffectNodeIds = []): array
     {
         $nodes = [];
         $routeRows = [];
         foreach ($routes as $route) {
-            $inventory = $this->inventory($route);
+            $inventory = $this->inventory($route, $excludedEffectNodeIds);
             $routeRows[] = ['route_id' => $route->id, 'domain' => $route->domain, 'replacement_of' => $inventory['replacement_of']];
             foreach ($inventory['nodes'] as $node) {
                 if (! isset($nodes[$node['node_id']])) {
@@ -70,6 +78,9 @@ final readonly class NativeRouteRemovalIntent
             }
         }
         foreach ($alwaysPhpNodes as $node) {
+            if (in_array($node->id, $excludedEffectNodeIds, true)) {
+                continue;
+            }
             if (! isset($nodes[$node->id])) {
                 $nodes[$node->id] = $this->memberForNode($node);
             }
@@ -79,7 +90,8 @@ final readonly class NativeRouteRemovalIntent
         usort($routeRows, static fn (array $a, array $b): int => $a['route_id'] <=> $b['route_id']);
 
         return ['routes' => $routeRows, 'nodes' => array_values($nodes),
-            'dns_node_ids' => $routes->isEmpty() ? [] : PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all()];
+            'dns_node_ids' => $routes->isEmpty() ? [] : PrivateDnsPublicationNodes::query()->orderBy('id')->pluck('id')->all(),
+            'excluded_effect_node_ids' => $excludedEffectNodeIds];
     }
 
     /** @return RemovalMember */
@@ -92,8 +104,9 @@ final readonly class NativeRouteRemovalIntent
             'shared_php' => false, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
     }
 
-    /** @return array{route_id:int,replacement_of:?int,nodes:list<RemovalMember>} */
-    private function inventory(Route $route): array
+    /** @param list<int> $excludedEffectNodeIds
+     * @return array{route_id:int,replacement_of:?int,nodes:list<RemovalMember>} */
+    private function inventory(Route $route, array $excludedEffectNodeIds): array
     {
         $route->loadMissing(['targets.instance.node', 'customProxy.node', 'node', 'transitionNode', 'generationBasisNode',
             'cluster.routerAssignment.node', 'cluster.ingressAssignment.node',
@@ -102,6 +115,9 @@ final readonly class NativeRouteRemovalIntent
         $nodes = [];
         foreach ($route->targets as $target) {
             $instance = $target->instance;
+            if (in_array($instance->node_id, $excludedEffectNodeIds, true)) {
+                continue;
+            }
             $nodes[$instance->node_id] ??= $this->memberForNode($instance->node);
             $node = &$nodes[$instance->node_id];
             $node['shared_php'] = ! $instance->placedOnAppProd() || $node['shared_php'];
@@ -122,7 +138,7 @@ final readonly class NativeRouteRemovalIntent
             unset($node);
         }
         foreach ([$route->node, $route->customProxy?->node, $route->transitionNode, $route->generationBasisNode] as $node) {
-            if ($node !== null) {
+            if ($node !== null && ! in_array($node->id, $excludedEffectNodeIds, true)) {
                 $nodes[$node->id] ??= $this->memberForNode($node);
                 $nodes[$node->id]['lan_route_ids'][] = $route->id;
                 if ($route->isCustomProxy()) {
@@ -133,14 +149,14 @@ final readonly class NativeRouteRemovalIntent
             }
         }
         foreach ([$route->cluster?->routerAssignment?->node, $route->transitionCluster?->routerAssignment?->node] as $node) {
-            if ($node !== null) {
+            if ($node !== null && ! in_array($node->id, $excludedEffectNodeIds, true)) {
                 $nodes[$node->id] ??= $this->memberForNode($node);
                 $nodes[$node->id]['certificate_scopes'] = [...$nodes[$node->id]['certificate_scopes'], "route-{$route->id}-router", "route-{$route->id}-router-hostname-change"];
             }
         }
         if ($route->publication === RoutePublication::Public) {
             foreach ([$route->cluster?->ingressAssignment?->node, $route->transitionCluster?->ingressAssignment?->node] as $node) {
-                if ($node !== null) {
+                if ($node !== null && ! in_array($node->id, $excludedEffectNodeIds, true)) {
                     $nodes[$node->id] ??= $this->memberForNode($node);
                     $nodes[$node->id]['ingress_firewall'] = true;
                     $nodes[$node->id]['certificate_scopes'][] = "route-{$route->id}-ingress";

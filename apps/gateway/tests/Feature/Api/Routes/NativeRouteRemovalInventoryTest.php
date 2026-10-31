@@ -133,3 +133,33 @@ it('captures Node-owned Route rows then withdraws publication without deleting t
     expect(Route::query()->whereKey($routes[0]->id)->exists())->toBeFalse()
         ->and(Route::query()->whereKey($routes[1]->id)->exists())->toBeTrue();
 });
+
+it('keeps complete Route rows but resolves no account or effect for an explicitly absent guest', function (): void {
+    $gone = Node::query()->create(['name' => 'gone-guest', 'public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $survivor = Node::query()->create(['name' => 'online-survivor', 'public_ssh_host' => '192.0.2.81', 'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
+    $routes = collect([$gone, $survivor])->map(fn (Node $node): Route => Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $node->id, 'domain' => $node->name.'.private.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']));
+    app()->instance(ManagedUserAccountResolver::class, new class($gone->id) implements ManagedUserAccountResolver
+    {
+        public function __construct(private int $goneId) {}
+
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            if ($node->id === $this->goneId) {
+                throw new RuntimeException('An absent guest has no resolvable account.');
+            }
+
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
+    $plan = app(NativeRouteRemovalPlan::class);
+    $snapshot = $plan->captureForNode($gone, $routes->pluck('id')->all(), [$gone->id]);
+    expect(array_column($snapshot['routes'], 'route_id'))->toBe($routes->pluck('id')->all())
+        ->and(array_column($snapshot['nodes'], 'node_id'))->toBe([$survivor->id])
+        ->and($snapshot['excluded_effect_node_ids'])->toBe([$gone->id])
+        ->and(Route::query()->count())->toBe(2);
+    $plan->recordWithdrawal(['routes' => [$snapshot['routes'][0]]]);
+    expect($routes[0]->fresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($routes[1]->fresh()->status)->toBe(RouteStatus::Pending);
+    $unrouted = app(NativeRouteRemovalIntent::class)->captureMany(new Collection, [$gone], [$gone->id]);
+    expect($unrouted['nodes'])->toBe([])->and($unrouted['routes'])->toBe([]);
+});

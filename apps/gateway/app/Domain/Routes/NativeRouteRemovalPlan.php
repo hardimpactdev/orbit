@@ -14,10 +14,11 @@ final readonly class NativeRouteRemovalPlan
     public function __construct(private NativeRouteRemovalIntent $intent) {}
 
     /** The parent may supply its already-frozen complete Route IDs.
+     * @param  list<int>  $excludedEffectNodeIds  Explicit parent-owned offline/provider-absent Nodes only.
      * @param  list<int>|null  $routeIds
      * @return array<string,mixed>
      */
-    public function captureForNode(Node $node, ?array $routeIds = null): array
+    public function captureForNode(Node $node, ?array $routeIds = null, array $excludedEffectNodeIds = []): array
     {
         $routes = Route::query()->when($routeIds !== null,
             static fn (Builder $query): Builder => $query->whereKey($routeIds),
@@ -27,7 +28,7 @@ final readonly class NativeRouteRemovalPlan
                 ->orWhereHas('targets.instance', static fn (Builder $query): Builder => $query->where('node_id', $node->id))))
             ->orderBy('id')->get();
 
-        return [...$this->intent->captureMany($routes, [$node]), 'removed_node_id' => $node->id];
+        return [...$this->intent->captureMany($routes, [$node], $excludedEffectNodeIds), 'removed_node_id' => $node->id];
     }
 
     /** Record the parent's desired withdrawal in its admission transaction.
@@ -39,7 +40,7 @@ final readonly class NativeRouteRemovalPlan
     {
         foreach ($snapshot['routes'] as $member) {
             $route = Route::query()->whereKey($member['route_id'])->firstOrFail();
-            $this->intent->forRoute($route);
+            $this->intent->beginWithdrawal($route);
         }
     }
 }
