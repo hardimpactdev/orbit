@@ -22,7 +22,7 @@ Process create, update, start, stop, restart, and destroy record an Operation an
 
 Only the HTTP and CLI mutation paths admit these Operations. Retained Gateway callers keep the synchronous Process actions and native runtime managers, including their leases and failure handling. Deploy, rollback, environment refresh, clone, transfer, Gateway release, role changes and development wake or sleep keep this path until their owning lane cuts over. They do not admit or await a Process Operation.
 
-When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Create returns HTTP 201 for a new Process or 200 for an existing one. Update, start and restart return HTTP 200 with Process data. Stop and destroy return HTTP 202 and start Swamp directly on every Node.
+When a Process runs on the configured Swamp Services Node or an executor worker Node, its unconverted mutations execute synchronously through the PHP actions and native runtime managers. This includes Instance Processes and deployment helper Processes there. Update, start and restart return HTTP 200 with Process data. Create, stop and destroy return HTTP 202 and start Swamp directly on every Node.
 
 Placement uses the configured Node identities; renaming a Process cannot bypass it. Unconverted Swamp admission and final dispatch still refuse with `process.executor_dependency` (HTTP 409), protecting against a queued effect or an internal caller that skips the synchronous path. Processes on other Nodes keep HTTP 202 Operations.
 
@@ -348,4 +348,10 @@ A native Process installation step receives only the admitted Process ID, owned 
 
 A parent native DAG selects its own admitted material and calls the local installation export; it starts no child Operation and projects only its root result. When a Process changes runtime, the local action removes its recorded artifact from the previous runtime. It stages and conditionally activates systemd or converges Docker, then reads bounded status. Command and environment bytes stay inside the callback and sudo stdin.
 
-Ordinary Process creation records one direct intent and uses the same native root for Vite preparation, canonical Caddy publication, installation and readiness. Its old Gateway run descriptors, receipt proof and admission lease are removed. Executor-Node recovery keeps its synchronous creation path. Rollback is a revert PR.
+Ordinary Process creation records one direct intent and uses the same native root for Vite preparation, canonical Caddy publication, installation and readiness. Its old Gateway run descriptors, receipt proof and admission lease are removed. Rollback is a revert PR.
+
+### Internal bootstrap completion
+
+Process creation through HTTP and MCP always admits the direct `process.create` intent, including executor Nodes. Admission returns HTTP 202 and leaves installation and completion to the native root. Record-only composition uses `RecordProcessIntentAction` inside its owning transaction and performs no runtime work.
+
+Four internal callers still require synchronous bootstrap completion: AI Router clears source activation and completes credential cutover; Plausible waits for container health before publication; Task VM preparation marks Pi ready for work; Gateway release handoff starts Horizon before release verification. These callers use closed bootstrap methods for their fixed Node Process names, runtimes, and commands. They cannot install arbitrary Processes. The next Process PR removes these temporary bootstrap methods together with their completion dependencies.
