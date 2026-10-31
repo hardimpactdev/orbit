@@ -470,7 +470,6 @@ Deno.test("discovery uses the Gateway eligibility filter and skips excluded Inst
   assertEquals(f.requests.map((r) => r.path), [
     "/api/v1/nodes",
     "/api/v1/instances?auto_deploy=true",
-    "/api/v1/nodes",
     "/api/v1/instances",
   ]);
   assertEquals(f.data.size, 0);
@@ -650,7 +649,7 @@ Deno.test("disabled and development targets do not read source or write", async 
     f.instance.auto_deploy.enabled = development;
     if (development) f.nodes[0].roles = ["app-dev"];
     await f.run();
-    assertEquals(f.requests.length, 4);
+    assertEquals(f.requests.length, 3);
     assertEquals(f.data.size, 0);
   }
 });

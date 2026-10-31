@@ -231,6 +231,7 @@ Deno.test("timeout, deadline shortage and uncertain execution stop even a best-e
     {
       error_code: "deployment.command_timed_out",
       failed_step: "before_activation.install",
+      output_tail: "",
     },
   );
   assertEquals(

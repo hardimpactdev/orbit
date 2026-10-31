@@ -125,6 +125,11 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual([row['status'] for row in state['posts']], ['running'])
         self.assertNotIn('finished_at', state['posts'][0])
         self.assert_private_absent(json.dumps(state['posts']))
+        # Resume the same native run: its checkpoint must survive the failed method.
+        before = list(state['posts'])
+        self.cli('workflow', 'resume', 'dev-deploy-direct-proof', success=False)
+        self.assertEqual(state['status'], 'running')
+        self.assertEqual(state['posts'], before)
 
 
 if __name__ == '__main__':

@@ -64,8 +64,12 @@ export const behavior = {
   methods: {
     run: {
       ...root.methods.run,
-      execute: (args: Parameters<typeof root.methods.run.execute>[0]) =>
+      execute: (
+        args: Parameters<typeof root.methods.run.execute>[0],
+        context: Parameters<typeof root.methods.run.execute>[1],
+      ) =>
         root.methods.run.execute(args, {
+          ...context,
           globalArgs: {
             gatewayUrl: Deno.env.get("ORBIT_DEPLOY_TEST_URL")!,
             caFile: Deno.env.get("ORBIT_DEPLOY_TEST_CA")!,

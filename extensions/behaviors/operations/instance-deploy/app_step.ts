@@ -40,7 +40,9 @@ export const AppStepResult = z.union([
   z.object({
     exit_code: z.number().int(),
     timed_out: z.boolean(),
-    output_tail: z.string().max(2048),
+    output_tail: z.string().max(2048).refine((value) =>
+      new TextEncoder().encode(value).length <= 2048
+    ),
     truncated: z.boolean(),
   }).strict(),
   z.object({ error_code: z.string().regex(/^[a-z0-9_.-]{1,100}$/) }).strict(),

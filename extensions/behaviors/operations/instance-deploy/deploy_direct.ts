@@ -25,7 +25,22 @@ const Input = DeploySourceInput.extend({
     steps: DeployAppInput.shape.steps,
   }),
 });
-type Context = { globalArgs: z.infer<typeof Globals>; signal?: AbortSignal };
+const Checkpoint = z.object({
+  operation_id: z.number().int().positive(),
+  run_id: z.string().uuid(),
+  started_at: z.string(),
+  active: z.boolean(),
+}).strict();
+type Context = {
+  globalArgs: z.infer<typeof Globals>;
+  signal?: AbortSignal;
+  readResource(name: string): Promise<Record<string, unknown> | null>;
+  writeResource(
+    spec: string,
+    name: string,
+    value: Record<string, unknown>,
+  ): Promise<unknown>;
+};
 class Refused extends Error {}
 type Ports = {
   http?: (ctx: Context) => Http;
@@ -41,6 +56,15 @@ export function deployDirect(ports: Ports = {}) {
     type: "@nckrtl/instance-deploy-direct",
     version: "2026.10.31.1",
     globalArguments: Globals,
+    resources: {
+      execution: {
+        description:
+          "Public effect checkpoint; no private material or command output",
+        schema: Checkpoint,
+        lifetime: "infinite",
+        garbageCollection: 10,
+      },
+    },
     methods: {
       run: {
         description:
@@ -75,20 +99,57 @@ export function deployDirect(ports: Ports = {}) {
           if (["succeeded", "failed", "cancelled"].includes(initial.status)) {
             return { status: initial.status };
           }
-          if (initial.status !== "queued") {
+          const input = Input.parse(initial.input), d = input.deployment;
+          const checkpointName =
+            `execution-${args.operation_id}-${args.run_id}`;
+          const stored = await ctx.readResource(checkpointName);
+          const checkpoint = stored === null ? null : Checkpoint.parse(stored);
+          if (
+            checkpoint &&
+            (checkpoint.operation_id !== args.operation_id ||
+              checkpoint.run_id !== args.run_id)
+          ) throw new Error("deployment.identity_changed");
+          if (checkpoint?.active) {
             throw new Error("deployment.execution_unconfirmed");
           }
-          const input = Input.parse(initial.input), d = input.deployment;
-          const started_at = new Date(now()).toISOString();
+          const started_at = checkpoint?.started_at ??
+            new Date(now()).toISOString();
+          let effectActive = false;
+          const mark = async (active: boolean) => {
+            await ctx.writeResource("execution", checkpointName, {
+              operation_id: args.operation_id,
+              run_id: args.run_id,
+              started_at,
+              active,
+            });
+            effectActive = active;
+          };
+          const invoke: typeof runNodeAgent = async (call, signal) => {
+            if (call.mutates) await mark(true);
+            const reply = await (ports.invoke ?? runNodeAgent)(call, signal);
+            if (
+              call.mutates &&
+              !/execution_(unconfirmed|uncertain)/.test(
+                String(reply.error_code ?? ""),
+              )
+            ) await mark(false);
+            return reply;
+          };
+          const run: typeof sudoAppStep = async (...parameters) => {
+            await mark(true);
+            const reply = await (ports.run ?? sudoAppStep)(...parameters);
+            if (
+              !("error_code" in reply) ||
+              !/execution_(unconfirmed|uncertain)/.test(reply.error_code)
+            ) await mark(false);
+            return reply;
+          };
           const deadline = now() +
-            Math.min(
-                1600,
-                900 +
-                  d.steps.reduce(
-                    (total, step) => total + step.timeout_seconds,
-                    0,
-                  ),
-              ) * 1000;
+            (900 +
+                d.steps.reduce(
+                  (total, step) => total + step.timeout_seconds,
+                  0,
+                )) * 1000;
           const result = {
             instance_id: input.instance_id,
             commit: input.commit,
@@ -98,6 +159,7 @@ export function deployDirect(ports: Ports = {}) {
             selection_confirmed: true,
             failed_step: null as string | null,
             warnings: 0,
+            output_tail: null as string | null,
           };
           let phase = "source_preparation", error_code: string | null = null;
           const current = async () => {
@@ -140,6 +202,14 @@ export function deployDirect(ports: Ports = {}) {
             return reply;
           };
           try {
+            if (initial.status !== "queued") {
+              throw new Refused(
+                initial.cancel_requested
+                  ? "operation.cancelled"
+                  : "deployment.interrupted",
+              );
+            }
+            await mark(false);
             await gateway.project({
               status: "running",
               started_at,
@@ -151,7 +221,7 @@ export function deployDirect(ports: Ports = {}) {
               throw new Refused("deployment.projection_pending");
             }
             const source = await prepareDeploySource(input, deadline, {
-              invoke: ports.invoke,
+              invoke,
               current,
               now,
               git: (use) =>
@@ -188,7 +258,7 @@ export function deployDirect(ports: Ports = {}) {
                   },
                   deadline,
                   {
-                    invoke: ports.invoke,
+                    invoke,
                     current,
                     now,
                     reference: async (pins, status) => {
@@ -240,13 +310,15 @@ export function deployDirect(ports: Ports = {}) {
                   await check();
                   await use(await currentProgram(http, step));
                 },
-                run: ports.run,
+                run,
                 now,
               },
               ctx.signal,
             );
             if ("error_code" in commands) {
               result.failed_step = commands.failed_step;
+              result.output_tail = commands.output_tail?.replaceAll("\0", "") ||
+                null;
               throw new Refused(Code.parse(commands.error_code));
             }
             result.warnings = commands.warnings;
@@ -284,8 +356,10 @@ export function deployDirect(ports: Ports = {}) {
               : "deployment.interrupted";
             result.failed_step ??= phase;
           }
-          if (error_code === "deployment.execution_unconfirmed") {
-            throw new Error(error_code);
+          if (
+            effectActive || error_code === "deployment.execution_unconfirmed"
+          ) {
+            throw new Error("deployment.execution_unconfirmed");
           }
           const status = error_code === null
             ? "succeeded"

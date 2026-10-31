@@ -56,7 +56,11 @@ async function fixture() {
       return Promise.resolve({
         status: 200,
         body: {
-          data: [{ name: "proof", command: program, timeout_seconds: 60 }],
+          data: input.deployment.steps.map((step) => ({
+            name: step.name,
+            command: program,
+            timeout_seconds: step.timeout_seconds,
+          })),
         },
       });
     }
@@ -132,7 +136,18 @@ async function fixture() {
       truncated: false,
     });
   };
+  const checkpoints = new Map<string, Record<string, unknown>>();
   const ctx = {
+    readResource: (name: string) =>
+      Promise.resolve(checkpoints.get(name) ?? null),
+    writeResource: (
+      _spec: string,
+      name: string,
+      value: Record<string, unknown>,
+    ) => {
+      checkpoints.set(name, structuredClone(value));
+      return Promise.resolve({ name });
+    },
     globalArgs: {
       gatewayUrl: "https://gateway.example.test",
       caFile: "/test/ca",
@@ -145,6 +160,7 @@ async function fixture() {
     invoke,
     run,
     ctx,
+    checkpoints,
     posts,
     calls,
     commands,
@@ -199,6 +215,7 @@ Deno.test("native dev root fetches, checks out and runs admitted steps as config
     selection_confirmed: true,
     failed_step: null,
     warnings: 0,
+    output_tail: null,
   });
   assertEquals(JSON.stringify(f.posts).includes("private"), false);
   assertEquals(
@@ -207,7 +224,7 @@ Deno.test("native dev root fetches, checks out and runs admitted steps as config
   );
 });
 
-Deno.test("native root never replays an already running deployment", async () => {
+Deno.test("restart before any active effect fails interrupted without replay and releases the hold", async () => {
   const f = await fixture();
   f.status("running");
   await assertRejects(
@@ -215,11 +232,34 @@ Deno.test("native root never replays an already running deployment", async () =>
       deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run }).methods
         .run.execute(f.args, f.ctx),
     Error,
-    "deployment.execution_unconfirmed",
+    "deployment.interrupted",
   );
   assertEquals(f.calls, []);
   assertEquals(f.commands, []);
-  assertEquals(f.posts, []);
+  assertEquals(f.posts.at(-1)?.status, "failed");
+  assertEquals(f.posts.at(-1)?.error_code, "deployment.interrupted");
+});
+Deno.test("restart with an active effect checkpoint refuses replay and settlement", async () => {
+  const f = await fixture();
+  f.status("running");
+  await f.ctx.writeResource(
+    "execution",
+    `execution-${f.args.operation_id}-${f.args.run_id}`,
+    {
+      operation_id: f.args.operation_id,
+      run_id: f.args.run_id,
+      started_at: "2026-10-31T02:00:00Z",
+      active: true,
+    },
+  );
+  await assertRejects(
+    () =>
+      deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run }).methods
+        .run.execute(f.args, f.ctx),
+    Error,
+    "deployment.execution_unconfirmed",
+  );
+  assertEquals([f.calls, f.commands, f.posts], [[], [], []]);
 });
 
 Deno.test("terminal native root replay makes no local calls or projections", async () => {
@@ -258,7 +298,7 @@ Deno.test("required command failure retains checked-out commit and bounded failu
           Promise.resolve({
             exit_code: 1,
             timed_out: false,
-            output_tail: "private token",
+            output_tail: "\0token=[REDACTED]",
             truncated: false,
           }),
       }).methods.run.execute(f.args, f.ctx),
@@ -271,7 +311,10 @@ Deno.test("required command failure retains checked-out commit and bounded failu
     "before_activation.proof",
   );
   assertEquals((f.posts.at(-1)?.result as { commit: string }).commit, commit);
-  assertEquals(JSON.stringify(f.posts).includes("private token"), false);
+  assertEquals(
+    (f.posts.at(-1)?.result as { output_tail: string }).output_tail,
+    "token=[REDACTED]",
+  );
 });
 
 Deno.test("verification refuses a different checked-out commit after app scripts", async () => {
@@ -522,4 +565,63 @@ Deno.test("a settled source refusal retains the admitted commit for automatic re
   assertEquals(f.posts.at(-1)?.status, "failed");
   assertEquals((f.posts.at(-1)?.result as { commit: string }).commit, commit);
   assertEquals(f.commands, []);
+});
+
+Deno.test("seven 300-second admitted steps fit the native deadline with infrastructure overhead", async () => {
+  const f = await fixture();
+  f.input.deployment.steps = Array.from(
+    { length: 7 },
+    (_, index) => ({
+      ...f.input.deployment.steps[0],
+      name: `step-${index}`,
+      timeout_seconds: 300,
+    }),
+  );
+  let elapsed = 0;
+  await deployDirect({
+    http: () => f.http,
+    invoke: f.invoke,
+    run: (step, script) => {
+      elapsed += 300000;
+      return f.run(step, script);
+    },
+    now: () => 1000 + elapsed,
+  }).methods.run.execute(f.args, f.ctx);
+  assertEquals(f.posts.at(-1)?.status, "succeeded");
+});
+
+Deno.test("an operator cancellation settles a restarted run with no active effect", async () => {
+  const f = await fixture();
+  f.status("running");
+  f.cancel();
+  assertEquals(
+    await deployDirect({ http: () => f.http, invoke: f.invoke, run: f.run })
+      .methods.run.execute(f.args, f.ctx),
+    { status: "cancelled" },
+  );
+  assertEquals([f.calls, f.commands], [[], []]);
+  assertEquals(f.posts.at(-1)?.status, "cancelled");
+});
+
+Deno.test("typed uncertain source outcomes retain their active checkpoint without terminal projection", async () => {
+  for (
+    const code of [
+      "operation.execution_uncertain",
+      "instance.step_execution_unconfirmed",
+    ]
+  ) {
+    const f = await fixture();
+    await assertRejects(
+      () =>
+        deployDirect({
+          http: () => f.http,
+          invoke: () => Promise.resolve({ error_code: code }),
+          run: f.run,
+        }).methods.run.execute(f.args, f.ctx),
+      Error,
+      "deployment.execution_unconfirmed",
+    );
+    assertEquals(f.posts.map((row) => row.status), ["running"]);
+    assertEquals([...f.checkpoints.values()].at(-1)?.active, true);
+  }
 });

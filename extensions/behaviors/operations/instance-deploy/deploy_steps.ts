@@ -43,7 +43,11 @@ export const DeployAppInput = z.object({
 });
 export type DeployAppInput = z.infer<typeof DeployAppInput>;
 type Phase = "before_activation" | "after_activation";
-type Failure = { error_code: string; failed_step: string | null };
+type Failure = {
+  error_code: string;
+  failed_step: string | null;
+  output_tail?: string;
+};
 type PhaseResult = Failure | { completed: number; warnings: number };
 type Port = {
   /** Canonical direct read revalidates the current target and entire admitted list. */
@@ -159,11 +163,19 @@ export async function runDeployPhase(
       return { error_code: "operation.cancelled", failed_step };
     }
     if (result.timed_out) {
-      return { error_code: "deployment.command_timed_out", failed_step };
+      return {
+        error_code: "deployment.command_timed_out",
+        failed_step,
+        output_tail: result.output_tail,
+      };
     }
     if (result.exit_code !== 0) {
       if (row.required) {
-        return { error_code: "deployment.step_failed", failed_step };
+        return {
+          error_code: "deployment.step_failed",
+          failed_step,
+          output_tail: result.output_tail,
+        };
       }
       warnings++;
     }

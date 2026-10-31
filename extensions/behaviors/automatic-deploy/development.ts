@@ -59,6 +59,7 @@ const Instance = z.object({
   development_projection_route_id: z.number().int().positive().nullable(),
   auto_deploy: z.object({
     policy_owner: z.string(),
+    eligible: z.boolean(),
     resumed_after: z.number().int(),
     history_version: z.string(),
   }),
@@ -92,14 +93,6 @@ export async function tickDevelopment(
     }
     return z.object({ data: z.unknown() }).parse(response.body).data;
   };
-  const nodes = z.array(
-    z.object({ id: z.number().int(), roles: z.array(z.string()) }),
-  ).parse(await request("GET", "/api/v1/nodes"));
-  const development = new Set(
-    nodes.filter((n) =>
-      n.roles.includes("app-dev") && !n.roles.includes("app-prod")
-    ).map((n) => n.id),
-  );
   const discovery = Instance.pick({
     id: true,
     node_id: true,
@@ -107,7 +100,10 @@ export async function tickDevelopment(
     status: true,
     source_layout: true,
   }).extend({
-    auto_deploy: z.object({ policy_owner: z.string() }),
+    auto_deploy: z.object({
+      policy_owner: z.string(),
+      eligible: z.boolean().optional().default(false),
+    }),
   });
   const records = z.array(discovery).parse(
     await request("GET", "/api/v1/instances"),
@@ -116,7 +112,7 @@ export async function tickDevelopment(
   const failures: string[] = [];
   for (const listed of records) {
     if (
-      !development.has(listed.node_id) || listed.name !== "default" ||
+      !listed.auto_deploy.eligible || listed.name !== "default" ||
       listed.source_layout !== "checkout" || listed.status !== "active" ||
       listed.auto_deploy.policy_owner !== "swamp" ||
       filter.length && !filter.includes(listed.id)
@@ -126,7 +122,8 @@ export async function tickDevelopment(
         await request("GET", `/api/v1/instances/${listed.id}`),
       );
       if (
-        instance.id !== listed.id || instance.name !== "default" ||
+        !instance.auto_deploy.eligible || instance.id !== listed.id ||
+        instance.name !== "default" ||
         instance.source_layout !== "checkout" ||
         instance.node_id !== listed.node_id || instance.status !== "active" ||
         instance.auto_deploy.policy_owner !== "swamp"

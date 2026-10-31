@@ -16,6 +16,7 @@ function fixture() {
     route: null as { id: number } | null,
     auto_deploy: {
       policy_owner: "swamp",
+      eligible: true,
       resumed_after: 0,
       history_version: "f".repeat(64),
     },
@@ -307,4 +308,12 @@ Deno.test("native-first deployment skips the old Gateway dev owner before readin
   await f.run();
   assertEquals(f.starts, []);
   assertEquals(f.requests.some((r) => r.path === "/api/v1/instances/7"), false);
+});
+
+Deno.test("canonical Gateway refusal skips ambiguous app-dev plus app-prod placement", async () => {
+  const f = fixture();
+  f.instance.auto_deploy.eligible = false;
+  await f.run();
+  assertEquals(f.starts, []);
+  assertEquals(f.memory.size, 0);
 });
