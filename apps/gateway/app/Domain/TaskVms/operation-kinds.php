@@ -32,7 +32,7 @@ return (static function (): array {
         ];
     }
 
-    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::packageCacheKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
+    $kinds = [...$kinds, ...TaskVmCommandContracts::guestKinds(), ...TaskVmCommandContracts::runtimeKinds(), ...TaskVmCommandContracts::lifecycleKinds(), ...TaskVmCommandContracts::imageKinds(), ...TaskVmUpCloudImageContracts::kinds(), ...TaskVmSweepContracts::kinds()];
     foreach ($kinds as $kind => &$definition) {
         if ($kind === 'task_vm.destroy') {
             if (! OperationKinds::supports('cancel_guard')) {
@@ -51,7 +51,7 @@ return (static function (): array {
 
         if (isset($definition['runs']) && is_array($definition['runs'])) {
             foreach ($definition['runs'] as &$run) {
-                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_package-cache', 'task_vm_lifecycle', 'task_vm_sweep', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.image_promote', 'task_vm.image_prune', 'task_vm.guest_install', 'task_vm.guest_pi_upload', 'task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
+                if (is_array($run) && (in_array($run['transport'], ['task_vm_runtime', 'task_vm_upcloud', 'task_vm_lifecycle', 'task_vm_sweep', 'task_vm_upcloud-image'], true) || in_array($kind, ['task_vm.image_promote', 'task_vm.image_prune', 'task_vm.guest_install', 'task_vm.guest_pi_upload', 'task_vm.pi_install', 'task_vm.configure_runtime'], true))) {
                     $run['resumable'] = true;
                 }
             }
@@ -77,11 +77,8 @@ return (static function (): array {
         if (OperationKinds::supports('children')) {
             $definition['admission'] = TaskVmChildAdmission::class;
         }
-        if (str_starts_with($kind, 'task_vm.fill_package_cache') && (! OperationKinds::supports('list_of') || ! OperationKinds::supports('children_settled'))) {
-            unset($kinds[$kind]);
-        }
     }
     unset($definition);
 
-    return $kinds;
+    return [...$kinds, ...TaskVmCommandContracts::packageCacheKinds()];
 })();

@@ -35,10 +35,9 @@ class DirectOperationRequest extends ExecutorRequest
 
     public function authorize(): bool
     {
-        parent::authorize();
+        $peer = $this->peerNodeId();
         $operation = $this->route('operation');
         if ($operation instanceof Operation) {
-            $peer = $this->peerNodeId();
             if (! in_array(config('dependency_detection.services_node_id'), [$peer, (string) $peer], true) && $operation->node_id !== $peer) {
                 $projection = app(DirectOperation::class)->projection($operation);
                 if ($this->route()?->getActionMethod() === 'show' && $projection instanceof DirectOperationPublicView) {

@@ -14,7 +14,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseServer;
-use App\Models\DatabaseUser;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Process;
@@ -53,10 +52,6 @@ final readonly class DatabaseOperationCompletion implements OperationCompletion
         }
         $intent = DatabaseExecutionIntent::recorded($operation->input['intent_id']);
         $projection = $intent->payload['projection'];
-        if (isset($projection['upsert_user'])) {
-            $user = $projection['upsert_user'];
-            DatabaseUser::query()->updateOrCreate(['database_connection_id' => $user['database_connection_id'], 'username' => $user['username']], $user);
-        }
         if (isset($projection['server']) && $server !== null) {
             $server->update($projection['server']);
         }

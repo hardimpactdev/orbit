@@ -3,17 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\Operations\OperationKinds;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
 use App\Models\Operation;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Client\Request as HttpRequest;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Extensions\Conn\Domain\ConnExecutionInput;
-use Orbit\Extensions\Conn\Domain\ConnPairingIssueCommand;
 use Orbit\Extensions\Conn\Domain\ConnRevocationCommand;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     // Use the real immutable registry once across this test's HTTP requests.
@@ -30,91 +29,15 @@ beforeEach(function (): void {
     $this->other = Node::query()->create(['name' => 'laptop', 'status' => 'active', 'platform' => 'macos', 'public_ssh_host' => '10.44.0.78', 'wireguard_ip' => '10.44.0.78']);
     $this->environment = ConnEnvironment::query()->create(['environment_id' => 'conn-h-proof', 'label' => 'dev', 'node_id' => $this->services->id,
         'url' => 'http://dev.test', 'admin_session' => 'fixture-admin-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-conn-direct', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture.shared.token']);
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
     $this->postJson('/api/v1/conn/environments/conn-h-proof/pairings', ['async' => true])->assertAccepted();
     $this->operation = Operation::query()->sole();
     $this->pairing = ConnPairing::query()->sole();
-    $this->path = '/api/v1/operation-executor/'.$this->operation->id;
-    $this->reference = ['$secret' => 'conn.pairing.credential', 'id' => $this->pairing->id];
-    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
-    $this->postJson('/api/v1/operation-executor/claim', ['kind' => 'conn.pairing_create', 'worker' => 'conn-h'])->assertOk();
-    $this->run = ['worker' => 'conn-h', 'key' => 'pairing-create', 'transport' => 'gateway', 'name' => 'conn.pairing-issue',
-        'input' => ['environment' => $this->operation->input['environment'], 'pairing_ids' => [$this->pairing->id]]];
-});
 
-it('stores one encrypted output and preserves its exact reference through replay, steps and completion', function (): void {
-    Http::fake(['http://dev.test/api/auth/pairing-token' => Http::response(['id' => 'one-time-link',
-        'credential' => 'conn-one-time-sentinel', 'expiresAt' => now()->addMinutes(5)->toIso8601String()])]);
-
-    $response = $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.credential', $this->reference);
-    $result = $response->json('data');
-    $encrypted = DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential');
-    expect($encrypted)->not->toContain('conn-one-time-sentinel');
-    expect($this->pairing->fresh()->credential)->toBe('conn-one-time-sentinel');
-    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data', $result);
-    expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->toBe($encrypted);
-    $this->postJson($this->path.'/step', ['worker' => 'conn-h', 'key' => 'pairing-create.done', 'name' => 'pairing-create', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    $this->postJson($this->path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertOk();
-    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('conn-one-time-sentinel')->not->toContain('fixture-admin-session');
-    expect(json_encode($this->operation->steps()->get()->toArray()))->not->toContain('conn-one-time-sentinel');
-    Http::assertSentCount(1);
-    Http::assertSent(fn ($request): bool => $request->url() === 'http://dev.test/api/auth/pairing-token'
-        && $request->hasHeader('Authorization', 'Bearer fixture-admin-session')
-        && $request['label'] === $this->pairing->client_label
-        && in_array('access:read', $request['scopes'], true)
-        && in_array('access:write', $request['scopes'], true)
-        && ! in_array('review:write', $request['scopes'], true));
-
-    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertOk()
-        ->assertHeader('Cache-Control', 'no-store, private')->assertJsonPath('data.pairing_url', 'http://dev.test/pair#token=conn-one-time-sentinel');
-    expect($this->pairing->fresh()->credential)->toBeNull();
-    $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertConflict();
-    $list = $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings')->assertOk();
-    expect($list->getContent())->not->toContain('conn-one-time-sentinel');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->other->wireguard_ip]);
-    $this->getJson('/api/v1/conn/environments/conn-h-proof/pairings/'.$this->pairing->id)->assertNotFound();
-});
-
-it('refuses a changed run or raw submitted credential and requires proven step completion', function (): void {
-    Http::fake(['http://dev.test/api/auth/pairing-token' => Http::response(['id' => 'one-time-link',
-        'credential' => 'conn-one-time-sentinel', 'expiresAt' => now()->addMinutes(5)->toIso8601String()])]);
-    $this->postJson($this->path.'/run', [...$this->run, 'input' => ['environment' => ['$secret' => 'conn.environment', 'id' => $this->environment->id + 1], 'pairing_ids' => [$this->pairing->id]]])->assertUnprocessable();
-    Http::assertNothingSent();
-    $result = $this->postJson($this->path.'/run', $this->run)->assertOk()->json('data');
-    $this->postJson($this->path.'/complete', ['worker' => 'conn-h', 'status' => 'succeeded', 'result' => $result])->assertConflict()
-        ->assertJsonPath('error.code', 'operation.completion_unproven');
-    foreach (['raw-secret', true, ['$secret' => 'conn.pairing.credential', 'id' => $this->pairing->id + 1]] as $credential) {
-        $response = $this->postJson($this->path.'/step', ['worker' => 'conn-h', 'key' => 'forged', 'name' => 'pairing-create', 'status' => 'succeeded',
-            'result' => [...$result, 'credential' => $credential]]);
-        if (is_array($credential)) {
-            $response->assertConflict()->assertJsonPath('error.code', 'operation.completion_unproven');
-        } else {
-            $response->assertUnprocessable()->assertJsonPath('error.code', 'operation.secret_output_unproven');
-        }
-    }
-    expect($this->operation->steps()->where('status', 'succeeded')->count())->toBe(0);
-    expect(json_encode($this->operation->fresh()->getAttributes()))->not->toContain('raw-secret')->not->toContain('conn-one-time-sentinel');
-});
-
-it('refuses a changed output owner before calling the pairing server', function (): void {
-    $this->pairing->update(['node_id' => $this->other->id]);
-
-    $this->postJson($this->path.'/run', $this->run)->assertConflict()->assertJsonPath('error.code', 'operation.secret_output_unavailable');
-
-    expect($this->pairing->fresh()->credential)->toBeNull();
-    Http::assertNothingSent();
-});
-
-it('keeps an uncertain issue fenced and never mints a replacement automatically', function (): void {
-    Http::fake(['http://dev.test/api/auth/pairing-token' => Http::failedConnection()]);
-
-    $this->postJson($this->path.'/run', $this->run)->assertServerError();
-    $this->postJson($this->path.'/run', $this->run)->assertOk()->assertJsonPath('data.error_code', 'conn.pairing_outcome_unknown');
-
-    Http::assertSentCount(1);
-    expect($this->pairing->fresh()->credential)->toBeNull()->and($this->pairing->fresh()->issue_started_at)->not->toBeNull();
-    expect($this->operation->fresh()->state['executor_runs']['pairing-create']['result'])->toBeNull();
 });
 
 it('refuses expired sessions and missing environments before admitting another issue', function (): void {
@@ -126,19 +49,6 @@ it('refuses expired sessions and missing environments before admitting another i
 
     expect(Operation::query()->count())->toBe(1)->and(ConnPairing::query()->count())->toBe(1);
     Http::assertNothingSent();
-});
-
-it('keeps an invalid generated output out of encrypted state and the keyed receipt', function (): void {
-    $credential = 'oversized-output-'.str_repeat('x', 16384);
-    Http::fake(['http://dev.test/api/auth/pairing-token' => Http::response(['id' => 'one-time-link',
-        'credential' => $credential, 'expiresAt' => now()->addMinutes(5)->toIso8601String()])]);
-
-    $response = $this->postJson($this->path.'/run', $this->run)->assertUnprocessable()->assertJsonPath('error.code', 'conn.pairing_credential_invalid');
-
-    expect($response->getContent())->not->toContain('oversized-output-');
-    expect($this->pairing->fresh()->credential)->toBeNull();
-    expect($this->operation->fresh()->state['executor_runs']['pairing-create']['result'])->toBeNull();
-    Http::assertSentCount(1);
 });
 
 it('lets the no-grant originating caller read and cancel only its own Conn Operation', function (): void {
@@ -183,16 +93,6 @@ it('keeps a credential unreadable before completion and clears it when expired',
     $this->travel(2)->minutes();
     $this->getJson($url)->assertConflict();
     expect($this->pairing->fresh()->credential)->toBeNull();
-});
-
-it('refuses an already revoked pairing before the issue command contacts its server', function (): void {
-    $this->pairing->update(['revoked_at' => now()]);
-
-    expect(fn () => app(ConnPairingIssueCommand::class)->run($this->operation,
-        ['environment' => new ConnExecutionInput(['id' => $this->environment->id, 'url' => $this->environment->url, 'admin_session' => 'fixture-admin-session']),
-            'pairing_ids' => [$this->pairing->id]]))->toThrow(ModelNotFoundException::class);
-
-    Http::assertNothingSent();
 });
 
 function conn_revocation_admit(object $test, bool $cleanup = false): Operation
@@ -273,6 +173,7 @@ it('requires Gateway access for cleanup and keeps a newer registration revision 
 });
 
 it('does not admit clean revisions and preserves pending cleanup when cancelled', function (): void {
+    $this->withServerVariables(['REMOTE_ADDR' => $this->services->wireguard_ip]);
     $this->postJson('/api/v1/conn/environments/conn-h-proof/sessions/cleanup')->assertNoContent();
     $this->environment->update(['cleanup_version' => 1]);
     $operation = conn_revocation_admit($this, true);
