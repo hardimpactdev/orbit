@@ -25,11 +25,9 @@ inputs:
 jobs:
   - name: schedule
     target: orbit-node-209
-    labels: &placement {node: "209"}
     steps:
       - name: timer
         target: orbit-node-209
-        labels: *placement
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/systemd'
@@ -47,7 +45,6 @@ jobs:
           inputs: {}
       - name: result
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         task:
           type: behavior

@@ -98,10 +98,10 @@ p.write_text(json.dumps(s))
             )
             for job in workflow["jobs"]:
                 self.assertEqual(job.pop("target"), "orbit-node-209")
-                self.assertEqual(job.pop("labels"), {"node": "209"})
+                self.assertNotIn("labels", job)
                 for step in job["steps"]:
                     self.assertEqual(step.pop("target"), "orbit-node-209")
-                    self.assertEqual(step.pop("labels"), {"node": "209"})
+                    self.assertNotIn("labels", step)
                     # Map declared root ownership to this disposable fixture account.
                     if step["task"]["behaviorType"] == "@swamp/cfgmgmt/file":
                         globals = step["task"]["globalArgs"]

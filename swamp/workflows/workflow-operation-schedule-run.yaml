@@ -100,13 +100,9 @@ inputs:
 jobs:
 - name: run
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: assets
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/schedule-run-assets'
@@ -115,8 +111,6 @@ jobs:
       inputs: {}
   - name: prepare_assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -146,8 +140,6 @@ jobs:
         - ${{ "/tmp/orbit-schedule-run-" + run.id }}
   - name: copy_assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: prepare_assets
       condition:
@@ -166,8 +158,6 @@ jobs:
         recursive: true
   - name: account
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: copy_assets
       condition:
@@ -190,8 +180,6 @@ jobs:
         - ${{ inputs.intent.schedule.group }}
   - name: directory
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: account
       condition:
@@ -215,8 +203,6 @@ jobs:
         - ${{ inputs.intent.schedule.working_directory }}
   - name: accessible
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: directory
       condition:
@@ -240,8 +226,6 @@ jobs:
         - ${{ inputs.intent.schedule.working_directory }}
   - name: command_hash
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: accessible
       condition:
@@ -263,8 +247,6 @@ jobs:
           }}
   - name: execute
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: command_hash
       condition:
@@ -293,8 +275,6 @@ jobs:
         captureOutput: false
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -343,8 +323,6 @@ jobs:
             }}'
   - name: cleanup_assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: result
       condition:

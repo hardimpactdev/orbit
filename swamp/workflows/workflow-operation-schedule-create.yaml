@@ -24,11 +24,9 @@ inputs:
 jobs:
   - name: schedule
     target: orbit-node-209
-    labels: &placement {node: "209"}
     steps:
       - name: units
         target: orbit-node-209
-        labels: *placement
         task:
           type: behavior
           behaviorType: '@nckrtl/schedule-run-assets'
@@ -37,7 +35,6 @@ jobs:
           inputs: {schedule: '${{ inputs.intent.schedule }}'}
       - name: files
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: units, condition: {type: succeeded}}]
         forEach: {item: unit, in: '${{ ["service", "timer"] }}'}
         task:
@@ -60,7 +57,6 @@ jobs:
           inputs: {}
       - name: reload
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: files, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -77,7 +73,6 @@ jobs:
           inputs: {}
       - name: timer
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: reload, condition: {type: succeeded}}]
         task:
           type: behavior
@@ -96,7 +91,6 @@ jobs:
           inputs: {}
       - name: remove_obsolete
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: timer, condition: {type: succeeded}}]
         forEach: {item: suffix, in: '${{ [".sh", ".complete"] }}'}
         task:
@@ -115,7 +109,6 @@ jobs:
           inputs: {}
       - name: result
         target: orbit-node-209
-        labels: *placement
         dependsOn: [{step: remove_obsolete, condition: {type: succeeded}}]
         task:
           type: behavior
