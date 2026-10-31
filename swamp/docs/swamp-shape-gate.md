@@ -290,3 +290,5 @@ Python command provenance uses lexical scope and statement order. Global or
 nonlocal declarations, walrus assignments and deleted bindings prevent a claim
 that a captured command is fixed. Unresolved executable control remains unknown
 and cannot gain a clean classification.
+
+The Node-worker lint recognizes the exact official `@swamp/ssh`, `@swamp/cfgmgmt/file`, `@swamp/cfgmgmt/directory` and `@swamp/cfgmgmt/systemd` types. The systemd model provides native `apply` and `restart` used by publication workflows. This is not an extension-namespace wildcard; other unknown types still fail.

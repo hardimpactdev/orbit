@@ -1,6 +1,6 @@
-# @swamp/ssh for light boxes
+# @swamp/ssh for all target Nodes
 
-Run VPN1 (Node1) and usexit18 (Node18) actions through the official `@swamp/ssh` extension on the normal Node209 control worker. Built-in `command/shell` executes on its worker, so placing it on209 does not execute it on either light box. Use the official extension with its defaults; add no family SSH adapter, wrapper or transport.
+Node209 alone runs Serve and all Swamp workers. Run every target Node action, including VPN1 (Node1), usexit18 (Node18), Gateway14 and Beast9, through official `@swamp/ssh` on a Node209 worker. Node bootstrap installs no Swamp binary or worker and mints no worker token. Built-in `command/shell` executes on its worker, so placing it on209 does not execute it on either light box. Use the official extension with its defaults; add no family SSH adapter, wrapper or transport.
 
 ## Model and placement
 
@@ -69,13 +69,13 @@ jobs:
           cat /etc/hostname
 ```
 
-Node209's `orbit-node-worker.service` already loads the approved existing key with `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. The `identityFile` above is the worker-readable systemd credential; do not point the orbit worker at the root-only source file. This is the existing approved209→1/18 key and access edge. No new vault, grant, key, unit change or restart is needed for a family to use it. `hostKeys` selects the official pinned policy. Keep the host pins shown above; do not substitute trust on first use.
+Node209's `orbit-node-worker.service` already loads the approved existing key with `LoadCredential=proxy-ssh-identity:/etc/orbit/node-proxy/id_ed25519`. The `identityFile` above is the worker-readable systemd credential; do not point the orbit worker at the root-only source file. Nick approved this existing key for every Node through the tracked managed-account converge/footprint policy. Install no new key and do not hand-edit authorized_keys. Before migrating a Node, verify the official SSH route with that key and the stored full host pin. First-key publication may use the existing Gateway14 Node-SSH identity execution copy on209, solely for the tracked key-policy step. Remove that execution copy after every target verifies209's own identity. The live proof below covers1/18; it does not establish ordinary-Node access. `hostKeys` selects the official pinned policy. Keep the host pins shown above; do not substitute trust on first use.
 
 ## Methods, secrets and results
 
 Use `exec` with `argv` for one command. Add `sudo: true` for root execution; the extension uses noninteractive sudo. For one script action, use `script`: its body travels on stdin to the default `sh -s --`. Set the official `interpreter` field only when the script requires another interpreter. Keep one action per step and use native dependencies, guards and cleanup steps as in the canary.
 
-For a tool's stdin, `exec` accepts `inputs.stdin`; the canary's `read` step demonstrates it. Keep secret values out of `argv`, script text and tracing. Use only the official stdin or documented environment support. `inputs.env` uses OpenSSH SendEnv, so the remote server must accept each variable through AcceptEnv; root scripts also require sudoers env_keep. The example needs no environment changes. Do not add a custom secret channel.
+For a tool's stdin, `exec` accepts `inputs.stdin`; the canary's `read` step demonstrates it. A private JSON execution copy can be one whole `vault.get(...)` expression in this field, consumed by a shipped script with `json.load(sys.stdin)`. Invoke the script with public argv only. Official `runExec` records `hasStdin`, rather than the stdin value; keep secrets out of the action's stdout/stderr too. `script` uses stdin for the script body, so use `exec` when the action needs separate private stdin. Keep secret values out of `argv`, script text and tracing. Use only the official stdin or documented environment support. `inputs.env` uses OpenSSH SendEnv, so the remote server must accept each variable through AcceptEnv; root scripts also require sudoers env_keep. The example needs no environment changes. Do not add a custom secret channel.
 
 The official step exposes `steps.<step>.outputs.stdout`. Native history records the per-host `runResult`, including stdout, stderr and exitCode; check the requested host and actual exit code. Use the shared Gateway terminal projection for family Operations. The direct canaries below created no Gateway Operation and do not prove a role, removal or Metrics parent.
 
@@ -94,3 +94,9 @@ Both live effect-and-cleanup runs succeeded with all six steps exiting0: VPN1 `6
 Each family's port spec carries this prerequisite. Account for active, queued and saved/resumable roots that retain old placement before removing units. Complete native accounting on2026-10-31 found zero suspended runs; that does not migrate accepted dynamic callers or settle roots by itself. Owners supply exact IDs or checkpoint locators for any additional saved placement, or report none known. Preserve terminal history and schedule pauses; do not resume or settle roots merely to clear retirement.
 
 After those prerequisites are complete, the runtime owner stops, disables and removes only the two obsolete proxy worker units and selections. Keep local light-Node workers masked. The sole issuer retires obsolete worker credentials. Preserve the existing SSH key, public pins and Node209 worker credential used above. Do not delete the whole proxy directory. This guide does not authorize DNS changes, new credentials or access edges.
+
+## Move an ordinary Node
+
+Use the sole public supplier `App\Infrastructure\Swamp\SwampSshExecutionInput::{identity,forNode}` when its source is accepted. `identity()` returns control Node209, the credential file locator above and the existing authorized public key. `forNode(Node)` adds `target: {name, host, user, port, host_keys}` from stored Node fields. It performs no SSH or credential read. Families translate that public descriptor into the complete official `task.globalArgs` map; do not add another provider. Prospective bootstrap or Retarget endpoints come from their admitted intent, with the family's full pin verification.
+
+For each Node, publish the existing key through the tracked policy, prove pinned official SSH from209, move every accepted placement and worker-recreation path, account for active and resumable roots, then retire its worker, binary and worker-specific tokens. Follow the [single-Node retirement plan](single-swamp-node-retirement.md). An idle worker is not retirement clearance.

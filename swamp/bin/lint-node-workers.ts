@@ -189,6 +189,7 @@ for (const path of await files(`${root}/workflows`)) {
           "@swamp/ssh",
           "@swamp/cfgmgmt/directory",
           "@swamp/cfgmgmt/file",
+          "@swamp/cfgmgmt/systemd",
         ].includes(String(type))
       ) {
         // Official extensions provide these actions directly.

@@ -8,10 +8,7 @@ import {
     workerUnit,
 } from "../../node-worker/config.ts";
 
-export const Args = WorkerConfig.refine(
-    (worker) => ![1, 18].includes(worker.node_id),
-    "Light Nodes do not install a worker",
-);
+export const Args = WorkerConfig.extend({ node_id: z.literal(209) });
 export const Assets = z.object({
     unit: z.string(),
     checker: z.string(),
@@ -58,7 +55,7 @@ export async function assets(
 }
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
     },
