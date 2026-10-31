@@ -9,6 +9,11 @@ namespace App\Domain\Operations;
  */
 final readonly class OperationKinds
 {
+    private const array GatewayJobs = [
+        'github.app_register' => ['executor' => 'gateway'],
+        'github.app_sync' => ['executor' => 'gateway'],
+    ];
+
     /** The form of every kind name, `<family>.<verb>` in lower case, such as `instance.deploy`. */
     public const string NamePattern = '/\A[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\z/D';
 
@@ -48,13 +53,13 @@ final readonly class OperationKinds
     /** @return array<string,array<string,mixed>> */
     public static function definitions(): array
     {
-        return app(DirectOperation::class)->definitions();
+        return app(DirectOperation::class)->definitions() + self::GatewayJobs;
     }
 
     /** @return array<string,mixed>|null */
     public function definition(string $kind): ?array
     {
-        return app(DirectOperation::class)->definition($kind);
+        return self::definitions()[$kind] ?? null;
     }
 
     public static function supports(string $capability): bool
@@ -64,6 +69,9 @@ final readonly class OperationKinds
 
     public static function executor(string $kind): string
     {
+        if (self::gatewayJob($kind)) {
+            return 'gateway';
+        }
         app(DirectOperation::class)->writer($kind);
 
         return 'swamp';
@@ -71,7 +79,13 @@ final readonly class OperationKinds
 
     public function directOnly(string $kind): bool
     {
-        return $this->definition($kind) !== null;
+        return app(DirectOperation::class)->definition($kind) !== null;
+    }
+
+    /** The two App-key operations must stay inside the Gateway. */
+    public static function gatewayJob(string $kind): bool
+    {
+        return isset(self::GatewayJobs[$kind]);
     }
 
     /** @return list<string> */

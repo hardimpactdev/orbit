@@ -47,8 +47,6 @@
     {"workflow": "operation-fleet-recipe-direct", "actions": ["run", "read"]},
     {"workflow": "operation-fleet-recipe-pr", "actions": ["run", "read"]},
     {"workflow": "operation-fleet-rollout", "actions": ["run", "read"]},
-    {"workflow": "operation-github-app-register", "actions": ["run", "read"]},
-    {"workflow": "operation-github-app-sync", "actions": ["run", "read"]},
     {"workflow": "operation-instance-clone", "actions": ["run", "read"]},
     {"workflow": "operation-instance-create", "actions": ["run", "read"]},
     {"workflow": "operation-instance-deploy-direct", "actions": ["run", "read"]},

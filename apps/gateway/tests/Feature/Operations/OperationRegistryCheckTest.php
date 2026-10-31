@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRegistryCheck;
 use App\Domain\Shared\ResourceOperationException;
 use Symfony\Component\Process\Process;
 use Tests\Support\PolledOperationFixture;
 
 it('boots and resolves every registered family without reading resource records', function (): void {
-    expect(app(OperationRegistryCheck::class)->execute())->toBe(count(OperationKinds::definitions()))->toBeGreaterThan(0);
+    expect(app(OperationRegistryCheck::class)->execute())->toBe(count(app(DirectOperation::class)->definitions()))->toBeGreaterThan(0);
 });
 
 it('fails on an unsupported family or completion guarantee', function (string $part): void {

@@ -1031,26 +1031,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/github-app/mod.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/github-app/mod.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/github-app/mod.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
       "rule": "custom-control",
       "count": 5,
