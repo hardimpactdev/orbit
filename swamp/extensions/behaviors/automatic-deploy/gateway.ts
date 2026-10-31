@@ -1,8 +1,6 @@
 import { z } from "npm:zod@4.4.3";
-import {
-  proxyGatewayRequest,
-  runtimeNodeProxy,
-} from "../operations/_lib/node-proxy.ts";
+import { runtimeNodeProxy } from "../operations/_lib/node-proxy.ts";
+import { proxyGatewayRequest } from "../operations/_lib/node-proxy-http.ts";
 import { type DevelopmentContext, tickDevelopment } from "./development.ts";
 import {
   CallerNodeIdSchema,
