@@ -53,7 +53,7 @@ async function reviewed(path: string) {
   }
   for (
     const match of text.matchAll(
-      /(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g,
+      /(?<!["'])\b(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g,
     )
   ) {
     const dependency = match[1];

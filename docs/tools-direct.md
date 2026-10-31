@@ -53,7 +53,9 @@ its existing sudo authority to prepare shared prerequisites. Manager processes
 run as the exact admitted account with that account's home and fixed manager
 scope; this also preserves enrollment's candidate account before activation.
 macOS verifies the existing account-owned manager scope in place. No Tool write
-calls orbit-agent, and no agent digest is needed to admit a Tool write.
+calls orbit-agent, and no agent digest is needed to admit a Tool write. The
+native direct behavior publishes this contract as version `2026.10.31.1`; workers
+must load that version before processing the pin-free admitted input.
 
 The Python implementation uses fixed argv, bounded output and a process deadline.
 Raw manager stdout and stderr never enter native resources. The existing package

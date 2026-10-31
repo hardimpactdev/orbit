@@ -1,0 +1,41 @@
+id: d98239bb-4a95-4873-a3e1-6f7c5bdb76ab
+name: operation-task-turn
+description: Pi writes or reviews code in the admitted task VM, under one native run.
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [tasks.turn] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: turn
+    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+    labels: { node: "${{ string(inputs.node_id) }}" }
+    steps:
+      - name: prepare
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-turn"
+          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
+          methodName: prepare
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: pi
+        dependsOn: [{ step: prepare, condition: { type: succeeded } }]
+        writes: true
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/task-turn"
+          behaviorName: '${{ "task-workspace-node-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            preparation: '${{ data.latest("task-workspace-node-" + string(inputs.node_id), "turn-" + run.id).attributes }}'

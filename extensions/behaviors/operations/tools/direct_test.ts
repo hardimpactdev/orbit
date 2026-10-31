@@ -32,7 +32,6 @@ class Fixture {
         platform: manager === "brew-cask" ? "macos" : "linux",
         architecture: "x86_64",
         user: "orbit",
-        agent_sha256: "a".repeat(64),
         tool_id: kind === "tool.install" ? null : 1,
       },
       started_at: "2026-10-30T12:00:00.000Z",

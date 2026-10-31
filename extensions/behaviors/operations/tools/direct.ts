@@ -26,7 +26,7 @@ export function directTool(
 ) {
   return {
     type: "@nckrtl/tool-direct",
-    version: "2026.10.30.3",
+    version: "2026.10.31.1",
     globalArguments: Globals,
     resources: toolNode(invoke).resources,
     methods: {

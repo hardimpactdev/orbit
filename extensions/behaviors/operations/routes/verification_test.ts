@@ -131,7 +131,7 @@ Deno.test("invalid results and worker-selected inputs refuse without a success p
     const f = fixture();
     f.response(result);
     await assertRejects(f.run);
-    assertEquals(f.calls.length, 2);
+    assertEquals(f.calls.length, 3);
   }
   assertEquals(
     Probe.safeParse({ ...input, command: "foreign" }).success,

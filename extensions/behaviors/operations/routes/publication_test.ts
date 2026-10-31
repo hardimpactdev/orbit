@@ -25,7 +25,7 @@ const ctx = {
   globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/test/ca.pem" },
 };
 for (const preAborted of [true, false]) {
-  Deno.test(`default Route HTTP preserves projection when cancellation is ${preAborted ? "before" : "during"} the primitive`, async () => {
+  Deno.test(`default Route HTTP preserves projection when cancellation is ${preAborted ? "before" : "during"} the local publication`, async () => {
     const controller = new AbortController();
     if (preAborted) controller.abort();
     const calls: Record<string, unknown>[] = [];
@@ -35,17 +35,11 @@ for (const preAborted of [true, false]) {
     using _client = stub(Deno, "createHttpClient", () => createClient({}));
     using _fetch = stub(globalThis, "fetch", (url, init) => {
       assertEquals(init?.signal?.aborted, false);
-      const path = String(url);
+      assertEquals(String(url).includes("/direct-operations/17"), true);
       if (init?.method === "GET") {
         return Promise.resolve(
           Response.json({ data: new Fixture().operation }),
         );
-      }
-      if (path.endsWith("/primitive")) {
-        effects++;
-        controller.abort();
-        assertEquals(init?.signal?.aborted, false);
-        return Promise.resolve(Response.json({ data: { ready: true } }));
       }
       calls.push(JSON.parse(String(init?.body)));
       return Promise.resolve(Response.json({ data: {} }));
@@ -87,13 +81,6 @@ class Fixture {
       if (method === "GET") {
         return { status: 200, body: { data: this.operation } };
       }
-      if (path.endsWith("/primitive")) {
-        if (this.losePublication) {
-          this.losePublication = false;
-          throw new Error("lost publication reply");
-        }
-        return { status: 200, body: { data: this.result } };
-      }
       const value = body as Record<string, unknown>;
       this.operation.status = String(value.status);
       this.operation.result = value.result as Record<string, unknown> ?? null;
@@ -111,10 +98,14 @@ class Fixture {
           this.effects.push(call);
           if (this.losePublication) {
             this.losePublication = false;
-            throw new Error("lost publication reply");
+            throw new Error("operation.native_outcome_unknown");
           }
           return this.result;
         }),
+      (input) => {
+        this.effects.push(input);
+        return Promise.resolve(this.result);
+      },
     );
     return kind === "route.caddy_converge"
       ? model.methods.convergeCaddy.execute({ ...args, kind }, ctx)
@@ -140,11 +131,18 @@ Deno.test("native Route publication uses one stored Node and no claim lease rece
 Deno.test("private DNS publication uses the same native flow without a separate dispatch wait", async () => {
   const f = new Fixture();
   f.operation.kind = "route.private_dns_publish";
-  f.result = { outcome: "published", data: { ready: true }, ready: true };
+  const catalog = "{}";
+  const digest =
+    "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+  Object.assign(f.operation.input, {
+    private_dns_publication: { node_id: 9, records: "", catalog, digest },
+  });
+  f.result = { outcome: "published", data: { ready: true, digest } };
   assertEquals(await f.execute(f.operation.kind), { status: "succeeded" });
+  assertEquals(f.effects.length, 1);
   assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/primitive")).length,
-    1,
+    f.calls.some((call) => /primitive|claim|children/.test(call.path)),
+    false,
   );
 });
 
@@ -182,15 +180,27 @@ Deno.test("native retry after lost terminal projection reads the committed resul
   );
 });
 
-Deno.test("uncertain publication escapes for native step recovery without inventing a receipt or local retry", async () => {
+Deno.test("uncertain publication records a safe failure and never repeats a terminal effect", async () => {
   const f = new Fixture();
   f.losePublication = true;
-  await assertRejects(() => f.execute(), Error, "lost publication reply");
-  assertEquals(f.calls.length, 2);
-  assertEquals(await f.execute(), { status: "succeeded" });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.native_outcome_unknown",
+  );
+  assertEquals(f.calls.length, 3);
+  assertEquals(f.operation.status, "failed");
+  assertEquals(f.operation.result, {
+    error_code: "operation.native_outcome_unknown",
+  });
+  await assertRejects(
+    () => f.execute(),
+    Error,
+    "operation.native_outcome_unknown",
+  );
   assertEquals(
     f.effects.length,
-    2,
+    1,
   );
 });
 
@@ -212,7 +222,7 @@ Deno.test("unproven or malformed publication refuses terminal success", async ()
     await assertRejects(() => f.execute());
     assertEquals(
       f.calls.filter((call) => call.path.endsWith("/result")).length,
-      1,
+      2,
     );
   }
 });
@@ -333,4 +343,161 @@ Deno.test("each same-root method invocation fetches again rather than caching th
   );
   assertEquals(seen, [caddy, f.operation.input.caddy_publication.caddy]);
   assertEquals(f.calls.length, 2);
+});
+
+Deno.test("participant PHP fresh read preserves whole-Node survivors and never posts the parent", async () => {
+  let generation = 0;
+  const calls: string[] = [];
+  const effects: unknown[] = [];
+  const model = publication(
+    () => (_method, path) => {
+      calls.push(path);
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            id: 17,
+            kind: "instance.destroy",
+            node_id: 17,
+            status: "running",
+            cancel_requested: false,
+            input: {
+              php_publication: {
+                node_id: 9,
+                agent_sha256: "a".repeat(64),
+                configurations: { "8.5": `survivors-${++generation}` },
+              },
+            },
+          },
+        },
+      });
+    },
+    undefined,
+    undefined,
+    (_program, input) => {
+      effects.push(input);
+      return Promise.resolve({ changed: true, missing_pools: [] });
+    },
+  );
+  const input = {
+    ...args,
+    kind: "instance.destroy",
+    node_id: 17,
+    target_node_id: 9,
+  };
+  await model.methods.publishPhp.execute(input, ctx);
+  await model.methods.publishPhp.execute(input, ctx);
+  assertEquals(effects, [{ configurations: { "8.5": "survivors-1" } }, {
+    configurations: { "8.5": "survivors-2" },
+  }]);
+  assertEquals(calls, [
+    `/api/v1/direct-operations/17?run_id=${args.run_id}`,
+    `/api/v1/direct-operations/17?run_id=${args.run_id}`,
+  ]);
+});
+
+Deno.test("participant DNS reads fresh owner artifact and rejects a different effect Node", async () => {
+  const catalog = "{}\n";
+  const digest = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(catalog)),
+    ),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
+  let effects = 0;
+  const model = publication(
+    () => () =>
+      Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            id: 17,
+            kind: "node.remove",
+            node_id: 9,
+            status: "running",
+            cancel_requested: false,
+            input: {
+              private_dns_publication: {
+                node_id: 1,
+                catalog,
+                digest,
+                records: "# fresh\n",
+              },
+            },
+          },
+        },
+      }),
+    undefined,
+    () => {
+      effects++;
+      return Promise.resolve({
+        outcome: "published",
+        data: { ready: true, digest },
+      });
+    },
+  );
+  const input = { ...args, kind: "node.remove", target_node_id: 1 };
+  assertEquals(
+    (await model.methods.publishDns.execute(input, ctx)).ready,
+    true,
+  );
+  await assertRejects(() =>
+    model.methods.publishDns.execute({ ...input, target_node_id: 18 }, ctx)
+  );
+  assertEquals(effects, 1);
+});
+
+Deno.test("participant firewall uses a fresh exact Node artifact under the publication model without parent mutation", async () => {
+  let node = 13, cancelled = false, effects = 0, reads = 0;
+  const model = publication(
+    () => () => {
+      reads++;
+      return Promise.resolve({
+        status: 200,
+        body: {
+          data: {
+            id: 17,
+            kind: "analytics.enable",
+            node_id: 17,
+            status: "running",
+            cancel_requested: cancelled,
+            input: {
+              caddy_publication: { node_id: node },
+              ingress_firewall: { desired: [], remove: [], enable: false },
+            },
+          },
+        },
+      });
+    },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (_program, input) => {
+      effects++;
+      assertEquals(input, {
+        mode: "rules",
+        desired: [],
+        remove: [],
+        enable: false,
+      });
+      return Promise.resolve({ matches: true });
+    },
+  );
+  const input = {
+    ...args,
+    kind: "analytics.enable",
+    node_id: 17,
+    target_node_id: 13,
+  };
+  assertEquals(await model.methods.publishFirewall.execute(input, ctx), {
+    matches: true,
+  });
+  node = 14;
+  await assertRejects(() => model.methods.publishFirewall.execute(input, ctx));
+  node = 13;
+  cancelled = true;
+  await assertRejects(() => model.methods.publishFirewall.execute(input, ctx));
+  assertEquals(effects, 1);
+  assertEquals(reads, 3);
 });

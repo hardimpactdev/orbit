@@ -1,354 +1,232 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
+import { certificateActions } from "./actions.ts";
 import { certificates } from "./mod.ts";
-import { type Context, Operation } from "../../operation-runner/mod.ts";
-import type { Http } from "../../automatic-deploy/gateway.ts";
+import { type CertificateSystemCall } from "./system.ts";
 
-class Fixture {
-  operation = Operation.parse({
-    id: 7,
-    node_id: 2,
-    kind: "certificate.converge",
-    status: "running",
-    cancel_requested: false,
-    input: {
-      scope: "route-3-router",
-      domain: "private.example.test",
-      version: "op-7",
-      root_hash: "a".repeat(64),
-      user: "orbit",
-      home: "/home/orbit",
-    },
-    step_results: {},
-  });
-  result: Record<string, unknown> = {
-    state: "request",
-    request_base64: btoa("public CSR"),
-  };
-  receipts = new Map<string, unknown>();
-  resources = new Map<string, Record<string, unknown>>();
-  calls: { path: string; body: Record<string, unknown> }[] = [];
-  runs = 0;
-  loseRun = false;
-  emptyResultsAsArrays = false;
-  losePublish = false;
-  loseComplete = false;
-  worker = "run-1";
-  available = true;
-  terminal: Record<string, unknown> | null = null;
-  http: Http = (method, path, raw) =>
+const leaf = {
+  node_id: 2,
+  scope: "route-8-router",
+  home: "/home/orbit",
+  agent_sha256: "a".repeat(64),
+  domain: "private.test",
+  version: "0123456789abcdef",
+  root_hash: "b".repeat(64),
+  user: "orbit",
+};
+const scope = {
+  node_id: leaf.node_id,
+  scope: leaf.scope,
+  home: leaf.home,
+  agent_sha256: leaf.agent_sha256,
+};
+const csr =
+  "-----BEGIN CERTIFICATE REQUEST-----\ncHVibGlj\n-----END CERTIFICATE REQUEST-----\n";
+const pem =
+  "-----BEGIN CERTIFICATE-----\ncHVibGlj\n-----END CERTIFICATE-----\n";
+const signed = {
+  certificate_base64: btoa(pem),
+  root_certificate_base64: btoa(pem),
+};
+
+Deno.test("request, publish and inspect use only local system actions and public outputs", async () => {
+  const calls: CertificateSystemCall[] = [];
+  const actions = certificateActions((call) =>
     Promise.resolve().then(() => {
-      if (method === "GET") {
-        this.calls.push({ path, body: {} });
-        if (path === "/api/v1/operations/7") {
-          return {
-            status: 200,
-            body: {
-              data: this.terminal ??
-                { ...this.operation, result: null, error_code: null },
-            },
-          };
-        }
-        const key = decodeURIComponent(path.split("/").at(-1)!);
-        return {
-          status: 200,
-          body: {
-            data: {
-              effect_key: `op-7.${key}`,
-              state: this.receipts.has(key) ? "succeeded" : "unknown",
-              exit_code: 0,
-              result: this.receipts.get(key) ?? null,
-              finished_at: "2026-10-28T21:00:00Z",
-            },
-          },
-        };
-      }
-      const body = raw as Record<string, unknown>;
-      this.calls.push({ path, body });
-      if (body.worker !== this.worker) {
-        return {
-          status: 409,
-          body: { error: { code: "operation.lease_lost" } },
-        };
-      }
-      if (path.endsWith("/claim") && !this.available) {
-        return { status: 200, body: { data: null } };
-      }
-      let data: unknown = this.operation;
-      if (path.endsWith("/run")) {
-        const key = String(body.key);
-        if (!this.receipts.has(key)) {
-          const value = key === "certificate-request"
-            ? this.result
-            : key === "certificate-sign"
-            ? {
-              signed: true,
-              certificate_base64: btoa("leaf"),
-              root_certificate_base64: btoa("root"),
-            }
-            : key === "certificate-inspect"
-            ? { present: true }
-            : {};
-          this.receipts.set(
-            key,
-            this.emptyResultsAsArrays && Object.keys(value).length === 0
-              ? []
-              : value,
-          );
-          this.runs++;
-        }
-        if (this.losePublish && key === "certificate-publish") {
-          this.losePublish = false;
-          throw new Error("Lost publication response");
-        }
-        if (this.loseRun) {
-          this.loseRun = false;
-          throw new Error("Lost Node response");
-        }
-        data = this.receipts.get(key);
-      }
-      if (path.endsWith("/step") && body.status === "succeeded") {
-        this.operation.step_results[String(body.name)] = body.result;
-      }
-      if (path.endsWith("/complete")) {
-        this.terminal = { id: 7, kind: this.operation.kind, ...body };
-      }
-      if (path.endsWith("/complete") && this.loseComplete) {
-        this.loseComplete = false;
-        throw new Error("Lost completion response");
-      }
-      return { status: 200, body: { data } };
-    });
-  context(): Context {
-    const { context } = createModelTestContext({
-      globalArgs: {
-        gatewayUrl: "https://gateway.example.test",
-        caFile: "/unused",
-      },
-    });
-    const write = context.writeResource.bind(context);
-    return Object.assign(context, {
-      globalArgs: {
-        gatewayUrl: "https://gateway.example.test",
-        caFile: "/unused",
-      },
-      readResource: (name: string) =>
-        Promise.resolve(this.resources.get(name) ?? null),
-      writeResource: async (
-        spec: string,
-        name: string,
-        value: Record<string, unknown>,
-      ) => {
-        const handle = await write(spec, name, value);
-        this.resources.set(name, structuredClone(value));
-        return handle;
-      },
-    });
-  }
-  execute(worker = this.worker) {
-    return certificates(() => this.http).methods.execute.execute({
-      kind: this.operation.kind,
-      worker,
-    }, this.context());
-  }
-}
-
-Deno.test("new leaf request is signed on Gateway and published by reference before inspection", async () => {
-  const f = new Fixture();
-  assertEquals((await f.execute()).status, "succeeded");
-  const runs = f.calls.filter((x) => x.path.endsWith("/run")).map((x) =>
-    x.body
+      calls.push(call);
+      return call.name === "certificate.request-leaf"
+        ? { state: "request", request: csr }
+        : call.name === "certificate.inspect-leaf"
+        ? { present: true }
+        : {};
+    })
   );
-  assertEquals(runs.map((x) => x.name), [
+  const request = await actions.request(leaf);
+  assertEquals(request, { state: "request", request_base64: btoa(csr) });
+  const applied = await actions.publish(leaf, request, signed);
+  assertEquals(await actions.inspect(scope, applied), { present: true });
+  assertEquals(calls.map((c) => c.name), [
     "certificate.request-leaf",
-    "certificate.sign-leaf",
     "certificate.publish-leaf",
     "certificate.inspect-leaf",
   ]);
-  assertEquals(runs[1].transport, "gateway");
-  assertEquals((runs[2].input as Record<string, unknown>).certificate, {
-    $secret: "certificate.leaf",
-    id: 7,
+  assertEquals(calls.every((c) => c.name.startsWith("certificate.")), true);
+  assertEquals(calls[0].input, {
+    scope: leaf.scope,
+    home: leaf.home,
+    domain: leaf.domain,
+    version: leaf.version,
+    root_hash: leaf.root_hash,
+    user: leaf.user,
   });
-  assertEquals(runs.some((x) => "node_id" in x), false);
-  assertEquals(f.calls.at(-1)!.body.result, { present: true });
+  assertEquals(calls[1].input.certificate, pem);
 });
-Deno.test("a current leaf is inspected without generating or signing another key", async () => {
-  const f = new Fixture();
-  f.result = { state: "current" };
-  await f.execute();
-  assertEquals(
-    f.calls.filter((x) => x.path.endsWith("/run")).map((x) => x.body.name),
-    ["certificate.request-leaf", "certificate.inspect-leaf"],
+Deno.test("current leaf skips signing and publication", async () => {
+  let called = 0;
+  const actions = certificateActions(() =>
+    Promise.resolve().then(() => {
+      called++;
+      return { state: "current" };
+    })
   );
-});
-Deno.test("remove uses only the recorded scope and home", async () => {
-  const f = new Fixture();
-  f.operation.kind = "certificate.remove";
-  await f.execute();
-  assertEquals(f.calls.find((x) => x.path.endsWith("/run"))!.body.input, {
-    scope: "route-3-router",
-    home: "/home/orbit",
+  const request = await actions.request(leaf);
+  assertEquals(await actions.publish(leaf, request, { skipped: true }), {
+    applied: true,
   });
+  assertEquals(called, 1);
 });
-Deno.test("certificate refusal closes its failed step and stops publication", async () => {
-  const f = new Fixture();
-  f.result = { error_code: "certificate.leaf_failed" };
-  assertEquals((await f.execute()).status, "failed");
-  assertEquals(f.runs, 1);
-  assertEquals(f.calls.at(-1)!.body.error_code, "certificate.leaf_failed");
-});
-Deno.test("lost request response reuses its stable effect key, version and recorded receipt", async () => {
-  const f = new Fixture();
-  f.loseRun = true;
-  await assertRejects(() => f.execute(), Error, "Lost Node response");
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.runs, 4);
-  const runs = f.calls.filter((x) =>
-    x.body.name === "certificate.request-leaf"
+Deno.test("refusals stop publication and inspection and malformed public signatures fail", async () => {
+  let calls = 0;
+  const actions = certificateActions(() =>
+    Promise.resolve().then(() => {
+      calls++;
+      return {};
+    })
   );
-  assertEquals(runs.length, 1);
-  assertEquals(
-    f.calls.some((c) => c.path.endsWith("/receipts/certificate-request")),
-    true,
+  const error = { error_code: "certificate.leaf_failed" };
+  assertEquals(await actions.publish(leaf, error, signed), error);
+  assertEquals(await actions.inspect(scope, error), error);
+  assertEquals(await actions.remove({ ...scope, in_use: true }), {
+    error_code: "app-dev.certificate_in_use",
+  });
+  assertEquals(calls, 0);
+  await assertRejects(() =>
+    actions.publish(leaf, { state: "request", request_base64: btoa(csr) }, {
+      ...signed,
+      certificate_base64: btoa("PRIVATE KEY"),
+    })
   );
+  assertEquals(calls, 0);
 });
-Deno.test("lost completion response replays persisted completion without Node work", async () => {
-  const f = new Fixture();
-  f.loseComplete = true;
-  await assertRejects(() => f.execute());
-  const count = f.calls.length;
-  await f.execute();
-  assertEquals(f.calls.length, count + 1);
-  assertEquals(f.runs, 4);
-});
-Deno.test("lease takeover stops the old worker before key generation", async () => {
-  const f = new Fixture();
-  f.worker = "run-2";
-  await assertRejects(() => f.execute("run-1"), Error, "operation.lease_lost");
-  assertEquals(f.runs, 0);
-  await f.execute("run-2");
-  assertEquals(f.runs, 4);
-});
-Deno.test("cancellation before a leaf request does no Node work", async () => {
-  const f = new Fixture();
-  f.operation.cancel_requested = true;
-  assertEquals((await f.execute()).status, "cancelled");
-  assertEquals(f.runs, 0);
-});
-Deno.test("unknown request evidence never reaches signing or completion", async () => {
-  const f = new Fixture();
-  f.result = {};
-  await assertRejects(() => f.execute(), Error, "Unproven certificate request");
-  assertEquals(f.runs, 1);
-  assertEquals(f.calls.some((x) => x.path.endsWith("/complete")), false);
-});
-
-Deno.test("empty family claim ends without a heartbeat or effect", async () => {
-  const f = new Fixture();
-  f.available = false;
-  assertEquals((await f.execute()).status, "idle");
-  assertEquals(f.calls.map((call) => call.path), [
-    "/api/v1/operation-executor/claim",
-  ]);
-  assertEquals(f.runs, 0);
-});
-
-Deno.test("retry after committed completion confirms the original result without another claim", async () => {
-  const f = new Fixture();
-  f.loseComplete = true;
-  await assertRejects(() => f.execute());
-  const before = f.calls.length;
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.calls.slice(before).map((call) => call.path), [
-    "/api/v1/operations/7",
-  ]);
-  assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/claim")).length,
-    1,
+Deno.test("removal verifies absence and never trusts a failed effect", async () => {
+  const calls: CertificateSystemCall[] = [];
+  const actions = certificateActions((call) =>
+    Promise.resolve().then(() => {
+      calls.push(call);
+      return call.name === "certificate.inspect-leaf" ? { present: false } : {};
+    })
   );
-});
-
-Deno.test("mismatched terminal result refuses the saved completion without claiming more work", async () => {
-  const f = new Fixture();
-  f.loseComplete = true;
-  await assertRejects(() => f.execute());
-  f.terminal!.result = { forged: true };
-  const before = f.calls.length;
-  await assertRejects(
-    () => f.execute(),
-    Error,
-    "Unproven saved certificates completion",
-  );
-  assertEquals(f.calls.slice(before).map((call) => call.path), [
-    "/api/v1/operations/7",
+  const removed = await actions.remove({ ...scope, in_use: false });
+  assertEquals(await actions.inspect(scope, removed), { present: false });
+  assertEquals(calls.map((v) => v.name), [
+    "certificate.remove-leaf",
+    "certificate.inspect-leaf",
   ]);
 });
-
-Deno.test("resumed family dispatch with a lost lease never claims a replacement Operation", async () => {
-  const f = new Fixture();
-  f.loseRun = true;
-  await assertRejects(() => f.execute());
-  f.worker = "replacement-worker";
-  const before = f.calls.length;
-  await assertRejects(() => f.execute("run-1"), Error, "operation.lease_lost");
-  assertEquals(f.calls.slice(before).map((call) => call.path), [
-    "/api/v1/operation-executor/7/heartbeat",
-  ]);
-});
-
-Deno.test("empty PHP publication and removal maps finish as object results", async () => {
-  const publication = new Fixture();
-  publication.emptyResultsAsArrays = true;
-  assertEquals((await publication.execute()).status, "succeeded");
-  assertEquals(publication.operation.step_results["certificate-publish"], {});
-
-  const removal = new Fixture();
-  removal.operation.kind = "certificate.remove";
-  removal.emptyResultsAsArrays = true;
-  assertEquals((await removal.execute()).status, "succeeded");
-  assertEquals(removal.calls.at(-1)!.body.result, {});
-});
-
-Deno.test("lost empty publication reply recovers its receipt without repeating the effect", async () => {
-  const f = new Fixture();
-  f.emptyResultsAsArrays = true;
-  f.losePublish = true;
-  await assertRejects(() => f.execute(), Error, "Lost publication response");
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(f.runs, 4);
-  assertEquals(
-    f.calls.filter((c) =>
-      c.path.endsWith("/run") && c.body.key === "certificate-publish"
-    ).length,
-    1,
+Deno.test("admission binds the worker Node before a local effect", async () => {
+  const definition = certificates(() => () =>
+    Promise.resolve({
+      status: 200,
+      body: {
+        data: {
+          id: 19,
+          kind: "certificate.converge",
+          node_id: 9,
+          input: leaf,
+          cancel_requested: false,
+        },
+      },
+    })
   );
-  assertEquals(
-    f.calls.some((c) => c.path.endsWith("/receipts/certificate-publish")),
-    true,
+  await assertRejects(() =>
+    definition.methods.admit.execute({
+      operation_id: 19,
+      kind: "certificate.converge",
+      node_id: 9,
+      run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+    }, {
+      globalArgs: { gatewayUrl: "https://gateway.test", caFile: "/fixture" },
+      writeResource: () => Promise.resolve({}),
+    })
   );
 });
 
-Deno.test("a recorded empty publication result resumes at inspection", async () => {
-  const f = new Fixture();
-  f.operation.step_results = {
-    "certificate-request": {
-      state: "request",
-      request_base64: btoa("public CSR"),
+Deno.test("parent requests effect Nodes, signs once on control209, then publishes on effect Nodes", async () => {
+  const resources: { spec: string; value: unknown }[] = [];
+  const calls: CertificateSystemCall[] = [];
+  const leaves = [leaf, { ...leaf, node_id: 3, scope: "route-8" }];
+  let signatures = 0;
+  const definition = certificates(
+    () => () => {
+      throw new Error("Signing must not call the Gateway");
     },
-    "certificate-sign": { signed: true },
-    "certificate-publish": [],
-  };
-  assertEquals((await f.execute()).status, "succeeded");
-  assertEquals(
-    f.calls.filter((c) => c.path.endsWith("/run")).map((c) => c.body.name),
-    ["certificate.inspect-leaf"],
+    certificateActions((call) => {
+      calls.push(call);
+      return Promise.resolve(
+        call.name === "certificate.request-leaf"
+          ? { state: "request", request: csr }
+          : call.name === "certificate.inspect-leaf"
+          ? { present: true }
+          : {},
+      );
+    }),
+    () => {
+      signatures++;
+      return Promise.resolve({
+        certificates: leaves.map((l) => ({
+          node_id: l.node_id,
+          scope: l.scope,
+          ...signed,
+        })),
+      });
+    },
   );
-});
-
-Deno.test("a nonempty array cannot prove certificate publication", async () => {
-  const f = new Fixture();
-  f.receipts.set("certificate-publish", [{ ready: true }]);
-  await assertRejects(() => f.execute());
-  assertEquals(f.calls.some((c) => c.path.endsWith("/complete")), false);
+  const ctx = {
+    globalArgs: {
+      gatewayUrl: "https://gateway.test",
+      caFile: "/fixture",
+      vaultName: "disposable",
+      secretKey: "ca",
+    },
+    vaultService: {
+      get: () => {
+        throw new Error("Injected signer does not read CA");
+      },
+    },
+    writeResource: (spec: string, _name: string, value: unknown) => {
+      resources.push({ spec, value });
+      return Promise.resolve({});
+    },
+  };
+  const root = {
+    operation_id: 19,
+    kind: "route.converge",
+    node_id: 9,
+    run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
+  };
+  for (const participant of leaves) {
+    await definition.methods.requestAll.execute({
+      ...root,
+      target_node_id: participant.node_id,
+      leaves: [participant],
+    }, ctx);
+  }
+  const requests = resources.filter((r) => r.spec === "requests").map((r) =>
+    (r.value as { requests: unknown[] }).requests
+  );
+  await definition.methods.signBatch.execute({
+    ...root,
+    leaves,
+    requests: requests as never,
+  }, ctx);
+  assertEquals(signatures, 1);
+  const batch = resources.find((r) => r.spec === "signedBatch")!.value as {
+    certificates: ({ node_id: number; scope: string } & typeof signed)[];
+  };
+  for (let index = 0; index < leaves.length; index++) {
+    await definition.methods.publishAll.execute({
+      ...root,
+      target_node_id: leaves[index].node_id,
+      leaves: [leaves[index]],
+      requests: requests[index] as never,
+      signed: batch.certificates,
+    }, ctx);
+  }
+  assertEquals(calls.map((c) => c.name), [
+    "certificate.request-leaf",
+    "certificate.request-leaf",
+    "certificate.publish-leaf",
+    "certificate.inspect-leaf",
+    "certificate.publish-leaf",
+    "certificate.inspect-leaf",
+  ]);
 });

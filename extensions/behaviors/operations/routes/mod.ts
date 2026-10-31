@@ -14,7 +14,6 @@ import {
   Invocation,
 } from "./contract.ts";
 import { RouteRefusal } from "./contract.ts";
-import { analyticsKinds, executeAnalytics } from "./analytics.ts";
 import { executeRoot, rootKinds } from "./roots.ts";
 
 const Publication = Operation.extend({ execution_context: ExecutionContext });
@@ -194,9 +193,6 @@ export function routes(
               ...completion,
             });
             return { status: completion.status };
-          }
-          if (analyticsKinds.includes(operation.kind)) {
-            return executeAnalytics(args, ctx, http, operation);
           }
           if (rootKinds.includes(operation.kind)) {
             return executeRoot(args, ctx, http, operation);

@@ -6,7 +6,7 @@ import {
   directOperation,
   GatewayOperation,
 } from "../_lib/direct.ts";
-import { runNodeAgent } from "../_lib/node-agent.ts";
+import type { NodeCall } from "../_lib/node-agent.ts";
 
 const Args = DirectArgs.extend({
   kind: z.enum(["route.workload_verify", "route.public_verify"]),
@@ -23,8 +23,74 @@ export const Probe = z.object({
 }).strict();
 
 /** Two fixed account-only probes, no root boundary or worker-selected command. */
-export async function verifyLocal(input: unknown, invoke = runNodeAgent) {
+export async function verifyLocal(
+  input: unknown,
+  invoke?: (call: NodeCall) => Promise<Record<string, unknown>>,
+) {
   const admitted = Probe.parse(input);
+  if (!invoke) {
+    const { address, port, domain } = admitted.probe;
+    if (
+      !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+        .test(domain)
+    ) throw new Error("Route probe domain is invalid");
+    const endpoint = address.includes(":")
+      ? `[${address}]:${port}`
+      : `${address}:${port}`;
+    const process = admitted.protocol === "tls"
+      ? new Deno.Command("/usr/bin/timeout", {
+        args: [
+          "10",
+          "/usr/bin/openssl",
+          "s_client",
+          "-connect",
+          endpoint,
+          "-servername",
+          domain,
+          "-verify_hostname",
+          domain,
+          "-verify_return_error",
+        ],
+        stdin: "null",
+        stdout: "null",
+        stderr: "null",
+        signal: AbortSignal.timeout(15000),
+      })
+      : new Deno.Command("/usr/bin/curl", {
+        args: [
+          "--head",
+          "--noproxy",
+          "*",
+          "--silent",
+          "--connect-timeout",
+          "10",
+          "--max-time",
+          "10",
+          "--output",
+          "/dev/null",
+          "--header",
+          `Host: ${domain}`,
+          `http://${endpoint}/`,
+        ],
+        stdin: "null",
+        stdout: "null",
+        stderr: "null",
+        signal: AbortSignal.timeout(15000),
+      });
+    try {
+      return (await process.output()).success ? { ready: true } : {
+        error_code: admitted.protocol === "tls"
+          ? "route.certificate_invalid"
+          : "route.http_unreachable",
+      };
+    } catch {
+      return {
+        error_code: admitted.protocol === "tls"
+          ? "route.certificate_invalid"
+          : "route.http_unreachable",
+      };
+    }
+  }
   const result = await invoke({
     name: admitted.protocol === "tls"
       ? "route.verify-certificate"
@@ -51,7 +117,7 @@ export function verification(
 ) {
   return {
     type: "@nckrtl/route-verification",
-    version: "2026.10.31.1",
+    version: "2026.10.31.2",
     globalArguments: Globals,
     methods: {
       verify: {

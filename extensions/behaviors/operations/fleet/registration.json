@@ -1,9 +1,0 @@
-{
-  "kinds": [
-    "fleet.recipe",
-    "fleet.rollout",
-    "fleet.recipe_pr",
-    "fleet.cli_converge"
-  ],
-  "workflow": "operation-fleet"
-}
