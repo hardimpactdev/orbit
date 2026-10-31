@@ -330,7 +330,73 @@ Deno.test("Reverb waits for fresh process reports and resumes a completed pendin
   );
 });
 
-Deno.test("Conn revoke preserves the admitted pairing set", async () => {
+Deno.test("Conn issue preserves the exact H credential reference through step and completion", async () => {
+  const f = new Fixture();
+  f.operation.kind = "conn.pairing_create";
+  f.operation.input = {
+    environment: { $secret: "conn.environment", id: 8 },
+    pairing_ids: [77],
+  };
+  f.result = {
+    backend: "issued",
+    pairing_id: 77,
+    pairing_link_id: "link-1",
+    expires_at: "2026-10-28T22:00:00Z",
+    credential: { $secret: "conn.pairing.credential", id: 77 },
+    admin_session: "secret-sentinel",
+  };
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(
+    f.calls.find((call) => call.path.endsWith("/run"))!.body.input,
+    f.operation.input,
+  );
+  assertEquals(
+    JSON.stringify([...f.resources]).includes("secret-sentinel"),
+    false,
+  );
+  assertEquals(JSON.stringify(f.calls).includes("secret-sentinel"), false);
+  for (const suffix of ["/step", "/complete"]) {
+    const result = f.calls.find((call) =>
+      call.path.endsWith(suffix) && call.body.result !== undefined
+    )!.body
+      .result as Record<string, unknown>;
+    assertEquals(result.credential, {
+      $secret: "conn.pairing.credential",
+      id: 77,
+    });
+  }
+});
+Deno.test("Conn rejects a raw one-time credential before writing a result receipt", async () => {
+  for (
+    const credential of [
+      "secret-sentinel",
+      true,
+      undefined,
+      { $secret: "conn.pairing.credential", id: 78 },
+      { $secret: "conn.other", id: 77 },
+      { $secret: "conn.pairing.credential", id: 77, value: "secret-sentinel" },
+    ]
+  ) {
+    const f = new Fixture();
+    f.operation.kind = "conn.pairing_create";
+    f.operation.input = {
+      environment: { $secret: "conn.environment", id: 8 },
+      pairing_ids: [77],
+    };
+    f.result = { backend: "issued", pairing_id: 77, credential };
+    await assertRejects(() => f.execute());
+    assertEquals([...f.resources.values()], [{ operation_id: 12 }]);
+    assertEquals(
+      JSON.stringify([...f.resources]).includes("secret-sentinel"),
+      false,
+    );
+    assertEquals(
+      f.calls.some((call) => call.path.endsWith("/complete")),
+      false,
+    );
+  }
+});
+Deno.test("Conn revoke preserves the admitted pairing set and uncertain issue fails without minting again", async () => {
   const f = new Fixture();
   f.operation.kind = "conn.pairing_revoke";
   f.operation.input = {
@@ -343,6 +409,12 @@ Deno.test("Conn revoke preserves the admitted pairing set", async () => {
     f.calls.find((call) => call.path.endsWith("/run"))!.body.input,
     f.operation.input,
   );
+  const unknown = new Fixture();
+  unknown.operation.kind = "conn.pairing_create";
+  unknown.operation.input = f.operation.input;
+  unknown.result = { error_code: "conn.pairing_outcome_unknown" };
+  assertEquals((await unknown.execute()).status, "failed");
+  assertEquals(unknown.effects, 1);
 });
 
 Deno.test("a still-running target receipt ends without another effect or completion", async () => {
@@ -499,6 +571,56 @@ Deno.test("an unrecognized pre-start marker cannot become a terminal command ref
     ),
     false,
   );
+});
+
+Deno.test("Conn server refusal ends the admitted workflow and cannot return an issued credential", async () => {
+  for (
+    const code of [
+      "conn.server_unreachable",
+      "conn.session_rejected",
+      "conn.request_refused",
+    ]
+  ) {
+    const f = new Fixture();
+    f.operation.kind = "conn.pairing_create";
+    f.operation.input = {
+      environment: { $secret: "conn.environment", id: 8 },
+      pairing_ids: [77],
+    };
+    f.result = { error_code: code };
+    assertEquals((await f.execute()).status, "failed");
+    assertEquals(f.calls.at(-1)?.body, {
+      worker: "workflow-12",
+      status: "failed",
+      result: { error_code: code },
+      error_code: code,
+    });
+    assertEquals(f.effects, 1);
+    assertEquals(
+      f.calls.some((call) => JSON.stringify(call).includes("pairing_url")),
+      false,
+    );
+  }
+});
+
+Deno.test("Conn pairing workflow reuses its issued secret reference after a lost completion reply", async () => {
+  const f = new Fixture();
+  f.operation.kind = "conn.pairing_create";
+  f.operation.input = {
+    environment: { $secret: "conn.environment", id: 8 },
+    pairing_ids: [77],
+  };
+  f.result = {
+    backend: "issued",
+    pairing_id: 77,
+    pairing_link_id: "link-1",
+    credential: { $secret: "conn.pairing.credential", id: 77 },
+  };
+  f.loseCompletion = true;
+  await assertRejects(() => f.execute(), Error, "Lost completion reply");
+  assertEquals((await f.execute()).status, "succeeded");
+  assertEquals(f.effects, 1);
+  assertEquals(f.calls.filter((call) => call.path.endsWith("/run")).length, 1);
 });
 
 Deno.test("Vault sync resumes its keyed collection result and completes every admitted ledger field", async () => {

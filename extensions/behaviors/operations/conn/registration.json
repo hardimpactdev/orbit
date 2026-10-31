@@ -1,4 +1,0 @@
-{
-  "kinds": ["conn.pairing_create"],
-  "workflow": "operation-conn-direct"
-}

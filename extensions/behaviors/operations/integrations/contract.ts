@@ -32,10 +32,12 @@ export function invocation(
 ): Invocation {
   if (
     [
+      "conn.pairing_create",
       "conn.pairing_revoke",
       "conn.gateway_sessions_revoke",
     ].includes(kind)
   ) {
+    const create = kind === "conn.pairing_create";
     const environment = z.object({
       $secret: z.literal("conn.environment"),
       id: z.number().int().positive(),
@@ -51,14 +53,24 @@ export function invocation(
         pairing_link_id: z.string().optional(),
         expires_at: z.string().optional(),
         revoked_sessions: z.number().int().nonnegative().optional(),
+        credential: create
+          ? z.object({
+            $secret: z.literal("conn.pairing.credential"),
+            id: z.number().int().positive(),
+          }).strict()
+          : z.never().optional(),
       }),
     ]);
     return {
-      step: kind === "conn.gateway_sessions_revoke"
+      step: create
+        ? "pairing-create"
+        : kind === "conn.gateway_sessions_revoke"
         ? "gateway-sessions-revoke"
         : "pairing-revoke",
       transport: "gateway",
-      name: kind === "conn.gateway_sessions_revoke"
+      name: create
+        ? "conn.pairing-issue"
+        : kind === "conn.gateway_sessions_revoke"
         ? "conn.gateway-sessions-revoke"
         : "conn.pairing-revoke",
       input: {
@@ -74,10 +86,18 @@ export function invocation(
       },
       parseResult: (value) => {
         const parsed = result.parse(value);
+        if (create && !("error_code" in parsed)) {
+          if (
+            ids.length !== 1 || parsed.pairing_id !== ids[0] ||
+            parsed.credential?.id !== ids[0]
+          ) {
+            throw new Error("conn.pairing_reference_invalid");
+          }
+        }
         return parsed;
       },
       error: remoteError,
-      prove: (value) => value.backend === "revoked",
+      prove: (value) => value.backend === (create ? "issued" : "revoked"),
     };
   }
   if (

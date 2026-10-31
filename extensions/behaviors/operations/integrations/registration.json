@@ -8,6 +8,7 @@
     "vault.sync",
     "vault.teardown",
     "websocket.app_rotate",
+    "conn.pairing_create",
     "conn.pairing_revoke",
     "ai_router.setup",
     "ai_router.teardown",
