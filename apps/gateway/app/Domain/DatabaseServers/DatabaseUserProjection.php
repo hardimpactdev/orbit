@@ -7,7 +7,6 @@ namespace App\Domain\DatabaseServers;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\DatabaseUser;
 use App\Models\Operation;
@@ -23,17 +22,15 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
         $command = $intent->payload['commands']['database-apply'];
         $input = $operation->input;
         $container = $command['input']['container'] ?? null;
-        $pin = $input['agent_sha256'] ?? null;
         $username = $input['username'] ?? null;
         if (! in_array($input['driver'] ?? null, ['mysql', 'pgsql'], true)
             || ! is_string($container) || preg_match('/\Aorbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $container) !== 1
-            || ! is_string($pin) || preg_match('/\A[0-9a-f]{64}\z/D', $pin) !== 1
             || ! is_string($username) || preg_match('/\A[A-Za-z0-9_]{1,32}\z/D', $username) !== 1
             || ! is_bool($input['replication'] ?? null) || ! is_bool($input['known_user'] ?? null)) {
             $this->invalid();
         }
 
-        return ['driver' => $input['driver'], 'container' => $container, 'agent_sha256' => $pin,
+        return ['driver' => $input['driver'], 'container' => $container,
             'username' => $username, 'replication' => $input['replication'], 'known_user' => $input['known_user']];
     }
 
@@ -58,7 +55,7 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
         return DB::transaction(function () use ($operation, $data, $result, $status, $user): Operation {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
             $terminal = $operation->status->terminal();
-            $projected = app(DirectOperation::class)->project($operation, $data, $result, 'database-apply');
+            $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($status === 'succeeded' && ! $terminal) {
                 DatabaseUser::query()->updateOrCreate(['database_connection_id' => $user['database_connection_id'], 'username' => $user['username']], $user);
             }
@@ -75,16 +72,6 @@ final readonly class DatabaseUserProjection implements DirectOperationProjection
             $this->invalid();
         }
         $intent = DatabaseExecutionIntent::recorded($id);
-        $command = $intent->payload['commands']['database-apply'] ?? null;
-        $user = $intent->payload['projection']['upsert_user'] ?? null;
-        if (! is_array($command) || count($intent->payload['commands']) !== 1 || $command['name'] !== 'database.server-admin'
-            || ($command['input']['operation'] ?? null) !== 'execute' || ($command['protected'] ?? []) !== ['password', 'sql']
-            || ! is_array($user) || $user['database_connection_id'] !== ($operation->input['connection_id'] ?? null)
-            || $user['username'] !== ($operation->input['username'] ?? null)
-            || ! DatabaseConnection::query()->whereKey($user['database_connection_id'])->where('database_server_id', $operation->target_id)->exists()
-            || ($intent->payload['projection']['children'] ?? []) !== []) {
-            $this->invalid();
-        }
 
         return $intent;
     }

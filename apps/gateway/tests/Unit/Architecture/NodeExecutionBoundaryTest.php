@@ -149,7 +149,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/GitHub/ProcessGitHubCliToken.php',
         'app/Infrastructure/MachineSoftware/AuthenticatedUbuntuSnapshot.php',
         'app/Infrastructure/MachineSoftware/UbuntuReleaseSignature.php',
-        'app/Infrastructure/MachineSoftware/RecipeArtifactsBump.php',
         'app/Infrastructure/GatewayReleases/ScriptGatewayReleaseSmoke.php',
         'app/Infrastructure/AgentView/ProcessAgentViewPublisher.php',
         'app/Jobs/RunScheduledCommand.php',
@@ -163,7 +162,6 @@ it('keeps Node execution inside the agent transports across core and extensions'
         'app/Infrastructure/AppDev/DnsmasqPrivateDnsManager.php',
         'app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php',
         'app/Infrastructure/Nodes/Roles/GatewayRoleBaseline.php',
-        'app/Infrastructure/Doctor/NativeRoleStateInspector.php',
         'app/Infrastructure/WireGuard/NativeGatewayVpnConverger.php',
         // Existing Tasks workspace execution and its journal are excluded from this port.
         'app/Infrastructure/AppDev/DevelopmentSshExecutor.php',

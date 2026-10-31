@@ -4,25 +4,27 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Shared\ResourceOperationException;
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Tasks\DependencyBatchMergeGuard;
-use App\Domain\Tasks\TaskOperations;
+use App\Domain\Tasks\DependencyMergeProjection;
 use App\Models\Operation;
 use App\Models\Task;
 
 final readonly class StartDependencyBatchMergeAction
 {
-    public function __construct(private DependencyBatchMergeGuard $guard, private TaskOperations $tasks) {}
+    public function __construct(private DependencyBatchMergeGuard $guard, private StartOperationAction $operations,
+        private RequireTasksExtensionAction $extension, private OperationIdempotency $idempotency) {}
 
     public function execute(Task $group, int $publish, string $head, string $caller, string $request): Operation
     {
-        $intent = $this->guard->lineage($group, $publish, $head);
-        $this->guard->github($intent);
+        $this->extension->execute();
+        if (($existing = $this->idempotency->replay('tasks.dependency_merge')) !== null) {
+            return $existing;
+        }
+        $intent = [...$this->guard->lineage($group, $publish, $head), 'node_id' => DependencyMergeProjection::WorkerNodeId];
 
-        return $this->tasks->start($group, 'tasks.dependency_merge', $intent, function (Task $group) use ($intent, $publish, $head): void {
-            if ($this->guard->lineage($group, $publish, $head) !== $intent) {
-                throw new ResourceOperationException('dependency_merge.lineage_changed', 'The batch changed before admission.', 409);
-            }
-        }, $caller, $request);
+        return $this->operations->execute('tasks.dependency_merge', 'task_group', $group->id,
+            DependencyMergeProjection::WorkerNodeId, $intent, $caller, $request);
     }
 }

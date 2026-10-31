@@ -11,7 +11,7 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor is one command. The Gateway compares its stored intent with a bounded, read-only observation of each Node and returns one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
+Doctor is one command. The Gateway admits stored intent and starts one native Swamp run. Placed read-only steps inspect each Node and return one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
 
 ## Commands
 
@@ -49,15 +49,15 @@ The exit status follows the report.
 | `0` | `healthy` is true. Informational findings alone still exit 0. |
 | `1` | `healthy` is false, so at least one finding is drift or unverifiable, or the Gateway could not be reached. |
 
-The Gateway answers a completed report with HTTP 200, also when it holds drift or unverifiable findings. Transport and authorization failures use the normal error envelope.
+The Gateway answers admission with HTTP 202 and a `doctor.inspect` Operation. The CLI follows that Operation and renders its `result.report`, including drift or unverifiable findings. Transport and authorization failures use the normal error envelope.
 
 <Note>
 Doctor selects only Nodes that the caller may address through an access grant. The Gateway refuses a `--node` value outside that set with `node_access.required`, so Doctor never inspects a Node that the caller could not otherwise reach.
 </Note>
 
-### How the Gateway inspects
+### How Swamp inspects
 
-Private Route projections use the read-only `doctor.inspect-private-route` agent command. Rust checks the live Caddyfile, certificate files, system DNS answer, firewall state, and Laravel URL. The Gateway supplies the expected Route and returns only match results; environment contents never leave the Node. Router checks use the same command with the expected upstream addresses. The read-only `doctor.inspect-application-urls` command checks the environment of each directory served by a Route with a web root in one call, using the same URL parser. Directories without a regular `artisan` file need no Laravel URL check. Custom proxy Routes use `doctor.inspect-custom-proxy` for the live site, certificate files, DNS answer, and a bounded connection to the configured loopback upstream. Public proxy DNS checks use `doctor.resolve-route-dns`.
+Private Route projections use the read-only `doctor.inspect-private-route` agent command. Rust checks the live Caddyfile, certificate files, system DNS answer, firewall state, and Laravel URL. The Gateway admits the expected Route and returns only match results; environment contents never leave the Node. Router checks use the same command with the expected upstream addresses. The read-only `doctor.inspect-application-urls` command checks the environment of each directory served by a Route with a web root in one call, using the same URL parser. Directories without a regular `artisan` file need no Laravel URL check. Custom proxy Routes use `doctor.inspect-custom-proxy` for the live site, certificate files, DNS answer, and a bounded connection to the configured loopback upstream. Public proxy DNS checks use `doctor.resolve-route-dns`.
 
 The Gateway calls `doctor.inspect-node` once through the agent runner before it runs the family probes. The command reads platform and address state through native OS APIs, deduplicates the root and home filesystems, and returns typed disk counters. It executes no shell. Linux reads the observer files and service state; macOS checks only the enrolled account and its home volume. The observation holds reachability, platform, architecture, and whether the WireGuard address is present. For managed Linux Nodes, it also holds the [Node agent](/reference/node-agent#doctor) binary, unit, state, and checksums, plus free space and free inodes on the filesystem holding the Orbit home or root. macOS inspection uses native platform and tunnel checks. A missing Linux agent, systemd unit, exporter, or Linux disk path is not drift and not unverifiable. macOS does check free space on the enrolled account's home volume, as [node.disk_low](#what-each-family-checks) describes.
 
@@ -73,7 +73,7 @@ Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=fals
 
 Role package, service, and Caddy version observations use `doctor.inspect-role-runtime`. The agent shares the Docker CE prerequisite rule with role convergence: all three packages, the executable, and the running Docker service must be present before Docker CE satisfies `docker.io`.
 
-Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
+Swamp places each inspection on the exact `orbit-node-N` worker with its matching Node label. Checks that read root-owned files run through passwordless `sudo` on that Node. Doctor calls observer commands only. It never calls an agent action command. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
 
 Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, `database_server`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
 
@@ -209,3 +209,7 @@ Issue values are booleans, enums, normalized versions, or fixed labels. This kee
 - [`node`](/cli/node) converges a Node or role again after Doctor reports drift.
 - [`process`](/cli/process) and [`schedule`](/cli/schedule) start, stop, or replace the resources that Doctor compares.
 - [`route`](/cli/route) creates and removes the custom proxy Routes the `route` family inspects.
+
+## Scheduled collection
+
+Swamp admits the same native Doctor workflow every ten minutes. Its Gateway-local step tails at most 1 MiB of logs per pass, finishing the current record up to an 8 MiB cap. The Gateway records fingerprints and the cursor together after the native result. The first pass starts at the current log end. Rotation preserves unread records by inode; truncation resumes at the shorter end. Log contents and exception messages never enter native results. Activity and assistance collection, retention and interrupted Activity finalization keep their bounded database state writes in the Gateway.
