@@ -952,7 +952,11 @@ export function createDemoGateway() {
                     /^\/api\/v1\/instances\/(\d+)\/analytics$/,
                     ([id = ""]) => {
                         if (method !== "GET") {
-                            trackedInstances[method === "POST" ? "add" : "delete"](id);
+                            return startDemoOperation(
+                                method === "POST" ? "analytics.enable" : "analytics.disable",
+                                Number(id),
+                                { instance_id: Number(id), enabled: method === "POST" },
+                            );
                         }
 
                         const domain =
@@ -1243,9 +1247,15 @@ export function createDemoGateway() {
             Object.assign(operation, { status: "running", attempts: 1, started_at: now, sequence });
             return;
         }
+        if (operation.kind === "analytics.enable" || operation.kind === "analytics.disable") {
+            trackedInstances[operation.kind === "analytics.enable" ? "add" : "delete"](
+                String(operation.target_id),
+            );
+        }
         Object.assign(operation, {
             status: "succeeded", finished_at: now, poll_after_seconds: null,
             result: { deployment_id: null, release: null, selected_release: null, commit: null }, sequence,
+
         });
     }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Analytics;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Analytics\InstanceAnalyticsResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -20,10 +20,14 @@ final class EnableInstanceAnalyticsRequest extends GatewayRequest implements Has
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param list<string> $hosts */
+    /** @param list<string> $hosts
+     * @param list<array<string,mixed>> $goals
+     */
     public function __construct(
         private readonly int $instanceId,
         private readonly array $hosts = [],
+        private readonly ?string $timezone = null,
+        private readonly array $goals = [],
     ) {}
 
     public function resolveEndpoint(): string
@@ -31,17 +35,21 @@ final class EnableInstanceAnalyticsRequest extends GatewayRequest implements Has
         return "/api/v1/instances/{$this->instanceId}/analytics";
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceAnalyticsResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): OperationResponse
     {
-        return InstanceAnalyticsResponse::fromGatewayData(
+        return OperationResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );
     }
 
-    /** @return array{hosts?: list<string>} */
+    /** @return array<string,mixed> */
     protected function defaultBody(): array
     {
-        return $this->hosts === [] ? [] : ['hosts' => $this->hosts];
+        return [
+            ...($this->hosts === [] ? [] : ['hosts' => $this->hosts]),
+            ...($this->timezone === null ? [] : ['timezone' => $this->timezone]),
+            ...($this->goals === [] ? [] : ['goals' => $this->goals]),
+        ];
     }
 }

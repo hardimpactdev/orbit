@@ -89,7 +89,6 @@ pub mod production_home;
 pub mod project_source;
 pub mod recipe;
 pub mod recipe_delivery;
-pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
@@ -301,9 +300,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
         entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
-        entry::<registration::InspectRegistrationSource>(),
-        entry::<registration::RelocateRegistrationSource>(),
-        entry::<registration::LaravelRegistrationReceipt>(),
         entry::<production::PrepareRelease>(),
         entry::<production::ActivateRelease>(),
         entry::<production::InspectRelease>(),
