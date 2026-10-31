@@ -304,12 +304,6 @@
     },
     {
       "file": "extensions/behaviors/node-worker/canary.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/node-worker/canary.ts",
       "rule": "multi-action",
       "count": 8,
       "evidence": [
@@ -508,14 +502,6 @@
     },
     {
       "file": "extensions/behaviors/operations/_lib/direct.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/direct.ts",
       "rule": "gateway-http",
       "count": 3,
       "evidence": [
@@ -550,12 +536,6 @@
     {
       "file": "extensions/behaviors/operations/_lib/node-agent.ts",
       "rule": "agent-dynamic",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/_lib/node-proxy.ts",
-      "rule": "gateway-http",
       "count": 1,
       "evidence": []
     },
@@ -1002,12 +982,6 @@
       "file": "extensions/behaviors/operations/documents/cleanup_program.ts",
       "rule": "inline-script",
       "count": 72,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/documents/cleanup.ts",
-      "rule": "gateway-http",
-      "count": 1,
       "evidence": []
     },
     {

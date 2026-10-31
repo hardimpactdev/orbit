@@ -25,6 +25,7 @@ const input: EnrollmentRuntimeIntent = {
     desired: "running",
     on_demand: false,
     activation_pending: false,
+    required_mount_paths: [],
     retired: null,
   },
 };
