@@ -8,7 +8,7 @@ The admitted environment selects the account: development uses the configured No
 
 Source preparation and scripts consume private callbacks only during delivery. Repeated or retained callbacks cannot repeat or start later effects. A delivery failure preserves a confirmed local result; an uncertain action cannot become success through another callback. Public repositories carry a null Git credential. Private bytes stay outside native inputs, resources and public results.
 
-Required failures stop the list. Best-effort failures add warnings and allow later steps. Verified success advances the seed; failed or cancelled work keeps the prior successful seed. A terminal replay does nothing. A running invocation with no terminal proof refuses reexecution rather than repeating source or scripts.
+Required failures stop the list. Best-effort failures add warnings and allow later steps. Verified success advances the seed; failed or cancelled work keeps the prior successful seed. A terminal replay does nothing. A running invocation with no terminal proof refuses reexecution. An uncertain mutation keeps the Operation running and its Instance hold in place; cancellation cannot replace missing settlement proof. No source or script is repeated.
 
 Vite+ projects only public pins and checking, active or failed reference state through the same parent endpoint. Pending default Route publication must be settled by the independent repair owner before dev deployment admission. This root creates no Route, Process, Schedule or prerequisite child Operations.
 
@@ -32,7 +32,7 @@ The production release still requires the owning Process, Schedule, PHP, environ
 
 ## Development release gate
 
-Before releasing the development writer, fence development deployment admission and let every pre-cutover development Operation and its children reach terminal through their current owner. An empty read without an admission fence does not prove a drain. Never adopt an old Operation into the direct writer or replay an uncertain effect. The Gateway change removes the development execution contract, so unresolved legacy work blocks its release.
+Before merging either half of the cutover, fence development deployment admission and let every pre-cutover development Operation and its children reach terminal through their current owner. An empty read without an admission fence does not prove a drain. Never adopt an old Operation into the direct writer or replay an uncertain effect. The Gateway change removes the development execution contract, so unresolved legacy work blocks its release.
 
 After normal Swamp source acceptance, verify the exact workflow UUID and existing Gateway principal's run/read grant before the Gateway writer releases. Run the released writer on a disposable Beast development Instance and revert the pair on failure. This source fixture does not prove worker readiness, effective grants or a live canary.
 

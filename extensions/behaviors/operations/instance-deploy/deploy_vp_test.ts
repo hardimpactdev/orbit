@@ -131,3 +131,28 @@ Deno.test("native deploy Vite+ cancellation prevents the next local effect", asy
   });
   assertEquals(f.calls.map((x) => x.name), ["tool.read-vp-project"]);
 });
+
+Deno.test("uncertain runtime mutation stops later calls and keeps its checking reference", async () => {
+  for (
+    const mutation of ["tool.materialize-vp", "tool.install-vp-environment"]
+  ) {
+    const f = fixture(false), original = f.port.invoke;
+    const attempted: string[] = [];
+    const result = await prepareDeployVp(f.input, 901000, {
+      ...f.port,
+      invoke: (call) => {
+        attempted.push(call.name);
+        if (call.name === mutation) {
+          throw new Error("private uncertain runtime");
+        }
+        return original(call);
+      },
+    });
+    assertEquals(result, { error_code: "deployment.execution_unconfirmed" });
+    assertEquals(attempted.at(-1), mutation);
+    assertEquals(
+      f.references,
+      mutation === "tool.materialize-vp" ? [] : ["checking"],
+    );
+  }
+});

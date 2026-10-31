@@ -113,7 +113,7 @@ Deno.test("private material and native diagnostics cannot become source results"
         throw new Error("private native diagnostic");
       },
     }),
-    { error_code: "deployment.interrupted" },
+    { error_code: "deployment.execution_unconfirmed" },
   );
 });
 
@@ -165,7 +165,7 @@ Deno.test("suppressed local uncertainty cannot be replayed into success", async 
     await action({ github_token: "private-read-token" });
   };
   assertEquals(await prepareDeploySource(f.input, 901000, f.port), {
-    error_code: "deployment.interrupted",
+    error_code: "deployment.execution_unconfirmed",
   });
   assertEquals(f.calls.length, 1);
 });

@@ -76,6 +76,9 @@ export function deployDirect(ports: Ports = {}) {
           if (["succeeded", "failed", "cancelled"].includes(initial.status)) {
             return { status: initial.status };
           }
+          if (initial.status !== "queued") {
+            throw new Error("deployment.execution_unconfirmed");
+          }
           const input = Input.parse(initial.input), d = input.deployment;
           const started_at = new Date(now()).toISOString();
           const deadline = now() + input.timeout_seconds * 1000;
@@ -130,9 +133,6 @@ export function deployDirect(ports: Ports = {}) {
             return reply;
           };
           try {
-            if (initial.status !== "queued") {
-              throw new Refused("deployment.execution_unconfirmed");
-            }
             await gateway.project({
               status: "running",
               started_at,
@@ -276,6 +276,9 @@ export function deployDirect(ports: Ports = {}) {
               ? error.message
               : "deployment.interrupted";
             result.failed_step ??= phase;
+          }
+          if (error_code === "deployment.execution_unconfirmed") {
+            throw new Error(error_code);
           }
           const status = error_code === null
             ? "succeeded"

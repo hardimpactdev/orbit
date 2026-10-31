@@ -18,7 +18,7 @@ export const DeployStep = z.object({
   required: z.boolean().default(true),
 });
 export const Configuration = z.object({
-  variant: z.enum(["production", "development", "rollback"]),
+  variant: z.enum(["production", "rollback"]),
   php: z.boolean(),
   needs_vp: z.boolean().default(false),
   steps: z.array(DeployStep).max(32),
@@ -42,13 +42,6 @@ export function phases(config: Configuration): Phase[] {
       phase(`${name}.${step.name}`, step.required)
     );
   const vp = config.needs_vp ? [phase("vp_environment")] : [];
-  if (config.variant === "development") {
-    return [
-      phase("source_preparation"),
-      ...vp,
-      ...userSteps("before_activation"),
-    ];
-  }
   const refresh = config.php ? [phase("php_refresh")] : [];
   if (config.variant === "rollback") {
     return [

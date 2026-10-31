@@ -132,7 +132,7 @@ export async function runDeployPhase(
           outcome = { error_code: "deployment.deadline_exceeded" };
           return;
         }
-        outcome = { error_code: "deployment.interrupted" };
+        outcome = { error_code: "deployment.execution_unconfirmed" };
         try {
           outcome = AppStepResult.parse(
             await (port.run ?? sudoAppStep)(step, program, signal),
@@ -146,12 +146,17 @@ export async function runDeployPhase(
     } finally {
       accepting = false;
     }
-    if (signal?.aborted) {
-      return { error_code: "operation.cancelled", failed_step };
-    }
     const result = AppStepResult.parse(outcome);
     if ("error_code" in result) {
-      return { error_code: result.error_code, failed_step };
+      return {
+        error_code: result.error_code === "instance.step_execution_unconfirmed"
+          ? "deployment.execution_unconfirmed"
+          : result.error_code,
+        failed_step,
+      };
+    }
+    if (signal?.aborted) {
+      return { error_code: "operation.cancelled", failed_step };
     }
     if (result.timed_out) {
       return { error_code: "deployment.command_timed_out", failed_step };

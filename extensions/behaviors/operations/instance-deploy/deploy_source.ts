@@ -53,14 +53,19 @@ export async function prepareDeploySource(
     if (!Number.isFinite(remaining) || remaining <= 0) {
       throw new Refused("deployment.deadline_exceeded");
     }
-    const result = await (port.invoke ?? runNodeAgent)({
-      name,
-      input: data,
-      pin: input.agent_sha256,
-      sudo: true,
-      mutates: true,
-      deadlineMs: Math.min(remaining, 900000),
-    }, signal);
+    let result: Record<string, unknown>;
+    try {
+      result = await (port.invoke ?? runNodeAgent)({
+        name,
+        input: data,
+        pin: input.agent_sha256,
+        sudo: true,
+        mutates: true,
+        deadlineMs: Math.min(remaining, 900000),
+      }, signal);
+    } catch {
+      throw new Refused("deployment.execution_unconfirmed");
+    }
     if (typeof result.error_code === "string") {
       const code = ({
         "instance.commit_not_on_branch": "deployment.commit_not_on_branch",
@@ -79,7 +84,7 @@ export async function prepareDeploySource(
       await port.git(async (git) => {
         if (!accepting || attempted) return;
         attempted = true;
-        fetched = { error_code: "deployment.interrupted" };
+        fetched = { error_code: "deployment.execution_unconfirmed" };
         try {
           const read = z.object({ github_token: z.string().nullable() })
             .strict().parse(git);

@@ -219,7 +219,7 @@ Deno.test("native root never replays an already running deployment", async () =>
   );
   assertEquals(f.calls, []);
   assertEquals(f.commands, []);
-  assertEquals(f.posts.at(-1)?.status, "failed");
+  assertEquals(f.posts, []);
 });
 
 Deno.test("terminal native root replay makes no local calls or projections", async () => {
@@ -463,4 +463,49 @@ Deno.test("final checkout inspection uses the configured account without sudo", 
   );
   assertEquals(inspect?.sudo, false);
   assertEquals(inspect?.mutates, false);
+});
+
+Deno.test("uncertain source or app execution keeps the parent running without a terminal projection", async () => {
+  for (const boundary of ["source", "app"]) {
+    const f = await fixture();
+    await assertRejects(
+      () =>
+        deployDirect({
+          http: () => f.http,
+          invoke: boundary === "source"
+            ? () => {
+              throw new Error("private uncertain source");
+            }
+            : f.invoke,
+          run: boundary === "app"
+            ? () => {
+              throw new Error("private uncertain app");
+            }
+            : f.run,
+        }).methods.run.execute(f.args, f.ctx),
+      Error,
+      "deployment.execution_unconfirmed",
+    );
+    assertEquals(f.posts.map((post) => post.status), ["running"]);
+    assertEquals(JSON.stringify(f.posts).includes("private"), false);
+  }
+});
+
+Deno.test("cancellation cannot turn an uncertain app action into a terminal cancellation", async () => {
+  const f = await fixture();
+  const abort = new AbortController();
+  await assertRejects(
+    () =>
+      deployDirect({
+        http: () => f.http,
+        invoke: f.invoke,
+        run: () => {
+          abort.abort();
+          throw new Error("private uncertain action");
+        },
+      }).methods.run.execute(f.args, { ...f.ctx, signal: abort.signal }),
+    Error,
+    "deployment.execution_unconfirmed",
+  );
+  assertEquals(f.posts.map((post) => post.status), ["running"]);
 });

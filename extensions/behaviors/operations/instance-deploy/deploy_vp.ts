@@ -48,14 +48,23 @@ export async function prepareDeployVp(
     if (!Number.isFinite(remaining) || remaining <= 0) {
       throw new Refused("deployment.deadline_exceeded");
     }
-    const result = await invoke({
-      name,
-      input: data,
-      pin: input.agent_sha256,
-      sudo,
-      mutates,
-      deadlineMs: Math.min(remaining, 900000),
-    }, signal);
+    let result: Record<string, unknown>;
+    try {
+      result = await invoke({
+        name,
+        input: data,
+        pin: input.agent_sha256,
+        sudo,
+        mutates,
+        deadlineMs: Math.min(remaining, 900000),
+      }, signal);
+    } catch {
+      throw new Refused(
+        mutates
+          ? "deployment.execution_unconfirmed"
+          : "deployment.vp_store_failed",
+      );
+    }
     if (typeof result.error_code === "string") {
       throw new Refused(result.error_code);
     }
@@ -121,7 +130,11 @@ export async function prepareDeployVp(
     await port.reference(environment, "active");
     return { runtime: environment };
   } catch (error) {
-    if (environment !== null && environment.store !== "/unresolved") {
+    if (
+      !(error instanceof Refused &&
+        error.message === "deployment.execution_unconfirmed") &&
+      environment !== null && environment.store !== "/unresolved"
+    ) {
       try {
         await port.reference(environment, "failed");
       } catch { /* Keep the existing checking reference on projection loss. */ }

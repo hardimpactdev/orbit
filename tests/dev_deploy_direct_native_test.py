@@ -117,6 +117,14 @@ class DevDeployDirectNativeTest(NativeTestCase):
         self.assertEqual(state['posts'][-1]['result']['failed_step'], 'verification')
         self.assertEqual(state['posts'][-1]['result']['commit'], 'a' * 40)
         self.assert_private_absent(json.dumps(state['posts']))
+        # A lost mutation outcome leaves the same parent open and does not free its target.
+        state.update(status='queued', posts=[], paths=[], run_id=None)
+        self.native_env['ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE'] = '1'
+        self.cli('workflow', 'run', 'dev-deploy-direct-proof', success=False)
+        self.assertEqual(state['status'], 'running')
+        self.assertEqual([row['status'] for row in state['posts']], ['running'])
+        self.assertNotIn('finished_at', state['posts'][0])
+        self.assert_private_absent(json.dumps(state['posts']))
 
 
 if __name__ == '__main__':

@@ -199,7 +199,7 @@ Deno.test("only a proven best-effort command failure may continue the deploy pha
       },
     );
     assertEquals(result, {
-      error_code: "instance.step_execution_unconfirmed",
+      error_code: "deployment.execution_unconfirmed",
       failed_step: "before_activation.install",
     });
     assertEquals(other.effects.length, 0);
@@ -241,7 +241,7 @@ Deno.test("timeout, deadline shortage and uncertain execution stop even a best-e
       },
     }),
     {
-      error_code: "deployment.interrupted",
+      error_code: "deployment.execution_unconfirmed",
       failed_step: "before_activation.install",
     },
   );
@@ -310,7 +310,7 @@ Deno.test("a private callback cannot suppress an uncertain effect or omit comman
       await runDeployPhase(f.admitted, "before_activation", 100000, f.port),
       {
         error_code: delivered
-          ? "deployment.interrupted"
+          ? "deployment.execution_unconfirmed"
           : "instance.step_not_admitted",
         failed_step: "before_activation.install",
       },

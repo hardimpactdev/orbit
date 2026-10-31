@@ -7,6 +7,9 @@ const root = deployDirect({
     if (call.pin !== "d".repeat(64)) throw new Error("Wrong admitted pin");
     const commit = "a".repeat(40);
     if (call.name === "instance.resolve-development-target") {
+      if (Deno.env.get("ORBIT_DEPLOY_TEST_UNCERTAIN_SOURCE") === "1") {
+        throw new Error(secret);
+      }
       if (
         !call.sudo || !call.mutates ||
         (call.input.git_read as { github_token: string }).github_token !==
