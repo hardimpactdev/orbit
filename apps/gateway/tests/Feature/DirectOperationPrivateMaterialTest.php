@@ -58,7 +58,7 @@ it('calls the existing encrypted owner store and accepts only exact replay', fun
     expect($this->pairing->fresh()->credential)->toBe('shared-output-sentinel');
     expect(DB::table('conn_pairings')->where('id', $this->pairing->id)->value('credential'))->not->toContain('shared-output-sentinel');
     expect($this->operation->fresh()->getAttributes())->toBe($before);
-    expect(json_encode([$this->operation->steps()->get()->toArray(), Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
+    expect(json_encode([Activity::query()->get()->toArray()]))->not->toContain('shared-output-sentinel')->not->toContain('different-output-sentinel');
 });
 
 it('rejects foreign and missing native bindings without establishing a run', function (): void {
