@@ -86,4 +86,7 @@ export function connectionUpdate(
     makeHttp,
   );
 }
-export const behavior = connectionUpdate();
+export const behavior = {
+  ...connectionUpdate(),
+  type: "@nckrtl/database-connection-update",
+};
