@@ -21,7 +21,7 @@ beforeEach(function (): void {
 });
 
 it('sends each phase to the prepared release and keeps its control-plane report', function (): void {
-    $serve = ['caddy' => 'unchanged', 'fpm' => 'unchanged', 'opcache' => ['outcome' => 'reset', 'cache_full' => false]];
+    $serve = ['caddy' => 'submitted', 'caddy_operation_id' => 5898, 'fpm' => 'unchanged', 'opcache' => ['outcome' => 'reset', 'cache_full' => false]];
     $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $serve]);
     expect($this->runtime->handoff('0123456789ab'))->toBe($serve);
     $schedule = ['scheduler' => 'restarted', 'scheduler_drain' => ['outcome' => 'drained'], 'cleanup_paused' => false];

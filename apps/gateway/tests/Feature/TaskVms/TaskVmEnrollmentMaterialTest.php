@@ -10,6 +10,7 @@ use App\Domain\TaskVms\TaskVmEnrollmentProjection;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\TaskVms\TaskVmEnrollmentMaterialSource;
 use App\Infrastructure\TaskVms\TaskVmImageArtifactSource;
+use App\Infrastructure\TaskVms\TaskVmSecretSource;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -94,4 +95,27 @@ it('serves the admitted Pi artifact only for the same enrollment pin', function 
     $operation->input = [...$operation->input, 'pi_artifact' => ['path' => '/not-read', 'sha256' => str_repeat('b', 64)]];
     expect($source->ownerId($operation))->toBeNull();
     expect(fn () => $source->artifact($operation, $vm->id))->toThrow(ResourceOperationException::class);
+});
+
+it('returns absent first-visit material until its native provider result is projected', function (): void {
+    [$vm, $operation] = enrollmentMaterialParent();
+    $vm->update(['provider' => 'upcloud', 'address' => null, 'ssh_host_key' => null]);
+    enrollmentMaterialBindings($operation, 'first_visit', $vm->node_id);
+    $ssh = Mockery::mock(SshKeyProvider::class);
+    $ssh->shouldNotReceive('privateKeyPath');
+    app()->instance(SshKeyProvider::class, $ssh);
+
+    expect(new TaskVmEnrollmentMaterialSource('first_visit')->resolve($operation, $vm->id, '', 'first_visit')->value)->toBeNull();
+    $operation->target_id++;
+    expect(fn () => new TaskVmEnrollmentMaterialSource('first_visit')->resolve($operation, $vm->id, '', 'first_visit'))->toThrow(ResourceOperationException::class);
+});
+
+it('binds the provision parent cloud token to its actual UpCloud VM before any credential read', function (): void {
+    [$vm, $operation] = enrollmentMaterialParent();
+    $source = new TaskVmSecretSource('upcloud.api');
+    expect($source->ownerId($operation))->toBeNull();
+    $vm->update(['provider' => 'upcloud']);
+    expect($source->ownerId($operation))->toBe($vm->id);
+    $operation->target_id++;
+    expect($source->ownerId($operation))->toBeNull();
 });

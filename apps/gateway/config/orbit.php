@@ -23,7 +23,7 @@ return [
     'recipe_snapshot_cache' => env('ORBIT_RECIPE_SNAPSHOT_CACHE'),
     // The pinned agent and its command contract (docs/reference/node-agent.md#commands).
     'agent' => [
-        'contract' => $gatewayPath((string) env('ORBIT_AGENT_CONTRACT', '../agent/contract/commands.json')),
+        'contract' => $gatewayPath((string) env('ORBIT_AGENT_CONTRACT', 'resources/agent/frozen-commands.json')),
         // The release checkout holds the manifest CI wrote with the tested artifacts; it is not tracked in Git.
         'delivery' => $gatewayPath((string) env('ORBIT_AGENT_DELIVERY', '../agent/delivery/manifest.json')),
     ],

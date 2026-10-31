@@ -59,6 +59,11 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         $id = $operation->target_id;
         if ($operation->target_type === 'task_group') {
+            if ($this->source === 'upcloud.api' && $operation->kind === 'tasks.provision') {
+                $vm = TaskVmEnrollmentMaterialSource::owned($operation);
+
+                return $vm?->provider === TaskVmProviderKind::UpCloud ? $vm->id : null;
+            }
             if ($this->source !== 'upcloud.api' || $operation->kind !== 'tasks.park') {
                 return null;
             }
@@ -121,7 +126,7 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         }
         $vm = TaskVm::query()->findOrFail($id);
         if ($this->source === 'task_vm.model_router') {
-            $origin = Arr::get($operation->input, 'enrollment.runtime.origin') ?? Arr::get($operation->input, 'runtime.origin') ?? ($operation->input['origin'] ?? null);
+            $origin = Arr::get($operation->input, 'enrollment.runtime.origin') ?? Arr::get($operation->input, 'runtime.origin') ?? ($operation->input['model_origin'] ?? $operation->input['origin'] ?? null);
             if (! is_string($origin) || $origin === '' || $origin !== $vm->ai_router_origin) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The model router origin does not match admitted VM intent.', 422);
             }

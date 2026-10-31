@@ -8,6 +8,8 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use JsonException;
 
@@ -23,6 +25,10 @@ final readonly class GitHubAppStore
     private const string PRIVATE_KEY = 'github.app.private_key';
 
     private const string REGISTRATION = 'github.app.registration';
+
+    private const string EXCHANGE = 'github.app.registration_exchange';
+
+    private const string OBSERVATION = 'github.app.installations';
 
     public function __construct(
         private SettingRepository $settings,
@@ -69,6 +75,7 @@ final readonly class GitHubAppStore
                 SettingValueProtection::Secret,
             );
             $this->settings->delete($this->scope(), self::REGISTRATION);
+            $this->settings->delete($this->scope(), self::OBSERVATION);
         });
     }
 
@@ -78,11 +85,22 @@ final readonly class GitHubAppStore
             $this->settings->delete($this->scope(), self::APP);
             $this->settings->delete($this->scope(), self::PRIVATE_KEY);
             $this->settings->delete($this->scope(), self::REGISTRATION);
+            $this->settings->delete($this->scope(), self::EXCHANGE);
+            $this->settings->delete($this->scope(), self::OBSERVATION);
         });
     }
 
     public function beginRegistration(GitHubAppRegistration $registration): void
     {
+        $exchange = $this->exchange();
+        if ($exchange !== null && is_int($exchange['operation_id'] ?? null)
+            && Operation::query()->find($exchange['operation_id'])?->status->terminal()) {
+            $this->finishExchange($exchange['operation_id']);
+            $exchange = null;
+        }
+        if ($exchange !== null) {
+            throw new ResourceOperationException('github.registration_pending', 'Finish the admitted App registration before starting another.', 409);
+        }
         $this->settings->put(
             $this->scope(),
             self::REGISTRATION,
@@ -96,6 +114,52 @@ final readonly class GitHubAppStore
         $stored = $this->decode($this->settings->get($this->scope(), self::REGISTRATION));
 
         return $stored === null ? null : GitHubAppRegistration::fromArray($stored);
+    }
+
+    /** @return array<string,mixed>|null */
+    public function exchange(): ?array
+    {
+        return $this->decode($this->settings->get($this->scope(), self::EXCHANGE));
+    }
+
+    public function beginExchange(Operation $operation, #[\SensitiveParameter] string $code): void
+    {
+        $this->settings->put($this->scope(), self::EXCHANGE, json_encode([
+            'operation_id' => $operation->id, 'registration_id' => $operation->input['registration_id'], 'code' => $code,
+        ], JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
+    }
+
+    public function consumeExchangeCode(int $operationId): void
+    {
+        $exchange = $this->exchange();
+        if (($exchange['operation_id'] ?? null) === $operationId) {
+            unset($exchange['code']);
+            $this->settings->put($this->scope(), self::EXCHANGE, json_encode($exchange, JSON_THROW_ON_ERROR), SettingValueProtection::Secret);
+        }
+    }
+
+    public function finishExchange(int $operationId): void
+    {
+        if (($this->exchange()['operation_id'] ?? null) === $operationId) {
+            $this->settings->delete($this->scope(), self::EXCHANGE);
+            $this->settings->delete($this->scope(), self::REGISTRATION);
+        }
+    }
+
+    /** @return array<string,mixed>|null */
+    public function observation(): ?array
+    {
+        $stored = $this->decode($this->settings->get($this->scope(), self::OBSERVATION));
+
+        return ($stored['app_id'] ?? null) === $this->credentials()?->appId ? $stored : null;
+    }
+
+    /** @param array<string,mixed> $result */
+    public function observe(Operation $operation, array $result): void
+    {
+        if (($operation->input['app_id'] ?? null) === $this->credentials()?->appId) {
+            $this->settings->put($this->scope(), self::OBSERVATION, json_encode($result, JSON_THROW_ON_ERROR));
+        }
     }
 
     /** @return array<array-key, mixed>|null */
