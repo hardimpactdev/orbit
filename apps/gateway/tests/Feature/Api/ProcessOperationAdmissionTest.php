@@ -162,7 +162,7 @@ it('refuses update intent while a Route owns the Process reservation lock', func
     $reservation = new NativeProcessRuntimeLease;
     $reservation->run($process, function () use ($process, $before): void {
         $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:changed'])
-            ->assertConflict()->assertJsonPath('error.code', 'process.runtime_lock_failed');
+            ->assertStatus(502)->assertJsonPath('error.code', 'process.runtime_lock_failed');
         expect($process->fresh()->runtime_config)->toBe($before);
         expect(Operation::query()->where('kind', 'process.update')->exists())->toBeFalse();
     });
