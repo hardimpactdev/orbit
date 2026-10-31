@@ -2,16 +2,16 @@ import {
   type DependencyProject,
   dependencyProject,
 } from "./dependency_projects.ts";
-import { z } from "npm:zod@4";
 import { type Http } from "./gateway_stage.ts";
 import { canonical } from "./repository_analysis.ts";
-import { TargetsSchema } from "./maintenance/batch.ts";
-export const PackageTargetSchema = z.strictObject({
-  workItem: z.string().regex(/^tg-[1-9]\d*$/),
-  targets: TargetsSchema,
-  sourceCommit: z.string().regex(/^[a-f0-9]{40}$/).optional(),
-});
-export type PackageTarget = z.infer<typeof PackageTargetSchema>;
+import {
+  type PackageTarget,
+  PackageTargetSchema,
+} from "./package_target_schema.ts";
+export {
+  type PackageTarget,
+  PackageTargetSchema,
+} from "./package_target_schema.ts";
 export function packageDescription(t: PackageTarget) {
   return t.targets.map((t) =>
     `${t.path}: ${t.manager} ${t.package} → ${t.version} (${t.purpose})${

@@ -16,6 +16,10 @@ from the Gateway. Its model needs only the checkout path and branch; scan data
 records the resolved commit and checkout sources. The registry planner consumes
 that inventory as before.
 
+Package target inputs share a schema between worker dispatch and admission.
+The schema lives in `_lib/package_target_schema.ts`, so workers can validate
+those inputs without loading the Gateway admission client.
+
 Package tools run only in a disposable planning tree containing tracked
 manifests, lockfiles and required workspace inputs. Repository `.npmrc`, Bun
 configuration, scripts, executables, Git metadata and credentials never enter
