@@ -21,7 +21,31 @@ BIN = pathlib.Path("/usr/local/bin")
 def install(value):
     account = pwd.getpwnam(value["user"])
     tools = value["tools"]
-    scope = ROOT / "vite-plus"
+    home = pathlib.Path(account.pw_dir)
+    candidates = [
+        ROOT / "vite-plus",
+        home / ".vite-plus",
+        home / ".local/share/vite-plus",
+    ]
+    scope = candidates[-1]
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        metadata = candidate.lstat()
+        if (
+            not candidate.is_dir()
+            or candidate.is_symlink()
+            or metadata.st_uid != account.pw_uid
+        ):
+            raise ValueError("node.tool_scope_conflict")
+        if (candidate / "bin/vp").is_file():
+            scope = candidate
+            break
+    if scope == candidates[-1]:
+        for parent in [home / ".local", home / ".local/share"]:
+            if not parent.exists():
+                parent.mkdir()
+                os.chown(parent, account.pw_uid, account.pw_gid)
     for path in (
         ROOT,
         scope,
@@ -118,7 +142,9 @@ def install(value):
                 "chown",
                 "-R",
                 str(account.pw_uid) + ":" + str(account.pw_gid),
-                str(scope),
+                str(scope / "js_runtime/node" / tools["node"]["version"]),
+                str(scope / "recipe" / ("pnpm-" + tools["pnpm"]["version"])),
+                str(scope / "bin/vp"),
             ],
             check=True,
         )

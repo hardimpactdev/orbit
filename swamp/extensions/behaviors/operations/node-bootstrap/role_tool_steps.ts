@@ -3,12 +3,16 @@ import { roleActionSteps } from "../node-role-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
 const placement = { target: "orbit-node-209", labels: { node: "209" } };
-const after = (names: string[]) =>
+const after = (names: string[], optional: Set<string>) =>
     names.map((step) => ({
         step,
         condition: {
-            type: "or",
-            conditions: [{ type: "succeeded" }, { type: "skipped" }],
+            ...(optional.has(step)
+                ? {
+                    type: "or",
+                    conditions: [{ type: "succeeded" }, { type: "skipped" }],
+                }
+                : { type: "succeeded" }),
         },
     }));
 
@@ -20,6 +24,14 @@ export function roleToolSteps(
     dependency?: string,
     guard?: string,
 ): Fields[] {
+    const optional = new Set([
+        name + "_caddy_assets",
+        name + "_caddy_command",
+        name + "_caddy",
+        name + "_javascript",
+        name + "_composer",
+        name + "_browser",
+    ]);
     const stage = '"/tmp/orbit-node-tools-" + run.id + "-' + name + '"';
     const assets = name + "_assets";
     const metadata = (methodName: string, inputs: Fields) => ({
@@ -38,7 +50,7 @@ export function roleToolSteps(
         name: step,
         ...placement,
         writes: true,
-        dependsOn: after(dependencies),
+        dependsOn: after(dependencies, optional),
         task: {
             type: "behavior",
             behaviorType: "@swamp/ssh",
@@ -51,7 +63,7 @@ export function roleToolSteps(
     const steps: Fields[] = [{
         name: assets,
         ...placement,
-        ...(dependency ? { dependsOn: after([dependency]) } : {}),
+        ...(dependency ? { dependsOn: after([dependency], optional) } : {}),
         task: metadata("read", { intent: expr(intent) }),
     }];
     steps.push(
@@ -114,7 +126,7 @@ export function roleToolSteps(
     steps.push({
         name,
         ...placement,
-        dependsOn: after([...complete, name + "_cleanup"]),
+        dependsOn: after([...complete, name + "_cleanup"], optional),
         task: metadata("result", {
             intent: expr(intent),
             apt: expr('steps["' + name + '_apt"].outputs.stdout'),

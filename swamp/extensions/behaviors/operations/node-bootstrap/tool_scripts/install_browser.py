@@ -33,6 +33,9 @@ def install(value):
         target.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(target)
+            for entry in bundle.infolist():
+                if not entry.is_dir() and entry.external_attr >> 16 & 0o111:
+                    (target / entry.filename).chmod(0o755)
         binary = target / "chrome-headless-shell-linux64/chrome-headless-shell"
         binary.chmod(0o755)
         version = subprocess.check_output([str(binary), "--version"], text=True).strip()
