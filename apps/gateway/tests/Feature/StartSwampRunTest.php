@@ -349,7 +349,7 @@ it('announces a fast completed binding and projects it through the observer with
         ];
     };
     app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'private.start-token']);
+    config(['swamp.run_token' => 'private.start-token', 'swamp.read_token' => 'private.read-token']);
 
     app(StartSwampRun::class)->start($operation);
 
@@ -415,7 +415,7 @@ it('keeps an accepted start bound when its coalesced terminal history is unavail
         ];
     };
     app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.run_token' => 'private.start-token']);
+    config(['swamp.run_token' => 'private.start-token', 'swamp.read_token' => 'private.read-token']);
 
     app(StartSwampRun::class)->start($operation);
     app(StartSwampRun::class)->start($operation->fresh());
