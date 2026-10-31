@@ -34,6 +34,21 @@
   ],
   "commands": [
     {
+      "name": "analytics.configure-clickhouse",
+      "summary": "Publish Plausible's four fixed ClickHouse configuration files.",
+      "mutates": true,
+      "timeout_seconds": 60,
+      "privilege": {
+        "linux": "root",
+        "macos": null
+      },
+      "errors": [
+        "analytics.clickhouse_config_unsafe",
+        "analytics.clickhouse_config_failed",
+        "analytics.clickhouse_recovery_failed"
+      ]
+    },
+    {
       "name": "task-vm.start-topology",
       "summary": "Start one bounded topology preparation as the managed account.",
       "mutates": true,
@@ -2967,48 +2982,6 @@
       ]
     },
     {
-      "name": "instance.inspect-registration-source",
-      "summary": "Read a checkout, or its worktree set, with the identity and digest that registration keeps.",
-      "mutates": false,
-      "timeout_seconds": 60,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.relocate-registration-source",
-      "summary": "Adopt a registered source set in place, or move it into the apps directory and resume an interrupted move.",
-      "mutates": true,
-      "timeout_seconds": 900,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
-      "name": "instance.laravel-registration-receipt",
-      "summary": "Keep, restore, or drop the Laravel URL files that registration rewrites.",
-      "mutates": true,
-      "timeout_seconds": 30,
-      "privilege": {
-        "linux": "account",
-        "macos": null
-      },
-      "errors": [
-        "instance.registration_invalid",
-        "instance.git_failed"
-      ]
-    },
-    {
       "name": "instance.prepare-release",
       "summary": "Clone a new production release of a branch and link its environment and shared paths.",
       "mutates": true,
@@ -3754,20 +3727,6 @@
       ]
     },
     {
-      "name": "caddy.publish",
-      "summary": "Validate and publish a rendered Node Caddyfile, restoring the previous configuration on reload failure.",
-      "mutates": true,
-      "timeout_seconds": 120,
-      "privilege": {
-        "linux": "root",
-        "macos": null
-      },
-      "errors": [
-        "caddy.publication_invalid",
-        "caddy.publication_failed"
-      ]
-    },
-    {
       "name": "caddy.check-addresses",
       "summary": "Check that every Caddy listen address exists on the Node.",
       "mutates": false,
@@ -3777,7 +3736,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },
@@ -3791,7 +3749,6 @@
         "macos": null
       },
       "errors": [
-        "caddy.publication_invalid",
         "caddy.publication_failed"
       ]
     },
@@ -3948,6 +3905,20 @@
         "caddy.package_invalid",
         "caddy.package_unsafe",
         "caddy.package_failed"
+      ]
+    },
+    {
+      "name": "http.await-healthy",
+      "summary": "Wait until a service answers its health URL.",
+      "mutates": false,
+      "timeout_seconds": 600,
+      "privilege": {
+        "linux": "account",
+        "macos": null
+      },
+      "errors": [
+        "http.url_invalid",
+        "http.unhealthy"
       ]
     },
     {

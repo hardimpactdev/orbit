@@ -3,7 +3,6 @@ title: "Analytics role"
 description: "How the analytics role runs Plausible Community Edition, where it keeps its data, and how an Instance publishes a tracking host."
 covers:
   - apps/gateway/{app/Domain/Analytics,app/Infrastructure/Analytics,app/Actions/Analytics,extensions/analytics}/**
-  - apps/gateway/app/Infrastructure/Nodes/Roles/AnalyticsRoleBaseline.php
   - apps/gateway/app/Actions/Routes/ConvergeAnalyticsTrackingPlacementAction.php
   - apps/gateway/resources/analytics/**
   - apps/gateway/tests/{Feature/Infrastructure/Analytics,Feature/Extensions/Analytics,Unit/Extensions/Analytics}/**
@@ -17,7 +16,7 @@ The `analytics` role runs Plausible Community Edition for the fleet. An Instance
 
 Analytics currently lives in core and has no extension switch. The proposed [Analytics transition contract](/decisions/0210-give-each-extension-its-own-code-boundary#analytics-transition-contract) moves it behind an extension boundary only after explicit Process ownership and metadata-only adoption. That proposal does not enable, adopt, migrate, restart or remove anything. The operating instructions below describe the current implementation, not the proposed switch or adoption command.
 
-The Gateway publishes and removes Analytics certificates through the shared [Node agent](/reference/node-agent#commands) Caddy commands. The agent also runs the HTTP readiness probe; the Gateway owns placement and publication intent.
+Swamp publishes and removes Analytics certificates and checks HTTP readiness on the admitted Nodes. The Gateway records placement and publication intent.
 
 ## Prepare the database Processes
 
@@ -111,9 +110,9 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 ### Update Plausible
 
-`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp runs the canonical Process system component on the admitted Node. It changes the container image and checks health, preserving its Process identity, environment, ports and application mounts. It removes the retired agent startup wrapper and binary mount. The Process component keeps the rollback container until readiness passes and restores it when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
+`orbit analytics:update VERSION` returns an Operation for the direct Swamp update. Swamp runs the canonical Process system component on the admitted Node. It changes the container image and checks health, preserving its Process identity, environment, ports and application mounts. It removes the agent startup wrapper and binary mount. The Process component keeps the rollback container until readiness passes and restores it when the new version fails. A later Process stop cannot be undone by a separate workflow rollback. The Gateway projects the pin and Process image after success.
 
-A repeated version checks health without replacing an unchanged container. The first update replaces a container that still uses the retired agent startup wrapper, even when its version is unchanged. Start a stopped Plausible Process before updating it. The canonical Swamp Process component refuses a stale replacement and owns health checks and rollback. The Gateway records its result without validating execution receipts.
+A repeated version checks health without replacing an unchanged container. The first update replaces a container that still uses the agent startup wrapper, even when its version is unchanged. Start a stopped Plausible Process before updating it. The canonical Swamp Process component refuses a stale replacement and owns health checks and rollback. The Gateway records its result without validating execution receipts.
 
 The Analytics direct declaration registers its workflow and projection. Rollback of the implementation uses a revert PR. The admitted Node worker reads the existing runtime environment through the shared private-material endpoint inside an effect-only callback. The read requires the exact Node, native run, unfinished Operation, active owning role and unchanged environment hash. Private bytes reach Docker only through the canonical system component's protected stdin; they never enter workflow arguments, resources, results or logs.
 

@@ -3,6 +3,7 @@
 pub mod accounts;
 pub mod agent;
 pub mod agent_footprint;
+mod analytics_clickhouse;
 pub mod application_log;
 pub mod caddy;
 pub mod caddy_access;
@@ -81,13 +82,13 @@ pub mod php_runtime;
 mod php_shared;
 pub mod pi_artifact;
 pub mod pi_runtime;
+pub mod plausible;
 pub mod processes;
 pub mod production;
 pub mod production_home;
 pub mod project_source;
 pub mod recipe;
 pub mod recipe_delivery;
-pub mod registration;
 pub mod role_prerequisites;
 pub mod schedules;
 pub mod service_metrics;
@@ -131,6 +132,7 @@ pub fn linux_only(platform: Platform, privilege: Privilege) -> Option<Privilege>
 
 pub fn all() -> Vec<Entry> {
     vec![
+        entry::<analytics_clickhouse::Configure>(),
         entry::<task_topology::Start>(),
         entry::<task_topology::Inspect>(),
         entry::<agent::Status>(),
@@ -298,9 +300,6 @@ pub fn all() -> Vec<Entry> {
         entry::<dev_source::InspectDevelopmentSource>(),
         entry::<dev_source::ResolveDevelopmentSource>(),
         entry::<dev_source::ReadDevelopmentEnvironmentTemplate>(),
-        entry::<registration::InspectRegistrationSource>(),
-        entry::<registration::RelocateRegistrationSource>(),
-        entry::<registration::LaravelRegistrationReceipt>(),
         entry::<production::PrepareRelease>(),
         entry::<production::ActivateRelease>(),
         entry::<production::InspectRelease>(),
@@ -360,6 +359,7 @@ pub fn all() -> Vec<Entry> {
         entry::<doctor_route::InspectCustomProxy>(),
         entry::<caddy_certificate::RemoveCertificate>(),
         entry::<caddy_package::InstallPackage>(),
+        entry::<health::AwaitHealthy>(),
         entry::<metrics_certificate::MetricsCertificate>(),
         entry::<metrics_exporter::NodeExporter>(),
         entry::<metrics_exporter::Cadvisor>(),
