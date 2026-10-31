@@ -472,10 +472,12 @@ The Gateway sends the release ID and phase to `gateway.handoff-release`. The age
 
 The serving phase:
 
-1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
+1. submits the Gateway Node's `route.caddy_converge` Operation and records `caddy: submitted` with its `caddy_operation_id`;
 2. converges the PHP-FPM pool and the start hooks, as described below;
 3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path;
 4. starts [Laravel Horizon](/reference/gateway-queue#releases) after the pre-switch drain. A manual handoff of an active Process uses `php artisan horizon:terminate`.
+
+The native Caddy Operation owns publication and its final result. Submission is not a publication claim. Release verification still checks live HTTPS.
 
 The scheduler phase:
 

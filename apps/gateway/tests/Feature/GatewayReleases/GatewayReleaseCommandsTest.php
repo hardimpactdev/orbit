@@ -187,3 +187,26 @@ it('keeps the source release when its workers cannot be proved drained', functio
     expect(fn () => $this->commands->switch($this->layout, 'aaaaaaaaaaaa'))->toThrow(GatewayReleaseException::class);
     expect($this->agents->commands())->toBe(['gateway.drain-horizon']);
 })->with(['timeout', 'lost_result', 'malformed']);
+
+it('accepts a native Caddy submission in the serving handoff report', function (): void {
+    $report = ['caddy' => 'submitted', 'caddy_operation_id' => 5898, 'fpm' => 'unchanged'];
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
+
+    expect($this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))
+        ->toBe($report);
+    expect($this->agents->commands())->toBe(['gateway.handoff-release']);
+});
+
+it('rejects an invalid Caddy submission without retrying the handoff', function (array $report): void {
+    $this->agents->answer('gateway.handoff-release', ['succeeded' => true, 'report' => $report]);
+
+    expect(fn () => $this->commands->handoffPhase($this->layout, 'aaaaaaaaaaaa', 'serve', '/home/orbit/.orbit/gateway-release-step.lock'))
+        ->toThrow(GatewayReleaseException::class);
+    expect($this->agents->commands())->toBe(['gateway.handoff-release']);
+})->with([
+    'missing operation' => [['caddy' => 'submitted']],
+    'invalid operation' => [['caddy' => 'submitted', 'caddy_operation_id' => 0]],
+    'noninteger operation' => [['caddy' => 'submitted', 'caddy_operation_id' => '5898']],
+    'unsubmitted operation' => [['caddy' => 'failed', 'caddy_operation_id' => 5898]],
+    'retired inline publication' => [['caddy' => 'reloaded']],
+]);
