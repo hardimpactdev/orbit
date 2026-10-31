@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -69,6 +71,35 @@ it('ignores another request response without marking the copy synchronized', fun
     expect(fn () => $this->copies->synchronize('orbit-control-inputs', 'key', 'synthetic-value'))->toThrow(ResourceOperationException::class);
     expect($this->socket->sent)->toHaveCount(1);
 });
+
+it('records handshake status separately from a vault refusal without logging private diagnostics', function (string $failure): void {
+    Log::spy();
+    $private = 'private-value-and-remote-message';
+    if ($failure === 'connect') {
+        $this->socket->onConnect = static fn () => throw new WebSocketException($private, 429);
+    } else {
+        $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'],
+            'error' => ['code' => $failure === 'forbidden' ? 'forbidden' : $private, 'message' => $private]]];
+    }
+    try {
+        $this->copies->synchronize('orbit-control-inputs', 'database-write-intent-20', $private);
+        test()->fail('The failed copy must refuse.');
+    } catch (ResourceOperationException $error) {
+        expect($error->errorCode)->toBe('swamp.vault_sync_unavailable');
+        expect((string) $error)->not->toContain($private);
+    }
+    Log::shouldHaveReceived('warning')->once()->with('Swamp execution copy unavailable', Mockery::on(function (array $context) use ($failure, $private): bool {
+        expect($context)->toMatchArray(['vault' => 'orbit-control-inputs', 'key' => 'database-write-intent-20',
+            'phase' => $failure === 'connect' ? 'connect' : 'acknowledge',
+            'remote_code' => $failure === 'connect' ? null : ($failure === 'forbidden' ? 'forbidden' : 'unrecognized'),
+            'http_status' => $failure === 'connect' ? 429 : null]);
+        expect($context['vault_request_id'])->toMatch('/\A[a-f0-9]{32}\z/');
+        expect(json_encode($context))->not->toContain($private, 'synthetic-gateway.private');
+
+        return true;
+    }));
+    expect($this->socket->closed)->toBeTrue();
+})->with(['connect', 'forbidden', 'unrecognized']);
 
 it('refuses invalid names or missing connection configuration before opening a socket', function (string $vault, string $key, string $address): void {
     config(['swamp.address' => $address]);
