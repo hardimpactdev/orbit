@@ -2,8 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\Nodes\BootstrapSshOperationTransport;
 use App\Infrastructure\Nodes\ManagedAgentInstallOperationTransport;
 use App\Infrastructure\Nodes\NodeWireGuardOperationTransport;
 
-return ['node-wireguard' => NodeWireGuardOperationTransport::class, 'node-agent' => ManagedAgentInstallOperationTransport::class, 'bootstrap-ssh' => BootstrapSshOperationTransport::class];
+return ['node-wireguard' => NodeWireGuardOperationTransport::class, 'node-agent' => ManagedAgentInstallOperationTransport::class];

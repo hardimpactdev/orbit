@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Fleet",
+      "order": 23,
+      "pages": ["reference/node-bootstrap-native"]
+    }
+  ]
+}
