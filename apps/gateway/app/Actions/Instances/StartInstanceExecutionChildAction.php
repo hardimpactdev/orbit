@@ -8,12 +8,10 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Environment\EnvironmentSyncMaterial;
 use App\Domain\Instances\Environment\InstanceServedWebRootsExecution;
 use App\Domain\Instances\PhpRuntime\InstancePhpRuntimeExecution;
-use App\Domain\Instances\StepLists\InstanceStepListIntent;
+use App\Domain\Instances\StepLists\InstanceStepListExecution;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -48,7 +46,7 @@ final readonly class StartInstanceExecutionChildAction
             default => app(InstancePhpRuntimeExecution::class)->plan($candidate),
         };
 
-        return $this->operations->execute($intent['kind'], 'instance', $id, $intent['node_id'], $candidate->input, $parent->triggered_by, null);
+        return $this->operations->execute($intent['kind'], 'instance', $id, $intent['node_id'], $intent['input'], $parent->triggered_by, null);
     }
 
     private function stepList(Operation $parent, Operation $candidate): void
@@ -73,9 +71,7 @@ final readonly class StartInstanceExecutionChildAction
             || ! is_string($digest) || $digest !== ($candidate->input['configuration_digest'] ?? null)) {
             throw $this->invalid();
         }
-        $instance = Instance::query()->with(['project', 'node'])->findOrFail($candidate->target_id);
-        $candidate->input = [...$candidate->input, ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::from($phase))];
-        app(InstanceStepListIntent::class)->input($candidate);
+        app(InstanceStepListExecution::class)->instance($candidate);
     }
 
     private function invalid(): ResourceOperationException

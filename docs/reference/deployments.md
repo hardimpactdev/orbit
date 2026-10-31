@@ -694,11 +694,3 @@ Cancel queued Swamp deploy and rollback Operations through the Operation API. Co
 `instance.prepare_served_web_roots` uses the polled Swamp deployment workflow. The Route parent admits the Instance and Node, and the Gateway validates ownership before supplying the existing `instance.prepare-served-web-roots` input. A primary-root Route needs no Node action. Preparation of an additional root must finish with its bound receipt before the Route becomes active.
 
 This kind has no direct workflow declaration. A stale per-kind direct-writer setting cannot start a second workflow. Its complete native cutover must replace the current dispatch and execution path in the same change.
-
-## Swamp setup and teardown steps
-
-`instance.run_steps` runs every admitted Project setup or teardown list through Swamp, including lists requested by Instance lifecycle parents. The Gateway records the Node, Project, checkout, execution account, ordered command digests and complete timeouts. It validates current target and configuration on reads, and projects bounded outcomes. It keeps no PHP step executor, command budget, execution receipt or completion proof for this kind.
-
-Development checkouts run as their admitted Node account, matching their ownership. Production deploy steps run as `orbit-app-<ProjectID>` in the admitted release. Both use direct sudo from the Node-user worker, a cleared environment, checked directories and command digests, full step timeouts, bounded redacted output and process cleanup. Setup's `@orbit/ci-caches` command is a fixed workflow-owned action. Teardown refuses that setup-only action. The package sandbox stays separate and has no sudo.
-
-The kind uses the direct writer by default. The per-kind setting cannot select the deleted polled path. The same cutover includes writer selection and old execution/test deletion. After worker readiness is verified, merge first when released code is needed for the canary. Prove the complete Gateway-to-worker path on a real dev or disposable target within minutes of auto-release. Revert the cutover immediately on failure. A Node 209 worker may execute only an intent admitted to Node 209; it cannot substitute for another Node's worker.
