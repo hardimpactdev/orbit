@@ -46,10 +46,15 @@ class ImportBaseTest(unittest.TestCase):
                 os.chdir(root)
                 # Both the import PR and its first main push compare against the pre-import Orbit base.
                 self.assertEqual(source, plan.swamp_comparison_base(orbit, imported))
+                output = root / '.git/selector-output'
                 result = json.loads(subprocess.check_output(
-                    ['python3', loader.path, '--base', orbit, '--head', imported, '--swamp-base'],
+                    ['python3', loader.path, '--base', orbit, '--head', imported, '--swamp-base',
+                     '--github-output', str(output)],
                     cwd=root, timeout=60))
                 self.assertEqual(source, result['swamp_base_ref'])
+                outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                self.assertEqual(source, outputs['swamp_base_ref'])
+                self.assertEqual(result['jobs'], json.loads(outputs['jobs']))
                 (root / 'swamp/workflow.yaml').write_text('name: next\n')
                 git('add', '.')
                 git('commit', '-m', 'A later Swamp change')

@@ -75,7 +75,8 @@ def main():
     if a.github_output:
         with a.github_output.open('a') as output:
             for name, value in result.items():
-                output.write(f'{name}={json.dumps(value, separators=(",", ":"))}\n')
+                encoded = value if isinstance(value, str) else json.dumps(value, separators=(',', ':'))
+                output.write(f'{name}={encoded}\n')
 
 
 if __name__ == '__main__':
