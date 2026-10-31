@@ -14,7 +14,6 @@ use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\TaskVms\TaskVmInputs;
-use App\Infrastructure\TaskVms\TaskVmUpCloudImageRead;
 use App\Models\Operation;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
@@ -55,7 +54,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
             'task_vm.resume' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'provider-start' => 'task_vm.'.$provider.'_start', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
             'task_vm.destroy' => ['lifecycle-intent' => 'task_vm.lifecycle_intent', 'destroy-intent' => 'task_vm.mark_destroying', 'provider-delete' => 'task_vm.'.$provider.'_delete', 'forget-workspaces' => 'task_vm.forget_workspaces', 'forget-records' => 'task_vm.destroy_records', ...(($operation->input['key'] ?? null) === null ? [] : ['revoke-model-key' => 'task_vm.model_revoke'])],
             'task_vm.prepare_runtime' => ['model-key' => 'task_vm.model_issue', 'pi-configure' => 'task_vm.configure_runtime', 'pi-process-owner' => 'process.create', 'runtime-confirmed' => 'task_vm.runtime_confirm'],
-            'task_vm.upcloud_image_build' => ['delete-smoke' => 'task_vm.upcloud_image_delete_smoke'],
             default => [],
         };
         if (in_array($operation->kind, ['task_vm.provision', 'task_vm.enroll'], true)
@@ -99,7 +97,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     {
         $children = match ($operation->kind) {
             'task_vm.prepare_runtime' => $this->runtime($operation),
-            'task_vm.upcloud_image_build' => $this->upcloudImage($operation),
             default => $this->lifecycle($operation),
         };
         $definition = app(OperationKinds::class)->definition($operation->kind);
@@ -120,17 +117,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
     private function child(string $key, string $kind, int $node, array $input): array
     {
         return ['key' => $key, 'kind' => $kind, 'node_id' => $node, 'input' => [...$input, 'effect_key' => $key]];
-    }
-
-    /** @return array<string,mixed> */
-    private function recipe(string $json): array
-    {
-        $value = json_decode($json, flags: JSON_THROW_ON_ERROR);
-        if (! $value instanceof \stdClass) {
-            throw new \LogicException('The recipe input must be an object.');
-        }
-
-        return get_object_vars($value);
     }
 
     /** @return list<ChildIntent> */
@@ -157,18 +143,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         app(OperationChildren::class)->requireSucceeded($operation, $key);
 
         return true;
-    }
-
-    /** @return list<string> */
-    private function bootstrapKeys(Operation $operation, string $base): array
-    {
-        $failed = Operation::query()->where('parent_operation_id', $operation->id)->where('status', 'failed')->where('error_code', 'agent.supervisor_not_ready')->pluck('child_key')->all();
-        $keys = [$base];
-        for ($attempt = 0; in_array($keys[$attempt], $failed, true); $attempt++) {
-            $keys[] = $base.'-retry-'.($attempt + 1);
-        }
-
-        return $keys;
     }
 
     /** @return list<ChildIntent> */
@@ -238,64 +212,6 @@ final readonly class TaskVmFamilyChildren implements OperationFamilyChildren, Op
         foreach (TaskVmInputs::workspaceRoutes($input['workspace_routes'] ?? []) as $entry) {
             $route = ValidatedData::object($entry);
             $children[] = ['key' => 'workspace-route-'.ValidatedData::integer($route['route_id']), 'kind' => 'route.destroy', 'node_id' => ValidatedData::integer($route['node_id']), 'input' => ['route_id' => $route['route_id'], 'offline' => true]];
-        }
-
-        return $children;
-    }
-
-    /** @return list<ChildIntent> */
-    private function upcloudImage(Operation $operation): array
-    {
-        $input = $operation->input;
-        $id = $operation->target_id;
-        $node = (int) $operation->node_id;
-        $children = [];
-        $provider = static fn (string $verb, array $extra = []): array => ['build_id' => $id, ...($verb === 'prepare' ? [] : ['token' => ['$secret' => 'upcloud.api', 'id' => $id]]), ...$extra];
-        foreach (['prepare', 'launch-builder', 'launch-smoke', 'stop', 'hard-stop-builder', 'hard-stop-smoke', 'templatize', 'delete-builder', 'delete-smoke', 'promote', 'discard-template'] as $verb) {
-            $extra = str_starts_with($verb, 'launch-') ? ['bootstrap' => ['$secret' => 'task_vm.image_bootstrap', 'id' => $id]] : [];
-            $key = $verb === 'stop' ? 'stop-builder' : $verb;
-            $children[] = $this->child($key, 'task_vm.upcloud_image_'.str_replace('-', '_', $verb), $node, $provider($verb, $extra));
-            if (in_array($verb, ['delete-builder', 'delete-smoke', 'hard-stop-builder', 'hard-stop-smoke', 'discard-template'], true)) {
-                $children[] = $this->child('cleanup-'.$verb, 'task_vm.upcloud_image_'.str_replace('-', '_', $verb), $node, $provider($verb));
-            }
-        }
-        $guest = fn (string $key, string $command, array $parameters = [], string $slot = 'builder'): array => $this->child($key, 'task_vm.upcloud_guest_'.str_replace(['.', '-'], '_', $command), $node, ['build_id' => $id, 'slot' => $slot, 'parameters_json' => json_encode((object) $parameters, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)]);
-        $recipe = $this->recipe(ValidatedData::string($input['recipe']));
-        foreach (['builder', 'smoke'] as $slot) {
-            foreach ($this->bootstrapKeys($operation, $slot.'-agent') as $key) {
-                $children[] = $guest($key, 'agent.install-guest', [], $slot);
-            }
-            $children[] = $guest($slot.'-boot-confirmed', 'guest.cloud-init', [], $slot);
-        }
-        foreach ([['owner', 'image.owner', []], ['recipe-marker', 'image.recipe-marker', ['identity' => $input['identity'], 'profile' => 'base']], ['verify', 'image.verify', $recipe], ['boot-policy', 'image.boot', ['lean' => false]], ['firewall', 'image.firewall', []], ['clean', 'image.clean', []]] as [$key,$command,$parameters]) {
-            $children[] = $guest($key, $command, $parameters);
-        }
-        $children[] = $guest('smoke-verify', 'image.verify', $recipe, 'smoke');
-        $children[] = $guest('smoke-check', 'image.check', ['lean_boot' => false, 'firewall' => true], 'smoke');
-        if ($this->known($operation, 'builder-boot-confirmed') && ! $this->known($operation, 'clean')) {
-            foreach (['apt-source', 'packages', 'javascript', 'rust', 'agent', 'pi'] as $phase) {
-                if ($phase === 'pi' && $input['pi_artifact'] === null) {
-                    continue;
-                }
-                $state = app(TaskVmUpCloudImageRead::class)->read($operation, 'phase-'.$phase);
-                if (($state['state'] ?? null) === 'complete') {
-                    continue;
-                }
-                if (isset($state['boot_id'])) {
-                    $children[] = $guest($phase.'-start', 'image.start-phase', ['key' => ['identity' => $input['identity'], 'profile' => 'base', 'phase' => $phase, 'execution' => 'upcloud-'.$id], 'boot_id' => $state['boot_id'], 'recipe' => $recipe]);
-                }
-                if ($phase === 'pi') {
-                    $artifact = ValidatedData::object($input['pi_artifact']);
-                    $children[] = $guest('pi-artifact', 'pi.upload-guest', ['artifact' => $artifact['path'], 'sha256' => $artifact['sha256']]);
-                }
-                break;
-            }
-        }
-        if ($this->known($operation, 'promote')) {
-            $state = app(TaskVmUpCloudImageRead::class)->read($operation, null);
-            foreach (ValidatedData::stringList($state['prune_templates']) as $uuid) {
-                $children[] = $this->child('prune-'.$uuid, 'task_vm.upcloud_image_prune_template', $node, $provider('prune-template', ['template_uuid' => $uuid]));
-            }
         }
 
         return $children;
