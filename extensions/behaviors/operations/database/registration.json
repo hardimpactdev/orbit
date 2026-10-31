@@ -1,6 +1,5 @@
 {
   "kinds": [
-    "database_server.create",
     "database.create",
     "database.destroy",
     "database.clone",

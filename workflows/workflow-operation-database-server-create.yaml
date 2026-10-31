@@ -1,0 +1,45 @@
+id: f497279b-80cd-4dc8-82bb-1a6622d977e4
+name: operation-database-server-create
+description: Provision the admitted server locally and project sanitized records.
+target: '${{ "orbit-node-" + string(inputs.node_id) }}'
+labels: { node: "${{ string(inputs.node_id) }}" }
+writes: true
+vaults: []
+inputs:
+  properties:
+    operation_id: { type: integer, minimum: 1 }
+    node_id: { type: integer, minimum: 1 }
+    kind: { type: string, enum: [database_server.create] }
+  required: [operation_id, node_id, kind]
+jobs:
+  - name: server
+    steps:
+      - name: apply
+        dataOutputOverrides:
+          - specName: outcome
+            vary: [run_id]
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-server-create"
+          behaviorName: '${{ "database-server-create-" + string(inputs.node_id) }}'
+          methodName: apply
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+      - name: project
+        dependsOn:
+          - step: apply
+            condition: { type: succeeded }
+        task:
+          type: behavior
+          behaviorType: "@nckrtl/database-server-create"
+          behaviorName: '${{ "database-server-create-" + string(inputs.node_id) }}'
+          methodName: project
+          inputs:
+            operation_id: "${{ inputs.operation_id }}"
+            node_id: "${{ inputs.node_id }}"
+            kind: "${{ inputs.kind }}"
+            run_id: "${{ run.id }}"
+            outcome: "${{ steps.apply.outputs.outcome }}"

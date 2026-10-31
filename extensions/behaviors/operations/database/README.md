@@ -65,3 +65,29 @@ intent, and deletes records only after the native absent result. No private
 material or family relay is needed. Require normal healthy load, exact existing
 Gateway-principal run/read proof and a disposable-server canary before takeover.
 Never use a production database server for the proof.
+
+`database_server.create` is direct-only. The fixed
+`operation-database-server-create` workflow
+(`f497279b-80cd-4dc8-82bb-1a6622d977e4`) provisions on exact `orbit-node-ID`
+placement. Its private callback supplies only the admitted admin password,
+initializer environment, ACL file and user policy. The Gateway records
+server/Process intent and projects a closed result; it runs no readiness or
+adoption probes. The Node authenticates adopted Valkey state before any write,
+initializes SQL once, proves TCP readiness, removes initializer variables and
+proves readiness again. Retries preserve the named volume. An old open Valkey
+repair refuses a closed or unknown live default-user policy before writing its
+ACL; it never restores nopass after a close.
+
+`server_create_native_test.py` uses `tests/native_harness.py` and REAL
+`gatewayHttp` for whole-scratch secret scans and lost-projection resume. The
+opt-in `DATABASE_SERVER_EFFECT_CANARY=1` Deno test creates only uniquely named
+loopback disposable MySQL/PostgreSQL/Valkey servers, proves provisioning,
+initializer scrub and replay, and retires its containers/volumes. Run each
+driver with `--filter mysql`, `pgsql` or `redis` under `timeout 60`.
+
+Before the Gateway writer releases, require credential approval, a normal
+healthy source load, the actual fixed workflow UUID and the existing Gateway
+principal's exact run/read grant. Then admit an owned disposable-server canary
+on a fresh exact worker and prove binding-before-first-read plus public/native
+privacy. Revert on a code failure. Never use production services-valkey for this
+proof.

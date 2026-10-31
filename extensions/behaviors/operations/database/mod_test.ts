@@ -14,29 +14,6 @@ Deno.test("each database kind uses admitted descriptors and never supplies a tra
     assertEquals(f.resources.get("operation-7")!.status, "succeeded");
   }
 });
-Deno.test("server initialization finishes readiness and secret removal before completion", async () => {
-  const f = new Fixture();
-  f.operation.kind = "database_server.create";
-  f.descriptors = [
-    "container",
-    "initialize",
-    "remove-initialization-secret",
-    "database-apply",
-  ].map((key) => ({ ...f.descriptors[0], key, step: key }));
-  await f.execute();
-  assertEquals(
-    f.calls.filter((call) => call.path.endsWith("/run")).map((call) =>
-      call.body.key
-    ),
-    [
-      "container",
-      "initialize",
-      "remove-initialization-secret",
-      "database-apply",
-    ],
-  );
-  assertEquals(f.calls.at(-1)!.path, "/api/v1/operation-executor/7/complete");
-});
 Deno.test("PostgreSQL test pool repair resumes proven members before creating the next", async () => {
   const f = new Fixture();
   f.descriptors = ["test-pool-0", "test-pool-1", "database-apply"].map((
