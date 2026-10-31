@@ -2,6 +2,12 @@ import { parser as pythonParser } from "npm:@lezer/python@1.1.18";
 import ts from "npm:typescript@5.9.3";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { posix } from "node:path";
+import {
+  movedLimits,
+  proveProxyHttpMove,
+  PROXY_HTTP_MOVE,
+  type SourceMove,
+} from "./swamp-shape-relocations.ts";
 
 export const SCHEMA = 1;
 export const BASELINE = "config/swamp-shape-baseline.json";
@@ -2168,9 +2174,41 @@ if (import.meta.main) {
         await toolFindings(base),
       ),
     );
+    const moves: SourceMove[] = [];
+    if (head.has(PROXY_HTTP_MOVE.to)) {
+      for (const descendant of [baseRef, "HEAD"]) {
+        const lineage = await run([
+          "git",
+          "merge-base",
+          "--is-ancestor",
+          PROXY_HTTP_MOVE.origin,
+          descendant,
+        ]);
+        if (!lineage.success) {
+          throw new Error("HTTP source move lacks immutable origin ancestry");
+        }
+      }
+      const origin = await filesAt(PROXY_HTTP_MOVE.origin);
+      const move = proveProxyHttpMove(
+        origin,
+        base,
+        head,
+        JSON.parse(origin.get(BASELINE) ?? "null"),
+        prior,
+        baseEntries,
+        entries,
+      );
+      if (move) moves.push(move);
+    }
     const errors = [
-      ...ratchet(entries, baseline, prior),
-      ...ratchet(entries, { schema: SCHEMA, entries: baseEntries }),
+      // The checked-in list still only shrinks. A proved move derives its cap
+      // separately and never writes a row at the new path.
+      ...ratchet([], baseline, prior),
+      ...ratchet(entries, movedLimits(baseline, moves)),
+      ...ratchet(
+        entries,
+        movedLimits({ schema: SCHEMA, entries: baseEntries }, moves),
+      ),
     ];
     for (const entry of baseline.entries) {
       const actual = entries.find((row) =>
@@ -2198,6 +2236,8 @@ if (import.meta.main) {
         agent_unknown_calls: "syntactic_call_sites",
         workflows: "workflow_files",
         grandfathered: "file_rule_entries",
+        baseline_entries: "checked_in_file_rule_entries",
+        relocated_allowances: "derived_file_rule_entries",
       },
       inline_script_lines: values.reduce((n, a) => n + a.inlineLines, 0),
       custom_loops: entries.filter((e) => e.rule === "custom-control")
@@ -2211,12 +2251,14 @@ if (import.meta.main) {
         .reduce((n, e) => n + e.count, 0),
       workflows: coverage,
       grandfathered: entries.length,
+      baseline_entries: baseline.entries.length,
+      relocated_allowances: moves,
       violations: entries,
       errors,
     };
     console.log(JSON.stringify(metrics));
     console.log(
-      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} baseline_accepted=${coverage.baseline_accepted} unknown=${coverage.unknown}`,
+      `SHAPE-GATE workflows_passing=${coverage.clean}/${coverage.total} grandfathered=${entries.length} baseline_accepted=${coverage.baseline_accepted} unknown=${coverage.unknown} source_moves=${moves.length}`,
     );
     if (option("--report")) {
       await Deno.writeTextFile(

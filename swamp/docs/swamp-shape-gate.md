@@ -10,6 +10,24 @@ old rules. Changing current rules, limits or exclusions cannot admit new debt
 under the frozen rules. Actual debt removal and approved classification fixes do
 not require stale allowances.
 
+One approved HTTP-only extraction has explicit source accounting: the unchanged
+`curlQuote`, `proxyHttpConfig` and `proxyGatewayRequest` declarations move from
+`operations/_lib/node-proxy.ts` to `node-proxy-http.ts`. The checker compares all
+three declarations with immutable origin `529a72e86d2757cd8f90fedb564e4c69d1879b6d`,
+requires the exact two imports, removes the original definitions, and preserves
+only the existing automatic-deploy caller and call expression. Extra declarations,
+new or indirect callers, changed executable bodies, count/evidence growth and
+resurrection after the actual comparison base removed the debt all fail. The
+origin must be an ancestor of both HEAD and the comparison base.
+
+The raw baseline still only shrinks. This source proof derives one virtual limit
+at the new path for each run; `--write-baseline` never writes that limit into the
+ledger. Current findings and workflow coverage still include the retained HTTP
+call. JSON metrics report checked-in baseline rows and derived source moves
+separately; `SHAPE-GATE` includes `source_moves`. This is not a general permission
+to transfer allowances on rename. The support lower must reach the comparison
+base before the extraction, so the frozen checker enforces the same contract.
+
 The gate implements Nick's migration policy using these manual references:
 
 - [Workflows](https://swamp-club.com/manual/reference/workflows): placed steps,
