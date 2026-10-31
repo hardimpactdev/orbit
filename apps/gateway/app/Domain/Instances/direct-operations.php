@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentProjection;
 use App\Domain\Instances\InstanceCloneProjection;
+use App\Domain\Instances\InstanceDestroyProjection;
 use App\Domain\Instances\InstanceRegisterResult;
 use App\Domain\Instances\InstanceRenameResult;
 use App\Domain\Instances\InstanceTransferDiscardProjection;
@@ -23,6 +24,11 @@ return [
         'private_material' => ['environment_material' => 'instance.environment_sync'],
     ],
     'instance.register' => ['workflow' => 'operation-instance-register', 'projection' => InstanceRegisterResult::class],
+    'instance.destroy' => [
+        'workflow' => 'operation-instance-destroy',
+        'projection' => InstanceDestroyProjection::class,
+        'private_material' => ['git_read' => 'instance.lifecycle_git', 'teardown' => 'instance.destroy_teardown', 'php' => 'instance.destroy_php', 'database_material' => 'database.intent'],
+    ],
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',

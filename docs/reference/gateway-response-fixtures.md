@@ -52,7 +52,7 @@ Project Document fixtures record a complete file lifecycle, reads of earlier ver
 
 Gateway rollback fixtures record a queued code switch with `force: false` and no force member in the rollback phase. The request is bodyless. The crossing-refusal fixture is removed because Laravel owns migration discovery; [Gateway recovery](/reference/gateway-recovery#laravel-owns-migrations) explains the decision.
 
-Database server fixtures include the `driver` in create, list, and show responses. Valkey fixtures cover server creation, ACL-user creation, and closing an adopted server, including refusal while a client still uses `default`. The CLI replays those responses in human and JSON modes. Keep the MySQL cases when adding Valkey cases, so both drivers retain their contracts.
+Database list and show fixtures contain resource records. Managed database creation, user creation, server creation and server closing replay terminal native Operations recorded through `DatabaseNativeResponseFixturesTest`. The CLI tests use those terminal responses for the accepted start and final Operation read, in human and JSON modes. MySQL, PostgreSQL and Valkey request tests retain their driver options, worker counts, replication flags and password exclusion. Valkey closing also retains the refusal while a client still uses `default`.
 
 Tasks status fixtures cover `workspace_leases` with an empty list, a holder, FIFO waiters, and `remote_uncertain`. Keep thread and check identities in the Gateway recording and SDK/CLI replay. These fields describe workspace ownership separately from task status and VM power; the [Tasks contract](/reference/tasks#workspace-lease) owns their meaning.
 

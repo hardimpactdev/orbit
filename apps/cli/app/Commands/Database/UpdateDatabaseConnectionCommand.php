@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class UpdateDatabaseConnectionCommand extends DatabaseCommand
 {
+    use FollowsOperations;
+
     #[\Override]
     protected $signature = 'database:update
         {slug : Database connection slug}
@@ -22,6 +25,7 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
         {--path= : Unix absolute sqlite path}
         {--username= : Username}
         {--password= : Password}
+        {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -93,10 +97,15 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
             }
         }
 
-        $connection = $this->sendWithProgress(
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
+            return self::FAILURE;
+        }
+        $operation = $this->send(
             $connector,
             new UpdateDatabaseConnectionRequest(
                 slug: $slug,
+                idempotencyKey: is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
                 hasDriver: $hasDriver,
                 driver: is_string($driver) ? $driver : null,
                 hasNodeId: $hasNode,
@@ -114,14 +123,11 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
                 hasPassword: $hasPassword,
                 password: is_string($password) ? $password : null,
             ),
-            DatabaseConnectionResponse::class,
-            ['Update Database connection', 'Updating Database connection', 'Updated Database connection'],
+            OperationResponse::class,
         );
 
-        if (! $connection instanceof DatabaseConnectionResponse) {
-            return self::FAILURE;
-        }
-
-        return $this->renderConnection($connection, "Database connection [{$connection->slug}] updated.");
+        return $operation instanceof OperationResponse
+            ? $this->followOperation($connector, $profile, $operation, "Update Database connection [{$slug}]", 'Database connection')
+            : self::FAILURE;
     }
 }

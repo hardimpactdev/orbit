@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Models\DatabaseConnection;
+use App\Models\Operation;
 
 final readonly class ListDatabaseTablesAction
 {
-    public function __construct(
-        private DatabaseInspectionExecutor $executor,
-    ) {}
+    public function __construct(private ReadDatabaseConnectionAction $reads) {}
 
-    /** @return list<string> */
-    public function execute(DatabaseConnection $connection): array
+    public function execute(DatabaseConnection $connection): Operation
     {
-        return $this->executor->tables($connection);
+        return $this->reads->execute($connection, 'tables');
     }
 }

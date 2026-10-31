@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\DatabaseConnections\DatabaseOwnerAdmission;
 use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -38,6 +39,26 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 final class DatabaseConnection extends Model
 {
+    /**
+     * SQLite IMMEDIATE serializes this admission check and row write with lifecycle's prepare + Removing commit.
+     * The persisted Removing state excludes ownership writes throughout the later native run.
+     *
+     * @param  array{touch?: bool|null}  $options
+     */
+    #[\Override]
+    public function save(array $options = []): bool
+    {
+        if ($this->exists && ! $this->isDirty(DatabaseOwnerAdmission::IdentityFields)) {
+            return parent::save($options);
+        }
+
+        return $this->getConnection()->transaction(function () use ($options): bool {
+            app(DatabaseOwnerAdmission::class)->assertWritable($this);
+
+            return parent::save($options);
+        });
+    }
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [

@@ -8,7 +8,6 @@ use App\Actions\TaskVms\DeleteTaskVmAction;
 use App\Actions\TaskVms\StartTaskVmLifecycleOperationAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
@@ -60,7 +59,6 @@ final readonly class RemoveTaskWorkspaceAction
     public const string HandoffBranchLeftPrefix = 'Handoff branch not deleted: ';
 
     public function __construct(
-        private InstanceRemover $remover,
         private TaskPullRequestPublisher $publisher,
     ) {}
 
@@ -159,7 +157,7 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        $this->remover->execute($instance, true);
+        throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace removal requires its native ending DAG.', 503);
     }
 
     /**

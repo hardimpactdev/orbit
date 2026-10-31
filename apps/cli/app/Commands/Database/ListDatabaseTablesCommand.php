@@ -7,10 +7,12 @@ namespace App\Commands\Database;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
+use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class ListDatabaseTablesCommand extends DatabaseCommand
 {
+    use FollowsDatabaseInspections;
+
     #[\Override]
     protected $signature = 'database:tables
         {slug : Database connection slug}
@@ -33,28 +35,14 @@ final class ListDatabaseTablesCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->sendWithProgress(
-            $connector,
-            new ListDatabaseTablesRequest($slug),
-            DatabaseTablesResponse::class,
-            ['List Database tables', 'Loading Database tables', 'Loaded Database tables'],
-        );
-
-        if (! $result instanceof DatabaseTablesResponse) {
+        $profile = $this->activeGatewayProfile($repository);
+        if ($profile === null) {
             return self::FAILURE;
         }
+        $operation = $this->send($connector, new ListDatabaseTablesRequest($slug), OperationResponse::class);
 
-        if ($this->option('json') === true) {
-            $this->writeJson($result->toArray());
-
-            return self::SUCCESS;
-        }
-
-        return $this->renderInspectionTable(
-            "Database tables [{$result->slug}].",
-            ['Table'],
-            array_map(static fn (string $table): array => [$table], $result->tables),
-            $result->requestId,
-        );
+        return $operation instanceof OperationResponse
+            ? $this->followInspection($connector, $profile, $operation, $slug)
+            : self::FAILURE;
     }
 }

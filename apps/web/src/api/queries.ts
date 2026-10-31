@@ -3,6 +3,7 @@ import { useFallbackPoll, useLiveness } from "../realtime/liveness";
 import { lastProcessUsageAt, processPollInterval } from "../realtime/process-usage";
 import { useAgentProcessStatuses } from "../realtime/agent-processes";
 import { get } from "./client";
+import type { Operation } from "./operations";
 import type {
     Database,
     DatabaseUser,
@@ -139,15 +140,8 @@ export const databaseUsersQuery = (slug: string) =>
 export const databaseTablesQuery = (slug: string) =>
     queryOptions({
         queryKey: ["database-tables", slug],
-        queryFn: async () => {
-            const data = await get<{ tables?: ({ name?: string } | string)[] }>(
-                `/api/v1/database-connections/${encodeURIComponent(slug)}/tables`,
-            );
-
-            return (data.tables ?? []).map((table) =>
-                typeof table === "string" ? table : (table.name ?? ""),
-            );
-        },
+        queryFn: () =>
+            get<Operation>(`/api/v1/database-connections/${encodeURIComponent(slug)}/tables`),
         retry: false,
     });
 

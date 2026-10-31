@@ -13,8 +13,6 @@ use Illuminate\Validation\ValidationException;
 /** Keeps a managed Valkey connection's identity and credentials aligned with its ACL user. */
 final readonly class ValkeyConnectionUpdateHook implements DatabaseConnectionUpdateHook
 {
-    public function __construct(private ValkeyServerAdmin $admin) {}
-
     public function validate(DatabaseConnection $proposed): void
     {
         $server = $proposed->server;
@@ -32,7 +30,7 @@ final readonly class ValkeyConnectionUpdateHook implements DatabaseConnectionUpd
             }
         }
 
-        if ($proposed->isDirty('database') && $proposed->database !== null && (! ctype_digit($proposed->database) || (int) $proposed->database >= $this->admin->databaseCount($server))) {
+        if ($proposed->isDirty('database') && $proposed->database !== null && ! ctype_digit($proposed->database)) {
             throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
         }
     }

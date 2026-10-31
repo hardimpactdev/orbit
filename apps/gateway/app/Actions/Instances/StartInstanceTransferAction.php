@@ -10,7 +10,6 @@ use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceDestinationGuard;
-use App\Domain\Instances\InstanceLifecycleAvailability;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
@@ -20,6 +19,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
@@ -59,7 +59,9 @@ final readonly class StartInstanceTransferAction
         if (($replay = $this->idempotency->replay('instance.transfer')) !== null) {
             return $replay;
         }
-        app(InstanceLifecycleAvailability::class)->assertAvailable('instance.transfer');
+        if (app(DirectOperation::class)->definition('instance.transfer') === null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Instance transfer has no native workflow.', 503);
+        }
 
         return DB::transaction(function () use ($instance, $data, $caller, $requestId): Operation {
             $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
