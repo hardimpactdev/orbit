@@ -251,7 +251,79 @@ it('leaves refusal and unavailable run locations unchanged without a history req
     Bus::assertNothingDispatched();
     expect($operation->fresh()->status)->toBe(OperationStatus::Running);
     expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);
-})->with(['error', 'run.elsewhere', 'run.interrupted']);
+})->with(['error', 'run.elsewhere']);
+
+it('retains an interrupted attach until bound history becomes terminal without replaying the root', function (): void {
+    $operation = nativeSubscriberOperation();
+    $clock = (object) ['now' => 100.0];
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger, static fn (): float => $clock->now);
+    $history = new FakeRoutePublicationSocket;
+    $reads = 0;
+    $history->reply = static function (array $request) use ($operation, &$reads): array {
+        $reads++;
+
+        return [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => [
+            'id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-test-native-events',
+            'status' => $reads === 1 ? 'running' : 'interrupted',
+            'inputs' => ['operation_id' => $operation->id, 'kind' => $operation->kind, 'node_id' => $operation->node_id],
+            'startedAt' => '2026-10-31T14:00:00Z', 'completedAt' => '2026-10-31T14:00:01Z',
+            'jobs' => [['name' => 'completion', 'steps' => [['name' => 'result', 'status' => 'pending']]]],
+        ]]]];
+    };
+    app()->instance(WebSocketClient::class, $history);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(['type' => 'run.interrupted', 'id' => $request['id'], 'payload' => [
+        'runId' => $operation->state['swamp_run_id'], 'instanceId' => 'dead-owner', 'reason' => 'instance_dead',
+    ]]);
+
+    $subscriber->pass();
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($operation->fresh()->result)->toBeNull();
+    $subscriber->recover();
+    $clock->now = 104.9;
+    $subscriber->pass();
+    expect($history->sent)->toHaveCount(1);
+    $clock->now = 105.0;
+    $subscriber->pass();
+
+    expect($operation->fresh()->status)->toBe(OperationStatus::Failed);
+    expect($operation->fresh()->error_code)->toBe('operation.native_failed');
+    expect($operation->fresh()->result)->toBe([]);
+    expect($operation->fresh()->state['swamp_run_id'])->toBe($request['payload']['runId']);
+    expect(array_column($history->sent, 'type'))->toBe(['workflow.history.get', 'workflow.history.get']);
+    expect(array_column($socket->sent, 'type'))->toBe(['run.attach']);
+    expect($socket->endpoints)->toHaveCount(1);
+    expect($socket->isConnected())->toBeTrue();
+    $subscriber->pass();
+    $subscriber->recover();
+    $subscriber->pass();
+    expect($history->sent)->toHaveCount(2);
+});
+
+it('ignores an interrupted reply that does not name the bound root', function (mixed $payload): void {
+    Bus::fake([ProjectSwampTerminal::class]);
+    $operation = nativeSubscriberOperation();
+    $socket = new FakeSwampEventSocket;
+    $subscriber = new SwampRunSubscriber($socket, new NullLogger);
+    $subscriber->pass();
+    $request = $socket->sent[0];
+    $socket->push(['type' => 'run.interrupted', 'id' => $request['id'], 'payload' => $payload]);
+
+    $subscriber->pass();
+
+    Bus::assertNothingDispatched();
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    $socket->push(nativeSubscriberAttached($request), nativeSubscriberFrame($request, $operation));
+    $subscriber->pass();
+    Bus::assertDispatchedSync(ProjectSwampTerminal::class, 1);
+})->with([
+    'missing run' => [[]],
+    'another run' => [['runId' => '25b90c36-1497-45be-ab30-3f1fe650e8f2']],
+    'malformed payload' => ['not-an-object'],
+]);
 
 it('suppresses duplicate terminal frames and delayed binding notices after synchronous delivery', function (): void {
     $operation = nativeSubscriberOperation();
