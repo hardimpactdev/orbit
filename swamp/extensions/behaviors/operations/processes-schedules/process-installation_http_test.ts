@@ -65,11 +65,7 @@ Deno.test("real Gateway HTTP keeps Process private material out of native inputs
           },
         }, { headers: { "Cache-Control": "no-store" } });
       }
-      if (request.method === "GET" && reads++ === 0) {
-        return Response.json({ error: { code: "operation.run_unbound" } }, {
-          status: 409,
-        });
-      }
+      if (request.method === "GET") reads++;
       if (request.method === "POST") posts.push(await request.json());
       return Response.json({ data: current });
     },
@@ -81,12 +77,11 @@ Deno.test("real Gateway HTTP keeps Process private material out of native inputs
         "/etc/ssl/certs/ca-certificates.crt",
       ),
       args,
-      () => Promise.resolve(),
     );
     let effects = 0;
     assertEquals(
       await directOperation(args, gateway, async (safe) => {
-        assertEquals(reads, 2);
+        assertEquals(reads, 1);
         return await installProcess(
           ProcessInstallation.parse(safe),
           gateway,
