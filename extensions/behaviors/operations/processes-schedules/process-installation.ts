@@ -2,6 +2,10 @@ import { z } from "npm:zod@4.4.3";
 import type { GatewayOperation } from "../_lib/direct.ts";
 import { processSystem, type ProcessSystemCommand } from "./process-system.ts";
 import {
+  processAccountContent,
+  ProcessAccountHome,
+} from "./process-account.ts";
+import {
   localSystemCommand,
   type SystemTransport,
 } from "../node/system_command.ts";
@@ -25,6 +29,7 @@ export const ProcessInstallation = z.discriminatedUnion("runtime", [
     runtime: z.literal("systemd"),
     content_hash: Digest,
     activation_pending: z.boolean(),
+    account_user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).optional(),
   }).strict(),
   Base.extend({ runtime: z.literal("docker"), spec: Digest }).strict(),
 ]).superRefine((input, ctx) => {
@@ -124,6 +129,8 @@ export function installProcessWithTransport(
     privateMaterial,
     signal,
     (name, value, _digest, abort) => action(name, value, abort),
+    (content, user, abort) =>
+      processAccountContent(content, user, transport, abort),
   );
 }
 
@@ -133,6 +140,12 @@ export async function installProcess(
   privateMaterial: Pick<GatewayOperation, "withPrivateMaterial">,
   signal?: AbortSignal,
   invoke: Invoke = localProcess,
+  resolveAccount: (
+    content: string,
+    user: string,
+    signal?: AbortSignal,
+  ) => Promise<string> = (content, user, abort) =>
+    processAccountContent(content, user, undefined, abort),
 ): Promise<ProcessInstallationOutcome> {
   const admitted = ProcessInstallation.parse(input);
   const call = (
@@ -166,6 +179,15 @@ export async function installProcess(
         ).join("");
         if (hash !== admitted.content_hash) {
           throw new Error("Process unit differs");
+        }
+        if (admitted.account_user !== undefined) {
+          installation.content = await resolveAccount(
+            installation.content,
+            admitted.account_user,
+            signal,
+          );
+        } else if (installation.content.includes(ProcessAccountHome)) {
+          throw new Error("Process account template is unbound");
         }
       }
       if (

@@ -1,5 +1,13 @@
 # Native Process runtime composition
 
+Systemd installation accepts optional `account_user` for an admitted
+certificate-path template. The Gateway hashes the template and does no account
+discovery. The installer verifies that hash, then reads the exact user's passwd
+entry through the supplied Node system transport. It fills the actual home
+before any installation or retired-runtime effect. It never guesses the account
+home or group. Private environment content stays inside the existing callback
+and stdin path.
+
 `processSystem(run?, sleep?)(name, input, signal?, beforeContainerReplacement?)`
 executes fixed system commands on the current Node. The parent owns placement,
 private-material access and final projection. It admits no child Operation and
