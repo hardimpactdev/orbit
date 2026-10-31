@@ -117,9 +117,11 @@ polling, retries and lock calls are counted separately.
 
 The approved Route private DNS grace is the sole sleep exception. It matches only
 `workflows/workflow-route-dns-grace.yaml`, job `grace`, step
-`wait-private-dns-ttl`, target `orbit-node-209`, labels `{node: '209'}`, and the
-exact `command/shell` behavior `route-dns-grace.execute` with the sole input
-`run: /usr/bin/sleep 31`. The workflow contains one job and one step. This covers
+`wait-private-dns-ttl`, placed with step labels `{node: '209'}` or target
+`orbit-node-209` (or both with matching values), and the exact `command/shell`
+behavior `route-dns-grace.execute` with the sole input
+`run: /usr/bin/sleep 31`. Inherited targets still apply; a foreign target cannot
+qualify through 209 labels. The workflow contains one job and one step. This covers
 the existing 30-second private DNS TTL after replacement publication and before
 old Caddy sites, certificate scopes and LAN allowances retire, including restore.
 Core and the official workflows extension provide no native delay. The binding

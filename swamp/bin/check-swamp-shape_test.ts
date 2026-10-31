@@ -46,6 +46,12 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
   };
   const source = JSON.stringify(workflow);
   assertEquals(analyzeYaml(file, source).findings, []);
+  const labelsOnly = JSON.parse(source);
+  delete labelsOnly.jobs[0].steps[0].target;
+  assertEquals(analyzeYaml(file, JSON.stringify(labelsOnly)).findings, []);
+  const targetOnly = JSON.parse(source);
+  delete targetOnly.jobs[0].steps[0].labels;
+  assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);
   const rejected = (path: string, source: string) =>
     assert(
       analyzeYaml(path, source).findings.some((f) =>
@@ -53,6 +59,25 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
       ),
       `${path}: ${source}`,
     );
+  const unplaced = structuredClone(labelsOnly);
+  delete unplaced.jobs[0].steps[0].labels;
+  rejected(file, JSON.stringify(unplaced));
+  for (const labels of [{ node: "18" }, { node: 209 }, {}]) {
+    const changed = structuredClone(labelsOnly);
+    changed.jobs[0].steps[0].labels = labels;
+    rejected(file, JSON.stringify(changed));
+  }
+  const foreignTarget = structuredClone(targetOnly);
+  foreignTarget.jobs[0].steps[0].target = "orbit-node-18";
+  rejected(file, JSON.stringify(foreignTarget));
+  for (const scope of ["workflow", "job"]) {
+    const changed = structuredClone(labelsOnly);
+    const placement = scope === "workflow" ? changed : changed.jobs[0];
+    placement.target = "orbit-node-18";
+    rejected(file, JSON.stringify(changed));
+    placement.target = "orbit-node-209";
+    assertEquals(analyzeYaml(file, JSON.stringify(changed)).findings, []);
+  }
   for (const path of [
     "workflows/other.yaml",
     "models/workflow-route-dns-grace.yaml",
