@@ -30,13 +30,14 @@ class ShapeGate(unittest.TestCase):
             return json.loads(result.stdout)
         self.assertEqual(scan(script), [])
         variants = [
-            script.replace("method='POST'", "method='GET'"),
+            re.sub(r"method=([\"'])POST\1", 'method="GET"', script),
             script.replace("/certificates/sign", "/primitive"),
-            script.replace("if not re.fullmatch(r'[1-9][0-9]*', operation):", "if False:"),
+            re.sub(r"if not re\.fullmatch\([^\n]+\):", "if False:", script),
             script.replace("    url = ", "    operation = os.environ['UNCHECKED_PATH']\n    url = "),
             script + "\nurllib.request.Request('https://gateway.orbit/api/v1/operations/19/result',data=b'{}',method='POST')\n",
         ]
         for variant in variants:
+            self.assertNotEqual(variant, script, "Mutation must change the actual formatted source")
             self.assertTrue(any(row["rule"] == "gateway-http" for row in scan(variant)))
 
     def test_gate_preserves_ratchet_and_metrics_when_run_from_swamp_subtree(self):
