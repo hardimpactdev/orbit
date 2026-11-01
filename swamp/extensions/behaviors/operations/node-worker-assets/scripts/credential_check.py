@@ -10,13 +10,16 @@ SWAMP = '/home/orbit/.local/bin/swamp'
 REPO = '/home/orbit/apps/orbit-monorepo-staging/checkout/swamp'
 SERVE = ['--server', 'ws://127.0.0.1:9418', '--token-file', '/etc/orbit/swamp-issuer/operator.token', '--json']
 ISSUER_ENV = {'SWAMP_API_KEY_FILE': '/etc/orbit/swamp-issuer/api-key', 'SWAMP_NO_UPDATE_CHECK': '1',
-              'SWAMP_NO_TELEMETRY': '1', 'SWAMP_SERVE_TIMEOUT_MS': '60000'}
+              'SWAMP_NO_TELEMETRY': '1', 'SWAMP_SERVE_TIMEOUT_MS': '25000'}
 AS_ORBIT = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'SWAMP_HOME=/home/orbit/.swamp',
             'SWAMP_CONFIG_DIR=/home/orbit/.config/swamp', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key',
             'SWAMP_NO_UPDATE_CHECK=1', 'SWAMP_NO_TELEMETRY=1', SWAMP]
 CERTIFICATE = '/home/orbit/.config/swamp/serve-tls/cert.pem'
 ALERT_HOURS = 72
 RENEW_HOURS = 6
+# Keeps the report one bounded environment value for the renew step.
+MAXIMUM_ROWS = 200
+STALE_HOURS = -168
 
 
 class CheckFailed(Exception):
@@ -25,9 +28,9 @@ class CheckFailed(Exception):
 
 def run(label: str, argv: list, env: dict | None = None) -> str:
     try:
-        completed = subprocess.run(argv, cwd=REPO, env=env, capture_output=True, text=True, timeout=60, check=False)
+        completed = subprocess.run(argv, cwd=REPO, env=env, capture_output=True, text=True, timeout=30, check=False)
     except subprocess.TimeoutExpired as error:
-        raise CheckFailed(f'{label} did not finish in 60 s') from error
+        raise CheckFailed(f'{label} did not finish in 30 s') from error
     if completed.returncode != 0:
         raise CheckFailed(f'{label} exited {completed.returncode}')
     return completed.stdout
@@ -84,14 +87,18 @@ def inspect(now: datetime.datetime) -> list:
             found.append(record('club', row, now))
     end = certificate_end(run('openssl x509 -enddate', ['openssl', 'x509', '-enddate', '-noout', '-in', CERTIFICATE]))
     found.append(record('tls', {'name': 'swamp.orbit', 'expiresAt': end.isoformat()}, now))
-    return found
+    # A credential expired for over a week has alerted already; drop it before the bound.
+    found = [item for item in found if item['hours_left'] is None or item['hours_left'] > STALE_HOURS]
+    found.sort(key=lambda item: (item['hours_left'] is None, item['hours_left'] or 0))
+    return found[:MAXIMUM_ROWS]
 
 
 if __name__ == '__main__':
     moment = datetime.datetime.now(datetime.UTC)
     try:
         credentials = inspect(moment)
-    except (CheckFailed, ValueError, KeyError) as error:
-        print(f'credential check failed: {type(error).__name__}: {error}'[:300], file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 - one public line; never a value or command output
+        detail = f': {error}' if isinstance(error, CheckFailed) else ''
+        print(f'credential check failed: {type(error).__name__}{detail}'[:300], file=sys.stderr)
         sys.exit(1)
     print(json.dumps({'checked_at': moment.isoformat(), 'credentials': credentials}))

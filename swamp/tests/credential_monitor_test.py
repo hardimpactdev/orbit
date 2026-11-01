@@ -61,9 +61,25 @@ class Classification(unittest.TestCase):
         self.assertEqual((found['swamp.orbit']['kind'], found['swamp.orbit']['class']), ('tls', 'ok'))
 
     def test_failed_native_list_fails_the_check(self):
-        with patch.object(check.subprocess, 'run', return_value=check.subprocess.CompletedProcess([], 4, '', 'detail')):
-            with self.assertRaisesRegex(check.CheckFailed, 'swamp access token list exited 4'):
-                check.inspect(NOW)
+        failed = check.subprocess.CompletedProcess([], 4, '', 'detail')
+        with patch.object(check.subprocess, 'run', return_value=failed), \
+                self.assertRaisesRegex(check.CheckFailed, 'swamp access token list exited 4'):
+            check.inspect(NOW)
+
+    def test_report_stays_bounded(self):
+        many = [{'name': f'stale-{n}', 'state': 'active', 'expiresAt': at(-200)} for n in range(3)]
+        many += [{'name': f'live-{n}', 'state': 'active', 'expiresAt': at(n + 1)} for n in range(400)]
+
+        def run(label, argv, env=None):
+            if 'access' in argv:
+                return json.dumps(many)
+            return 'notAfter=Nov  7 20:56:22 2027 GMT' if argv[0] == 'openssl' else '[]'
+
+        with patch.object(check, 'run', side_effect=run):
+            found = check.inspect(NOW)
+        self.assertEqual(len(found), check.MAXIMUM_ROWS)
+        self.assertEqual(found[0]['name'], 'live-0')
+        self.assertFalse(any(item['name'].startswith('stale-') for item in found))
 
 
 class Renewal(unittest.TestCase):
@@ -185,6 +201,14 @@ class Alerts(unittest.TestCase):
         self.assertEqual([(item['name'], item['reason']) for item in renew.alerts(credentials, renewals)],
                          [('orbit-gateway-run-20261030', 'within_72h'), ('orbit-node-9', 'expired'),
                           ('orbit-node-209', 'expired_renewed')])
+
+    def test_failed_renewal_escalates_at_expiry_and_a_missing_pair_alerts(self):
+        failed = [{'kind': 'access', 'name': 'orbit-node-209-access', 'outcome': 'failed'}]
+        due = [self.credential('orbit-node-209-access', 'within_6h')]
+        self.assertEqual([item['reason'] for item in renew.alerts(due, failed)], ['missing', 'renewal_failed'])
+        gone = [self.credential('orbit-node-209-access', 'expired')]
+        self.assertEqual([(item['name'], item['reason']) for item in renew.alerts(gone, failed)],
+                         [('orbit-node-209', 'missing'), ('orbit-node-209-access', 'expired')])
 
 
 if __name__ == '__main__':

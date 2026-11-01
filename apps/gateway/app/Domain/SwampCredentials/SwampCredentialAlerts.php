@@ -29,6 +29,10 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
             throw new LogicException('Unknown Swamp credential schedule.');
         }
         $runId = is_string($run['id'] ?? null) ? $run['id'] : null;
+        // The shared reader may hand the same terminal run over again after a reconnect.
+        if ($runId === null || ! Cache::add('swamp-credential-run:'.$runId, true, now()->addDays(30))) {
+            return;
+        }
         if (($run['status'] ?? null) !== 'succeeded') {
             $status = is_string($run['status'] ?? null) ? $run['status'] : 'unknown';
             $this->send(['event' => 'swamp.credential_monitor_failed', 'root_run_id' => $runId, 'status' => $status,
@@ -45,22 +49,28 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
             $alert = ['kind' => Str::limit($alert['kind'], 32, ''), 'name' => Str::limit($alert['name'], 128, ''),
                 'reason' => $alert['reason'], 'expires_at' => is_string($alert['expires_at'] ?? null) ? Str::limit($alert['expires_at'], 40, '') : null,
                 'hours_left' => is_int($alert['hours_left'] ?? null) || is_float($alert['hours_left'] ?? null) ? $alert['hours_left'] : null];
-            // One notification per credential, expiry and reason; a renewed credential has a new expiry.
-            if (Cache::add('swamp-credential-alert:'.hash('sha256', implode('|', [$alert['kind'], $alert['name'], $alert['expires_at'], $alert['reason']])), true, now()->addDays(30))) {
-                $alerts[] = $alert;
+            // One delivered notification per credential, expiry and reason; a renewed credential has a new expiry.
+            $key = 'swamp-credential-alert:'.hash('sha256', implode('|', [$alert['kind'], $alert['name'], $alert['expires_at'], $alert['reason']]));
+            if (! Cache::has($key)) {
+                $alerts[$key] = $alert;
             }
         }
         if ($alerts === []) {
             return;
         }
-        $this->send(['event' => 'swamp.credential_expiring', 'root_run_id' => $runId, 'credentials' => $alerts,
+        $delivered = $this->send(['event' => 'swamp.credential_expiring', 'root_run_id' => $runId, 'credentials' => array_values($alerts),
             'text' => 'Swamp credentials need attention: '.implode(', ', array_map(
                 static fn (array $alert): string => sprintf('%s %s (%s, expires %s)', $alert['kind'], $alert['name'], $alert['reason'], $alert['expires_at'] ?? 'unknown'),
                 $alerts)).'.']);
+        if ($delivered) {
+            foreach (array_keys($alerts) as $key) {
+                Cache::put($key, true, now()->addDays(30));
+            }
+        }
     }
 
     /** @param array<string,mixed> $payload */
-    private function send(array $payload): void
+    private function send(array $payload): bool
     {
         $payload = [...$payload, 'occurred_at' => now()->toISOString(), 'request_id' => (string) Str::uuid()];
         $activity = null;
@@ -76,8 +86,12 @@ final readonly class SwampCredentialAlerts implements ScheduledResultProjection
             $activity?->update(['status' => $receipt->failedStep() ? 'failed' : 'succeeded',
                 'error_code' => $receipt->failedStep() ? 'swamp.credential_alert_webhook_failed' : null,
                 'properties' => [...$payload, 'webhook' => $receipt->toArray()]]);
+
+            return ! $receipt->failedStep();
         } catch (Throwable $exception) {
             report($exception);
+
+            return false;
         }
     }
 }

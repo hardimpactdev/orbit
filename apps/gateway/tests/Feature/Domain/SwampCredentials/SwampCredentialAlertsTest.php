@@ -14,9 +14,9 @@ beforeEach(function (): void {
     Http::fake(['https://hooks.example.test/credential-alert' => Http::response('', 200)]);
 });
 
-function credentialRun(string $status = 'succeeded'): array
+function credentialRun(string $status = 'succeeded', string $id = '0e0c6b55-3a6e-4f57-9b5c-2b8f0f6b8d11'): array
 {
-    return ['id' => '0e0c6b55-3a6e-4f57-9b5c-2b8f0f6b8d11', 'status' => $status];
+    return ['id' => $id, 'status' => $status];
 }
 
 function credentialAlert(string $name, string $reason, string $expiresAt = '2026-11-02T12:46:21.024000+00:00'): array
@@ -36,6 +36,7 @@ it('sends one signed alert per credential expiry and reason', function (): void 
         'credentials' => [['name' => 'never-forwarded']]];
     app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), $result);
     app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), $result);
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), $result);
 
     Http::assertSentCount(1);
     Http::assertSent(function (Request $request): bool {
@@ -48,9 +49,20 @@ it('sends one signed alert per credential expiry and reason', function (): void 
     });
     expect(Activity::query()->where('command', 'swamp:credential-alert')->sole()->status)->toBe('succeeded');
 
-    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(),
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '9b7e4f0c-2d3a-4e1b-a6c5-7f8e9d0a1b2c'),
         ['alerts' => [credentialAlert('orbit-node-13-access', 'within_6h')]]);
     Http::assertSentCount(2);
+});
+
+it('sends an undelivered alert again on the next run', function (): void {
+    config(['orbit.releases.alert_webhook_url' => 'https://hooks.example.test/credential-retry']);
+    Http::fake(['https://hooks.example.test/credential-retry' => Http::sequence()->push('', 500)->push('', 200)]);
+    $result = ['alerts' => [credentialAlert('orbit-node-9-access', 'within_72h')]];
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(), $result);
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun(id: '6a1d2a1e-0f4b-4c55-8d0e-3b1f8f2c9a01'), $result);
+
+    Http::assertSentCount(2);
+    expect(Activity::query()->where('command', 'swamp:credential-alert')->pluck('status')->all())->toBe(['failed', 'succeeded']);
 });
 
 it('stays silent when no credential needs attention', function (): void {
@@ -60,9 +72,11 @@ it('stays silent when no credential needs attention', function (): void {
     expect(Activity::query()->where('command', 'swamp:credential-alert')->exists())->toBeFalse();
 });
 
-it('alerts when the monitor run itself does not succeed', function (string $status): void {
+it('alerts once when the monitor run itself does not succeed', function (string $status): void {
+    app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun($status), []);
     app(SwampCredentialAlerts::class)->applyScheduled(SwampCredentialAlerts::Workflow, credentialRun($status), []);
 
+    Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request['event'] === 'swamp.credential_monitor_failed'
         && $request['status'] === $status && $request['root_run_id'] === credentialRun()['id']);
 })->with(['failed', 'cancelled', 'interrupted']);

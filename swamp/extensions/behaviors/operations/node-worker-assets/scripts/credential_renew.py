@@ -13,7 +13,7 @@ SWAMP = '/home/orbit/.local/bin/swamp'
 REPO = '/home/orbit/apps/orbit-monorepo-staging/checkout/swamp'
 SERVE = ['--server', 'ws://127.0.0.1:9418', '--token-file', '/etc/orbit/swamp-issuer/operator.token', '--json']
 ISSUER_ENV = {'SWAMP_API_KEY_FILE': '/etc/orbit/swamp-issuer/api-key', 'SWAMP_NO_UPDATE_CHECK': '1',
-              'SWAMP_NO_TELEMETRY': '1', 'SWAMP_SERVE_TIMEOUT_MS': '90000'}
+              'SWAMP_NO_TELEMETRY': '1', 'SWAMP_SERVE_TIMEOUT_MS': '50000'}
 AS_ORBIT = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'SWAMP_HOME=/home/orbit/.swamp',
             'SWAMP_CONFIG_DIR=/home/orbit/.config/swamp', 'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key',
             'SWAMP_NO_UPDATE_CHECK=1', 'SWAMP_NO_TELEMETRY=1', SWAMP]
@@ -34,12 +34,15 @@ class Refused(Exception):
 
 def native(label: str, argv: list, env: dict) -> dict:
     try:
-        completed = subprocess.run(argv, cwd=REPO, env=env, capture_output=True, text=True, timeout=100, check=False)
+        completed = subprocess.run(argv, cwd=REPO, env=env, capture_output=True, text=True, timeout=60, check=False)
     except subprocess.TimeoutExpired as error:
         raise Refused(f'{label}_timed_out') from error
     if completed.returncode != 0:
         raise Refused(f'{label}_exit_{completed.returncode}')
-    return json.loads(completed.stdout)
+    body = json.loads(completed.stdout)
+    if not isinstance(body, dict):
+        raise Refused(f'{label}_response_invalid')
+    return body
 
 
 def served(label: str, command: list) -> dict:
@@ -47,7 +50,8 @@ def served(label: str, command: list) -> dict:
 
 
 def local(label: str, command: list) -> dict:
-    return native(label, [*AS_ORBIT, *command, '--yes', '--repo-dir', REPO, '--json'], dict(os.environ))
+    return native(label, [*AS_ORBIT, *command, '--yes', '--repo-dir', REPO, '--json'],
+                  {**os.environ, 'SWAMP_SERVE_URL': '', 'SWAMP_SERVER_URL': ''})
 
 
 def checked(value: object, name: str) -> str:
@@ -125,19 +129,21 @@ def renew(kind: str, name: str, path: str, now: datetime.datetime, cli=None, roo
 
 
 def alerts(credentials: list, renewals: list) -> list:
-    """Renewable credentials alert only on failure or after an expiry; all others alert within 72 h."""
+    """Renewable credentials alert when missing, on failure or after an expiry; all others alert within 72 h."""
     outcomes = {(item['kind'], item['name']): item for item in renewals}
-    raised = []
+    listed = {(item['kind'], item['name']) for item in credentials}
+    raised = [{'kind': kind, 'name': name, 'reason': 'missing', 'expires_at': None, 'hours_left': None}
+              for kind, name in RENEWABLE if (kind, name) not in listed]
     for credential in credentials:
         key = (credential['kind'], credential['name'])
         if credential['class'] in ('ok', 'no_expiry'):
             continue
         if key in RENEWABLE:
             outcome = outcomes.get(key, {}).get('outcome')
-            if outcome == 'failed':
-                reason = 'renewal_failed'
-            elif credential['class'] == 'expired':
+            if credential['class'] == 'expired':
                 reason = 'expired_renewed' if outcome == 'renewed' else 'expired'
+            elif outcome == 'failed':
+                reason = 'renewal_failed'
             else:
                 continue
         else:
@@ -156,7 +162,7 @@ def maintain(report: dict, now: datetime.datetime, cli=None, root: Path = BACKUP
             continue
         try:
             renewals.append(renew(*key, RENEWABLE[key], now, cli, root, owner))
-        except (Refused, OSError, ValueError) as error:
+        except Exception as error:  # noqa: BLE001 - one public reason; never a value or command output
             reason = str(error) if isinstance(error, Refused) else type(error).__name__
             print(f'{key[1]} renewal failed: {reason}', file=sys.stderr)
             renewals.append({'kind': key[0], 'name': key[1], 'outcome': 'failed', 'error': reason})
