@@ -1,0 +1,88 @@
+{
+  "kind": "firewall.inspect",
+  "workflow": "operation-firewall-inspect",
+  "topology": "app-dev",
+  "budget_seconds": 1089,
+  "queue_timeout_seconds": 30,
+  "envelope": {
+    "node_id": "${topology.app-dev.node_id}",
+    "intent": {
+      "ssh": {
+        "target": {
+          "name": "target",
+          "host": "${topology.app-dev.wireguard_ip}",
+          "user": "orbit",
+          "port": 22
+        }
+      },
+      "expected": "${match.present}"
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "inspection",
+      "step": "result",
+      "match": {}
+    }
+  },
+  "phases": [
+    {
+      "name": "read",
+      "job": "inspection",
+      "step": "read",
+      "budget_seconds": 1089
+    },
+    {
+      "name": "compare",
+      "job": "inspection",
+      "step": "result",
+      "budget_seconds": 1089
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/firewall.inspect/parity.py"
+    ],
+    "cases": [
+      "active-backend",
+      "owned-rule-exact",
+      "unmanaged-ssh-preserved",
+      "inspection-read-only"
+    ]
+  },
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "firewall:allow",
+        "proof-owned",
+        "--node=${topology.app-dev.node_id}",
+        "--from=192.0.2.1",
+        "--protocol=tcp",
+        "--port=443",
+        "--json"
+      ]
+    }
+  ],
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/firewall.inspect/setup.py"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "firewall:inspect",
+      "--node=${topology.app-dev.node_id}",
+      "--json"
+    ],
+    "operation": "$.id"
+  }
+}

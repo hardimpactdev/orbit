@@ -1,0 +1,13 @@
+{
+  "name": "app-dev",
+  "version": 1,
+  "nodes": ["app-dev"],
+  "seed": {
+    "host_node_id": 13,
+    "recipe": "sha256:278a3a65b8e1f0c8675eeb97343baefd52807ed76640c6d68742ebeabe5cd041",
+    "build_id": 147,
+    "base_alias": "orbit-task-base-recipe-278a3a65b8e1-147-base",
+    "base_fingerprint": "3aaa1160b86e5e1b6a0d244fef2845dd1243997fead7c3baf1d86ff9e2017bd1",
+    "seed_volume": "orbit-topology-seed-3aaa1160b86e"
+  }
+}

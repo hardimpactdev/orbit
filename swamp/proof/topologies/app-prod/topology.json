@@ -1,0 +1,6 @@
+{
+  "name": "app-prod",
+  "version": 1,
+  "nodes": ["app-prod"],
+  "seed": null
+}
