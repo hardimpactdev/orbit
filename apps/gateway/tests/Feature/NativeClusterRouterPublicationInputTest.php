@@ -198,3 +198,20 @@ it('captures official Router ingress families and preserves shared workload tupl
         ->and($this->oldRole->fresh()->status->value)->toBe('active')
         ->and($this->candidateRole->fresh()->status->value)->toBe('provisioning');
 });
+
+it('executes only changed Router leaves once while retaining complete workload publications', function (): void {
+    $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation,
+        app(NativeClusterRouterIntent::class)->forOperation($this->operation));
+
+    $forward = $capture['route_mutations']['forward'];
+    $restore = $capture['route_mutations']['restore'];
+    expect(array_column($forward['prepare_certificates'], 'node_id'))->toBe([$this->candidate->id])
+        ->and(array_column($restore['certificates'], 'node_id'))->toBe([$this->old->id])
+        ->and($forward['certificates'])->toBe([])->and($restore['prepare_certificates'])->toBe([])
+        ->and($capture['certificates'])->toHaveCount(2)
+        ->and(array_column($capture['certificates'], 'node_id'))->not->toContain($this->workload->id)
+        ->and(collect($forward['publications'])->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])
+        ->toContain('app.cluster.test')
+        ->and(array_column($forward['cleanup'], 'node_id'))->toBe([$this->old->id])
+        ->and(array_column($restore['cleanup'], 'node_id'))->toBe([$this->candidate->id]);
+});

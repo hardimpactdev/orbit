@@ -373,7 +373,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: restore-result
+      behaviorName: '${{ "restore-result-" + run.id + "-" + string(self._index) }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}

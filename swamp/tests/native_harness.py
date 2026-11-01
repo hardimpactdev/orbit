@@ -41,6 +41,7 @@ class NativeTestCase(unittest.TestCase):
         # Existing family tests inject fixtureSign. Preserve that fixed mock
         # boundary for their new native shell step; the dedicated HTTPS test
         # opts into the actual command and its disposable Gateway server.
+        # Match the two canonical signer identities only.
         if not self.real_certificate_signing:
             for path in (self.repo / 'workflows').glob('*.yaml'):
                 workflow = yaml.safe_load(path.read_text())
@@ -48,7 +49,7 @@ class NativeTestCase(unittest.TestCase):
                 for job in workflow.get('jobs', []):
                     for step in job.get('steps', []):
                         task = step.get('task', {})
-                        if task.get('behaviorName') == 'orbit-certificate-signing-http':
+                        if task.get('behaviorName') in ('orbit-certificate-signing-http', '${{ "certificate-sign-" + run.id }}'):
                             task.setdefault('inputs', {})['run'] = '${{ model["orbit-certificate-signing-http"].input.globalArguments.run }}'
                             changed = True
                 if changed:
