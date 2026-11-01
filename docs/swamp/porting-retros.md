@@ -13,6 +13,7 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 
 | PR | Ported or changed | Swamp lines | Steps per legacy call | Budget | Pre-F10 evidence | Findings |
 | --- | --- | --- | --- | --- | --- | --- |
+| #2332 | Automatic-deploy policy returns one checkpoint handle per resource name; `swamp.vault_sync_unavailable` with 0 attempts and a null result is a definite pre-submission failure (E) | +67 / −15 | Not a kind | None | Outage exception on E's independent review PASS against the skill; receipt after `up` | A duplicate `development-315` output broke policy and tick. The body lacked "merges without a topology receipt". CI does not check `deno fmt`, and main is not fmt-clean |
 | #2369 | Task VM guest Node removal skips the token phases (boundary decision 8 (a)) | +49 / −10 | Unchanged: a guard on five existing steps | Unchanged | Outage exception; native guest and ordinary-Node regressions; live check after load | The `allows()` conjunct is dead code. An intent admitted before load lacks `task_vm_guest`, and the guard error fails the step |
 | #2253 | `route.create` and Route removal from native children | +1,957 / −5,706 | About 100 steps for about 5 to 7 calls | None | Native tests; no live run | All-pairs `always` edges; result takes `${{ steps }}` plus an echo step; one SSH `true` per Node |
 | #2251 | Cluster routers reach task VM web ports through vpn1 | +126 / −47 | About 17 steps for 1 call | None | 3 fixture cases | One `exec` per UFW command; op 6650 failed after merge in the "Frame too large" loop |
