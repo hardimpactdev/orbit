@@ -1,5 +1,6 @@
 id: ad81876c-b31c-4ea4-8930-e9468294471a
 name: operation-database-destroy
+queueTimeout: 30
 description: Remove admitted databases and unshared users through native SSH actions from209.
 writes: true
 vaults: [orbit-control-inputs]

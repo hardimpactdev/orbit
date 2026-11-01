@@ -1,5 +1,6 @@
 id: 6a07d0b5-6d80-4b71-9934-b9b756d43a91
 name: database-sqlite-action
+queueTimeout: 30
 description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
 writes: true
 vaults: []

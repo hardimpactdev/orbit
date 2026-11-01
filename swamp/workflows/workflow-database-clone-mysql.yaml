@@ -1,5 +1,6 @@
 id: 41a9479f-05dc-4626-a875-585a143bb40d
 name: database-clone-mysql
+queueTimeout: 30
 description: One admitted database clone through placed native actions and official SSH from209.
 writes: true
 vaults:

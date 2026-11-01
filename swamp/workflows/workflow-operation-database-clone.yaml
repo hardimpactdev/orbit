@@ -1,5 +1,6 @@
 id: 3c44f7b0-9f87-4a6e-b899-6d0b4bb71292
 name: operation-database-clone
+queueTimeout: 30
 description: One admitted database clone through placed native actions and official SSH from209.
 writes: true
 vaults:
