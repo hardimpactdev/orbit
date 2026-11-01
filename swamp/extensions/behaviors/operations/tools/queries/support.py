@@ -3,10 +3,11 @@ import json
 import os
 import pwd
 import subprocess
+import sys
 from pathlib import Path  # noqa: F401 -- exported to manager queries
 
-QUERY_INPUT = None
-INPUT = json.loads(QUERY_INPUT)
+# The public input arrives as argv JSON, never as script source.
+INPUT = json.loads(sys.argv[1])
 ACCOUNT = pwd.getpwnam(INPUT["user"])
 ENV = {"HOME": ACCOUNT.pw_dir, "USER": ACCOUNT.pw_name, "LOGNAME": ACCOUNT.pw_name,
        "PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C"}

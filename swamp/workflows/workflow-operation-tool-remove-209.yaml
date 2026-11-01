@@ -1,5 +1,6 @@
 id: 5c48c4ee-452a-4dd5-8f14-5d3e1b681445
 name: operation-tool-remove-209
+description: Tool removal from 209 in the steps of flows/tool.remove.mmd, one shipped phase script per step through official SSH.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -13,169 +14,122 @@ inputs:
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, ssh]
   additionalProperties: false
+# Node steps carry their flow chart labels (ADR 0246); lowercase steps are typed work on 209 that the chart does not show.
 jobs:
 - name: tools
-  target: orbit-node-209
   steps:
-  - name: before_assets
+  - name: assets
     target: orbit-node-209
-    allowFailure: true
-    forEach: &active
-      item: package
-      in: '${{ inputs.intent.intent_only ? [] : [inputs.intent] }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-before_assets-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "tr-assets-" + run.id }}'
       methodName: assets
-      inputs: {action: query, input: '${{ self.package }}'}
-  - name: before_query
+      inputs: {input: '${{ inputs.intent }}'}
+  # The installed package and, for apt and brew, what removing it would also remove.
+  - name: Plan the removal
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: before_assets, condition: {type: succeeded}}]
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
-      methodName: script
+      behaviorName: '${{ "tr-plan-" + run.id }}'
+      methodName: exec
       globalArgs: &ssh
-        name: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+        name: '${{ "tr-ssh-" + run.id }}'
         transport:
           kind: ssh
           user: '${{ inputs.ssh.target.user }}'
           port: '${{ inputs.ssh.target.port }}'
-          hostKeys: '${{ inputs.ssh.target.host_keys }}'
           identityFile: '${{ inputs.ssh.identity_file }}'
           identitiesOnly: true
+          hostKeys: '${{ inputs.ssh.target.host_keys }}'
         hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
       inputs:
         hosts: name:target
-        interpreter: python3
-        sudo: false
-        script: '${{ steps["before_assets-0"].outputs.script_body }}'
-  - name: before
+        okExitCodes: any
+        timeoutSec: 65
+        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', plan]
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  # Refuse a plan that removes anything else, a Composer non-root or an unsafe cask; nothing changes then.
+  - name: decide
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: before_query, condition: {type: succeeded}}]
+    dependsOn: [{step: Plan the removal, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-before-" + run.id + "-" + string(self._index) }}'
-      methodName: observe
-      inputs: {input: '${{ self.package }}', observation: '${{ steps["before_query-0"].outputs }}'}
-  - name: plan_assets
+      behaviorName: '${{ "tr-decide-" + run.id }}'
+      methodName: decide
+      inputs: {input: '${{ inputs.intent }}', plan: '${{ steps["Plan the removal"] }}'}
+  - name: Remove the package
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    guard: '${{ inputs.intent.manager != "apt" || !steps["before-0"].outputs.ready || !steps["before-0"].outputs.present }}'
-    dependsOn: [{step: before, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-plan_assets-" + run.id + "-" + string(self._index) }}'
-      methodName: assets
-      inputs: {action: plan, input: '${{ self.package }}'}
-  - name: plan_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: plan_assets, condition: {type: succeeded}}]
+    dependsOn: [{step: decide, condition: {type: succeeded}}]
+    guard: '${{ !steps.decide.outputs.remove }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
-      methodName: script
-      globalArgs: *ssh
-      inputs: {hosts: 'name:target', sudo: false, interpreter: python3, script: '${{ steps["plan_assets-0"].outputs.script_body }}'}
-  - name: plan
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: plan_query, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-plan-" + run.id + "-" + string(self._index) }}'
-      methodName: plan
-      inputs: {package: '${{ self.package.package }}', observation: '${{ steps["plan_query-0"].outputs }}'}
-  - name: remove_assets
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    guard: '${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.present || (inputs.intent.manager == "apt" && (steps["plan-0"].status != "succeeded" || !steps["plan-0"].outputs.ready)) }}'
-    dependsOn: [{step: before, condition: {type: succeeded}}, {step: plan, condition: {type: always}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-remove_assets-" + run.id + "-" + string(self._index) }}'
-      methodName: assets
-      inputs: {action: remove, input: '${{ self.package }}', before: '${{ steps["before-0"].outputs }}'}
-  - name: remove
-    target: orbit-node-209
-    writes: true
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: remove_assets, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
-      methodName: script
-      globalArgs: *ssh
-      inputs: {hosts: 'name:target', sudo: '${{ self.package.manager == "apt" }}', interpreter: python3, script: '${{ steps["remove_assets-0"].outputs.script_body }}'}
-  - name: after_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: remove, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
-      methodName: script
-      globalArgs: *ssh
-      inputs: {hosts: 'name:target', sudo: false, interpreter: python3, script: '${{ steps["before_assets-0"].outputs.script_body }}'}
-  - name: after
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{step: after_query, condition: {type: succeeded}}]
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-after-" + run.id + "-" + string(self._index) }}'
-      methodName: observe
-      inputs: {input: '${{ self.package }}', observation: '${{ steps["after_query-0"].outputs }}'}
-  - name: repository_cleanup
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{step: before, condition: {type: succeeded}}, {step: after, condition: {type: always}}]
-    guard: '${{ !("remove_repository" in inputs.intent) || !inputs.intent.remove_repository || !steps["before-0"].outputs.ready || (steps["before-0"].outputs.present && (!("after-0" in steps) || steps["after-0"].status!="succeeded" || !steps["after-0"].outputs.ready || steps["after-0"].outputs.present)) }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
+      behaviorName: '${{ "tr-remove-" + run.id }}'
       methodName: exec
       globalArgs: *ssh
-      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps["before_assets-0"].outputs.repository_body,"cleanup",steps["before_assets-0"].outputs.repository_json] }}'}
+      inputs:
+        hosts: name:target
+        timeoutSec: 125
+        argv: [timeout, '120', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove]
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  - name: Check it is gone
+    target: orbit-node-209
+    dependsOn: [{step: Remove the package, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tr-check-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 65
+        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', gone]
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  # Best-effort: the package is already gone, so a failure here keeps the apt repository record for a later cleanup.
+  - name: Remove the apt source
+    target: orbit-node-209
+    allowFailure: true
+    dependsOn:
+      - {step: decide, condition: {type: succeeded}}
+      - {step: Check it is gone, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ !inputs.intent.remove_repository || !steps.decide.outputs.ready || (steps.decide.outputs.remove && !("Check it is gone" in steps && steps["Check it is gone"].status == "succeeded")) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tr-source-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        timeoutSec: 65
+        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', remove_source]
+        stdin: '${{ steps.assets.outputs.bundle }}'
   - name: result
     target: orbit-node-209
-    dependsOn: [{step: after, condition: {type: always}}, {step: repository_cleanup, condition: {type: always}}]
+    dependsOn:
+      - {step: Plan the removal, condition: {type: always}}
+      - {step: decide, condition: {type: always}}
+      - {step: Remove the package, condition: {type: always}}
+      - {step: Check it is gone, condition: {type: always}}
+      - {step: Remove the apt source, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@nckrtl/tool-remove-command'
-      behaviorName: '${{ "tool-remove-result-" + run.id }}'
+      behaviorName: '${{ "tr-result-" + run.id }}'
       methodName: result
-      inputs: {input: '${{ inputs.intent }}', steps: '${{ steps }}'}
-  - name: assert
+      inputs:
+        input: '${{ inputs.intent }}'
+        plan: '${{ "Plan the removal" in steps ? steps["Plan the removal"] : null }}'
+        decision: '${{ "decide" in steps ? steps.decide : null }}'
+        remove: '${{ "Remove the package" in steps ? steps["Remove the package"] : null }}'
+        check: '${{ "Check it is gone" in steps ? steps["Check it is gone"] : null }}'
+        source: '${{ "Remove the apt source" in steps ? steps["Remove the apt source"] : null }}'
+  - name: accepted
     target: orbit-node-209
     dependsOn: [{step: result, condition: {type: succeeded}}]
-    task:
-      type: assert
-      expr: 'steps.result.outputs.ok'
-      severity: high
-      message: Tool removal requires proven absence or admitted intent retirement
+    task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool removal did not prove the package absent.}

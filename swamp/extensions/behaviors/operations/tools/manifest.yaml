@@ -1,9 +1,9 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.01.2
+version: 2026.11.02.3
 visibility: private
 license: MIT
-description: Typed public manager observations and bounded Tool operation results.
+description: The Tool phase driver, its manager scripts, and the typed Tool decisions and results.
 behaviors:
 - operations/tools/adopt.ts
 - operations/tools/remove.ts
@@ -18,6 +18,7 @@ additionalFiles:
 - queries/brew_cask.py
 - mutations/apt.py
 - mutations/apt_plan.py
+- mutations/brew_plan.py
 - mutations/brew.py
 - mutations/brew_cask.py
 - mutations/composer.py
@@ -31,3 +32,4 @@ additionalFiles:
 - writes/vp.py
 - writes/brew.py
 - apt_repository.py
+- phase.py

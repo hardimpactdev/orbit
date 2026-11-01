@@ -2,8 +2,9 @@
 import json
 import re
 import subprocess
+import sys
 
-REMOVE_INPUT = None
+REMOVE_INPUT = json.loads(sys.argv[1])
 result = subprocess.run(["/usr/bin/apt-get", "--simulate", "remove", "--", REMOVE_INPUT["package"]],
                         check=True, stdin=subprocess.DEVNULL, capture_output=True, text=True, env={"PATH":"/usr/bin:/bin","LC_ALL":"C"})
 packages = []

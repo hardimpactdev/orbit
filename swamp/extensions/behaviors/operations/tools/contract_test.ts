@@ -3,7 +3,6 @@ import {
   allows,
   Input,
   normalizeVersion,
-  repositoryJson,
   validateConstraint,
 } from "./contract.ts";
 import corpus from "./composer-constraints.json" with { type: "json" };
@@ -44,7 +43,7 @@ Deno.test("constraint validation refuses malformed ranges and preserves manager 
   assertEquals(allows(input(null), "unparseable"), true);
 });
 
-Deno.test("repository script input carries the packages its apt preference admits", () => {
+Deno.test("repository packages refuse apt preference injection", () => {
   const repository = {
     name: "rex",
     uris: ["https://pkgs.superlogical.com/rex/apt"],
@@ -52,8 +51,5 @@ Deno.test("repository script input carries the packages its apt preference admit
     components: ["main"],
     signing_key: { url: "https://pkgs.superlogical.com/rex/keys/rex-archive-keyring.gpg", fingerprint: "E28636AC71905C6DDE40C1EDFAA6B80F641307A7" },
   };
-  const parsed = Input.parse({ node_id: 209, manager: "apt", package: "rex", user: "orbit", platform: "linux", architecture: "x86_64", repository, repository_packages: ["rex"] });
-  assertEquals(JSON.parse(repositoryJson(parsed)), { ...repository, packages: ["rex"] });
-  assertEquals(repositoryJson(Input.parse({ node_id: 209, manager: "apt", package: "rex", user: "orbit", platform: "linux", architecture: "x86_64" })), "null");
   assertThrows(() => Input.parse({ node_id: 209, manager: "apt", package: "rex", user: "orbit", platform: "linux", architecture: "x86_64", repository, repository_packages: ["Rex\nPin-Priority: 1001"] }));
 });

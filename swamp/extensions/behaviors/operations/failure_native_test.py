@@ -30,11 +30,10 @@ class NativeFailureTest(NativeTestCase):
             (ROOT / "workflows/workflow-operation-tool-write-209.yaml").read_text()
         )
         for job in flow["jobs"]:
-            self.assertEqual(job.pop("target"), "orbit-node-209")
-            job.pop("labels", None)
+            self.assertNotIn("labels", job)
             for step in job["steps"]:
                 self.assertEqual(step.pop("target"), "orbit-node-209")
-                if step["name"] == "initial_query":
+                if step["name"] == "inspect":
                     step["task"] = {"type": "behavior", "behaviorType": "@nckrtl/fixture-rejected", "behaviorName": "rejected-${{ run.id }}", "behaviorVersion": "2026.11.01.1", "methodName": "apply"}
         (self.repo / "workflows/workflow-failure.yaml").write_text(
             yaml.safe_dump(flow, sort_keys=False)
@@ -62,7 +61,7 @@ class NativeFailureTest(NativeTestCase):
         )
         self.assertEqual([job["name"] for job in history["jobs"]], ["tools"])
         steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
-        self.assertEqual(steps["initial_query-0"]["status"], "failed")
+        self.assertEqual(steps["inspect"]["status"], "failed")
         self.assertEqual(json.loads(steps["result"]["outputs"]["stdout"])["error_code"], "tool.version_probe_failed")
 
 

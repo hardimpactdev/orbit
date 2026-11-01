@@ -6,6 +6,7 @@ use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Models\Node;
 use Tests\Support\FakeAgentCommandRunner;
@@ -55,6 +56,13 @@ describe(AptToolManager::class, function (): void {
             ->toBe('2.4.3')
             ->and($manager->normalizeVersion('1.0~rc1-1'))
             ->toBeNull();
+    });
+
+    it('reads the role packages without this release\'s agent delivery', function (): void {
+        app()->instance(AgentDelivery::class, new AgentDelivery(sys_get_temp_dir().'/missing-agent-delivery.json', sys_get_temp_dir()));
+        [$manager] = apt_tool_manager();
+
+        expect($manager->roleOwns('php-common'))->toBeTrue()->and($manager->roleOwns('tree'))->toBeFalse();
     });
 
     it('reserves every PHP role package and the recipe shared PHP pins for the PHP role', function (string $package, bool $owned): void {

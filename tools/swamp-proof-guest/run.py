@@ -111,7 +111,10 @@ def main():
                 receipt.update(proof_pass=False, error='prepare failed', prepare_reply=reply)
                 return receipt
             if 'bind' in request:
-                context[request['bind'] + '.id'] = reply['response']['data']['id']
+                data = reply['response']['data']
+                if isinstance(data, list):
+                    data = next(item for item in data if all(item.get(key) == value for key, value in request.get('match', {}).items()))
+                context[request['bind'] + '.id'] = data['id']
             continue
         receipt['prepare'].append({'path': request['path'], 'status': reply.get('operation', {}).get('status'),
                                    'error_code': reply.get('operation', {}).get('error_code'), 'seconds': reply.get('terminal_seconds')})

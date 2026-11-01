@@ -25,7 +25,7 @@ final readonly class ToolPackageProtection
         if ($manager !== ToolManagerName::Apt) {
             return [];
         }
-        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', ...new RecipeLoader()->load()->gitPackages];
+        $packages = [...$this->bootstrapPackages->forNode($node), 'openssh-server', 'wireguard-tools', ...new RecipeLoader()->source()->gitPackages];
         foreach (RoleName::cases() as $role) {
             $packages = [...$packages, ...$this->bootstrapPackages->forRole($node, $role)];
         }

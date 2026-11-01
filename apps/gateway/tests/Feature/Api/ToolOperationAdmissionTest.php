@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
@@ -38,15 +39,22 @@ beforeEach(function (): void {
     app()->instance(AgentCommandRunner::class, $agents);
 });
 
-it('admits keyed installs without manager execution or premature Tool ownership', function (): void {
+it('admits keyed installs without manager execution and records the Tool as installing', function (): void {
     $body = ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq', 'version_constraint' => '^1.0'];
     $start = $this->withHeader('Idempotency-Key', 'tools-proof')->postJson('/api/v1/tools', $body)->assertAccepted();
     $this->postJson('/api/v1/tools', $body)->assertAccepted()->assertJsonPath('data.id', $start->json('data.id'));
     $operation = Operation::query()->sole();
     expect($operation->kind)->toBe('tool.install')->and($operation->node_id)->toBe($this->node->id)
         ->and($operation->lock_key)->toBe('node_tools:'.$this->node->id.':apt')
-        ->and($operation->input['version_constraint'])->toBe('^1.0')->and($operation->input)->not->toHaveKey('constraint_intervals')->and(Tool::query()->count())->toBe(0);
+        ->and($operation->input['version_constraint'])->toBe('^1.0')->and($operation->input)->not->toHaveKey('constraint_intervals')
+        ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Installing)->and($operation->input['tool_id'])->toBe(Tool::query()->sole()->id);
     Queue::assertNothingPushed();
+});
+
+it('admits an apt install without this release\'s agent delivery', function (): void {
+    app()->instance(AgentDelivery::class, new AgentDelivery(sys_get_temp_dir().'/missing-agent-delivery.json', sys_get_temp_dir()));
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'tree'])->assertAccepted();
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'git'])->assertConflict();
 });
 
 it('records command activity for admission without claiming synchronous package completion', function (): void {
@@ -59,7 +67,7 @@ it('records command activity for admission without claiming synchronous package 
     expect($operation->status->value)->toBe('running')
         ->and($activity->target_node_id)->toBe($this->node->id)
         ->and($activity->subject_id)->toBeNull();
-    expect(Tool::query()->count())->toBe(0);
+    expect(Tool::query()->sole()->status)->toBe(ToolStatus::Installing);
     Queue::assertNothingPushed();
 });
 
@@ -199,16 +207,14 @@ it('retains an unconfirmed native cancellation without inventing terminal succes
     expect(Tool::query()->count())->toBe(0);
 });
 
-it('captures native removal and projects only its selected Tool once', function (bool $failed, bool $intentOnly): void {
+it('captures native removal and projects only its selected Tool once', function (bool $failed): void {
     $record = $this->node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Active, 'installed_version' => '3.0.0']);
-    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'is-number', 'status' => $intentOnly ? ToolStatus::Failed : ToolStatus::Installed,
-        'installed_version' => $intentOnly ? null : '7.0.0', 'error_code' => $intentOnly ? 'tool.version_probe_failed' : null]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'is-number', 'status' => ToolStatus::Installed, 'installed_version' => '7.0.0']);
     $other = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'other', 'status' => ToolStatus::Installed]);
     $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
     $operation = Operation::query()->sole();
     $inputs = $this->socket->sent[0]['payload']['inputs'];
     expect($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-tool-remove-209')
-        ->and($inputs['intent']['intent_only'])->toBe($intentOnly)
         ->and($inputs['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.$this->node->ssh_host_key]);
     $this->node->update(['wireguard_ip' => '10.44.0.99', 'user' => 'changed']);
     expect(app(ToolIntentProjection::class)->input($operation))->toBe(['intent' => $inputs['intent'], 'ssh' => $inputs['ssh']]);
@@ -233,7 +239,70 @@ it('captures native removal and projects only its selected Tool once', function 
     expect($record->refresh()->installed_version)->toBe('3.0.0')->and($operation->fresh()->lock_key)->toBeNull();
     $this->socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'f4c20822-d85f-4212-a60d-a81a52c30baa']]];
     $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'after-release'])->assertAccepted();
-})->with([[false, false], [true, false], [false, true]]);
+})->with([false, true]);
+
+it('marks only the manager failed when first-use setup fails, and the Tool when the package install fails', function (bool $setupFailed, string $packageError = 'tool.install_failed'): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'is-number'])->assertAccepted();
+    $operation = Operation::query()->sole();
+    $result = $setupFailed ? ['manager_version' => null, 'installed_version' => null, 'error_code' => 'tool.manager_provision_failed']
+        : ['manager_version' => 'vp 0.9.2', 'installed_version' => null, 'error_code' => $packageError];
+    $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-tool-write-209', 'status' => 'failed',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tool.install'],
+        'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
+        'jobs' => [['name' => 'tools', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
+    $manager = $this->node->toolManagers()->where('name', 'vp')->sole();
+    expect($operation->fresh()->error_code)->toBe($result['error_code']);
+    if ($setupFailed) {
+        expect($manager->status)->toBe(LifecycleStatus::Failed)->and($manager->failed_step)->toBe('materialize')
+            ->and($manager->error_code)->toBe('node.tool_manager_materialization_failed')->and(Tool::query()->count())->toBe(0);
+    } else {
+        expect($manager->status)->toBe(LifecycleStatus::Active)->and($manager->installed_version)->toBe('vp 0.9.2')
+            ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed)->and(Tool::query()->sole()->error_code)->toBe($packageError);
+    }
+})->with(['setup failed' => [true], 'install failed' => [false], 'package probe failed on a ready manager' => [false, 'tool.version_probe_failed']]);
+
+it('drops the installing Tool when the package was already installed outside Orbit', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'jq'])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole(), 'tool.package_already_installed');
+    expect(Tool::query()->count())->toBe(0);
+});
+
+it('removes a Tool with nothing on the Node without a run (R1)', function (): void {
+    $record = $this->node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Active, 'installed_version' => '3.0.0']);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'is-number', 'status' => ToolStatus::Failed,
+        'installed_version' => null, 'error_code' => 'tool.version_probe_failed', 'failed_operation' => 'install']);
+    $response = $this->withHeader('Idempotency-Key', 'tools-r1')->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    $this->withHeader('Idempotency-Key', 'tools-r1')->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted()->assertJsonPath('data.id', $response->json('data.id'));
+    $operation = Operation::query()->sole();
+    expect($operation->kind)->toBe('tool.remove')->and($operation->status->value)->toBe('succeeded')->and($operation->lock_key)->toBeNull()
+        ->and($operation->state)->not->toHaveKey('swamp_run_id')->and($this->socket->sent)->toBe([]);
+    $this->assertModelMissing($tool);
+});
+
+it('keeps an unknown manager unfailed when only the package probe failed', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'is-number'])->assertAccepted();
+    $operation = Operation::query()->sole();
+    $result = ['manager_version' => null, 'installed_version' => null, 'error_code' => 'tool.version_probe_failed'];
+    $run = ['id' => $operation->state['swamp_run_id'], 'workflowName' => 'operation-tool-write-209', 'status' => 'failed',
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tool.install'],
+        'startedAt' => '2026-11-01T01:00:00Z', 'completedAt' => '2026-11-01T01:00:01Z',
+        'jobs' => [['name' => 'tools', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
+    $this->socket->reply = static fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $run]]];
+    app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'tools', 'step' => 'result']);
+    expect($this->node->toolManagers()->sole()->status)->toBe(LifecycleStatus::Provisioning)
+        ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Failed)->and(Tool::query()->sole()->error_code)->toBe('tool.version_probe_failed');
+});
+
+it('refuses a removal without a run while another change holds the manager', function (): void {
+    $record = $this->node->toolManagers()->create(['name' => 'vp', 'status' => LifecycleStatus::Active, 'installed_version' => '3.0.0']);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'is-number', 'status' => ToolStatus::Failed,
+        'installed_version' => null, 'error_code' => 'tool.version_probe_failed', 'failed_operation' => 'install']);
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'other'])->assertAccepted();
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    $this->assertModelExists($tool);
+});
 
 it('rejects removal callbacks and sends cancellation to its bound native root', function (): void {
     $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
@@ -317,7 +386,8 @@ it('captures a signed apt repository without doing Node work', function (): void
     $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
     expect(Operation::query()->sole()->input['repository'])->toBe($repository)
         ->and($this->socket->sent[0]['payload']['inputs']['intent']['repository'])->toBe($repository);
-    expect(Tool::query()->count())->toBe(0);
+    // R2: the repository is stored only from the terminal result.
+    expect(AptRepository::query()->count())->toBe(0)->and(Tool::query()->sole()->apt_repository_id)->toBeNull();
 });
 
 it('rejects invalid apt repository input before starting a run', function (string $field, mixed $value): void {
@@ -397,12 +467,26 @@ function signedToolRepository(): array
     return ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
 }
 
-function finishSignedToolOperation(Operation $operation, ?string $error = null): void
+function finishSignedToolOperation(Operation $operation, ?string $error = null, bool $sourceRemoved = true): void
 {
     app(ToolIntentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'],
         'status' => $error === null ? 'succeeded' : 'failed', 'error_code' => $error, 'started_at' => '2026-11-01T01:00:00Z', 'finished_at' => '2026-11-01T01:00:01Z',
-        'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error])]]);
+        'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error]),
+            ...($operation->input['remove_repository'] ?? false ? ['repository_removed' => $sourceRemoved] : [])]]);
 }
+
+it('deletes the Tool but keeps its apt repository record when removing the unused source fails', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole());
+    $tool = Tool::query()->sole();
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    $remove = Operation::query()->latest('id')->firstOrFail();
+    finishSignedToolOperation($remove, sourceRemoved: false);
+    expect($remove->fresh()->status->value)->toBe('succeeded')->and(Tool::query()->count())->toBe(0);
+    $kept = AptRepository::query()->sole();
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
+    expect(Operation::query()->latest('id')->firstOrFail()->input['repository_id'])->toBe($kept->id);
+});
 
 it('does not reserve a repository slug after failed read only adoption', function (): void {
     $repository = signedToolRepository();
@@ -413,14 +497,15 @@ it('does not reserve a repository slug after failed read only adoption', functio
     $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
 });
 
-it('retains newly attached repository intent when an update fails so removal can clean it', function (): void {
+it('keeps the stored repository definition when an update fails, and stores a new one when it succeeds', function (): void {
     $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
     $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'hello', 'status' => ToolStatus::Installed]);
     $this->postJson('/api/v1/tools/'.$tool->id.'/update', ['repository' => signedToolRepository()])->assertAccepted();
     finishSignedToolOperation(Operation::query()->sole(), 'tool.repository_unavailable');
-    expect($tool->refresh()->apt_repository_id)->not->toBeNull();
-    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
-    expect(Operation::query()->latest('id')->firstOrFail()->input['remove_repository'])->toBeTrue();
+    expect($tool->refresh()->apt_repository_id)->toBeNull()->and(AptRepository::query()->count())->toBe(0)->and($tool->status)->toBe(ToolStatus::Failed);
+    $this->postJson('/api/v1/tools/'.$tool->id.'/update', ['repository' => signedToolRepository()])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->latest('id')->firstOrFail());
+    expect($tool->refresh()->apt_repository_id)->toBe(AptRepository::query()->sole()->id);
 });
 
 it('exposes the full signed repository shape in the MCP catalogue', function (): void {

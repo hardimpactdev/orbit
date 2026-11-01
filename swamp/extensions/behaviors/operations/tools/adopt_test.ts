@@ -1,7 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
 import { AdoptInput, adoptionResult, behavior } from "./adopt.ts";
-const observation = (value: unknown) => ({ stdout: JSON.stringify(value), exitCode: 0 });
 function fixture(manager = "apt") {
   const input = AdoptInput.parse({ node_id: 9, manager, package: manager === "composer" ? "vendor/package" : "hello", user: "orbit", platform: manager === "brew-cask" ? "macos" : "linux", architecture: "x86_64" });
   const facts: Record<string, unknown> = { manager_version: "3.0.0", versions: ["1.0.0"], complete: true, roots: [input.package], os_major: 15, prefix: "/prefix", home: "/home/orbit" };
@@ -9,7 +8,7 @@ function fixture(manager = "apt") {
   if (manager === "brew-cask") facts.homebrew = { token: "hello", full_token: "hello", tap: "homebrew/cask", disabled: false, url: "https://example.test/download", version: "1.0.0", sha256: "b".repeat(64), artifacts: [{ font: ["Font.ttf"] }], variations: {} };
   return { input, facts };
 }
-const result = (f: ReturnType<typeof fixture>) => JSON.parse(adoptionResult(f.input, observation(f.facts)).stdout);
+const result = (f: ReturnType<typeof fixture>) => JSON.parse(adoptionResult(f.input, { facts: f.facts }).stdout);
 Deno.test("all selected managers adopt readable versions and preserve installed intent", () => {
   for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
     const f = fixture(manager);
@@ -34,7 +33,7 @@ Deno.test("absent, malformed, incomplete and ambiguous manager observations refu
   }
   const f = fixture("composer"); f.facts.roots = [];
   assertEquals(result(f).block, "dependency");
-  assertEquals(JSON.parse(adoptionResult(f.input, { stdout: "{", exitCode: 0 }).stdout).error_code, "tool.version_probe_failed");
+  assertEquals(JSON.parse(adoptionResult(f.input, null).stdout).error_code, "tool.version_probe_failed");
 });
 Deno.test("Homebrew eligibility preserves official roots, current bottles and safe cask artifacts", () => {
   const f = fixture("brew"), record = f.facts.homebrew as Record<string, unknown>;

@@ -7,6 +7,7 @@ use App\Actions\Tools\StartToolOperationAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolManagerName;
@@ -67,7 +68,8 @@ it('projects bounded native package data once and rejects another root', functio
 it('rejects malformed typed native results without writing Tool state', function (array $result): void {
     $operation = app(StartToolOperationAction::class)->execute('install', $this->node->id, 'apt', 'jq', null);
     expect(fn () => app(ToolIntentProjection::class)->apply($operation, ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-11-01T04:00:00Z', 'finished_at' => '2026-11-01T04:00:01Z', 'result' => $result]))->toThrow(ResourceOperationException::class);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and(Tool::query()->count())->toBe(0)->and(ToolManagerRecord::query()->count())->toBe(0);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and(Tool::query()->sole()->status)->toBe(ToolStatus::Installing)->and(ToolManagerRecord::query()->sole()->status)->toBe(LifecycleStatus::Provisioning);
 })->with([
     [['manager_version' => "3.0.0\nraw"]], [['installed_version' => str_repeat('a', 256)]], [['installed_version' => []]], [['outcome' => 'raw']],
 ]);

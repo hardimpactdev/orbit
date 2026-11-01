@@ -83,6 +83,7 @@ final readonly class StartToolOperationAction
                 if ($currentRepository !== null && $repository !== null && $repository['name'] !== $currentRepository->name) {
                     $this->refuse('tool.repository_conflict');
                 }
+                // R2: the Gateway stores a repository definition, and links it, only from the run's terminal result.
                 $repositoryRecord = $currentRepository;
                 if ($repository !== null) {
                     $repositoryRecord ??= AptRepository::query()->where('node_id', $nodeId)->where('name', $repository['name'])->first();
@@ -90,40 +91,51 @@ final readonly class StartToolOperationAction
                         && Tool::query()->where('apt_repository_id', $repositoryRecord->id)->exists()) {
                         $this->refuse('tool.repository_conflict');
                     }
-                    $repositoryRecord ??= AptRepository::query()->create(['node_id' => $nodeId, 'name' => $repository['name'], 'definition' => $repository]);
-                    if ($repositoryRecord->definition != $repository) {
-                        $repositoryRecord->update(['definition' => $repository]);
-                    }
                 }
-                if ($verb === 'update' && $tool !== null && $repositoryRecord !== null) {
-                    $tool->update(['apt_repository_id' => $repositoryRecord->id]);
-                }
-                $repository = $repositoryRecord?->definition;
+                $repositoryGiven = $repository !== null;
+                $repository ??= $repositoryRecord?->definition;
                 // The repository's apt preference admits exactly the packages of the Tools that reference it.
-                $repositoryPackages = $repositoryRecord === null ? [] : Tool::query()
+                $repositoryPackages = $repositoryRecord === null ? ($repository === null || $verb === 'remove' ? [] : [$package]) : Tool::query()
                     ->where('apt_repository_id', $repositoryRecord->id)
                     ->when($tool !== null, static fn ($query) => $query->whereKeyNot($tool?->id))->pluck('package')
                     ->when($verb !== 'remove', static fn ($packages) => $packages->push($package))
                     ->unique()->sort()->values()->all();
                 $removeRepository = $verb === 'remove' && $repositoryRecord !== null && $repositoryPackages === [];
 
-                $intentOnly = $roleOwned || ($verb === 'remove' && $repository === null && $tool?->status === ToolStatus::Failed
-                    && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version);
-
-                return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, [
+                $input = [
                     'node_id' => $nodeId, 'manager' => $managerName, 'package' => $package, 'user' => $node->user,
                     'platform' => $node->platform, 'architecture' => $node->architecture,
                     'version_constraint' => $constraint,
                     'repository' => $repository, 'repository_id' => $repositoryRecord?->id, 'remove_repository' => $removeRepository,
-                    'repository_packages' => $repositoryPackages,
+                    'repository_packages' => $repositoryPackages, 'repository_given' => $repositoryGiven,
                     'tool_id' => $tool?->id, 'manager_id' => $record?->id,
                     'tool_status' => $tool?->status->value, 'installed_version' => $tool?->installed_version,
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
-                    'intent_only' => $intentOnly,
                     'protected_packages' => $protected,
+                    'manager_ready' => $record?->status === LifecycleStatus::Active,
                     'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                     'setup' => $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null,
-                ], 'operator', request()->attributes->getString('orbit.request_id'), lockKey: $manager->name()->operationLockKey($nodeId));
+                ];
+                $requestId = request()->attributes->getString('orbit.request_id');
+                if ($verb === 'install' && $tool === null) {
+                    // The reviewed install chart records the Tool as installing; a failed manager setup drops it again.
+                    $record ??= ToolManagerRecord::query()->create(['node_id' => $nodeId, 'name' => $managerName, 'status' => LifecycleStatus::Provisioning]);
+                    $tool = Tool::query()->create(['node_id' => $nodeId, 'tool_manager_id' => $record->id, 'package' => $package,
+                        'version_constraint' => $constraint, 'status' => ToolStatus::Installing]);
+                    $input['tool_id'] = $tool->id;
+                    $input['manager_id'] = $record->id;
+                }
+                // R1: a role-owned package, or a failed install that never left a version, has nothing on the Node to remove.
+                if ($verb === 'remove' && ($roleOwned || ($repository === null && $tool?->status === ToolStatus::Failed
+                    && $tool->error_code === 'tool.version_probe_failed' && ! $tool->installed_version))) {
+                    $operation = $this->operations->record('tool.remove', 'node_tools', $nodeId, $nodeId, $input,
+                        ['manager_version' => null, 'installed_version' => null, 'outcome' => 'applied'], 'operator', $requestId, $manager->name()->operationLockKey($nodeId));
+                    $tool?->delete();
+
+                    return $operation;
+                }
+
+                return $this->operations->execute('tool.'.$verb, 'node_tools', $nodeId, $nodeId, $input, 'operator', $requestId, lockKey: $manager->name()->operationLockKey($nodeId));
             });
         } catch (ResourceOperationException $error) {
             if (! str_starts_with($error->errorCode, 'tool.')) {

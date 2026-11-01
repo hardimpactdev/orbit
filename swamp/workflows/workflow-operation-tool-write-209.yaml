@@ -1,5 +1,6 @@
 id: 3f4a442f-a80b-4d66-9ef8-5b1f4c462f7f
 name: operation-tool-write-209
+description: Tool install and update from 209 in the steps of flows/tool.install.mmd and tool.update.mmd, one shipped phase script per step through official SSH.
 vaults: []
 queueTimeout: 60
 inputs:
@@ -13,156 +14,153 @@ inputs:
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, ssh]
   additionalProperties: false
+# Node steps carry their flow chart labels (ADR 0246); install and update share this workflow, so each kind's own
+# labels run only for that kind. Lowercase steps are typed work on 209 that the charts do not show. A Node step prints
+# its result and exits nonzero when it did not do its job; later steps read that exit code.
 jobs:
 - name: tools
-  target: orbit-node-209
   steps:
-  - name: query_assets
+  - name: assets
     target: orbit-node-209
-    allowFailure: true
-    forEach: &active {item: package, in: '${{ [inputs.intent] }}'}
-    task: {behaviorName: '${{ "tw-query_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {action: query, input: '${{ self.package }}'}, methodName: assets, type: behavior}
-  - name: initial_query
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-write-command'
+      behaviorName: '${{ "tw-assets-" + run.id }}'
+      methodName: assets
+      inputs: {input: '${{ inputs.intent }}'}
+  - name: setup_assets
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: query_assets}]
+    guard: '${{ !("setup" in inputs.intent) || inputs.intent.setup == null }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/node-tool-setup-assets'
+      behaviorName: '${{ "tw-setup-assets-" + run.id }}'
+      methodName: read
+      inputs: {setup: '${{ inputs.intent.setup }}'}
+  # Only when the Tool Manager is not ready yet: a Linux first use installs it at its pinned version.
+  - name: Set up the Tool Manager
+    target: orbit-node-209
+    dependsOn:
+      - {step: assets, condition: {type: succeeded}}
+      - {step: setup_assets, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.kind == "tool.update" || !("setup" in inputs.intent) || inputs.intent.setup == null || ("manager_ready" in inputs.intent && inputs.intent.manager_ready) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "tool-write-"+run.id+"-"+string(self._index) }}
-      methodName: script
-      globalArgs: &ssh {hosts: [{address: '${{ inputs.ssh.target.host }}', name: target}], name: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', transport: {hostKeys: '${{ inputs.ssh.target.host_keys }}', identitiesOnly: true, identityFile: '${{ inputs.ssh.identity_file }}', kind: ssh, port: '${{ inputs.ssh.target.port }}', user: '${{ inputs.ssh.target.user }}'}}
-      inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["query_assets-0"].outputs.script_body }}', sudo: false}
-  - name: inspect
+      behaviorName: '${{ "tw-setup-" + run.id }}'
+      methodName: exec
+      globalArgs: &ssh
+        name: '${{ "tw-ssh-" + run.id }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.ssh.target.user }}'
+          port: '${{ inputs.ssh.target.port }}'
+          identityFile: '${{ inputs.ssh.identity_file }}'
+          identitiesOnly: true
+          hostKeys: '${{ inputs.ssh.target.host_keys }}'
+        hosts: [{name: target, address: '${{ inputs.ssh.target.host }}'}]
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 905
+        argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', setup]
+        # The bundle, then the installers; the Vite+ installer exceeds one exec argument.
+        stdin: '${{ steps.assets.outputs.bundle + ("setup_assets" in steps && steps.setup_assets.status == "succeeded" ? "\x1e" + steps.setup_assets.outputs.manager_body + "\x1e" + (steps.setup_assets.outputs.apt_body == null ? "" : steps.setup_assets.outputs.apt_body) : "") }}'
+  - name: Add the signed apt source
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: initial_query}]
-    task: {behaviorName: '${{ "tw-inspect-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ self.package }}', observation: '${{ steps["initial_query-0"].outputs }}'}, methodName: inspect, type: behavior}
-  - name: setup_assets
+    dependsOn: [{step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    guard: '${{ inputs.intent.kind != "tool.install" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given || ("Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status == "succeeded" && steps["Set up the Tool Manager"].outputs.exitCode != 0) }}'
+    task: &source
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tw-source-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 65
+        argv: [timeout, '60', python3, -I, -c, '${{ steps.assets.outputs.driver }}', source]
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  - name: Update the apt source
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: inspect}]
-    guard: ${{ !steps["inspect-0"].outputs.setup_required }}
-    task: {behaviorName: '${{ "tw-setup_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/node-tool-setup-assets', inputs: {setup: '${{ inputs.intent.setup }}'}, methodName: read, type: behavior}
-  - name: setup_refresh
+    dependsOn: [{step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.kind != "tool.update" || !("repository_given" in inputs.intent) || !inputs.intent.repository_given }}'
+    task: *source
+  - name: Check the candidate
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: setup_assets}]
-    guard: ${{ inputs.intent.setup==null || inputs.intent.setup.packages.size()==0 }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {argv: [/usr/bin/apt-get, update], hosts: 'name:target', sudo: true}, methodName: exec, type: behavior}
-  - name: setup_packages
+    dependsOn:
+      - {step: Set up the Tool Manager, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+      - {step: Add the signed apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+      - {step: Update the apt source, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    guard: '${{ inputs.intent.kind == "tool.manager_converge" || ["Set up the Tool Manager", "Add the signed apt source", "Update the apt source"].exists(s, s in steps && steps[s].status == "succeeded" && steps[s].outputs.exitCode != 0) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tw-check-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 125
+        argv: [timeout, '120', python3, -I, -c, '${{ steps.assets.outputs.driver }}', check]
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  # The constraint, the installed version and every refusal, before any package write.
+  - name: decide
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: setup_refresh}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {argv: '${{ ["/usr/bin/apt-get","install","--yes","--no-install-recommends","--no-remove","--" ]+(inputs.intent.setup==null?[]:inputs.intent.setup.packages) }}', hosts: 'name:target', sudo: true}, methodName: exec, type: behavior}
-  - name: setup_apt
+    dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-write-command'
+      behaviorName: '${{ "tw-decide-" + run.id }}'
+      methodName: decide
+      inputs: {input: '${{ inputs.intent }}', check: '${{ steps["Check the candidate"] }}'}
+  # apt as root with --no-remove, waiting up to 300 s for a busy lock; other managers as the managed account.
+  - name: Install the package
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: setup_assets}, {condition: {type: always}, step: setup_packages}]
-    guard: ${{ steps["setup_assets-0"].outputs.apt_body==null || ("setup_packages-0" in steps && steps["setup_packages-0"].status=="failed") }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["setup_assets-0"].outputs.apt_body }}', sudo: true}, methodName: script, type: behavior}
-  - name: setup_manager
+    dependsOn: [{step: decide, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.kind != "tool.install" || !steps.decide.outputs.mutate }}'
+    task: &write
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "tw-write-" + run.id }}'
+      methodName: exec
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        okExitCodes: any
+        timeoutSec: 905
+        argv: [timeout, '900', python3, -I, -c, '${{ steps.assets.outputs.driver }}', write, '${{ steps.decide.outputs.candidate_json }}']
+        stdin: '${{ steps.assets.outputs.bundle }}'
+  - name: Upgrade the package
     target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: setup_assets}, {condition: {type: always}, step: setup_apt}, {condition: {type: always}, step: setup_packages}]
-    guard: ${{ ("setup_apt-0" in steps && steps["setup_apt-0"].status=="failed") || ("setup_packages-0" in steps && steps["setup_packages-0"].status=="failed") || ("setup_refresh-0" in steps && steps["setup_refresh-0"].status=="failed") }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["setup_assets-0"].outputs.manager_body }}', sudo: true}, methodName: script, type: behavior}
-  - name: before_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: query_assets}, {condition: {type: succeeded}, step: inspect}, {condition: {type: always}, step: setup_manager}]
-    guard: ${{ !steps["inspect-0"].outputs.ready || (steps["inspect-0"].outputs.setup_required && !("setup_manager-0" in steps && steps["setup_manager-0"].status=="succeeded")) }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["query_assets-0"].outputs.script_body }}', sudo: false}, methodName: script, type: behavior}
-  - name: before
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: before_query}]
-    task: {behaviorName: '${{ "tw-before-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ self.package }}', observation: '${{ steps["before_query-0"].outputs }}'}, methodName: before, type: behavior}
-  - name: repository
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: before}]
-    guard: ${{ !steps["before-0"].outputs.ready || !("repository" in inputs.intent) || inputs.intent.repository==null }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["timeout","180","/usr/bin/python3","-I","-c",steps["query_assets-0"].outputs.repository_body,"prepare",steps["query_assets-0"].outputs.repository_json] }}', sudo: true}, methodName: exec, type: behavior}
-  - name: candidate_assets
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: before}, {condition: {type: always}, step: repository}]
-    guard: ${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.package_required || ("repository" in inputs.intent && inputs.intent.repository!=null && steps["repository-0"].status!="succeeded") }}
-    task: {behaviorName: '${{ "tw-candidate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {repository_observation: '${{ "repository-0" in steps && steps["repository-0"].status=="succeeded" ? steps["repository-0"].outputs : null }}', action: candidate, before: '${{ steps["before-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
-  - name: candidate_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: candidate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["python3","-I","-c",steps["candidate_assets-0"].outputs.script_body,steps["candidate_assets-0"].outputs.repository_json] }}', sudo: false, timeoutSec: 120}, methodName: exec, type: behavior}
-  - name: candidate
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: candidate_query}]
-    task: {behaviorName: '${{ "tw-candidate-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ self.package }}', observation: '${{ steps["candidate_query-0"].outputs }}'}, methodName: candidate, type: behavior}
-  - name: reconcile_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: candidate}]
-    guard: ${{ !steps["candidate-0"].outputs.ready }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["query_assets-0"].outputs.script_body }}', sudo: false}, methodName: script, type: behavior}
-  - name: decision
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: reconcile_query}]
-    task: {behaviorName: '${{ "tw-decision-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {before: '${{ steps["before-0"].outputs.facts }}', candidate: '${{ steps["candidate-0"].outputs }}', input: '${{ self.package }}', observation: '${{ steps["reconcile_query-0"].outputs }}'}, methodName: decision, type: behavior}
-  - name: mutate_assets
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: decision}]
-    guard: ${{ !steps["decision-0"].outputs.ready || !steps["decision-0"].outputs.mutate }}
-    task: {behaviorName: '${{ "tw-mutate_assets-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {candidate: '${{ steps["candidate-0"].outputs }}', action: mutate, before: '${{ steps["decision-0"].outputs.facts }}', input: '${{ self.package }}'}, methodName: assets, type: behavior}
-  - name: mutate
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    writes: true
-    dependsOn: [{condition: {type: succeeded}, step: mutate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ (inputs.intent.platform == "linux" ? ["timeout","900"] : []) + ["python3","-I","-c",steps["mutate_assets-0"].outputs.script_body,steps["mutate_assets-0"].outputs.candidate_json,steps["mutate_assets-0"].outputs.repository_json] }}', timeoutSec: 960, sudo: '${{ inputs.intent.manager=="apt" }}'}, methodName: exec, type: behavior}
-  - name: after_query
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: before}, {condition: {type: always}, step: decision}, {condition: {type: always}, step: mutate}]
-    guard: ${{ !steps["before-0"].outputs.ready || !steps["before-0"].outputs.package_required || !("decision-0" in steps) || steps["decision-0"].status!="succeeded" || !steps["decision-0"].outputs.ready || (steps["decision-0"].outputs.mutate && steps["mutate-0"].status!="succeeded") }}
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', interpreter: python3, script: '${{ steps["query_assets-0"].outputs.script_body }}', sudo: false}, methodName: script, type: behavior}
-  - name: after
-    target: orbit-node-209
-    allowFailure: true
-    forEach: *active
-    dependsOn: [{condition: {type: succeeded}, step: after_query}]
-    task: {behaviorName: '${{ "tw-after-"+run.id+"-"+string(self._index) }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ self.package }}', observation: '${{ steps["after_query-0"].outputs }}', phase: after}, methodName: before, type: behavior}
+    dependsOn: [{step: decide, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.kind != "tool.update" || !steps.decide.outputs.mutate }}'
+    task: *write
   - name: result
     target: orbit-node-209
-    dependsOn: [{step: after, condition: {type: always}}]
-    task: {behaviorName: '${{ "tool-write-result-"+run.id }}', behaviorType: '@nckrtl/tool-write-command', inputs: {input: '${{ inputs.intent }}', steps: '${{ steps }}'}, methodName: result, type: behavior}
-  - name: assert
+    dependsOn:
+      - {step: Set up the Tool Manager, condition: {type: always}}
+      - {step: Add the signed apt source, condition: {type: always}}
+      - {step: Update the apt source, condition: {type: always}}
+      - {step: Check the candidate, condition: {type: always}}
+      - {step: decide, condition: {type: always}}
+      - {step: Install the package, condition: {type: always}}
+      - {step: Upgrade the package, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/tool-write-command'
+      behaviorName: '${{ "tw-result-" + run.id }}'
+      methodName: result
+      inputs:
+        input: '${{ inputs.intent }}'
+        setup: '${{ "Set up the Tool Manager" in steps && steps["Set up the Tool Manager"].status != "skipped" ? steps["Set up the Tool Manager"] : null }}'
+        source: '${{ "Add the signed apt source" in steps && steps["Add the signed apt source"].status != "skipped" ? steps["Add the signed apt source"] : ("Update the apt source" in steps && steps["Update the apt source"].status != "skipped" ? steps["Update the apt source"] : null) }}'
+        check: '${{ "Check the candidate" in steps ? steps["Check the candidate"] : null }}'
+        decision: '${{ "decide" in steps ? steps.decide : null }}'
+        write: '${{ "Install the package" in steps && steps["Install the package"].status != "skipped" ? steps["Install the package"] : ("Upgrade the package" in steps && steps["Upgrade the package"].status != "skipped" ? steps["Upgrade the package"] : null) }}'
+  - name: accepted
     target: orbit-node-209
     dependsOn: [{step: result, condition: {type: succeeded}}]
-    task: {type: assert, expr: steps.result.outputs.ok, severity: high, message: Tool write requires typed manager and package readiness}
+    task: {type: assert, expr: 'steps.result.outputs.ok == true', severity: high, message: The Tool write did not complete.}

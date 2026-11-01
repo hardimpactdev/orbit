@@ -43,7 +43,7 @@ final readonly class AptToolManager implements ReservesRolePackages, ToolManager
         }
 
         return array_any(
-            ($this->recipe ?? new RecipeLoader()->load())->php,
+            ($this->recipe ?? new RecipeLoader()->source())->php,
             static fn (PhpBuild $build): bool => in_array($package, $build->packages, true),
         );
     }

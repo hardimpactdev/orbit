@@ -1,0 +1,19 @@
+{
+  "kind": "tool.install",
+  "workflow": "operation-tool-write-209",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "queue_timeout_seconds": 30,
+  "clean_target": [
+    ["sh", "-c", "dpkg --purge tree >/dev/null 2>&1; true"]
+  ],
+  "request": {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "apt", "package": "tree"}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
+    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
+    {"name": "Install the package", "job": "tools", "step": "Install the package", "budget_seconds": 900},
+    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+  ],
+  "parity": "swamp/proof/tool.install/parity.py"
+}

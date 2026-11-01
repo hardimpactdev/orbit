@@ -1,10 +1,6 @@
-import json
-import sys
-
 from support import INPUT, finish, query
 
-# Repository intent arrives as argv JSON data, never as script source.
-REPOSITORY = json.loads(sys.argv[1]) if len(sys.argv) > 1 else None
+REPOSITORY = INPUT.get("repository")
 
 
 def observe():

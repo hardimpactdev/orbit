@@ -1,0 +1,22 @@
+{
+  "kind": "tool.install",
+  "workflow": "operation-tool-write-209",
+  "topology": "minimal",
+  "budget_seconds": 900,
+  "queue_timeout_seconds": 30,
+  "note": "Install's Linux first use (flows/tool.install.mmd, opt 'Set up the Tool Manager'): no Vite+ store on the target, so inspect installs the pinned manager before the package.",
+  "clean_target": [
+    ["sh", "-c", "rm -rf /opt/orbit/vite-plus /home/orbit/.vite-plus /home/orbit/.local/share/vite-plus; for f in vp node pnpm npm npx; do rm -f /usr/local/bin/$f; done; true"]
+  ],
+  "request": {"method": "POST", "path": "tools", "body": {"node_id": "${node.target}", "manager": "vp", "package": "is-number"}},
+  "expect": {"status": "succeeded"},
+  "phases": [
+    {"name": "setup_assets", "job": "tools", "step": "setup_assets", "budget_seconds": 30},
+    {"name": "Set up the Tool Manager", "job": "tools", "step": "Set up the Tool Manager", "budget_seconds": 900},
+    {"name": "Check the candidate", "job": "tools", "step": "Check the candidate", "budget_seconds": 120},
+    {"name": "decide", "job": "tools", "step": "decide", "budget_seconds": 30},
+    {"name": "Install the package", "job": "tools", "step": "Install the package", "budget_seconds": 900},
+    {"name": "result", "job": "tools", "step": "result", "budget_seconds": 30}
+  ],
+  "parity": "swamp/proof/tool.install.first-use/parity.py"
+}

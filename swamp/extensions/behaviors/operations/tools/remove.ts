@@ -1,97 +1,71 @@
 import { z } from "npm:zod@4.4.3";
-import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
+import { AdoptInput, type Context, phaseAssets } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { repositoryJson, sourceInput, ToolRefusal } from "./contract.ts";
+import { printed, Step, ToolRefusal } from "./contract.ts";
 import { writeInventory } from "./write.ts";
-export const RemoveInput = AdoptInput.safeExtend({ intent_only: z.boolean() });
+export const RemoveInput = AdoptInput;
 type Input = z.infer<typeof RemoveInput>;
-const Public = z.record(z.string(), z.unknown());
-const Probe = z.object({ ready: z.boolean(), present: z.boolean().optional(), facts: Facts.optional(), error_code: z.string().optional() });
-type Context = { extensionFile(name: string): string; writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
-export function removalProbe(input: Input, raw: unknown) {
+type StepValue = z.infer<typeof Step> | null;
+export type RemovalDecision = { ready: boolean; remove: boolean; error_code?: string; manager_version: string | null };
+/** Refuse a removal from its plan: unreadable facts, a Composer non-root, an unsafe cask, or an apt or brew plan that removes more. */
+export function removalDecision(input: Input, phase: Record<string, unknown> | null): RemovalDecision {
+    let managerVersion: string | null = null;
     try {
-        const { facts, present } = writeInventory(raw);
+        if (phase === null) throw new ToolRefusal("tool.version_probe_failed");
+        const { facts, present } = writeInventory(phase.facts);
+        managerVersion = facts.manager_version!;
         if (present && input.manager === "composer" && !facts.roots?.includes(input.package)) throw new ToolRefusal("tool.remove_failed");
         if (present && homebrewRemovalBlock(input, facts)) throw new ToolRefusal("tool.remove_failed");
-        return { ready: true, present, facts };
+        if (present && (input.manager === "apt" || input.manager === "brew")) {
+            const plan = z.object({ packages: z.array(z.string()) }).safeParse(phase.plan);
+            if (!plan.success) throw new ToolRefusal("tool.remove_failed");
+            if (plan.data.packages.length !== 1 || plan.data.packages[0] !== input.package) throw new ToolRefusal("tool.removal_plan_unsafe");
+        }
+        return { ready: true, remove: present, manager_version: managerVersion };
     } catch (error) {
-        return { ready: false, error_code: error instanceof ToolRefusal ? error.code : "tool.version_probe_failed" };
+        if (!(error instanceof ToolRefusal) && !(error instanceof z.ZodError)) throw error;
+        return { ready: false, remove: false, error_code: error instanceof ToolRefusal ? error.code : "tool.version_probe_failed", manager_version: managerVersion };
     }
 }
-const Step = z.object({ status: z.string(), outputs: Public.optional() }).passthrough();
-export function removalResult(input: Input, steps: Record<string, z.infer<typeof Step>>) {
-    const before = Probe.safeParse(steps["before-0"]?.outputs);
-    const fact = before.success ? before.data : null;
-    const success = (name: string) => steps[name + "-0"]?.status === "succeeded";
-    let error = null;
-    if (!input.intent_only) {
-        if (!success("before") || !fact?.ready) error = fact?.error_code ?? "tool.version_probe_failed";
-        else if (fact.present) {
-            if (input.manager === "apt" && (!success("plan") || steps["plan-0"]?.outputs?.ready !== true)) {
-                error = steps["plan-0"]?.outputs?.error_code ?? "tool.remove_failed";
-            } else if (!success("remove") || !success("after") || steps["after-0"]?.outputs?.ready !== true ||
-                steps["after-0"]?.outputs?.present !== false) error = "tool.remove_failed";
-        }
-    }
-    if (error === null && input.remove_repository && input.repository) {
-        error = success("repository_cleanup") ? repositoryError(steps["repository_cleanup-0"]?.outputs) : "tool.repository_failed";
-    }
-    return { ok: error === null, stdout: JSON.stringify({ manager_version: fact?.facts?.manager_version ?? null,
-        installed_version: error === null ? null : input.installed_version, ...(error ? { error_code: error } : { outcome: "applied" }) }) };
+/** Only proven absence deletes the Tool. Dropping the last Tool's apt source is best-effort (Nick, 2026-11-01). */
+export function removalResult(input: Input, plan: StepValue, decision: StepValue, remove: StepValue, check: StepValue, source: StepValue) {
+    const decided = decision?.status === "succeeded" ? decision.outputs as RemovalDecision : removalDecision(input, printed(plan));
+    let error = decided.ready ? null : decided.error_code ?? "tool.version_probe_failed";
+    if (error === null && decided.remove && (remove?.status !== "succeeded" || check?.status !== "succeeded")) error = "tool.remove_failed";
+    return { ok: error === null, stdout: JSON.stringify({ manager_version: decided.manager_version,
+        installed_version: error === null ? null : input.installed_version, ...(error ? { error_code: error } : { outcome: "applied" }),
+        ...(input.remove_repository ? { repository_removed: source?.status === "succeeded" } : {}) }) };
 }
 export const behavior = {
-    type: "@nckrtl/tool-remove-command", version: "2026.11.01.2",
+    type: "@nckrtl/tool-remove-command", version: "2026.11.02.2",
     resources: {
-        assets: { schema: z.object({ script_body: z.string(), repository_body: z.string(), repository_json: z.string() }), lifetime: "1d", garbageCollection: 10 },
-        probe: { schema: Probe, lifetime: "1d", garbageCollection: 10 },
-        plan: { schema: z.object({ ready: z.boolean(), error_code: z.string().optional() }), lifetime: "1d", garbageCollection: 10 },
+        assets: { schema: z.object({ driver: z.string(), bundle: z.string() }), lifetime: "1d", garbageCollection: 10 },
+        decision: { schema: z.record(z.string(), z.unknown()), lifetime: "1d", garbageCollection: 10 },
         result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
         assets: {
-            description: "Read one canonical manager query or removal action",
-            arguments: z.object({ action: z.enum(["query", "plan", "remove"]), input: RemoveInput, before: Probe.optional() }),
-            execute: async (args: { action: "query" | "plan" | "remove"; input: Input; before?: z.infer<typeof Probe> }, ctx: Context) => {
-                let script_body;
-                if (args.action === "query") script_body = await queryScript(args.input, ctx);
-                else {
-                    const file = args.action === "plan" ? "apt_plan" : args.input.manager.replace("-", "_");
-                    let source = await Deno.readTextFile(ctx.extensionFile("mutations/" + file + ".py"));
-                    if (args.action === "remove" && (!args.before?.ready || !args.before.present || !args.before.facts)) {
-                        throw new ToolRefusal("tool.remove_failed");
-                    }
-                    const input = { ...sourceInput(args.input), before: args.before?.facts };
-                    if (args.input.manager !== "apt") source = await Deno.readTextFile(ctx.extensionFile("queries/support.py")) + "\n" + source.replace(/^from support import [^\n]*\n/gm, "");
-                    const encoded = JSON.stringify(JSON.stringify(input));
-                    script_body = args.input.manager === "apt"
-                        ? source.replace("REMOVE_INPUT = None", "REMOVE_INPUT = json.loads(" + encoded + ")")
-                        : source.replace("QUERY_INPUT = None", "QUERY_INPUT = " + encoded);
-                }
-                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(args.input) }; await ctx.writeResource("assets", "assets", result); return result;
+            description: "Read the phase driver, the manager query, the apt or brew plan and the removal, with the public intent as argv JSON",
+            arguments: z.object({ input: RemoveInput }),
+            execute: async (args: { input: Input }, ctx: Context) => {
+                const scripts: Record<string, string> = { remove: `mutations/${args.input.manager.replace("-", "_")}.py` };
+                if (args.input.manager === "apt" || args.input.manager === "brew") scripts.plan = `mutations/${args.input.manager}_plan.py`;
+                const value = await phaseAssets("tool.remove", args.input, ctx, scripts);
+                await ctx.writeResource("assets", "assets", value); return value;
             },
         },
-        observe: {
-            description: "Select installed facts without hiding invalid or incomplete reads",
-            arguments: z.object({ input: RemoveInput, observation: Observation }),
-            execute: async (args: { input: Input; observation: z.infer<typeof Observation> }, ctx: Context) => {
-                const result = removalProbe(args.input, args.observation); await ctx.writeResource("probe", "probe", result); return result;
-            },
-        },
-        plan: {
-            description: "Refuse an apt plan that removes any other package",
-            arguments: z.object({ package: z.string(), observation: Observation }),
-            execute: async (args: { package: string; observation: z.infer<typeof Observation> }, ctx: Context) => {
-                const packages = z.object({ packages: z.array(z.string()) }).parse(JSON.parse(args.observation.stdout)).packages;
-                const ready = packages.length === 1 && packages[0] === args.package;
-                const result = { ready, ...(!ready ? { error_code: "tool.removal_plan_unsafe" } : {}) };
-                await ctx.writeResource("plan", "plan", result); return result;
+        decide: {
+            description: "Refuse or select the removal from its plan",
+            arguments: z.object({ input: RemoveInput, plan: Step.nullable() }),
+            execute: async (args: { input: Input; plan: StepValue }, ctx: Context) => {
+                const value = removalDecision(args.input, printed(args.plan)); await ctx.writeResource("decision", "decision", value); return value;
             },
         },
         result: {
-            description: "Project only proven absence or admitted intent retirement",
-            arguments: z.object({ input: RemoveInput, steps: z.record(z.string(), Step) }),
-            execute: async (args: { input: Input; steps: Record<string, z.infer<typeof Step>> }, ctx: Context) => {
-                const result = removalResult(args.input, args.steps); await ctx.writeResource("result", "result", result); return result;
+            description: "Project only proven absence",
+            arguments: z.object({ input: RemoveInput, plan: Step.nullable(), decision: Step.nullable(), remove: Step.nullable(), check: Step.nullable(), source: Step.nullable() }),
+            execute: async (args: { input: Input; plan: StepValue; decision: StepValue; remove: StepValue; check: StepValue; source: StepValue }, ctx: Context) => {
+                const value = removalResult(args.input, args.plan, args.decision, args.remove, args.check, args.source); await ctx.writeResource("result", "result", value); return value;
             },
         },
     },
