@@ -17,6 +17,21 @@ SQLite parity also reads the owned file directly on `app-dev` with `mode=ro`, ch
 
 Both `before_request` and parity run from the staged repository root with repo-relative paths. `PROOF_EXEC` selects the disposable topology operator or `app-dev`; only the frozen five `PROOF_*` variables are available. CLI follows get an explicit 1,800-second guest timeout, with a 30-second outer transport margin, rather than the harness's 60-second default. SQLite setup writes only its fresh `/home/orbit/proof-database-inspection-<run>/proof.sqlite` directory and refuses an existing directory. It never writes Gateway or Swamp state. One-shot teardown owns the records, databases, volumes and SQLite directory; a persistent topology keeps its owned fixtures until `down`. Production Connection 47 and the load owner's historical target-v2 cleanup are excluded.
 
-These are draft fixtures, not an executed F13 receipt. No topology is allocated and no kind behavior changes. The 1,800-second ceiling is the unmeasured-kind default, not a p95 sample. Null queue timeout records the roots' absent explicit `queueTimeout`; native inheritance is currently 600 seconds. The owning port must measure the kind and replace those values with explicit queue/phase/run budgets. The selected `sql` or `sqlite` step maps the legacy query phase; admission and projection are not native phase timers.
+These are draft fixtures, not an executed F13 receipt. No topology is allocated and no kind behavior changes. The budgets below use current-execution-path public Operation timing and the existing shared F8 policy, not a measured native p95. The selected `sql` or `sqlite` step maps the legacy query phase; admission and projection are not native phase timers.
 
 Remaining topology cases include production SQLite owner selection, missing/unreadable files and symlinks, Unicode/byte output bounds, secret-bearing result redaction and unsupported Redis. Existing Gateway/native tests are not receipts for these cases. Run local checker tests with `python3 -I swamp/proof/database-inspection/parity_test.py`. They include the actual PHP read policy, real temporary SQLite files and source bindings, without allocating infrastructure or starting an Operation.
+
+## Budget binding
+
+These fixtures are stacked on #2404 at `aa7604ea772b629d074ad8587de36932defc49ae`, whose explicit workflow queue timeout is 30 seconds. Test that staged product source with the canonical #2314 runner (lane 25's branch until it reaches main). Every fixture records queue 30, strictly below its run budget. No workflow or shared Operations regression is changed here. #2404 and these drafts wait for D's receipts; no topology run is implied.
+
+The saved Gateway succeeded-list snapshot is from 2026-11-01 14:40:14Z. Samples belong to the current SSH execution paths below. The existing policy applies `max(60, ceil(longest_seconds * 1.5 / 60) * 60)`; no current-shape success in this snapshot uses 1800. Raw values are shown separately. This caller-visible snapshot is not complete 14-day native history, and zero selected successes does not prove no historical success. These are kind-wide budgets, not engine-specific or p95 measurements.
+
+| Kind | Current execution path | Successes | Longest seconds | Raw × 1.5 | Budget seconds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `database.read` | #2134/171ae8dbdd | 5 | 30 | 45 | 60 |
+| `database.write` | #2090/fbe4c08b02 | 3 | 20 | 30 | 60 |
+
+Earlier-shape Operations excluded: 6059.
+
+Each phase ceiling is capped at the kind budget. Those ceilings are not additive and are not measured phase budgets. Supplementary parity calls retain their bounded transport timeout. The source classification and raw values come from `evidence/database-queue-timeouts-current-shape-fixture-budgets.json` in the execution evidence directory; the same table is recorded in #2404.

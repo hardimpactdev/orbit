@@ -247,6 +247,13 @@ class FixtureContractTests(unittest.TestCase):
                 self.assertEqual(value["request"]["operation"], "$.id")
                 flow = flows[value["workflow"]]
                 self.assertEqual(value["queue_timeout_seconds"], flow.get("queueTimeout"))
+                self.assertIs(type(value["budget_seconds"]), int)
+                self.assertIs(type(value["queue_timeout_seconds"]), int)
+                self.assertLess(0, value["queue_timeout_seconds"])
+                self.assertLess(value["queue_timeout_seconds"], value["budget_seconds"])
+                self.assertTrue(all(type(phase["budget_seconds"]) is int and
+                                    0 < phase["budget_seconds"] <= value["budget_seconds"]
+                                    for phase in value["phases"]))
                 self.assertFalse(set(value) & {"secrets", "target_setup"})
                 for call in [value["request"], *value["prepare"]]:
                     self.assertEqual(call["argv"][0], "orbit")

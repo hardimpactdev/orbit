@@ -4,8 +4,8 @@
   "topology": [
     "app-dev+database"
   ],
-  "budget_seconds": 1800,
-  "queue_timeout_seconds": null,
+  "budget_seconds": 60,
+  "queue_timeout_seconds": 30,
   "prepare": [
     {
       "argv": [
@@ -76,7 +76,7 @@
       "name": "execute-statement",
       "job": "write",
       "step": "sql",
-      "budget_seconds": 1800
+      "budget_seconds": 60
     }
   ],
   "parity": {
