@@ -7,6 +7,6 @@
     "operator": {"declarable": false, "address": 14, "checkout": true, "memory": "1GiB"}
   },
   "default": ["app-dev", "app-prod"],
-  "extra_roles": ["ingress"],
+  "extra_roles": ["ingress", "router", "vpn"],
   "own_cluster_roles": ["ingress"]
 }

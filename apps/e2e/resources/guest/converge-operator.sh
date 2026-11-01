@@ -79,7 +79,14 @@ case ${1-} in
         fi
       fi
     fi
-    if ! output=$("$orbit" node:role:add "$2" "$3" --json 2>&1); then
+    if [[ "$3" == router ]]; then
+      # Router is protected from generic role mutation. Its product path owns the Cluster assignment.
+      nodes=$("$orbit" node:list --json)
+      node=$(node_id "$2" <<<"$nodes")
+      cluster_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach ($v["nodes"] as $n) { if ($n["id"] === (int) $argv[1] && is_int($n["cluster_id"] ?? null) && $n["cluster_id"] > 0) { echo $n["cluster_id"]; } }' -- "$node" <<<"$nodes")
+      [[ -n "$cluster_id" ]] || { echo 'e2e.router_cluster_required' >&2; exit 65; }
+      "$orbit" cluster:router:set "$cluster_id" "$node" --json
+    elif ! output=$("$orbit" node:role:add "$2" "$3" --json 2>&1); then
       printf 'node:role:add %s %s failed: %s\n' "$2" "$3" "$output" >&2
       exit 1
     fi

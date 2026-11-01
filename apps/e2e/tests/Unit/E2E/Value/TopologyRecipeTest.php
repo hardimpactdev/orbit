@@ -87,7 +87,7 @@ it('adds the declared roles to their Node, in canonical order', function () {
 it('refuses an unknown or repeated extra role', function (string $option, string $message) {
     expect(fn () => TopologyRecipe::fromOption($option))->toThrow(InvalidArgumentException::class, $message);
 })->with([
-    'unknown role' => ['app-prod+router', 'The Node [app-prod] can only add the roles ingress.'],
+    'unknown role' => ['app-prod+websocket', 'can only add the roles'],
     'base role again' => ['app-dev+app-dev', 'can only add the roles'],
     'repeated role' => ['app-prod+ingress+ingress', 'The Node [app-prod] adds a role twice.'],
     'same Node twice with other roles' => ['app-prod,app-prod+ingress', 'The Node [app-prod] is declared twice.'],
@@ -98,3 +98,14 @@ it('names a missing Node', function () {
     expect(fn () => TopologyRecipe::compose(['app-dev'])->node('app-prod'))
         ->toThrow(InvalidArgumentException::class, 'The topology has no Node [app-prod].');
 });
+
+it('accepts declarable Router and VPN roles in canonical order without moving the Node to a new Cluster', function (array $declared, string $key) {
+    $recipe = TopologyRecipe::compose($declared);
+    expect($recipe->extraRoles($recipe->node($key)))->toBe(['router', 'vpn'])
+        ->and($recipe->ownClusterRoles($recipe->node($key)))->toBe([])
+        ->and(TopologyRecipe::fromArray($recipe->toArray())->assignments())->toBe($recipe->assignments());
+})->with([
+    [['app-dev+vpn+router'], 'app-dev'],
+    [['app-prod+vpn+router'], 'app-prod'],
+    [['app-prod', 'app-prod-2+vpn+router'], 'app-prod-2'],
+]);

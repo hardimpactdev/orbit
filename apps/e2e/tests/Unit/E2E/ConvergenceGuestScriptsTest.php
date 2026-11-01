@@ -261,6 +261,30 @@ describe('Node convergence', function () {
 });
 
 describe('operator convergence', function () {
+    it('selects the Router through the normal Cluster path using existing membership without seeding a role', function () {
+        $fixture = operatorFixture();
+        file_put_contents($fixture['root'].'/nodes.json', json_encode(['nodes' => [
+            ['id' => 4, 'name' => 'app-dev', 'cluster_id' => 7],
+        ]], JSON_THROW_ON_ERROR));
+
+        expect(runGuestScript($fixture, ['role-add', 'app-dev', 'router'])->getExitCode())->toBe(0)
+            ->and(commandLog($fixture))->toBe([
+                'orbit node:list --json',
+                'orbit cluster:router:set 7 4 --json',
+            ]);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
+
+    it('refuses Router enrollment without Cluster membership before starting an Operation', function () {
+        $fixture = operatorFixture();
+        file_put_contents($fixture['root'].'/nodes.json', json_encode(['nodes' => [
+            ['id' => 4, 'name' => 'app-dev', 'cluster_id' => null],
+        ]], JSON_THROW_ON_ERROR));
+        $result = runGuestScript($fixture, ['role-add', 'app-dev', 'router']);
+        expect($result->getExitCode())->toBe(65)
+            ->and($result->getErrorOutput())->toContain('e2e.router_cluster_required')
+            ->and(commandLog($fixture))->toBe(['orbit node:list --json']);
+    })->skip(fn (): bool => posix_geteuid() === 0, 'role-add re-runs itself through sudo as root.');
+
     it('refuses invalid arguments for each mode before any work', function (array $arguments) {
         $fixture = operatorFixture();
 
