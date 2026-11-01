@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + analytics-plausible-via-swamp + gateway-root-of-trust-keys + single-swamp-node; DECISIONS 2 (DNS publication held).
+  %% Target design: ADR 0244 task, Recall analytics-plausible-via-swamp, DECISIONS 1 (cert signing), 2 (DNS hold), R2-R4. docs/reference/analytics.md.
   %% status: draft
+  %% command: instance:analytics:enable
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,27 +11,111 @@ sequenceDiagram
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Route Node<br/>Caddy over ssh
-  participant P as Plausible<br/>HTTPS from 209
-  CLI->>GW: instance:analytics:enable<br/>{instance: 42}
-  Note over GW: Validate, plan tracking<br/>certs, Caddy, DNS deltas
-  GW->>SW: Store Plausible creds<br/>analytics-plausible-<uuid>
-  GW->>SW: Start run, full intent<br/>operation-analytics-enable-direct
+  participant N as Node 12<br/>serves the host
+  participant P as Plausible<br/>analytics.orbit
+  CLI->>GW: instance:analytics:enable<br/>42 --host=HOST (repeatable)
+  %%> Command:
+  %%> - `orbit instance:analytics:enable 42 --host=stats.shop.example.com`
+  %%> - syntax: `<instance> [--host=HOST]... [--json]`
+  %%> Input:
+  %%> - the Instance ID
+  %%> - up to ten tracking hosts; without `--host`, `analytics.<instance domain>`
+  %%> What it does:
+  %%> - creates or updates the Instance's Plausible site, and publishes the tracking hosts
+  %%> - sets the exact host set: hosts you leave out are removed
+  Note over GW: Validate, plan the hosts<br/>task #5126 · Instance lock
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - a Node has the active `analytics` role (`analytics.role_missing`)
+  %%> - Instance 42 serves a domain (`analytics.domain_required`)
+  %%> - no other Route owns a named host (`analytics.host_taken`)
+  %%> - no other analytics or Route change runs for Instance 42; the Gateway holds one lock
+  %%> Builds:
+  %%> - the site domain (the Instance's own domain), timezone and goals
+  %%> - each host's tracking Route, copying the Node, Cluster and publication of the Instance's Route
+  %%> - the Caddy sites, certificate requests and before state
+  %%> Result:
+  %%> - tracking Routes recorded as provisioning; task #5126 recorded with the full intent
+  GW->>SW: Push credentials to vault<br/>analytics-plausible-5126
+  %%> What it does:
+  %%> - writes the Plausible login to the Swamp vault after commit (R3)
+  %%> Why:
+  %%> - the workflow gets only the vault key name, never the value
+  GW->>SW: Start run, full intent<br/>operation-analytics-enable
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the site, goals, hosts, Caddy sites and certificate requests
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5126
-  SW->>P: Reconcile site and goals<br/>command/shell · site.py
-  SW->>N: Request a CSR<br/>route-certificate-publish
-  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
-  GW-->>SW: Signed leaf<br/>Orbit CA stays in Gateway
-  SW->>N: Publish Caddy, probe<br/>operation-route-caddy-delta
-  Note over SW: DNS publication held<br/>native-dns-takeover-held
-  alt all jobs succeed
-    SW-->>GW: Run succeeded<br/>terminal event + result_json
-    Note over GW: Tracking Routes active<br/>store site binding
-  else a job fails
-    SW--xGW: Run failed<br/>error_code
-    Note over GW: Routes unchanged<br/>task failed
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>P: Converge the site<br/>command/shell · site.py
+  %%> How:
+  %%> - one shipped script logs in at `https://analytics.orbit` with the vault credentials
+  %%> What it does:
+  %%> - creates the site when it is missing, or updates it; never a duplicate
+  %%> - sets the timezone and the requested goals, checks them, and logs out, also after a failure
+  %%> Never:
+  %%> - session cookies or tokens in outputs or files
+  opt host is served by a Router
+    SW->>N: Request the certificate<br/>CSR for the tracking host
+    %%> When:
+    %%> - only when Instance 42's Route is Cluster-scoped; then Node 12 is the Router
+    %%> What it does:
+    %%> - makes a key and a CSR on Node 12; the private key never leaves it
+    %%> - public Ingress uses its own automatic public certificates
+    SW->>GW: Sign the CSR<br/>certificate-sign primitive
+    %%> Why a call to the Gateway:
+    %%> - certificate signing is the one allowed step→Gateway call; the Orbit CA stays in the Gateway
+    GW-->>SW: Signed certificate<br/>installed on Node 12
+    %%> Returns:
+    %%> - the signed certificate; Swamp installs it on Node 12
+  end
+  SW->>N: Publish Caddy, reload<br/>/js/* and /api/event only
+  %%> What it does:
+  %%> - adds a site per host that proxies only Plausible's script and event paths over WireGuard; every other path answers 404
+  %%> - removes sites of hosts you left out; validates, then reloads Caddy without a restart
+  SW->>N: Probe the tracking host<br/>TLS · GET /js/script.js
+  %%> What it does:
+  %%> - checks the host answers with a valid certificate and serves the script
+  Note over SW: Publish private DNS<br/>open: Nick decides (DNS hold)
+  %%> What it does:
+  %%> - publishes the hosts' private DNS records, waits the 31-second grace, then withdraws old placements
+  %%> Open:
+  %%> - the DNS hold (`native-dns-takeover-held`) is in force; Nick decides how Route DNS is published
+  %%> Not included:
+  %%> - the public CNAME; `instance:analytics:show` names the record to create
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Tracking Routes active<br/>site binding · task succeeded
+    %%> Result:
+    %%> - the tracking Routes become active; removed hosts' Routes are deleted
+    %%> - the Plausible site binding is saved; task #5126 succeeds
+  else a step fails
+    N--xSW: exit ≠ 0 or probe fails
+    %%> When:
+    %%> - the Plausible call, a certificate, Caddy or the probe fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its public error code; never a Plausible response body
+    Note over GW: Mark the Routes failed<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - the tracking Routes stay, marked failed; task #5126 fails
+    %%> On the Node:
+    %%> - a Plausible site already created stays; a rerun finds and reuses it
+    %%> Retry:
+    %%> - run the same command again; it converges the same site and hosts
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5126
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

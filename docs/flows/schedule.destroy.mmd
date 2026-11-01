@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: ADR 0244 native Swamp schedules, nothing installed on Nodes; DECISIONS Schedules (Nick 2026-11-02), R1-R3.
+  %% Target design: ADR 0244 native Swamp schedules, one Swamp workflow per Schedule (Nick 2026-11-02), nothing installed on Nodes; R1-R3.
   %% status: draft
   %% command: schedule:destroy
   autonumber
@@ -27,25 +27,29 @@ sequenceDiagram
   %%> - your Node has an access grant to Node 12, which runs Instance 42
   %%> - Schedule 7f3c… exists; a failed or disabled Schedule can be destroyed too
   %%> Result:
-  %%> - Schedule 7f3c… is marked removing; the trigger is removed next
+  %%> - Schedule 7f3c… is marked removing; its trigger and workflow are removed next
   %%> - there is no Node work, so no run starts (R1)
   %%> Not refused:
   %%> - a running fire no longer blocks destroy; `schedule.run_active` is gone
-  GW->>SW: Remove the trigger<br/>workflow trigger removal
+  GW->>SW: Remove the trigger<br/>workflow.trigger.remove
   %%> What it does:
-  %%> - removes the native Swamp schedule trigger from serve (Node 209)
-  %%> When:
-  %%> - skipped when the Schedule is disabled and has no trigger
+  %%> - removes the cron trigger of `schedule-7f3c…` from serve (Node 209); serve starts no new fire
+  %%> - removing a trigger that is gone is safe, so a disabled Schedule takes the same path
+  GW->>SW: Delete the workflow<br/>workflow.delete schedule-7f3c…
+  %%> What it does:
+  %%> - deletes the Schedule's own workflow from serve
+  %%> - a fire that already started keeps running from its own copy
   alt Swamp confirms
-    SW-->>GW: trigger removed
+    SW-->>GW: trigger and workflow gone
     %%> Returns:
-    %%> - the trigger is gone; serve starts no new fire
+    %%> - serve starts no new fire for Schedule 7f3c…
     Note over GW: Delete the Schedule<br/>its tasks stay as history
     %%> Result:
     %%> - Schedule 7f3c…'s record is deleted
     %%> - its tasks stay, so past fires remain visible
+    %%> - task #5141 is recorded as succeeded at once (R1)
     %%> Vault key:
-    %%> - the command's vault key is removed now, or after a running fire ends
+    %%> - the command's vault key stays until it is overwritten; it starts nothing
     GW-->>CLI: Schedule destroyed<br/>204 No Content
     %%> What you get:
     %%> - the result at once; there is nothing to follow
@@ -56,9 +60,9 @@ sequenceDiagram
     Note over GW: Keep Schedule removing<br/>rerun the same destroy
     %%> Result:
     %%> - Schedule 7f3c… stays recorded, marked removing
-    %%> - the trigger may still be set; a fire it starts still runs and is recorded as a task
+    %%> - the trigger or the workflow may still be set; a fire it starts still runs and is recorded as a task
     %%> Retry:
-    %%> - run the same command again; removing a trigger that is gone is safe
+    %%> - run the same command again; removing a trigger or workflow that is gone is safe
     GW--xCLI: 503 removal unconfirmed<br/>swamp.schedule_publish_unavailable
     %%> Returns:
     %%> - the error code; the Schedule stays removing
@@ -72,8 +76,7 @@ sequenceDiagram
     SW-->>GW: Run finished<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Record the fire<br/>task #5141 · trigger: schedule
+    Note over GW: Record the fire<br/>task #5139 · trigger: schedule
     %%> Result:
-    %%> - the fire's task records its result, although the Schedule is gone
-    %%> - then the command's vault key is removed
+    %%> - the fire's task, recorded when it started, gets its result, although the Schedule is gone
   end

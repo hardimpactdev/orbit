@@ -66,7 +66,7 @@ Removal runs these steps in order. It stops at the first step that fails, except
 
 When the apt source cannot be removed, the removal still succeeds and the Tool is deleted. The apt repository record stays, and the next install from that source reuses it.
 
-Node and Instance callers still use the shared manager-only prerequisite lower. It remains until those parents replace their materialization calls. It cannot install, update, adopt or remove a Tool and creates no `tool.manager_converge` child Operation. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
+There is no separate manager kind. `Set up the Tool Manager` is one shared child workflow, `operation-tool-manager-setup`: `tool:install` runs it on a Linux first use, and a development deploy runs it for Vite+. `node:add` needs no apt setup: when `node.bootstrap_host` succeeds, the Gateway records apt as a ready Tool Manager. Role convergence keeps its own local manager prerequisite for Composer and Vite+. Project runtime environments belong to the Instances family. Input, ownership and platform refusals happen before admission. Scan returns its discovery report directly and creates no Tool intent. A kind without a native declaration returns `operation.kind_unavailable` (HTTP 503).
 
 ## Where Tools run
 
@@ -106,7 +106,7 @@ Native Composer package operations use fixed shared-scope arguments through offi
 
 The `tool.inspect-composer-scope` agent command reads the shared Composer manifest as data and verifies directory and file ownership. It treats a valid manifest with no `require` member as an empty root set, including the manifest Composer leaves after removing the final package. It runs no PHP or shell. Native Swamp Composer convergence installs the fixed Linux prerequisites, creates the account-owned scope, and verifies Composer as that account. It refuses conflicting paths before setup and preserves an existing owned manifest.
 
-Native Swamp manager convergence installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. Enrollment composes the same native manager action with the admitted candidate account and recipe pins.
+The shared Tool Manager setup installs a missing Linux Vite+ scope from the verified JavaScript recipe pins. It runs no downloaded installer. It keeps an existing scope's runtime versions, checks every managed launcher before publication, and restores the previous launchers if runtime verification fails. A development deploy runs the same shared setup for the Instance's account.
 
 Managed-account recipe commands run from that account's home directory, including JavaScript installation, inventory, launcher checks, and image verification. They change directory after switching accounts and set `VP_HOME` to the resolved store. A caller's working directory cannot select workspace configuration or prevent the account from running a tool.
 
@@ -487,7 +487,7 @@ No other `details` keys are returned.
 
 ## Locks
 
-Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove, adopt or manager convergence on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers all Tool writes. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
+Tool admission holds the existing Operation `lock_key` for the exact Node and manager until normal terminal projection releases it. A competing Tool install, update, remove or adopt on that pair returns `operation.target_busy` (HTTP 409) without starting a run. Idempotent replay returns the original Operation. A different Node or manager can admit work independently. This approved admission boundary covers all Tool writes. Package managers retain their own locks, including the shared Homebrew prefix and [dpkg lock](#the-dpkg-lock). Scan creates no Operation hold.
 
 ## Check removal with Doctor
 
@@ -495,7 +495,7 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 ## Direct Swamp execution
 
-Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt, remove and manager convergence run on Node209 through official SSH with the admitted target pins and existing209 identity.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, adopt and remove run on Node209 through official SSH with the admitted target pins and existing209 identity.
 
 Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; [one phase script per Node phase](#native-execution) does the reads and writes. A typed check applies package ownership, eligibility and version constraints.
 

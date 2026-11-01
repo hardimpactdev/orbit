@@ -11,5 +11,4 @@ return [
     'tool.update' => $intent,
     'tool.remove' => [...$intent, 'workflow' => 'operation-tool-remove-209', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'tools', 'step' => 'result']],
     'tool.adopt' => [...$intent, 'workflow' => 'operation-tool-adopt-209', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'tools', 'step' => 'result']],
-    'tool.manager_converge' => $intent,
 ];

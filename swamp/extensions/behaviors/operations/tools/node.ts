@@ -17,14 +17,14 @@ export function toolNode(invoke = localTool) {
       arguments: z.object({ intent: Intent }),
       execute: async ({ intent }: { intent: z.infer<typeof Intent> }, ctx: Context) => {
         const input = intent.input;
-        if (intent.kind !== "tool.manager_converge" || input.node_id !== intent.node_id || !["apt", "composer", "vp"].includes(input.manager)) throw new Error("Invalid parent manager action");
+        if (input.node_id !== intent.node_id || !["composer", "vp"].includes(input.manager)) throw new Error("Invalid parent manager action");
         ctx.signal?.throwIfAborted();
         let manager_version: string | null = null;
         const save = async (outcome: z.infer<typeof Result>) => ({ outcome, dataHandles: [await ctx.writeResource("outcome", "outcome-" + intent.run_id, { outcome })] });
         const call = async (name: string, fields: Record<string, unknown>, step: string) => {
           ctx.signal?.throwIfAborted();
           const value = await invoke(name, fields, input, ctx.signal);
-          if (typeof value.error_code === "string") throw new ToolRefusal(refusalCode(step, value.error_code, intent.kind), { error_code: value.error_code });
+          if (typeof value.error_code === "string") throw new ToolRefusal(refusalCode(step, value.error_code), { error_code: value.error_code });
           return value;
         };
         try {

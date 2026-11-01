@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { behavior, decide, WriteInput, writeResult } from "./write.ts";
+import { behavior, decide, ManagerInput, WriteInput, writeResult } from "./write.ts";
 
 const facts = { scope: "present", manager_version: "apt 3.0.0", versions: [] as (string | null)[], complete: true, roots: ["vendor/dependency"] };
 const base = { kind: "tool.install", manager: "apt", node_id: 9, package: "hello", user: "orbit", platform: "linux", architecture: "x86_64", tool_id: null };
@@ -7,15 +7,15 @@ const input = (changes: Record<string, unknown> = {}) => WriteInput.parse({ ...b
 
 const ran = (value: unknown, exitCode = 0) => ({ status: "succeeded", outputs: { stdout: JSON.stringify(value), exitCode } });
 const none = { setup: null, source: null, check: null, decision: null, write: null };
-Deno.test("a failed first-use setup records no manager version, so the Gateway records no Tool", () => {
-  const failed = JSON.parse(writeResult(input(), { ...none, setup: ran({ facts: null }, 1) }).stdout);
+Deno.test("a failed shared manager setup records no manager version, so the Gateway records no Tool", () => {
+  const failed = JSON.parse(writeResult(input(), { ...none, setup: { status: "failed" } }).stdout);
   assertEquals([failed.error_code, failed.manager_version], ["tool.manager_provision_failed", null]);
+  assertEquals(JSON.parse(writeResult(input(), { ...none, setup: ran({ facts: null }, 1) }).stdout).error_code, "tool.manager_provision_failed");
   const conflict = JSON.parse(writeResult(input({ manager: "vp" }), { ...none, setup: ran({ facts: { scope: "conflict" } }, 1) }).stdout);
   assertEquals([conflict.error_code, conflict.native_error_code], ["tool.manager_unavailable", "tool.vp_scope_conflict"]);
+  assertEquals(writeResult(input(), { ...none, setup: ran({ facts }), check: ran({ facts, candidate: { version: "2.0" } }) }).ok, false);
   const scope = decide(input({ manager: "vp", kind: "tool.update", tool_id: 1 }), { facts: { scope: "absent" } });
   assertEquals([scope.error_code, scope.native_error_code], ["tool.manager_unavailable", "tool.vp_scope_absent"]);
-  const converge = JSON.parse(writeResult(input({ kind: "tool.manager_converge", package: "" }), { ...none, setup: ran({ facts }) }).stdout);
-  assertEquals([converge.manager_version, converge.outcome], ["apt 3.0.0", "unchanged"]);
 });
 Deno.test("a refused apt source stops before the candidate with its own code", () => {
   const value = JSON.parse(writeResult(input(), { ...none, source: ran({ ready: false, error_code: "tool.repository_key_mismatch" }, 1) }).stdout);
@@ -31,8 +31,6 @@ Deno.test("refusals happen before any write: silent adoption, missing updates an
   assertEquals(decide(input(), null).error_code, "tool.version_probe_failed");
   const retry = decide(input({ tool_id: 1 }), { facts: { ...facts, versions: ["1.0.0"] } });
   assertEquals([retry.ready, retry.mutate, retry.installed_version], [true, false, "1.0.0"]);
-  const converge = decide(input({ kind: "tool.manager_converge", package: "" }), { facts });
-  assertEquals([converge.ready, converge.mutate, converge.manager_version], [true, false, "apt 3.0.0"]);
 });
 
 Deno.test("the constraint blocks an install, an update stays unchanged on the same version, and no candidate fails", () => {
@@ -67,12 +65,13 @@ Deno.test("a Composer dependency already in the inventory is still an installabl
   assertEquals([decision.ready, decision.mutate], [true, true]);
 });
 
-Deno.test("manager-only capture omits package and receives the canonical empty selector", () => {
-  const captured = { kind: "tool.manager_converge", node_id: 9, user: "orbit", manager: "vp", platform: "linux", architecture: "x86_64" };
-  assertEquals(WriteInput.parse(captured).package, "");
-  assertEquals(WriteInput.safeParse({ ...captured, kind: "tool.install" }).success, false);
+Deno.test("the shared manager setup reads only the manager, with no package", async () => {
+  const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
+  const deploy = { node_id: 9, user: "orbit", manager: "vp", platform: "linux", architecture: "x86_64", setup: null };
+  const bundle = JSON.parse((await behavior.methods.manager_assets.execute({ input: ManagerInput.parse(deploy) }, ctx)).bundle);
+  assertEquals([bundle.input.manager, bundle.input.package, bundle.repository], ["vp", "", null]);
+  assertEquals(WriteInput.safeParse({ ...base, kind: "tool.manager_converge" }).success, false);
 });
-
 Deno.test("every manager script compiles and public intent travels as argv JSON, never in rewritten source", async () => {
   const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
   for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {

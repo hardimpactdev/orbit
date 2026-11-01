@@ -1,13 +1,9 @@
 import { z } from "npm:zod@4.4.3";
 import { Input } from "./contract.ts";
 
-export const Kind = z.enum([
-  "tool.manager_converge",
-]);
 export const Identity = z.object({
   operation_id: z.number().int().positive(),
   node_id: z.number().int().positive(),
-  kind: Kind,
   run_id: z.string().uuid(),
 });
 export const ToolIntentInput = Input.extend({

@@ -1,32 +1,156 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node (@swamp/ssh from 209).
+  %% Target design: rule 1 (read-only from Node agent reports, like tool.adopt), R1 record-only branch, R4 Node-work branch like tool.remove; .env stays the user's file; Processes from Project definitions for development (instance.create). docs/domains/applications.md#register-an-existing-checkout.
   %% status: draft
+  %% command: instance:register
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
+  %% lane A icon=server pill=observer tone=amber
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  participant CLI as CLI / MCP<br/>on app-dev Node
+  participant CLI as CLI / MCP<br/>on Node 12
   participant GW as Gateway<br/>Laravel API
+  participant A as Node agent<br/>orbit-agent
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:register<br/>{project: 7, path, name}
-  Note over GW: Check caller and path<br/>Instance 42 reserved · #5131
-  GW->>SW: Start run, full intent<br/>operation-instance-register
-  GW-->>CLI: 202 Accepted<br/>operation #5131
-  SW->>N: Inspect the checkout<br/>@swamp/ssh · owner, mode, git dir
-  SW->>N: Read origin, branch, HEAD<br/>git -C checkout, hooks off
-  alt source matches the Project
-    N-->>SW: branch, commit, digest
-    SW->>N: Protect the .env file<br/>@swamp/ssh · protect_environment
-    SW-->>GW: Run succeeded<br/>terminal event · source.result
-    Note over GW: Store source facts<br/>Instance 42 → active
-  else origin or owner differs
-    N--xSW: check fails, error_code
-    SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Keep Instance 42 reserved<br/>task → failed
+  loop continuously, on change
+    Note over A: Observe checkouts<br/>under the apps root
+    %%> What it observes:
+    %%> - each Git checkout under `<apps-root>/<project-slug>/<name>`
+    %%> - its owner, Git layout, origin, branch and `HEAD` commit, and whether it is dirty
+    %%> - whether `.env` exists and who can read it
+    %%> - application facts: PHP version and whether it is Laravel
+    %%> Runs as:
+    %%> - read-only; the Node agent never changes a Node
+    A->>GW: Report observations<br/>with observed_at
+    %%> What it sends:
+    %%> - what changed since the last report, with the time it was observed
+    Note over GW: Store latest facts<br/>per Node, per checkout
+    %%> Result:
+    %%> - the Gateway always has a recent picture of the checkouts on each app-dev Node
   end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show #5131
-    GW-->>CLI: status + result
+  CLI->>GW: instance:register<br/>--project=7 --name=feature --yes
+  %%> Command:
+  %%> - `cd /fast/apps/acme/feature && orbit instance:register --project=7 --name=feature --yes`
+  %%> - syntax: `--project=ID [--path=PATH] [--name=NAME] [--root=PATH] [--setup] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> What registering means:
+  %%> - Orbit adopts a checkout that already exists, in place
+  %%> - Orbit owns the source from now on; a later `instance:destroy` deletes the checkout
+  %%> Confirmation:
+  %%> - without `--yes`, the CLI asks for consent that names the source; the default is No
+  %%> - without a terminal, or with `--json`, `--yes` is required
+  %%> CLI checks first:
+  %%> - the directory is a Git checkout, and its origin has no credentials
+  Note over GW: Check against the facts<br/>path · origin · branch · commit
+  %%> Requirements:
+  %%> - the request comes from Node 12 itself; the Node that sends it receives the Instance
+  %%> - Node 12 has the `app-dev` role, and Project 7 may be placed on it
+  %%> - the name `feature` is free in Project 7
+  %%> Checks in the agent's latest report:
+  %%> - the checkout is at `/fast/apps/acme/feature` and the Node's managed user owns it
+  %%> - its origin is Project 7's repository
+  %%> - it is a plain checkout, not a linked worktree
+  %%> - the report is fresh enough to trust
+  %%> Decides:
+  %%> - whether the Node needs work, or only a record
+  alt no --setup, .env private
+    Note over GW: Record the Instance<br/>R1: no task, no run
+    %%> When:
+    %%> - no `--setup`, and `.env` is absent or readable only by its owner
+    %%> Result:
+    %%> - Instance 42 recorded as active, with the observed branch, commit and application facts
+    %%> - Git `HEAD`, the index, dirty files and `.env` stay as they are
+    %%> - no Swamp run starts (R1)
+    %%> Not included:
+    %%> - no Process starts; use `--setup`, or `instance:setup` later
+    GW-->>CLI: Instance registered<br/>Instance 42 · branch feature
+    %%> What you get:
+    %%> - the final result at once; there is nothing to follow
+  else --setup or public .env
+    Note over GW: Reserve, record intent<br/>Instance 42 · task #5131
+    %%> When:
+    %%> - `--setup` was given, or the agent saw a `.env` that others can read
+    %%> Result:
+    %%> - Instance 42 recorded as reserved, with the observed facts
+    %%> - task #5131 recorded with the full intent
+    %%> Today:
+    %%> - `--setup` returns `operation.kind_unavailable`
+    GW->>SW: Start run, full intent<br/>operation-instance-register
+    %%> What it does:
+    %%> - starts one Swamp run on serve (Node 209)
+    %%> Inputs:
+    %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+    %%> - the observed facts, the setup steps, the development Process definitions
+    GW-->>CLI: 202 Accepted<br/>task #5131
+    %%> What you get:
+    %%> - the task number, at once
+    %%> Next:
+    %%> - the CLI follows the task with `operation:show`
+    SW->>N: Verify the checkout<br/>@swamp/ssh · origin, HEAD, owner
+    %%> What it does:
+    %%> - checks that the checkout still matches the facts the Gateway admitted
+    %%> Why:
+    %%> - the agent's report may be a few seconds old; nothing changes on a different checkout
+    %%> How:
+    %%> - Git commands run with hooks and filesystem monitors off
+    opt .env readable by others
+      SW->>N: Protect the .env file<br/>chmod 600 · content unchanged
+      %%> What it does:
+      %%> - removes group and public read access from `.env`
+      %%> Not included:
+      %%> - never reads or changes the content; the file stays the user's
+    end
+    opt --setup given
+      SW->>N: Run Project setup steps<br/>@swamp/ssh · own timeout each
+      %%> What it does:
+      %%> - runs the Project's setup steps in order, as the Node's managed user, from the repository root
+      %%> Typical steps:
+      %%> - `composer install`, `vp install`, `php artisan migrate`
+      SW->>N: Create, start Processes<br/>Project definitions · development
+      %%> What it does:
+      %%> - creates the Instance's Processes from the Project's Process definitions for `development`
+      %%> - starts them, for example the Vite dev server (`vp-dev`)
+      %%> Why here:
+      %%> - after the setup steps, because Processes need the installed dependencies
+    end
+    alt all steps pass
+      N-->>SW: checkout commit
+      %%> Returns:
+      %%> - the commit that is checked out
+      SW-->>GW: Run succeeded<br/>terminal event
+      %%> How the Gateway learns it:
+      %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+      Note over GW: Record result<br/>Instance 42 → active
+      %%> Result:
+      %%> - Instance 42 becomes active, with its Processes when `--setup` was given
+      %%> - task #5131 succeeds
+    else a step fails
+      N--xSW: mismatch or exit ≠ 0
+      %%> When:
+      %%> - the checkout no longer matches, or a setup or Process step fails
+      SW--xGW: Run failed<br/>error_code, failed step
+      %%> The Gateway reads:
+      %%> - which step failed and its error code
+      Note over GW: Keep Instance, mark failed<br/>rerun after a fix
+      %%> Result:
+      %%> - Instance 42 stays, marked failed; task #5131 fails
+      %%> On the Node:
+      %%> - the checkout stays as it is; no rollback
+      %%> Retry:
+      %%> - run the same command again; it is a new task
+    end
+    loop every 2 s until terminal
+      CLI->>GW: operation:show #5131
+      %%> What it does:
+      %%> - asks for the task's status every 2 seconds until it has ended
+      GW-->>CLI: status + result
+      %%> Returns:
+      %%> - the current status, and the result once the task has ended
+    end
+  else facts mismatch or too old
+    GW--xCLI: Refused or can't verify<br/>instance.source_invalid
+    %%> When:
+    %%> - the path, owner, origin or layout doesn't match, or the agent hasn't reported recently
+    %%> Result:
+    %%> - nothing is recorded; fix the source, or try again when the agent reports
   end

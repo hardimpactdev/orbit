@@ -1,34 +1,166 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + gateway-root-of-trust-keys (Gateway signs) + single-swamp-node; DECISIONS 2 (DNS held, same-Node work).
+  %% Target design: ADR 0244 task, DECISIONS R1-R4 + 2 (DNS hold), firewall.allow shape, Gateway signs CSRs (root-of-trust), single-swamp-node. docs/cli/route.mdx, docs/reference/routes.md.
   %% status: draft
+  %% command: route:create
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
+  %% lane V icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Route Node<br/>Caddy over ssh
-  CLI->>GW: route:create<br/>{domain: shop.test, instance: 42}
-  Note over GW: Validate, reserve domain<br/>Route pending · task route.create
+  participant N as Route Nodes<br/>workload · Router
+  participant V as VPN Node<br/>private DNS
+  CLI->>GW: route:create 12 shop.test<br/>--publication=private
+  %%> Command:
+  %%> - `orbit route:create 12 shop.test --publication=private`
+  %%> - syntax: `<instance> <domain> [--publication=private|public] [--web-root=PATH]`
+  %%> Other forms:
+  %%> - custom proxy: `<domain> --node=NODE --upstream=URL` or `<domain> --node=NODE --process=PROCESS`
+  %%> - public Process Route: `<domain> --process=PROCESS [--ingress=NODE] --publication=public`
+  %%> Input:
+  %%> - Instance 12 sets the Project and the scope: its Node, or its active Cluster
+  %%> - the domain; the Gateway normalizes it
+  %%> - publication is `private` unless you ask for `public`
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, reserve domain<br/>Route 14 pending · task #5120
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 7, the Node of Instance 12
+  %%> - Instance 12 is active and has a supported web root
+  %%> - the domain is valid, free, and not a reserved name such as `gateway.orbit`
+  %%> - Instance 12 has no other Route without a web root (`route.target_conflict`)
+  %%> - a Cluster-scoped Route needs an active Router (`route.router_required`)
+  %%> - a public Route needs production targets and a serving Ingress
+  %%> Locks:
+  %%> - the projection lock and the Instance environment owner of Instance 12
+  %%> - a busy lock is waited for up to 30 s, then `app-dev.projection_busy`
+  %%> Builds:
+  %%> - the Caddy site blocks for every affected Node, the certificate leaves, the LAN tuples and the private DNS records
+  %%> Result:
+  %%> - Route 14 recorded as `pending`, unpublished, with the domain reserved
+  %%> - task #5120 recorded with the full intent
+  %%> - nothing has happened on a Node yet
   GW->>SW: Start run, full intent<br/>operation-route-create
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the rendered Caddy blocks before and after, per Node
+  %%> - the certificate leaves: Node, scope, domain, Node user
+  %%> - LAN tuples, DNS records, probes, and each Node's address and SSH host keys
+  %%> - production `.env` material only as vault key names in `orbit-control-inputs` (R3)
+  %%> - the SSH identity comes from the `swamp` role
   GW-->>CLI: 202 Accepted<br/>task #5120
-  SW->>N: Request a CSR<br/>@swamp/ssh · node_batch.py
-  N-->>SW: CSR, key stays on Node
-  SW->>GW: Ask to sign the CSR<br/>certificate-sign primitive
-  GW-->>SW: Signed leaf<br/>Orbit CA stays in Gateway
-  SW->>N: Install cert, Caddyfile<br/>caddy validate, then reload
-  Note over SW: DNS publication held<br/>native-dns-takeover-held
-  alt all steps succeed
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  opt development target
+    SW->>N: Prepare the web root<br/>setfacl as the Node user
+    %%> What it does:
+    %%> - denies Caddy the rest of the checkout and its Git directory
+    %%> - grants Caddy read access to the web root, and passage through the directories above it
+    %%> - converges the shared PHP-FPM pool for Instance 12
+    %%> Runs as:
+    %%> - the Node's managed user; root only above every checkout
+    %%> When:
+    %%> - the target is a development Instance; production releases already have access
+  end
+  SW->>N: Make a CSR on the Node<br/>openssl req · key stays on Node
+  %%> How:
+  %%> - Swamp reaches Node 7, and the Router for a Cluster Route, over `@swamp/ssh` from 209
+  %%> What it does:
+  %%> - makes a new private key and a certificate request for `shop.test`
+  %%> - returns only the public CSR to Swamp
+  %%> Why:
+  %%> - the private key never leaves the Node
+  SW->>GW: Sign the CSR<br/>operation:direct:certificate-sign
+  %%> What it does:
+  %%> - sends the CSRs with task #5120 and the run id
+  %%> Why:
+  %%> - the Orbit CA key stays in the Gateway; signing is the one step that calls the Gateway
+  %%> Requirements:
+  %%> - the Gateway checks the task, the run, and that each CSR matches an admitted leaf
+  GW-->>SW: Signed certificate<br/>Orbit CA key stays in Gateway
+  %%> Returns:
+  %%> - one public certificate bundle per leaf
+  SW->>N: Install the certificate<br/>/etc/caddy/orbit-certificates
+  %%> What it does:
+  %%> - writes the certificate next to its key, owned `root:caddy`, mode 0750
+  %%> - reads it back and checks it matches the key and the domain
+  opt Cluster-scoped Route
+    SW->>N: Allow the Router on LAN<br/>ufw allow 443 from Router LAN
+    %%> What it does:
+    %%> - on the workload Node, allows TCP 443 from the Router's LAN address
+    %%> - an identical tuple that another Route uses is left as it is
+    %%> Why:
+    %%> - the Router forwards to the workload over LAN, with no WireGuard fallback
+  end
+  SW->>N: Publish the Caddy site<br/>caddy validate, then reload
+  %%> What it does:
+  %%> - writes the new site blocks into the Caddyfile of each affected Node
+  %%> - validates the whole file, then reloads Caddy
+  %%> Why reload:
+  %%> - a reload keeps open connections; Caddy is never restarted (rule 7)
+  %%> Refuses:
+  %%> - a validation error; the old Caddyfile stays in place
+  SW->>N: Probe the site over TLS<br/>openssl s_client · SNI shop.test
+  %%> What it does:
+  %%> - connects from 209 to the workload, or the Router, on port 443 with the Route domain as SNI
+  %%> - requires a chain the Orbit root trusts
+  %%> Why:
+  %%> - the Route only counts as served when the probe passes
+  %%> Not included:
+  %%> - the application's own HTTP answer; a 500 does not fail the Route
+  opt public Route
+    SW->>N: Open the Ingress edge<br/>Ingress Caddy · ufw 80/443
+    %%> What it does:
+    %%> - publishes the public site on the Ingress, with `tls force_automate` for Let's Encrypt
+    %%> - opens `orbit:ingress-http` and `orbit:ingress-https` when they are closed
+    %%> Not included:
+    %%> - the public DNS record; you create it yourself
+    %%> - waiting for Let's Encrypt; Caddy retries on its own
+  end
+  SW->>V: Publish private DNS<br/>records + catalog, then reload
+  %%> What it does:
+  %%> - adds `shop.test`, pointing at Node 7, or at the Router for a Cluster Route
+  %%> - checks the loaded catalog and a DNS reply
+  %%> Order:
+  %%> - DNS goes last, so a name only resolves when its site serves
+  Note over V: open: Nick decides<br/>DNS hold · native-dns-takeover
+  %%> Open:
+  %%> - DNS publication is under the DNS hold; Nick decides (rule 9)
+  %%> - until then, the run skips this step and Route work stays same-Node work
+  alt every step succeeds
     SW-->>GW: Run succeeded<br/>terminal event + outputs
-    Note over GW: Project result<br/>Route active · task succeeded
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>Route 14 active · task succeeded
+    %%> Result:
+    %%> - Route 14 becomes `active` and Instance 12 shows `https://shop.test`
+    %%> - task #5120 succeeds
   else a step fails
-    Note over SW: Restore prior state<br/>route-mutation-restore
-    SW--xGW: Run failed<br/>error_code
-    Note over GW: Route failed<br/>task failed
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the Route failed<br/>domain kept · rerun after a fix
+    %%> Result:
+    %%> - Route 14 is marked `failed` with `failed_step` and `error_code`; the domain stays reserved
+    %%> - task #5120 fails
+    %%> On the Node:
+    %%> - what the run added stays; there is no rollback
+    %%> - that is safe: no private DNS name points at the new site yet, and the record shows `failed`
+    %%> Retry:
+    %%> - run the same command again after fixing the cause; it is a new task and skips finished steps
+    %%> - to give up instead, run `route:destroy 14`; it removes what the run added
   end
   loop every 2 s until terminal
     CLI->>GW: operation:show #5120
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end

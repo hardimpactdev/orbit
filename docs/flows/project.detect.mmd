@@ -1,0 +1,110 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task (driver workflow), ADR 0239 orbit.dependencies.v1, Recall swamp-owns-dependencies + deps-one-group-per-project, R1-R3.
+  %% status: draft
+  %% command: project:maintenance:detect
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant GH as GitHub<br/>repository · PRs
+  CLI->>GW: maintenance:detect 4<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - MCP tool `project-maintenance-detect` with project `4` and an Idempotency-Key
+  %%> - syntax: `project:maintenance:detect <project> --idempotency-key=KEY`
+  %%> Input:
+  %%> - the Project ID
+  %%> - an idempotency key; it is required, so a lost reply replays the same task
+  %%> Who can call it:
+  %%> - the MCP tool; there is no `orbit` CLI page for it yet
+  %%> - the hourly `maintenance-projects` Schedule admits the same kind when a Project's daily scan is due
+  Note over GW: Validate, mint read token<br/>task #5150 · vault key
+  %%> Requirements:
+  %%> - your Node has an access grant to the Gateway
+  %%> - Project 4 reads its repository through the GitHub App
+  %%> - Project 4 has a default branch and a task check
+  %%> - no other `project.detect`, `project.routine` or `project.observe` task runs for Project 4
+  %%> What it does:
+  %%> - captures the Project (repository, default branch, check) and its task groups
+  %%> - mints a GitHub App token with `contents: read` and `pull_requests: read` for this repository only
+  %%> - puts the token in the `orbit-control-inputs` vault as `project-dependency-read-5150` (R3)
+  %%> Result:
+  %%> - task #5150 recorded, kind `project.detect`, driver `workflow`, on Node 209
+  %%> - no Node is a target; the work only reads GitHub
+  GW->>SW: Start run, full intent<br/>project-detect
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - the captured Project and task groups
+  %%> - the vault key names of the token, never the token
+  GW-->>CLI: 202 Accepted<br/>task #5150
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the caller follows the task with `operation:show`
+  SW->>GH: Clone the default branch<br/>git clone --depth=1 · vault.get
+  %%> How:
+  %%> - a shallow clone into Swamp's scan cache on Node 209
+  %%> - git reads the token with `vault.get` as an HTTP header
+  %%> Why:
+  %%> - detect reads lockfiles from git; it needs no task VM (Recall swamp-owns-dependencies)
+  SW->>GH: Read open maintenance PRs<br/>gh pr view · dependency-evidence
+  %%> What it does:
+  %%> - reads the state and head of each maintenance pull request of Project 4
+  %%> Why:
+  %%> - a package group that already has an open PR is not opened again
+  Note over SW: Scan the lockfiles<br/>orbit-gateway scan · policy
+  %%> What it does:
+  %%> - finds outdated packages and security advisories in Composer and JavaScript lockfiles
+  %%> - applies release-age policy, version constraints and the Project's exceptions
+  %%> Result:
+  %%> - findings, kept as Swamp data (`orbit.dependencies.v1`)
+  %%> - at most one package group request: every eligible major and advisory fix together
+  SW->>GH: Check head is unchanged<br/>git ls-remote · assert_scan_head
+  %%> What it does:
+  %%> - reads the current head of the default branch again
+  %%> Why:
+  %%> - findings count only for the commit that is still the head
+  alt scan is current
+    GH-->>SW: same head
+    %%> Returns:
+    %%> - the branch head equals the scanned commit
+    SW-->>GW: Run succeeded<br/>terminal event · requests
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Admit the package group<br/>task group #812 · tasks.provision
+    %%> Result when updates are eligible:
+    %%> - task group #812 created with one package group, for one pull request
+    %%> - the Gateway admits `tasks.provision` for it; Pi turns then run in its task VM (driver `pi`)
+    %%> Result when nothing is eligible:
+    %%> - no task group; the findings stay Swamp data
+    %%> Not admitted:
+    %%> - a group while Project 4 has unfinished work, or when its settings changed after capture
+    %%> Always:
+    %%> - task #5150 succeeds
+  else clone, scan or head check fails
+    GH--xSW: error or moved head
+    %%> When:
+    %%> - the token is refused, the clone fails, the scan fails, or the branch moved during the scan
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, for example `project.scan_failed`
+    Note over GW: Mark the task failed<br/>no group · rerun is safe
+    %%> Result:
+    %%> - task #5150 fails; no task group is created
+    %%> On Node 209:
+    %%> - the scan checkout in Swamp's cache is harmless; a rerun uses a new directory
+    %%> Retry:
+    %%> - run the command again with a new key, or wait for the next daily scan
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5150
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the admitted group IDs once the task has ended
+  end

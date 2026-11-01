@@ -3,11 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
-use App\Actions\Tools\ConvergeToolManagerAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
-use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -352,11 +350,10 @@ it('holds exactly one Node manager pair across native removal and retained write
     expect(Operation::query()->count())->toBe(2)->and($this->socket->sent)->toHaveCount(2);
 })->with(['remove', 'update', 'install', 'adopt']);
 
-it('excludes native removal while the retained manager action owns its pair', function (): void {
+it('excludes native removal while another change holds the manager', function (): void {
     $manager = $this->node->toolManagers()->create(['name' => 'composer', 'status' => LifecycleStatus::Active]);
     $tool = $this->node->tools()->create(['tool_manager_id' => $manager->id, 'package' => 'vendor/package', 'status' => ToolStatus::Installed]);
-    $held = app(ConvergeToolManagerAction::class)->execute($this->node, ToolManagerName::Composer);
-    expect($held->lock_key)->toBe('node_tools:'.$this->node->id.':composer');
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/other'])->assertAccepted();
     $this->deleteJson('/api/v1/tools/'.$tool->id)->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
     expect(Operation::query()->count())->toBe(1)->and($this->socket->sent)->toHaveCount(1);
 });

@@ -1,0 +1,69 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task; DECISIONS R1 + round 2 websocket.sync (no Swamp run, the Gateway closes the task from Reverb's own reports). docs/reference/websocket-apps.md.
+  %% status: draft
+  %% command: websocket:app:destroy
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant N as Reverb<br/>on websocket Node
+  CLI->>GW: websocket:app:destroy<br/>hauzer --force
+  %%> Command:
+  %%> - `orbit websocket:app:destroy hauzer --force`
+  %%> - syntax: `<name> [--force] [--operation-key=KEY] [--json]`
+  %%> Confirmation:
+  %%> - without `--force`, the CLI asks first; the default is No
+  %%> - without a terminal, or with `--json`, `--force` is required (`websocket.confirmation_required`)
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Delete app, revision 20<br/>R1: no run · task #5151
+  %%> Requirements:
+  %%> - the app is not `gateway` (`websocket.app_reserved`)
+  %%> - no Instance uses the app (`websocket.app_in_use`); remove it with `instance:websocket:remove` first
+  %%> What it does:
+  %%> - deletes the app and its encrypted secret, and saves registry revision 20, in one transaction
+  %%> - records task #5151, which waits for revision 20
+  %%> Why no Swamp run:
+  %%> - nothing has to be done on a Node; Reverb pulls the registry itself (R1)
+  GW-->>CLI: 202 Accepted<br/>task #5151
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  loop each Reverb reconcile, 30 s
+    N->>GW: Pull the registry<br/>full snapshot, revision 20
+    %%> What it does:
+    %%> - every Reverb process fetches the full snapshot on its own 30-second reconcile
+    %%> - it stops accepting the app and closes only that app's sockets with code `4001`
+    %%> - other apps keep their connections; Reverb does not restart
+    N->>GW: Report applied revision<br/>per process and boot
+    %%> What it does:
+    %%> - each process reports the revision it applied, with its boot identity
+    %%> Why:
+    %%> - the app only counts as gone when no serving process accepts it anymore
+  end
+  alt every process applied 20
+    Note over GW: Close the task<br/>succeeded · app revoked
+    %%> Result:
+    %%> - no serving Reverb process accepts the app
+    %%> - task #5151 succeeds
+  else no fresh report in 5 min
+    Note over GW: Close the task, failed<br/>websocket.registry_pending
+    %%> When:
+    %%> - a serving process is stale or missing
+    %%> Result:
+    %%> - task #5151 fails; the app stays deleted in the Gateway
+    %%> - a process that still runs an older snapshot may accept the app until it reconciles; status reports show the pending revocation
+    %%> Retry:
+    %%> - run `websocket:sync` after the fix
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5151
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end

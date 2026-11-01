@@ -27,7 +27,7 @@ export const Input = z.object({
   materialize: z.record(z.string(), z.unknown()).nullable().default(null),
 });
 export type ToolInput = z.infer<typeof Input>;
-export const Kind = z.enum(["tool.install", "tool.update", "tool.manager_converge", "tool.remove", "tool.adopt"]);
+export const Kind = z.enum(["tool.install", "tool.update", "tool.remove", "tool.adopt"]);
 export const Step = z.object({ status: z.string(), outputs: z.record(z.string(), z.unknown()).optional() }).passthrough();
 /** The public JSON a phase step printed, or null when the step did not finish its phase. */
 export function printed(step: z.infer<typeof Step> | null | undefined): Record<string, unknown> | null {
@@ -104,19 +104,11 @@ export function verifyInstalled(input: ToolInput, version: string): void {
   }
 }
 
-export function refusalCode(step: string, code: string, kind: string): string {
+/** The public code of a failed Node-parent manager setup step. */
+export function refusalCode(step: string, code: string): string {
   if (code === "operation.cancelled") return code;
   if (/^tool\.(?:vp|homebrew|composer)_scope_(?:absent|conflict)$/.test(code)) {
     return "tool.manager_unavailable";
   }
-  if (step === "manager-materialize" || step === "manager-ready") {
-    return kind === "tool.install" || kind === "tool.manager_converge"
-      ? "tool.manager_provision_failed"
-      : "tool.version_probe_failed";
-  }
-  if (step === "package-candidate") {
-    return "tool.candidate_version_probe_failed";
-  }
-  if (step === "package-mutate") return `${kind}_failed`;
-  return "tool.version_probe_failed";
+  return step === "manager-materialize" || step === "manager-ready" ? "tool.manager_provision_failed" : "tool.version_probe_failed";
 }

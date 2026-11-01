@@ -36,7 +36,7 @@ final readonly class DevelopmentDeployInput
 
         return ['ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'manager' => $needsVp ? ['node_id' => $instance->node_id, 'user' => $instance->node->user, 'manager' => 'vp',
-                'platform' => 'linux', 'architecture' => $instance->node->architecture, 'kind' => 'tool.manager_converge',
+                'platform' => 'linux', 'architecture' => $instance->node->architecture,
                 'setup' => app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp)] : null,
             'github_repository' => ($repository = GitHubRepository::fromOrigin($instance->project->repository_url)) === null ? null : $repository->owner.'/'.$repository->name,
             'github_mint' => $repository !== null];

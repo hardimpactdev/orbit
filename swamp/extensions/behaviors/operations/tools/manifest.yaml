@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/tool-adopt-command'
-version: 2026.11.02.3
+version: 2026.11.02.4
 visibility: private
 license: MIT
 description: The Tool phase driver, its manager scripts, and the typed Tool decisions and results.

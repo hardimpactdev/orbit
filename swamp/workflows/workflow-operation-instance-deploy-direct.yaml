@@ -83,7 +83,7 @@ jobs:
   - name: dev_manager
     guard: ${{ inputs.intent.deployment.variant != "development" || (!inputs.intent.deployment.needs_vp) }}
     dependsOn: [{step: dev_checkout_check, condition: {type: succeeded}}]
-    task: {type: workflow, workflowIdOrName: operation-tool-write-209, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: tool.manager_converge, intent: '${{ inputs.intent.deployment.variant == "development" ? inputs.intent.manager : null }}', ssh: '${{ inputs.intent.deployment.variant == "development" ? inputs.intent.ssh_execution : {} }}', execution_secrets: {}}}
+    task: {type: workflow, workflowIdOrName: operation-tool-manager-setup, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', intent: '${{ inputs.intent.deployment.variant == "development" ? inputs.intent.manager : null }}', ssh: '${{ inputs.intent.deployment.variant == "development" ? inputs.intent.ssh_execution : {} }}'}}
   - name: dev_vp_project
     guard: ${{ inputs.intent.deployment.variant != "development" || (!inputs.intent.deployment.needs_vp) }}
     dependsOn: [{step: dev_manager, condition: {type: succeeded}}]
