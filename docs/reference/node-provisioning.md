@@ -764,13 +764,13 @@ Internal callers admit `node.add` through `ProvisionNodeAction::start` and `node
 
 Enrollment records its pinned bootstrap connection, candidate placement and generated Route changes before execution. Generated-domain children can run before candidate placement is committed; private DNS children see only committed placement. Each effect on another Node belongs to a child whose serving Node and input come from the recorded intent. Bootstrap architecture aliases `amd64` and `aarch64` normalize to `x86_64` and `arm64` before validation.
 
-Node removal records immutable participants and Route withdrawal intent before its native run. It preserves the departing Node's Route associations through serving cleanup. Swamp decides completion and restoration. The Gateway projects the native result without child receipts or runtime proof checks.
+Node removal records immutable participants and Route withdrawal intent before its native run. It preserves the departing Node's Route associations through serving cleanup. Swamp decides completion; removal does not restore completed effects after a failure. The Gateway projects the native result without child receipts or runtime proof checks.
 
 Only `task_vm.provision` and `task_vm.enroll` may admit enrollment children. TaskVM destruction composes Node cleanup as placed steps in its own native run, without a `node.remove` child. The target must be the owning VM’s reserved Node, with matching name and WireGuard identity. Enrollment requires proven preparation, a provisioning VM and its reserved or failed Node; it cannot adopt an active fleet Node through `taskVmId`. Serialized role names are converted to the Node role enum at admission.
 
 Cross-family enrollment uses the internal `ProvisionNodeData` field names. TaskVM Node cleanup retains its owning planner and custody checks. Standalone Node removal refuses TaskVM guests and caller-supplied provider-deletion claims.
 
-Every hub render excludes Nodes in `Removing` state, including concurrent enrollment and retained synchronous renders. Rollback restores the prior state before restoring hub membership. Node removal places serving cleanup on every admitted participant, including Services and control workers. Enrollment retains its own placement policy.
+Every hub render excludes Nodes in `Removing` state, including concurrent enrollment and retained synchronous renders. Enrollment rollback restores the prior state before restoring hub membership. Node removal places serving cleanup on every admitted participant, including Services and control workers. Enrollment retains its own placement policy.
 
 Enrollment and Node removal publish private DNS only on an active Node with an active VPN assignment. Gateway-only Nodes receive no DNS publication. Role convergence uses the same owner selection. Saved footprint listener runs refuse a target without an active VPN role.
 
