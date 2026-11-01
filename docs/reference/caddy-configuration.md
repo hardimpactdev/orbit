@@ -266,11 +266,11 @@ php artisan orbit:caddy-build NODE --dry-run --diff
 
 | Option | Result |
 | --- | --- |
-| None | Builds the Node and pushes the file, as any publisher does. It prints whether it published a new file or found the live file current. |
+| None | Submits `route.caddy_converge` with the complete public render to Swamp and prints its Operation ID. The Operation records native completion. |
 | `--dry-run` | Prints the rendered Caddyfile and changes nothing. |
 | `--diff` | With `--dry-run`, reads the live `/etc/caddy/Caddyfile` and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. |
 
-A failed build exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address. The output names hostnames and certificate paths. Orbit's Caddy sites hold no secrets.
+A failed render or native admission exits with status 1 and prints the error message. `--dry-run` exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address. The output names hostnames and certificate paths. Orbit's Caddy sites hold no secrets.
 
 Repeating any command that publishes one of a Node's sites, such as `orbit node:role:add NODE app-dev --converge`, also builds the Node again.
 
