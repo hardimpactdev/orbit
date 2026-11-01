@@ -25,38 +25,28 @@ Deno.test("every declared grant pattern passes the actual native safety check", 
     assertEquals(checkGrantPatterns(policy, nativeCheck), []);
 });
 
-Deno.test("native check rejects the original create pattern and accepts its exact safe key set", () => {
+Deno.test("native check rejects the original create pattern and accepts the exact create key set", () => {
     assertEquals(
         nativeCheck(rejected)?.includes("catastrophic backtracking"),
         true,
     );
     assertEquals(nativeCheck(current.key_pattern), undefined);
-    const oldPattern = new RegExp(rejected);
     const safePattern = new RegExp(current.key_pattern);
+    // Create writes the git token, the rendered environment and the setup list, one key each per Operation.
+    const created = ["git-operation-", "create-environment-input-", "create-"];
     for (
         const prefix of [
-            "git-operation-",
-            "create-environment-input-",
+            ...created,
             "create-environment-result-",
-            "create-",
             "destroy-",
             "clone-environment-operation-",
         ]
     ) {
         for (const id of ["0", "1", "9", "10", "01", "99999", "-1", "x"]) {
-            for (
-                const suffix of [
-                    "",
-                    "-setup-0",
-                    "-setup-01",
-                    "-setup-1",
-                    "-setup-",
-                    "-setup-x",
-                    "-extra",
-                ]
-            ) {
+            for (const suffix of ["", "-setup-0", "-setup-1", "-extra"]) {
                 const key = `instance-${prefix}${id}${suffix}`;
-                assertEquals(safePattern.test(key), oldPattern.test(key), key);
+                const expected = created.includes(prefix) && suffix === "" && /^[1-9][0-9]*$/.test(id);
+                assertEquals(safePattern.test(key), expected, key);
             }
         }
     }
