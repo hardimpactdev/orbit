@@ -48,9 +48,6 @@ beforeEach(function (): void {
     $this->nodes['gateway']->roles()->create(['role' => 'vpn', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Variants', 'slug' => 'variants', 'type' => 'laravel-app', 'repository_url' => 'https://example.test/variants.git', 'root' => 'public']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->nodes['workload']->id, 'name' => 'prospective', 'status' => 'reserved', 'checkout_path' => '/home/orbit/projects/variants/prospective', 'selected_php_version' => null, 'source_is_laravel' => false]);
-    foreach (['APP_NAME' => 'Variants', 'APP_KEY' => 'base64:'.base64_encode(str_repeat('a', 32)), 'APP_URL' => 'https://{{instance.domain}}'] as $key => $value) {
-        $this->instance->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
-    }
     $this->route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $cluster->id, 'domain' => 'created.variants.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending', 'sites_published' => false]);
     $this->route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
 });
@@ -89,20 +86,14 @@ it('matches the complete canonical capture with those facts stored after source 
     $prior['sites'] = [];
     $prior['intent']['certificates'] = [];
     $variant = app(NativeRouteInstanceVariantsInput::class)->capture($this->instance, $this->route)[$version.':'.($laravel ? 'true' : 'false')];
-    $variantValues = array_column(array_column($this->socket->sent, 'payload'), 'value', 'key');
-    $this->socket->sent = [];
     $this->route->update(['status' => 'active', 'sites_published' => true]);
     $this->instance->update(['status' => 'active', 'provisioning_step' => 'active', 'selected_php_version' => $version, 'source_is_laravel' => $laravel]);
     $candidate = $this->route->fresh(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
     $candidate->forceFill(['status' => 'active', 'sites_published' => true, 'replacement_step' => RouteReplacementStep::Cleanup]);
-    $desired = $mutations->route($candidate, [$candidate->id => $candidate]);
+    $desired = $mutations->route($candidate, [$candidate->id => $candidate], environment: false);
     $canonical = $mutations->capture([$prior], [$desired], [$desired], [$prior], $beforeSites, $beforeSites, $prior['intent']['node_ids'], static fn (Closure $render): array => $render());
     expect(normalize_source_variant($variant))->toBe(normalize_source_variant($canonical));
-    foreach ($canonical['execution_secrets'] as $field => $descriptor) {
-        $actual = $variantValues[$variant['execution_secrets'][$field]['key']];
-        $expected = collect($this->socket->sent)->firstWhere('payload.key', $descriptor['key'])['payload']['value'];
-        expect($actual)->toBe($expected);
-    }
+    expect($this->socket->sent)->toBe([]);
 })->with(['php85-laravel' => ['8.5', true], 'php85-plain' => ['8.5', false], 'php84-laravel' => ['8.4', true], 'php84-plain' => ['8.4', false]]);
 
 it('scopes facts to the actual Instance and restores nested and failed render scopes', function (): void {
@@ -195,3 +186,30 @@ it('omits unrelated stored PHP sites from prospective deltas without changing th
     }
     expect($other->fresh()->selected_php_version)->toBe('8.4')->and($other->fresh()->source_is_laravel)->toBeFalse();
 });
+
+it('captures finite source variants for a new Instance with an empty environment store', function (): void {
+    $variants = app(NativeRouteInstanceVariantsInput::class)->capture($this->instance, $this->route);
+
+    expect(array_keys($variants))->toBe(['8.5:true', '8.5:false', '8.4:true', '8.4:false'])
+        ->and($this->instance->environmentValues()->count())->toBe(0);
+});
+
+it('captures no environment or URL material even when the Instance has stored values', function (bool $webRoot): void {
+    foreach (['APP_NAME' => 'Parent-owned name', 'APP_KEY' => 'parent-owned-key', 'APP_URL' => 'https://parent-owned.test'] as $key => $value) {
+        $this->instance->environmentValues()->create(['env_key' => $key, 'env_value' => $value]);
+    }
+    if ($webRoot) {
+        $this->route->update(['web_root' => 'alternate/public']);
+    }
+    $before = $this->instance->environmentValues()->pluck('env_value', 'env_key')->all();
+
+    $variants = app(NativeRouteInstanceVariantsInput::class)->capture($this->instance, $this->route);
+
+    foreach ($variants as $variant) {
+        expect($variant['route_mutations']['forward']['url_writes'])->toBe([])
+            ->and($variant['route_mutations']['restore']['url_writes'])->toBe([])
+            ->and($variant['execution_secrets'])->toBe([]);
+    }
+    expect($this->socket->sent)->toBe([])
+        ->and($this->instance->environmentValues()->pluck('env_value', 'env_key')->all())->toBe($before);
+})->with(['primary' => false, 'additional-web-root' => true]);

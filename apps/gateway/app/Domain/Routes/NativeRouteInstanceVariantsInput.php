@@ -13,7 +13,7 @@ use App\Models\Route;
 use App\Support\ValidatedData;
 use Closure;
 
-/** Finite initial Route publications admitted before native checkout resolves source facts. */
+/** Finite initial publications only; the create parent owns the whole environment and primary URL. */
 final readonly class NativeRouteInstanceVariantsInput
 {
     public function __construct(private NativeRouteMutationInput $mutations, private DevelopmentSiteRepository $sites,
@@ -46,7 +46,7 @@ final readonly class NativeRouteInstanceVariantsInput
                 foreach ([true, false] as $laravel) {
                     $facts = new NativeRouteInstanceFacts($actual->id, $actual->node_id, $version, $laravel);
                     $variants[$facts->key()] = $this->context->renderInstanceFacts($facts, function () use ($route, $candidate, $prior, $beforeSites): array {
-                        $desired = $this->mutations->route($candidate, [$route->id => $candidate]);
+                        $desired = $this->mutations->route($candidate, [$route->id => $candidate], environment: false);
 
                         return $this->mutations->capture([$prior], [$desired], [$desired], [$prior], $beforeSites, $beforeSites,
                             ValidatedData::integerList($prior['intent']['node_ids']), static fn (Closure $render): array => $render());
