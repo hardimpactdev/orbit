@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\ReadOperationAction;
 use App\Data\Operations\OperationData;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -270,3 +271,27 @@ it('expires never-started native admissions on the first observer startup with n
     ['doctor.inspect', 'queued', false, true],
     ['vault.sync', 'queued', false, false],
 ]);
+
+it('keeps a long native kind running past the default budget until its measured budget', function (): void {
+    $operation = budgetOperation('task_vm.image_build', ['input' => []]);
+    $this->travel(301)->seconds();
+    app(ExpireOperationAction::class)->execute($operation);
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running);
+    $this->travel(2400 - 301)->seconds();
+
+    expect(app(ExpireOperationAction::class)->execute($operation)->error_code)->toBe('operation.timed_out');
+});
+
+it('reads the measured budget of each long native kind', function (string $kind, int $seconds): void {
+    expect(OperationRunBudgets::seconds(budgetOperation($kind, ['input' => []])))->toBe($seconds);
+})->with([
+    ['certificate.converge', 1200], ['cluster.router_set', 2700], ['node.converge', 3900],
+    ['node.role_add', 2700], ['task_vm.destroy', 2700], ['task_vm.image_build', 2400], ['task_vm.sweep_host', 600],
+    ['tasks.provision', 3900],
+]);
+
+it('budgets only registered direct-operation kinds', function (): void {
+    $kinds = array_keys((new ReflectionClassConstant(OperationRunBudgets::class, 'SecondsByKind'))->getValue());
+
+    expect(array_diff($kinds, array_keys(app(DirectOperation::class)->definitions())))->toBe([]);
+});
