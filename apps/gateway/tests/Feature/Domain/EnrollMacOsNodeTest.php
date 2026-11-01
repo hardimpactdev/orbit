@@ -14,7 +14,6 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AgentCommands\AdmissionAgentRunner;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -26,14 +25,12 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Tests\Support\FakeMacAdmissionAgentRunner;
 use Tests\Support\FakeNodeAgentRuntime;
-use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
     $this->ssh = new FakeMacAdmissionAgentRunner;
     $this->scanner = new EnrollmentScanner;
     $this->knownHosts = new EnrollmentKnownHosts;
     $this->agent = new FakeNodeAgentRuntime;
-    $this->tools = new FakeToolManagerMaterializer;
     $this->linux = new class implements NodeConverger
     {
         public int $calls = 0;
@@ -98,7 +95,6 @@ beforeEach(function (): void {
     app()->instance(KnownHostsStore::class, $this->knownHosts);
     app()->instance(NodeConverger::class, $this->linux);
     app()->instance(NodeAgentRuntime::class, $this->agent);
-    app()->instance(ToolManagerMaterializer::class, $this->tools);
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(MetricsFleetReconciler::class, $this->metrics);
 });
@@ -125,7 +121,6 @@ it('enrolls a new mac without bootstrap, allocation, or linux services', functio
         ->and($node->roles)->toHaveCount(0)
         ->and($this->linux->calls)->toBe(0)
         ->and($this->agent->nodeIds)->toBe([])
-        ->and($this->tools->requests)->toBe([])
         ->and($this->firewall->calls)->toBe(0)
         ->and($this->metrics->calls)->toBe(0)
         ->and($this->knownHosts->puts)->toBe([
