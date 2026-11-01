@@ -323,7 +323,7 @@ jobs:
       inputs:
         hosts: name:target
         argv: '${{ inputs.intent.provider == "incus" ? ["/usr/bin/sudo","-n","--","/usr/bin/incus","--project",inputs.intent.vm.project,"exec","--mode=non-interactive","--user","0","--group","0","--",inputs.intent.name]
-          + ["/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body] : ["/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body]
+          + ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body] : ["/usr/bin/sudo","-n","-u",inputs.intent.user,"--","/usr/bin/python3","-B","-c",steps["bootstrap-verify-assets"].outputs.script_body]
           }}'
         sudo: ${{ inputs.intent.provider != "incus" }}
     dependsOn:
