@@ -1,12 +1,31 @@
 """Exercise shipped setup scripts in a disposable tree without privileged effects."""
+import hashlib
+import io
 import os
 import runpy
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+
+class Broken(io.RawIOBase):
+    """A response body that resets after the first bytes, as a dropped mirror connection does."""
+    def __init__(self):
+        self.sent = False
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if self.sent:
+            raise ConnectionResetError('reset by peer')
+        self.sent = True
+        buffer[:4] = b'part'
+        return 4
 
 
 class SetupScriptsTest(unittest.TestCase):
@@ -53,6 +72,55 @@ class SetupScriptsTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 script['install']({'user': 'orbit', 'revision': 'a' * 40, 'version': '7.0.0'})
         self.assertEqual(list(self.path('/home/linuxbrew').iterdir()), [])
+
+    def apt_artifact(self, body=b'exact deb'):
+        return {'urls': ['https://mirror.example/git_d.deb', 'https://origin.example/git.deb'], 'algorithm': 'sha256', 'digest': hashlib.sha256(body).hexdigest()}
+
+    def responses(self, served):
+        def urlopen(url, timeout=None):
+            if served[url] == 'reset':
+                return io.BufferedReader(Broken())
+            if served[url] is None:
+                raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+            return io.BytesIO(served[url])
+        return urlopen
+
+    def test_apt_artifact_comes_from_the_mirror_when_it_serves_the_pin(self):
+        script = self.load('install_apt.py'); artifact = self.apt_artifact(); path = self.root / 'git.deb'
+        served = {artifact['urls'][0]: b'exact deb', artifact['urls'][1]: None}
+        with patch('urllib.request.urlopen', side_effect=self.responses(served)) as download:
+            script['fetch'](artifact, path)
+        self.assertEqual(path.read_bytes(), b'exact deb')
+        self.assertEqual([call.args[0] for call in download.call_args_list], artifact['urls'][:1])
+
+    def test_apt_artifact_falls_back_to_the_recipe_url_when_the_mirror_lacks_it(self):
+        script = self.load('install_apt.py'); artifact = self.apt_artifact(); path = self.root / 'git.deb'
+        served = {artifact['urls'][0]: None, artifact['urls'][1]: b'exact deb'}
+        with patch('urllib.request.urlopen', side_effect=self.responses(served)) as download:
+            script['fetch'](artifact, path)
+        self.assertEqual(path.read_bytes(), b'exact deb')
+        self.assertEqual([call.args[0] for call in download.call_args_list], artifact['urls'])
+
+    def test_apt_artifact_moves_on_when_the_mirror_breaks_mid_download(self):
+        script = self.load('install_apt.py'); artifact = self.apt_artifact(); path = self.root / 'git.deb'
+        served = {artifact['urls'][0]: 'reset', artifact['urls'][1]: b'exact deb'}
+        with patch('urllib.request.urlopen', side_effect=self.responses(served)) as download:
+            script['fetch'](artifact, path)
+        self.assertEqual(path.read_bytes(), b'exact deb')
+        self.assertEqual(len(download.call_args_list), 2)
+
+    def test_apt_artifact_with_a_wrong_digest_fails_without_falling_back(self):
+        script = self.load('install_apt.py'); artifact = self.apt_artifact(); path = self.root / 'git.deb'
+        served = {artifact['urls'][0]: b'corrupt deb', artifact['urls'][1]: b'exact deb'}
+        with patch('urllib.request.urlopen', side_effect=self.responses(served)) as download, self.assertRaisesRegex(ValueError, 'node.tool_artifact_mismatch'):
+            script['fetch'](artifact, path)
+        self.assertEqual(len(download.call_args_list), 1)
+
+    def test_apt_artifact_fails_when_no_url_serves_it(self):
+        script = self.load('install_apt.py'); artifact = self.apt_artifact(); path = self.root / 'git.deb'
+        served = {artifact['urls'][0]: None, artifact['urls'][1]: None}
+        with patch('urllib.request.urlopen', side_effect=self.responses(served)), self.assertRaises(urllib.error.HTTPError):
+            script['fetch'](artifact, path)
 
     def test_javascript_foreign_launcher_refuses_before_artifact_download(self):
         script = self.load('install_javascript.py'); namespace = script['install'].__globals__
