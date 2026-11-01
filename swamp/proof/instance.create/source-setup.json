@@ -27,7 +27,7 @@
         "instance:setup-step:create",
         "verify-public-source",
         "--project=${capture.project_id}",
-        "--command=test -f README && test \"$APP_ENV\" = development && git rev-parse --verify HEAD",
+        "--command=test -f README && test \"$APP_ENV\" = development && git rev-parse --verify HEAD > .orbit-proof-setup",
         "--timeout=30",
         "--json"
       ]
@@ -122,7 +122,8 @@
   "parity": {
     "command": [
       "python3",
-      "swamp/proof/instance.create/parity.py"
+      "swamp/proof/instance.create/parity.py",
+      "source-setup"
     ],
     "cases": [
       "public-anonymous-new-branch",

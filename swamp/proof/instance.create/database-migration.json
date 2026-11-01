@@ -1,0 +1,178 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 952,
+  "queue_timeout_seconds": 15,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-create-db-${proof.run}",
+        "node-package",
+        "https://github.com/octocat/Spoon-Knife.git",
+        "--root=.",
+        "--default-branch=main",
+        "--source-access=github_app",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:create",
+        "${capture.project_id}",
+        "${topology.app-dev.node_id}",
+        "default",
+        "--root=.",
+        "--json"
+      ],
+      "capture": {
+        "default_instance_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:show",
+        "${capture.default_instance_id}",
+        "--json"
+      ],
+      "capture": {
+        "default_checkout": "$.checkout_path"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-create-db-${proof.run}",
+        "--driver=sqlite",
+        "--node=${topology.app-dev.node_id}",
+        "--path=${capture.default_checkout}/database/database.sqlite",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:database:add",
+        "proof-create-db-${proof.run}",
+        "--instance=${capture.default_instance_id}",
+        "--prefix=DB",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:setup-step:create",
+        "migrate-owned-database",
+        "--project=${capture.project_id}",
+        "--command=python3 -c 'import os\nimport sqlite3\nfrom pathlib import Path\n\nif os.environ.get(\"DB_CONNECTION\") != \"sqlite\":\n    raise RuntimeError(\"database-connection-not-ready-before-setup\")\nroot = Path.cwd().resolve()\npath = Path(os.environ[\"DB_DATABASE\"])\nif not path.is_absolute() or not path.resolve().is_relative_to(root):\n    raise RuntimeError(\"database-outside-owned-checkout\")\nif not path.is_file() or path.is_symlink():\n    raise RuntimeError(\"database-not-created-before-setup\")\n# Read-write mode must never create a missing database as a side effect.\nwith sqlite3.connect(path.as_uri() + \"?mode=rw\", uri=True) as connection:\n    if connection.execute(\"SELECT marker FROM orbit_create_seed\").fetchall() != [(\"owned-source\",)]:\n        raise RuntimeError(\"database-copy-not-ready-before-setup\")\n    connection.execute(\"CREATE TABLE IF NOT EXISTS orbit_create_migrations (name TEXT PRIMARY KEY)\")\n    connection.execute(\"INSERT OR IGNORE INTO orbit_create_migrations VALUES (?)\", (\"create-before-setup\",))\n    if connection.execute(\"SELECT name FROM orbit_create_migrations\").fetchall() != [(\"create-before-setup\",)]:\n        raise RuntimeError(\"migration-not-applied\")\nprint(\"migration-ok\")\n'",
+        "--timeout=30",
+        "--json"
+      ]
+    }
+  ],
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "seed_sqlite.py",
+        "${capture.default_checkout}"
+      ],
+      "timeout_seconds": 30
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "instance:create",
+      "${capture.project_id}",
+      "${topology.app-dev.node_id}",
+      "proof-${proof.run}",
+      "--root=.",
+      "--branch=proof-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "root": ".",
+    "branch_override": "proof-${proof.run}",
+    "default_branch": "main",
+    "run_budget_seconds": "${match.positive_int}",
+    "direct_provisioning": {
+      "project_type": "node-package",
+      "phase_plan": {
+        "source": {
+          "seconds": 30
+        },
+        "environment": {
+          "seconds": 30
+        },
+        "setup": {
+          "seconds": 30
+        },
+        "queue_timeout_seconds": 15
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "create",
+      "step": "finish-result",
+      "match": {
+        "ready": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "prepare",
+      "job": "prepare",
+      "step": "create-prepare",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source",
+      "job": "prepare",
+      "step": "create-source",
+      "budget_seconds": 30
+    },
+    {
+      "name": "environment",
+      "job": "prepare",
+      "step": "env-write",
+      "budget_seconds": 30
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "finish-setup",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "swamp/proof/instance.create/parity.py",
+      "database-migration"
+    ],
+    "cases": [
+      "owned-database-created-before-setup-migration",
+      "copied-database-migrated",
+      "default-database-kept-unmodified",
+      "Gateway-terminal-projection"
+    ]
+  }
+}

@@ -6,6 +6,7 @@ for (
         "source_actions_test.py",
         "project_step_test.py",
         "setup_phase_test.py",
+        "../../../../proof/instance.create/proof_test.py",
     ]
 ) {
     Deno.test(
