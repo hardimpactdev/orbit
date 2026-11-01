@@ -92,9 +92,14 @@ class RecipeDirectNative(NativeTestCase):
         self.state['uncertain']='php-build';self.save()
         self.run_workflow(success=False)
         self.assertEqual(self.read()['operation']['status'],'running')
-        self.cli('workflow','resume','operation-fleet-recipe-direct','--run',self.run_id)
+        history=json.loads(self.cli('workflow','history','get',self.run_id).stdout)
+        self.assertEqual(history['status'],'failed')
+        # This fixture has no Gateway reader. Model its existing native failure settlement.
+        self.state=self.read();self.state['operation']['status']='failed'
+        self.state['operation']['error_code']='operation.native_failed';self.save()
+        self.cli('workflow','resume','operation-fleet-recipe-direct','--run',self.run_id,success=False)
         state=self.read()
-        self.assertEqual(state['operation']['status'],'running')
+        self.assertEqual(state['operation']['status'],'failed')
         self.assertEqual(state['effects'].count('recipe-apply'),1)
         self.assertEqual(state['effects'].count('php-build'),1)
 

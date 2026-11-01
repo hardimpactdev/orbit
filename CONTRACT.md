@@ -30,7 +30,7 @@ return [
 - `POST .../{operation}/result` records `run_id`, native `status`, timestamps, bounded `result`, and optional `error_code`.
 - The shared layer checks caller authority and the bound root UUID. It does not revalidate native work. Public `operation:list`, `operation:show` and `operation:cancel` remain. Executor/claim/run/step/child/receipt APIs do not.
 
-Native terminal events and the existing shared history reader record failure. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code prints it in the result step stdout. Workflows contain no HTTP failure reporter, and the Gateway has no `POST .../{operation}/failure` endpoint.
+The shared subscriber follows kinds with `terminal_result`; normal operation reads retain their existing native failure check. A failed or interrupted run without selected public output records `operation.native_failed`. A family that needs a specific public error code prints it in the result step stdout. Workflows contain no HTTP failure reporter, and the Gateway has no `POST .../{operation}/failure` endpoint.
 
 Existing `directOperation` callers still read their admitted intent before the family action. Recorded cancellation skips that action and records cancellation. New-shape families use full workflow inputs and public result stdout through the shared terminal projector.
 
