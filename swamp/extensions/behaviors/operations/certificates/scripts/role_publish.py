@@ -9,10 +9,10 @@ from role_paths import KEY_ROOT, role_paths
 
 
 def publish(leaf):
-    role, current, _ = role_paths(leaf)
+    name, current, _ = role_paths(leaf)
     if valid_pair(
-        current / (role + ".pem"),
-        current / (role + ".key"),
+        current / (name + ".pem"),
+        current / (name + ".key"),
         current / "root-ca.pem",
         leaf,
     ):
@@ -25,8 +25,8 @@ def publish(leaf):
     gid = grp.getgrnam("caddy").gr_gid
     directory(current, 0, gid, 0o750)
     for source, target in (
-        ("cert.pem", role + ".pem"),
-        ("key.pem", role + ".key"),
+        ("cert.pem", name + ".pem"),
+        ("key.pem", name + ".key"),
         ("root.pem", "root-ca.pem"),
     ):
         path = current / target

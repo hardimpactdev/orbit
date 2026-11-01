@@ -21,7 +21,8 @@ def role_paths(data):
     ):
         raise ValueError("certificate.role_input_invalid")
     directory = role_directory(data["scope"])
-    return role, directory, str(directory)
+    name = "reverb" if role == "websocket" else role
+    return name, directory, str(directory)
 
 
 def role_directory(scope):
