@@ -5,7 +5,7 @@ description: Use when porting a legacy Orbit command (Gateway executor or orbit-
 
 # Port a kind to Swamp
 
-Port one parent kind per PR. The Gateway admits and projects; Swamp does the work. The [porting reference](../../../docs/swamp/porting.md) holds the template, the legacy-to-native table, the anti-patterns and the changelog. The [Swamp shape guide](../../../swamp/docs/swamp-shape.md) and [PLAN boundary decisions](../../../docs/swamp/porting.md#check-all-seven-boundary-decisions) are binding. Where this skill and the guide disagree, the guide wins; tell lane 26.
+Port one family or parent kind per PR. The Gateway admits and projects; Swamp does the work. The [porting reference](../../../docs/swamp/porting.md) holds the template, the legacy-to-native table, the anti-patterns and the changelog. The [Swamp shape guide](../../../swamp/docs/swamp-shape.md) and [PLAN boundary decisions](../../../docs/swamp/porting.md#check-all-seven-boundary-decisions) are binding. Where this skill and the guide disagree, the guide wins; tell lane 26.
 
 ## Before you write anything
 
@@ -17,18 +17,18 @@ Port one parent kind per PR. The Gateway admits and projects; Swamp does the wor
 
 ## Build it
 
-Copy the workflow and Gateway declaration from the [template](../../../docs/swamp/porting.md#fill-the-workflow) and fill every `REPLACE_*` token.
+Copy the workflow and Gateway declaration from the [template](../../../docs/swamp/porting.md#fill-the-workflow) and fill every `REPLACE_*` token. `REPLACE_F1_RUN` stays a plain script invocation until lane 16 ships F1.
 
 - **Inputs:** the full non-secret intent under `intent`, and names-only `{vault, key}` descriptors under `execution_secrets`. Secrets are never inputs.
-- **Vaults:** list every vault the workflow reads, in parents and children. `vaults: []` when there is none.
-- **Placement:** every step runs on `target: orbit-node-209`. Reach another Node with official `@swamp/ssh` from 209 using the intent's `identity_file`, stored `host_keys` and `sudo: true`. One selector per scope: `target` or `labels`, never both. Copy placement from `firewall.inspect`, not `node.bootstrap_probe`.
-- **Scripts:** one script file per action group, shipped through the behavior manifest `additionalFiles` and run as a placed `command/shell` step. Split only at a resume point, a Node change or a guard. TypeScript only shapes typed inputs and outputs.
+- **Vaults:** list every vault the workflow reads, in parents and children. `vaults: []` when there is none, by convention.
+- **Placement:** every step runs on `target: orbit-node-209`. Reach another Node with official `@swamp/ssh` from 209 using the intent's `identity_file`, stored `host_keys` and `sudo: true`. Use one selector in the effective placement: `target` only, with no `labels` at any inherited scope. Copy placement from `firewall.inspect`, not `node.bootstrap_probe`.
+- **Scripts:** one script file per action group, shipped through the behavior manifest `additionalFiles` and run as a placed `command/shell` step on 209, or through `@swamp/ssh` `script` for another Node. Split only at a resume point, a Node change or a guard. TypeScript only shapes typed inputs and outputs.
 - **Secrets in steps:** one whole `${{ vault.get(...) }}` expression per variable in `task.inputs.env`, or in `@swamp/ssh` `stdin`. Hand it to tools on stdin or in a 0600 file, never argv.
 - **Refusals first:** read, decide in a typed step, refuse with an `assert` step before the first write.
-- **Control flow:** `dependsOn` with `condition`, `forEach` with a per-item `behaviorName`, `guard`, `allowFailure`, `concurrency`, inherited `queueTimeout`, native resume. No loops, sleeps, lock files or receipts. Swamp has no step retry key. Never read outputs of a failed or skipped step.
-- **Errors (F1):** every failing step runs through lane 16's shared F1 wrapper so its step name and the last 4 KB of redacted stderr reach `operation:show`. Never add a family wrapper.
-- **Result:** one result step prints one public JSON object. A refusal prints `{"error_code":"family.code"}` and exits nonzero. Declare it as `terminal_result` in the Gateway.
-- **Time budget (F8):** measure the kind's p95 from native history. Set a run budget from it, as PLAN does for `instance.create` (target under 10 s, budget 60 s, policy not proof); the Gateway passes it as the run timeout through lane 16's shared field. Set `queueTimeout` per kind. Use fewer, larger steps; each one adds scheduling and SSH overhead.
+- **Control flow:** `dependsOn` with `condition`, `forEach` with a per-item `behaviorName`, `guard`, `allowFailure`, `concurrency`, per-kind `queueTimeout` (F8), native resume. No loops, sleeps, lock files or receipts. Swamp has no step retry key. Never read outputs of a failed or skipped step.
+- **Errors (F1, pending, lane 16):** shipped scripts will run through the shared F1 wrapper, and the shared projector will report the failed step and the last 4 KB of redacted stderr for any failed step. Until it lands, add no family wrapper.
+- **Result:** a `result` step with `condition: always` maps the decision output or the first failed step to a public `error_code` and prints one JSON object with `ready`. It is the `terminal_result`. A trailing `assert` on `ready` fails the run. Without it, a refusal projects only `operation.native_failed`.
+- **Time budget (F8):** measure the kind's p95 from native history and set a run budget from it. PLAN sets `instance.create` at under 10 s with a 60 s budget; that is policy, not proof. Passing the budget as the run timeout is pending in lane 16; until then state it in the PR body. Set `queueTimeout` per kind. One step per action group, not per command: each step adds scheduling and SSH overhead.
 - **Gateway:** validate and record immutable intent at admission, start with shared `StartSwampRun`, push changed secrets with `SwampCommandStep::executionCopy`, project through the family projector. No callbacks, holds, pollers or retries.
 - **Delete** the old executor, its tests, its embedded scripts, its callbacks, and the CLI, SDK and docs paths that served only it, in the same PR. Do not touch `apps/agent`. Remove the kind's rows from `swamp/config/swamp-shape-baseline.json`.
 
@@ -47,4 +47,4 @@ Lane 26 reviews every kind PR against the [PR and review checklist](../../../doc
 
 ## Improve this skill
 
-After every merged PR that touches `swamp/workflows/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. Fold each lesson into the reference in a PR within the hour, and add one line to its `## Changelog` with the PR number. Update an existing lesson under the same canonical finding ID instead of adding a duplicate.
+After every merged PR that touches `swamp/workflows/`, run a short retro: what was slow, what the reviewer or conformance audit flagged, what broke live. Fold each lesson into the reference in a PR the same hour, and add one row to its `## Changelog` with the PR number. When a lesson comes from a conformance finding, cite its canonical ID and update that row instead of adding a duplicate.
