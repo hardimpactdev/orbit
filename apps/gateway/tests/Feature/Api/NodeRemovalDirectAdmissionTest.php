@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
+use App\Domain\Metrics\ExporterPreference;
+use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Nodes\NodeRemovalInput;
 use App\Domain\Nodes\NodeRemovalPlan;
 use App\Domain\Nodes\NodeRemovalProjection;
@@ -155,6 +157,9 @@ it('captures Metrics teardown for the canonical surviving fleet including209', f
     $this->markAsGateway(FleetFixtures::node('removal-metrics-gateway'));
     $control = FleetFixtures::node('removal-control-exporter');
     Node::query()->whereKey($control->id)->update(['id' => 209]);
+    app(ExporterPreferenceRepository::class)->put(209, ExporterPreference::Enabled);
+    $roleless = FleetFixtures::node('removal-roleless-unpinned');
+    $roleless->update(['ssh_host_key_type' => null, 'ssh_host_key' => null]);
     $metrics = FleetFixtures::node('removal-metrics', [RoleName::Metrics]);
     $metrics->update(['wireguard_public_key' => null]);
     $capture = app(NodeRemovalInput::class)->capture(app(NodeRemovalPlan::class)->build($metrics, false));

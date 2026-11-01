@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Metrics\MetricsFleetCapture;
+use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
@@ -30,9 +30,11 @@ final readonly class NativeNodeRoleRemovalInput
         if ($role === RoleName::Metrics) {
             // The canonical fleet capture owns its membership. Disable both service
             // publication kinds as well as the Gateway site when Metrics leaves.
-            $metrics = $node->roles()->where('role', RoleName::Metrics)->sole();
-            foreach (MetricsFleetCapture::members(app(MetricsFleetCapture::class)->captureFor($metrics, false)) as $member) {
-                $target = Node::query()->findOrFail(ValidatedData::integer($member['node_id']));
+            foreach (app(MetricsExporterProjection::class)->for($node) as $member) {
+                if (! $member->selection->selected) {
+                    continue;
+                }
+                $target = $member->node;
                 if (CaddySiteRoles::nodeExpectsCaddy($target->id)) {
                     $duties['caddy_node_ids'][] = $target->id;
                 }
@@ -97,9 +99,11 @@ final readonly class NativeNodeRoleRemovalInput
             foreach ([$catalog->metricsGrafanaUpstream($node, ValidatedData::string($gateway->wireguard_ip)), $catalog->metricsGrafanaIsolation($node)] as $rule) {
                 $firewall[] = ['ssh' => $ssh, 'input' => ['argv' => ['ufw', '--force', 'delete', ...array_slice($rule->arguments, 2)]]];
             }
-            $fleet = app(MetricsFleetCapture::class)->captureFor($assignment, false);
-            foreach (MetricsFleetCapture::members($fleet) as $member) {
-                $target = Node::query()->findOrFail(ValidatedData::integer($member['node_id']));
+            foreach (app(MetricsExporterProjection::class)->for($node) as $member) {
+                if (! $member->selection->selected) {
+                    continue;
+                }
+                $target = $member->node;
                 $connection = app(SwampSshExecutionInput::class)->forNode($target);
                 foreach (['prometheus-node-exporter.service', 'orbit-cadvisor.service', 'orbit-fpm-exporter.service'] as $unit) {
                     $unitsForFleet[] = ['ssh' => $connection, 'input' => ['unit' => $unit]];
