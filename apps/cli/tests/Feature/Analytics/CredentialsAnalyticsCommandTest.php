@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -14,6 +15,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Input\ArgvInput;
 use Tests\Support\CapturedConsoleOutput;
+use Tests\Support\FakeStandardInput;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -47,6 +49,7 @@ describe('analytics:credentials', function (): void {
         fwrite($stream, $password."\n");
         rewind($stream);
         $input->setStream($stream);
+        app()->instance(StandardInputReader::class, FakeStandardInput::piped($password."\n"));
         $output = new CapturedConsoleOutput;
         try {
             expect(app(Kernel::class)->handle($input, $output))->toBe($exit);
@@ -64,6 +67,15 @@ describe('analytics:credentials', function (): void {
             fclose($stream);
         }
     })->with(['valid' => ['private-password-sentinel', 0], 'spaces preserved' => ['  private-password-sentinel  ', 0], 'empty' => ['', 1], 'oversized' => [str_repeat('x', 4097), 1], 'control' => ["private\0sentinel", 1]]);
+
+    it('refuses stdin mode on a terminal without reading or sending a request', function (): void {
+        $stdin = FakeStandardInput::terminal();
+        app()->instance(StandardInputReader::class, $stdin);
+        $mockClient = MockClient::global();
+        $this->artisan('analytics:credentials', ['--set' => true, '--api-key' => 'private-stats-sentinel', '--management-password-stdin' => true, '--json' => true])
+            ->expectsOutputToContain('analytics.management_password_invalid')->assertExitCode(1);
+        expect($stdin->reads)->toBe(0)->and($mockClient->getLastPendingRequest())->toBeNull();
+    });
 
     it('refuses a management password argv option', function (): void {
         $mockClient = MockClient::global();

@@ -8,13 +8,13 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Console\StandardInputReader;
 use Laravel\Prompts\PasswordPrompt;
 use Orbit\Sdk\Requests\Analytics\SetAnalyticsCredentialsRequest;
 use Orbit\Sdk\Requests\Analytics\ShowAnalyticsCredentialsRequest;
 use Orbit\Sdk\Requests\Analytics\UnsetAnalyticsCredentialsRequest;
 use Orbit\Sdk\Responses\Analytics\AnalyticsCredentialsResponse;
 use SensitiveParameter;
-use Symfony\Component\Console\Input\StreamableInputInterface;
 
 final class CredentialsAnalyticsCommand extends GatewayCommand
 {
@@ -30,7 +30,7 @@ final class CredentialsAnalyticsCommand extends GatewayCommand
     #[\Override]
     protected $description = 'Show Plausible credential status, store credentials, or clear them.';
 
-    public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
+    public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory, StandardInputReader $input): int
     {
         $set = $this->option('set') === true;
         $unset = $this->option('unset') === true;
@@ -72,7 +72,7 @@ final class CredentialsAnalyticsCommand extends GatewayCommand
             }
             $password = null;
             if ($passwordStdin || is_string($email)) {
-                $password = $this->managementPassword($passwordStdin);
+                $password = $this->managementPassword($passwordStdin, $input);
                 if ($password === null) {
                     return self::FAILURE;
                 }
@@ -103,15 +103,12 @@ final class CredentialsAnalyticsCommand extends GatewayCommand
         );
     }
 
-    private function managementPassword(bool $stdin): ?string
+    private function managementPassword(bool $stdin, StandardInputReader $input): ?string
     {
         $password = null;
         if ($stdin) {
-            $stream = $this->input instanceof StreamableInputInterface ? $this->input->getStream() : null;
-            $stream ??= defined('STDIN') ? STDIN : null;
-            if (is_resource($stream) && ! stream_isatty($stream)) {
-                $line = fgets($stream, 4099);
-                $password = is_string($line) ? preg_replace('/\r?\n\z/', '', $line) : null;
+            if (! $input->isTerminal()) {
+                $password = preg_replace('/\r?\n\z/', '', $input->read());
             }
         } elseif ($this->consoleMode()->mayPrompt) {
             $answer = $this->commandPrompts()->run(fn (): PasswordPrompt => new PasswordPrompt(
