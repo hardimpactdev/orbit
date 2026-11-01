@@ -351,6 +351,43 @@ it('keeps the native error when stderr was recorded but empty', function (): voi
     ]);
 });
 
+it('renders the literal native phase timeout with its failed step', function (mixed $command): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'compile', 'status' => 'failed', 'outputs' => ['exitCode' => 124, 'command' => $command, 'stderr' => ''], 'error' => 'Command failed with exit code 124'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('compile');
+    expect(OperationData::fromModel($result)->toArray()['error'])->toBe([
+        'code' => 'operation.native_failed', 'detail' => 'compile timed out after 60s', 'stderr_recorded' => true,
+    ]);
+})->with([
+    'shell command' => ['timeout 60 python3 phase.py'],
+    'argv command' => [['timeout', '60', 'python3', 'phase.py']],
+]);
+
+it('preserves the native failure when exit or command does not prove a literal timeout', function (int $exitCode, mixed $command): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'compile', 'status' => 'failed', 'outputs' => ['exitCode' => $exitCode, 'command' => $command, 'stderr' => 'Original diagnostic.']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe('Original diagnostic.');
+})->with([
+    'ordinary failure' => [1, 'timeout 60 python3 phase.py'],
+    'plain exit 124' => [124, 'python3 phase.py'],
+    'disabled timeout' => [124, 'timeout 0 python3 phase.py'],
+    'dynamic timeout' => [124, 'timeout $BUDGET python3 phase.py'],
+    'nested text' => [124, 'echo timeout 60'],
+    'invalid argv budget' => [124, ['timeout', '-1', 'python3', 'phase.py']],
+]);
+
 it('chooses the earliest native failure rather than the workflow declaration order', function (): void {
     $this->history['status'] = 'failed';
     $this->history['jobs'] = [
