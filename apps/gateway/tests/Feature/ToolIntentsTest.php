@@ -54,7 +54,6 @@ it('projects a selected package and manager without execution receipts', functio
     expect(ToolManagerRecord::query()->sole()->installed_version)->toBe('apt 3.0.0');
     expect($this->operation->fresh()->result)->not->toHaveKey('password');
     expect($this->operation->fresh()->state)->toHaveKey('swamp_run_id')->not->toHaveKeys(['steps', 'executor_runs']);
-    expect($this->operation->steps()->count())->toBe(0);
     expect($this->operation->fresh()->worker)->toBeNull();
 });
 
@@ -63,7 +62,6 @@ it('records a bounded native result without demanding runtime or step proof', fu
         'finished_at' => '2026-10-30T12:00:01.000Z', 'result' => ['outcome' => 'unchanged']])->assertOk();
 
     expect($this->operation->fresh()->status)->toBe(OperationStatus::Succeeded);
-    expect($this->operation->steps()->count())->toBe(0);
     expect(Tool::query()->count())->toBe(0);
 });
 

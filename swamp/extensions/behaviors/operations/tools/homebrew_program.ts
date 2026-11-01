@@ -154,31 +154,6 @@ def brew(host,verb,data):
   if not official(value,name) or value.get('disabled') is not False or not version(stable) or not bottle(value,tag):refuse('tool.homebrew_candidate_unavailable')
   return stable
  if verb=='candidate':return {'version':candidate(metadata_(True))}
- if verb=='adoption':
-  entries=[p for p in inventory()['packages'] if p['name']==name]
-  if not entries:return {'installed_version':None,'block':None}
-  if len(entries)!=1 or entries[0]['unverifiable'] or len(entries[0]['versions'])!=1:refuse('tool.output_invalid')
-  installed=entries[0]['versions'][0];value=metadata_();block=None
-  if value is None:block='unsupported_source'
-  elif cask:
-   try:assess_cask(value,name,prefix,host.home)
-   except Refusal as error:
-    block={'tool.homebrew_cask_source_unsupported':'unsupported_source','tool.homebrew_cask_artifact_unsupported':'unsupported_artifact','tool.homebrew_cask_authorization_required':'authorization_required','tool.homebrew_cask_checksum_unavailable':'checksum_unavailable','tool.homebrew_cask_version_unavailable':'version_unreadable'}.get(error.code)
-    if block is None:raise
-  elif not official(value,name):block='unsupported_source'
-  else:
-   kegs=value.get('installed')
-   if not isinstance(kegs,list) or not kegs or any(not isinstance(k,dict) for k in kegs):refuse('tool.output_invalid')
-   explicit=any(k.get('installed_on_request') is True for k in kegs)
-   if any('installed_on_request' in k and not isinstance(k['installed_on_request'],bool) for k in kegs):refuse('tool.output_invalid')
-   versions=[k.get('version') for k in kegs];readable=all(version(v) and v!='latest' for v in versions) and len(set(v for v in versions if isinstance(v,str)))==1
-   if not explicit:block='dependency'
-   elif not readable:installed=None;block='version_unreadable'
-   elif versions[0]!=installed:refuse('tool.output_invalid')
-   elif 'disabled' in value and not isinstance(value['disabled'],bool):refuse('tool.output_invalid')
-   elif value.get('disabled') is True:block='unsupported_artifact'
-   elif not bottle(value,tag):block='bottle_unavailable'
-  return {'installed_version':installed,'block':block}
  if verb=='remove':
   if cask:
    value=metadata_()

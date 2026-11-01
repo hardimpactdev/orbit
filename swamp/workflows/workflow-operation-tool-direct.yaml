@@ -8,7 +8,7 @@ inputs:
     node_id: { type: integer, minimum: 1 }
     kind: {
       type: string,
-      enum: [tool.update, tool.remove, tool.adopt, tool.manager_converge],
+      enum: [tool.update, tool.remove, tool.manager_converge],
     }
   required: [operation_id, node_id, kind]
 jobs:

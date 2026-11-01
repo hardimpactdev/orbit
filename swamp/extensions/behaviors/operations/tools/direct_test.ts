@@ -73,15 +73,6 @@ class Fixture {
         packages: this.installed === null ? [] : [this.value.input.package],
       });
     }
-    if (name.endsWith("-adoption")) {
-      return Promise.resolve({
-        installed_version: this.installed,
-        block: null,
-      });
-    }
-    if (name === "tool.inspect-composer-scope") {
-      return Promise.resolve({ roots: [this.value.input.package] });
-    }
     if (/-(install|update|remove)$/.test(name)) {
       this.installed = name.endsWith("-remove") ? null : this.candidate;
       if (this.lost) {
@@ -102,14 +93,13 @@ class Fixture {
   }
 }
 
-Deno.test("direct policy preserves all five kinds across the closed manager registry", async () => {
+Deno.test("direct policy preserves retained kinds across the closed manager registry", async () => {
   for (const manager of ["apt", "composer", "vp", "brew", "brew-cask"]) {
     for (
       const kind of [
         "tool.install",
         "tool.update",
         "tool.remove",
-        "tool.adopt",
         "tool.manager_converge",
       ]
     ) {
@@ -119,89 +109,9 @@ Deno.test("direct policy preserves all five kinds across the closed manager regi
       assertEquals(value.outcome.result.manager_version, "3.0.0");
       assertEquals(
         f.mutations().length,
-        ["tool.adopt", "tool.manager_converge"].includes(kind) ? 0 : 1,
+        kind === "tool.manager_converge" ? 0 : 1,
       );
     }
-  }
-});
-
-Deno.test("direct adoption keeps package policy and never mutates or materializes", async () => {
-  for (
-    const block of [
-      null,
-      "protected",
-      "dependency",
-      "unsupported_source",
-      "unsupported_artifact",
-      "bottle_unavailable",
-      "version_unreadable",
-      "authorization_required",
-    ]
-  ) {
-    for (const manager of ["brew", "brew-cask"]) {
-      const f = new Fixture("tool.adopt", manager);
-      const invoke = f.invoke;
-      f.invoke = (name, input) =>
-        name.endsWith("-adoption")
-          ? Promise.resolve({ installed_version: f.installed, block })
-          : invoke(name, input);
-      const result = await f.execute();
-      assertEquals(
-        result.outcome.error_code,
-        block === null ? null : "tool.adoption_unsupported",
-      );
-      assertEquals(f.mutations(), []);
-      assertEquals(
-        f.calls.some((call) => /materialize|candidate/.test(call.name)),
-        false,
-      );
-    }
-  }
-  for (
-    const [installed, roots, error] of [
-      ["1.0.0", ["vendor/package"], null],
-      ["1.0.0", ["other/root"], "tool.adoption_unsupported"],
-      [null, ["vendor/package"], "tool.package_absent"],
-    ] as const
-  ) {
-    const f = new Fixture("tool.adopt", "composer");
-    f.installed = installed;
-    const invoke = f.invoke;
-    f.invoke = (name, input) =>
-      name === "tool.inspect-composer-scope"
-        ? Promise.resolve({ roots: [...roots] })
-        : invoke(name, input);
-    assertEquals((await f.execute()).outcome.error_code, error);
-    assertEquals(f.mutations(), []);
-    assertEquals(
-      f.calls.some((call) => /materialize|candidate/.test(call.name)),
-      false,
-    );
-  }
-  for (
-    const code of [
-      "tool.composer_scope_absent",
-      "tool.composer_scope_conflict",
-      "tool.composer_scope_unreadable",
-    ]
-  ) {
-    const f = new Fixture("tool.adopt", "composer");
-    const invoke = f.invoke;
-    f.invoke = (name, input) =>
-      name === "tool.inspect-composer-scope"
-        ? Promise.resolve({ error_code: code })
-        : invoke(name, input);
-    assertEquals(
-      (await f.execute()).outcome.error_code,
-      code.endsWith("unreadable")
-        ? "tool.version_probe_failed"
-        : "tool.manager_unavailable",
-    );
-    assertEquals(f.mutations(), []);
-    assertEquals(
-      f.calls.some((call) => call.name.endsWith("-inventory")),
-      false,
-    );
   }
 });
 

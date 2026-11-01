@@ -270,7 +270,7 @@ The JSON object allows only these fields. Any other field fails with `validation
 | `package` | yes | string | That manager's package name, at most 255 characters. |
 | `version_constraint` | no | string or null | A SemVer range, such as `^14.0`, at most 255 characters. Omit or null for none. |
 
-The Gateway records an Operation for the Node. Swamp reads the selected package again through a narrow Gateway read command. A discovery row is not evidence.
+The Gateway records an Operation for the Node. Swamp receives the complete admitted package intent and reads the selected package on its target through official `@swamp/ssh` from Node209. One manager query returns scope, manager version and installed facts. The typed result step checks eligibility and constraints. The managed account and full target host pins come from the canonical public SSH descriptor. Adoption requires no sudo or manager installation. The Gateway records the selected Tool only from the declared native terminal result. A discovery row is not evidence.
 
 Writes return an Operation with HTTP 202. Successful package receipts include `installed_version`, `block`, and `outcome`. Read the Tool with list or show after completion. Those reads retain these fields:
 
@@ -461,9 +461,13 @@ Use the Tool removal result and native Tool scan to inspect installation state. 
 
 ## Direct Swamp execution
 
-Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Install, update, remove, adopt and manager convergence all run on the admitted Node's exact `orbit-node-<id>` worker with its matching Node label. There is no migration-pool fallback or polled writer.
+Each Tool write records one Operation and starts its declared native Swamp workflow. The family's `direct-operations.php` is the sole registration. Adopt runs on Node209 through official SSH with the admitted target pins and existing209 identity.
 
-Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Read-only scan stays in Orbit.
+Official cfgmgmt package models were checked: their current connection schema does not carry the full admitted host-key list, and their package state does not encode the selected Composer root and Homebrew artifact adoption policy. Official SSH owns transport, command cancellation and outputs; one shipped query script reads facts for the selected manager. A typed check applies package ownership, eligibility and version constraints. The four-step graph reads that asset, queries through official SSH, records the bounded result, then fails on a refusal.
+
+Install, update, remove and manager convergence retain their declared Node worker paths pending their kind conversions. There is no migration-pool fallback or polled writer.
+
+Swamp owns manager setup, package constraints, execution, retries, cancellation and recovery. The Gateway keeps request validation, managed ownership and bounded result projection. It records native status and Tool/manager state without step receipts or a second runtime/completion proof. Native adoption rows reject intent and result HTTP callbacks. Cancelling an admitted adoption sends one cancellation request to its bound Swamp root; the native terminal subscriber records the outcome. An unconfirmed cancellation remains a request. Read-only scan stays in Orbit.
 
 
 ## Why it works this way

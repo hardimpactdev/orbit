@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,12 +17,23 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Public intent and bounded state writes. Swamp owns package execution and policy. */
-final readonly class ToolIntentProjection implements DirectOperationProjection
+final readonly class ToolIntentProjection implements DirectOperationProjection, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
 
+    public function native(Operation $operation): bool
+    {
+        return $operation->kind === 'tool.adopt';
+    }
+
     public function input(Operation $operation): array
     {
+        if ($operation->kind === 'tool.adopt') {
+            return ['intent' => array_intersect_key($operation->input, array_flip([
+                'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version',
+            ])), 'ssh' => $operation->input['ssh']];
+        }
+
         return ['node_id' => $operation->node_id, ...array_intersect_key($operation->input, array_flip([
             'manager', 'package', 'user', 'platform', 'architecture',
             'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'materialize',

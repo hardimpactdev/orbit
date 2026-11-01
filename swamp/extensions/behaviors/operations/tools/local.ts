@@ -17,15 +17,15 @@ def dispatch(value):
   if node['platform']!='linux' or data.get('user')!=node['user']:refuse('tool.account_invalid')
   host=Host(node)
   return {'vp':vp_materialize,'composer':composer_materialize,'brew':brew_materialize}[manager](host,data)
- special={'tool.homebrew-version':('version',manager in ('brew','brew-cask')),'tool.inspect-composer-scope':('scope',manager=='composer'),'tool.inspect-vp-scope':('scope',manager=='vp')}
+ special={'tool.homebrew-version':('version',manager in ('brew','brew-cask')),'tool.inspect-vp-scope':('scope',manager=='vp')}
  if name in special:
   verb,allowed=special[name]
   if not allowed:refuse('tool.input_invalid')
  else:
   if not name.startswith(prefix):refuse('tool.input_invalid')
   verb=name[len(prefix):]
-  if verb not in ('version','inventory','candidate','removal-plan','install','update','remove','adoption'):refuse('tool.input_invalid')
-  if verb=='adoption' and manager not in ('brew','brew-cask') or verb=='removal-plan' and manager in ('brew','brew-cask'):refuse('tool.input_invalid')
+  if verb not in ('version','inventory','candidate','removal-plan','install','update','remove'):refuse('tool.input_invalid')
+  if verb=='removal-plan' and manager in ('brew','brew-cask'):refuse('tool.input_invalid')
  allowed={'package','architecture','operation'} if verb not in ('version','inventory','scope') else set()
  if set(data)-allowed:refuse('tool.input_invalid')
  if verb not in ('version','inventory','scope'):package(manager,data.get('package'))
