@@ -6,6 +6,7 @@ license: MIT
 description: Database server command files and public result shaping.
 behaviors:
   - operations/database-server-commands/assets.ts
+  - operations/database-server-commands/destroy_plan.ts
   - operations/database-server-commands/create_assets.ts
 additionalFiles:
   - scripts/process.py
@@ -33,3 +34,6 @@ additionalFiles:
   - scripts/postgres_revoke_database.py
   - scripts/postgres_revoke_schema.py
   - scripts/postgres_grant_schema.py
+  - scripts/destroy.py
+  - scripts/destroy_sql.py
+  - scripts/destroy_valkey.py
