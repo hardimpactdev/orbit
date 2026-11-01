@@ -170,3 +170,27 @@ it('captures Metrics teardown for the canonical surviving fleet including209', f
     expect(array_column($role['firewall'], 'input'))->not->toBeEmpty();
     expect($capture['intent']['preserved_on_node'])->not->toBeEmpty();
 });
+
+it('requires consent for a role that appears before the locked Node is reloaded', function (): void {
+    FleetFixtures::bind();
+    $caller = FleetFixtures::node('removal-race-caller');
+    $node = FleetFixtures::node('removal-race-node');
+    $dispatcher = Node::getEventDispatcher();
+    Node::setEventDispatcher(clone $dispatcher);
+    $added = false;
+    try {
+        Node::retrieved(function (Node $loaded) use ($node, &$added): void {
+            if ($loaded->id === $node->id && ! $added) {
+                $added = true;
+                $loaded->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+            }
+        });
+        expect(fn () => app(RemoveNodeAction::class)->start($node, $caller))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('node.confirmation_required'));
+        expect($added)->toBeTrue();
+        expect(Operation::query()->count())->toBe(0);
+        expect($node->fresh()->status)->toBe(LifecycleStatus::Active);
+    } finally {
+        Node::setEventDispatcher($dispatcher);
+    }
+});

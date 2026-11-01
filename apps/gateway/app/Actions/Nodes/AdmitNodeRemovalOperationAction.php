@@ -29,9 +29,7 @@ final readonly class AdmitNodeRemovalOperationAction
         if ($deleted || TaskVm::query()->where('node_id', $node->id)->exists()) {
             throw new ResourceOperationException('node.removal_owner_required', 'Remove a TaskVM Node inside its owning native TaskVM workflow.', 422);
         }
-        if (($offline || $node->roles()->exists()) && ! $force) {
-            throw new ResourceOperationException('node.confirmation_required', 'Offline or role-shedding removal requires explicit force confirmation.', 422);
-        }
+        $this->consent($node, $offline, $force);
         $this->policy->protected($node, $caller);
         $this->policy->resources($node, $offline);
 
@@ -40,6 +38,7 @@ final readonly class AdmitNodeRemovalOperationAction
             if ($node->status === LifecycleStatus::Removing) {
                 throw new ResourceOperationException('node.removal_busy', 'This Node already has an admitted removal.', 409);
             }
+            $this->consent($node, $offline, $force);
             $this->policy->protected($node, $caller);
             $this->policy->resources($node, $offline);
             $snapshot = $this->plan->build($node, $offline);
@@ -50,5 +49,12 @@ final readonly class AdmitNodeRemovalOperationAction
                     'intent' => $execution['intent'], 'execution_secrets' => [],
                     'participant_node_ids' => $execution['participant_node_ids']], 'operator', $requestId);
         });
+    }
+
+    private function consent(Node $node, bool $offline, bool $force): void
+    {
+        if (($offline || $node->roles()->exists()) && ! $force) {
+            throw new ResourceOperationException('node.confirmation_required', 'Offline or role-shedding removal requires explicit force confirmation.', 422);
+        }
     }
 }
