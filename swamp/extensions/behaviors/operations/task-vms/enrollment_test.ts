@@ -1,5 +1,4 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { parse } from "jsr:@std/toml@1.0.9";
 import {
   createTaskVmEnrollmentAdapter,
   TaskVmEnrollmentStages,
@@ -19,10 +18,6 @@ const sshIdentity = {
   ssh_host_key_type: "ssh-ed25519" as const,
   ssh_host_key: publicBody,
   ssh_host_fingerprint: "SHA256:RXm/ruZ0eTzRXKwi1AQEDynB0VgHQ2ac9KPSFdf/YnA",
-};
-const pair = {
-  enrollment_token: `orbit-node-212.${"c".repeat(32)}`,
-  server_token: `orbit-node-212-access.${"d".repeat(32)}`,
 };
 function intent(): EnrollmentIntent {
   return {
@@ -101,7 +96,6 @@ function fixture() {
   const events: string[] = [];
   const privateValue: Record<string, unknown> = {
     secret_hash: null,
-    worker_credentials: null,
     pi_token: "1".repeat(64),
   };
   const material = {
@@ -145,11 +139,20 @@ function fixture() {
     system: (command) => {
       if (command.args.includes("is-active")) {
         events.push("services-active");
-        return Promise.resolve({ success: true, stdout: "active\nactive\n" });
+        return Promise.resolve({
+          success: true,
+          stdout: "active\nactive\n",
+        });
       }
       events.push("pi-inspect");
-      assertEquals(JSON.parse(command.stdin!).name, "pi.inspect-artifact");
-      return Promise.resolve({ success: true, stdout: '{"current":true}' });
+      assertEquals(
+        JSON.parse(command.stdin!).name,
+        "pi.inspect-artifact",
+      );
+      return Promise.resolve({
+        success: true,
+        stdout: '{"current":true}',
+      });
     },
     observer: (url, pin, system) => {
       events.push("observer-install");
@@ -168,41 +171,10 @@ function fixture() {
     publishNetwork: (_input, _network, selected, _guard, system) => {
       events.push("publish-network");
       assertEquals([selected, system], [key, guest]);
-      return Promise.resolve({ guest_node_id: 212, network_configured: true });
-    },
-    issuer: async (raw, existing, store) => {
-      events.push("issuer209");
-      assertEquals(raw, {
-        schema_version: 1,
-        node_id: 212,
-        issuer_node_id: 209,
-        worker_user: "orbit",
-        selected: true,
-      });
-      assertEquals(existing, null);
-      await store({ worker_credentials: pair });
-      return { issued: true, node_id: 212 };
-    },
-    configure: (raw, system) => {
-      events.push("configure-observer");
-      assertEquals(system, guest);
-      assertEquals(raw.worker_credentials, pair);
-      assertEquals(parse(raw.configuration).swamp_worker, {
-        node_id: 212,
-        user: "orbit",
-      });
       return Promise.resolve({
-        configured: true,
-        secret_hash: hash,
-        restarted: true,
-        unclosed: [],
+        guest_node_id: 212,
+        network_configured: true,
       });
-    },
-    installWorker: (_id, _guard, _material, system) => {
-      events.push("start-node-worker");
-      assertEquals(privateValue.secret_hash, hash);
-      assertEquals(system, guest);
-      return Promise.resolve({ configured: true });
     },
     identity: (args) => {
       events.push("exact-guest212");
@@ -231,12 +203,18 @@ function fixture() {
   };
   return { events, material, privateValue, dependencies };
 }
-Deno.test("native enrollment keeps issue/configure/hash/worker start/exact readiness/runtime in one truthful ordered root", async () => {
+Deno.test("remaining enrollment lowers preserve bootstrap/network/runtime behavior without worker creation", async () => {
   const f = fixture();
   const input = intent();
   for (
     const stage of TaskVmEnrollmentStages.filter((stage) =>
-      stage !== "issue-model" && stage !== "publish-hub"
+      ![
+        "issue-model",
+        "publish-hub",
+        "issue-worker",
+        "configure-worker",
+        "worker-ready",
+      ].includes(stage)
     )
   ) {
     const actions = nativeTaskVmEnrollmentActions(
@@ -258,7 +236,6 @@ Deno.test("native enrollment keeps issue/configure/hash/worker start/exact readi
     if (stage === "prepare-network") {
       input.wireguard_public_key = String(result.wireguard_public_key);
     }
-    assertEquals(JSON.stringify(result).includes(pair.enrollment_token), false);
     if (stage === "confirm-runtime") assertEquals(result.ready, true);
   }
   assertEquals(f.events, [
@@ -267,42 +244,12 @@ Deno.test("native enrollment keeps issue/configure/hash/worker start/exact readi
     "ssh-public-observe",
     "prepare-network",
     "publish-network",
-    "issuer209",
-    "store:worker_credentials",
-    "configure-observer",
-    "store:secret_hash",
-    "start-node-worker",
-    "exact-guest212",
     "runtime-configure",
     "exact-guest212",
     "pi-inspect",
     "services-active",
     "pi-capabilities",
   ]);
-});
-Deno.test("failed observer-hash persistence prevents the worker service from starting", async () => {
-  const f = fixture();
-  f.privateValue.worker_credentials = pair;
-  f.material.storeSecretOutput = () =>
-    Promise.reject(new Error("private-store-failed"));
-  const actions = nativeTaskVmEnrollmentActions(
-    intent(),
-    async () => {},
-    f.material,
-    {},
-    f.dependencies,
-  );
-  await assertRejects(
-    () =>
-      actions["configure-worker"]!({
-        input: intent(),
-        guard: async () => {},
-        privateMaterial: f.material,
-      }),
-    Error,
-    "task_vm.worker_bootstrap_refused",
-  );
-  assertEquals(f.events.includes("start-node-worker"), false);
 });
 Deno.test("production selects the shared native Process installer and preserves its typed refusal", async () => {
   const f = fixture();
@@ -318,7 +265,10 @@ Deno.test("production selects the shared native Process installer and preserves 
   }
   input.runtime.process.content_hash = Array.from(
     new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content)),
+      await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(content),
+      ),
     ),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
@@ -448,7 +398,10 @@ Deno.test("trusted UpCloud public SSH observation must match the admitted pinned
     privateMaterial: f.material,
   });
   assertEquals(result, { bootstrapped: true, node: sshIdentity });
-  assertEquals(JSON.stringify(result).includes("/private/managed-ssh"), false);
+  assertEquals(
+    JSON.stringify(result).includes("/private/managed-ssh"),
+    false,
+  );
   const changed = Uint8Array.from(
     atob(publicBody),
     (character) => character.charCodeAt(0),
@@ -477,7 +430,10 @@ Deno.test("failed or malformed SSH observation stops bootstrap before worker rea
       Promise.resolve(
         command.stdin !== undefined
           ? { success: true, stdout: '{"prepared":true}' }
-          : { success, stdout: "private untyped transport diagnostic" },
+          : {
+            success,
+            stdout: "private untyped transport diagnostic",
+          },
       );
     const input = intent();
     const actions = nativeTaskVmEnrollmentActions(
@@ -501,4 +457,39 @@ Deno.test("failed or malformed SSH observation stops bootstrap before worker rea
     assertEquals(f.events, []);
     assertEquals(f.privateValue.secret_hash, null);
   }
+});
+
+Deno.test("plain Task VM legacy worker stages refuse before material reads or effects", async () => {
+  const f = fixture();
+  const actions = nativeTaskVmEnrollmentActions(
+    intent(),
+    async () => {},
+    f.material,
+    {},
+    f.dependencies,
+  );
+  for (
+    const stage of [
+      "issue-worker",
+      "configure-worker",
+      "worker-ready",
+    ] as const
+  ) {
+    assertEquals(actions[stage], undefined);
+    await assertRejects(
+      () =>
+        createTaskVmEnrollmentAdapter(
+          intent(),
+          () =>
+            Promise.reject(
+              new Error("No Gateway guard should be read for a retired stage"),
+            ),
+          f.material,
+          actions,
+        ).execute(stage),
+      Error,
+      "operation.kind_unavailable",
+    );
+  }
+  assertEquals(f.events, []);
 });

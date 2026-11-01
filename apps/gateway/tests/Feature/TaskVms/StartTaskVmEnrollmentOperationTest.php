@@ -81,7 +81,8 @@ it('records one host-placed enrollment root and starts its native DAG without ch
     expect($operation->node_id)->toBe($executionNodeId)->not->toBe($vm->fresh()->node_id);
     expect($again->id)->toBe($operation->id);
     expect($operation->input['execution_node_id'])->toBe($executionNodeId);
-    expect($operation->input['private_bindings']['worker_credentials']['owner_node_id'])->toBe($vm->fresh()->node_id);
+    expect($operation->input)->not->toHaveKey('worker_credentials');
+    expect($operation->input['private_bindings'])->not->toHaveKey('worker_credentials');
     expect($operation->input['model_key'])->toBe(['$secret' => 'task_vm.model_key', 'id' => $vm->id]);
     expect($vm->fresh()->state)->toBe(TaskVmState::Provisioning);
     expect($vm->fresh()->node->status)->toBe(LifecycleStatus::Provisioning);

@@ -59,14 +59,12 @@ beforeEach(function (): void {
         'input' => ['task_vm_id' => $this->vm->id, 'guest_node_id' => $id, 'execution_node_id' => $this->host->id,
             'participant_node_ids' => [$this->host->id, $id, $this->issuer->id],
             'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $id],
-            'worker_credentials' => ['$secret' => 'node.worker_credentials', 'id' => $id],
-            'private_bindings' => ['secret_hash' => ['owner_node_id' => $id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => [$this->host->id]],
-                'worker_credentials' => ['owner_node_id' => $id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => [$this->issuer->id]]]],
+            'private_bindings' => ['secret_hash' => ['owner_node_id' => $id, 'read_node_ids' => [$this->host->id], 'write_node_ids' => [$this->host->id]]]],
         'state' => ['swamp_run_id' => '418fba90-401a-4c69-93cb-70d96dd31210']]);
     $this->credentials = ['enrollment_token' => 'orbit-node-'.$id.'.'.str_repeat('a', 32), 'server_token' => 'orbit-node-'.$id.'-access.'.str_repeat('b', 32)];
 });
 
-it('keeps nullable initial material and protected outputs on the actual guest', function (string $kind): void {
+it('keeps observer material and refuses worker material for plain task VMs', function (string $kind): void {
     $this->operation->kind = $kind;
     if (in_array($kind, ['task_vm.provision', 'tasks.provision'], true)) {
         $vm = $this->vm;
@@ -88,14 +86,13 @@ it('keeps nullable initial material and protected outputs on the actual guest', 
     }
     $hashes = app(NodeAgentHashSource::class);
     $workers = app(NodeWorkerEnrollment::class);
-    expect($hashes->resolve($this->operation, $this->guest->id, '', 'secret_hash')->value)->toBeNull()
-        ->and($workers->resolve($this->operation, $this->guest->id, '', 'worker_credentials')->value)->toBeNull();
+    expect($hashes->resolve($this->operation, $this->guest->id, '', 'secret_hash')->value)->toBeNull();
+    expect(fn () => $workers->resolve($this->operation, $this->guest->id, '', 'worker_credentials'))->toThrow(ResourceOperationException::class);
     $hashes->store($this->operation, $this->guest->id, str_repeat('c', 64));
-    $workers->store($this->operation, $this->guest->id, $this->credentials);
+    expect(fn () => $workers->store($this->operation, $this->guest->id, $this->credentials))->toThrow(ResourceOperationException::class);
     expect($this->guest->fresh()->agent_secret_hash)->toBe(str_repeat('c', 64))
         ->and($this->host->fresh()->agent_secret_hash)->toBeNull()
-        ->and($workers->resolve($this->operation, $this->guest->id, '', 'worker_credentials')->value)->toBe($this->credentials)
-        ->and(Cache::get('nodes:worker-enrollment:operation:'.$this->operation->id))->not->toContain($this->credentials['enrollment_token']);
+        ->and(Cache::get('nodes:worker-enrollment:operation:'.$this->operation->id))->toBeNull();
 })->with(['task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision']);
 
 it('refuses marker reference binding VM or family ownership drift before writing', function (string $change): void {

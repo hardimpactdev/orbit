@@ -2449,30 +2449,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_worker_install.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_worker_install.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_worker.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/enrollment_worker.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -2492,7 +2468,7 @@
     {
       "file": "extensions/behaviors/operations/task-vms/enrollment.ts",
       "rule": "private-material",
-      "count": 4,
+      "count": 3,
       "evidence": []
     },
     {

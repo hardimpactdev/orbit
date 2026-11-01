@@ -99,6 +99,9 @@ export function createTaskVmEnrollmentAdapter(
       signal?: AbortSignal,
     ): Promise<Record<string, unknown>> {
       signal?.throwIfAborted();
+      if (["issue-worker", "configure-worker", "worker-ready"].includes(stage)) {
+        throw new Error("operation.kind_unavailable");
+      }
       await guard();
       if (stage === "issue-model" || stage === "publish-hub") throw refused();
       if (stage === "publish-network" && input.wireguard_public_key === null) {

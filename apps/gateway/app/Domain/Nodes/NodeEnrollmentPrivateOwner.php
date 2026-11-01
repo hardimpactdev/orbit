@@ -14,7 +14,7 @@ final readonly class NodeEnrollmentPrivateOwner
 {
     public function taskVm(Operation $operation, string $field): ?int
     {
-        $sources = ['secret_hash' => 'node.agent_secret_hash', 'worker_credentials' => 'node.worker_credentials'];
+        $sources = ['secret_hash' => 'node.agent_secret_hash'];
         if (! isset($sources[$field]) || ! in_array($operation->kind, ['task_vm.provision', 'tasks.provision', 'task_vm.enroll', 'task_vm.prepare_runtime'], true)
             || $operation->status->terminal()) {
             return null;

@@ -210,7 +210,8 @@ it('admits immutable field custody without exporting private material or invokin
     try {
         $private = app(TaskVmEnrollmentIntent::class)->privateInput($vm, $vm->host_node_id);
         expect($private['participant_node_ids'])->toContain($vm->host_node_id, $issuer->id, $router->id, $vm->node_id, $hub->id);
-        expect($private['private_bindings']['worker_credentials'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->host_node_id, $issuer->id], 'write_node_ids' => [$issuer->id]]);
+        expect($private)->not->toHaveKey('worker_credentials');
+        expect($private['private_bindings'])->not->toHaveKey('worker_credentials');
         expect($private['private_bindings']['installation'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [$vm->node_id], 'write_node_ids' => []]);
         expect($private['private_bindings']['model_router']['owner_node_id'])->toBe($router->id);
         expect($private['private_bindings']['provider_bootstrap'])->toBe(['owner_node_id' => $vm->node_id, 'read_node_ids' => [], 'write_node_ids' => []]);
@@ -276,7 +277,7 @@ it('bulk reads initial standalone enrollment material without requiring provider
         $material = app(DirectOperationPrivateMaterial::class)->read($operation, $intent['execution_node_id']);
 
         expect($material)->toMatchArray(['model_key' => $vm->fresh()->model_key, 'model_router' => ['management_key' => 'PRIVATE-ROUTER', 'anchor_key' => str_repeat('e', 64)],
-            'secret_hash' => null, 'worker_credentials' => null, 'first_visit' => null]);
+            'secret_hash' => null, 'first_visit' => null]);
         expect($material['configuration']['snapshot'])->toBe($private['_wireguard']);
         expect($material)->not->toHaveKey('enrollment_network');
         expect($material)->not->toHaveKey('provider_bootstrap');
