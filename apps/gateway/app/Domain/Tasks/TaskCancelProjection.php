@@ -68,7 +68,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
                 $group->fill(['status' => $operation->kind === 'tasks.maintenance_finish' || $group->status === TaskGroupStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Cancelled, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null])->save();
                 $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
                     ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-            } elseif (in_array($data['status'], ['failed', 'cancelled', 'interrupted'], true)) {
+            } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                 $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 

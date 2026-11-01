@@ -41,7 +41,7 @@ final readonly class TaskVmDestroyProjection implements DirectOperationProjectio
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($data['status'] === OperationStatus::Succeeded->value) {
                 $this->record($vm, $operation->input, $result);
-            } elseif (in_array($data['status'], [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value], true)) {
+            } elseif (in_array($data['status'], [OperationStatus::Failed->value, OperationStatus::Cancelled->value], true)) {
                 $this->failed($vm, $operation->input, ValidatedData::nullableString($data['error_code'] ?? null));
             }
 
