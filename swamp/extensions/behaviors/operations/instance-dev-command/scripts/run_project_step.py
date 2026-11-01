@@ -84,7 +84,7 @@ tail = redact(whole[-TAIL_LIMIT:])
 lines = tail.split(b'\n')
 if truncated or len(whole) > TAIL_LIMIT:
     lines = lines[1:]  # the first line may start mid-secret
-kept = [b'[REDACTED LINE]' if holds_fragment(line) else line for line in lines]
+kept = [line for line in lines if not holds_fragment(line)]  # dropped, not replaced, so the tail never grows
 output = {'exitCode': code, 'stderr': b'\n'.join(kept).decode('utf-8', errors='ignore')}
 print(json.dumps(output))
 sys.exit(code)

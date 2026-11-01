@@ -63,6 +63,17 @@ class ProjectStep(unittest.TestCase):
                 for start in range(len(secret) - 8 + 1):
                     self.assertNotIn(secret[start:start + 8], tail, f'offset {offset}')
 
+    def test_many_fragment_lines_are_dropped_and_the_tail_stays_bounded(self):
+        secret = 'unique-private-fragment-0123456789'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            command = f'for i in $(seq 512); do printf "x{secret[3:11]}\\n" >&2; done; printf "last-public-line\\n" >&2; exit 7'
+            output = json.loads(self.run_step(path, command).stdout)
+            self.assertLessEqual(len(output['stderr'].encode()), 4096)
+            self.assertNotIn(secret[3:11], output['stderr'])
+            self.assertIn('last-public-line', output['stderr'])
+
     def test_redacts_escaped_terminal_quotes_and_truncates_unicode_by_bytes(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
             path = Path(folder)
