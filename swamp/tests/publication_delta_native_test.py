@@ -65,7 +65,7 @@ name=Path(sys.argv[0]).name
 with open(os.environ['FIXTURE_AUDIT'],'a') as output:output.write(json.dumps([name,*sys.argv[1:]])+'\n')
 if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate':sys.exit(1)
 """
-        for name in ["caddy", "php-fpm8.4", "systemctl"]:
+        for name in ["caddy", "php-fpm8.4", "php-fpm8.5", "systemctl"]:
             path = self.commands / name
             path.write_text(script)
             path.chmod(0o700)
@@ -107,10 +107,10 @@ if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate'
                 )
             for job in workflow["jobs"]:
                 job.pop("target")
-                job.pop("labels")
+                job.pop("labels", None)
                 for step in job["steps"]:
                     self.assertEqual(step.pop("target"), "orbit-node-209")
-                    self.assertEqual(step.pop("labels"), {"node": "209"})
+                    self.assertIn(step.pop("labels", None), [None, {"node": "209"}])
             (
                 self.repo / f"workflows/workflow-operation-route-{family}-delta.yaml"
             ).write_text(yaml.safe_dump(workflow, sort_keys=False))
@@ -236,3 +236,29 @@ if name in ('caddy','php-fpm8.4') and os.environ.get('FIXTURE_FAIL')=='validate'
             "php", self.php_input(pool(1, 5)), self.php_input(pool(1, 7)), success=False
         )
         self.assertEqual([row[0] for row in self.calls()], ["php-fpm8.4"])
+
+    def test_php_versions_validate_concurrently_without_a_shared_behavior_lock(self):
+        second = self.host / "php/8.5/fpm/pool.d/orbit-scopes.conf"
+        second.parent.mkdir(parents=True)
+        barrier = self.repo / "validation-barrier"
+        barrier.mkdir()
+        for version in ["8.4", "8.5"]:
+            command = self.commands / ("php-fpm" + version)
+            command.write_text(command.read_text() + '''
+import time
+barrier=Path(os.environ['FIXTURE_PHP_BARRIER'])
+(barrier/name).touch()
+deadline=time.monotonic()+8
+while len(list(barrier.iterdir()))<2:
+    if time.monotonic()>deadline:raise SystemExit('parallel validation serialized')
+    time.sleep(0.02)
+''')
+        self.native_env["FIXTURE_PHP_BARRIER"] = str(barrier)
+        before = {"account_user": self.user, "configurations": {"8.4": "", "8.5": ""}}
+        after = {"account_user": self.user, "configurations": {"8.4": pool(1, 5), "8.5": pool(2, 7)}}
+
+        self.run_delta("php", before, after)
+
+        self.assertEqual(self.php.read_text(), pool(1, 5))
+        self.assertEqual(second.read_text(), pool(2, 7))
+        self.assertCountEqual([p.name for p in barrier.iterdir()], ["php-fpm8.4", "php-fpm8.5"])

@@ -2345,16 +2345,10 @@
     {
       "file": "extensions/behaviors/operations/routes/removal.ts",
       "rule": "gateway-http",
-      "count": 5,
+      "count": 4,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/removal.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/routes/route-workload-local.ts",
@@ -3270,7 +3264,6 @@
     {"file":"workflows/workflow-operation-node-role-remove-direct.yaml","rule":"foreach-shared-identity","count":1,"evidence":["source_certificates_job/source_certificates"]},
     {"file":"workflows/workflow-operation-process-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-process-restart-instance.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
-    {"file":"workflows/workflow-operation-route-php-delta.yaml","rule":"foreach-shared-identity","count":3,"evidence":["publication/apply-pool","publication/reload","publication/validate"]},
     {"file":"workflows/workflow-operation-schedule-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["schedule/remove_files"]},
     {"file":"workflows/workflow-operation-schedule-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-task-check.yaml","rule":"foreach-shared-identity","count":5,"evidence":["check/base-${{ self._index }}","check/base_prepare-${{ self._index }}","check/base_ready-${{ self._index }}","check/deliverable-${{ self._index }}","check/setup-${{ self._index }}"]},

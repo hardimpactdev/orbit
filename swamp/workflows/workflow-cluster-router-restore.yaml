@@ -34,8 +34,6 @@ jobs:
   steps:
   - name: restore_prepare_certificates
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.certificates }}
@@ -62,8 +60,6 @@ jobs:
     allowFailure: true
   - name: restore_php
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -91,8 +87,6 @@ jobs:
     allowFailure: true
   - name: restore_lan
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.lan }}
@@ -119,8 +113,6 @@ jobs:
     allowFailure: true
   - name: restore_urls
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.url_writes }}
@@ -149,8 +141,6 @@ jobs:
     allowFailure: true
   - name: restore_restore_prepare_caddy
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -184,8 +174,6 @@ jobs:
     allowFailure: true
   - name: restore_dns
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.before.dns != null) }}
@@ -217,8 +205,6 @@ jobs:
     allowFailure: true
   - name: restore_dns_grace
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.route_mutations.restore.publications.exists(p,p.before.dns != null && p.before.dns.digest
@@ -244,8 +230,6 @@ jobs:
     allowFailure: true
   - name: restore_restore_caddy
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.publications.filter(p,p.serves_routes) }}
@@ -282,8 +266,6 @@ jobs:
     allowFailure: true
   - name: restore_cleanup
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.cleanup }}
@@ -318,8 +300,6 @@ jobs:
     allowFailure: true
   - name: restore_retire_lan
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.restore.retire_lan }}
@@ -353,8 +333,6 @@ jobs:
     allowFailure: true
   - name: restore
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.restore] }}

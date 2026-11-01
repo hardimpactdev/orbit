@@ -46,7 +46,7 @@ abstract class RouteCommand extends GatewayCommand
         $this->writeHumanMessage('Left on Nodes the Gateway could not reach:');
         foreach ($retained as $node) {
             if (is_array($node) && is_string($node['node'] ?? null) && is_array($node['steps'] ?? null)) {
-                $this->writeHumanMessage($node['node'].': '.implode(', ', $node['steps']));
+                $this->writeHumanMessage($node['node'].': '.implode(', ', array_filter($node['steps'], is_string(...))));
             }
         }
         $this->writeHumanMessage('Run orbit node:converge NODE once the Node answers to remove them.');

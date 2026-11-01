@@ -37,7 +37,6 @@ const current = {
   input: {
     route_removal: snapshot,
     php_publication: { node_id: 18, agent_sha256: "a".repeat(64) },
-    environment_fields: { "18": "environment_sync_0" },
     workloads: [{
       instance_id: 4,
       node_id: 18,
@@ -96,68 +95,6 @@ Deno.test("removal rebuilds production runtime from fresh whole-workload input",
   });
   assertEquals(commands, ["4"]);
 });
-Deno.test("removal keeps protected URL bytes inside the exact admitted workload action", async () => {
-  const privateValue = "private-url-sentinel";
-  const sent: unknown[] = [];
-  const http: Http = (_method, path) =>
-    Promise.resolve({
-      status: 200,
-      body: {
-        data: path.includes("private-material")
-          ? {
-            environment_sync_0: [{
-              instance_id: 4,
-              name: "instance.write-development-url",
-              input: { content: privateValue },
-            }],
-          }
-          : current,
-      },
-    });
-  const behavior = removal(() => http, undefined, {
-    ...routeWorkloadLocal(),
-    synchronizeEnvironment: (raw) => {
-      sent.push(...(raw as { input: unknown }[]).map((write) => write.input));
-      return Promise.resolve({ ready: true });
-    },
-  });
-  const result = await behavior.methods.synchronizeEnvironment.execute(
-    args,
-    ctx,
-  );
-  assertEquals(sent, [{ content: privateValue }]);
-  assertEquals(JSON.stringify(result).includes(privateValue), false);
-});
-Deno.test("removal refuses a private environment write for another admitted instance", async () => {
-  let invoked = false;
-  const http: Http = (_method, path) =>
-    Promise.resolve({
-      status: 200,
-      body: {
-        data: path.includes("private-material")
-          ? {
-            environment_sync_0: [{
-              instance_id: 99,
-              name: "instance.write-development-url",
-              input: {},
-            }],
-          }
-          : current,
-      },
-    });
-  const behavior = removal(() => http, undefined, {
-    ...routeWorkloadLocal(),
-    synchronizeEnvironment: () => {
-      invoked = true;
-      return Promise.resolve({ ready: true });
-    },
-  });
-  await assertRejects(() =>
-    behavior.methods.synchronizeEnvironment.execute(args, ctx)
-  );
-  assertEquals(invoked, false);
-});
-
 Deno.test("removal terminal projection supplies the shared endpoint timestamps", async () => {
   const http: Http = (_method, _path, body) => {
     const input = body as Record<string, unknown>;

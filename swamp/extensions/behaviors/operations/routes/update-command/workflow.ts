@@ -1,7 +1,7 @@
 import { routeMutationSteps } from "../mutation-command/steps.ts";
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const placed = { target: "orbit-node-209", labels: { node: "209" } };
+const placed = { target: "orbit-node-209" };
 const after = (...names: string[]) =>
     names.map((step) => ({ step, condition: { type: "always" } }));
 const envelope = {
@@ -154,10 +154,12 @@ export function mutationWorkflow(mode: "forward" | "restore"): Fields {
         "inputs.parent_run_id",
         true,
     );
-    for (const step of steps) step.allowFailure = true;
+    for (const step of steps) {
+        step.allowFailure = true;
+        delete step.target;
+    }
     steps.push({
         name: "result",
-        ...placed,
         dependsOn: after(...steps.map((s) => String(s.name))),
         task: {
             type: "behavior",
@@ -172,6 +174,7 @@ export function mutationWorkflow(mode: "forward" | "restore"): Fields {
             ? "b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7"
             : "f11fa84e-418c-44cf-86d9-a84f46ef0146",
         name: `route-mutation-${mode}`,
+        target: "orbit-node-209",
         description:
             "Canonical Route publications and complete native contribution proof.",
         vaults: [],

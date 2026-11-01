@@ -101,14 +101,59 @@ it('gives a foreign participant its public view while the parent keeps its truth
         ->assertJsonPath('data.input.participant_node_id', $this->node->id)
         ->assertJsonPath('data.input.caddy_publication.node_id', $this->node->id)->assertJsonMissingPath('data.result');
     $this->postJson($path.'/result', ['run_id' => $this->runId, 'status' => 'succeeded', 'started_at' => '2026-10-31T08:00:00.000Z', 'finished_at' => '2026-10-31T08:00:01.000Z', 'result' => ['ready' => true]])->assertForbidden();
-    $material = $this->getJson($path.'/private-material?run_id='.$this->runId)->assertOk();
-    $field = $operation->input['environment_fields'][$this->node->id];
-    expect(array_keys($material->json('data')))->toBe([$field]);
-    expect($material->json('data.'.$field))->toBe([]);
+    $this->getJson($path.'/private-material?run_id='.$this->runId)->assertForbidden()
+        ->assertJsonPath('error.code', 'operation.executor_forbidden');
+    expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings']);
     $other = Node::query()->create(['name' => 'other', 'public_ssh_host' => '192.0.2.15', 'wireguard_ip' => '10.44.0.15', 'user' => 'orbit', 'status' => 'active']);
     $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
     $this->getJson($path.'?run_id='.$this->runId)->assertForbidden();
     expect($this->route->targets()->count())->toBe(1);
+});
+
+it('captures removal URL material in named execution copies before starting the root', function (): void {
+    $this->route->update(['web_root' => 'docs/public']);
+    $this->node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-pin']);
+    $this->instance->update(['selected_php_version' => '8.5']);
+    $survivor = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
+        'domain' => 'survivor.private.test', 'web_root' => 'docs/public', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $survivor->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+    $survivor->update(['status' => 'active', 'sites_published' => true]);
+    $this->socket->reply = static fn (array $request): array => $request['type'] === 'vault.put'
+        ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]]
+        : [['type' => 'event', 'id' => $request['id'], 'event' => ['kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]];
+
+    $operation = app(NativeRouteRemovalAdmission::class)->start('route.destroy', $this->route);
+
+    $write = $operation->input['route_environment'][0];
+    expect($write['write']['input']['url'])->toBe('https://survivor.private.test')
+        ->and($write['host_keys'])->toBe(['ssh-ed25519 fixture-pin'])
+        ->and($write['control_node_id'])->toBe(209)
+        ->and($write['write']['input'])->not->toHaveKeys(['app_key', 'app_name'])
+        ->and($operation->input['execution_secrets'][$write['write']['secret_field']])->toHaveKeys(['vault', 'key']);
+    $requests = $this->socket->sent;
+    expect($requests[0]['type'])->toBe('vault.put')
+        ->and($requests[0]['payload']['value'])->toContain('APP_KEY=')
+        ->and($requests[1]['type'])->toBe('workflow.run')
+        ->and($requests[1]['payload']['inputs']['intent']['environment_writes'])->toBe($operation->input['route_environment'])
+        ->and(json_encode($requests[1], JSON_THROW_ON_ERROR))->not->toContain('APP_KEY=');
+});
+
+it('rolls back withdrawal and starts no native root when the execution copy is not acknowledged', function (): void {
+    $this->route->update(['web_root' => 'docs/public']);
+    $this->node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-pin']);
+    $this->instance->update(['selected_php_version' => '8.5']);
+    $survivor = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
+        'domain' => 'survivor.private.test', 'web_root' => 'docs/public', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $survivor->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+    $survivor->update(['status' => 'active', 'sites_published' => true]);
+    $this->socket->reply = static fn (): array => [];
+
+    $this->deleteJson('/api/v1/routes/'.$this->route->id)->assertServiceUnavailable()
+        ->assertJsonPath('error.code', 'swamp.vault_sync_unavailable');
+
+    expect($this->route->fresh()->status)->toBe(RouteStatus::Pending)
+        ->and(Operation::query()->count())->toBe(0)
+        ->and(array_column($this->socket->sent, 'type'))->toBe(['vault.put']);
 });
 
 it('keeps captured rows when cancellation is recorded and rejects a later conflicting success', function (): void {

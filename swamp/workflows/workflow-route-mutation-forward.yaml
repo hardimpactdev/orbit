@@ -1,5 +1,6 @@
 id: b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7
 name: route-mutation-forward
+target: orbit-node-209
 description: Canonical Route publications and complete native contribution proof.
 vaults: []
 inputs:
@@ -46,9 +47,6 @@ jobs:
 - name: forward
   steps:
   - name: forward_prepare_certificates
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.prepare_certificates }}
@@ -73,9 +71,6 @@ jobs:
         restoring: false
     allowFailure: true
   - name: forward_php
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
@@ -101,9 +96,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_lan
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.lan }}
@@ -128,9 +120,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_ingress
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.ingress }}
@@ -156,9 +145,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_prepare_caddy
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
@@ -190,9 +176,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_urls
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.url_writes }}
@@ -221,9 +204,6 @@ jobs:
           material: ${{ inputs.execution_secrets[self.part.secret_field] }}
     allowFailure: true
   - name: forward_prepare_dns
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.prepared.dns != null) }}
@@ -254,9 +234,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_dns_grace
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: '${{ inputs.intent.route_mutations.forward.publications.exists(p,p.before.dns != null && p.before.dns.digest
@@ -281,9 +258,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_withdraw_caddy
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
@@ -319,9 +293,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_live_certificates
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.certificates }}
@@ -355,9 +326,6 @@ jobs:
         restoring: false
     allowFailure: true
   - name: forward_live_caddy
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.serves_routes) }}
@@ -395,9 +363,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_dns
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.publications.filter(p,p.after.dns != null) }}
@@ -433,9 +398,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_cleanup
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.cleanup }}
@@ -472,9 +434,6 @@ jobs:
         restoring: false
     allowFailure: true
   - name: forward_retire_lan
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.retire_lan }}
@@ -510,9 +469,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward_retire_ingress
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: part
       in: ${{ inputs.intent.route_mutations.forward.retire_ingress }}
@@ -549,9 +505,6 @@ jobs:
         execution_secrets: {}
     allowFailure: true
   - name: forward
-    target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: stage
       in: ${{ [inputs.intent.route_mutations.forward] }}
@@ -604,9 +557,6 @@ jobs:
         outcomes: ${{ steps }}
     allowFailure: true
   - name: result
-    target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
     - {step: forward_php, condition: {type: always}}

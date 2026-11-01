@@ -64,7 +64,6 @@ export function removal(
           agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
         }),
         workloads: z.array(z.record(z.string(), z.unknown())).default([]),
-        environment_fields: z.record(z.string(), z.string()).default({}),
       }),
     }).parse(await new GatewayOperation(makeHttp(ctx), args).read(ctx.signal));
     if (
@@ -214,29 +213,6 @@ export function removal(
         execute: async (args: EffectArgs, ctx: Context) => {
           const current = await effect(args, ctx);
           return await cleanup.prepareRuntime(current.workloads, ctx.signal);
-        },
-      },
-      synchronizeEnvironment: {
-        description:
-          "Restore authoritative application URLs inside the protected material callback",
-        arguments: effectArgs,
-        execute: async (args: EffectArgs, ctx: Context) => {
-          const current = await effect(args, ctx);
-          const member = current.route_removal.nodes.find((node) =>
-            node.node_id === args.target_node_id
-          );
-          if (!member) throw new Error("Route environment participant missing");
-          await new GatewayOperation(makeHttp(ctx), args).withPrivateMaterial(
-            async (material) => {
-              await cleanup.synchronizeEnvironment(
-                material[
-                  current.environment_fields[String(args.target_node_id)]
-                ],
-                member.url_instance_ids,
-              );
-            },
-          );
-          return { ready: true };
         },
       },
       ingressFirewall: {
