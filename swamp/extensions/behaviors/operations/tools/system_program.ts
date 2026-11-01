@@ -97,78 +97,18 @@ class Host:
   if check and code:refuse('tool.command_failed')
   return code,out,err
 
-def package(manager,value):
- patterns={'apt':r'(?=.{2,128}\Z)(?=.*[a-z])[a-z0-9][a-z0-9+.-]*','composer':r'(?=.{1,255}\Z)[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?','vp':r'(?=.{1,214}\Z)(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*/[a-z0-9][a-z0-9._~-]*)','brew':r'(?=.{1,255}\Z)[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\+*'}
- if not isinstance(value,str) or not re.fullmatch(patterns['brew' if manager=='brew-cask' else manager],value):refuse('tool.package_invalid')
- return value
-
 def first(text):
  value=text.splitlines()[0] if text else ''
  if not safe(value):refuse('tool.output_invalid')
  return value
 
 def apt(host,verb,data):
- if verb=='version':return {'version':first(host.run(['/usr/bin/apt-get','--version'])[1])}
- if verb=='inventory':
-  text=host.run(['/usr/bin/dpkg-query','--show','--showformat=$'+'{Package}\\t$'+'{Status}\\t$'+'{Version}\\n'])[1];packages=[]
-  absent={'deinstall ok config-files','deinstall ok not-installed','purge ok config-files','purge ok not-installed','unknown ok not-installed'}
-  for line in text.split('\n'):
-   if not line:continue
-   fields=line.split('\t')
-   if len(fields)!=3:refuse('tool.output_invalid')
-   name,status,value=fields
-   try:package('apt',name)
-   except Refusal:continue
-   if status not in absent:packages.append({'name':name,'version':value if status=='install ok installed' and safe(value) else None})
-  return {'packages':packages}
- name=package('apt',data.get('package'))
- if verb=='candidate':
-  rows=[line.lstrip()[10:] for line in host.run(['/usr/bin/apt-cache','policy','--',name])[1].splitlines() if line.lstrip().startswith('Candidate:')]
-  if len(rows)!=1 or not rows[0].startswith((' ','\t')) or not version(rows[0].strip()):refuse('tool.output_invalid')
-  return {'version':None if rows[0].strip()=='(none)' else rows[0].strip()}
- host.run(['/usr/bin/apt-get','-o','DPkg::Lock::Timeout=300','install','--yes','--no-install-recommends','--',name],root=True,env={'DEBIAN_FRONTEND':'noninteractive'});return {}
+ if verb!='version':refuse('tool.input_invalid')
+ return {'version':first(host.run(['/usr/bin/apt-get','--version'])[1])}
 
-COMPOSER_FLAGS=['--no-interaction','--no-ansi','--no-progress','--no-audit','--with-all-dependencies']
 def composer(host,verb,data):
- def call(args,check=True):return host.run(['/usr/bin/composer',*args],env={'COMPOSER_HOME':'/opt/orbit/composer'},check=check)
- if verb=='version':return {'version':first(call(['--version','--no-ansi'])[1])}
- if verb=='inventory':
-  value=json_(call(['global','show','--format=json','--no-ansi'])[1])
-  if value==[]:return {'packages':[]}
-  entries=object_(value).get('installed')
-  if not isinstance(entries,list):refuse('tool.output_invalid')
-  packages=[]
-  for entry in entries:
-   entry=object_(entry)
-   try:name=package('composer',entry.get('name'))
-   except Refusal:continue
-   packages.append({'name':name,'version':entry.get('version') if version(entry.get('version')) else None})
-  return {'packages':packages}
- name=package('composer',data.get('package'));op={'install':'require','update':'update','candidate':'require' if data.get('operation')=='install' else 'update'}[verb]
- target=name+':*' if op=='require' else name;args=['global',op,target]
- if verb=='candidate':args+=['--dry-run']
- code,out,err=call(args+COMPOSER_FLAGS,check=False)
- if len(out.encode())>65536 or len(err.encode())>65536:refuse('tool.output_invalid')
- text=out+'\n'+err
- if code:
-  missing='Could not find a matching version of package '+name+'. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability'
-  if verb=='candidate' and len(text)<=32768 and missing in ' '.join(text.split()):return {'version':None}
-  refuse('tool.command_failed')
- if verb!='candidate':return {}
- if not text.strip() or len(text)>32768:refuse('tool.output_invalid')
- found=[];operations=0;noop=0
- for line in text.splitlines():
-  if line=='Nothing to install, update or remove':noop+=1;continue
-  match=re.fullmatch(r'\s*-\s+(Locking|Installing)\s+(\S+)\s+\(([^\s()]+)\)\s*',line) or re.fullmatch(r'\s*-\s+(Upgrading|Downgrading)\s+(\S+)\s+\([^\s()]+\s+=>\s+([^\s()]+)\)\s*',line)
-  if match:
-   operations+=1
-   if match[2]==name:found.append((match[1],match[3]))
-  elif re.match(r'\s*-\s+(Locking|Installing|Upgrading|Downgrading|Removing)(?:\s|$)',line):refuse('tool.output_invalid')
- if not noop and (len(found)==1 or len(found)==2 and found[0][0]=='Locking' and found[1][0]=='Installing' and found[0][1]==found[1][1]) and version(found[-1][1]):return {'version':found[-1][1]}
- if noop==1 and operations==0:
-  entries=[p for p in composer(host,'inventory',{})['packages'] if p['name']==name]
-  if len(entries)==1 and version(entries[0]['version']):return {'version':entries[0]['version']}
- refuse('tool.output_invalid')
+ if verb!='version':refuse('tool.input_invalid')
+ return {'version':first(host.run(['/usr/bin/composer','--version','--no-ansi'],env={'COMPOSER_HOME':'/opt/orbit/composer'})[1])}
 
 def vp_scope(host,missing=False):
  candidates=([Path('/opt/orbit/vite-plus')] if host.node['platform']=='linux' else [])+[Path(host.home)/'.vite-plus',Path(host.home)/'.local/share/vite-plus'];found=[]
@@ -190,24 +130,7 @@ def vp_scope(host,missing=False):
 
 def vp(host,verb,data):
  scope=vp_scope(host)
- def call(args):return host.run([str(scope/'bin/vp'),*args],env={'VP_HOME':str(scope)})[1]
  if verb=='scope':return {'binary':str(scope/'bin/vp')}
- if verb=='version':return {'version':first(call(['--version']))}
- if verb=='inventory':
-  entries=json_(call(['list','-g','--json']))
-  if not isinstance(entries,list):refuse('tool.output_invalid')
-  packages=[];seen=set();complete=True
-  for entry in entries:
-   entry=object_(entry);name=entry.get('name');value=entry.get('version')
-   if not isinstance(name,str):refuse('tool.output_invalid')
-   value=value if safe(value) else None;complete=complete and safe(name) and value is not None and name not in seen;seen.add(name);packages.append({'name':name,'version':value})
-  return {'packages':packages,'scan_complete':complete}
- name=package('vp',data.get('package'))
- if verb=='candidate':
-  value=json_(call(['info',name,'version','--json']))
-  if not safe(value):refuse('tool.output_invalid')
-  return {'version':value}
- if name=='pnpm':refuse('tool.vp_package_protected')
- argv={'install':['install','-g',name,'--node','lts'],'update':['update','-g',name,'--reinstall-node-mismatch']}[verb]
- call(argv);return {}
+ if verb!='version':refuse('tool.input_invalid')
+ return {'version':first(host.run([str(scope/'bin/vp'),'--version'],env={'VP_HOME':str(scope)})[1])}
 `;

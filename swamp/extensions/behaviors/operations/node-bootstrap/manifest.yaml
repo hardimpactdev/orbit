@@ -8,6 +8,7 @@ behaviors:
   - operations/node-bootstrap/probe_result.ts
   - operations/node-bootstrap/ssh_access.ts
   - operations/node-bootstrap/command_assets.ts
+  - operations/node-bootstrap/tool_setup_assets.ts
 additionalFiles:
   - scripts/bootstrap_authorized_key.py
   - scripts/bootstrap_packages.py
@@ -15,3 +16,7 @@ additionalFiles:
   - scripts/bootstrap_sudo.py
   - scripts/bootstrap_observer.py
   - scripts/bootstrap_verify.py
+  - tool_scripts/install_apt.py
+  - tool_scripts/install_javascript.py
+  - tool_scripts/prepare_composer.py
+  - tool_scripts/install_homebrew.py

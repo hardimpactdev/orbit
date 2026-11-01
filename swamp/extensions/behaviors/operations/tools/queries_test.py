@@ -24,8 +24,8 @@ class QueriesTest(unittest.TestCase):
     def path(self, value):
         return self.root / str(value).lstrip('/')
 
-    def run_query(self, manager, outputs, platform='linux'):
-        input = {'user': 'orbit', 'package': 'hello', 'manager': manager, 'platform': platform}
+    def run_query(self, manager, outputs, platform='linux', family='queries', extra=None):
+        input = {'user': 'orbit', 'package': 'hello', 'manager': manager, 'platform': platform, **(extra or {})}
         source = (QUERIES / 'support.py').read_text().replace('QUERY_INPUT = None', 'QUERY_INPUT = ' + repr(json.dumps(input)))
         namespace = {'__name__': '__main__'}
         with patch('pwd.getpwnam', return_value=self.account):
@@ -39,6 +39,8 @@ class QueriesTest(unittest.TestCase):
                 raise subprocess.CalledProcessError(code, argv)
             return subprocess.CompletedProcess(argv, code, out, err)
         sources = ([QUERIES / 'brew_query.py'] if manager.startswith('brew') else []) + [QUERIES / (manager.replace('-', '_') + '.py')]
+        if family != 'queries':
+            sources = [QUERIES.parent / family / (('brew' if manager.startswith('brew') else manager) + '.py')]
         output = io.StringIO()
         with patch('subprocess.run', side_effect=run), contextlib.redirect_stdout(output):
             for file in sources:
@@ -61,6 +63,12 @@ class QueriesTest(unittest.TestCase):
         self.assertEqual(result['roots'], ['hello'])
         self.assertEqual(result['versions'], ['1.2.3'])
         self.assertTrue(all(call[1]['env']['COMPOSER_HOME'] == str(scope) for call in self.calls))
+
+    def test_owned_composer_scope_interrupted_before_manifest_can_retry_setup(self):
+        scope = self.path('/opt/orbit/composer'); scope.mkdir(parents=True)
+        self.assertEqual(self.run_query('composer', [])['scope'], 'absent')
+        (scope / 'composer.json').symlink_to(self.root / 'missing')
+        self.assertEqual(self.run_query('composer', [])['scope'], 'conflict')
 
     def test_vp_skips_cache_only_and_preserves_incomplete_inventory(self):
         self.path('/home/orbit/.vite-plus').mkdir(parents=True)
@@ -100,6 +108,35 @@ class QueriesTest(unittest.TestCase):
         binary = self.path('/opt/homebrew/bin/brew'); binary.parent.mkdir(parents=True); binary.touch()
         for rows in ([], [{'token': 'hello', 'tap': 'foreign/tap', 'installed': '9.0'}]):
             self.assertFalse(self.run_query('brew-cask', ['Homebrew 7\n', {'casks': rows}, 'hello\n', '15.4\n'], 'macos')['complete'])
+
+    def test_apt_candidate_and_write_use_normal_selection_without_removal(self):
+        self.assertEqual(self.run_query('apt', [' Candidate: 2.0.1\n'], family='candidates')['version'], '2.0.1')
+        self.run_query('apt', [''], family='writes')
+        self.assertEqual(self.calls[-1][0], ['/usr/bin/apt-get', 'install', '--yes', '--no-install-recommends', '--no-remove', '--', 'hello'])
+        self.assertEqual(self.calls[-1][1]['env']['DEBIAN_FRONTEND'], 'noninteractive')
+
+    def test_composer_dry_run_parses_normal_operations_and_rejects_ambiguity(self):
+        for text in ['  - Locking hello (v2.0.1)\n  - Installing hello (v2.0.1)', '  - Upgrading hello (v1.0.0 => v2.0.1)']:
+            self.assertEqual(self.run_query('composer', [text], family='candidates', extra={'kind': 'tool.install'})['version'], 'v2.0.1')
+        self.assertIn('--dry-run', self.calls[-1][0])
+        self.assertEqual(self.run_query('composer', ['  - Removing hello (v1.0.0)'], family='candidates', extra={'kind': 'tool.update'})['error_code'], 'tool.version_probe_failed')
+        self.run_query('composer', [''], family='writes', extra={'kind': 'tool.install'})
+        self.assertEqual(self.calls[-1][0][1:4], ['global', 'require', 'hello:*'])
+        self.assertEqual(self.calls[-1][1]['env']['COMPOSER_HOME'], '/opt/orbit/composer')
+
+    def test_vp_write_uses_observed_scope_and_selected_package(self):
+        self.run_query('vp', [''], family='writes', extra={'kind': 'tool.update', 'before': {'scope_path': '/home/orbit/.vite-plus'}})
+        self.assertEqual(self.calls[-1][0], ['/home/orbit/.vite-plus/bin/vp', 'update', '-g', 'hello', '--reinstall-node-mismatch'])
+        self.assertEqual(self.calls[-1][1]['cwd'], '/home/orbit')
+
+    def test_homebrew_writes_keep_bottle_and_official_cask_boundaries(self):
+        for manager, coordinate in [('brew', 'homebrew/core/hello'), ('brew-cask', 'homebrew/cask/hello')]:
+            self.run_query(manager, [''], family='writes', extra={'kind': 'tool.install', 'before': {'prefix': '/brew'}})
+            argv, options = self.calls[-1]
+            self.assertEqual(argv[-1], coordinate)
+            self.assertEqual('--force-bottle' in argv, manager == 'brew')
+            self.assertEqual(options['env']['HOMEBREW_NO_AUTOREMOVE'], '1')
+            self.assertNotIn('sudo', argv)
 
     def test_scope_absence_and_invalid_manager_json_are_bounded(self):
         self.assertEqual(self.run_query('composer', [])['scope'], 'absent')

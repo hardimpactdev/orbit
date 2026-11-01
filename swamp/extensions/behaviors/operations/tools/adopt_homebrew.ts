@@ -65,13 +65,14 @@ export function homebrewRemovalBlock(input: BrewInput, facts: Record<string, unk
 export function homebrewBlock(
     input: Pick<ToolInput, "manager" | "package" | "platform" | "architecture">,
     facts: Record<string, unknown>,
+    candidate = false,
 ): string | null {
     const r = Row.parse(facts.homebrew);
     const tag = homebrewTag(input, facts);
     if (input.manager === "brew") {
         if (r.name !== input.package || r.full_name !== input.package || r.tap !== "homebrew/core") return "unsupported_source";
         const kegs = z.array(z.object({ installed_on_request: z.boolean().optional(), version: z.string() })).parse(r.installed);
-        if (!kegs.some((k) => k.installed_on_request)) return "dependency";
+        if (!candidate && !kegs.some((k) => k.installed_on_request)) return "dependency";
         if (z.boolean().parse(r.disabled)) return "unsupported_artifact";
         const versions = Row.parse(r.versions);
         const files = Row.parse(Row.parse(Row.parse(r.bottle).stable).files);
@@ -88,4 +89,9 @@ export function homebrewBlock(
     if (block) return block;
     if (!sha(value.sha256)) return "checksum_unavailable";
     return safeVersion(value.version) && value.version !== "latest" ? null : "version_unreadable";
+}
+
+export function homebrewCandidateVersion(input: BrewInput, facts: Record<string, unknown>): unknown {
+    const record = Row.parse(facts.homebrew);
+    return input.manager === "brew" ? Row.parse(record.versions).stable : ({ ...record, ...Row.parse(Row.parse(record.variations ?? {})[homebrewTag(input, facts)] ?? {}) }).version;
 }

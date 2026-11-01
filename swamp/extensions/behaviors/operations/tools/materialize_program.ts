@@ -16,34 +16,6 @@ def composer_materialize(host,data):
   with os.fdopen(fd,'wb') as f:f.write(b'{"require":{}}\n');os.fchown(f.fileno(),uid,gid)
  composer(host,'version',{});return {}
 
-def brew_materialize(host,data):
- account=host.account;parent=Path('/home/linuxbrew');prefix=parent/'.linuxbrew'
- owned(parent,0,0,missing=True);exists=metadata(prefix) is not None
- if exists:brew_scope(host)
- prerequisites(host,['build-essential','procps','curl','file','git','ca-certificates'])
- directory(parent,0,0)
- if not exists:
-  work=Path(tempfile.mkdtemp(prefix='.orbit-brew-',dir=parent));os.chown(work,account.pw_uid,account.pw_gid);os.chmod(work,0o755)
-  try:
-   repo=work/'Homebrew';host.run(['/usr/bin/git','clone','--filter=blob:none','--no-checkout',BREW_ORIGIN,str(repo)])
-   host.run(['/usr/bin/git','-C',str(repo),'-c','advice.detachedHead=false','checkout','--detach',BREW_REVISION])
-   for path in ['bin','Cellar','Caskroom','Frameworks','etc','include','lib','opt','sbin','share','var','var/homebrew','var/homebrew/locks']:directory(work/path,account.pw_uid,account.pw_gid,0o775)
-   (work/'bin/brew').symlink_to('../Homebrew/bin/brew');os.lchown(work/'bin/brew',account.pw_uid,account.pw_gid)
-   if metadata(prefix):refuse('tool.homebrew_scope_conflict')
-   os.rename(work,prefix)
-  finally:
-   if work.exists():shutil.rmtree(work)
- prefix=brew_scope(host);repo=prefix/'Homebrew'
- def git(args,check=True):return host.run(['/usr/bin/git','-C',str(repo),*args],check=check)
- if git(['rev-parse','HEAD'])[1].rstrip('\r\n')!=BREW_REVISION:
-  git(['fetch','--filter=blob:none','origin',BREW_REVISION]);git(['-c','advice.detachedHead=false','checkout','--detach',BREW_REVISION])
- if git(['show-ref','--verify','--quiet','refs/tags/7.0.0'],False)[0]:
-  git(['fetch','--filter=blob:none','origin','tag','7.0.0'])
-  cache=repo/'.git/describe-cache'
-  if metadata(cache):owned(cache,account.pw_uid,account.pw_gid);shutil.rmtree(cache)
- if git(['rev-parse','--verify','7.0.0^{commit}'])[1].rstrip('\r\n')!=BREW_REVISION:refuse('tool.homebrew_materialize_failed')
- brew(host,'version',{});host.run([str(prefix/'bin/brew'),'config'],env=BREW_ENV);return {}
-
 def https(url):
  if not isinstance(url,str):refuse('tool.vp_materialize_invalid')
  parsed=urllib.parse.urlsplit(url)
