@@ -115,7 +115,6 @@ final readonly class TaskVmEnrollmentIntent
             'pi_token' => [$node->id, [$node->id], []],
             'model_router' => [$routerNodeId, [$gateway->id], []],
             'secret_hash' => [$node->id, [$host->id], [$host->id]],
-            'worker_credentials' => [$node->id, [$host->id, $issuer->id], [$issuer->id]],
             'pi_artifact_file' => [$node->id, [$node->id], []],
             'configuration' => [$network->server->id, [$gateway->id], []],
             'first_visit' => [$node->id, [$host->id], []],
@@ -132,7 +131,6 @@ final readonly class TaskVmEnrollmentIntent
             $references[$field] = ['$secret' => $source, 'id' => $vm->id];
         }
         $references['secret_hash'] = ['$secret' => 'node.agent_secret_hash', 'id' => $node->id];
-        $references['worker_credentials'] = ['$secret' => 'node.worker_credentials', 'id' => $node->id];
         $references['configuration'] = ['$secret' => 'node.vpn_configuration', 'id' => $network->server->id];
         if ($providerCreate && $vm->provider === TaskVmProviderKind::UpCloud) {
             $references['provider_bootstrap'] = ['$secret' => 'task_vm.provider_bootstrap', 'id' => $vm->id];

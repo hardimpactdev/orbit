@@ -1,0 +1,117 @@
+id: 1b007f31-5cfe-4dc3-bb6e-1fa9bcda3738
+name: task-vm-workspace
+description: Prepare the captured directory on an already reachable plain Task VM through official SSH from209.
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      minLength: 1
+    intent:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  additionalProperties: false
+jobs:
+- name: workspace
+  target: orbit-node-209
+  steps:
+  - name: input
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-workspace-input'
+      behaviorName: ${{ "workspace-input-" + run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+  - name: account
+    target: orbit-node-209
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      methodName: exec
+      globalArgs: &id001
+        name: ${{ "task-vm-workspace-" + run.id }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.ssh_execution.target.user }}
+          port: ${{ inputs.intent.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.ssh_execution.target.host }}
+          transport:
+            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/id
+        - -un
+  - name: directory
+    target: orbit-node-209
+    dependsOn:
+    - step: account
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - --
+        - ${{ steps.input.outputs.checkout_path }}
+  - name: observe
+    target: orbit-node-209
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "task-vm-workspace-" + run.id }}
+      methodName: exec
+      globalArgs: *id001
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - -c
+        - "import json,os,sys\nfrom pathlib import Path\nvalue=json.load(sys.stdin)\npath=Path(value[\"checkout_path\"])\nif not path.is_dir() or not os.access(path,os.W_OK):\n    raise SystemExit(1)\nprint(json.dumps({**value,\"ready\":True}))\n"
+        stdin: ${{ steps.input.outputs.input_json }}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-workspace-input'
+      behaviorName: ${{ "workspace-input-" + run.id }}
+      methodName: result
+      inputs:
+        observation: ${{ steps.observe.outputs }}

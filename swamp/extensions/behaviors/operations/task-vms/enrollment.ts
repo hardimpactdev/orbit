@@ -2,14 +2,12 @@ import { z } from "npm:zod@4.4.3";
 import { inspect } from "../../node-worker/canary.ts";
 import type { GatewayOperation } from "../_lib/direct.ts";
 import type { SshEnvironment } from "../_lib/pinned-ssh.ts";
-import { configureAgent } from "../node/agent_configure_system.ts";
 import {
   installProcessLocal,
   ProcessInstallationMaterial,
 } from "../processes-schedules/process-installation.ts";
 import { BootstrapHostProgram } from "../node-bootstrap/bootstrap_program.ts";
 import { HubPublicationInput } from "../node/wireguard_local.ts";
-import { nodeEnrollmentIssuer } from "../node/enrollment_issuer.ts";
 import { installObserver } from "../node/observer_install_system.ts";
 import {
   localSystemCommand,
@@ -30,12 +28,6 @@ import {
   EnrollmentRuntimeInput,
   type RuntimeProcessInstaller,
 } from "./enrollment_runtime.ts";
-import {
-  configureTaskVmWorker,
-  EnrollmentWorkerInput,
-  type NativeConfigureAgent,
-} from "./enrollment_worker.ts";
-import { installTaskVmWorker } from "./enrollment_worker_install.ts";
 import { incusGuestSystem, sshGuestSystem } from "./guest_system.ts";
 import { piNative } from "./pi_native.ts";
 
@@ -74,7 +66,8 @@ function publicHostKey(raw: string) {
   const view = new DataView(bytes.buffer);
   if (
     bytes.length !== 51 || view.getUint32(0) !== 11 ||
-    view.getUint32(15) !== 32 || header.some((byte, i) => bytes[4 + i] !== byte)
+    view.getUint32(15) !== 32 ||
+    header.some((byte, i) => bytes[4 + i] !== byte)
   ) throw new Error("task_vm.host_key_failed");
   return { value: match[1], bytes };
 }
@@ -121,7 +114,17 @@ async function observePublicHostKey(
   }
 }
 
-export const EnrollmentInput = EnrollmentWorkerInput.safeExtend({
+export const EnrollmentInput = z.object({
+  task_vm_id: Id,
+  guest_node_id: Id,
+  user: z.literal("orbit"),
+  agent_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  agent: z.object({
+    configuration: z.string().min(1).max(65536),
+    certificate: z.string().min(1).max(65536),
+    unit: z.string().min(1).max(65536),
+    checkouts: z.array(z.string().min(1).max(4096)).max(1024),
+  }).strict(),
   execution_node_id: Id,
   gateway_node_id: Id,
   issuer_node_id: Id,
@@ -162,7 +165,8 @@ export const EnrollmentInput = EnrollmentWorkerInput.safeExtend({
     new URL(input.pi_url).protocol !== "http:" ||
     (input.provider === "incus"
       ? input.vm?.name !== input.name
-      : input.vm !== null || input.execution_node_id !== input.gateway_node_id)
+      : input.vm !== null ||
+        input.execution_node_id !== input.gateway_node_id)
   ) {
     ctx.addIssue({
       code: "custom",
@@ -179,11 +183,8 @@ export type EnrollmentNativeDependencies = {
   system?: SystemTransport;
   identity?: typeof inspect;
   observer?: typeof installObserver;
-  configure?: NativeConfigureAgent;
-  installWorker?: typeof installTaskVmWorker;
   prepareNetwork?: typeof prepareTaskVmNetwork;
   publishNetwork?: typeof publishTaskVmNetwork;
-  issuer?: ReturnType<typeof nodeEnrollmentIssuer>;
   runtime?: typeof configureTaskVmRuntime;
   installProcess?: RuntimeProcessInstaller;
   artifact?: () => Promise<Uint8Array>;
@@ -226,7 +227,10 @@ export function nativeTaskVmEnrollmentActions(
   const system: SystemTransport = async (command, signal) => {
     signal?.throwIfAborted();
     await guard();
-    return await (dependencies.system ?? localSystemCommand)(command, signal);
+    return await (dependencies.system ?? localSystemCommand)(
+      command,
+      signal,
+    );
   };
   const guest: SystemTransport = dependencies.guest ??
     (input.provider === "incus"
@@ -269,7 +273,13 @@ export function nativeTaskVmEnrollmentActions(
       await guard();
       const output = await guest({
         command: "/usr/bin/sudo",
-        args: ["-n", "--", "/usr/bin/python3", "-c", BootstrapHostProgram],
+        args: [
+          "-n",
+          "--",
+          "/usr/bin/python3",
+          "-c",
+          BootstrapHostProgram,
+        ],
         stdin: JSON.stringify({
           ...input.bootstrap,
           ssh_port: 22,
@@ -289,7 +299,9 @@ export function nativeTaskVmEnrollmentActions(
         guest,
         signal,
       );
-      if ("error_code" in installed) throw new Error(installed.error_code);
+      if ("error_code" in installed) {
+        throw new Error(installed.error_code);
+      }
       const node = await observePublicHostKey(
         guest,
         guard,
@@ -317,59 +329,13 @@ export function nativeTaskVmEnrollmentActions(
         signal,
       );
     },
-    "issue-worker": async ({ signal }) => {
-      await guard();
-      await material.withPrivateMaterial(async (privateInput) => {
-        await guard();
-        const issue = dependencies.issuer ?? nodeEnrollmentIssuer();
-        await issue(
-          {
-            schema_version: 1,
-            node_id: input.guest_node_id,
-            issuer_node_id: input.issuer_node_id,
-            worker_user: input.user,
-            selected: true,
-          },
-          privateInput.worker_credentials,
-          (outputs) => material.storeSecretOutput(outputs),
-          signal,
-        );
-      });
-      return { issued: true };
-    },
-    "configure-worker": async ({ signal }) => {
-      await configureTaskVmWorker(
-        {
-          task_vm_id: input.task_vm_id,
-          guest_node_id: input.guest_node_id,
-          user: input.user,
-          agent_sha256: input.agent_sha256,
-          agent: input.agent,
-        },
-        true,
-        guard,
-        material,
-        guest,
-        dependencies.configure ?? configureAgent,
-        signal,
-      );
-      await (dependencies.installWorker ?? installTaskVmWorker)(
-        input.guest_node_id,
-        guard,
-        material,
-        guest,
-        signal,
-      );
-      return { configured: true };
-    },
-    "worker-ready": async ({ signal }) => {
-      await identity(signal);
-      return { worker_ready: true };
-    },
     "prepare-runtime": async ({ signal }) => {
       const artifact = dependencies.artifact ?? (() => {
         if (!material.artifact) throw refused();
-        return material.artifact("pi_artifact_file", input.runtime.pi_sha256);
+        return material.artifact(
+          "pi_artifact_file",
+          input.runtime.pi_sha256,
+        );
       });
       return await (dependencies.runtime ?? configureTaskVmRuntime)(
         input.runtime,
@@ -408,7 +374,9 @@ export function nativeTaskVmEnrollmentActions(
         services.stdout.trim() !== "active\nactive"
       ) throw new Error("task_vm.runtime_not_ready");
       await material.withPrivateMaterial(async (value) => {
-        const token = z.string().regex(/^[a-f0-9]{64}$/).parse(value.pi_token);
+        const token = z.string().regex(/^[a-f0-9]{64}$/).parse(
+          value.pi_token,
+        );
         signal?.throwIfAborted();
         await guard();
         let response: Response;
@@ -419,7 +387,10 @@ export function nativeTaskVmEnrollmentActions(
               headers: { Authorization: `Bearer ${token}` },
               redirect: "error",
               signal: signal
-                ? AbortSignal.any([signal, AbortSignal.timeout(5000)])
+                ? AbortSignal.any([
+                  signal,
+                  AbortSignal.timeout(5000),
+                ])
                 : AbortSignal.timeout(5000),
             },
           );

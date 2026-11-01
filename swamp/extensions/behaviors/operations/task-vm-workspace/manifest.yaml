@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/task-vm-workspace"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public Task VM workspace input and directory receipt; official SSH owns effects.
+behaviors:
+  - operations/task-vm-workspace/metadata.ts

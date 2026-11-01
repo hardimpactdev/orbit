@@ -133,7 +133,7 @@ Deno.test("reusable adapter exposes only public key and readiness after native l
   const intent = input();
   for (
     const stage of TaskVmEnrollmentStages.filter((stage) =>
-      stage !== "issue-model" && stage !== "publish-hub"
+      !["issue-model", "publish-hub", "issue-worker", "configure-worker", "worker-ready"].includes(stage)
     )
   ) {
     const result = await createTaskVmEnrollmentAdapter(
@@ -158,7 +158,7 @@ Deno.test("reusable adapter exposes only public key and readiness after native l
   assertEquals(
     seen,
     TaskVmEnrollmentStages.filter((stage) =>
-      stage !== "issue-model" && stage !== "publish-hub"
+      !["issue-model", "publish-hub", "issue-worker", "configure-worker", "worker-ready"].includes(stage)
     ),
   );
 });
@@ -166,7 +166,7 @@ Deno.test("adapter refuses missing native ports, missing key, invalid identity, 
   await assertRejects(
     () =>
       createTaskVmEnrollmentAdapter(input(), async () => {}, material, {})
-        .execute("issue-worker"),
+        .execute("bootstrap"),
     Error,
     "task_vm.enrollment_unavailable",
   );
