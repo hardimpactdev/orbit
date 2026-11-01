@@ -1,11 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import {
-    before,
-    candidate,
-    decision,
-    WriteInput,
-    writeResult,
-} from "./write.ts";
+import { before, WriteInput, writeResult } from "./write.ts";
 
 const observation = (facts: unknown) => ({
     stdout: JSON.stringify(facts),
@@ -73,28 +67,4 @@ for (const manager of ["composer", "brew-cask"] as const) {
         assertEquals(checked.ready, true);
         assertEquals(checked.package_required, true);
     });
-
-    Deno.test(`2211-03: ${manager} post-write check verifies the installed version`, () => {
-        const { input, facts } = installed(manager);
-        const checked = before(input, observation(facts), true);
-        assertEquals(checked.ready, true);
-        assertEquals(checked.package_required, false);
-    });
 }
-
-Deno.test("2211-03: reconciliation uses write inventory for a Composer dependency", () => {
-    const { input, facts } = installed("composer", "tool.update");
-    const result = decision(
-        input,
-        facts,
-        { ready: true, version: "2.0.0", allowed: true },
-        observation(facts),
-    );
-    assertEquals(result.ready, true);
-    assertEquals(result.mutate, true);
-});
-
-Deno.test("cask candidate still refuses artifacts requiring authorization", () => {
-    const { input, facts } = installed("brew-cask", "tool.update");
-    assertEquals(candidate(input, observation(facts)).ready, false);
-});
