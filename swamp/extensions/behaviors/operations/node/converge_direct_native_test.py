@@ -130,15 +130,15 @@ class DirectConvergeNative(NativeTestCase):
         self.assertEqual(state['effects'], ['agent-install', 'caddy-package', 'caddy'])
         self.assertEqual(state['operation']['result'], {})
 
-    def test_first_read_waits_for_gateway_start_binding(self):
+    def test_unbound_first_read_fails_once_without_waiting_or_effects(self):
         self.state['unbound'] = True
         self.save()
-        self.run_workflow()
+        self.run_workflow(success=False)
         state = self.read()
+        self.assertEqual(len(state['calls']), 1)
         self.assertEqual(state['calls'][0]['method'], 'GET')
-        self.assertEqual(state['calls'][1]['method'], 'GET')
-        self.assertEqual(state['calls'][2]['body']['status'], 'running')
-        self.assertEqual(state['operation']['status'], 'succeeded')
+        self.assertEqual(state['effects'], [])
+        self.assertEqual(state['operation']['status'], 'queued')
 
     def test_real_gateway_http_private_callback_leaves_no_credentials_in_native_scratch(self):
         self.secrets = (uuid.uuid4().hex + uuid.uuid4().hex,

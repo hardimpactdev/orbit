@@ -27,10 +27,11 @@ class CloneNative(NativeTestCase):
         module = self.repo / 'extensions/behaviors/operations/instance-lifecycle/clone_root.ts'
         module.write_text('import {cloneHttp, cloneInvoke} from "./clone_native_fixture.ts";\n' +
                           module.read_text().replace('provisioningRoot("instance.clone")',
-                              'provisioningRoot("instance.clone", () => cloneHttp, cloneInvoke)'))
+                              'provisioningRoot("instance.clone", () => cloneHttp, cloneInvoke, undefined, {\n                                  local: (mode, input) => {\n                                      if (mode !== "project") throw new Error("Unexpected native VP effect");\n                                      return cloneInvoke({name: "tool.read-vp-project", input, pin: "", sudo: false, mutates: false, deadlineMs: 120000});\n                                  }\n                              })'))
         self.state_file = self.repo / 'provisioning-fixture.json'
         checkout = '/home/orbit-app-1/releases/initial'
         plan = {'instance_id': 11, 'project_id': 1, 'node_id': 9, 'node_user': 'orbit',
+                'platform': 'linux', 'architecture': 'x86_64', 'vp_materialize': {'user': 'orbit'},
                 'environment': 'production', 'user': 'orbit-app-1',
                 'checkout': checkout, 'application': checkout, 'agent_sha256': 'a' * 64,
                 'project_type': 'node-package', 'entry_point': 'artisan', 'skip_profile': False,
