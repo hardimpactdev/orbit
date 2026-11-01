@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 use Saloon\Http\Faking\MockClient;
@@ -46,34 +45,11 @@ describe('Instance environment response', function (): void {
             ->toEqual($response);
     });
 
-    it('preserves a bounded production runtime refresh outcome', function (string $outcome): void {
-        $response = EnvironmentOperationResponse::fromGatewayData([
-            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
-            'runtime_refresh' => $outcome,
-        ], 'sync', '11111111-1111-4111-8111-111111111111');
-        expect($response->runtimeRefresh)->toBe($outcome)->and($response->toArray()['runtime_refresh'])->toBe($outcome);
-    })->with(['skipped_unchanged', 'skipped_no_php_version', 'skipped_no_current_release', 'config_cache_and_opcache_refreshed', 'opcache_refreshed_config_uncached']);
-
-    it('preserves restarted Process IDs', function (array $ids): void {
-        $response = EnvironmentOperationResponse::fromGatewayData([
-            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
-            'runtime_refresh' => 'config_cache_and_opcache_refreshed', 'restarted_process_ids' => $ids,
-        ], 'sync', '11111111-1111-4111-8111-111111111111');
-        expect($response->restartedProcessIds)->toBe($ids)->and($response->toArray()['restarted_process_ids'])->toBe($ids);
-    })->with(['none' => [[]], 'multiple' => [[12, 14]]]);
-
-    it('rejects malformed restarted Process IDs safely', function (mixed $ids): void {
-        expect(fn () => EnvironmentOperationResponse::fromGatewayData([
-            'instance_id' => 17, 'operation' => 'sync', 'changed' => true, 'key_count' => 1,
-            'runtime_refresh' => 'config_cache_and_opcache_refreshed', 'restarted_process_ids' => $ids,
-        ], 'sync', '11111111-1111-4111-8111-111111111111'))->toThrow(GatewayApiException::class);
-    })->with([null, 'SECRET', [[0]], [[-1]], [['12']], [[12, 12]], [['key' => 12]], [[['SECRET']]]]);
-
-    it('rejects unknown runtime results and results on store-only operations', function (string $operation, mixed $outcome): void {
+    it('rejects runtime results on store-only operations', function (string $operation, mixed $outcome): void {
         expect(fn () => EnvironmentOperationResponse::fromGatewayData([
             'instance_id' => 17, 'operation' => $operation, 'changed' => true, 'key_count' => 1, 'runtime_refresh' => $outcome,
         ], $operation, '11111111-1111-4111-8111-111111111111'))->toThrow(GatewayApiException::class);
-    })->with([['sync', 'SECRET'], ['sync', null], ['sync', []], ['update', 'skipped_unchanged'], ['import', 'skipped_unchanged']]);
+    })->with([['update', 'skipped_unchanged'], ['import', 'skipped_unchanged']]);
 
     it('rejects missing wrongly typed contradictory extra and out-of-bound data safely', function (array $data): void {
         $sentinel = 'malformed-environment-value-8c2d';
@@ -160,10 +136,10 @@ describe('Instance environment response', function (): void {
 
     it('rejects missing or invalid request correlation safely', function (array $meta): void {
         $mock = new MockClient([
-            SynchronizeInstanceEnvironmentRequest::class => MockResponse::make([
+            ImportInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => [
                     'instance_id' => 17,
-                    'operation' => 'sync',
+                    'operation' => 'import',
                     'changed' => false,
                     'key_count' => 0,
                 ],
@@ -173,7 +149,7 @@ describe('Instance environment response', function (): void {
 
         expect(
             fn (): mixed => environment_response_connector($mock)
-                ->send(new SynchronizeInstanceEnvironmentRequest(17))
+                ->send(new ImportInstanceEnvironmentRequest(17))
                 ->dto(),
         )
             ->toThrow(GatewayApiException::class, 'Gateway response contains invalid environment operation data.');
@@ -189,13 +165,13 @@ describe('Instance environment response', function (): void {
     ): void {
         $credential = 'environment-failure-credential-4c81';
         $requestId = '22222222-2222-4222-8222-222222222222';
-        $request = new SynchronizeInstanceEnvironmentRequest(17);
+        $request = new ImportInstanceEnvironmentRequest(17);
         $expectedDetails = [
             'field' => 'replace',
             'APP_KEY' => '[REDACTED]',
         ];
         $mock = new MockClient([
-            SynchronizeInstanceEnvironmentRequest::class => MockResponse::make(
+            ImportInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => $errorCode,
@@ -280,14 +256,9 @@ describe('Instance environment response', function (): void {
             'The stored Instance environment configuration has an unavailable reference.',
             409,
         ],
-        'failed synchronization' => [
+        'failed write' => [
             'env.write_failed',
             'The Instance environment file replacement failed safely.',
-            409,
-        ],
-        'unconfirmed synchronization' => [
-            'env.sync_unconfirmed',
-            'The Instance environment synchronization result is unconfirmed. Retry the request.',
             409,
         ],
     ]);

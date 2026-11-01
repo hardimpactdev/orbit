@@ -22,7 +22,7 @@ The [hosted handoff CI prerequisite](/reference/tasks#check-an-external-group) a
 
 The generated Database server schema includes the `mysql`, `pgsql` and `redis` drivers, explicit LAN peers, Valkey adoption inputs, and the close operation. Database connections expose a managed `lan_host` when available, and attachments accept an explicit `network` choice. Database creation accepts key patterns and allowed commands for a Valkey server. [Database servers](/reference/database-servers) defines these operator commands.
 
-The generated environment-operation schema includes the optional `runtime_refresh` result and `restarted_process_ids` for production env-sync. They report config-cache and FPM opcache refresh outcomes and the opted-in Processes restarted by the Gateway. These types do not add an environment editor. See [Instance environment variables](/reference/environment-variables#synchronize).
+Environment synchronization returns an Operation. On production, its `result` holds `runtime_refresh` and `restarted_process_ids`. They report config-cache and FPM opcache refresh outcomes and the opted-in Processes restarted by the Gateway. These types do not add an environment editor. See [Instance environment variables](/reference/environment-variables#synchronize).
 
 The generated clone response types include required `data.warnings: string[]` for both creation and retry. These hints from the Gateway name environment keys to review; they do not change app settings. The schema update adds no clone UI; [Instance cloning](/reference/instance-cloning) describes the operator workflow.
 
