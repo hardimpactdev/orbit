@@ -30,8 +30,8 @@ use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => (string) Str::uuid(),
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => (string) Str::uuid(),
     ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
@@ -54,6 +54,7 @@ beforeEach(function (): void {
         'public_ssh_port' => 22,
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $node = $this->markAsGateway($node);

@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/process-command-scripts'
-version: 2026.10.31.1
+version: 2026.11.01.1
 visibility: private
 license: MIT
 description: Reusable one-action Process command components and public metadata.
@@ -30,3 +30,6 @@ additionalFiles:
   - scripts/remove_container.py
   - scripts/cleanup_checkpoint.py
   - scripts/check_health.py
+  - scripts/lifecycle_environment.py
+  - scripts/lifecycle_container.py
+  - scripts/lifecycle_listener.py

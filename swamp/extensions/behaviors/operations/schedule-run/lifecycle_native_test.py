@@ -336,3 +336,12 @@ p.write_text(json.dumps(s))
             self.unit("service").read_text(),
         )
         self.assertFalse(obsolete.exists())
+
+    def test_obsolete_file_fanout_uses_distinct_model_names(self):
+        self.run_lifecycle()
+        names = []
+        for suffix in ['.sh', '.complete']:
+            name = 'schedule-remove_obsolete-' + ('script' if suffix == '.sh' else 'complete') + '-' + str(self.inputs['operation_id'])
+            model = json.loads(self.cli('model', 'get', name).stdout)
+            names.append(model['name'])
+        self.assertEqual(len(set(names)), 2)

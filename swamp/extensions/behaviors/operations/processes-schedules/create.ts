@@ -11,7 +11,7 @@ import { installProcess, ProcessInstallation } from "./process-installation.ts";
 import { Preparation, startActions, StartInput } from "./start.ts";
 
 const Args = DirectArgs.extend({
-  kind: z.enum(["process.create", "process.update"]),
+  kind: z.enum(["process.update"]),
   node_id: z.number().int().positive(),
 });
 export const Creation = z.object({

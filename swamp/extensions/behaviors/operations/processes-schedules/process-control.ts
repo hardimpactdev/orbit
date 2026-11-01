@@ -18,7 +18,7 @@ const Kind = z.enum([
   "process.destroy",
 ]);
 const Args = DirectArgs.extend({
-  kind: Kind.exclude(["process.stop"]),
+  kind: Kind.exclude(["process.stop", "process.destroy"]),
   node_id: z.number().int().positive(),
 });
 const State = z.string().regex(/^[a-z][a-z_-]{0,63}$/);
@@ -88,7 +88,7 @@ export function processControl(
 ) {
   return {
     type: "@nckrtl/process-control",
-    version: "2026.10.31.2",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
       startPreparation: {
@@ -111,7 +111,7 @@ export function processControl(
             gateway,
             (input) => {
               const admitted = Input.parse(input);
-              if (args.kind !== "process.destroy" && admitted.vite !== null) {
+              if (admitted.vite !== null) {
                 throw new Error(
                   "Vite startup needs its native preparation steps",
                 );
@@ -121,7 +121,7 @@ export function processControl(
             (result) => {
               const bounded = Result.parse(result);
               if (
-                !("error_code" in bounded) && args.kind !== "process.destroy" &&
+                !("error_code" in bounded) &&
                 !("state" in bounded)
               ) {
                 throw new Error("Process state is required");

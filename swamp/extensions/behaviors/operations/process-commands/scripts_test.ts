@@ -5,6 +5,7 @@ const root = fromFileUrl(new URL(".", import.meta.url));
 for (
     const name of [
         "scripts_test.py",
+        "lifecycle_scripts_test.py",
         "installation_test.py",
         "material_delivery_test.py",
         "docker_test.py",
