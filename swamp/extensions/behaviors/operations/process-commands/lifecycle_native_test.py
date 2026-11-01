@@ -388,6 +388,7 @@ p.write_text(json.dumps(s))
                 )
                 state = json.loads(state_path.read_text())
                 state["docker"] = {"present": True, "state": "created", "body": body}
+                state["creates"] = state.get("creates", 0) + 1
                 state_path.write_text(json.dumps(state))
                 raw = json.dumps({"Id": "e" * 64}).encode()
                 handler.send_response(201)
@@ -412,6 +413,7 @@ p.write_text(json.dumps(s))
             + """import json,sys
 from pathlib import Path
 p=Path(STATE);s=json.loads(p.read_text());a=sys.argv[2:];d=s.setdefault('docker',{'present':False})
+s.setdefault('docker_calls',[]).append(a)
 if a[:2]==['image','inspect']:print('image-present')
 elif a[:2]==['container','ls']:
  if d['present']:print(NAME)
@@ -451,7 +453,7 @@ p.write_text(json.dumps(s))
                 "restart": "no",
                 "working_directory": "/work",
                 "ports": [],
-                "mounts": [],
+                "mounts": [{"source": "proof-volume", "target": "/data", "read_only": False}],
             },
         }
         self.run_lifecycle()
@@ -461,6 +463,27 @@ p.write_text(json.dumps(s))
         self.assertEqual(state["body"]["Cmd"], ["echo", "ok"])
         self.assertEqual(state["body"]["WorkingDir"], "/work")
         self.run_lifecycle()
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 1)
+        install = self.inputs["intent"]["installation"]
+        install["spec"] = "b" * 64
+        install["definition"].update(image="example:2", command=["echo", "updated"])
+        self.inputs["operation_id"] = 18
+        self.run_lifecycle("update")
+        state = json.loads(self.state.read_text())
+        self.assertEqual(state["creates"], 2)
+        self.assertEqual(state["docker"]["state"], "running")
+        self.assertEqual(state["docker"]["body"]["Image"], "example:2")
+        self.assertEqual(state["docker"]["body"]["Cmd"], ["echo", "updated"])
+        self.assertEqual(state["docker"]["body"]["Labels"]["orbit.process.id"], "17")
+        self.assertEqual(state["docker"]["body"]["HostConfig"]["Mounts"][0]["Source"], "proof-volume")
+        removals = [call for call in state["docker_calls"] if call[:2] == ["container", "rm"]]
+        self.assertEqual(removals, [["container", "rm", "orbit-process-17-proof"]])
+        self.run_lifecycle("update")
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 2)
+        install.update(spec="c" * 64, desired="stopped")
+        self.run_lifecycle("update")
+        self.assertEqual(json.loads(self.state.read_text())["docker"]["state"], "exited")
+        self.assertEqual(json.loads(self.state.read_text())["creates"], 3)
         self.inputs["intent"].pop("installation")
         self.run_lifecycle("destroy")
         self.run_lifecycle("destroy")
