@@ -46,12 +46,14 @@ Before you build any mechanism, check Swamp core (https://swamp-club.com/manual)
    - **Child work:** `type: workflow`.
 
    No `setTimeout` sleeps, no `while (true)` polling, no lock files when one of these fits. A host-level lock that a tool itself needs, such as apt or ufw, is allowed. Name it in the step.
+
+   Note (sub-orchestrator A, 2026-11-01): a phase script may poll an external system until it reaches a state, such as an UpCloud VM started, an image ready or DNS visible. The poll runs under coreutils `timeout <phase budget>` at a fixed interval. It exits 0 on the target state and nonzero with a readable F1 error on a terminal bad state or timeout. The PR states the interval and budget, which count toward the kind's F8 budget. This keeps the legacy sequence (F9). Retrying a failed action, waiting on the Gateway or Orbit state, and waits outside a phase script (TypeScript behaviors, step loops, Gateway code) stay forbidden.
 7. **Placement on every step.**
    - Each step declares `target` or `labels`, and serve only relays (`--remote-only`).
    - A per-Node worker acts only on its own Node.
    - vpn1 and usexit18 run their steps through the SSH proxy workers on 209.
 8. **No agent actions.** Do not call orbit-agent action commands from a step. Implement the action as steps. The agent is frozen and will be stripped to an observer.
-9. **Swamp defaults.** Use the manual and CLI defaults for retention, GC, queueTimeout, concurrency and tokens. Any deviation needs a measured reason, recorded in PLAN.md.
+9. **Swamp defaults.** Use the manual and CLI defaults for retention, GC, concurrency and tokens; `queueTimeout` follows rule 6. Any deviation needs a measured reason, recorded in PLAN.md.
 
 ## Checks on every PR
 
