@@ -92,7 +92,9 @@
       "names-only-registry-copy"
     ]
   },
-  "topology": "app-prod",
+  "topology": [
+    "app-prod"
+  ],
   "prepare": [
     {
       "argv": [

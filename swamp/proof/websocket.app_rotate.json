@@ -94,7 +94,9 @@
       "pre-existing-unrelated-socket-survives"
     ]
   },
-  "topology": "app-prod",
+  "topology": [
+    "app-prod"
+  ],
   "prepare": [
     {
       "argv": [
