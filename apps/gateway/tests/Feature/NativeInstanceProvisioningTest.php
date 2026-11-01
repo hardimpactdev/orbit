@@ -99,21 +99,13 @@ it('allows source Git reads before environment readiness without exposing unavai
         ->toThrow(ResourceOperationException::class);
 });
 
-it('freezes clone target account and candidate placement without inspecting either Node', function (): void {
-    orbit_test_set_app_placement_role($this->node, true);
-    $this->instance->update(['production_user' => 'orbit-app-'.$this->project->id,
-        'production_home' => '/home/orbit-app-'.$this->project->id,
-        'checkout_path' => '/home/orbit-app-'.$this->project->id.'/releases/initial']);
-    $candidate = ['node_id' => 17, 'agent_sha256' => str_repeat('c', 64), 'environment' => 'development',
-        'base' => '/srv/source/default', 'expected_source' => '/srv/source/default', 'user' => 'source',
-        'repository' => $this->project->repository_url, 'configured_branch' => 'main', 'target_branch' => 'main'];
-    $plan = app(NativeInstanceProvisioningIntent::class)->clone($this->instance->refresh(), [
-        'repository' => $this->project->repository_url, 'branch' => 'main', 'candidate' => $candidate]);
-
-    expect($plan['candidate'])->toBe($candidate)->and($plan['environment'])->toBe('production')
-        ->and($plan['user'])->toBe('orbit-app-'.$this->project->id)
-        ->and($plan['source'])->toMatchArray(['instance' => $this->instance->id, 'user' => $plan['user']])
-        ->and($plan)->not->toHaveKey('setup');
+it('freezes development clone placement without inspecting either Node', function (): void {
+    $candidate = ['node_id' => 17, 'checkout' => '/srv/source/default', 'repository_identity' => $this->project->repository_identity, 'branch' => 'main'];
+    $plan = app(NativeInstanceProvisioningIntent::class)->clone($this->instance, [
+        'repository' => $this->project->repository_url, 'source_root' => '/srv/apps', 'branch' => 'main', 'candidate' => $candidate]);
+    expect($plan['candidate'])->toBe($candidate)->and($plan['environment'])->toBe('development')
+        ->and($plan['user'])->toBe('orbit')->and($plan['source']['checkout'])->toBe($this->instance->checkout_path)
+        ->and($plan['resolve']['require_branch'])->toBeTrue()->and($plan)->not->toHaveKey('setup');
 });
 
 it('refuses runtime definition installation before create reserves an Instance', function (): void {

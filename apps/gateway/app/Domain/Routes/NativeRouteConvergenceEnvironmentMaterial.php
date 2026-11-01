@@ -42,9 +42,10 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
     /** Pure rendering for full-input parents; never resolves an Operation or calls a Node.
      * @param  array<string,mixed>  $intent
      * @param  array<int,Route>  $candidates  Prospective replacements keyed by original Route id.
+     * @param  array<int,Instance>  $placements  Captured Instance placements supplied by an owning parent.
      * @return list<array{instance_id:int,name:string,input:array<string,mixed>}>
      */
-    public function forRoute(Route $route, int $ownerNodeId, array $intent, bool $rollingBack = false, array $candidates = []): array
+    public function forRoute(Route $route, int $ownerNodeId, array $intent, bool $rollingBack = false, array $candidates = [], array $placements = []): array
     {
         $writes = [];
         foreach (RouteExecutionProof::objects($intent['workloads'] ?? []) as $member) {
@@ -52,9 +53,9 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                 continue;
             }
             if (isset($member['route_id'])) {
-                $route = Route::query()->findOrFail(ValidatedData::integer($member['route_id']));
+                $route = $candidates[ValidatedData::integer($member['route_id'])] ?? Route::query()->findOrFail(ValidatedData::integer($member['route_id']));
             }
-            $instance = Instance::query()->with(['node', 'project'])->findOrFail(ValidatedData::integer($member['instance_id']));
+            $instance = $placements[ValidatedData::integer($member['instance_id'])] ?? Instance::query()->with(['node', 'project'])->findOrFail(ValidatedData::integer($member['instance_id']));
             if ($instance->node_id !== $ownerNodeId) {
                 throw new ResourceOperationException('operation.execution_forbidden', 'The environment workload moved from its admitted Node.', 403);
             }

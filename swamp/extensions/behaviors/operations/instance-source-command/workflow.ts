@@ -57,7 +57,7 @@ export function sourceSteps(
             inputs,
         });
     }
-    function exec(
+    function sshAction(
         suffix: string,
         argv: unknown[],
         guard?: string,
@@ -102,8 +102,12 @@ export function sourceSteps(
     ];
     script("prepare", "prepare_directory");
     typed("prepared", "decode", { observation: expr(outputs("prepare-read")) });
-    exec("init", [...git, "init", "--quiet"], `!${created} || (${seeded})`);
-    exec("worktree", [
+    sshAction(
+        "init",
+        [...git, "init", "--quiet"],
+        `!${created} || (${seeded})`,
+    );
+    sshAction("worktree", [
         "/usr/bin/git",
         "-c",
         "core.hooksPath=/dev/null",
@@ -131,13 +135,13 @@ export function sourceSteps(
         observation: expr(outputs("origin-read")),
         allow_empty: expr(`${outputs("prepared")}.owned`),
     });
-    exec("origin-configure", [
+    sshAction("origin-configure", [
         ...git,
         "config",
         "remote.origin.url",
         expr(`${intent}.source.repository`),
     ], `${outputs("origin-read")}.stdout != ""`);
-    exec("git-directory", [...git, "rev-parse", "--absolute-git-dir"]);
+    sshAction("git-directory", [...git, "rev-parse", "--absolute-git-dir"]);
     script("marker", "mark_source", {
         checkout: expr(`${intent}.source.checkout`),
         prepare_id: expr(`${intent}.source.prepare_id`),
@@ -145,7 +149,7 @@ export function sourceSteps(
     });
     typed("paths", "paths", { intent: expr(intent) });
     const temporary = expr(`"/tmp/orbit-source-" + run.id + "-${name}"`);
-    exec("scripts-directory", ["/usr/bin/mkdir", "-p", temporary]);
+    sshAction("scripts-directory", ["/usr/bin/mkdir", "-p", temporary]);
     add("scripts-copy", {
         type: "behavior",
         behaviorType: "@swamp/ssh",
@@ -160,7 +164,7 @@ export function sourceSteps(
             direction: "to",
         },
     });
-    exec(
+    sshAction(
         "fetch",
         [
             "/usr/bin/python3",
@@ -174,7 +178,7 @@ export function sourceSteps(
             stdin: expr(gitRead),
         },
     );
-    exec("refs", [
+    sshAction("refs", [
         ...git,
         "for-each-ref",
         "--format=%(refname)",
@@ -185,7 +189,7 @@ export function sourceSteps(
         resolve: expr(`${intent}.resolve`),
         refs: expr(outputs("refs")),
     });
-    exec("checkout", [
+    sshAction("checkout", [
         ...git,
         "checkout",
         "--quiet",
@@ -194,7 +198,7 @@ export function sourceSteps(
         expr(`${outputs("selected")}.branch`),
         expr(`${outputs("selected")}.reference`),
     ], retained);
-    exec("commit", [...git, "rev-parse", "--verify", "HEAD^{commit}"]);
+    sshAction("commit", [...git, "rev-parse", "--verify", "HEAD^{commit}"]);
     script("profile", "profile");
     typed("result", "provisioningResult", {
         intent: expr(intent),

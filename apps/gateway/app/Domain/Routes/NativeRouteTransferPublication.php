@@ -16,12 +16,12 @@ use Illuminate\Support\Arr;
 /** Full public before/after capture, before any physical cutover or terminal database projection. */
 final readonly class NativeRouteTransferPublication
 {
-    public function __construct(private DevelopmentSiteRepository $sites, private NativeRoutePublicationInput $publications) {}
+    public function __construct(private DevelopmentSiteRepository $sites) {}
 
     /** The parent holds its admission transaction and records this immutable result as run input.
      * @param  array<string,mixed>  $plan
      * @param  array<string,mixed>  $destinationInstallations
-     * @return array{schema_version:int,nodes:list<array<string,mixed>>}
+     * @return array<string,mixed>
      */
     public function capture(array $plan, array $destinationInstallations): array
     {
@@ -46,9 +46,23 @@ final readonly class NativeRouteTransferPublication
             ->whereHas('targets', fn ($query) => $query->where('instance_id', $instance->id))->orderBy('id')->get();
         $before = $this->sites->all();
         $domains = $routes->pluck('domain')->all();
+        $previous = $desired = $workloads = [];
+        $capture = app(NativeRouteMutationInput::class);
+        $candidates = [];
         $after = $before->reject(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))->values();
         $movedIds = array_column(RouteExecutionProof::objects($plan['routes']), 'route_id');
         $placement = ValidatedData::object($plan['destination_placement']);
+        foreach ($routes as $stored) {
+            if ($stored->id === $plan['destination_route_id'] && $stored->id !== $plan['source_route_id']) {
+                continue;
+            }
+            $prior = clone $stored;
+            $prior->replacement_step = null;
+            $prior->replaced_by_route_id = null;
+            $prior->replaces_route_id = null;
+            $prior->status = RouteStatus::Active;
+            $previous[] = $capture->route($prior);
+        }
         foreach ($routes as $stored) {
             if ($stored->id === $plan['source_route_id'] && $stored->id !== $plan['destination_route_id']) {
                 continue;
@@ -76,21 +90,16 @@ final readonly class NativeRouteTransferPublication
                 continue;
             }
             $after->push(...$this->sites->projectSites($route));
+            $candidates[$route->id] = $route;
         }
-        $target = ValidatedData::object($plan['target']);
-        $nodeIds = array_values(array_unique([...ValidatedData::integerList($target['caddy_node_ids']),
-            ...ValidatedData::integerList($target['dns_node_ids']),
-            ...$before->filter(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))->map(static fn (DevelopmentSite $site): int => $site->nodeId)->all(),
-            ...$after->filter(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))->map(static fn (DevelopmentSite $site): int => $site->nodeId)->all()]));
-        sort($nodeIds);
-        $nodes = [];
-        foreach ($nodeIds as $nodeId) {
-            $node = Node::query()->findOrFail($nodeId);
-            $nodes[] = ['node_id' => $node->id, 'user' => $node->user,
-                ...app(NativeCaddyPublicationInput::class)->connectionForNode($node),
-                'before' => $this->publications->snapshot($node, $before), 'after' => $this->publications->snapshot($node, $after)];
+        foreach ($candidates as $route) {
+            $desired[] = $capture->route($route, $candidates, [$moving->id => $moving]);
+            $workload = app(NativeRouteWorkloadPreparation::class)->capture($moving, $route, $route);
+            $workloads[] = [...array_intersect_key($workload, array_flip(['node_id', 'instance_id', 'connection', 'host_keys', 'control_node_id'])), 'plan' => $workload['selected']];
         }
+        $result = $capture->capture($previous, $desired, [], $previous, $before, $before,
+            array_values(array_unique([...ValidatedData::integerList(ValidatedData::object($plan['target'])['caddy_node_ids']), ...ValidatedData::integerList(ValidatedData::object($plan['target'])['dns_node_ids'])])), static fn (\Closure $render): array => $render());
 
-        return ['schema_version' => 1, 'nodes' => $nodes];
+        return [...$result, 'workloads' => $workloads];
     }
 }

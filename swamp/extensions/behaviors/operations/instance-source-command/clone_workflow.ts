@@ -3,6 +3,18 @@ type Fields = Record<string, unknown>;
 const expr = (s: string) => "${{ " + s + " }}";
 /** One development clone with read-only candidate facts and native target source actions. */
 export function cloneWorkflow(): Fields {
+    const descriptor = () => ({
+        type: "object",
+        properties: {
+            vault: { type: "string", enum: ["orbit-control-inputs"] },
+            key: {
+                type: "string",
+                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$",
+            },
+        },
+        required: ["vault", "key"],
+        additionalProperties: false,
+    });
     const steps: Fields[] = [];
     const id = () => expr('"icl-" + run.id + "-' + steps.length + '"');
     function add(name: string, task: Fields) {
@@ -174,8 +186,8 @@ export function cloneWorkflow(): Fields {
                 execution_secrets: {
                     type: "object",
                     properties: {
-                        git_read: { type: "object" },
-                        environment: { type: "object" },
+                        git_read: descriptor(),
+                        environment: descriptor(),
                     },
                     required: ["git_read", "environment"],
                     additionalProperties: false,

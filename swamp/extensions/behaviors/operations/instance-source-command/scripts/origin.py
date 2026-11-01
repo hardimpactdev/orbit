@@ -1,5 +1,5 @@
 """Read one Git origin without persisting an embedded credential in native history."""
-import json
+import json  # noqa: F401 - the asset method injects json.loads for SOURCE_INPUT
 import re
 import subprocess
 import sys
@@ -11,7 +11,7 @@ SOURCE_INPUT = None
 def origin(value):
     path = value.get("checkout") or value["source"]["checkout"]
     result = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", path,
-                             "config", "--get", "remote.origin.url"], capture_output=True, text=True)
+                             "config", "--get", "remote.origin.url"], check=False, capture_output=True, text=True)
     if result.returncode == 1 and value.get("allow_empty", False):
         return ""
     if result.returncode != 0:

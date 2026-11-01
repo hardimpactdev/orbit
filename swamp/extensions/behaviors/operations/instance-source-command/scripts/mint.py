@@ -1,6 +1,7 @@
 """Use the existing mint-only Gateway primitive; expose descriptor names only."""
 import json
 import os
+import re
 import ssl
 import urllib.request
 
@@ -10,10 +11,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-operation = os.environ["ORBIT_OPERATION_ID"]
-if not operation.isdecimal() or int(operation) < 1:
+operation_id = os.environ["ORBIT_OPERATION_ID"]
+if not re.fullmatch("[1-9][0-9]*", operation_id):
     raise ValueError("instance.git_mint_invalid")
-request = urllib.request.Request("https://gateway.orbit/api/v1/direct-operations/" + operation + "/github-token",
+request = urllib.request.Request("https://gateway.orbit/api/v1/direct-operations/" + operation_id + "/github-token",
                                  data=json.dumps({"run_id": os.environ["ORBIT_RUN_ID"]}).encode(),
                                  headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST")
 context = ssl.create_default_context(cafile="/usr/local/share/ca-certificates/orbit-managed-root-ca.crt")

@@ -1,9 +1,9 @@
 ---
 title: "Instance cloning"
-description: "Create a production Instance from an admitted candidate through one native Swamp workflow."
+description: "Copy committed development source and stored configuration through one native Swamp workflow."
 covers:
   - apps/gateway/app/Actions/Instances/StartInstanceCloneAction.php
-  - apps/gateway/app/Domain/Instances/{InstanceCloneProjection,NativeInstanceProvisioningIntent,NativeInstanceProvisioningProjection}.php
+  - apps/gateway/app/Domain/Instances/{InstanceCloneProjection,NativeInstanceProvisioningIntent}.php
   - apps/gateway/app/Http/{Controllers/Api/InstanceClonesController.php,Requests/Instances/CloneInstanceRequest.php}
   - apps/cli/app/Commands/Instances/CloneInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CloneInstanceRequest.php
@@ -11,67 +11,36 @@ covers:
 
 # Instance cloning
 
-Cloning creates a production Instance from an active candidate. The Gateway records the source and destination placements, reserves the target, and starts one native Swamp workflow. Swamp inspects the candidate on its own worker and prepares the destination on its own worker. The candidate keeps running.
+Cloning creates an independent development Instance from an active candidate. The Gateway reserves the target, captures public intent and copies the candidate's stored environment values. One native Swamp workflow runs on Node 209 and uses official `@swamp/ssh` actions on the admitted source and destination Nodes. The candidate keeps running.
 
-The native workflow currently supports Projects without Routes, database attachments, Process definitions, or Schedule definitions. Neither placement may be a task VM. SQLite seeding and other combinations return `operation.kind_unavailable` before the Gateway reserves a target.
-
-`instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
-
-## Clone
-
-Choose a candidate and a destination with an active `app-prod` role.
+The current workflow supports development Projects without Routes, database attachments, Process definitions or Schedule definitions. Production placements, task VM placements and SQLite seeding return `operation.kind_unavailable` before target reservation. These variants need their native child composition before they can be admitted.
 
 ```bash
 orbit instance:clone <candidate> <node> <name> --preview-name=preview [--branch=BRANCH]
 ```
 
-The CLI calls `POST /api/v1/instances/{candidate}/clone`. The API returns HTTP 202 with the admitted Operation. An optional `Idempotency-Key` returns the same admission after a lost response. Swamp owns steps, placement, failure handling, and cancellation. The Gateway records the resulting Instance state.
+The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs access to both Nodes. An `Idempotency-Key` returns the same admission after a lost response. The request accepts no Project, commit, Unix user or filesystem path.
 
 | Input | Meaning |
 | --- | --- |
-| `node_id` | Destination Node with an active `app-prod` role. Required. |
-| `name` | New Instance name. Required. |
-| `preview_name` | Reserved preview identity. Required; no Route is created for the supported Project types. |
-| `branch` | Repository branch for the production target. Defaults to the candidate's branch, or its deployment branch for a production candidate. |
-| `sqlite_source_path` | Unavailable in the native clone workflow. |
+| `node_id` | Active Linux destination with an active `app-dev` role and stored apps root. |
+| `name` | New development Instance name. |
+| `preview_name` | Reserved preview identity; supported Project types create no Route. |
+| `branch` | Existing repository branch for the target; defaults to the candidate's recorded branch. A missing requested branch is refused. |
+| `sqlite_source_path` | Currently unavailable. |
 
-The request accepts no Project, commit, Unix user, or filesystem path. The candidate decides the Project. The caller needs access to both Nodes. The successful result is `{instance_id, ready: true}`.
+## Candidate rules
 
-## Candidate and destination
+The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the repository identity, branch, commit, clean working tree and absence of submodules before changing target source. Git hooks and filesystem monitors are disabled. An origin containing credentials is rejected on the Node before its value can enter native history.
 
-A candidate needs a recorded source profile. An unclassified candidate returns `instance.source_profile_missing` before target reservation; complete native registration or source preparation first.
+Swamp fetches committed source from the admitted Project repository. Working files, dependency directories and logs from the candidate are not copied. When the candidate and target use the same branch, their commits must match. Source preparation records the existing preparation ID with the directory's device and inode; an identical failed attempt can reuse only that owned directory.
 
-A candidate is an active development Instance with its recorded checkout, or an active production Instance with a selected release. Swamp verifies its repository, branch, clean working tree, submodules, and committed source. It checks that the commit and target branch exist in the Project repository. Candidate inspection uses the admitted source account and disables Git hooks and filesystem monitors.
+## Configuration and result
 
-The Gateway records placement metadata only. It does not run Git or inspect the candidate during admission. The source worker receives read-only public intent and the declared Git read material. Only the destination worker can project the parent result or read its environment material.
+The target receives independently encrypted stored candidate values, excluding `DB_*` and candidate WebSocket app credentials. The Gateway publishes the rendered environment as a named vault execution copy. Official SSH resolves it only for the environment write; private values never enter workflow inputs or public results. The file is written atomically with mode `0640`.
 
-The destination must be an active Linux Node with an active `app-prod` role. A Project has at most one production Instance per Node. Swamp creates the fixed `orbit-app-<ProjectID>` account and private home, then prepares `releases/initial` from the repository. It performs these actions through local system commands. It does not invoke agent action commands.
+The existing scoped GitHub App mint primitive supplies repository read access. Its root key stays in the Gateway. All other steps use captured inputs and native outputs; no step reads intent or reports progress through Gateway HTTP.
 
-## What the clone gets
+The shared terminal subscriber projects source facts and activates the target only after successful native completion. Failure or cancellation keeps the target reserved and records the error. API cancellation requests native cancellation; an acknowledgment does not prove that the root has settled.
 
-The target gets independent source and stored configuration.
-
-| Part | Result |
-| --- | --- |
-| Source | Committed source checked out from the Project repository. Candidate working files are not copied. |
-| Environment | Stored candidate values, encrypted for the new Instance, excluding `DB_*` and candidate WebSocket app credentials. Production mode is set. |
-| Dependencies | The Project's admitted Vite+ environment, when applicable. |
-| Release | A prepared initial checkout; no release is selected. |
-
-Private values stay inside the native effect callback. Workflow inputs and resources contain only public source identity and placement. Swamp checks the destination before replacing files and refuses foreign ownership or unsafe paths.
-
-Cloning does not stop the candidate's Processes or Schedules, pause its queues, or change its source, environment, or database.
-
-## Failure and retry
-
-A failed or cancelled workflow records its terminal Operation status and releases the Gateway admission hold. Swamp records the failed stage. An identical request can use the existing reserved target; a changed candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`.
-
-After completion, an identical request keeps the existing Instance. Removing a candidate with an incomplete clone returns `instance.clone_in_progress`.
-
-## Next steps
-
-Check the copied environment values, synchronize them, and record the Project's deploy steps. Then run `instance:deploy` to create and select the first release.
-
-## Why it works this way
-
-A repository holds code but not the Instance's stored environment. A candidate supplies both identities. Rebuilding committed source avoids carrying dependencies, logs, caches, or host configuration into production. A separate first deployment gives you a chance to check production configuration before selecting a release.
+An identical retry reuses the reserved target. A changed candidate, Node, name, preview, branch or SQLite input returns `instance.clone_retry_conflict`. An identical request after completion keeps the existing Instance. The candidate's source, Processes, environment and database remain unchanged.

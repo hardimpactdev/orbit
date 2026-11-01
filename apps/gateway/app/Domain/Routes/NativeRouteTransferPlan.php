@@ -6,12 +6,9 @@ namespace App\Domain\Routes;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
-use App\Infrastructure\AppDev\DevelopmentSite;
-use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
-use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -157,75 +154,6 @@ final readonly class NativeRouteTransferPlan
             Route::query()->whereKey($snapshot['destination_route_id'])->update(['replaces_route_id' => null, 'replacement_step' => null]);
             Route::query()->whereKey($snapshot['source_route_id'])->delete();
         }
-    }
-
-    /** Fresh public render for the parent's shared DirectOperationPublicView hook.
-     * @return array<string,mixed>
-     */
-    public function publicInput(Operation $operation, int $nodeId): array
-    {
-        $snapshot = ValidatedData::object($operation->input['route_transfer']);
-        if (! in_array($nodeId, ValidatedData::integerList($operation->input['participant_node_ids']), true)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted Route transfer participant.', 403);
-        }
-        $node = Node::query()->findOrFail($nodeId);
-        $instance = Instance::query()->with(['node', 'project'])->findOrFail(ValidatedData::integer($snapshot['instance_id']));
-        $target = ValidatedData::object($snapshot['target']);
-        $workloads = [];
-        $members = $instance->node_id === $snapshot['source_node_id']
-            ? array_map(static fn (array $row): array => ['route_id' => $row['route_id'], 'instance_id' => $instance->id,
-                'node_id' => $instance->node_id, 'production' => false,
-                'certificate_scope' => $row['web_root'] === null ? "app-instance-{$instance->id}" : 'route-'.ValidatedData::integer($row['route_id'])], RouteExecutionProof::objects($snapshot['routes']))
-            : RouteExecutionProof::objects($target['prepared']);
-        foreach ($members as $member) {
-            if ($member['node_id'] !== $nodeId || $instance->node_id !== $nodeId) {
-                continue;
-            }
-            $route = Route::query()->findOrFail(ValidatedData::integer($member['route_id']));
-            $workloads[] = [...$member, ...app(RouteWorkloadInput::class)->forInstance($instance, $route, $nodeId),
-                'lan' => app(RouteHopInput::class)->firewall($instance, $route, Node::query()->findOrFail(ValidatedData::integer($snapshot['destination_router_node_id'])), $nodeId)];
-        }
-        $retire = array_find(RouteExecutionProof::objects($snapshot['retire_nodes']), fn (array $member): bool => $member['node_id'] === $nodeId);
-        if (is_array($retire)) {
-            $sites = app(DevelopmentSiteRepository::class)->forNode($node);
-            $retire['certificate_scopes'] = array_values(array_filter(ValidatedData::stringList($retire['certificate_scopes']), fn (string $scope): bool => ! $sites->contains(fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))));
-        }
-        $rollbackLeaves = array_values(array_filter(RouteExecutionProof::objects($target['live_certificates']), static fn (array $leaf): bool => $leaf['node_id'] === $nodeId));
-        $rollback = null;
-        if ($rollbackLeaves !== []) {
-            $sites = app(DevelopmentSiteRepository::class)->forNode($node);
-            $rollback = ['node_id' => $nodeId, 'user' => ValidatedData::string($rollbackLeaves[0]['user']),
-                'agent_sha256' => ValidatedData::string($rollbackLeaves[0]['agent_sha256']),
-                'certificate_scopes' => array_values(array_unique(array_map(static fn (array $leaf): string => ValidatedData::string($leaf['scope']),
-                    array_values(array_filter($rollbackLeaves, static fn (array $leaf): bool => ! $sites->contains(static fn (DevelopmentSite $site): bool => $site->loadsCertificate(ValidatedData::string($leaf['scope'])))))))),
-                'lan_route_ids' => [], 'shared_php' => false, 'production_instance_ids' => [], 'url_instance_ids' => [], 'ingress_firewall' => false];
-        }
-        $artifacts = app(NativeRoutePublicationInput::class)->forNode($node);
-
-        return [...$artifacts, 'participant_node_id' => $nodeId, 'target' => $target, 'workloads' => $workloads,
-            'publication' => ['node_id' => $nodeId, 'caddy_publication' => $artifacts['caddy_publication'], 'php' => $artifacts['php_publication'], 'dns' => $artifacts['private_dns_publication']],
-            'environment_fields' => $operation->input['environment_fields'] ?? [], 'probes' => [], 'firewall' => null,
-            'route_transfer' => $snapshot, 'route_retire' => $retire, 'route_rollback' => $rollback];
-    }
-
-    /** Existing URL material only, after the parent records authoritative placement.
-     * The parent declares its own fixed private source and Node-bound field; values stay inside its callback.
-     *
-     * @return list<array{instance_id:int,name:string,input:array<string,mixed>}>
-     */
-    public function environmentMaterial(Operation $operation, int $nodeId): array
-    {
-        $snapshot = ValidatedData::object($operation->input['route_transfer']);
-        $instance = Instance::query()->findOrFail(ValidatedData::integer($snapshot['instance_id']));
-        if (! in_array($nodeId, ValidatedData::integerList($operation->input['participant_node_ids']), true)
-            || ! in_array($nodeId, [$snapshot['source_node_id'], $snapshot['destination_node_id']], true)
-            || $instance->node_id !== $nodeId) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Route URL material belongs only to the authoritative Instance placement.', 403);
-        }
-        $view = clone $operation;
-        $view->input = [...$operation->input, 'route_removal' => ['nodes' => [['node_id' => $nodeId, 'url_instance_ids' => [$instance->id]]]]];
-
-        return app(NativeRouteEnvironmentMaterial::class)->forNode($view, $nodeId);
     }
 
     /** @return array<string,mixed> */

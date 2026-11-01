@@ -360,7 +360,10 @@ export function transferWorkflow(): Fields {
                                 type: "string",
                                 enum: ["orbit-control-inputs"],
                             },
-                            key: { type: "string" },
+                            key: {
+                                type: "string",
+                                pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$",
+                            },
                         },
                         required: ["vault", "key"],
                         additionalProperties: false,

@@ -30,7 +30,6 @@ use App\Domain\Instances\InstanceDestroyPhpSecret;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
 use App\Domain\Instances\InstanceLifecycleGitSecret;
 use App\Domain\Instances\InstanceLifecycleUrlSecret;
-use App\Domain\Instances\InstanceTransferRouteEnvironment;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Instances\ProductionInstanceProvisioner;
@@ -110,7 +109,7 @@ final class InstancesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->tag([InstanceCreateEnvironmentSeed::class], OperationSecretOutputStore::class);
-        $this->app->tag([InstanceTransferRouteEnvironment::class, NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceDestroyPhpSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),

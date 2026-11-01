@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceTransferProcesses;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -16,6 +17,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Cluster;
@@ -25,8 +27,13 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
+    config(['swamp.run_token' => 'fixture.run']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     $gateway = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'gateway-control', 'public_ssh_host' => '192.0.2.14', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $this->gateway = $gateway;
@@ -53,6 +60,7 @@ beforeEach(function (): void {
     $this->node->roles()->create(['cluster_id' => $this->cluster->id, 'role' => 'router', 'status' => 'active']);
     $this->destination = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'destination', 'cluster_id' => $this->destinationCluster->id, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.2']);
     $this->destination->roles()->create(['cluster_id' => $this->destinationCluster->id, 'role' => 'router', 'status' => 'active']);
+    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $this->route->update(['node_id' => null, 'cluster_id' => $this->cluster->id, 'sites_published' => true, 'status' => 'active']);
     $this->extra = Route::query()->create(['project_id' => $this->instance->project_id, 'cluster_id' => $this->cluster->id, 'domain' => 'extra.test', 'web_root' => 'admin/public', 'status' => 'pending', 'sites_published' => true, 'publication' => 'private', 'provenance' => 'explicit']);
     $this->extra->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
@@ -111,36 +119,33 @@ it('captures account intent from stored Node users without resolving any host ac
         ->and($snapshot['retire_nodes'][0])->not->toHaveKey('home');
 });
 
-it('keeps source workload ownership in the fresh pre-cutover restoration view', function (): void {
-    $plan = app(NativeRouteTransferPlan::class);
-    $snapshot = $plan->capture($this->transfer);
-    $operation = new Operation(['kind' => 'instance.transfer', 'node_id' => $this->node->id,
-        'input' => ['route_transfer' => $snapshot, 'participant_node_ids' => $snapshot['participant_node_ids']]]);
-    $view = $plan->publicInput($operation, $this->node->id);
-    expect(array_column($view['workloads'], 'instance_id'))->toBe([$this->instance->id, $this->instance->id])
-        ->and(array_column($view['workloads'], 'node_id'))->toBe([$this->node->id, $this->node->id]);
-    expect(fn () => $plan->environmentMaterial($operation, $this->destination->id))->toThrow(ResourceOperationException::class);
+it('captures source restoration and destination publication without changing ownership', function (): void {
+    $this->node->update(['wireguard_ip' => '10.44.0.11']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.12']);
+    $snapshot = app(NativeRouteTransferPlan::class)->capture($this->transfer);
+    $processes = app(InstanceTransferProcesses::class)->capture($this->transfer);
+    $capture = app(NativeRouteTransferPublication::class)->capture($snapshot, $processes['destination_installations']);
+    expect($capture['route_mutations']['restore']['certificates'])->not->toBeEmpty();
+    expect(array_column($capture['route_mutations']['restore']['certificates'], 'node_id'))->toContain($this->node->id);
+    expect(array_column($capture['route_mutations']['forward']['certificates'], 'node_id'))->toContain($this->destination->id);
+    expect($this->instance->fresh()->node_id)->toBe($this->node->id);
 });
 
-it('exposes only this participant candidate leaf scopes for pre-cutover cleanup', function (): void {
-    $plan = app(NativeRouteTransferPlan::class);
-    $snapshot = $plan->capture($this->transfer);
-    $operation = new Operation(['kind' => 'instance.transfer_rollback', 'node_id' => $this->node->id,
-        'input' => ['route_transfer' => $snapshot, 'participant_node_ids' => $snapshot['participant_node_ids']]]);
-    $view = $plan->publicInput($operation, $this->destination->id);
-    expect($view['route_rollback']['node_id'])->toBe($this->destination->id)
-        ->and($view['route_rollback']['user'])->toBe('orbit')
-        ->and($view['route_rollback']['certificate_scopes'])->toContain('app-instance-'.$this->instance->id)
-        ->and($view['route_rollback'])->not->toHaveKey('home')
-        ->and($view['route_rollback']['lan_route_ids'])->toBe([]);
-    expect($plan->publicInput($operation, $this->node->id)['route_rollback'])->toBeNull();
+it('cleans candidate leaves only on nodes whose restored publications do not use them', function (): void {
+    $this->node->update(['wireguard_ip' => '10.44.0.11']);
+    $this->destination->update(['wireguard_ip' => '10.44.0.12']);
+    $snapshot = app(NativeRouteTransferPlan::class)->capture($this->transfer);
+    $processes = app(InstanceTransferProcesses::class)->capture($this->transfer);
+    $capture = app(NativeRouteTransferPublication::class)->capture($snapshot, $processes['destination_installations']);
+    $cleanup = $capture['route_mutations']['restore']['cleanup'];
+    expect(array_column($cleanup, 'node_id'))->toContain($this->destination->id);
+    expect(array_filter($cleanup, fn (array $leaf): bool => $leaf['node_id'] === $this->node->id && $leaf['scope'] === 'app-instance-'.$this->instance->id))->toBe([]);
 });
 
 it('captures prospective complete publications without changing stored placement', function (): void {
     $this->node->update(['wireguard_ip' => '10.44.0.11']);
     $this->instance->update(['selected_php_version' => '8.4']);
     $this->destination->update(['wireguard_ip' => '10.44.0.12']);
-    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $survivorInstance = Instance::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id,
         'name' => 'survivor', 'checkout_path' => '/srv/survivor', 'branch' => 'main', 'source_is_laravel' => false, 'status' => 'active']);
     $survivor = Route::query()->create(['project_id' => $this->instance->project_id, 'cluster_id' => $this->cluster->id,
@@ -152,7 +157,7 @@ it('captures prospective complete publications without changing stored placement
     $routesBefore = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
     $publications = app(NativeRouteTransferPublication::class)->capture($plan, ['instance_id' => $this->instance->id, 'node_id' => $this->destination->id,
         'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null, 'source_is_laravel' => false, 'vite_port' => null, 'ssr_port' => null]]]);
-    $rows = collect($publications['nodes'])->keyBy('node_id');
+    $rows = collect($publications['route_mutations']['forward']['publications'])->keyBy('node_id');
     $source = $rows[$this->node->id];
     $destination = $rows[$this->destination->id];
     expect($source['control_node_id'])->toBe(209)
@@ -181,14 +186,13 @@ it('clears the prospective publication view if canonical rendering throws', func
 it('renders the canonical collision-adjusted destination Vite identity instead of its source port', function (): void {
     $this->node->update(['wireguard_ip' => '10.44.0.11']);
     $this->destination->update(['wireguard_ip' => '10.44.0.12']);
-    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $this->instance->update(['vite_port' => 5173]);
     $plan = app(NativeRouteTransferPlan::class)->capture($this->transfer);
     $batch = ['instance_id' => $this->instance->id, 'node_id' => $this->destination->id,
         'target' => ['instance' => ['checkout_path' => $this->transfer->destination_path, 'root' => null,
             'source_is_laravel' => false, 'vite_port' => 5180, 'ssr_port' => 5181]]];
     $publications = app(NativeRouteTransferPublication::class)->capture($plan, $batch);
-    $destination = collect($publications['nodes'])->firstWhere('node_id', $this->destination->id);
+    $destination = collect($publications['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->destination->id);
     expect($destination['after']['caddy']['content'])->toContain('5180')->not->toContain('5173')
         ->and($this->instance->fresh()->vite_port)->toBe(5173);
     $batch['node_id'] = $this->node->id;

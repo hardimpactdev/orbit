@@ -845,12 +845,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/instance-lifecycle/clone_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/instance-lifecycle/create_root.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -1016,22 +1010,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/instance-lifecycle/register_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/rename_root.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/instance-lifecycle/session.ts",
       "rule": "custom-control",
       "count": 2,
@@ -1046,30 +1024,6 @@
       "evidence": [
         "GET <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_archive.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/git",
-        "/usr/bin/python3",
-        "/usr/bin/tar"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/integrations/metrics_certificate_system.ts",
@@ -2436,15 +2390,6 @@
       "evidence": [
         "cleanup/cleanup-${{ self.member.node_id }}",
         "databases/database-${{ self.work.key }}"
-      ]
-    },
-    {
-      "file": "workflows/workflow-operation-instance-transfer.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 2,
-      "evidence": [
-        "recover-leaves/remove-candidate-certificates",
-        "retirement/retire-artifacts"
       ]
     },
     {

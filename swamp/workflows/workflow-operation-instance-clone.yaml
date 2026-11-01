@@ -1,318 +1,891 @@
 id: 6c413eaa-2e25-43c8-b146-f6c8e103c00d
 name: operation-instance-clone
-description: One native Instance clone root with placed source and environment steps.
-writes: true
-vaults: []
+description: >-
+  Clone committed development source through official209 SSH and one terminal
+  projection.
+vaults:
+  - orbit-control-inputs
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [instance.clone] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - instance.clone
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      properties:
+        git_read:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+                - orbit-control-inputs
+            key:
+              type: string
+              pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+          required:
+            - vault
+            - key
+          additionalProperties: false
+        environment:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+                - orbit-control-inputs
+            key:
+              type: string
+              pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'
+          required:
+            - vault
+            - key
+          additionalProperties: false
+      required:
+        - git_read
+        - environment
+      additionalProperties: false
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: provisioning
-    target: '${{ "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
+  - name: clone
+    target: orbit-node-209
     steps:
-      - name: admission
+      - name: paths
+        target: orbit-node-209
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: admit
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "icl-" + run.id + "-0" }}'
+          methodName: paths
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+            intent: '${{ inputs.intent }}'
+      - name: mint
+        target: orbit-node-209
+        dependsOn:
+          - step: paths
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "icl-" + run.id + "-1" }}'
+          methodName: execute
+          inputs:
+            run: python3 -B "$ORBIT_MINT"
+            env:
+              ORBIT_MINT: '${{ steps.paths.outputs.directory + "/mint.py" }}'
+              ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
+      - name: candidate-branch
+        target: orbit-node-209
+        dependsOn:
+          - step: mint
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-2" }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-2" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: >-
+                    ${{ inputs.intent.candidate.ssh_execution.target.host_keys
+                    }}
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.candidate.checkout }}'
+              - branch
+              - '--show-current'
+      - name: candidate-commit
+        target: orbit-node-209
+        dependsOn:
+          - step: candidate-branch
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-3" }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-3" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: >-
+                    ${{ inputs.intent.candidate.ssh_execution.target.host_keys
+                    }}
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.candidate.checkout }}'
+              - rev-parse
+              - '--verify'
+              - 'HEAD^{commit}'
+      - name: candidate-status
+        target: orbit-node-209
+        dependsOn:
+          - step: candidate-commit
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-4" }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-4" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: >-
+                    ${{ inputs.intent.candidate.ssh_execution.target.host_keys
+                    }}
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.candidate.checkout }}'
+              - status
+              - '--porcelain'
+              - '--untracked-files=all'
+      - name: candidate-submodules
+        target: orbit-node-209
+        dependsOn:
+          - step: candidate-status
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-5" }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-5" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: >-
+                    ${{ inputs.intent.candidate.ssh_execution.target.host_keys
+                    }}
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.candidate.checkout }}'
+              - submodule
+              - status
+              - '--recursive'
+      - name: candidate-origin-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: candidate-submodules
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "icl-" + run.id + "-6" }}'
+          methodName: read
+          inputs:
+            action: origin
+            input: '${{ inputs.intent.candidate }}'
+      - name: candidate-origin
+        target: orbit-node-209
+        dependsOn:
+          - step: candidate-origin-assets
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-7" }}'
+          methodName: script
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-7" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.candidate.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.candidate.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.candidate.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.candidate.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: >-
+                    ${{ inputs.intent.candidate.ssh_execution.target.host_keys
+                    }}
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["candidate-origin-assets"].outputs.script_body }}'
       - name: candidate
+        target: orbit-node-209
         dependsOn:
-          - step: admission
-            condition: { type: succeeded }
-        target: '${{ "orbit-node-" + string(steps.admission.outputs.candidate_node_id) }}'
-        labels: {
-          node: "${{ string(steps.admission.outputs.candidate_node_id) }}",
-        }
+          - step: candidate-origin
+            condition:
+              type: succeeded
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: candidate
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "icl-" + run.id + "-8" }}'
+          methodName: cloneCandidate
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ steps.admission.outputs.candidate_node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: prepare
+            intent: '${{ inputs.intent.candidate }}'
+            origin: '${{ steps["candidate-origin"].outputs }}'
+            branch: '${{ steps["candidate-branch"].outputs }}'
+            commit: '${{ steps["candidate-commit"].outputs }}'
+            status: '${{ steps["candidate-status"].outputs }}'
+            submodules: '${{ steps["candidate-submodules"].outputs }}'
+      - name: source-prepare-assets
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-0-" + run.id }}'
+          methodName: read
+          inputs:
+            action: prepare_directory
+            input: '${{ inputs.intent }}'
         dependsOn:
           - step: candidate
-            condition: { type: succeeded }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: prepare
-      - name: resolve
+            condition:
+              type: succeeded
+      - name: source-prepare-read
+        target: orbit-node-209
         dependsOn:
-          - step: prepare
-            condition: { type: succeeded }
+          - step: source-prepare-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-1-" + run.id }}'
+          methodName: script
+          globalArgs: &ref_0
+            name: '${{ "source-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: resolve
-            candidate_commit: "${{ steps.candidate.outputs.candidate_commit }}"
-      - name: profile
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-prepare-assets"].outputs.script_body }}'
+      - name: source-prepared
+        target: orbit-node-209
         dependsOn:
-          - step: resolve
-            condition: { type: succeeded }
+          - step: source-prepare-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-2-" + run.id }}'
+          methodName: decode
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: profile
-            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
-            candidate_commit: "${{ steps.candidate.outputs.candidate_commit }}"
-      - name: template
+            observation: '${{ steps["source-prepare-read"].outputs }}'
+      - name: source-init
+        target: orbit-node-209
         dependsOn:
-          - step: profile
-            condition: { type: succeeded }
+          - step: source-prepared
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: >-
+          ${{ !steps["source-prepared"].outputs.created ||
+          (inputs.intent.source.seed_repository != null &&
+          inputs.intent.resolve.seed_commit != null) }}
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-3-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: template
-            source: '${{ {"branch": steps.resolve.outputs.branch, "commit": steps.resolve.outputs.commit} }}'
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - init
+              - '--quiet'
+      - name: source-worktree
+        target: orbit-node-209
+        dependsOn:
+          - step: source-init
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: >-
+          ${{ !steps["source-prepared"].outputs.created ||
+          !(inputs.intent.source.seed_repository != null &&
+          inputs.intent.resolve.seed_commit != null) }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-4-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-C'
+              - >-
+                ${{ inputs.intent.source.seed_repository == null ?
+                inputs.intent.source.checkout :
+                inputs.intent.source.seed_repository }}
+              - worktree
+              - add
+              - '--no-checkout'
+              - '--detach'
+              - '--'
+              - '${{ inputs.intent.source.checkout }}'
+              - >-
+                ${{ inputs.intent.resolve.seed_commit == null ? "HEAD" :
+                inputs.intent.resolve.seed_commit }}
+      - name: source-origin-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: source-worktree
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-5-" + run.id }}'
+          methodName: read
+          inputs:
+            action: origin
+            input:
+              checkout: '${{ inputs.intent.source.checkout }}'
+              allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
+      - name: source-origin-read
+        target: orbit-node-209
+        dependsOn:
+          - step: source-origin-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-6-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-origin-assets"].outputs.script_body }}'
+      - name: source-origin-proof
+        target: orbit-node-209
+        dependsOn:
+          - step: source-origin-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-7-" + run.id }}'
+          methodName: origin
+          inputs:
+            expected: '${{ inputs.intent.source.repository }}'
+            observation: '${{ steps["source-origin-read"].outputs }}'
+            allow_empty: '${{ steps["source-prepared"].outputs.owned }}'
+      - name: source-origin-configure
+        target: orbit-node-209
+        dependsOn:
+          - step: source-origin-proof
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ steps["source-origin-read"].outputs.stdout != "" }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-8-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - config
+              - remote.origin.url
+              - '${{ inputs.intent.source.repository }}'
+      - name: source-git-directory
+        target: orbit-node-209
+        dependsOn:
+          - step: source-origin-configure
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-9-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - rev-parse
+              - '--absolute-git-dir'
+      - name: source-marker-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: source-git-directory
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-10-" + run.id }}'
+          methodName: read
+          inputs:
+            action: mark_source
+            input:
+              checkout: '${{ inputs.intent.source.checkout }}'
+              prepare_id: '${{ inputs.intent.source.prepare_id }}'
+              git_directory: '${{ steps["source-git-directory"].outputs.stdout }}'
+      - name: source-marker-read
+        target: orbit-node-209
+        dependsOn:
+          - step: source-marker-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-11-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-marker-assets"].outputs.script_body }}'
+      - name: source-paths
+        target: orbit-node-209
+        dependsOn:
+          - step: source-marker-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-12-" + run.id }}'
+          methodName: paths
+          inputs:
+            intent: '${{ inputs.intent }}'
+      - name: source-scripts-directory
+        target: orbit-node-209
+        dependsOn:
+          - step: source-paths
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-13-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/mkdir
+              - '-p'
+              - '${{ "/tmp/orbit-source-" + run.id + "-source" }}'
+      - name: source-scripts-copy
+        target: orbit-node-209
+        dependsOn:
+          - step: source-scripts-directory
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "source-copy-" + run.id }}'
+          methodName: copy
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            src: '${{ steps["source-paths"].outputs.directory }}'
+            dst: '${{ "/tmp/orbit-source-" + run.id + "-source/" }}'
+            recursive: true
+            direction: to
+      - name: source-fetch
+        target: orbit-node-209
+        dependsOn:
+          - step: source-scripts-copy
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: >-
+          ${{ !inputs.intent.resolve.network || (inputs.intent.retained_source
+          != null) }}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-15-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - >-
+                ${{ "/tmp/orbit-source-" + run.id + "-source/scripts/fetch.py"
+                }}
+              - '${{ inputs.intent.source.checkout }}'
+              - '${{ inputs.intent.source.repository }}'
+            stdin: >-
+              ${{
+              vault.get(inputs.execution_secrets.git_read.vault,inputs.execution_secrets.git_read.key)
+              }}
+      - name: source-refs
+        target: orbit-node-209
+        dependsOn:
+          - step: source-fetch
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-16-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - for-each-ref
+              - '--format=%(refname)'
+              - refs/heads
+              - refs/remotes/origin
+      - name: source-selected
+        target: orbit-node-209
+        dependsOn:
+          - step: source-refs
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-17-" + run.id }}'
+          methodName: select
+          inputs:
+            resolve: '${{ inputs.intent.resolve }}'
+            refs: '${{ steps["source-refs"].outputs }}'
+      - name: source-checkout
+        target: orbit-node-209
+        dependsOn:
+          - step: source-selected
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        guard: '${{ inputs.intent.retained_source != null }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-18-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - checkout
+              - '--quiet'
+              - '--no-track'
+              - '-B'
+              - '${{ steps["source-selected"].outputs.branch }}'
+              - '${{ steps["source-selected"].outputs.reference }}'
+      - name: source-commit
+        target: orbit-node-209
+        dependsOn:
+          - step: source-checkout
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-19-" + run.id }}'
+          methodName: exec
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-c'
+              - core.fsmonitor=false
+              - '-C'
+              - '${{ inputs.intent.source.checkout }}'
+              - rev-parse
+              - '--verify'
+              - 'HEAD^{commit}'
+      - name: source-profile-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: source-commit
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-20-" + run.id }}'
+          methodName: read
+          inputs:
+            action: profile
+            input: '${{ inputs.intent }}'
+      - name: source-profile-read
+        target: orbit-node-209
+        dependsOn:
+          - step: source-profile-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-21-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_0
+          inputs:
+            hosts: 'name:target'
+            interpreter: python3
+            script: '${{ steps["source-profile-assets"].outputs.script_body }}'
+      - name: source-result
+        target: orbit-node-209
+        dependsOn:
+          - step: source-profile-read
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-22-" + run.id }}'
+          methodName: provisioningResult
+          inputs:
+            intent: '${{ inputs.intent }}'
+            profile: '${{ steps["source-profile-read"].outputs }}'
+            branch: '${{ steps["source-selected"].outputs.branch }}'
+            commit: '${{ steps["source-commit"].outputs }}'
       - name: environment
+        target: orbit-node-209
         dependsOn:
-          - step: template
-            condition: { type: succeeded }
+          - step: source-result
+            condition:
+              type: succeeded
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "icl-" + run.id + "-32" }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "icl-" + run.id + "-32" }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.ssh_execution.target.user }}'
+              port: '${{ inputs.intent.ssh_execution.target.port }}'
+              identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.ssh_execution.target.host }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: environment
-      - name: vp
-        dependsOn:
-          - step: environment
-            condition: { type: succeeded }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: vp
-      - name: setup
-        dependsOn:
-          - step: vp
-            condition: { type: succeeded }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: stage
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            stage: setup
-      - name: complete
-        dependsOn:
-          - step: setup
-            condition: { type: succeeded }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: finish
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-      - name: failure_admission
-        dependsOn:
-          - step: admission
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: candidate
-      - name: failure_candidate
-        dependsOn:
-          - step: candidate
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: candidate
-      - name: failure_prepare
-        dependsOn:
-          - step: prepare
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: prepare
-      - name: failure_resolve
-        dependsOn:
-          - step: resolve
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: resolve
-      - name: failure_profile
-        dependsOn:
-          - step: profile
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: profile
-      - name: failure_template
-        dependsOn:
-          - step: template
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: template
-      - name: failure_environment
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/python3
+              - '-B'
+              - >-
+                ${{ "/tmp/orbit-source-" + run.id +
+                "-source/scripts/write_environment.py" }}
+              - '${{ inputs.intent.environment_path }}'
+            stdin: >-
+              ${{
+              vault.get(inputs.execution_secrets.environment.vault,inputs.execution_secrets.environment.key)
+              }}
+      - name: result
+        target: orbit-node-209
         dependsOn:
           - step: environment
-            condition: { type: failed }
+            condition:
+              type: succeeded
         task:
           type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "icl-" + run.id + "-33" }}'
+          methodName: cloneResult
           inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: environment
-      - name: failure_vp
-        dependsOn:
-          - step: vp
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: vp
-      - name: failure_setup
-        dependsOn:
-          - step: setup
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: setup
-      - name: failure_complete
-        dependsOn:
-          - step: complete
-            condition: { type: failed }
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/instance-clone"
-          behaviorName: '${{ "instance-clone-" + run.id }}'
-          methodName: fail
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
-            failed_step: complete
+            intent: '${{ inputs.intent }}'
+            source: '${{ steps["source-result"].outputs }}'
+            candidate: '${{ steps.candidate.outputs }}'
+            environment: '${{ steps.environment.outputs }}'

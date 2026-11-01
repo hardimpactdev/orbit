@@ -147,59 +147,6 @@ Deno.test("local source prepares, resolves, replays and reads only the committed
   }
 });
 
-Deno.test("local registration adoption and source identity preserve checkout bytes", async () => {
-  const f = await fixture();
-  try {
-    await f.prepare();
-    const resolved = await f.resolve();
-    await Deno.writeTextFile(`${f.checkout}/.env`, "PRIVATE=value\n", {
-      mode: 0o644,
-    });
-    const inspected = await f.call("instance.inspect-registration-source", {
-      path: f.checkout,
-      include_worktrees: false,
-      user: f.user,
-      group: f.group,
-    });
-    const row = (inspected.rows as Record<string, unknown>[])[0];
-    assertEquals(row.commit, resolved.commit);
-    assertMatch(String(row.source_digest), /^[a-f0-9]{64}$/);
-    const member = {
-      source: f.checkout,
-      destination: f.checkout,
-      application: f.checkout,
-      commit: row.commit,
-      branch: row.branch,
-      detached: row.detached,
-      digest: row.source_digest,
-    };
-    for (const operation of ["adopt", "adopt-finalize"]) {
-      assertEquals(
-        await f.call("instance.relocate-registration-source", {
-          operation,
-          members: [member],
-        }),
-        { identities: [] },
-      );
-    }
-    assertEquals((await Deno.lstat(`${f.checkout}/.env`)).mode! & 0o007, 0);
-    assertEquals(
-      await f.call("instance.inspect-development-source", {
-        ...f.source,
-        verify_origin: true,
-        require_idle: true,
-      }),
-      { origin: f.repository, branch: "feature", commit: resolved.commit },
-    );
-    assertEquals(
-      await Deno.readTextFile(`${f.checkout}/README.md`),
-      "source\n",
-    );
-  } finally {
-    await f.cleanup();
-  }
-});
-
 Deno.test("local source refuses a symlink parent and a replaced prepare receipt", async () => {
   const f = await fixture();
   try {
@@ -246,51 +193,6 @@ Deno.test("local source refuses repository filter execution and a symlink templa
       }),
       { error_code: "instance.source_invalid" },
     );
-  } finally {
-    await f.cleanup();
-  }
-});
-
-Deno.test("registration adopt refuses changed bytes and never follows environment links", async () => {
-  const f = await fixture();
-  try {
-    await f.prepare();
-    await f.resolve();
-    const inspected = await f.call("instance.inspect-registration-source", {
-      path: f.checkout,
-      include_worktrees: false,
-      user: f.user,
-      group: f.group,
-    });
-    const row = (inspected.rows as Record<string, unknown>[])[0];
-    const member = {
-      source: f.checkout,
-      destination: f.checkout,
-      application: f.checkout,
-      commit: row.commit,
-      branch: row.branch,
-      detached: row.detached,
-      digest: row.source_digest,
-    };
-    await Deno.writeTextFile(`${f.checkout}/README.md`, "changed\n");
-    assertEquals(
-      await f.call("instance.relocate-registration-source", {
-        operation: "adopt",
-        members: [member],
-      }),
-      { error_code: "instance.registration_conflict" },
-    );
-    const privateFile = `${f.root}/private`;
-    await Deno.writeTextFile(privateFile, "preserved", { mode: 0o644 });
-    await Deno.symlink(privateFile, `${f.checkout}/.env`);
-    assertEquals(
-      await f.call("instance.relocate-registration-source", {
-        operation: "adopt-finalize",
-        members: [member],
-      }),
-      { identities: [] },
-    );
-    assertEquals((await Deno.lstat(privateFile)).mode! & 0o777, 0o644);
   } finally {
     await f.cleanup();
   }

@@ -1,7 +1,6 @@
 import { localCommand, localFilesystem } from "../_lib/local-worker.ts";
 /** Instance source effects run on their placed native worker, never through orbit-agent. */
 import { z } from "npm:zod@4.4.3";
-import { createHash } from "node:crypto";
 import type { NodeCall } from "../_lib/node-agent.ts";
 
 const Path = z.string().max(4096).regex(/^\/(?:[^/]+\/)*[^/]+$/).refine((p) =>
@@ -599,200 +598,6 @@ async function template(
   refuse(blob.ok && blob.output.length === size);
   return { environment_template: decoder.decode(blob.output) };
 }
-async function registrationDigest(root: string, signal?: AbortSignal) {
-  const filesystem = localFilesystem();
-  const hash = createHash("sha256");
-  for (
-    const args of [
-      ["rev-parse", "HEAD"],
-      ["symbolic-ref", "-q", "HEAD"],
-      ["status", "--porcelain=v2", "--untracked-files=all"],
-      ["config", "--local", "--null", "--list"],
-      ["ls-files", "--stage", "-v"],
-    ]
-  ) {
-    const value = await git(["-C", root, ...args], signal);
-    if (args[0] === "status") refuse(value.ok);
-    hash.update(`git\0${args.join("\0")}\0`);
-    hash.update(value.output);
-  }
-  const walk = async (directory: string) => {
-    const entries = [];
-    for await (const entry of Deno.readDir(directory)) entries.push(entry);
-    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-    const subdirectories: string[] = [];
-    for (const entry of entries) {
-      if (directory === root && entry.name === ".git") continue;
-      const path = `${directory}/${entry.name}`, info = await Deno.lstat(path);
-      hash.update(
-        `${path.slice(root.length + 1)}\0${(info.mode ?? 0) & 0o7777}\0`,
-      );
-      if (info.isSymlink) {
-        hash.update("L");
-        hash.update(await Deno.readLink(path));
-      } else if (info.isFile) {
-        hash.update("F");
-        const file = await filesystem.open(path, { read: true });
-        try {
-          for await (const part of file.readable) hash.update(part);
-        } finally {
-          try {
-            file.close();
-          } catch { /* readable closed it */ }
-        }
-      } else {
-        hash.update("D");
-        if (info.isDirectory) subdirectories.push(path);
-      }
-    }
-    for (const directory of subdirectories) await walk(directory);
-  };
-  await walk(root);
-  return hash.digest("hex");
-}
-async function registration(
-  raw: Record<string, unknown>,
-  signal?: AbortSignal,
-) {
-  const input = z.object({
-    path: Path,
-    include_worktrees: z.literal(false),
-    user: Account,
-    group: Account,
-  }).parse(raw);
-  const owner = await account(input.user, signal);
-  refuse(input.group === owner.group);
-  await parentChain(input.path);
-  const top = await gitValue(
-    input.path,
-    ["rev-parse", "--show-toplevel"],
-    signal,
-  );
-  refuse(top === input.path);
-  const dotGit = `${input.path}/.git`, directory = await stat(dotGit);
-  refuse(
-    directory?.isDirectory && !directory.isSymlink,
-    "instance.registration_conflict",
-  );
-  const common = await gitValue(input.path, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-  ], signal);
-  refuse(common === dotGit);
-  for (const path of [input.path, dotGit]) {
-    const entry = await real(path);
-    refuse(
-      entry.uid === owner.uid && entry.gid === owner.gid &&
-        ((entry.mode ?? 0) & 0o7002) === 0,
-    );
-  }
-  const worktrees =
-    (await gitValue(input.path, ["worktree", "list", "--porcelain"], signal))!
-      .split("\n").filter((line) => line.startsWith("worktree ")).map((line) =>
-        line.slice(9)
-      );
-  refuse(
-    worktrees.length === 1 && worktrees[0] === input.path,
-    "instance.registration_conflict",
-  );
-  const repository = (await gitValue(
-    input.path,
-    ["config", "--get", "remote.origin.url"],
-    signal,
-  ))!;
-  const branch = await gitValue(
-    input.path,
-    ["symbolic-ref", "--short", "HEAD"],
-    signal,
-    true,
-  );
-  const defaultRef = await gitValue(
-    input.path,
-    ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-    signal,
-    true,
-  );
-  const slug = repository.replace(/\/+$/, "").split(/[/:]/).at(-1)!.replace(
-    /\.git$/,
-    "",
-  ).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
-  return {
-    rows: [{
-      path: input.path,
-      layout: "checkout",
-      repository_url: repository,
-      branch,
-      detached: branch === null,
-      commit: Commit.parse(
-        await gitValue(
-          input.path,
-          ["rev-parse", "--verify", "HEAD^{commit}"],
-          signal,
-        ),
-      ),
-      source_digest: await registrationDigest(input.path, signal),
-      default_branch: defaultRef?.replace(/^origin\//, "") ?? null,
-      inferred_slug: slug,
-      common_repository_path: common,
-      worktree_paths: worktrees,
-    }],
-  };
-}
-async function adopt(raw: Record<string, unknown>, signal?: AbortSignal) {
-  const input = z.object({
-    operation: z.enum(["adopt", "adopt-finalize"]),
-    members: z.array(
-      z.object({
-        source: Path,
-        destination: Path,
-        application: Path,
-        commit: Commit,
-        branch: z.string().nullable(),
-        detached: z.boolean(),
-        digest: z.string().regex(/^[a-f0-9]{64}$/),
-      }),
-    ).length(1),
-  }).parse(raw);
-  const member = input.members[0];
-  refuse(
-    member.source === member.destination &&
-      (member.application === member.source ||
-        inside(member.application, member.source)),
-  );
-  await parentChain(member.source);
-  refuse(
-    await gitValue(member.source, ["rev-parse", "--show-toplevel"], signal) ===
-      member.source,
-  );
-  if (input.operation === "adopt") {
-    refuse(
-      await gitValue(
-        member.source,
-        ["rev-parse", "--verify", "HEAD^{commit}"],
-        signal,
-      ) === member.commit,
-    );
-    const branch = await gitValue(
-      member.source,
-      ["symbolic-ref", "--short", "HEAD"],
-      signal,
-      true,
-    );
-    refuse(
-      branch === member.branch && (branch === null) === member.detached &&
-        await registrationDigest(member.source, signal) === member.digest,
-      "instance.registration_conflict",
-    );
-  } else {
-    await parentChain(member.application);
-    const path = `${member.application}/.env`, entry = await stat(path);
-    if (entry?.isFile && !entry.isSymlink && (entry.mode ?? 0) & 0o007) {
-      await localFilesystem().chmod(path, (entry.mode ?? 0) & 0o770);
-    }
-  }
-  return { identities: [] };
-}
 async function candidate(raw: Record<string, unknown>, signal?: AbortSignal) {
   const input = z.object({
     environment: z.literal("development"),
@@ -910,8 +715,6 @@ export async function runLocalSource(
       [
         "account.lookup",
         "instance.inspect-development-profile",
-        "instance.inspect-registration-source",
-        "instance.relocate-registration-source",
         "instance.inspect-clone-candidate",
         "instance.prepare-development-source",
         "instance.resolve-development-source",
@@ -925,12 +728,6 @@ export async function runLocalSource(
     }
     if (call.name === "instance.inspect-development-profile") {
       return await profile(call.input, boundedSignal);
-    }
-    if (call.name === "instance.inspect-registration-source") {
-      return await registration(call.input, boundedSignal);
-    }
-    if (call.name === "instance.relocate-registration-source") {
-      return await adopt(call.input, boundedSignal);
     }
     if (call.name === "instance.inspect-clone-candidate") {
       return await candidate(call.input, boundedSignal);
