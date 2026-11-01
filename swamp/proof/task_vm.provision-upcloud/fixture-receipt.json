@@ -20,8 +20,8 @@
     "swamp/workflows/workflow-task-vm-provider-upcloud.yaml": "b34015c02d229d8da4bccb0c2499c817a087fbc72f7b2cd795a69571ed0b411b",
     "swamp/tests/task_vm_upcloud_provider_native_test.py": "6bef091ff53b2355ead97e50e466974172bfb7098c2ef240f34e8f002e99c6be",
     "swamp/tests/task_vm_upcloud_wait_test.py": "7803aae69e92572f094ab69cd68da6d1eec769569c1636e6a72c1f1045102f86",
-    "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "8cced5d733bce91177776ebcb665d9cabb2a9d32a99ad09dc391cc6002df7f3b",
-    "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "3f213c3a4a30a6a81bef6099b6f1355b8bf06300ccd0e128826f57495b5e07da",
+    "apps/gateway/app/Domain/Operations/OperationRunBudgets.php": "b652f8ddf85a4ee1f0bd62367edcfde73d7f1077ba0711816518768c4cf0a6dc",
+    "apps/gateway/tests/Feature/Infrastructure/Swamp/OperationRunBudgetTest.php": "730554ca8a444f5779357597336d270fe0ba911b305a2eafcd0d50e3268cf4ca",
     "swamp/tests/swamp_shape_gate_test.py": "7d15ed5fb4eb62f0ee0a53205662d5d21fd6d827e0faf40ddfc0654969ac370a",
     "swamp/tests/task_vm_upcloud_composition_native_test.py": "ee56f40fabc8fbb55115340fd596a8b552aee8883d4f640560fde633d9a6b5bd"
   },
@@ -224,9 +224,9 @@
     "elapsed_seconds": 189.084
   },
   "gateway_budget_suite": {
-    "tests": 54,
-    "passed": 54,
-    "assertions": 465,
+    "tests": 58,
+    "passed": 58,
+    "assertions": 476,
     "regression_before_change_seconds": 120,
     "pinned_after_change_seconds": 3900,
     "providers": [
@@ -267,5 +267,9 @@
     "elapsed_seconds": 18.719,
     "native_run_id": "56f61973-8791-4d60-96a0-8007f0aed687",
     "native_run_duration_ms": 6584
+  },
+  "main_integration": {
+    "base": "6f808849fb",
+    "conflict_resolution": "Preserved main Tool budget regression and both provider pinning cases; lifecycle provider source unchanged by rebase"
   }
 }
