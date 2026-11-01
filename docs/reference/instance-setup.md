@@ -72,11 +72,13 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 The development create workflow runs from Node209 through official SSH as the Node's managed user. It captures the stored WireGuard endpoint and full host pins at admission. Native steps prepare the owned checkout, validate its configured origin, resolve the admitted branch and inspect the source profile. Git permits HTTPS reads only and disables repository hooks, filesystem monitors, alternate-ref commands and credential helpers. The shared source policy refuses foreign preparation markers and preserves unrelated worktrees.
 
+A seeded create returns `instance.branch_in_use` before preparing a target when the requested branch is already checked out in another worktree. Choose a new branch; Orbit does not force shared refs to move.
+
 A task workspace is a checkout inside its own [task VM](/reference/compute-drivers#task-vms). There the VM's managed user `orbit` owns it and runs the agents, the setup steps, and the checks.
 
 ### Credentialed Git
 
-The development parent uses the existing numeric Operation GitHub mint primitive. It receives a named execution copy in the native vault containing either a fresh App token with Contents-read access to that repository or no token for an anonymous read. The App key stays in the Gateway. `gh_cli` source access refuses before create admission. TaskVM workspace provisioning has a separate native parent; this create parent does not admit TaskVM placements.
+The development parent uses the existing numeric Operation GitHub mint primitive. It receives a named execution copy in the native vault containing either a fresh App token with Contents-read access to that repository or no token for an anonymous read. The App key stays in the Gateway. The Gateway accepts GitHub’s stateless installation-token format, including JWT dots, and still verifies repository scope, permissions and expiry. A failed mint skips all source actions. `gh_cli` source access refuses before create admission. TaskVM workspace provisioning has a separate native parent; this create parent does not admit TaskVM placements.
 
 A fetch carries the GitHub token. It runs in the checkout as the managed user, against the Project repository URL with explicit refspecs, never against a configured remote. It sets `credential.helper` empty, `http.followRedirects` to `false`, and `core.alternateRefsCommand` empty, besides the hook and fsmonitor overrides above. Only HTTPS may carry the fetch: `GIT_ALLOW_PROTOCOL` is `https`, `protocol.allow` is `never`, and HTTPS is allowed on the command line, so `ssh`, `ext`, `file`, and `git` stay off. The token exists only in the environment of that one `git` command. It travels in the command's input on the standard input of the SSH process, never in an argument or a file.
 

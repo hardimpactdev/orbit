@@ -104,40 +104,16 @@ jobs:
               ORBIT_OPERATION_ID: '${{ string(inputs.operation_id) }}'
               ORBIT_RUN_ID: '${{ run.id }}'
               ORBIT_GIT_REFERENCES: '${{ inputs.intent.execution_references_json }}'
-      - name: source-prepare-assets
+      - name: source-worktrees
         target: orbit-node-209
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-0-" + run.id }}'
-          methodName: read
-          inputs:
-            action: prepare_directory
-            input: '${{ inputs.intent }}'
-        dependsOn:
-          - step: create-mint
-            condition:
-              type: succeeded
-          - step: prepare-admitted
-            condition:
-              type: succeeded
-      - name: source-prepare-read
-        target: orbit-node-209
-        dependsOn:
-          - step: source-prepare-assets
-            condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
-          - step: prepare-admitted
-            condition:
-              type: succeeded
+        guard: >-
+          ${{ steps.exists(key, steps[key].status == "failed") || (!(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null)
+          || (inputs.intent.retained_source != null)) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-1-" + run.id }}'
-          methodName: script
+          behaviorName: '${{ "src-0-" + run.id }}'
+          methodName: exec
           globalArgs: &ref_2
             name: '${{ "source-" + run.id }}'
             transport:
@@ -150,6 +126,106 @@ jobs:
                 address: '${{ inputs.intent.ssh_execution.target.host }}'
                 transport:
                   hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            argv:
+              - /usr/bin/git
+              - '-c'
+              - core.hooksPath=/dev/null
+              - '-C'
+              - '${{ inputs.intent.source.seed_repository == null ? inputs.intent.source.checkout : inputs.intent.source.seed_repository }}'
+              - worktree
+              - list
+              - '--porcelain'
+        dependsOn:
+          - step: create-mint
+            condition:
+              type: succeeded
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+      - name: source-branch-available
+        target: orbit-node-209
+        dependsOn:
+          - step: source-worktrees
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-1-" + run.id }}'
+          methodName: branchAvailable
+          inputs:
+            resolve: '${{ inputs.intent.resolve }}'
+            checkout: '${{ inputs.intent.source.checkout }}'
+            worktrees: >-
+              ${{ inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null && !(inputs.intent.retained_source != null) ?
+              steps["source-worktrees"].outputs : {"stdout":""} }}
+      - name: source-branch-accepted
+        target: orbit-node-209
+        dependsOn:
+          - step: source-branch-available
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
+        task:
+          type: assert
+          expr: 'steps["source-branch-available"].outputs.available'
+          severity: high
+          message: instance.branch_in_use
+      - name: source-prepare-assets
+        target: orbit-node-209
+        dependsOn:
+          - step: source-branch-accepted
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-source-command'
+          behaviorName: '${{ "src-3-" + run.id }}'
+          methodName: read
+          inputs:
+            action: prepare_directory
+            input: '${{ inputs.intent }}'
+      - name: source-prepare-read
+        target: orbit-node-209
+        dependsOn:
+          - step: source-prepare-assets
+            condition:
+              type: or
+              conditions:
+                - type: succeeded
+                - type: skipped
+          - step: prepare-admitted
+            condition:
+              type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "src-4-" + run.id }}'
+          methodName: script
+          globalArgs: *ref_2
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -166,10 +242,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-2-" + run.id }}'
+          behaviorName: '${{ "src-5-" + run.id }}'
           methodName: decode
           inputs:
             observation: '${{ steps["source-prepare-read"].outputs }}'
@@ -185,11 +262,13 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ !steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
+        guard: >-
+          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || (inputs.intent.source.seed_repository != null &&
+          inputs.intent.resolve.seed_commit != null)) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-3-" + run.id }}'
+          behaviorName: '${{ "src-6-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -216,11 +295,13 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ !steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null && inputs.intent.resolve.seed_commit != null) }}'
+        guard: >-
+          ${{ steps.exists(key, steps[key].status == "failed") || (!steps["source-prepared"].outputs.created || !(inputs.intent.source.seed_repository != null
+          && inputs.intent.resolve.seed_commit != null)) }}
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-4-" + run.id }}'
+          behaviorName: '${{ "src-7-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -250,10 +331,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-5-" + run.id }}'
+          behaviorName: '${{ "src-8-" + run.id }}'
           methodName: read
           inputs:
             action: origin
@@ -272,10 +354,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-6-" + run.id }}'
+          behaviorName: '${{ "src-9-" + run.id }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -294,10 +377,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-7-" + run.id }}'
+          behaviorName: '${{ "src-10-" + run.id }}'
           methodName: origin
           inputs:
             expected: '${{ inputs.intent.source.repository }}'
@@ -315,11 +399,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ steps["source-origin-read"].outputs.stdout != "" }}'
+        guard: '${{ steps.exists(key, steps[key].status == "failed") || (steps["source-origin-read"].outputs.stdout != "") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-8-" + run.id }}'
+          behaviorName: '${{ "src-11-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -347,10 +431,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-9-" + run.id }}'
+          behaviorName: '${{ "src-12-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -377,10 +462,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-10-" + run.id }}'
+          behaviorName: '${{ "src-13-" + run.id }}'
           methodName: read
           inputs:
             action: mark_source
@@ -400,10 +486,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-11-" + run.id }}'
+          behaviorName: '${{ "src-14-" + run.id }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -422,10 +509,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-12-" + run.id }}'
+          behaviorName: '${{ "src-15-" + run.id }}'
           methodName: paths
           inputs:
             intent: '${{ inputs.intent }}'
@@ -441,10 +529,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-13-" + run.id }}'
+          behaviorName: '${{ "src-16-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -465,6 +554,7 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
@@ -489,11 +579,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ !inputs.intent.resolve.network || (inputs.intent.retained_source != null) }}'
+        guard: '${{ steps.exists(key, steps[key].status == "failed") || (!inputs.intent.resolve.network || (inputs.intent.retained_source != null)) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-15-" + run.id }}'
+          behaviorName: '${{ "src-18-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -517,10 +607,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-16-" + run.id }}'
+          behaviorName: '${{ "src-19-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -549,10 +640,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-17-" + run.id }}'
+          behaviorName: '${{ "src-20-" + run.id }}'
           methodName: select
           inputs:
             resolve: '${{ inputs.intent.resolve }}'
@@ -569,11 +661,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
-        guard: '${{ inputs.intent.retained_source != null }}'
+        guard: '${{ steps.exists(key, steps[key].status == "failed") || (inputs.intent.retained_source != null) }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-18-" + run.id }}'
+          behaviorName: '${{ "src-21-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -604,10 +696,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-19-" + run.id }}'
+          behaviorName: '${{ "src-22-" + run.id }}'
           methodName: exec
           globalArgs: *ref_2
           inputs:
@@ -635,10 +728,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-20-" + run.id }}'
+          behaviorName: '${{ "src-23-" + run.id }}'
           methodName: read
           inputs:
             action: profile
@@ -655,10 +749,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "src-21-" + run.id }}'
+          behaviorName: '${{ "src-24-" + run.id }}'
           methodName: script
           globalArgs: *ref_2
           inputs:
@@ -677,10 +772,11 @@ jobs:
           - step: prepare-admitted
             condition:
               type: succeeded
+        guard: '${{ steps.exists(key, steps[key].status == "failed") }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-source-command'
-          behaviorName: '${{ "src-22-" + run.id }}'
+          behaviorName: '${{ "src-25-" + run.id }}'
           methodName: provisioningResult
           inputs:
             intent: '${{ inputs.intent }}'

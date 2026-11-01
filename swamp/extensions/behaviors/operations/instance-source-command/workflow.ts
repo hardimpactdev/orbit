@@ -44,7 +44,11 @@ export function sourceSteps(
                     }],
                 }
                 : {}),
-            ...(guard ? { guard: expr(guard) } : {}),
+            guard: expr(
+                `steps.exists(key, steps[key].status == "failed")${
+                    guard ? " || (" + guard + ")" : ""
+                }`,
+            ),
             task,
         });
     }
@@ -100,6 +104,33 @@ export function sourceSteps(
         "-C",
         expr(`${intent}.source.checkout`),
     ];
+    sshAction("worktrees", [
+        "/usr/bin/git",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-C",
+        expr(
+            `${intent}.source.seed_repository == null ? ${intent}.source.checkout : ${intent}.source.seed_repository`,
+        ),
+        "worktree",
+        "list",
+        "--porcelain",
+    ], `!(${seeded}) || (${retained})`);
+    typed("branch-available", "branchAvailable", {
+        resolve: expr(`${intent}.resolve`),
+        checkout: expr(`${intent}.source.checkout`),
+        worktrees: expr(
+            `${seeded} && !(${retained}) ? ${
+                outputs("worktrees")
+            } : {"stdout":""}`,
+        ),
+    });
+    add("branch-accepted", {
+        type: "assert",
+        expr: `${outputs("branch-available")}.available`,
+        severity: "high",
+        message: "instance.branch_in_use",
+    });
     script("prepare", "prepare_directory");
     typed("prepared", "decode", { observation: expr(outputs("prepare-read")) });
     sshAction(
