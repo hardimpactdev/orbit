@@ -114,7 +114,7 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
             return [json_encode(['seeded' => true, 'cluster_id' => 1, 'project_id' => 1, 'nodes' => $nodes]), '', 0];
         }
         if ($script === 'topology-repositories.py') {
-            return ['{"fixture_repositories":"separate-caddy","site":"repositories.orbit"}', '', 0];
+            return ['{"fixture_repositories":"separate-caddy","site":"repositories.orbit","fcgiwrap":"1.1.0-16build3"}', '', 0];
         }
         if ($argv === ['cat', '/home/orbit/.orbit/ca/root.pem']) {
             static $certificate = null;

@@ -88,8 +88,8 @@ final readonly class TopologyComposer
             $this->assertBatch('fixture.trust', $commands);
         });
         StageTimer::run($progress, 'fixture.repositories', function () use ($gateway, $addresses): void {
-            $result = $this->host->exec($gateway, new GuestCommand(['/usr/local/bin/topology-repositories.py', $addresses['gateway']], 180));
-            if (! $result->successful() || json_decode($result->stdout, true) !== ['fixture_repositories' => 'separate-caddy', 'site' => 'repositories.orbit']) {
+            $result = $this->host->exec($gateway, new GuestCommand(['/usr/local/bin/topology-repositories.py', $addresses['gateway']], 660));
+            if (! $result->successful() || json_decode($result->stdout, true) !== ['fixture_repositories' => 'separate-caddy', 'site' => 'repositories.orbit', 'fcgiwrap' => '1.1.0-16build3']) {
                 throw new RuntimeException('e2e.fixture_repository_service_failed.');
             }
         });

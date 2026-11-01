@@ -13,13 +13,31 @@ UNITS = Path('/etc/systemd/system')
 REPOSITORIES = Path('/srv/swamp-proof/repositories')
 DNS = Path('/etc/dnsmasq.d/swamp-proof-repositories.conf')
 MARKER = '# Orbit disposable proof fixture\n'
+# The base image lacks fcgiwrap. Pin it exactly, like the recipe pins dnsmasq; the receipt records it.
+FCGIWRAP = '1.1.0-16build3'
 
 
-def run(argv, *, timeout=60):
-    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+def run(argv, *, timeout=60, env=None):
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False, env=env)
     if result.returncode:
         raise RuntimeError('e2e.fixture_repository_command_failed')
     return result.stdout
+
+
+def installed_version(package):
+    result = subprocess.run(['dpkg-query', '-W', '-f=${Status} ${Version}', package],
+                            capture_output=True, text=True, timeout=30, check=False)
+    status, _, version = result.stdout.rpartition(' ')
+    return version if result.returncode == 0 and status == 'install ok installed' else None
+
+
+def ensure_fcgiwrap():
+    if installed_version('fcgiwrap') is None:
+        env = dict(os.environ, DEBIAN_FRONTEND='noninteractive')
+        run(['apt-get', 'update'], timeout=300, env=env)
+        run(['apt-get', 'install', '-y', '--no-install-recommends', 'fcgiwrap=' + FCGIWRAP], timeout=300, env=env)
+    if installed_version('fcgiwrap') != FCGIWRAP or not os.access('/usr/sbin/fcgiwrap', os.X_OK):
+        raise RuntimeError('e2e.fixture_repository_fcgiwrap_version_mismatch')
 
 
 def caddyfile(address):
@@ -78,6 +96,8 @@ After=network.target swamp-proof-git-http.service
 [Service]
 User=caddy
 Group=caddy
+StateDirectory=swamp-proof-repositories
+Environment=XDG_DATA_HOME=/var/lib/swamp-proof-repositories XDG_CONFIG_HOME=/var/lib/swamp-proof-repositories
 ExecStart=/usr/bin/caddy run --config /etc/swamp-proof/Caddyfile --adapter caddyfile
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
@@ -102,7 +122,7 @@ def configure(address):
     parsed = ipaddress.ip_address(address)
     if parsed.version != 4 or not parsed in ipaddress.ip_network('10.232.0.0/16'):
         raise ValueError('e2e.fixture_repository_address_invalid')
-    for path in ['/usr/bin/caddy', '/usr/sbin/fcgiwrap', '/usr/lib/git-core/git-http-backend', '/usr/sbin/dnsmasq']:
+    for path in ['/usr/bin/caddy', '/usr/lib/git-core/git-http-backend', '/usr/sbin/dnsmasq']:
         if not os.access(path, os.X_OK):
             raise RuntimeError('e2e.fixture_repository_prerequisite_missing:' + path)
     manifest = units()
@@ -118,6 +138,7 @@ def configure(address):
             probe.bind((address, 443))
         except OSError:
             raise RuntimeError('e2e.fixture_repository_listener_occupied') from None
+    ensure_fcgiwrap()
     ROOT.mkdir(mode=0o750, parents=True, exist_ok=True)
     run(['php', '/usr/local/bin/topology-repository-certificate.php', address])
     run(['chown', 'root:caddy', str(ROOT), str(ROOT / 'repositories.key'), str(ROOT / 'repositories.pem')])
@@ -136,7 +157,7 @@ def configure(address):
     run(['systemctl', 'enable', '--now', *manifest])
     run(['systemctl', 'restart', 'dnsmasq'])
     run(['systemctl', 'is-active', '--quiet', *manifest, 'dnsmasq'])
-    return {'fixture_repositories': 'separate-caddy', 'site': 'repositories.orbit'}
+    return {'fixture_repositories': 'separate-caddy', 'site': 'repositories.orbit', 'fcgiwrap': FCGIWRAP}
 
 
 def main():
