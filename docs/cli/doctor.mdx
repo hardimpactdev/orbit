@@ -11,19 +11,15 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor is one command. The Gateway admits stored intent and starts one native Swamp run. Swamp runs native domain reads on each admitted Node. It reads continuous health, drift, and metrics observations through the Gateway and returns one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
+Doctor compares current Node and runtime facts with the Gateway's recorded intent. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule, firewall and database operations own their configuration checks; Doctor does not repeat them.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`doctor`](#orbit-doctor) | Verify registered Node state without making repairs. |
-
-The command accepts `--json`.
+| [`doctor`](#orbit-doctor) | Read current Node, role-service and Process state. |
 
 ## orbit doctor
-
-Verify one Node or every Node the caller may address, optionally limited to a set of families.
 
 ```bash
 orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
@@ -31,181 +27,74 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--node=ID` | every registered Node the caller may address | Numeric Node ID. The CLI rejects a value that is not a positive integer with `doctor.node_id_invalid`. |
-| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, and `database_server`. The Gateway refuses another value with `validation.failed`. |
+| `--node=ID` | accessible Nodes | Inspect one positive numeric Node ID. |
+| `--family=FAMILY` | all families | Repeat to select families. Current checks belong to `node`, `role`, and `process`. |
+| `--json` | false | Return the report as JSON. |
 
-```bash
-orbit doctor
-orbit doctor --node=7 --family=instance --family=process
-orbit doctor --family=firewall --json
-```
+The API admits one `doctor.inspect` Operation with HTTP 202. The CLI follows it and renders `result.report`. Node access applies before admission. Nodes sort by name and ID; the family order is fixed.
 
-Human output shows a progress indicator while the request runs. Then it shows a table with the columns Node, Family, Status, Checked, Resource, and Finding. A family without findings has one row, with "—" in the last two columns. A family with findings has one row for each finding. The Resource column names the resource type and name, so findings with the same code stay distinct. The Finding column shows the code, the summary, and the expected and observed values. The last lines give `summary.nodes`, `summary.families`, `summary.checks`, `summary.drift`, `summary.unverifiable`, and `summary.informational`, whether the fleet is healthy, and the request ID. JSON output returns the same report and the same six summary counts.
-
-The exit status follows the report.
-
-| Exit status | Meaning |
-| --- | --- |
-| `0` | `healthy` is true. Informational findings alone still exit 0. |
-| `1` | `healthy` is false, so at least one finding is drift or unverifiable, or the Gateway could not be reached. |
-
-The Gateway answers admission with HTTP 202 and a `doctor.inspect` Operation. The CLI follows that Operation and renders its `result.report`, including drift or unverifiable findings. Transport and authorization failures use the normal error envelope.
-
-<Note>
-Doctor selects only Nodes that the caller may address through an access grant. The Gateway refuses a `--node` value outside that set with `node_access.required`, so Doctor never inspects a Node that the caller could not otherwise reach.
-</Note>
+Human output lists Node, Family, Status, Checked, Resource and Finding. JSON returns the same report, with node/family/check counts and counts of drift, unverifiable and informational issues. Exit 0 means the performed checks have no drift or unverifiable findings. Exit 1 means a check found drift, could not be verified, or the request failed.
 
 ### How Swamp inspects
 
-Swamp reads files, package inventories, Git metadata, Route configuration, schedules, DNS answers, and database state with native readers on the exact admitted Node. It never launches orbit-agent commands. Root-owned files use passwordless `sudo`. Private material stays inside the read callback; only bounded match results leave the Node.
+Every read runs through official `@swamp/ssh` from the Node209 control worker, using stored host pins and the approved worker identity. The Gateway supplies full public expectations. A pure plan lists native argv; each read is a separate native step. One typed comparison step emits the report for the existing shared terminal projector. There is no Gateway callback, private-material fetch, binding wait, remote script bundle, or repair action.
 
-Doctor reads the continuous observer’s unit and Docker snapshots from the Gateway cache through the shared Operation input. Missing or stale snapshots are unverifiable and cannot clear prior findings. Swamp performs native identity, file, filesystem, service, and restart-counter reads that the frozen observer does not publish. Native domain reads still run when continuous observations are unavailable.
+The commands are `uname -sm`, `df -Pk /`, `systemctl show` with selected state properties, a filtered `docker container ls` showing only name and state, and `test -e` for a managed hibernation marker. Process reads use sudo. Docker environment, command arguments, service file contents and credentials are never requested.
 
-A missing worker produces an unverifiable report for that Node. Database-only checks still run for Node and role lifecycle, role conflicts, Route status, and database connections. Other families with resources report `*.node_unreachable`. An unreachable Node does not run the package inventory scan.
-
-For a nested Laravel root such as `apps/site/public`, Doctor uses the same [application directory](/reference/projects#application-directory) as the runtime. It checks that app's environment, cached APP_URL, PHP-FPM working directory, and production release `.env` link; Git identity and checkout-layout checks still cover the whole repository. Doctor does not infer a different app directory from discovered files.
-
-On `app-prod`, the expected `pool.conf` also holds the pool of each directory that a [Route with a web root](/reference/routes#web-roots-on-production) serves, so those pools are not drift. Doctor checks the release `.env` link and `APP_URL` of the default directory only.
-
-Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
-
-Role package, service, and Caddy version checks use native reads. Docker CE satisfies `docker.io` only when its three prerequisite packages, executable, and running service are present.
-
-Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, `database_server`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
-
-Each issue carries a stable code, a kind of `informational`, `drift`, or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. `expected` and `observed` stay a boolean, a string of at most 255 characters, or null.
-
-`checked` counts the family's persisted resources on that Node, not commands and not discoveries. For the tool family, that is the Tool rows, including `failed` rows, plus Instances with a recorded vp environment. Unregistered packages and inventory-scan issues do not increase it. A tool family with neither kind of record still has `checked` 0 when it reports discoveries or a failed scan.
-
-`summary.checks` is the sum of `checked`. `summary.drift`, `summary.unverifiable`, and `summary.informational` count issues of those kinds. An informational issue is not also counted as drift or unverifiable. `summary.nodes` and `summary.families` count the selected Nodes and family reports.
-
-A family with no issues, or only informational issues, is `healthy`. A family with a drift issue and no unverifiable issue is `drift`. Any unverifiable issue makes the family `unverifiable`. A Node is `healthy` when every selected family is `healthy`. The report is `healthy` when every Node is `healthy`. Health ignores informational issues.
-
-The report never contains raw output, commands, paths, URLs, branch names, repository origins, credentials, setting values, private keys, environment values, configuration contents, or exception text. A Route issue names the Route's domain as its resource name.
-
-Node-wide `*.node_unreachable` findings use `resource_id=node:{id}`. Database connection findings distinguish an attachment (`attachment:{id}`) from an unattached registry connection (`connection:{id}`).
-
-### Informational package discoveries
-
-The tool family reads installed Homebrew formulae and casks and Vite+ global root packages through the shared [package inspector](/reference/tools#discover-installed-packages). Registered Tools keep the drift checks below. A package with no matching Tool row is informational, not drift. Doctor creates no Tool rows, stores no inventory, and does not adopt.
-
-The scan states are the same five tokens as `tool:scan`. `complete` contributes package findings only. `unsupported` contributes nothing, so a Linux Node does not report `brew-cask` as a false package. `absent` is one informational scan finding and no package findings. A confirmed absent manager is a complete observation for inventory recovery. `incomplete` is one unverifiable scan finding even when the Node has no Tool rows, and the process exits 1. A read that fails before a scan state exists, including a command timeout, is one unverifiable `tool.inspection_failed` issue with `resource_id=node:{id}:inventory` and a null resource name, even when the Node has no Tool rows. Doctor still returns the other families. `conflicting` is informational when no Tool row uses that manager, including a Linux Homebrew prefix Orbit does not own. It is unverifiable when a Tool row uses that manager, because Doctor cannot check those Tools against that scope. A conflicting scope with no Tools does not make the Node unhealthy.
-
-| Finding | Kind | Fields |
-| --- | --- | --- |
-| `tool.package_unregistered` | `informational` | `resource_type` is `tool`. `resource_id` is null. `resource_name` is the package. `expected` is `brew`, `brew-cask`, or `vp`. `observed` is the fact string below. |
-| `tool.inventory_scan` | `informational` or `unverifiable`, as above | `resource_type` is `tool`. `resource_id` is `node:{id}:inventory`. `resource_name` is the manager. `expected` is `complete`. `observed` is `absent`, `incomplete`, or `conflicting`. |
-
-The Resource column shows `tool`, then the manager, then the package. For a package finding the manager is `expected`. For a scan finding the manager is `resource_name`. A formula and a cask that share a package name stay on different rows.
-
-The package `observed` value is four parts in this order, joined by semicolons: `version=14.1.1`, `dependency=no`, `adoption=supported`, and `block=none`. `dependency` is `yes` or `no`. `adoption` is `supported` or `unsupported`. The version token is 1 to 64 characters from letters, digits, and `._+:-`, or `unknown` when no such token exists. A null scan version is `unknown`, including a formula revision such as `25.8.1_1` and a cask version such as `3.003`. `block` is `none` when adoption is supported. Otherwise it is `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, or `authorization_required`. An unsupported cask still uses `tool.package_unregistered`.
-
-Registered Tool issues sort by Tool ID. Recorded vp environment issues follow, sorted by Instance ID. Inventory scan issues follow those, in the order `brew`, `brew-cask`, `vp`. Unregistered package issues follow, in that manager order and then by package name.
-
-Registered drift, including `tool.not_installed` on a `failed` row whose package was never installed, sets `resource_id` to the Tool id and leaves `resource_name` null. A report with only informational findings stays `healthy` and exits 0. Drift or unverifiable findings still exit 1.
-
-Adopt one selected package through [tool:adopt](/cli/tool#orbit-tooladopt) or the Node's [Tools page](/reference/web-app#node-detail-pages). The web app reads `tool:scan` for its package list. It does not store this report as an inventory.
-
+Failed or malformed reads produce one unverifiable inspection finding for their family and Node. Other reads continue. A parked or unmanaged Node dispatches no SSH reads and supplies no positive recovery evidence. Parked task VMs have an informational finding.
 
 ### What each family checks
 
-| Family | Checks | Issue codes |
-| --- | --- | --- |
-| `node` | Lifecycle for every Node. For a Node that the Gateway manages over SSH, also SSH reachability, platform, architecture, and WireGuard address against the Node record. For an active managed Linux Node, also the [Node agent](/reference/node-agent#doctor) binary and its pinned checksum, unit, secret, and the Gateway's view of its reports. While the [fleet rollout](/reference/gateway-recovery#catch-up) is on, also whether a Node of the rollout set runs the desired fleet state, and whether its `/usr/local/bin/orbit` is a CLI Orbit did not install. Checks free space and free inodes on the Linux Orbit home or root, or on the macOS enrolled account's home volume. Reports what an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) left on the Node, also while it is unreachable. On a reachable [task VM host](/reference/compute-drivers#sweep-task-vm-hosts), also task VMs without a live record, live records whose VM is gone, and [strays](/reference/compute-drivers#report-strays): instances and custom volumes Orbit does not own, and `ready` or `parked` records without an open group. On a Node named `tvm-<number>` without a live task VM record, a stray Node. The Node of a parked task VM is not inspected: it reports only the informational `node.task_vm_parked`. | `node.lifecycle_not_active`, `node.disk_low`, `node.ssh_unreachable`, `node.platform_mismatch`, `node.architecture_mismatch`, `node.wireguard_ip_mismatch`, `node.private_dns_uplink_missing`, `node.private_dns_policy_mismatch`, `node.private_dns_unreachable`, `node.public_dns_unreachable`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_view_stale`, `node.agent_secret_mismatch`, `node.release_lag`, `node.route_residue_retained`, `node.cli_foreign`, `node.task_vm_orphaned`, `node.task_vm_missing`, `node.task_vm_inspection_failed`, `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record`, `node.task_vm_stray_node`, `node.task_vm_parked`, `node.inspection_failed` |
-| `role` | Each role assignment's packages, installed Caddy release, services, firewall, DNS, VPN, and Cluster projections, the Gateway machine's private DNS route, the CI runner host boundary, plus singleton and assignment conflicts. Once per Node, the live Caddyfile against a fresh Node Caddy build. On a Node with an active `app-dev` or `app-prod` role, every Orbit PHP-FPM pool whose working directory is missing. | `role.lifecycle_not_active`, `role.claim_stale`, `role.packages_missing`, `role.caddy_version_unsupported`, `role.caddy_build_drift`, `role.php_pool_directory_missing`, `role.services_inactive`, `role.firewall_projection_mismatch`, `role.dns_projection_mismatch`, `role.private_dns_route_mismatch`, `role.ci_runner_host_mismatch`, `role.vpn_inactive`, `role.vpn_projection_mismatch`, `role.singleton_conflict`, `role.assignment_conflict`, `role.cluster_ownership_mismatch`, `role.cluster_cardinality_conflict`, `role.node_unreachable`, `role.inspection_failed` |
-| `project` | The stored repository identity and the repository origin that Instances on the Node project for the Project. | `project.repository_identity_mismatch`, `project.repository_origin_mismatch`, `project.node_unreachable`, `project.inspection_failed` |
-| `instance` | Checkout or production home, and source identity and layout. On `app-prod`, also PHP-FPM association, environment projection, and release selection. The private and public Route projection on every Node that serves the Instance, and stuck provisioning or removals. On a development Instance, also `APP_URL` in each application directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves, against the Route that wins the directory. | `instance.lifecycle_not_active`, `instance.provisioning_stuck`, `instance.removal_stuck`, `instance.checkout_missing`, `instance.source_identity_mismatch`, `instance.source_layout_mismatch`, `instance.repository_layout_mismatch`, `instance.origin_mismatch`, `instance.caddy_projection_mismatch`, `instance.php_fpm_association_missing`, `instance.php_fpm_association_shared`, `instance.php_fpm_projection_mismatch`, `instance.environment_projection_mismatch`, `instance.production_home_mismatch`, `instance.release_selection_mismatch`, `instance.selected_release_root_mismatch`, `instance.public_ingress_mismatch`, `instance.public_tls_mismatch`, `instance.public_firewall_mismatch`, `instance.private_forwarding_mismatch`, `instance.private_routing_scope_mismatch`, `instance.private_certificate_mismatch`, `instance.private_dns_mismatch`, `instance.private_firewall_mismatch`, `instance.router_caddy_mismatch`, `instance.workload_caddy_mismatch`, `instance.laravel_url_mismatch`, `instance.target_set_mismatch`, `instance.route_association_mismatch` (counts only Routes without a web root), `instance.related_node_unverifiable`, `instance.node_unreachable`, `instance.inspection_failed`, `instance.workspace_lease` |
-| `schedule` | The protected script, oneshot service, and timer of each Schedule against stored intent, including timer state, calendar, execution context, and placement. | `schedule.artifact_missing`, `schedule.artifact_permissions_mismatch`, `schedule.specification_mismatch`, `schedule.timer_state_mismatch`, `schedule.calendar_mismatch`, `schedule.execution_context_mismatch`, `schedule.completion_callback_mismatch`, `schedule.placement_mismatch`, `schedule.orphan_artifact`, `schedule.node_unreachable`, `schedule.inspection_failed` |
-| `tool` | Installed state and desired version constraints of Tools, and recorded Instance vp environments. Unregistered Homebrew and Vite+ packages are informational. | `tool.not_installed`, `tool.version_mismatch`, `tool.package_unregistered`, `tool.inventory_scan`, `tool.node_unreachable`, `tool.inspection_failed`, `tool.vp_store_missing`, `tool.vp_store_inspection_failed` |
-| `process` | Desired state against the observed systemd or Docker status of each Instance and Node Process, including crash-loop evidence for a systemd Process desired running. | `process.runtime_missing`, `process.state_mismatch`, `process.crash_loop`, `process.node_unreachable`, `process.inspection_failed` |
-| `firewall` | UFW backend state and each named rule the Gateway owns on the Node. | `firewall.backend_inactive`, `firewall.lifecycle_not_active`, `firewall.rule_missing`, `firewall.rule_mismatch`, `firewall.node_unreachable`, `firewall.inspection_failed` |
-| `database_connection` | Registry records and Instance attachments against the stored environment keys they project, with each record's stored host and port. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
-| `route` | The stored status of each Route the Node serves. Private custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. [Public Process Routes](/reference/routes#public-process-hostnames) on the Ingress only when both the Ingress and Process Node are in scope: the Gateway queries the recorded Orbit DNS server directly for the managed private A record and expects the Ingress WireGuard address; checks the Ingress Caddy site and ACME certificate (missing or expiring within the renewal margin), forwarding, and both firewall ends. | `route.lifecycle_not_active`, `route.domain_reserved`, `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.firewall_mismatch`, `route.node_unreachable`, `route.inspection_failed` |
-| `database_server` | Running MySQL, PostgreSQL and Valkey [Database servers](/reference/database-servers): private publications, SQL admin login and initialization-secret removal. PostgreSQL also checks recorded serial test databases and workers for missing members and compares live replication attributes with recorded users, even before endpoint opt-in. Valkey also checks anonymous access, its ACL file and recorded users. Publication checks start only after explicit server create/retry enables them. Creation retries repair drift. | `database_server.test_database_missing`, `database_server.replication_mismatch`, `database_server.publication_mismatch`, `database_server.login_failed`, `database_server.initialization_secret_present`, `database_server.open`, `database_server.acl_file_missing`, `database_server.acl_mismatch`, `database_server.inspection_failed` |
+| Family | Checks |
+| --- | --- |
+| `node` | Recorded lifecycle; platform and architecture; root filesystem free space; Linux agent service presence/state; freshness of the Gateway's continuous agent observation at comparison time. |
+| `role` | Recorded lifecycle and current state of each service required by an active Linux role. |
+| `process` | Current registered systemd unit or Docker container presence and running/stopped state. A systemd `activating/auto-restart` snapshot is crash-loop evidence. A cumulative restart count alone is not. |
 
-Managed Linux peers with roles, excluding the VPN holder and the Gateway, also check their persisted and live [private DNS policy](/reference/private-dns#resolver-selection). A mismatch is `node.private_dns_policy_mismatch`. A DNS server that does not return the expected Gateway address is `node.private_dns_unreachable`. An uncached public lookup must succeed through a non-Orbit link or global resolver; otherwise Doctor reports `node.public_dns_unreachable`. A missing configured uplink is `node.private_dns_uplink_missing`. These are drift. A failed agent read is unverifiable (`node.inspection_failed`). Namespace changes can cause a mismatch for up to five minutes plus queue and traversal time. Doctor never repairs the settings.
+A stopped, non-keep-alive development Process desired running is healthy only when its managed awake marker is proven absent. An unavailable marker does not count as sleep. This inspection takes no timed samples and does not infer a restart rate.
 
-`node.disk_low` is a drift issue when the checked filesystem has less than 10% free space, less than 2 GiB free space, or less than 10% free inodes. On Linux that filesystem is the one holding the Orbit home or root. On macOS it is the one that contains the enrolled account's home directory, which is the volume for that account's Homebrew prefix and Vite+ global store. The agent command reads the macOS home volume with a native filesystem query. The finding reports the observed free space. If a filesystem does not provide inode totals, including APFS, Doctor still checks its free space and reports inode availability as unavailable rather than treating zero reported inodes as zero percent free. A macOS home volume that cannot be read is `node.inspection_failed`. Doctor only reports the issue; it never deletes files or frees space.
+The existing family selectors `project`, `instance`, `schedule`, `tool`, `firewall`, `database_connection`, `route` and `database_server` remain accepted by the API, but have zero Doctor checks. A healthy family with `checked: 0` supplies no verdict on its resources. Use the owning native operation and its result for configuration validation.
 
-The `project` family also compares the stored repository identity with the identity derived from the Project URL. Drift reports `project.repository_identity_mismatch`, even when the Node is unreachable or checkout inspection fails. Send the current repository URL through [Project update](/reference/projects#repository-changes) to repair it. Doctor does not change the record.
+`checked` counts the focused reads performed for a family. Auxiliary awake-marker reads do not add another Process check. Lifecycle findings can exist without a host read. Missing reads remain in the count and produce unverifiable findings.
 
-The `project` family sends the settled checkout intents for one Project and Node to `doctor.inspect-project` in one call. Rust checks each checkout independently and returns a match or an unavailable observation; one failed checkout does not hide the others. Git runs as the recorded owner with hooks and filesystem monitoring disabled.
+### Informational package discoveries
 
-Production Instance observations use `doctor.inspect-production-instance`. Rust compares the home, selected release, environment link and content, live Caddy sites, and dedicated PHP-FPM runtime. The PHP checks share pool selection, generation receipts, and local tuning rules with runtime convergence. Unreadable process evidence stays distinct from drift.
-
-Development Instance source observations use `doctor.inspect-development-source`. It checks the recorded checkout, owner, Git administration, origin, and starting history without changing the checkout.
-
-The `project` and `instance` families read the `remote.origin.url` value stored in each checkout. They ignore `insteadOf` rewrites from the Node's Git configuration, so a Node that rewrites HTTPS URLs to SSH still matches. The `project` family compares that value by [repository identity](/reference/projects#repository-identity), so an SSH origin and an HTTPS Project URL for the same host and path match. A fork or another host still reports `project.repository_origin_mismatch`. The `instance` family compares the stored URL exactly. The `project` family looks for a development checkout under the Node's [apps root](/reference/node-settings#derive-the-effective-root).
-
-For a development Instance, `instance.source_identity_mismatch` means the checkout does not hold the recorded history: the recorded starting commit is missing, or `HEAD` shares no history with it. A checkout on another branch, on a detached `HEAD`, or reset below the starting commit is normal development work, not drift. Commands that act on the recorded branch check it when they run. For example, `instance:destroy` refuses a checkout on another branch with `instance.source_branch_mismatch`.
-
-A public Route also reports `instance.public_tls_mismatch` when its served certificate is untrusted, invalid for the domain, or expires within one sixth of its lifetime; renew or repair the public certificate at the ingress. A Route mid-issuance can report a transient TLS issue until the certificate is ready.
-
-The `tool` family compares only desired intent. A Tool without a version constraint needs only to be installed. With a constraint, Doctor checks the normalized installed version against it and reports `tool.version_mismatch` when the constraint rejects it. An invalid stored constraint, or a version that Doctor cannot normalize, reports `tool.inspection_failed`. Doctor never compares the version with the Tool's `installed_version`, because that field records the last operation's result, not intent.
-
-For each [recorded Project vp environment](/reference/tools#project-environments-in-the-vite-store), Doctor checks the store path, required vp version, runtime, and package-manager executables. Missing or drifted content, or a failed prerequisite, produces `tool.vp_store_missing` drift. An inspection failure produces `tool.vp_store_inspection_failed` as unverifiable. These findings use `resource_id=node:{id}:environments`; `resource_name` identifies the Instance and its vp environment. Doctor does not install or update store content.
-
-Every Instance is expected to be `active`, except a task workspace that is not visitable. That workspace has no Route, so its expected final state is `source_resolved`; the [tasks reference](/reference/tasks#task-workspace) owns that rule. A non-null provisioning step is unfinished unless it is the terminal `active` step. A lifecycle state before the Instance's settled state is also still provisioning. A non-null `failed_step` reports immediately; Doctor skips other unfinished provisioning while its row has changed within the last 20 minutes, and older provisioning reports only `instance.provisioning_stuck`. The `project` probe also excludes provisioning Instances; only the `instance` family reports when provisioning becomes stuck. A state later than the settled state is unexpected and reports `instance.lifecycle_not_active` with the expected state. The `instance` probe skips an Instance already in `removing`, except that removal lasting 10 minutes or more reports `instance.removal_stuck`; it also drops issues if removal starts or the row is deleted during inspection. The `project` probe excludes removing and unfinished-provisioning Instances when selecting eligible checkouts. The `process` probe skips Processes whose Instance is removing, and drops findings if removal starts or the Instance is deleted during inspection. The `database_connection` probe skips attachments whose Instance is removing, including when it rereads the attachment after inspection. No other family has a general removing-Instance skip. An unreachable Node skips the Instance lifecycle checks. Durable workspace lease records remain visible when the Node is unreachable. Doctor reports the current holder, any uncertain remote mutation, and ordered waiters as `instance.workspace_lease` information. It never revokes ownership, starts queued work, or infers that an old holder stopped. Restore connectivity to the recorded Node or Gateway first, then let the next task tick reconcile exact operation and run receipts. On the Gateway, `php artisan tasks:tick` runs that reconciliation through the normal scheduler. A running, unreadable, or legacy owner stays fenced. For an investigated synchronous holder, use the guarded `php artisan tasks:lease:release LEASE_ID --reason="operator investigation"` command on the Gateway. It seals late starts and verifies remote quiescence; it refuses ownership without sufficient proof and records the result in Activity. It never makes an unknown tree change attributable to Orbit. Inspect the exact operation or run identity before changing remote state.
-
-A role assignment that has stayed `provisioning` or `removing` for 11 minutes, while no operation holds the Node's [role lock](/reference/node-provisioning#role-operations-on-one-node), reports `role.claim_stale` instead of `role.lifecycle_not_active`: the operation that claimed it stopped without finishing, for example because its Gateway worker was killed. 11 minutes is the role lock's 10-minute request term plus a 1-minute margin. The lock itself ends at most one [term](/reference/node-provisioning#lock-renewal) after the operation's last command started, so a killed worker blocks the role for at most that term plus the 1-minute margin. `orbit node:role:add <node> <role> --converge` converges a stale `provisioning` claim again, and `orbit node:role:remove` removes a stale claim of either kind.
-
-Every Route is expected to be `active`. Any other status reports `route.lifecycle_not_active` on the Node that serves the Route; the [routes reference](/reference/routes#check-route-status-with-doctor) says which Node that is. A Route that holds a reserved name reports `route.domain_reserved`.
-
-For a Router, `role.firewall_projection_mismatch` includes missing or different Router LAN rules and ineligible-source residue in all three member families: `orbit:router-lan-https`, `orbit:router-lan-dns-udp`, and `orbit:router-lan-dns-tcp`. A leftover source is drift even when no member remains eligible. The check compares exact member source, Router LAN destination, port and protocol against the shared desired-rule catalog; it does not accept every `orbit:` comment as intended. Run the `role` family for this check, not only `firewall`, which checks named operator rules. Doctor never repairs residue or narrows overlapping operator/unmanaged allows. See the [Router LAN firewall contract](/cli/firewall#router-lan-member-rules) and its separate live acceptance requirements.
-
-An `ingress` role needs Caddy running on its Node, because the Node's Caddy serves its public sites. Doctor reports `role.services_inactive` when Caddy is stopped and `role.firewall_projection_mismatch` when the Ingress public HTTP rules differ.
-
-A systemd Process desired `running` reports `process.crash_loop` with kind `drift` when its unit is `activating` with sub-state `auto-restart`, or its `NRestarts` count grows between observations in the same bounded, read-only inspection. This remains drift if a sample catches the unit as `active` between crashes. A nonzero restart count alone is not a crash loop, and ordinary activation without `auto-restart` or a growing count is not crash-loop evidence. The finding identifies the Process by ID and name, has `expected=running`, and includes the observed active state, sub-state, and restart counts when available in its bounded `observed` evidence. Doctor reports the crash loop instead of a second `process.state_mismatch` for the same observation. A Process desired `stopped` still follows the state-mismatch rule, not the crash-loop rule. [Process runtime state](/reference/processes-and-schedules#process-runtime-state) owns these distinctions. Doctor only reports them; it does not restart the Process.
-
-A sleeping development Instance is not drift. When the awake marker is absent, Doctor does not report `process.state_mismatch` for a Process that is desired running, not keep-alive, and observed stopped; the [hibernation reference](/reference/app-dev-runtime-hibernation#inspect) owns that rule. A prepared production home without a `current` link is healthy before its first deployment; the [release layout reference](/reference/deployments#inspect-release-placement-with-doctor) owns that rule.
-
-The `schedule` family reports `schedule.orphan_artifact` from a scan that needs SSH and passwordless `sudo`. Orbit manages `sudo` only on a Node with a role, so Doctor scans a roleless Node only while it hosts a Schedule.
-
-The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor), [custom proxy Routes](/reference/routes#custom-proxy-routes), [the Caddy release a role needs](/reference/node-provisioning#package-sources), and [Caddy build drift](/reference/caddy-configuration#check-a-node-with-doctor).
-
-<Warning>
-Doctor keeps no report history for the caller. The Gateway writes one ordinary Activity row for the request and stores no raw findings. The [outer loop](/reference/tasks#outer-loop) stores a bounded fingerprint of a recurring issue: its code, resource, and expected and observed values.
-</Warning>
+Doctor does not discover packages. Use the Tool family's native scan and adoption operations. Doctor reads no package-manager scope and stores no inventory.
 
 ## Why it works this way
 
-These reasons explain the design. Check them before you propose a change.
-
 ### Verify only
 
-Doctor reports drift and never repairs it. A second convergence engine would compete with the commands that own each change. So Doctor uses only database reads and read-only commands. Its inspectors stay separate from the managers that change Nodes, and Doctor never calls a mutating manager or action. Code that both sides need, such as a catalog, a parser, or a renderer, moves to a shared place. Repair stays with those commands, such as `node:role:add --converge`. Restore, adoption, and interactive repair stay outside Doctor. Read-only Homebrew and Vite+ package discovery is the explicit exception to checking registered resources only. Other unmanaged host-state scans remain outside its contract.
+Doctor reports current liveness. Each native family owns the checks that establish its configuration. Repeating those implementations in Doctor creates a second execution engine and competing definitions of success.
 
 ### Informational findings stay healthy
 
-An unregistered Homebrew or Vite+ package is information. Selected ownership leaves packages outside Orbit on purpose. The finding names the manager, package, version when one exists, dependency status, and whether adoption is supported. It does not make the family or the Node unhealthy, and it does not change the exit code.
-
-Marking every unmanaged package as drift was rejected because that would call a chosen boundary a failure. Hiding the packages was rejected because the operator then has no list to adopt from. Adopting them inside Doctor was rejected because a read would change ownership. Treating a failed scan as an empty inventory was rejected because that would report success without checking the host.
-
-A Linux Node with no Tools can be healthy while absent `brew` and `vp` scopes are informational, and an unmanaged Homebrew dependency stays informational beside a healthy Tool. On a Mac, those findings stay informational when `node.disk_low` makes the Node drift. Drift and unverifiable findings still exit 1. Doctor stores no inventory. The Tools page reads the scan and adopts through the adoption operation.
+An informational finding is not drift or unverifiable. A parked task VM does not become unhealthy merely because Doctor skips it.
 
 ### No stored reports
 
-Doctor keeps no reports, raw findings, or raw observations for the caller. The request's one Activity row is the only record of that request. Stored raw output exposes paths, configuration, or credentials. The [outer loop](/reference/tasks#outer-loop) stores the issue code, the resource, and the bounded expected and observed values. It does not store the raw report.
+Native run history holds the public report. The Gateway projects the Operation result. Scheduled collection records bounded fingerprints, not raw host output or private values.
 
 ### One observation per Node
 
-One bounded observation limits remote work. Every family then uses the same reachability and identity facts for that Node.
+Every host fact belongs to its admitted Node. Doctor does not infer remote state from another Node's successful read.
 
 ### A closed family list
 
-Each family is an explicit probe with its own issue codes, order, and tests. There is no plugin registry. An architecture test requires each Gateway model to be a checked resource, a typed input, or excluded. A new model fails that test until its Doctor role is explicit.
+The API keeps its fixed family names. The table above defines the current inspection scope. A zero-check family cannot clear an old incident.
 
 ### Bounded values
 
-Issue values are booleans, enums, normalized versions, or fixed labels. This keeps secrets and diagnostic data out of the report. An unknown internal code becomes the family's `*.inspection_failed` issue.
+Expected and observed issue values contain at most 255 characters. Recovery evidence names only the codes actually compared. It never claims whole-resource coverage, so retiring a check does not silently resolve its old findings. Unavailable native reads share the existing `node:ID` check identity within their family; a later run clears that inspection failure only when every retained read for that family and Node is usable. Old numeric-resource inspection failures remain outside this reduced scope.
 
 ## Related
 
-- [`activity`](/cli/activity) finds the Activity row that a Doctor request created.
-- [`node`](/cli/node) converges a Node or role again after Doctor reports drift.
-- [`process`](/cli/process) and [`schedule`](/cli/schedule) start, stop, or replace the resources that Doctor compares.
-- [`route`](/cli/route) creates and removes the custom proxy Routes the `route` family inspects.
+- [Node management](/cli/node) owns provisioning and role convergence.
+- [Processes](/reference/processes-and-schedules) own runtime changes.
+- [Tools](/reference/tools), [Schedules](/reference/schedules), [Routes](/reference/routes) and [database connections](/reference/database-connections) own their configuration.
 
 ## Scheduled collection
 
-Swamp admits the same native Doctor workflow every ten minutes. Its Gateway-local step tails at most 1 MiB of logs per pass, finishing the current record up to an 8 MiB cap. The Gateway records fingerprints and the cursor together after the native result. The first pass starts at the current log end. Rotation preserves unread records by inode; truncation resumes at the shorter end. Log contents and exception messages never enter native results. Activity and assistance collection, retention and interrupted Activity finalization keep their bounded database state writes in the Gateway.
+Collection uses the same Doctor workflow. One focused Gateway log read remains because no native command supplies record-aware Laravel cursors and redaction. It runs as an official SSH script with public path/cursor input. The script reads at most 1 MiB per pass, finishing a record up to an 8 MiB cap. It returns exception class, safe source frame, request ID and timestamp; messages and raw logs stay on the Gateway host.
+
+The first pass starts at the current end. Rotation preserves unread records by inode; truncation resumes at the shorter end. An unreadable log result preserves the cursor. The Gateway commits returned fingerprints and the cursor together. Activity and assistance collection keep their existing bounded database cursors and redacted inputs.

@@ -89,9 +89,9 @@ The private networks are the trust boundary. Clients that can reach those privat
 
 The stored connection host stays WireGuard. Explicit LAN selection requires only that the server and consumer Nodes are active and each has an IPv4 LAN address. [LAN attachments](/reference/database-connections#choose-lan-for-an-instance) select LAN for an active consumer in the private network. A shared Cluster is not required.
 
-Existing servers keep their publications until an explicit create retry. That retry enables private publication and SQL Doctor checks for the selected server. Existing Valkey ACL checks still run. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
+Existing servers keep their publications until an explicit create retry. That retry enables private publication and validates the selected server. Node provisioning and removal do not contact database hosts or install database filters. When a server address changes, retry creation before switching clients. A retry can recreate an active MySQL container to repair publication drift.
 
-Doctor reports `database_server.publication_mismatch`, `database_server.login_failed`, and `database_server.initialization_secret_present` in the `database_server` family. Repeat creation repairs publication drift. A failed SQL repair keeps an active server active and records its failed step.
+Repeat creation repairs publication drift. A failed SQL repair keeps an active server active and records its failed step.
 
 ### A Valkey server
 
@@ -189,7 +189,7 @@ Orbit checks the recorded `<name>_test` and exact worker names as admin, then cr
 
 The primary database, member data and identities, credentials, attachments and unrecorded names stay unchanged. A primary database that is missing is not recreated by pool repair. Existing pool names owned by another role or a missing managed role return `database.name_conflict` (409) before any change; Orbit never adopts a foreign database. Repair and database removal share the server lock.
 
-A successful retry returns an Operation for the same connection. A failure keeps the connection record and any members already restored, so repeat the same request to finish. Stop the affected test run before repair. Repeating repair on a complete pool converges the same grants without recreating databases. Use [Doctor](#check-a-server-with-doctor) to find missing members, and check the [connection budget](/reference/database-connections#test-databases) before restarting tests.
+A successful retry returns an Operation for the same connection. A failure keeps the connection record and any members already restored, so repeat the same request to finish. Stop the affected test run before repair. Repeating repair on a complete pool converges the same grants without recreating databases. Inspect the native database result for missing members, and check the [connection budget](/reference/database-connections#test-databases) before restarting tests.
 
 ## Create an ACL user on a Valkey server
 
@@ -224,7 +224,7 @@ The Gateway refuses these inputs with `validation.failed`:
 - A key pattern that starts with `*`, `?`, `[`, or `\`. Each pattern needs a literal key prefix.
 - The rule `@all` or `@scripting`. A user gets only the categories and commands its clients need.
 
-The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports, so [Doctor](#check-a-server-with-doctor) can compare them. `database:user:list` shows those rules.
+The connection gets driver `redis`, the server's Node address and port, the `--database` index, the username `<slug>`, the encrypted password, and a link to the server. Orbit also records the user with the rules that Valkey reports. `database:user:list` shows those rules.
 
 The slug `default` is refused. A user that the server already has, and that Orbit did not record, returns `database.name_conflict`. A rule that Valkey does not know fails with `database.acl_rules_invalid`, without native diagnostics. A save failure removes the unsaved new user. The reserved connection and encrypted intent remain for an identical retry. Another public Operation on the server returns `operation.target_busy`.
 
@@ -260,7 +260,7 @@ The user has `LOGIN REPLICATION`, database `CONNECT`, public-schema `USAGE`, and
 
 Repeating the command sets the password and replaces privileges and owner defaults. Omit `--replication` on a later call to remove the replication attribute. The same name-conflict rules apply: Orbit refuses any connection owner on the server, or an existing PostgreSQL role outside this connection. Orbit does not adopt hand-created replication roles. Use an unused name when moving an existing client to managed credentials.
 
-User create returns an Operation. Its completion records the credentials and grants. List responses include the recorded `replication` boolean. Doctor compares the live PostgreSQL role's replication attribute with that record and reports `database_server.replication_mismatch` when it differs or the role is missing. This check runs for running PostgreSQL servers with recorded users, including servers that have not opted into private endpoint checks. A role cannot be inspected without a successful admin command; that failure reports `database_server.inspection_failed`.
+User create returns an Operation. Its completion records the credentials and grants. List responses include the recorded `replication` boolean. The native user operation validates the live PostgreSQL role before returning its result.
 
 Application migrations create and alter logical publications and select their tables. Orbit does not create publications or replication slots.
 
@@ -306,21 +306,7 @@ A Node that runs a server cannot be removed. [Node removal](/reference/node-prov
 
 ## Check a server with Doctor
 
-The [Doctor](/cli/doctor) family `database_server` checks Valkey servers, SQL servers that opted into private endpoint checks, and PostgreSQL servers with recorded users or test databases. The Process must have the desired state `running`. It connects as the Gateway does and reports drift when:
-
-| Code | Meaning | Remedy |
-| --- | --- | --- |
-| `database_server.test_database_missing` | A recorded PostgreSQL serial test database or worker is missing. The issue names the connection and member. | [Repair the pool](#repair-a-postgresql-test-pool). |
-| `database_server.open` | A client without a password can run a command. | On an adopted server, [close it](#close-an-adopted-server) after its clients have moved. On another server, [repair it](#repair-a-valkey-server). |
-| `database_server.acl_file_missing` | Valkey does not run with the ACL file `/data/users.acl`. | [Repair the server](#repair-a-valkey-server). |
-| `database_server.acl_mismatch` | The live users differ from the recorded users. | [Repair the server](#repair-a-valkey-server). |
-| `database_server.inspection_failed` | Doctor could not connect, or `default` could not log in with the admin password. | Check that the Node and the server's Process run, then [repair the server](#repair-a-valkey-server). |
-
-The recorded users are `default` with the admin password and all rights, and one user for each connection on the server that has a username, with its password and rules. A user that someone added by hand is drift too.
-
-Doctor compares only the rule tokens Orbit sets. Payload sanitization flags belong to Valkey and do not count as drift. The order of flags, key patterns, and channel rules does not matter. The order of command rules does.
-
-An adopted server that is not closed yet reports only `database_server.open`, because Doctor compares its `default` only after the close. The report names no user, rule, or hash. SQL servers that opted in get the [login, initialization-secret and publication checks](#private-publication). PostgreSQL servers with recorded users also get the [replication attribute check](#logical-replication-users). Running PostgreSQL servers with recorded test databases get the pool membership check even before endpoint opt-in. A failed admin query reports `database_server.inspection_failed`, not missing members.
+The native database-server and database operations own server configuration, endpoint and credential validation. [Doctor](/cli/doctor#what-each-family-checks) does not repeat these checks; its Process family can inspect the registered server container state.
 
 ## Repair a Valkey server
 
@@ -388,7 +374,7 @@ A connection describes one database that an Instance uses. A server holds the ad
 
 ### Valkey starts only from Orbit's ACL file
 
-With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. The [open adoption](#adopt-a-valkey-process) is the temporary exception. Doctor reports that exception until the operator closes it.
+With an ACL file, Valkey ignores `requirepass`. A file without a `default` line, or a start without `--aclfile`, gives every client full access without a password. So Orbit writes the file before the first start, always with a `default` line, and refuses `process:update` of the Process. A missing or broken file stops Valkey instead of opening it. New servers require a password. The [open adoption](#adopt-a-valkey-process) is the temporary exception. The recorded open state remains until the operator closes it.
 
 ### One Valkey user is one connection
 
@@ -400,11 +386,11 @@ The caller names only key patterns and allowed commands. Orbit adds the reset, t
 
 ### A repair rebuilds from the records
 
-The Gateway holds the admin password and each user's password and rules, so the records are enough to rebuild a server's ACL. A repair writes the ACL file through the same program that created it, and Doctor, the repair, and the file all derive the users from the records in one place. So a lost file or a hand-made change is a repeat of one command, not a manual runbook. The repair is a repeat of `database:server:create`, because that command already brings a server to its record: a separate converge command would be a second way to do one thing.
+The Gateway holds the admin password and each user's password and rules, so the records are enough to rebuild a server's ACL. A repair writes the ACL file through the same program that created it, and the repair and the file derive the users from the records in one place. So a lost file or a hand-made change is a repeat of one command, not a manual runbook. The repair is a repeat of `database:server:create`, because that command already brings a server to its record: a separate converge command would be a second way to do one thing.
 
 ### Valkey admin over WireGuard
 
-`valkey-cli` exits 0 on an error reply when it reads commands from standard input, so a script inside the container cannot tell a refused `ACL SETUSER` from a done one. The fixed Node program uses the recorded private endpoint and reads each protocol reply. Swamp owns retries, and the Gateway supplies credentials only inside the authorized invocation. Reads and Doctor inspection remain in the Gateway.
+`valkey-cli` exits 0 on an error reply when it reads commands from standard input, so a script inside the container cannot tell a refused `ACL SETUSER` from a done one. The fixed Node program uses the recorded private endpoint and reads each protocol reply. Swamp owns retries, and the Gateway supplies credentials only inside the authorized invocation. The native database operations own live validation.
 
 ### Adoption without a data move
 
@@ -436,7 +422,7 @@ PostgreSQL has no database prefix grant. Giving an Instance `CREATEDB` would let
 
 The Instance role keeps ownership of its serial test database and workers, including the right to drop them. This preserves the existing managed ownership and schema rule and supports Laravel's `migrate:fresh`, which drops tables and recreates the schema's objects. A separate non-login database owner could block Laravel's database drop, but adds another role lifecycle and an ownership migration for every existing pool. It also cannot make `--recreate-databases` work without `CREATEDB`. We keep the existing ownership model under **One way, one name** and **Lean**; no ownership migration is needed.
 
-Laravel's `--recreate-databases` and `--drop-databases` remain unsupported: dropping an owned database succeeds, but recreating it fails with `NOCREATEDB`. A failed worker probe takes the same destructive path. Orbit detects lost members with Doctor and restores them through the original create request. A separate repair command was rejected because it would add a second path for creating the same managed databases. Connection headroom and bounded parallelism prevent the observed exhaustion trigger; Orbit does not reserve server connections.
+Laravel's `--recreate-databases` and `--drop-databases` remain unsupported: dropping an owned database succeeds, but recreating it fails with `NOCREATEDB`. A failed worker probe takes the same destructive path. Orbit restores lost members through the original native create request. A separate repair command was rejected because it would add a second path for creating the same managed databases. Connection headroom and bounded parallelism prevent the observed exhaustion trigger; Orbit does not reserve server connections.
 
 ### Check the whole database set before removal
 

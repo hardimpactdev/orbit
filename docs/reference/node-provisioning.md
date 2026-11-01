@@ -296,7 +296,7 @@ These operations refuse macOS before remote mutation and before they write a rol
 | Firewall mutation | `firewall.platform_unsupported` | 422 |
 | DNS repair | `node.dns_repair_platform_unsupported` | 422 |
 
-Doctor checks lifecycle, SSH reachability, platform, architecture, tunnel identity, tools, and free space on the enrolled account's home volume. It does not expect systemd, a Node agent, an exporter, or a Linux disk path. A missing agent is not `node.agent_missing`. Realtime and the web page treat the Mac as a Node with no agent, not as a failed Linux service.
+Doctor checks platform, architecture and free space on the root filesystem. It does not expect systemd, a Node agent, an exporter, or a Linux disk path. A missing agent is not `node.agent_missing`. Realtime and the web page treat the Mac as a Node with no agent, not as a failed Linux service.
 
 ### Removal
 
@@ -331,7 +331,7 @@ On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Ad
 
 [Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
 
-Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
+Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. A Node without a pinned SSH host key dispatches no Doctor reads and supplies no positive recovery evidence.
 
 ## iPadOS peers
 
@@ -353,7 +353,7 @@ The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the p
 | DNS repair | `node.dns_repair_operator_owned`, because the Node has no role. |
 | Tool operations | `tool.node_unmanaged` (HTTP 409). |
 | Fleet rollout | Left out with reason `platform`. |
-| Doctor | Lifecycle check only, as for any Node without a pinned SSH host key. |
+| Doctor | No SSH reads or positive recovery evidence without a pinned SSH host key. |
 
 `node:wireguard-key` still sets the peer's public key, and `node:access:add` still grants it access to call the Gateway. Removing an `ipados` Node deletes the registry row and the hub peer. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `host-wireguard`, the tunnel the operator configured on the device.
 
@@ -460,7 +460,7 @@ The Caddy package digest covers the package program and the `CaddyRelease` floor
 
 The private-DNS digest covers the listener release, the publication code, and each private DNS record source that an extension contributes, with the classes it uses, such as the AI router state that decides the collector record. The other digests cover the inputs the agent unit renders from, the collector script, and the tmpfiles rule. The shared footprint boundary adds the agent pin to all of them.
 
-A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. The agent skips absent FPM binaries, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own operations publish them, and Doctor reports their drift.
+A user's sites and Routes do not change the code digests. The PHP runtime digest includes the versions selected by active Instances, so a version outside the Node's recipe profile also receives the module. This digest never reads live inventory. The agent skips absent FPM binaries, and recipe convergence publishes the module after installing PHP. The `peer-dns` digest includes the rendered private domains and server, so namespace changes also reach peers through convergence. Their own native operations publish and verify them.
 
 The `route-residue` digest also covers state: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. Its native binary installers own their update locks; it starts no separate SSH lock holder.
 
@@ -520,7 +520,7 @@ Some roles never share a Node. The Gateway refuses a conflicting role before it 
 | `analytics` | `gateway` |
 | `ci-runner` | `gateway`, `vpn` |
 
-`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles. [Doctor](/cli/doctor) reports each assignment of a conflicting pair as `role.assignment_conflict`.
+`router`, `metrics`, and `websocket` share a Node with any role. `node:role:add` and `node:role:relocate` answer `validation.failed` with `Role [ROLE] conflicts with assigned role [OTHER].` `node:add` answers `node.role_conflict` (HTTP 422), with `Role [ROLE] conflicts with requested role [OTHER].` when one request names both roles.
 
 Not every role can be added the same way.
 
@@ -555,7 +555,7 @@ For `app-dev`, it also creates `<home>/apps` for the managed user. For `app-dev`
 
 An application role then installs the JavaScript runtimes its [recipe profile](/reference/compute-drivers#role-and-base-tool-sets) pins: Node, Vite+, pnpm, and Bun. It sends `recipe.install-javascript`, the same command and verified archives as [recipe convergence](#converge-a-node-to-a-recipe), and it runs no downloaded installer. Image programs render the same call as `javascript-runtime`. Like recipe convergence, it replaces any root-owned launcher in `/usr/local/bin`. After it verifies the recipe Node, it removes the apt `nodejs` package, retires the NodeSource apt source, and removes Corepack links.
 
-Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
+Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
 Analytics role effects run in their native parent workflow. The Node PHP baseline refuses Analytics. An unported Analytics kind returns `operation.kind_unavailable`.
 
@@ -598,7 +598,7 @@ Every failed role operation returns its step's own code in `details.error_code`,
 
 `node:role:relocate` and Cluster Router changes take the lock only around the baseline step. The Metrics fleet reconcile runs inside the lock for `node:role:add`, `node:role:remove`, and `node:add`. It converges exporters on other Nodes without their locks, so two operations can never wait on each other. Operations on different Nodes run in parallel. An offline role removal runs outside the lock, because it changes nothing on the unreachable machine.
 
-An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over, and Doctor reports `role.claim_stale`.
+An operation that dies, such as a killed Gateway worker, leaves its role `provisioning` or `removing`. The claim is stale once it is 11 minutes old and no operation holds the lock. That is the role lock's request term plus a 1-minute margin. `node:role:add --converge` and `node:role:remove` then take it over. Doctor reports the inactive role lifecycle.
 
 ### Per-Node locks
 
@@ -630,7 +630,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
 - When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
 
-A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
+A reachability check always opens a new connection. The `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. Doctor uses official Swamp SSH. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
 A Node that the Gateway reaches through a [jump Node](#enroll-through-a-jump-host) shares a connection named after the jump Node, the Node's address, and its pinned host key.
 
@@ -659,7 +659,7 @@ The Gateway runs the [Node agent](/reference/node-agent#commands)'s `wireguard.p
 | `wireguard.hub_config_invalid` | `wireguard-server-validate` | `vpn.server_config_invalid` |
 | `wireguard.hub_start_failed`, or no result | `wireguard-server-restart` | `vpn.server_start_failed` |
 
-The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`. Doctor compares it, and the VPN DNS records, with the digests that `wireguard.inspect-hub` reads on the `vpn` Node.
+The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`. The native VPN convergence validates its configuration and DNS projection.
 
 Peer convergence still runs over SSH. It generates or reads the peer key and installs the peer configuration during admission, over the public bootstrap address, before the tunnel that the agent's transport uses exists.
 
@@ -736,9 +736,9 @@ Agent configuration stores its returned hash through the encrypted Node owner st
 
 A Mac is a managed Node for tools, not a service host. It uses the account, WireGuard identity, and SSH access that already exist. Enrollment pins the approved host key and checks the platform, architecture, account, and tunnel before it succeeds. It creates no account, installs no Ubuntu packages, and does not change host DNS or the firewall.
 
-An application role was rejected because tools do not need application services and the role list stays empty. SSH carries named agent commands for enrollment, package operations, and Doctor. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
+An application role was rejected because tools do not need application services and the role list stays empty. Native Doctor reads use official Swamp SSH exec. The command binary does not run an observer or login-session service on macOS. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
 
-Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.
+Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the observer service do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS login-session agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low`.
 
 ### CI roles own hosts; operators own runner registration
 

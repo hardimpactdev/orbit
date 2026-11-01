@@ -1,117 +1,114 @@
-"""Execute Doctor's real fan-out and aggregate against disposable Gateway HTTP."""
+"""Exercise focused Doctor exec steps through the real offline native DAG."""
 import json
-from pathlib import Path
+import shutil
 import sys
-import threading
 import unittest
+from pathlib import Path
+
 import yaml
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests'))
 from native_harness import NativeTestCase
 
 
+def reply(raw):
+    return json.JSONDecoder().raw_decode(raw.lstrip())[0]
+
+
 class DoctorWorkflowNative(NativeTestCase):
+    native_timeout = 120
+
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('observation', 'automatic-deploy', 'operations', 'node-worker')
-        module = self.repo / 'extensions/behaviors/observation/doctor.ts'
-        module.write_text('import {fixtureHttp,fixtureObservation,fixtureLocal} from "./doctor_native_fixture.ts";\n' +
-            module.read_text().replace('export const behavior = { ...doctor(), type: "@nckrtl/doctor" };',
-                'export const behavior = { ...doctor(() => fixtureHttp, fixtureObservation, fixtureLocal), type: "@nckrtl/doctor" };'))
-        # Placement remains checked separately; local harness executes the same jobs and expressions.
+        self.copy_behaviors('observation')
+        dest = self.repo / '.swamp/pulled-extensions/@swamp/ssh'
+        dest.parent.mkdir(parents=True)
+        shutil.copytree(ROOT / '.swamp/pulled-extensions/@swamp/ssh', dest)
+        index = self.repo / 'extensions/models/upstream_extensions.json'
+        index.parent.mkdir(parents=True)
+        index.write_text(json.dumps({'@swamp/ssh': json.loads((ROOT / 'extensions/models/upstream_extensions.json').read_text())['@swamp/ssh']}))
+        self.state = self.repo / 'fixture-state.json'
+        self.state.write_text(json.dumps({'deny': None}))
+        fake = self.repo / 'fixture-ssh'
+        fake.write_text('#!' + sys.executable + '\n' + r'''import json,shlex,sys
+from pathlib import Path
+if '-M' in sys.argv or '-O' in sys.argv:sys.exit(0)
+args=shlex.split(sys.argv[-1])
+if json.loads(Path(STATE).read_text())['deny'] and any('@10.44.0.9' in arg for arg in sys.argv):sys.exit(255)
+if args[:3]==['sudo','-n','--']:args=args[3:]
+if args[:2]==['uname','-sm']:print('Linux x86_64')
+elif args[:2]==['df','-Pk']:print('Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 10000000 1000000 9000000 10% /')
+elif args[0]=='systemctl':print('LoadState=loaded\nActiveState=active\nSubState=running\nNRestarts=49')
+elif args[:2]==['python3','-']:
+ # Execute the actual packaged one-read log script. It cannot invoke host commands.
+ exec(sys.stdin.read(),{'__name__':'__main__'})
+else:raise RuntimeError('Unexpected native command '+repr(args))
+'''.replace('STATE', repr(str(self.state))))
+        fake.chmod(0o700)
+        key = self.repo / 'fixture-key'
+        key.write_text('fixture key')
+        key.chmod(0o600)
         workflow = yaml.safe_load((ROOT / 'workflows/workflow-operation-doctor-inspect.yaml').read_text())
-        def unplace(value):
-            if isinstance(value, dict):
-                return {key: unplace(item) for key, item in value.items() if key not in ('target', 'labels')}
-            if isinstance(value, list):
-                return [unplace(item) for item in value]
-            return value
-        (self.repo / 'workflows/workflow-operation-doctor-inspect.yaml').write_text(json.dumps(unplace(workflow)))
-        self.nodes = [self.node(14), self.node(9)]
-        self.operation = {'id': 7, 'kind': 'doctor.inspect', 'node_id': 14, 'status': 'queued',
-            'cancel_requested': False, 'result': None,
-            'input': {'nodes': self.nodes, 'families': ['node'], 'collect_problems': False}}
-        self.probes = []
-        self.callbacks = []
-        self.refuse_node = None
-        self.refuse_first_read = False
-        owner = self
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *_args): pass
-            def respond(self, value, status=200):
-                encoded = json.dumps(value).encode()
-                self.send_response(status)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', str(len(encoded)))
-                self.end_headers()
-                self.wfile.write(encoded)
-            def do_GET(self):
-                if owner.refuse_first_read:
-                    owner.refuse_first_read = False
-                    return self.respond({}, 503)
-                self.respond({'data': owner.operation})
-            def do_POST(self):
-                data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-                if self.path == '/_observation':
-                    owner.probes.append(data)
-                    if data['node_id'] == owner.refuse_node:
-                        return self.respond({}, 503)
-                    return self.respond({'reachable': True, 'platform': 'linux', 'architecture': 'x86_64', 'wireguard': True})
-                owner.callbacks.append(data)
-                owner.operation['status'] = data.get('status', 'failed')
-                owner.operation['result'] = data.get('result', {})
-                self.respond({'data': owner.operation})
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        self.native_env['ORBIT_DOCTOR_HTTP_FIXTURE'] = f'http://127.0.0.1:{server.server_port}'
+        for job in workflow['jobs']:
+            self.assertEqual(job.pop('target'), 'orbit-node-209')
+            for step in job['steps']:
+                if step['task']['behaviorType'] == '@swamp/ssh':
+                    args = step['task']['globalArgs']
+                    args['sshBinary'] = str(fake)
+                    args['transport']['identityFile'] = str(key)
+        (self.repo / 'workflows/workflow-operation-doctor-inspect.yaml').write_text(yaml.safe_dump(workflow, sort_keys=False))
+        self.public = {'operation_id': 7, 'node_id': 14, 'kind': 'doctor.inspect', 'intent': {'nodes': [self.node(14), self.node(9)], 'families': ['node'], 'collect_problems': False}}
 
     @staticmethod
     def node(node_id, **overrides):
-        return {'id': node_id, 'name': f'dev-{node_id}', 'platform': 'linux', 'architecture': 'x86_64',
-            'user': 'orbit', 'address': f'10.44.0.{node_id}', 'managed': True, 'parked': False,
-            'roles': [], 'resources': {}, 'agent_sha256': 'a' * 64, **overrides}
+        return {'id': node_id, 'name': f'dev-{node_id}', 'platform': 'linux', 'architecture': 'x86_64', 'user': 'orbit', 'managed': True, 'parked': False, 'roles': [], 'resources': {}, 'observations': {'freshness': 'fresh', 'valid_until': 9999999999},
+                'ssh': {'host': f'10.44.0.{node_id}', 'user': 'orbit', 'port': 22, 'host_keys': ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG']}, **overrides}
 
-    def run_doctor(self, success=True):
+    def run_doctor(self):
         self.cli('workflow', 'validate', 'operation-doctor-inspect')
-        return self.cli('workflow', 'run', 'operation-doctor-inspect', '--input', 'operation_id=7',
-                        '--input', 'node_id=14', '--input', 'kind=doctor.inspect', success=success)
+        run = reply(self.cli('workflow', 'run', 'operation-doctor-inspect', '--input', json.dumps(self.public)).stdout)
+        history = reply(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        self.assertEqual(history['status'], 'succeeded', json.dumps(history))
+        step = next(s for j in history['jobs'] if j['name'] == 'report' for s in j['steps'] if s['name'] == 'result')
+        return json.loads(step['outputs']['stdout']), history
 
-    def test_cross_job_fanout_reads_each_admitted_node_and_merges_actual_reports(self):
-        self.run_doctor()
-        self.assertEqual(sorted(p['node_id'] for p in self.probes), [9, 14])
-        self.assertEqual(self.operation['status'], 'succeeded')
-        report = self.operation['result']['report']
-        self.assertTrue(report['healthy'])
-        self.assertEqual(report['summary']['nodes'], 2)
-        self.assertEqual(report['summary']['unverifiable'], 0)
+    def test_individual_native_execs_compare_two_nodes_without_script_copy_or_private_input(self):
+        result, history = self.run_doctor()
+        self.assertTrue(result['report']['healthy'])
+        reads = next(j for j in history['jobs'] if j['name'] == 'reads')['steps']
+        self.assertEqual(len(reads), 6)
+        self.assertTrue(all(s['status'] == 'succeeded' for s in reads))
+        self.assertEqual(result['report']['summary']['checks'], 6)
+        self.assertNotIn('execution_secrets', self.public)
 
-    def test_empty_fanout_finishes_without_dispatching_parked_or_unmanaged_nodes(self):
-        self.nodes[:] = [self.node(14, managed=False), self.node(9, parked=True)]
-        self.run_doctor()
-        self.assertEqual(self.probes, [])
-        self.assertEqual(self.operation['status'], 'succeeded')
-        self.assertEqual(self.operation['result']['report']['summary']['nodes'], 2)
+    def test_failed_ssh_is_unverifiable_and_other_node_stays_healthy(self):
+        self.state.write_text(json.dumps({'deny': 9}))
+        result, _ = self.run_doctor()
+        self.assertFalse(result['report']['healthy'])
+        self.assertTrue(result['report']['nodes'][0]['healthy'])
+        self.assertEqual(result['report']['nodes'][1]['families'][0]['status'], 'unverifiable')
 
-    def test_refused_node_read_remains_an_unverifiable_finding_in_the_final_report(self):
-        self.nodes[1]['resources'] = {'node_checks': [{'managed': True, 'status': 'active'}]}
-        self.refuse_node = 9
-        self.run_doctor()
-        self.assertEqual(self.operation['status'], 'succeeded')
-        report = self.operation['result']['report']
-        self.assertFalse(report['healthy'])
-        self.assertEqual(report['summary']['unverifiable'], 1)
-        failed = next(n for n in report['nodes'] if n['node_id'] == 9)
-        self.assertEqual(failed['families'][0]['issues'][0]['code'], 'node.inspection_failed')
+    def test_parked_and_unmanaged_nodes_do_not_dispatch(self):
+        self.public['intent']['nodes'][0]['parked'] = True
+        self.public['intent']['nodes'][1]['managed'] = False
+        result, history = self.run_doctor()
+        self.assertEqual(result['report']['summary']['checks'], 0)
+        self.assertEqual(next(j for j in history['jobs'] if j['name'] == 'reads')['steps'], [])
 
-    def test_failed_prepare_does_not_abort_later_planning_or_leave_the_gateway_running(self):
-        self.refuse_first_read = True
-        self.run_doctor(success=False)
-        self.assertNotIn(self.operation['status'], ['queued', 'running'])
-        self.assertEqual(self.probes, [])
+    def test_single_log_script_resolves_actual_registered_asset_and_returns_cursor_only(self):
+        # Files are outside native history; only cursor metadata may leave the reader.
+        with self.subTest('first pass ignores historic messages'):
+            logs = self.repo / 'fixture-logs'
+            logs.mkdir()
+            (logs / 'laravel.log').write_text('[2026-11-01 01:00:00] testing.ERROR: private log content\n')
+            self.public['intent'].update(collect_problems=True, logs={'log_directory': str(logs), 'base_directory': '/gateway', 'cursor': None})
+            result, history = self.run_doctor()
+            self.assertIn('logs', result, json.dumps(next(j for j in history['jobs'] if j['name'] == 'logs')))
+            self.assertEqual(result['logs']['signals'], [])
+            self.assertEqual(result['logs']['cursor']['offset'], (logs / 'laravel.log').stat().st_size)
+            self.assertNotIn('private log content', json.dumps(history))
+
 
 if __name__ == '__main__':
     unittest.main()

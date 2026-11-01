@@ -152,7 +152,7 @@ For PostgreSQL, synchronize the Instance environment, clear any cached Laravel c
 
 Laravel 13's `Illuminate\Testing\Concerns\TestDatabases::ensureTestDatabaseExists` connects to `<DB_DATABASE>_test_<token>` and queries for a table before attempting creation. An existing reachable worker database needs no creation. A missing or unreachable worker makes Laravel drop that worker before attempting creation, which the managed role cannot do. A transient connection failure, including server connection exhaustion, can therefore remove a worker. Stop the test run, correct the connection or budget, and [restore missing members](/reference/database-servers#repair-a-postgresql-test-pool) instead of adding `CREATEDB`. Use Laravel's normal migration traits, such as `RefreshDatabase`, to prepare the schema; the empty pool does not run migrations itself.
 
-A pool of N workers needs roughly N × (connections per worker) free server connections. Count connections to each database and extra application connections that a worker opens. Leave room for idle applications, other test runs, and admin connections when sizing PostgreSQL `max_connections`; the recorded pool size reserves databases, not connections. Reduce parallelism when the free budget is smaller. Doctor checks pool membership, not connection headroom.
+A pool of N workers needs roughly N × (connections per worker) free server connections. Count connections to each database and extra application connections that a worker opens. Leave room for idle applications, other test runs, and admin connections when sizing PostgreSQL `max_connections`; the recorded pool size reserves databases, not connections. Reduce parallelism when the free budget is smaller. Native database operations validate pool membership, not connection headroom.
 
 ## Add a connection on an Instance
 
@@ -180,20 +180,11 @@ Add and remove change stored configuration only. Run [`env:sync`](/reference/env
 
 `instance:database:add <slug> --instance=<instance> --network=lan` selects the managed server’s LAN address for that attachment. Both Nodes must be active and each must have an IPv4 LAN address. No peer list or Cluster membership is required. Orbit returns `database.lan_unavailable` before writing keys if either Node fails that check. `--network=wireguard` is the default; reattach with that option to switch back.
 
-Before selecting LAN on an existing server, retry `database:server:create` to publish its LAN address and confirm the Process bindings. The attachment stores its network choice. Environment projection, `.env.testing`, and Doctor use that same choice. The connection's default host and Gateway inspection remain WireGuard. External connections do not derive LAN endpoints: record their intended host explicitly. `env:sync` is still required after reattachment.
+Before selecting LAN on an existing server, retry `database:server:create` to publish its LAN address and confirm the Process bindings. The attachment stores its network choice. Environment projection and `.env.testing` use that same choice. The connection's default host and Gateway inspection remain WireGuard. External connections do not derive LAN endpoints: record their intended host explicitly. `env:sync` is still required after reattachment.
 
 ## Inspect attachments with Doctor
 
-[Doctor](/cli/doctor) checks database connections in its `database_connection` family. It compares each record and mapping with the Instance's stored keys, and changes nothing.
-
-| Code | Kind | Meaning |
-| --- | --- | --- |
-| `database_connection.missing` | Drift | A mapping names a record that does not exist. |
-| `database_connection.unhealthy` | Drift | A record lacks a required field or names a Node that is gone. |
-| `database_connection.env_mismatch` | Drift | A mapping's stored keys are missing, left over, or different. |
-| `database_connection.inspection_failed` | Unverifiable | Doctor could not read the password or the stored configuration. |
-
-To repair an `env_mismatch`, add the connection again with the same prefix, with `--replace`, then synchronize.
+Connection admission and the owning native database operations validate database intent. [Doctor](/cli/doctor#what-each-family-checks) does not repeat attachment, environment or credential checks.
 
 ## Why it works this way
 

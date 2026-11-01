@@ -6,7 +6,6 @@ covers:
   - apps/gateway/app/Infrastructure/Gateway/NativeGatewayCertificatePublisher.php
   - apps/agent/src/commands/gateway_certificate.rs
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
-  - apps/gateway/app/Actions/Doctor/Intent/InfrastructureDoctorIntent.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
   - apps/gateway/app/Domain/Nodes/CaddyRelease.php
 ---
@@ -15,7 +14,7 @@ covers:
 
 For a Laravel root of `apps/site/public`, Caddy serves that nested web root, not the application directory or repository root. Development access grants validate `apps/site/public/storage` against `apps/site/storage/app/public`, using the shared [application directory](/reference/projects#application-directory). They grant access to the paths that serving needs without making `.git` public. Root `public` keeps Laravel's storage link at `public/storage` in the repository root.
 
-Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. Doctor compares the live Caddyfile with a fresh Node Caddy build. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
+Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
 
 ## Published layout
 
@@ -141,7 +140,7 @@ Caddy cannot start with a missing listen address. So every build first checks th
 The build binds 192.168.6.30, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.
 ```
 
-The `websocket` role runs the read-only `caddy.check-addresses` command before it changes anything on the Node. Doctor and `caddy:build --dry-run --diff` read only the live file through `caddy.read-live`; they do not expand imports. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
+The `websocket` role runs the read-only `caddy.check-addresses` command before it changes anything on the Node. `caddy:build --dry-run --diff` reads only the live file through `caddy.read-live`; it does not expand imports. Give a Node with a stored LAN address a fixed address or a DHCP reservation.
 
 ### When a build runs
 
@@ -253,7 +252,7 @@ shop.example.com {
 
 Private sites never carry `force_automate`. They pin their Orbit CA files, so Caddy never asks a public CA for a private hostname, even when a pinned certificate does not match its site. `force_automate` needs Caddy 2.9.0 or newer, which is the release floor.
 
-[`orbit doctor`](/cli/doctor) reports `instance.public_tls_mismatch` when the live public site pins an Orbit CA leaf, or when it lacks `tls force_automate` while the live Caddyfile disables certificate management. Converge the public Route to build the Ingress Node again.
+Native Route publication validates the public TLS configuration. Converge the public Route to build the Ingress Node again.
 
 ## Build a Node by hand
 
@@ -290,23 +289,7 @@ Sites in a replaced file stop serving after that build. Move a hand-placed site 
 
 ## Check a Node with Doctor
 
-[`orbit doctor`](/cli/doctor) reads a Node's sites only from the one live `/etc/caddy/Caddyfile`. It never reads a file that the live Caddyfile imports.
-
-Changing or clearing `task_vms.swamp_host` changes the expected build on the Node that serves that hostname. Doctor reports `role.caddy_build_drift` until `php artisan orbit:caddy-build NODE` applies it.
-
-The `role` family renders the Node's build from stored state and compares it byte for byte with the live file. It reports `role.caddy_build_drift` once per Node, on the first active role that publishes Caddy sites, and lists the Node's site sources in the summary:
-
-| `expected` | `observed` | Meaning |
-| --- | --- | --- |
-| The version of a fresh build | The version of the live file | Someone edited the live file, or stored state changed without a build. |
-| The version of a fresh build | `not_built` | No build wrote the live file. |
-| `buildable` | `refused` | Stored state renders no buildable file, as `Build refused:` in `orbit:caddy-build NODE --dry-run` shows. |
-
-To repair drift, run `php artisan orbit:caddy-build NODE` on the Gateway machine, or converge a role that publishes one of the listed sites. When Doctor cannot read the live file, it reports `role.inspection_failed`.
-
-Doctor compares only while no build holds the Gateway's build lock for the Node. It waits up to 5 seconds for a running build. If the build still holds the lock, Doctor reports `role.inspection_failed` with `observed` set to `building`, so the check reads as unverifiable, never healthy. Doctor reads the live file with a 10-second limit. A command that has saved its change but has not started its build yet can show `role.caddy_build_drift` for a moment. Run Doctor again. A drift that remains is real.
-
-For a production Instance, the `instance` family checks that each of the Instance's own site blocks is in the live file exactly as a build renders it, and reports `instance.caddy_projection_mismatch` otherwise.
+The native Caddy publication validates its candidate before selecting it. Use the publication result or the read-only Caddy build diff for configuration comparison. [Doctor](/cli/doctor#what-each-family-checks) checks role-service liveness, not rendered Caddy content, certificate files or PHP pools.
 
 ## Why it works this way
 
@@ -314,7 +297,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### One build per Node, from stored state
 
-One deterministic render per Node makes the Caddy configuration reproducible from the database. Doctor can compare it, and Gateway recovery can restore it. Nothing on the Node is an input, so no hand-placed site, stale site, or foreign global option survives a build, and no publisher decides Node-wide facts, such as listener addresses, from partial knowledge. The cost is that one broken site blocks every change on its Node.
+One deterministic render per Node makes the Caddy configuration reproducible from the database. The native publisher can validate it, and Gateway recovery can restore it. Nothing on the Node is an input, so no hand-placed site, stale site, or foreign global option survives a build, and no publisher decides Node-wide facts, such as listener addresses, from partial knowledge. The cost is that one broken site blocks every change on its Node.
 
 Rejected alternatives: per-role fragments under a shared lock, a `fragments` directory that only the build writes, adopting a foreign Caddyfile as a carried fragment, rendering on the Node, and a build queue.
 

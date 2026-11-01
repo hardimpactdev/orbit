@@ -314,76 +314,9 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/observation/doctor_infrastructure.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_applications.ts",
-      "rule": "inline-script",
-      "count": 460,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_infrastructure.ts",
-      "rule": "inline-script",
-      "count": 21,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_node.ts",
-      "rule": "inline-script",
-      "count": 58,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": [
-        "embedded-control"
-      ]
-    },
-    {
       "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
       "rule": "inline-script",
-      "count": 247,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_native.ts",
-      "rule": "multi-action",
-      "count": 2,
-      "evidence": [
-        "incus",
-        "sudo"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_node.ts",
-      "rule": "custom-control",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor_node.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor.ts",
-      "rule": "gateway-http",
-      "count": 4,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/doctor.ts",
-      "rule": "private-material",
-      "count": 1,
+      "count": 81,
       "evidence": []
     },
     {

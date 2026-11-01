@@ -31,11 +31,11 @@ The generated pool records the resolved release as a comment. A release switch c
 
 Before publishing a changed pool, Orbit durably records a pending generation. After it starts and verifies the master, it durably records the applied generation with the boot ID, master PID, and process start time, then clears the pending receipt. A retry restarts FPM when the published bytes match but acknowledgment is missing.
 
-Doctor and convergence reject a pending generation or a receipt that does not match the desired release. They accept a running master that started after the recorded one: after a host reboot, or after a restart in the same boot. With no pending receipt, Orbit has no change in progress, so that master loaded the files Orbit confirmed. An unattended package upgrade that restarts the service is therefore not drift and does not make convergence restart it again. A receipt that names a master newer than the running one is rejected.
+Convergence rejects a pending generation or a receipt that does not match the desired release. It accepts a running master that started after the recorded one: after a host reboot, or after a restart in the same boot. With no pending receipt, Orbit has no change in progress, so that master loaded the files Orbit confirmed. An unattended package upgrade that restarts the service is therefore not drift and does not make convergence restart it again. A receipt that names a master newer than the running one is rejected.
 
 The check cannot see a change made outside Orbit, such as an operator who edits the generated files and restarts the service, or reverts an edit without a restart. Orbit accepts that risk; the byte checks of the generated files still report an edit that remains.
 
-Doctor accepts the application's directory in the initial release only while `current` is absent. After selection it expects the application's directory under `current`.
+Native runtime validation accepts the application's directory in the initial release only while `current` is absent. After selection it expects the application's directory under `current`.
 
 | Source | Result |
 | --- | --- |
@@ -78,12 +78,12 @@ Orbit does not recover missing source profiles on older Instances. [Projects: On
 
 Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway renders desired pools from stored state. The native `php.converge-shared-pools` command publishes each version into `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`. Instance creation, transfer, and removal run that convergence.
 
-The read-only `php.inspect-shared-pools` command reports missing working directories and the versions whose desired pools can run. Doctor uses the same read. The Gateway installs those versions, then calls `php.converge-shared-pools` once with all desired configurations. When no shared pools remain desired, the Gateway sends an empty configuration directly, without account, inspection, or package preflights. The mutation holds one Node-wide shared-pool lock while it discovers installed state, retires pools that move between versions, activates their replacements, and recovers failures. It never sends installed configuration back to PHP for parsing.
+The read-only `php.inspect-shared-pools` command reports missing working directories and the versions whose desired pools can run. The Gateway installs those versions, then calls `php.converge-shared-pools` once with all desired configurations. When no shared pools remain desired, the Gateway sends an empty configuration directly, without account, inspection, or package preflights. The mutation holds one Node-wide shared-pool lock while it discovers installed state, retires pools that move between versions, activates their replacements, and recovers failures. It never sends installed configuration back to PHP for parsing.
 
 One PHP-FPM convergence runs these steps:
 
 1. It reads each `orbit-scopes.conf`. As root, it checks the working directory (`chdir`) of every installed pool and of every pool that stored state renders.
-2. It skips a pool whose working directory is missing. [Doctor](#doctor) reports that pool.
+2. It skips a pool whose working directory is missing. The native runtime result records that pool.
 3. It installs the [PHP build](#php-build) without starting the service. A stale pool can keep PHP-FPM from starting, but it cannot block the step that removes it.
 4. It stages each version's desired pools with the other pool files and validates every set with `php-fpm<version> -t` before publication.
 5. It moves changed candidates into place, enables the services, and reloads them. The reload also starts a stopped or failed service.
@@ -126,7 +126,7 @@ A [Route with a web root](/reference/routes#web-roots-on-production) adds a pool
 
 Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. Removal keeps the ownership marker beside the tuning, so the same runtime can be created again without adopting an unowned file. A different identity still refuses.
 
-The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Rust agent validates the effective configuration. It refuses a `local.conf` that changes the identity, including a `chroot` directive. Doctor uses the same tuning rule. It never adopts an existing user, service, socket, or file that belongs to something else.
+The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Rust agent validates the effective configuration. It refuses a `local.conf` that changes the identity, including a `chroot` directive. It never adopts an existing user, service, socket, or file that belongs to something else.
 
 A failed start restores the generated files and service state from before the change. An interrupted change resumes from the recorded identity.
 
@@ -186,11 +186,7 @@ The refresh never touches another Instance's socket and never reloads a service.
 
 ## Doctor
 
-On every Node with an active `app-dev` or `app-prod` role, [Doctor](/cli/doctor) reports `role.php_pool_directory_missing` for each Orbit pool whose working directory is missing. It reports the issue on the `app-dev` role, or else on `app-prod`. A pool in a live `orbit-scopes.conf` with a missing directory stops that PHP version from starting at its next restart; the next PHP-FPM convergence on the Node removes it. A pool that only stored state renders is skipped by convergence until its directory exists.
-
-The read-only `doctor.inspect-production-instance` agent command compares the Node state. It shares pool selection and generation receipt checks with PHP runtime convergence. Doctor also checks that each production PHP Instance has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
-
-Doctor reads only. It never starts PHP-FPM, sends a request, reloads a service, or resets a cache. It does not compare allowed tuning with Orbit's defaults. A process that exits while Doctor reads it is not drift. When Doctor cannot read a required fact, it reports `instance.inspection_failed`.
+Native PHP runtime provisioning validates its configuration. [Doctor](/cli/doctor#what-each-family-checks) checks role-service liveness and does not repeat PHP package, pool or configuration validation.
 
 ## Check a Node
 

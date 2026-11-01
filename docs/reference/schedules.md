@@ -172,7 +172,7 @@ Schedule operations return these codes in the Orbit error envelope. The CLI chec
 
 ## Inspect Schedule drift
 
-[Doctor](/cli/doctor) checks Schedules in its `schedule` family. It uses `doctor.inspect-schedule` to compare each Schedule with its command file, service, and timer on the host Node: presence, owner and mode, content, timer state, calendar, execution context, completion report, and placement. `doctor.schedule-orphans` reports Schedule artifacts that have no record. Installation and inspection share Rust rendering and ownership rules. It changes nothing.
+Schedule creation, enable/disable and native run results own Schedule validation. [Doctor](/cli/doctor#what-each-family-checks) does not read Schedule command files, timers, credentials or orphan inventories.
 
 ## Why it works this way
 

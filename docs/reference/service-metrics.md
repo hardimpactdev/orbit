@@ -99,9 +99,7 @@ If the operation loses a Node lock, reconciliation stops and reports `node.lock_
 
 ### Doctor
 
-Doctor's firewall family expects the service allow and deny rules. Doctor's production Instance checks expect the status lines when monitoring is selected. These checks do not replace scrape health.
-
-The exporter restarts when its pool configuration changes. A fingerprint of the PHP configuration also refreshes Cbox's limits at the next reconcile after a tuning change. A manual tuning edit without a reconcile can leave those limits stale.
+[Doctor](/cli/doctor#what-each-family-checks) checks registered Process and role-service liveness. The native Metrics family owns exporter, scrape and firewall configuration validation.
 
 ## Why it works this way
 
