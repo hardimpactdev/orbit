@@ -49,8 +49,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
@@ -60,8 +58,6 @@ jobs:
         legacy_router: ${{ has(inputs.intent.rule.legacy_router) && inputs.intent.rule.legacy_router }}
   - name: prepare-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: assets
       condition:
@@ -93,8 +89,6 @@ jobs:
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: copy-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: prepare-assets
       condition:
@@ -113,8 +107,6 @@ jobs:
         recursive: true
   - name: write
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -136,8 +128,6 @@ jobs:
         type: succeeded
   - name: cleanup-assets
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: write
       condition:
@@ -156,8 +146,6 @@ jobs:
         - ${{ "/tmp/orbit-route-" + run.id }}
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: write
       condition:
