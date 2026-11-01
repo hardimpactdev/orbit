@@ -183,6 +183,9 @@ class ScriptActions(unittest.TestCase):
                 ]
             },
             {"load_folders": [str(caddy.parent)]},
+            {"load_folders": [str(caddy)]},
+            {"load_folders": [str(caddy / "current")]},
+            {"load_folders": [str(caddy / "versions" / self.leaf["version"])]},
         ):
             raw = json.dumps({"apps": {"tls": {"certificates": certificates}}}).encode()
             with patch.object(
@@ -191,6 +194,7 @@ class ScriptActions(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "certificate.in_use"):
                     remove.remove(scope)
             self.assertTrue((root / "current/key.pem").exists())
+            self.assertTrue((caddy / "current/key.pem").exists())
         with patch.object(
             remove.subprocess,
             "run",
