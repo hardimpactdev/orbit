@@ -77,7 +77,7 @@ Maintenance reads Gateway host uptime/load and the registered Horizon unit's mem
 
 The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records; the Gateway self-maintenance commands above do that. The former private Redis material source and callback-based collection, health, maintenance and retention schedule wrappers are removed.
 
-Fleet collection and Horizon health have no schedule: they run `operation-doctor-inspect`, which is being removed because Doctor reads agent observations. Each also started a run whenever serve re-registered its schedule, which filled Node 209's worker. Native `trigger.schedule` owns both cadences. Each tick selects one public expectation revision and runs one bounded Doctor read pass on 209. Terminal results enter through the existing shared commits feed; no step calls the Gateway. Maintenance and retention remain explicitly admitted reads.
+Fleet collection and Horizon health have no schedule: they run `operation-doctor-inspect`, which is being removed because Doctor reads agent observations. While scheduled, their slow runs held serve's single scheduled-run slot, and other schedules' queued fires then ran back to back. Native `trigger.schedule` owns both cadences. Each tick selects one public expectation revision and runs one bounded Doctor read pass on 209. Terminal results enter through the existing shared commits feed; no step calls the Gateway. Maintenance and retention remain explicitly admitted reads.
 
 No Gateway observation scheduler or family poller is added. `problems:file` retains its separate hourly schedule and lock.
 
