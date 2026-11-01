@@ -31,7 +31,7 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
             return $operation->target_id;
         }
 
-        return in_array($operation->kind, ['route.withdraw', 'route.destroy', 'route.target_set', 'route.create', 'route.converge', 'route.update'], true)
+        return in_array($operation->kind, ['route.target_set', 'route.create', 'route.converge', 'route.update'], true)
             && $operation->target_type === 'route' ? $operation->target_id : null;
     }
 
@@ -45,9 +45,6 @@ final readonly class RouteEnvironmentMaterialSource implements OperationSecretSo
 
         if (isset($operation->input['route_mutations'])) {
             return new OperationSecretValue(app(NativeRouteMutationPlan::class)->environmentMaterial($operation, $nodeId));
-        }
-        if (isset($operation->input['route_removal'])) {
-            return new OperationSecretValue(app(NativeRouteEnvironmentMaterial::class)->forNode($operation, $nodeId));
         }
         $intent = ValidatedData::object($operation->input['route_convergence'] ?? $operation->input['route_target'] ?? []);
         if (isset($operation->input['route_update'])) {

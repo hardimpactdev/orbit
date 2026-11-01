@@ -1,6 +1,6 @@
 type Fields = Record<string, unknown>;
 const expr = (value: string) => "${{ " + value + " }}";
-const coordinator = { target: "orbit-node-209", labels: { node: "209" } };
+const coordinator = { target: "orbit-node-209" };
 const completed = { type: "always" };
 /** Compose native children under the real parent Operation, without callbacks or effects in TS. */
 export function routeMutationSteps(

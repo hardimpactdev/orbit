@@ -84,13 +84,9 @@ inputs:
 jobs:
 - name: composition
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: plan
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -107,8 +103,6 @@ jobs:
         host_keys: ${{ inputs.intent.host_keys }}
   - name: read-account
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -133,24 +127,30 @@ jobs:
         - ${{ 'ORBIT_NODE_USER=' + string(inputs.intent.user) }}
         - /bin/sh
         - -c
-        - |
-          /usr/bin/python3 -B - <<'PYTHON'
+        - '/usr/bin/python3 -B - <<''PYTHON''
+
           import grp
+
           import json
+
           import os
+
           import pwd
 
+
           account = pwd.getpwnam(os.environ["ORBIT_NODE_USER"])
+
           print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": grp.getgrgid(account.pw_gid).gr_name}))
+
           PYTHON
+
+          '
     dependsOn:
     - step: plan
       condition:
         type: succeeded
   - name: read-current
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -164,24 +164,30 @@ jobs:
         - ${{ 'ORBIT_PHP_VERSIONS=' + string(steps.plan.outputs.versions_json) }}
         - /bin/sh
         - -c
-        - |
-          sudo --preserve-env=ORBIT_PHP_VERSIONS /usr/bin/python3 -B - <<'PYTHON'
+        - 'sudo --preserve-env=ORBIT_PHP_VERSIONS /usr/bin/python3 -B - <<''PYTHON''
+
           import json
+
           import os
+
           from pathlib import Path
 
+
           versions = json.loads(os.environ["ORBIT_PHP_VERSIONS"])
+
           paths = {version: Path(f"/etc/php/{version}/fpm/pool.d/orbit-scopes.conf") for version in versions}
+
           print(json.dumps({version: path.read_text() if path.is_file() else "" for version, path in paths.items()}))
+
           PYTHON
+
+          '
     dependsOn:
     - step: read-account
       condition:
         type: succeeded
   - name: compose
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
@@ -204,30 +210,33 @@ jobs:
         type: succeeded
 - name: publication
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: apply-pool
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-apply-pool-" + run.id }}
+      behaviorName: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "route-ssh-apply-pool-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
         argv:
         - /bin/sh
         - -c
-        - |-
-          set -eu
-          if [ "$1" = absent ]; then /usr/bin/rm -f "$2"; else
-            /usr/bin/install -m 0644 -o root -g root /dev/null "$2"
-            /usr/bin/cat > "$2"
-          fi
+        - "set -eu\nif [ \"$1\" = absent ]; then /usr/bin/rm -f \"$2\"; else\n  /usr/bin/install -m 0644 -o root\
+          \ -g root /dev/null \"$2\"\n  /usr/bin/cat > \"$2\"\nfi"
         - route-pool
         - ${{ self.pool.ensure }}
         - ${{ self.pool.path }}
@@ -238,14 +247,23 @@ jobs:
       in: ${{ steps.compose.outputs.files }}
   - name: validate
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-validate-" + run.id }}
+      behaviorName: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "route-ssh-validate-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
         argv:
@@ -263,14 +281,23 @@ jobs:
       in: ${{ steps.compose.outputs.files }}
   - name: reload
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "route-ssh-reload-" + run.id }}
+      behaviorName: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
       methodName: exec
-      globalArgs: *id001
+      globalArgs:
+        name: ${{ "route-ssh-reload-" + run.id + "-" + string(self._index) }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.connection.nodeUser }}
+          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
+          port: ${{ inputs.intent.connection.nodePort }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.connection.nodeHost }}
+          transport:
+            hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
         argv:
@@ -292,8 +319,6 @@ jobs:
       type: succeeded
 - name: completion
   target: orbit-node-209
-  labels:
-    node: '209'
   dependsOn:
   - job: publication
     condition:
@@ -301,8 +326,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

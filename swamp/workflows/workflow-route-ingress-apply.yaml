@@ -30,8 +30,6 @@ jobs:
   steps:
   - name: pins
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -55,8 +53,6 @@ jobs:
         - /usr/bin/true
   - name: apply
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: pins, condition: {type: succeeded}}
     forEach:
@@ -81,8 +77,6 @@ jobs:
       inputs: {}
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: pins, condition: {type: always}}
     - {step: apply, condition: {type: always}}

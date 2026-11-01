@@ -143,7 +143,7 @@ print('{"ready":true}')
         for job in jobs:
             for step in job["steps"]:
                 step.pop("target")
-                step.pop("labels")
+                step.pop("labels", None)
         workflow = {
             "id": "3efabfbc-eb73-42e1-8426-a4e00f0fe035",
             "name": "fixture-route-mutation",
@@ -232,6 +232,12 @@ class RouteMutationNative(RouteMutationFixture):
 
 
 class RouteEnvironmentNative(NativeTestCase):
+    def test_removal_root_delivers_named_material_through_its_existing_child(self):
+        self.environment_write(False, removal_parent=True)
+
+    def test_removal_retains_offline_nodes_without_environment_effects(self):
+        self.environment_write(False, removal_parent=True, retained=True)
+
     def test_real_vault_environment_write_returns_public_result(self):
         self.environment_write(False)
 
@@ -240,7 +246,7 @@ class RouteEnvironmentNative(NativeTestCase):
     ):
         self.environment_write(True)
 
-    def environment_write(self, update_parent):
+    def environment_write(self, update_parent, removal_parent=False, retained=False):
         import pwd
         import tempfile
 
@@ -289,7 +295,7 @@ class RouteEnvironmentNative(NativeTestCase):
         workflow = remote_path(workflow)
         for step in workflow["jobs"][0]["steps"]:
             step.pop("target")
-            step.pop("labels")
+            step.pop("labels", None)
         (self.repo / "workflows/workflow-route-environment-write.yaml").write_text(
             yaml.safe_dump(workflow, sort_keys=False)
         )
@@ -324,6 +330,32 @@ class RouteEnvironmentNative(NativeTestCase):
             "host_keys": [PIN],
         }
         name = "route-environment-write"
+        if removal_parent:
+            parent = yaml.safe_load(
+                (ROOT / "workflows/workflow-operation-route-removal.yaml").read_text()
+            )
+            parent.pop("target", None)
+            parent.pop("labels", None)
+            selection = self.repo / "extensions/behaviors/fixture_selection.ts"
+            selection.write_text('''import {z} from "npm:zod@4.4.3";
+const schema=z.object({nodes:z.array(z.object({node_id:z.number()}))});
+export const behavior={type:"@fixture/removal-selection",version:"2026.11.01.1",
+resources:{selected:{schema,lifetime:"infinite",garbageCollection:10}},
+methods:{read:{description:"Return the disposable offline selection",arguments:schema,execute:async(args:any,ctx:any)=>({dataHandles:[await ctx.writeResource("selected","selected",args)]})}}};
+''')
+            environment = next(j for j in parent["jobs"] if j["name"] == "environment")
+            environment["dependsOn"] = [{"job": "selection", "condition": {"type": "succeeded"}}]
+            for step in environment["steps"]:
+                step.pop("target", None)
+            parent["jobs"] = [{"name": "selection", "steps": [{"name": "selected", "task": {
+                "type": "behavior", "behaviorType": "@fixture/removal-selection",
+                "behaviorName": "selected", "methodName": "read",
+                "inputs": {"nodes": [] if retained else [{"node_id": 9}]},
+            }}]}, environment]
+            (self.repo / "workflows/workflow-operation-route-removal.yaml").write_text(yaml.safe_dump(parent, sort_keys=False))
+            value["kind"] = "route.destroy"
+            value["intent"] = {"environment_writes": [value["intent"]]}
+            name = "operation-route-removal"
         if update_parent:
             self.copy_behaviors("operations/routes/update-command")
             parent = yaml.safe_load(
@@ -402,10 +434,13 @@ class RouteEnvironmentNative(NativeTestCase):
         )
         history = json.loads(self.cli("workflow", "history", "get", reply["id"]).stdout)
         self.assertEqual(history["status"], "succeeded")
-        self.assertIn("APP_URL=https://new.test", (path / ".env").read_text())
+        self.assertIn("APP_URL=https://old.test" if retained else "APP_URL=https://new.test", (path / ".env").read_text())
         self.assertIn("APP_KEY=keep-current", (path / ".env").read_text())
         result = history["jobs"][0]["steps"][-1]["outputs"]
-        if update_parent:
+        if removal_parent:
+            effects = history["jobs"][1]["steps"]
+            self.assertEqual(len(effects), 0 if retained else 1)
+        elif update_parent:
             self.assertTrue(json.loads(result["stdout"])["ready"])
         else:
             self.assertEqual(result, {"ready": True, "route_id": 31, "instance_id": 33})
