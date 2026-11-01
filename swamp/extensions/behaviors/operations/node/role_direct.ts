@@ -173,7 +173,7 @@ export function nodeRoleAdd(
     };
     return {
         type: "@nckrtl/node-role-add-direct",
-        version: "2026.11.01.1",
+        version: "2026.11.01.2",
         globalArguments: Globals,
         resources: {
             ...parentManagerResources,
@@ -353,6 +353,17 @@ export function nodeRoleAdd(
                                     args.admission.snapshot.runtime,
                                     gateway(args, ctx),
                                     ctx.signal,
+                                    undefined,
+                                    undefined,
+                                    undefined,
+                                    args.admission.snapshot.runtime.role ===
+                                            "swamp"
+                                        ? await Deno.readTextFile(
+                                            ctx.extensionFile(
+                                                "scripts/swamp_workers.py",
+                                            ),
+                                        )
+                                        : undefined,
                                 ).then(async (result) => {
                                     if ("error_code" in result) {
                                         return {

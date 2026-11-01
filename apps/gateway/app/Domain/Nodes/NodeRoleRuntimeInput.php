@@ -29,6 +29,12 @@ use App\Models\Process;
 /** Role-owned runtime intent. Capture never discovers accounts or executes a host command. */
 final readonly class NodeRoleRuntimeInput
 {
+    /** The swamp role's worker instances: two, so one drains and restarts while the other runs (ADR 0243). */
+    public const array SwampWorkers = ['a', 'b'];
+
+    /** Dispatch slots per swamp worker, about twice the swamp Node's cores. */
+    public const int SwampWorkerConcurrency = 8;
+
     public function __construct(private AgentDelivery $agents, private ProcessTargetResolver $targets,
         private DockerProcessRenderer $docker, private RecordProcessIntentAction $processes, private ProcessSpecification $specifications,
         private AnalyticsRoleSettingsRepository $analytics, private AnalyticsStorageProcessGuard $storage,
@@ -71,6 +77,11 @@ final readonly class NodeRoleRuntimeInput
     public function capture(Node $node, NodeRole $assignment): ?array
     {
         $this->assignment($node, $assignment);
+        if ($assignment->role === RoleName::Swamp) {
+            return ['role' => $assignment->role->value, 'node_id' => $node->id, 'assignment_id' => $assignment->id,
+                'agent_sha256' => $this->agents->pin($node), 'user' => $node->user,
+                'workers' => self::SwampWorkers, 'concurrency' => self::SwampWorkerConcurrency];
+        }
         if (! in_array($assignment->role, [RoleName::Metrics, RoleName::Analytics, RoleName::WebSocket], true)) {
             return null;
         }
@@ -120,6 +131,7 @@ final readonly class NodeRoleRuntimeInput
         return match ($role) {
             RoleName::Metrics => [...$input, 'address' => $node->wireguard_ip],
             RoleName::WebSocket => [...$input, 'install_path' => config('orbit.websocket.install_path')],
+            RoleName::Swamp => [...$input, 'workers' => self::SwampWorkers],
             RoleName::Analytics => [...$input, 'process_id' => $this->plausible($node)->id,
                 'name' => $this->docker->containerName($this->plausible($node))],
             default => null,

@@ -61,6 +61,7 @@ export function roleRemovalLocal(deps = {
     stage: z.infer<typeof RemovalStage>,
     signal?: AbortSignal,
     effectNodeId?: number,
+    swampProgram?: string,
   ) => {
     const plan = RoleRemoval.parse(raw);
     signal?.throwIfAborted();
@@ -77,7 +78,14 @@ export function roleRemovalLocal(deps = {
       ) {
         throw new Error("Role runtime withdrawal changed its admitted Node");
       }
-      rawResult = await deps.runtime(plan.runtime, signal);
+      rawResult = await deps.runtime(
+        plan.runtime,
+        signal,
+        undefined,
+        undefined,
+        undefined,
+        swampProgram,
+      );
     } else if (stage === "ci-host" && plan.role === "ci-runner") {
       const result = await deps.ciHost(
         plan.purge_data ? "purge" : "remove",

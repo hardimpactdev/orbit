@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Fleet\FleetFixtures;
@@ -46,7 +47,11 @@ it('admits the swamp role as a Caddy role of its own Node and keeps it a singlet
     $snapshot = Operation::query()->findOrFail($ack->json('data.id'))->input['_role'];
     expect($snapshot['role'])->toBe('swamp')
         ->and($snapshot['publication']['caddy_node_ids'])->toBe([$this->node->id])
-        ->and($snapshot['prerequisites']['packages'])->toContain('caddy');
+        ->and($snapshot['prerequisites']['packages'])->toContain('caddy')
+        ->and($snapshot['metrics_fleet'])->toBeNull()
+        ->and($snapshot['runtime'])->toBe(['role' => 'swamp', 'node_id' => $this->node->id, 'assignment_id' => $snapshot['assignment_id'],
+            'agent_sha256' => $snapshot['agent_sha256'], 'user' => $this->node->user, 'workers' => ['a', 'b'], 'concurrency' => 8]);
+    expect(app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $this->node->id)->value)->toBeNull();
 
     $other = FleetFixtures::node('role-http-other');
     $other->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();

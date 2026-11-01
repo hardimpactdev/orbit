@@ -17,6 +17,12 @@ import type { SystemCommand } from "../processes-schedules/system.ts";
 import { initializePlausible } from "../analytics/initialization.ts";
 import { configureClickhouse } from "../analytics/clickhouse.ts";
 import { localSystemCommand, type SystemTransport } from "./system_command.ts";
+import {
+  convergeSwampWorkers,
+  removeSwampWorkers,
+  SwampWorkers,
+  SwampWorkersRemoval,
+} from "./role_swamp_workers.ts";
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Code = z.string().regex(/^[a-z0-9_.-]{1,100}$/);
@@ -63,6 +69,7 @@ export const RoleRuntime = z.discriminatedUnion("role", [
     assignment_id: z.number().int().positive(),
     material: Base.shape.material,
   }).strict(),
+  SwampWorkers,
 ]);
 export const RoleRuntimeRemoval = z.discriminatedUnion("role", [
   Identity.extend({
@@ -81,6 +88,7 @@ export const RoleRuntimeRemoval = z.discriminatedUnion("role", [
     install_path: z.string().startsWith("/"),
     purge_data: z.boolean(),
   }).strict(),
+  SwampWorkersRemoval,
 ]);
 type Outcome = { completed: true; changed?: boolean } | { error_code: string };
 const Configuration = z.record(
@@ -155,8 +163,14 @@ export async function installRoleRuntime(
   transport: SystemTransport = localSystemCommand,
   metrics: MetricsRuntimeActions = metricsRuntime(signal),
   native: NativeRuntimeActions = nativeRuntime(transport),
+  swampProgram?: string,
 ): Promise<Outcome> {
   const input = RoleRuntime.parse(raw);
+  // The swamp role's workers hold Node-placed tokens, so their runtime reads no private material.
+  if (input.role === "swamp") {
+    if (swampProgram === undefined) throw new Error("The swamp runtime requires its shipped script");
+    return await convergeSwampWorkers(input, swampProgram, signal, transport);
+  }
   if (input.material.id !== input.node_id) {
     throw new Error("Runtime material belongs to another Node");
   }
@@ -330,9 +344,14 @@ export async function removeRoleRuntime(
   transport: SystemTransport = localSystemCommand,
   metrics: MetricsRuntimeActions = metricsRuntime(signal),
   native: NativeRuntimeActions = nativeRuntime(transport),
+  swampProgram?: string,
 ): Promise<Outcome> {
   const input = RoleRuntimeRemoval.parse(raw);
   signal?.throwIfAborted();
+  if (input.role === "swamp") {
+    if (swampProgram === undefined) throw new Error("The swamp runtime requires its shipped script");
+    return await removeSwampWorkers(input, swampProgram, signal, transport);
+  }
   if (input.role === "websocket") {
     return await removeWebSocketRuntime(
       {

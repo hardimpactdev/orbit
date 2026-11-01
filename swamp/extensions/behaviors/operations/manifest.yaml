@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/sqlite-instance-files'
-version: 2026.11.01.1
+version: 2026.11.01.2
 visibility: private
 license: MIT
 description: Shared SQLite files for the existing Instance lower APIs.
@@ -10,3 +10,4 @@ additionalFiles:
   - database-server-commands/scripts/sqlite_actions.py
   - database-server-commands/scripts/sqlite_seed_common.py
   - database-server-commands/scripts/sqlite_clone_common.py
+  - fleet-recipe/scripts/swamp_workers.py
