@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
@@ -19,6 +21,10 @@ beforeEach(function (): void {
     $agent = Mockery::mock(AgentCommandRunner::class);
     $agent->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agent);
+    config(['swamp.run_token' => 'fake.run']);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $this->socket);
     DB::beginTransaction();
 });
 afterEach(function (): void {
@@ -42,7 +48,7 @@ it('returns one idempotent asynchronous role intent without executing a Node com
 })->with(['database', 'ci-runner']);
 
 it('hydrates only the existing owned hash through the real shared private reader', function (): void {
-    $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'database'])->assertAccepted();
+    $ack = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ci-runner'])->assertAccepted();
     $operation = Operation::query()->findOrFail($ack->json('data.id'));
     $run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
     $operation->update(['state' => [...$operation->state, 'swamp_run_id' => $run]]);

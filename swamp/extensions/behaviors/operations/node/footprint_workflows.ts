@@ -1,4 +1,7 @@
-import { roleRemovalWorkflow } from "./role_removal_workflow.ts";
+import {
+    roleRemovalJobs,
+    roleRemovalWorkflow,
+} from "./role_removal_workflow.ts";
 import { roleMetricsJobs } from "./role_metrics_workflow.ts";
 import { roleCertificateJobs } from "./role_certificates_workflow.ts";
 import { rolePublicationJobs } from "./role_publication_workflow.ts";
@@ -33,6 +36,7 @@ const dependency = (job: string, type = "succeeded") => ({
 
 export function footprintWorkflow(
     role: true,
+    relocateRole = false,
 ) {
     const behavior = role ? "node-role-add-direct" : "node-converge-direct";
     const task = (methodName: string, inputs: Fields = {}) => ({
@@ -88,6 +92,12 @@ export function footprintWorkflow(
             previous = certificates.lastJob;
             const publication = rolePublicationJobs(previous, {
                 blocked: "!steps.admit.outputs.ready",
+                ...(relocateRole
+                    ? {
+                        excludeNodeId:
+                            "steps.admit.outputs.snapshot.source_removal.node_id",
+                    }
+                    : {}),
             });
             jobs.push(...publication.jobs);
             previous = publication.lastJob;
@@ -105,6 +115,71 @@ export function footprintWorkflow(
             });
             previous = "prepare_footprint_job";
             prepared = true;
+        }
+        if (stage === "route-residue") {
+            const snapshot = (prepared
+                ? "steps.prepare_footprint.outputs"
+                : "steps.admit.outputs") + ".snapshot";
+            const present = snapshot +
+                '.footprint.artifacts.exists(a,a.name == "route-residue")';
+            const required = snapshot +
+                '.footprint.artifacts.exists(a,a.name == "route-residue" && a.required)';
+            jobs.push({
+                name: "route_residue_job",
+                dependsOn: [dependency(previous)],
+                steps: [{
+                    name: "route_residue_native",
+                    target: "orbit-node-209",
+                    queueTimeout: 30,
+                    guard: inactive,
+                    allowFailure: true,
+                    forEach: {
+                        item: "residue",
+                        in: expression(
+                            required + " ? [" + snapshot +
+                                '.footprint.payloads["route-residue"]] : []',
+                        ),
+                    },
+                    task: {
+                        type: "workflow",
+                        workflowIdOrName: "route-residue",
+                        inputs: {
+                            ...root,
+                            intent: {
+                                ssh: expression(snapshot + ".ssh"),
+                                residue: expression("self.residue"),
+                            },
+                        },
+                    },
+                }, {
+                    name: "route_residue",
+                    target: "orbit-node-209",
+                    queueTimeout: 30,
+                    guard: inactive,
+                    dependsOn: [{
+                        step: "route_residue_native",
+                        condition: { type: "always" },
+                    }],
+                    task: {
+                        type: "behavior",
+                        behaviorType: "@nckrtl/route-residue-command",
+                        behaviorName: expression('"residue-outcome-"+run.id'),
+                        methodName: "outcome",
+                        inputs: {
+                            artifact_present: expression(present),
+                            required: expression(required),
+                            status: expression(
+                                '"route_residue_native-0" in steps ? steps["route_residue_native-0"].status : "skipped"',
+                            ),
+                            stdout: expression(
+                                '"route_residue_native-0" in steps && steps["route_residue_native-0"].status == "succeeded" ? steps["route_residue_native-0"].outputs.result.stdout : ""',
+                            ),
+                        },
+                    },
+                }],
+            });
+            previous = "route_residue_job";
+            continue;
         }
         const name = key(stage);
         const isBaseline = role && baseline.includes(stage);
@@ -200,6 +275,30 @@ export function footprintWorkflow(
             }],
         });
     }
+    let cleanup: string | undefined;
+    if (relocateRole) {
+        jobs.push({
+            name: "target_ready_job",
+            dependsOn: [dependency("cli_job")],
+            steps: [{
+                name: "target_ready",
+                writes: true,
+                task: task("targetReady", {
+                    admission: expression(
+                        "has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs",
+                    ),
+                    ...results,
+                    dependencies: expression(`{"ready": ${dependencies}}`),
+                    cli: expression(
+                        "has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null",
+                    ),
+                }),
+            }],
+        });
+        const source = roleRemovalJobs("target_ready_job");
+        jobs.push(...source.jobs);
+        cleanup = source.result;
+    }
     jobs.push({
         name: "projection",
         dependsOn: jobs.map((job) => dependency(String(job.name), "always")),
@@ -216,6 +315,7 @@ export function footprintWorkflow(
                 ...results,
                 ...(role
                     ? {
+                        ...(cleanup ? { cleanup: expression(cleanup) } : {}),
                         dependencies: expression(`{"ready": ${dependencies}}`),
                         cli: expression(
                             "has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null",
@@ -226,8 +326,14 @@ export function footprintWorkflow(
         }],
     });
     const workflow = {
-        id: "620a861a-0938-4fa1-8f81-9da7890de04a",
-        name: "node-role-converge-retained",
+        id: role
+            ? relocateRole
+                ? "48ce785a-7429-463e-a776-7b5a59bb2961"
+                : "36af16a4-008f-41f3-81ed-187cb11b1a6b"
+            : "daace7ba-223f-47b6-9452-7c0da7cf384e",
+        name: relocateRole
+            ? "operation-node-role-relocate-direct"
+            : `operation-${behavior}`,
         description:
             "One exact-Node native root; generated from the shared footprint chain.",
         inputs: {
@@ -238,7 +344,11 @@ export function footprintWorkflow(
                 kind: {
                     type: "string",
                     enum: [
-                        "node.role_converge",
+                        role
+                            ? relocateRole
+                                ? "node.role_relocate"
+                                : "node.role_add"
+                            : "node.converge",
                     ],
                 },
             },
@@ -249,7 +359,8 @@ export function footprintWorkflow(
 
         jobs,
     };
-    if (role) {
+    if (role && !relocateRole) {
+        workflow.inputs.properties.kind.enum.push("node.role_converge");
         const retained = JSON.parse(
             JSON.stringify(workflow).replaceAll(
                 "run.id",
@@ -264,32 +375,20 @@ export function footprintWorkflow(
     return workflow;
 }
 
-/** Remaining unsupported convergence stays owned by its existing caller. */
 export function retainedRoleConvergeWorkflow() {
-    const workflow = footprintWorkflow(true);
-    workflow.id = "620a861a-0938-4fa1-8f81-9da7890de04a";
-    workflow.name = "node-role-converge-retained";
-    workflow.inputs.properties.kind.enum = ["node.role_converge"];
-    return workflow;
+    return footprintWorkflow(true);
 }
-
 export function generatedFootprintWorkflows() {
-    return [
-        retainedRoleConvergeWorkflow(),
-        roleRemovalWorkflow(),
-    ].map((workflow) => {
-        return {
-            path: new URL(
-                `../../../../workflows/workflow-${workflow.name}.yaml`,
-                import.meta.url,
-            ),
-            text:
-                "# deno-fmt-ignore-file\n# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts\n" +
-                stringify(workflow, { flowLevel: 4, lineWidth: -1 }),
-        };
-    });
+    return [roleRemovalWorkflow()].map((workflow) => ({
+        path: new URL(
+            `../../../../workflows/workflow-${workflow.name}.yaml`,
+            import.meta.url,
+        ),
+        text:
+            "# deno-fmt-ignore-file\n# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts\n" +
+            stringify(workflow, { flowLevel: 4, lineWidth: -1 }),
+    }));
 }
-
 if (import.meta.main) {
     for (const { path, text } of generatedFootprintWorkflows()) {
         await Deno.writeTextFile(path, text);

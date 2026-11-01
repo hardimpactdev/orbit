@@ -1,0 +1,37 @@
+# deno-fmt-ignore-file
+# Captured Route residue; host policy lives in canonical script suppliers.
+id: 827d2900-2586-476e-90be-24574dc06507
+name: route-residue
+vaults: []
+target: orbit-node-209
+queueTimeout: 30
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+  additionalProperties: false
+jobs:
+  - name: cleanup
+    steps:
+      - {name: assets, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/route-residue-command', behaviorName: '${{ "residue-assets-"+run.id }}', methodName: bundle, inputs: {residue: '${{ inputs.intent.residue }}'}}}
+      - {name: prepare, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: assets, condition: {type: succeeded}}], writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "route-residue-"+run.id }}', methodName: exec, globalArgs: &ref_0 {name: '${{ "route-residue-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: false, argv: [/usr/bin/timeout, '15', /usr/bin/mkdir, '-p', '--mode=0700', '${{ "/var/tmp/orbit-route-residue-"+run.id }}']}}}
+      - {name: copy, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: prepare, condition: {type: succeeded}}], writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "residue-copy-"+run.id }}', methodName: copy, globalArgs: *ref_0, inputs: {hosts: 'name:target', src: '${{ steps.assets.outputs.scripts_directory+"/." }}', dst: '${{ "/var/tmp/orbit-route-residue-"+run.id }}', direction: to, recursive: true}}}
+      - {name: caddy, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: copy, condition: {type: succeeded}}], forEach: {item: part, in: '${{ inputs.intent.residue.rows.exists(r,"caddy" in r.steps) ? [inputs.intent.residue] : [] }}'}, task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: {}, intent: {caddy_publication: {control_node_id: 209, connection: {nodeHost: '${{ inputs.intent.ssh.target.host }}', nodeUser: '${{ inputs.intent.ssh.target.user }}', nodePort: '${{ inputs.intent.ssh.target.port }}', nodeIdentityFile: '${{ inputs.intent.ssh.identity_file }}', become: true}, host_keys: '${{ inputs.intent.ssh.target.host_keys }}', node_id: '${{ inputs.node_id }}', user: '${{ inputs.intent.residue.user }}', caddy: '${{ self.part.caddy }}'}}}}}
+      - {name: action, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: copy, condition: {type: succeeded}}, {step: caddy, condition: {type: always}}], guard: '${{ steps.exists(k,k.startsWith("caddy-") && steps[k].status != "succeeded") }}', writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "route-residue-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '--signal=TERM', '--kill-after=5s', '180', /usr/bin/python3, '-B', '${{ "/var/tmp/orbit-route-residue-"+run.id+"/residue.py" }}'], stdin: '${{ steps.assets.outputs.input_json }}', ignoreExitCode: true}}}
+      - {name: cleanup, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: action, condition: {type: always}}, {step: prepare, condition: {type: succeeded}}], writes: true, task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "route-residue-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '15', /usr/bin/rm, '-rf', '--', '${{ "/var/tmp/orbit-route-residue-"+run.id }}']}}}
+      - {name: result, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: cleanup, condition: {type: always}}, {step: action, condition: {type: always}}, {step: caddy, condition: {type: always}}], task: {type: behavior, behaviorType: '@nckrtl/route-residue-command', behaviorName: '${{ "residue-result-"+run.id }}', methodName: complete, inputs: {action_status: '${{ "action" in steps ? steps.action.status : "skipped" }}', exit_code: '${{ "action" in steps && steps.action.status == "succeeded" ? steps.action.outputs.exitCode : -1 }}', stdout: '${{ "action" in steps && steps.action.status == "succeeded" ? steps.action.outputs.stdout : "" }}', caddy_statuses: '${{ steps.filter(k,k.startsWith("caddy-")).map(k,steps[k].status) }}', cleanup_status: '${{ "cleanup" in steps ? steps.cleanup.status : "skipped" }}'}}}
+      - {name: accepted, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: result, condition: {type: succeeded}}], task: {type: assert, expr: steps.result.outputs.ready, severity: high, message: Captured Route residue is still retryable}}

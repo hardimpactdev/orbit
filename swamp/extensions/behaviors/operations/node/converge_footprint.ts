@@ -44,10 +44,6 @@ export type LocalDependencies = {
         input: Record<string, unknown>,
         signal?: AbortSignal,
     ) => Promise<Record<string, unknown>>;
-    residue: (
-        snapshot: Snapshot,
-        signal?: AbortSignal,
-    ) => Promise<Record<string, unknown>>;
     network: (
         input: NonNullable<Snapshot["network"]>,
         signal?: AbortSignal,
@@ -213,19 +209,9 @@ export function footprintActions(deps: LocalDependencies) {
             return entry(installed.changed || publication.changed !== false);
         }
         if (stage === "route-residue") {
-            const result = await deps.residue(snapshot, signal);
-            if (result.error_code) {
-                return {
-                    stage,
-                    ok: true,
-                    entry: {
-                        name: "route-residue",
-                        status: "skipped",
-                        reason: "route_residue_cleanup_failed",
-                    },
-                };
-            }
-            return entry(Changed.parse(result).changed);
+            throw new Error(
+                "Route residue belongs to its native cleanup child",
+            );
         }
         const command = stage === "caddy-package"
             ? "caddy.install-package"

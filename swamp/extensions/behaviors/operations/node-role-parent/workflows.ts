@@ -1,3 +1,4 @@
+import { footprintWorkflow } from "../node/footprint_workflows.ts";
 import { stringify } from "jsr:@std/yaml@1.0.12";
 import { roleConvergeSteps } from "../node-role-converge-command/root_steps.ts";
 import { rolePublicationSteps } from "../node-role-converge-command/publication_steps.ts";
@@ -41,26 +42,131 @@ export function parentWorkflow(relocate = false) {
         }],
     };
     const target = roleConvergeSteps(
-        "",
+        "forward",
         "inputs.intent.target",
         globals,
         undefined,
         undefined,
-        { rootRunIdExpr: "run.id" },
+        {
+            rootRunIdExpr:
+                "has(inputs.parent_run_id) ? inputs.parent_run_id : run.id",
+        },
     );
+    const residueIndex = target.findIndex((step) =>
+        step.name === "forward_php_runtime"
+    );
+    target.splice(residueIndex, 0, {
+        name: "forward_residue",
+        ...placed,
+        allowFailure: true,
+        forEach: {
+            item: "residue",
+            in: ex(
+                "has(inputs.intent.target.residue) ? [inputs.intent.target.residue] : []",
+            ),
+        },
+        dependsOn: [
+            ...on("forward_packages"),
+            ...on("forward_peer_dns", "always"),
+            ...on("forward_caddy", "always"),
+        ],
+        guard: ex(
+            'steps.exists(k,k.startsWith("forward_") && steps[k].status in ["failed","cancelled"])',
+        ),
+        task: {
+            type: "workflow",
+            workflowIdOrName: "route-residue",
+            inputs: {
+                operation_id: ex("inputs.operation_id"),
+                node_id: ex("inputs.node_id"),
+                kind,
+                intent: ex("self.residue"),
+            },
+        },
+    });
+    for (const step of target) {
+        if (
+            [
+                "forward_php_runtime",
+                "forward_observer",
+                "forward_cli",
+                "forward_role_result",
+            ].includes(String(step.name))
+        ) {
+            step.dependsOn = [
+                ...(step.dependsOn as Fields[] ?? []),
+                ...on("forward_residue", "always"),
+            ];
+        }
+    }
     target.push({
         name: "target_proven",
         ...placed,
-        dependsOn: on("role_result"),
+        dependsOn: on("forward_role_result"),
         task: {
             type: "assert",
             severity: "high",
             message: "The target must be ready before source withdrawal",
             expr:
-                "steps.role_result.outputs.role_proven && steps.role_result.outputs.runtime_proven && steps.role_result.outputs.certificates_proven && steps.role_result.outputs.publication_proven",
+                "steps.forward_role_result.outputs.role_proven && steps.forward_role_result.outputs.runtime_proven && steps.forward_role_result.outputs.certificates_proven && steps.forward_role_result.outputs.publication_proven",
         },
     });
-    const jobs: Fields[] = [{ name: "target", steps: target }];
+    // Phase jobs gate later effects. Optional forEach phases may have no items;
+    // their boundary accepts skipped items but never a failed/cancelled action.
+    const resultIndex = target.findIndex((step) =>
+        step.name === "forward_role_result"
+    );
+    const phases = target.slice(0, resultIndex);
+    const final = target.slice(resultIndex);
+    const jobs: Fields[] = [];
+    let previous: string | undefined;
+    for (const phase of phases) {
+        delete phase.dependsOn;
+        const name = String(phase.name) + "_job";
+        const steps: Fields[] = [phase];
+        if (phase.name !== "forward_residue") {
+            const base = JSON.stringify(phase.name);
+            steps.push({
+                name: String(phase.name) + "_accepted",
+                ...placed,
+                dependsOn: on(String(phase.name), "always"),
+                task: {
+                    type: "assert",
+                    severity: "high",
+                    message: "Complete the role phase before later effects",
+                    expr: "steps.filter(k,k == " + base + " || k.startsWith(" +
+                        base +
+                        '+"-")).all(k,steps[k].status in ["succeeded","skipped"])',
+                },
+            });
+        }
+        jobs.push({
+            name,
+            ...(previous
+                ? {
+                    dependsOn: [{
+                        job: previous,
+                        condition: { type: "succeeded" },
+                    }],
+                }
+                : {}),
+            steps,
+        });
+        previous = name;
+    }
+    const finalNames = new Set(final.map((step) => String(step.name)));
+    for (const step of final) {
+        step.dependsOn = ((step.dependsOn as Fields[] | undefined) ?? [])
+            .filter((dependency) => finalNames.has(String(dependency.step)));
+    }
+    jobs.push({
+        name: "target",
+        dependsOn: jobs.map((job) => ({
+            job: job.name,
+            condition: { type: "always" },
+        })),
+        steps: final,
+    });
     if (!relocate) {
         jobs.push({
             name: "rollback",
@@ -69,7 +175,7 @@ export function parentWorkflow(relocate = false) {
                 name: "target_rollback",
                 ...placed,
                 guard: ex(
-                    '!(inputs.intent.target.role == "websocket" && inputs.intent.target.created && steps.exists(k,k == "runtime-0" && steps[k].status == "succeeded") && !steps.exists(k,k == "publication-0" && steps[k].status == "succeeded"))',
+                    '!(inputs.intent.target.role == "websocket" && inputs.intent.target.created && steps.exists(k,k == "forward_runtime-0" && steps[k].status == "succeeded") && !steps.exists(k,k == "forward_publication-0" && steps[k].status == "succeeded"))',
                 ),
                 task: {
                     type: "workflow",
@@ -115,7 +221,7 @@ export function parentWorkflow(relocate = false) {
     }
     if (relocate) {
         const source: Fields[] = [{
-            name: "source_grace",
+            name: "forward_source_grace",
             ...placed,
             task: {
                 type: "workflow",
@@ -128,7 +234,7 @@ export function parentWorkflow(relocate = false) {
                 "source_publication",
                 "inputs.intent.source",
                 "forward",
-                "source_grace",
+                "forward_source_grace",
             ),
         );
         source.push({
@@ -203,6 +309,7 @@ export function parentWorkflow(relocate = false) {
                         [
                             "role_admission",
                             "role_result",
+                            "route_residue",
                             "target_proven",
                             ...(relocate
                                 ? [
@@ -214,10 +321,22 @@ export function parentWorkflow(relocate = false) {
                                 : ["target_rollback"]),
                         ].map((name) => {
                             const key = JSON.stringify(name);
-                            const step = "steps[" + key + "]";
-                            const status = key + " in steps ? " + step +
+                            const sourceKey = JSON.stringify(
+                                name === "role_result"
+                                    ? "forward_role_result"
+                                    : name === "role_admission"
+                                    ? "forward_role_admission"
+                                    : name === "route_residue"
+                                    ? "forward_residue-0"
+                                    : name === "source_grace"
+                                    ? "forward_source_grace"
+                                    : name,
+                            );
+                            const step = "steps[" + sourceKey + "]";
+                            const status = sourceKey + " in steps ? " + step +
                                 '.status : "skipped"';
-                            const succeeded = key + " in steps && " + step +
+                            const succeeded = sourceKey + " in steps && " +
+                                step +
                                 '.status == "succeeded"';
                             return [name, {
                                 status: ex("(" + status + ")"),
@@ -228,7 +347,11 @@ export function parentWorkflow(relocate = false) {
                                                 ".outputs : {})",
                                         ),
                                     }
-                                    : ["source_cleanup", "target_rollback"]
+                                    : [
+                                            "source_cleanup",
+                                            "target_rollback",
+                                            "route_residue",
+                                        ]
                                             .includes(name)
                                     ? {
                                         outputs: {
@@ -256,8 +379,46 @@ export function parentWorkflow(relocate = false) {
             },
         }],
     });
+    // Keep the existing Node-worker sequence for roles whose contribution is not
+    // converted yet. Native jobs use the shared factory's prefix, so both paths
+    // retain the original run identity without colliding step names.
+    const legacy = footprintWorkflow(true, relocate);
+    const retained = legacy.jobs as Fields[];
     for (const job of jobs) {
-        for (const step of job.steps as Fields[]) step.queueTimeout = 30;
+        for (const step of job.steps as Fields[]) {
+            step.queueTimeout = 30;
+            const condition = String(step.guard ?? "${{ false }}").slice(4, -3);
+            step.guard = ex(
+                "!has(inputs.intent) || inputs.intent == null || (" +
+                    condition + ")",
+            );
+            if (step.forEach) {
+                const loop = step.forEach as Fields;
+                loop.in = ex(
+                    "has(inputs.intent) && inputs.intent != null ? (" +
+                        String(loop.in).slice(4, -3) + ") : []",
+                );
+            }
+        }
+    }
+    for (const job of retained) {
+        for (const step of job.steps as Fields[]) {
+            step.queueTimeout = 30;
+            step.target ??= legacy.target;
+            delete step.labels;
+            const condition = String(step.guard ?? "${{ false }}").slice(4, -3);
+            step.guard = ex(
+                "(has(inputs.intent) && inputs.intent != null) || (" +
+                    condition + ")",
+            );
+            if (step.forEach) {
+                const loop = step.forEach as Fields;
+                loop.in = ex(
+                    "has(inputs.intent) && inputs.intent != null ? [] : (" +
+                        String(loop.in).slice(4, -3) + ")",
+                );
+            }
+        }
     }
     return {
         id: relocate
@@ -274,20 +435,22 @@ export function parentWorkflow(relocate = false) {
             properties: {
                 operation_id: { type: "integer", minimum: 1 },
                 node_id: { type: "integer", minimum: 1 },
-                kind: { type: "string", enum: [kind] },
+                kind: {
+                    type: "string",
+                    enum: relocate ? [kind] : [kind, "node.role_converge"],
+                },
                 intent: { type: "object" },
+                parent_run_id: { type: "string", format: "uuid" },
                 execution_secrets: references,
             },
             required: [
                 "operation_id",
                 "node_id",
                 "kind",
-                "intent",
-                "execution_secrets",
             ],
             additionalProperties: false,
         },
-        jobs,
+        jobs: [...jobs, ...retained],
     };
 }
 export function generatedParentWorkflows() {

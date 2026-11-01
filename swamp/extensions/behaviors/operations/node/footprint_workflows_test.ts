@@ -53,7 +53,6 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                     "caddy",
                     "peer-dns",
                     "private-dns",
-                    "route-residue",
                     "php-runtime",
                     "tmpfiles",
                     "agent",
@@ -64,7 +63,6 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
                     "caddy",
                     "peer-dns",
                     "private-dns",
-                    "route-residue",
                     "php-runtime",
                     "tmpfiles",
                     "agent",
@@ -84,8 +82,13 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
         const children = jobs.flatMap((job) => job.steps).filter((step) =>
             step.task.type === "workflow"
         );
-        assertEquals(children.length, 1);
-        for (const child of children) {
+        assertEquals(children.length, 2);
+        for (
+            const child of children.filter((child) =>
+                (child.task as Record<string, unknown>).workflowIdOrName !==
+                    "route-residue"
+            )
+        ) {
             assertEquals(
                 (child.task as Record<string, unknown>).workflowIdOrName,
                 "node-role-certificate-publish",

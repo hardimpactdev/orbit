@@ -10,7 +10,10 @@ use App\Domain\Nodes\NativeNodeRoleConvergeInput;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\NodeRoleIntent;
+use App\Domain\Nodes\NodeRoleMetricsInput;
 use App\Domain\Nodes\NodeRoleParentInput;
+use App\Domain\Nodes\NodeRolePlacement;
+use App\Domain\Nodes\NodeRolePublicationInput;
 use App\Domain\Nodes\NodeRoleRelocateInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleSettings;
@@ -43,7 +46,10 @@ final readonly class AdmitNodeRoleRelocateAction
             $prepared = app(NodeRoleRelocateInput::class)->prepare($target, $role, $force, $from);
             $source = Node::query()->lockForUpdate()->findOrFail($prepared['source']->id);
             $assignment = NodeRole::query()->lockForUpdate()->findOrFail($prepared['assignment']->id);
-            if ($source->id === 209 || ! NativeNodeRoleConvergeInput::supportsContribution($target, $role)) {
+            if (! NativeNodeRoleConvergeInput::supportsContribution($target, $role)) {
+                return $this->retain($target, $source, $assignment, $role, $requestId);
+            }
+            if ($source->id === 209) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'This transfer requires its implemented native target and source cleanup.', 422);
             }
             if (! is_string($target->agent_secret_hash) || preg_match('/\A[a-f0-9]{64}\z/D', $target->agent_secret_hash) !== 1) {
@@ -116,5 +122,40 @@ final readonly class AdmitNodeRoleRelocateAction
 
             return $operation;
         });
+    }
+
+    private function retain(Node $target, Node $source, NodeRole $assignment, RoleName $role, ?string $requestId): Operation
+    {
+        foreach ([$source, $target] as $node) {
+            if (! app(NodeRolePlacement::class)->allows($node)) {
+                throw new ResourceOperationException('swamp.node_worker_not_ready', 'Both relocation Nodes require their existing native worker.', 422);
+            }
+        }
+        $operation = $this->operations->execute('node.role_relocate', 'node', $target->id, $target->id,
+            ['node_id' => $target->id, 'role' => $role->value, 'source_node_id' => $source->id], 'operator', $requestId);
+        if (! $operation->wasRecentlyCreated) {
+            return $operation;
+        }
+        $assignment->update(['node_id' => $target->id]);
+        $assignment->claimConvergence();
+        app(NodeRoleSettings::class)->copyForTransfer($source->id, $target->id, $role);
+        if ($role === RoleName::Gateway) {
+            app(GrantGatewayRoleAccessAction::class)->execute($target);
+        }
+        app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
+        $snapshot = app(NodeRoleRelocateInput::class)->capture($target->refresh(), $source, $assignment);
+        $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+        $owner = $metrics === null ? $target->id : ValidatedData::integer($metrics['metrics_node_id']);
+        $this->store->change($operation, ['input' => [...$operation->input, '_relocate' => $snapshot,
+            'participant_node_ids' => array_values(array_unique([$source->id, $target->id,
+                ...NodeRolePublicationInput::participants(ValidatedData::object($snapshot['publication'])),
+                ...NodeRoleCertificateInput::participants(ValidatedData::object($snapshot['certificates'])),
+                ...NodeRoleMetricsInput::participants($metrics)])),
+            'metrics_runtime' => $metrics === null ? null : ['$secret' => 'metrics.fleet_runtime', 'id' => $owner],
+            'private_bindings' => ['metrics_runtime' => ['owner_node_id' => $owner, 'read_node_ids' => $metrics === null ? [] : [$owner], 'write_node_ids' => []]],
+            'secret_hash' => ['$secret' => 'node.agent_secret_hash', 'id' => $target->id],
+            'runtime_material' => ['$secret' => 'node.role_runtime', 'id' => $target->id]]]);
+
+        return $operation;
     }
 }

@@ -1,53 +1,67 @@
-"""Retained residue removal against isolated real filesystem trees."""
+"""Retained removal parity against the canonical native filesystem action."""
 
 import getpass
+import importlib.util
+import json
 import os
-import pathlib
-import re
+import sys
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-PROGRAM = re.search(
-    r"String.raw`(.*?)`;",
-    pathlib.Path(__file__).with_name("system.ts").read_text(),
-    re.DOTALL,
-)[1]
+SCRIPTS = Path(__file__).parent / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+import local
+
+spec = importlib.util.spec_from_file_location("native_remove", SCRIPTS / "remove.py")
+native_remove = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(native_remove)
 
 
 class CertificateRemovalTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = pathlib.Path(self.temp.name)
-        self.ns = {"__name__": "fixture"}
-        exec(PROGRAM, self.ns)  # noqa: S102 - test the retained production program.
-        self.ns["CADDY"] = self.root / "caddy"
+        self.root = Path(self.temp.name)
         self.home = self.root / "home"
         self.home.mkdir()
-        self.uid = os.getuid()
         self.user = getpass.getuser()
-        self.leaf = {"scope": "route-42", "home": str(self.home), "user": self.user}
-        self.lookups = []
-        self.real_run = self.ns["run"]
-
-        def account_lookup(*args):
-            self.lookups.append(args)
-            self.assertEqual(("/usr/bin/getent", "passwd", self.user), args)
-            return f"{self.user}:x:{self.uid}:{os.getgid()}:fixture:{self.home}:/bin/sh\n"
-
-        self.ns["run"] = account_lookup
+        self.identity = SimpleNamespace(
+            pw_uid=os.getuid(), pw_gid=os.getgid(), pw_dir=str(self.home)
+        )
+        self.account_patch = patch.object(
+            local.pwd, "getpwnam", return_value=self.identity
+        )
+        self.lookup = self.account_patch.start()
+        self.addCleanup(self.account_patch.stop)
+        self.addCleanup(patch.stopall)
+        patch.object(local, "CADDY", self.root / "caddy").start()
+        self.caddy = patch.object(
+            native_remove.subprocess,
+            "run",
+            return_value=SimpleNamespace(stdout=json.dumps({"apps": {}}).encode()),
+        ).start()
+        self.leaf = {
+            "scope": "route-42",
+            "home": str(self.home),
+            "user": self.user,
+            "in_use": False,
+        }
         self.paths = self.seed_scope("route-42")
         self.unrelated = self.seed_scope("route-43")
+        self.lookup.reset_mock()
 
     def seed_scope(self, scope):
-        paths = self.ns["roots"]({**self.leaf, "scope": scope})
-        for path in paths:
+        _, root, caddy = local.account({**self.leaf, "scope": scope})
+        for path in (root, caddy):
             path.mkdir(parents=True)
             (path / "leaf.pem").write_text("fixture")
-        return paths
+        return root, caddy
 
     def remove(self, leaf=None):
-        return self.ns["execute"]("certificate.remove-leaf", self.leaf if leaf is None else leaf)
+        return native_remove.remove(self.leaf if leaf is None else leaf)
 
     def assert_preserved(self):
         for path in (*self.paths, *self.unrelated):
@@ -55,25 +69,28 @@ class CertificateRemovalTest(unittest.TestCase):
 
     def test_remove_clears_only_the_admitted_scope_and_is_repeatable(self):
         for _ in range(2):
-            self.assertEqual({}, self.remove())
+            self.assertEqual({"applied": True}, self.remove())
         self.assertTrue(all(not path.exists() for path in self.paths))
         for path in self.unrelated:
             self.assertEqual("fixture", (path / "leaf.pem").read_text())
 
     def test_absent_home_resolves_from_the_admitted_user(self):
-        self.assertEqual({}, self.remove({"scope": "route-42", "user": self.user}))
-        self.assertEqual([("/usr/bin/getent", "passwd", self.user)], self.lookups)
-        self.assertTrue(all(not path.exists() for path in self.paths))
+        leaf = dict(self.leaf)
+        del leaf["home"]
+        self.assertEqual({"applied": True}, self.remove(leaf))
+        self.lookup.assert_called_once_with(self.user)
 
     def test_mismatched_home_refuses_before_deletion(self):
         with self.assertRaisesRegex(ValueError, "certificate.home_mismatch"):
             self.remove({**self.leaf, "home": str(self.root / "foreign")})
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
     def test_wrong_home_owner_refuses_before_deletion(self):
-        self.uid += 1
+        self.identity.pw_uid += 1
         with self.assertRaisesRegex(ValueError, "certificate.home_unsafe"):
             self.remove()
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
     def test_symlink_home_refuses_before_deletion(self):
@@ -82,42 +99,59 @@ class CertificateRemovalTest(unittest.TestCase):
         self.home.symlink_to(target)
         with self.assertRaisesRegex(ValueError, "certificate.home_unsafe"):
             self.remove()
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
     def test_invalid_username_refuses_before_lookup_or_deletion(self):
         for user in ("orbit;id", "../orbit", "", None):
-            with self.subTest(user=user), self.assertRaisesRegex(ValueError, "certificate.account_invalid"):
+            with (
+                self.subTest(user=user),
+                self.assertRaisesRegex(ValueError, "certificate.account_invalid"),
+            ):
                 self.remove({**self.leaf, "user": user})
-        self.assertEqual([], self.lookups)
+        self.lookup.assert_not_called()
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
     def test_invalid_scope_refuses_before_deletion(self):
         for scope in ("../route-42", "role-gateway", "route-0", "route-42/.."):
             with self.subTest(scope=scope), self.assertRaises(ValueError):
                 self.remove({**self.leaf, "scope": scope})
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
-    def test_removed_actions_refuse_before_lookup_or_effects(self):
-        for action in ("certificate.request-leaf", "certificate.publish-leaf", "certificate.inspect-leaf"):
-            with self.subTest(action=action), self.assertRaises(ValueError):
-                self.ns["execute"](action, self.leaf)
-        self.assertEqual([], self.lookups)
+    def test_missing_or_invalid_account_refuses_before_caddy_or_deletion(self):
+        with (
+            patch.object(local.pwd, "getpwnam", side_effect=KeyError(self.user)),
+            self.assertRaisesRegex(ValueError, "certificate.account_invalid"),
+        ):
+            self.remove()
+        self.identity.pw_uid = "invalid"
+        with self.assertRaisesRegex(ValueError, "certificate.account_invalid"):
+            self.remove()
+        self.caddy.assert_not_called()
         self.assert_preserved()
 
-    def test_retained_program_exposes_no_issuance_trust_or_reload_helpers(self):
+    def test_native_removal_only_reads_caddy_and_never_signs_or_reloads(self):
+        self.remove()
+        self.assertEqual(1, self.caddy.call_count)
         self.assertEqual(
-            {"run", "local_account", "roots", "execute"},
-            {key for key, value in self.ns.items() if callable(value) and key != "P"},
+            [
+                "caddy",
+                "adapt",
+                "--config",
+                "/etc/caddy/Caddyfile",
+                "--adapter",
+                "caddyfile",
+            ],
+            self.caddy.call_args.args[0],
         )
-        for command in ("openssl", "systemctl", "update-ca-certificates"):
-            self.assertNotIn(command, PROGRAM)
 
-    def test_fixed_getent_reads_the_existing_account(self):
-        self.ns["run"] = self.real_run
-        uid, gid, home = self.ns["local_account"]({"user": self.user})
-        self.assertEqual(os.getuid(), uid)
-        self.assertIsInstance(gid, int)
-        self.assertTrue(pathlib.Path(home).is_dir())
+    def test_fixed_account_lookup_reads_the_existing_account(self):
+        self.account_patch.stop()
+        user, root, _ = local.account({"scope": "route-42", "user": self.user})
+        self.assertEqual(os.getuid(), user.pw_uid)
+        self.assertEqual(Path(user.pw_dir) / ".orbit/certificates/route-42", root)
 
 
 if __name__ == "__main__":

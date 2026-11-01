@@ -108,7 +108,6 @@ export const fixtureFootprint: StageAction = async (
       account: () => Promise.resolve({ home: "/home/nckrtl", group: "nckrtl" }),
       install: unexpected,
       dns: unexpected,
-      residue: unexpected,
       network: unexpected,
     })(stage, snapshot, gateway, binaryChanged, signal);
   }

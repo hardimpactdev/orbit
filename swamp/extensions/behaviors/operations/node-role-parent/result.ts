@@ -15,7 +15,37 @@ export function parentResult(raw: unknown) {
             ? steps.role_result.outputs
             : undefined,
     );
-    const target = parsed.success ? parsed.data : null;
+    type Contribution = z.infer<typeof RoleConvergeContribution>;
+    type ParentArtifact = {
+        name: string;
+        status: "applied" | "unchanged" | "skipped";
+        reason?: string;
+    };
+    const target:
+        | (Omit<Contribution, "footprint"> & {
+            footprint: Omit<Contribution["footprint"], "artifacts"> & {
+                artifacts: ParentArtifact[];
+            };
+        })
+        | null = parsed.success ? parsed.data : null;
+    if (
+        target !== null && steps.route_residue &&
+        steps.route_residue.status !== "skipped"
+    ) {
+        const receipt = steps.route_residue.status === "succeeded"
+            ? steps.route_residue.outputs?.result as
+                | Record<string, unknown>
+                | undefined
+            : undefined;
+        const completed = receipt?.ready === true;
+        target.footprint.artifacts.push({
+            name: "route-residue",
+            status: completed
+                ? (receipt.changed ? "applied" : "unchanged")
+                : "skipped",
+            ...(!completed ? { reason: "route_residue_cleanup_failed" } : {}),
+        });
+    }
     const target_completed = target !== null && target.role_proven &&
         target.runtime_proven && target.certificates_proven &&
         target.publication_proven;
@@ -62,7 +92,7 @@ export function parentResult(raw: unknown) {
 }
 export const behavior = {
     type: "@nckrtl/node-role-parent-result",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         result: {
             schema: z.record(z.string(), z.unknown()),

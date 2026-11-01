@@ -10,8 +10,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FakeFootprintArtifact;
 use Tests\Support\Fleet\FleetFixtures;
 
@@ -24,6 +26,10 @@ beforeEach(function (): void {
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agents);
+    config(['swamp.run_token' => 'fake.run']);
+    $this->socket = new FakeRoutePublicationSocket;
+    $this->socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $this->socket);
     DB::beginTransaction();
 });
 
@@ -50,14 +56,14 @@ it('records native role and footprint intent without an executor hold child or h
 });
 
 it('refuses unsupported or unplaced role roots before recording an Operation or assignment', function (string $reason): void {
-    $role = RoleName::Database;
+    $role = $reason === 'workerless' ? RoleName::CiRunner : RoleName::Database;
     match ($reason) {
         'workerless' => config(['swamp_workers.nodes' => []]),
         'identity' => $this->node->forceFill(['agent_secret_hash' => null])->save(),
     };
     $before = Operation::query()->count();
     expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, $role))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', RoleName::Database)->exists())->toBeFalse();
+    expect(Operation::query()->count())->toBe($before)->and($this->node->roles()->where('role', $role)->exists())->toBeFalse();
 })->with(['workerless', 'identity']);
 
 it('rolls back the assignment and intent when an applicable footprint contribution is unsupported', function (): void {

@@ -10,6 +10,8 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Fleet\NodeCliState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -19,20 +21,42 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Projects terminal native facts, including a ready target followed by failed source cleanup. */
-final readonly class NodeRoleParentProjection implements DirectOperationProjection, NativeOperationProjection
+final readonly class NodeRoleParentProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function native(Operation $operation): bool
     {
-        return true;
+        return isset($operation->input['intent']);
+    }
+
+    public function workflowInput(Operation $operation): array
+    {
+        return $this->native($operation) ? $this->input($operation) : [];
+    }
+
+    public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
+    {
+        app(NodeRoleDirectProjection::class)->assertPublicParticipant($operation, $callerNodeId);
+    }
+
+    public function publicInput(Operation $operation, int $callerNodeId): array
+    {
+        return app(NodeRoleDirectProjection::class)->publicInput($operation, $callerNodeId);
     }
 
     public function input(Operation $operation): array
     {
+        if (! $this->native($operation)) {
+            return app(NodeRoleDirectProjection::class)->input($operation);
+        }
+
         return ['intent' => $operation->input['intent'], 'execution_secrets' => $operation->input['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if (! $this->native($operation)) {
+            return app(NodeRoleDirectProjection::class)->apply($operation, $data);
+        }
         $status = OperationStatus::from(ValidatedData::string($data['status']));
         if (! $status->terminal()) {
             throw new ResourceOperationException('operation.result_invalid', 'Role parents project native terminal results only.', 422);

@@ -325,12 +325,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/certificates/system.ts",
-      "rule": "inline-script",
-      "count": 39,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/conn/maintenance.ts",
       "rule": "gateway-http",
       "count": 2,

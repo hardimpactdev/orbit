@@ -7,6 +7,7 @@ import os
 import pathlib
 import pwd
 import re
+import stat
 import subprocess
 import sys
 
@@ -26,19 +27,42 @@ def openssl(*args):
 
 
 def account(raw):
-    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", raw["user"]):
+    if not isinstance(raw.get("user"), str) or not re.fullmatch(
+        r"[a-z_][a-z0-9_-]{0,31}", raw["user"]
+    ):
         raise ValueError("certificate.account_invalid")
     if not re.fullmatch(
         r"(?:app-instance-[1-9][0-9]*(?:-hostname-change)?|route-[1-9][0-9]*(?:-router(?:-hostname-change)?|-ingress)?)",
         raw["scope"],
     ):
         raise ValueError("certificate.scope_invalid")
-    user = pwd.getpwnam(raw["user"])
+    try:
+        user = pwd.getpwnam(raw["user"])
+    except KeyError:
+        raise ValueError("certificate.account_invalid") from None
+    if (
+        type(user.pw_uid) is not int
+        or user.pw_uid < 0
+        or type(user.pw_gid) is not int
+        or user.pw_gid < 0
+        or not isinstance(user.pw_dir, str)
+    ):
+        raise ValueError("certificate.account_invalid")
     if raw.get("home", user.pw_dir) != user.pw_dir:
         raise ValueError("certificate.home_mismatch")
-    home = pathlib.Path(user.pw_dir)
-    if not home.is_absolute():
+    if (
+        not user.pw_dir.startswith("/")
+        or any(part in ("", ".", "..") for part in user.pw_dir[1:].split("/"))
+        or any(char in user.pw_dir for char in ("\r", "\n"))
+    ):
         raise ValueError("certificate.account_invalid")
+    home = pathlib.Path(user.pw_dir)
+    try:
+        info = home.lstat()
+    except OSError:
+        raise ValueError("certificate.home_unsafe") from None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != user.pw_uid:
+        raise ValueError("certificate.home_unsafe")
     return user, home / ".orbit/certificates" / raw["scope"], CADDY / raw["scope"]
 
 
@@ -117,7 +141,7 @@ def emit(action):
     try:
         result = action(json.loads(os.environ["ORBIT_CERTIFICATE_INPUT"]))
         print(json.dumps(result))
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - keep private exception details out of native output.
         code = str(error)
         if not re.fullmatch(r"certificate\.[a-z_]+", code):
             code = "certificate.action_failed"

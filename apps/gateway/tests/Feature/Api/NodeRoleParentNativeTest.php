@@ -14,7 +14,9 @@ use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\RouteRemovalResidue;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FakeFootprintArtifact;
@@ -49,8 +51,15 @@ it('admits a newly assigned Database through209 without a per-Node worker or pri
         ->and($inputs['intent']['target']['ssh']['control_node_id'])->toBe(209)
         ->and($inputs['intent']['target']['ssh']['target']['host_keys'])->toBe([$this->node->ssh_host_key_type.' '.$this->node->ssh_host_key])
         ->and($inputs['execution_secrets']['observer']['key'])->toBe('node-role-'.$operation->id.'-observer')
-        ->and(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('e', 64), 'runtime_material')
-        ->and(app(DirectOperation::class)->definition('node.role_add'))->not->toHaveKey('private_material');
+        ->and(json_encode($inputs, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('e', 64), 'runtime_material');
+});
+
+it('projects the exact WebSocket certificate version admitted to native publication', function (): void {
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::WebSocket);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($operation->input['_role']['certificates'])
+        ->toBe($input['intent']['target']['certificates']);
 });
 
 it('captures a real pre-transfer WebSocket source while preserving credentials until source success', function (): void {
@@ -95,9 +104,35 @@ it('projects ready target and source-cleanup failure only at terminal and retain
         ->and($operation->fresh()->status->value)->toBe('failed');
 });
 
-it('refuses unsupported native roles before recording any assignment or vault effect', function (): void {
-    expect(fn () => app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::AppDev))->toThrow(ResourceOperationException::class);
-    expect(Operation::query()->count())->toBe(0)->and($this->node->roles()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+it('keeps the existing worker route for roles outside the native contribution', function (RoleName $role): void {
+    config(['swamp_workers.nodes' => [$this->node->id]]);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, $role);
+
+    expect($operation->input['_role']['role'])->toBe($role->value)
+        ->and($operation->input)->not->toHaveKeys(['intent', 'native_role', 'execution_secrets'])
+        ->and(app(DirectOperation::class)->usesNativeTerminal($operation))->toBeFalse()
+        ->and(app(DirectOperation::class)->workflowInputs($operation))->toEqual([
+            'execution_secrets' => (object) [], 'operation_id' => $operation->id,
+            'kind' => 'node.role_add', 'node_id' => $this->node->id,
+        ])
+        ->and($this->node->roles()->sole()->role)->toBe($role)
+        ->and($this->socket->sent)->toBe([]);
+})->with([RoleName::AppDev, RoleName::CiRunner]);
+
+it('keeps the existing Gateway relocation route and its captured source', function (): void {
+    $source = Node::query()->where('name', 'gateway')->firstOrFail();
+    config(['swamp_workers.nodes' => [$source->id, $this->node->id]]);
+    $assignment = $source->roles()->sole();
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->relocate($this->node, RoleName::Gateway, true);
+
+    expect($operation->input)->not->toHaveKeys(['intent', 'native_role', 'execution_secrets'])
+        ->and($operation->input['_relocate']['source_node_id'])->toBe($source->id)
+        ->and($operation->input['_relocate']['source']['assignment_id'])->toBe($assignment->id)
+        ->and($operation->input['_relocate']['target']['node_id'])->toBe($this->node->id)
+        ->and(app(DirectOperation::class)->usesNativeTerminal($operation))->toBeFalse()
+        ->and($this->node->roles()->sole()->id)->toBe($assignment->id);
 });
 
 it('records a cancelled parent once without claiming its assignment active', function (): void {
@@ -144,5 +179,20 @@ it('keeps a proven target active when cancellation skips the final aggregate', f
         ->and($this->node->roles()->sole()->status->value)->toBe('active')
         ->and(app(SettingRepository::class)->get(new SettingScope(SettingScopeType::Node, $source->id), 'websocket.reverb.laravel_app_key'))->toBeString();
     expect(app(DirectOperation::class)->definition('node.role_relocate')['terminal_result']['captures']['target'])
-        ->toBe(['job' => 'target', 'step' => 'role_result']);
+        ->toBe(['job' => 'target', 'step' => 'forward_role_result']);
+});
+
+it('captures required Route residue for the parent without refusing the implemented contribution', function (): void {
+    FleetFixtures::bind([new FakeFootprintArtifact('agent', str_repeat('a', 64)), new FakeFootprintArtifact('route-residue', str_repeat('b', 64))]);
+    $row = RouteRemovalResidue::query()->create(['node_id' => $this->node->id, 'route_id' => 1999,
+        'domain' => 'removed.orbit', 'steps' => ['certificates', 'firewall'], 'attempts' => 0]);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->add($this->node, RoleName::Database);
+    $input = app(DirectOperation::class)->workflowInputs($operation);
+
+    expect($input['intent']['target']['residue']['residue']['rows'][0]['id'])->toBe($row->id)
+        ->and($input['intent']['target']['residue']['ssh']['control_node_id'])->toBe(209)
+        ->and(array_column($input['intent']['target']['footprint']['artifacts'], 'name'))->not->toContain('route-residue')
+        ->and(array_column($operation->input['_role']['footprint']['artifacts'], 'name'))->toContain('route-residue');
+    $this->assertModelExists($row);
 });

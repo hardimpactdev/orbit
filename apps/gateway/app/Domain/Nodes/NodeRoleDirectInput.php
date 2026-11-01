@@ -14,6 +14,7 @@ use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\MachineSoftware\NodeRecipeProgram;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Nodes\Roles\RolePrerequisites;
+use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -42,6 +43,7 @@ final readonly class NodeRoleDirectInput
 
         return ['proxy_node_ids' => app(NodeRolePlacement::class)->proxyNodeIds(), 'schema_version' => 1, 'node_id' => $node->id, 'agent_sha256' => $this->delivery->pin($node),
             'assignment_id' => $assignment->id, 'role' => $role->value, 'created' => $created, 'user' => $node->user,
+            'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
             'prerequisites' => $prerequisites, 'firewall' => $role === RoleName::Database ? null : $this->firewall->converge($node, $role),
             'footprint' => $footprint,
             'javascript' => in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? NodeRecipeProgram::javascript($node, $role) : null,

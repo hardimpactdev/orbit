@@ -1,0 +1,10 @@
+manifestVersion: 1
+name: "@nckrtl/route-residue-command"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Native Route residue assets and bounded terminal facts.
+behaviors:
+  - operations/routes/residue-command/assets.ts
+additionalFiles:
+  - scripts/residue.py

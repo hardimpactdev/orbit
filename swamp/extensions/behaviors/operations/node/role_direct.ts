@@ -39,7 +39,7 @@ const Outcome = z.object({
 }).strict();
 const Current = z.object({
     id: z.number().int().positive(),
-    kind: z.literal("node.role_converge"),
+    kind: z.enum(["node.role_add", "node.role_converge", "node.role_relocate"]),
     node_id: z.number().int().positive(),
     status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
     input: z.preprocess(stripRolePublication, RoleSnapshot),
@@ -73,6 +73,7 @@ const FollowUpArgs = RoleArgs.extend({
 });
 const CliArgs = FollowUpArgs;
 const ProjectArgs = FollowUpArgs.extend({
+    cleanup: z.object({ ready: z.boolean() }).nullable().optional(),
     cli: CliConvergeResult.nullable(),
     dependencies: z.object({ ready: z.boolean() }).passthrough().nullable()
         .optional(),
@@ -90,7 +91,7 @@ function baselineProof(outcomes: z.infer<typeof Outcome>[]) {
     }
     return failure;
 }
-/** Retained convergence aggregation; add and relocation use the native parent. */
+/** Existing role aggregation retained for contributions not yet converted. */
 export function roleResult(args: z.infer<typeof ProjectArgs>) {
     const snapshot = args.admission.snapshot;
     const installationFailure = args.baseline.length === 0
@@ -172,7 +173,7 @@ export function nodeRoleAdd(
     };
     return {
         type: "@nckrtl/node-role-add-direct",
-        version: "2026.10.31.1",
+        version: "2026.11.01.3",
         globalArguments: Globals,
         resources: {
             ...parentManagerResources,
@@ -596,6 +597,34 @@ export function nodeRoleAdd(
                     return { ok: !Object.hasOwn(outcome, "error_code") };
                 },
             },
+            targetReady: {
+                description:
+                    "Record the confirmed target before source cleanup starts",
+                arguments: ProjectArgs,
+                execute: async (
+                    raw: z.infer<typeof ProjectArgs>,
+                    ctx: Context,
+                ) => {
+                    const args = ProjectArgs.parse(raw);
+                    if (args.kind !== "node.role_relocate") {
+                        throw new Error("role.target_root_changed");
+                    }
+                    const { result, code, cancelled } = roleResult(args);
+                    if (code || cancelled) {
+                        throw new Error(code ?? "operation.cancelled");
+                    }
+                    await gateway(args, ctx).project({
+                        status: "running",
+                        started_at: args.admission.started_at,
+                        result: { ...result, target_completed: true },
+                    });
+                    await ctx.writeResource("outcome", "target-ready", {
+                        stage: "target-ready",
+                        ok: true,
+                    });
+                    return { ready: true };
+                },
+            },
             project: {
                 description:
                     "Project bounded assignment state and optional follow-ups without Gateway execution",
@@ -610,9 +639,19 @@ export function nodeRoleAdd(
                         throw new Error("Projection changed the admitted Node");
                     }
                     const evaluated = roleResult(args);
-                    const code = evaluated.code;
+                    const cleanupFailed = args.kind === "node.role_relocate" &&
+                        !evaluated.code && args.cleanup?.ready !== true;
+                    const code = cleanupFailed
+                        ? "node_role.source_cleanup_failed"
+                        : evaluated.code;
                     const cancelled = evaluated.cancelled;
-                    const result = evaluated.result;
+                    const result = cleanupFailed
+                        ? {
+                            ...evaluated.result,
+                            error_code: code,
+                            failed_step: "source",
+                        }
+                        : evaluated.result;
                     await gateway(args, ctx).project({
                         status: cancelled
                             ? "cancelled"

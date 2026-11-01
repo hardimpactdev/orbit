@@ -56,9 +56,10 @@ return ['node.worker_known_hosts' => [
 ], 'node.role_add' => [
     'workflow' => 'operation-node-role-add-direct',
     'projection' => NodeRoleParentProjection::class,
+    'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'result', 'step' => 'result', 'captures' => [
-        'target' => ['job' => 'target', 'step' => 'role_result'],
+        'target' => ['job' => 'target', 'step' => 'forward_role_result'],
         'target_rollback' => ['job' => 'rollback', 'step' => 'target_rollback', 'field' => 'result'],
     ]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-(observer|runtime_material)$']],
@@ -72,9 +73,10 @@ return ['node.worker_known_hosts' => [
 ], 'node.role_relocate' => [
     'workflow' => 'operation-node-role-relocate-direct',
     'projection' => NodeRoleParentProjection::class,
+    'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'result', 'step' => 'result', 'captures' => [
-        'target' => ['job' => 'target', 'step' => 'role_result'],
+        'target' => ['job' => 'target', 'step' => 'forward_role_result'],
         'source_cleanup' => ['job' => 'source', 'step' => 'source_cleanup', 'field' => 'result'],
     ]],
     'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-(observer|runtime_material)$']],

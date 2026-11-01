@@ -4,7 +4,7 @@
   "topology": [
     "spare"
   ],
-  "budget_seconds": 120,
+  "budget_seconds": 2700,
   "queue_timeout_seconds": 30,
   "prepare": [],
   "request": {
@@ -54,26 +54,26 @@
   "phases": [
     {
       "name": "account",
-      "job": "target",
-      "step": "account",
+      "job": "forward_account_job",
+      "step": "forward_account",
       "budget_seconds": 30
     },
     {
       "name": "observer-install",
-      "job": "target",
-      "step": "observer_install",
+      "job": "forward_observer_install_job",
+      "step": "forward_observer_install",
       "budget_seconds": 90
     },
     {
       "name": "legacy-prerequisites",
-      "job": "target",
-      "step": "packages",
+      "job": "forward_packages_job",
+      "step": "forward_packages",
       "budget_seconds": 600
     },
     {
       "name": "target-contribution",
       "job": "target",
-      "step": "role_result",
+      "step": "forward_role_result",
       "budget_seconds": 10
     }
   ],

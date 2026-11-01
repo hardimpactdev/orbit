@@ -99,3 +99,38 @@ Deno.test("cancelled rollback is an incomplete cleanup even after target proof",
     assertEquals(result.target_completed, true);
     assertEquals(result.error_code, "websocket.rollback_failed");
 });
+
+Deno.test("failed residue remains retryable without failing a proven role", () => {
+    const result = parentResult({
+        kind: "node.role_add",
+        steps: {
+            role_result: { status: "succeeded", outputs: target },
+            route_residue: {
+                status: "failed",
+                outputs: { result: { ready: true, changed: true } },
+            },
+        },
+    });
+    assertEquals(result.ready, true);
+    assertEquals(result.target?.footprint.artifacts, [{
+        name: "route-residue",
+        status: "skipped",
+        reason: "route_residue_cleanup_failed",
+    }]);
+});
+Deno.test("successful residue contributes its own removal proof", () => {
+    const result = parentResult({
+        kind: "node.role_add",
+        steps: {
+            role_result: { status: "succeeded", outputs: target },
+            route_residue: {
+                status: "succeeded",
+                outputs: { result: { ready: true, changed: true } },
+            },
+        },
+    });
+    assertEquals(result.target?.footprint.artifacts, [{
+        name: "route-residue",
+        status: "applied",
+    }]);
+});
