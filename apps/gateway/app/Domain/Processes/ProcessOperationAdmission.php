@@ -29,14 +29,11 @@ final readonly class ProcessOperationAdmission
     {
         return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            if ($verb === 'create' && $process->runtime === ProcessRuntime::Systemd) {
+            if (in_array($verb, ['create', 'update'], true) && $process->runtime === ProcessRuntime::Systemd) {
                 $input['activation_pending'] = $process->systemd_activation_pending || $process->systemd_activation_hash !== $input['content_hash'];
             }
-            if ($verb === 'update') {
-                $input['installation'] = ['$secret' => 'process.installation', 'id' => $process->id];
-            }
             $nodeId = ValidatedData::integer($input['node_id']);
-            if (! in_array($verb, ['create', 'destroy'], true)) {
+            if (! in_array($verb, ['create', 'update', 'destroy'], true)) {
                 $input['agent_sha256'] = app(AgentDelivery::class)->pin(Node::query()->findOrFail($nodeId));
             }
             $operation = $this->operations->execute('process.'.$verb, 'process', $process->id, $nodeId, $input, 'operator', $requestId);

@@ -29,7 +29,7 @@ final readonly class ProcessLifecycleInput
         $control = Arr::only($input, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
         $intent = ['control' => $control, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node)];
         $copies = [];
-        if ($operation->kind === 'process.create') {
+        if (in_array($operation->kind, ['process.create', 'process.update'], true)) {
             $material = ValidatedData::object($this->secrets->resolve($operation, $operation->target_id, '', 'installation')->value);
             $installation = Arr::only($input, ['process_id', 'runtime', 'name', 'desired', 'on_demand', 'directory', 'content_hash', 'activation_pending', 'spec', 'account_user', 'required_mount_paths']);
             $definition = $input['runtime'] === 'docker' ? ValidatedData::object($material['definition']) : [];
@@ -53,7 +53,7 @@ final readonly class ProcessLifecycleInput
                 $intent['mounts'][] = ['index' => $index, 'path' => $path];
             }
             if ($installation['has_environment']) {
-                $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', 'process-create-operation-'.$operation->id, $environment);
+                $copies['environment'] = $this->steps->executionCopy('orbit-control-inputs', str_replace('.', '-', $operation->kind).'-operation-'.$operation->id, $environment);
             }
             if (isset($input['vite_plan'])) {
                 $intent['vite_plan'] = $input['vite_plan'];

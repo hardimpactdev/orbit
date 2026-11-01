@@ -2056,14 +2056,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/processes-schedules/create.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/processes-schedules/installation.ts",
       "rule": "gateway-http",
       "count": 1,
@@ -3218,7 +3210,6 @@
     {"file":"workflows/workflow-operation-node-remove.yaml","rule":"foreach-shared-identity","count":4,"evidence":["restore_certificate_publish/restore_certificate_publish_${{ self.id }}","restore_certificate_requests/restore_certificate_request_${{ self.id }}","restore_serving/restore_participant_${{ self.member.node_id }}","serving/participant_${{ self.member.node_id }}"]},
     {"file":"workflows/workflow-operation-process-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-process-restart-instance.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
-    {"file":"workflows/workflow-operation-schedule-destroy.yaml","rule":"foreach-shared-identity","count":1,"evidence":["schedule/remove_files"]},
     {"file":"workflows/workflow-operation-schedule-install-instance-definitions.yaml","rule":"foreach-shared-identity","count":1,"evidence":["members/member-${{ string(self.member) }}"]},
     {"file":"workflows/workflow-operation-task-check.yaml","rule":"foreach-shared-identity","count":5,"evidence":["check/base-${{ self._index }}","check/base_prepare-${{ self._index }}","check/base_ready-${{ self._index }}","check/deliverable-${{ self._index }}","check/setup-${{ self._index }}"]},
     {"file":"workflows/workflow-operation-vault-sync.yaml","rule":"foreach-shared-identity","count":1,"evidence":["deletions/delete"]},

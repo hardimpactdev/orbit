@@ -2,7 +2,7 @@
 
 Use these components inside the owning parent's native workflow. There is no installer behavior, child Operation, Gateway client or hidden replacement workflow. The parent owns dependencies, guards, recovery and terminal projection.
 
-## Direct create and destroy
+## Direct create, update and destroy
 
 The direct lifecycle workflows place every step on `orbit-node-209`. They use the canonical SSH input and lane21's shared known_hosts policy. They add no host-key writer or credential type.
 
@@ -10,7 +10,7 @@ The direct lifecycle workflows place every step on `orbit-node-209`. They use th
 
 Three shipped scripts cover gaps in the official models: `lifecycle_environment.py` atomically writes an immutable 0600 EnvironmentFile from environment-only stdin; `lifecycle_container.py` sends one owned Docker create request with the full argv, labels and environment-only stdin; `lifecycle_listener.py` makes one Vite listener ownership observation. The official Docker container model uses `-e` argv and lacks these complete definition fields, so it cannot carry this private material safely. Every other effect uses the official models.
 
-The direct Gateway contracts declare only run/read on the two workflows and read/write on `orbit-control-inputs` keys matching `^process-create-operation-[1-9][0-9]*$`. The shared terminal subscriber records the result. Direct create/destroy do not use a Gateway intent/private-material/result callback. Retained parent/update consumers below remain separate migration work.
+The direct Gateway contracts declare only run/read on the two workflows and read/write on `orbit-control-inputs` keys matching `^process-create-operation-[1-9][0-9]*$` or `^process-update-operation-[1-9][0-9]*$`. The shared terminal subscriber records the result. Direct create/update/destroy do not use a Gateway intent/private-material/result callback. Retained parent consumers below remain separate migration work. Create and update share the existing operation-process-create convergence workflow and UUID; update has no separate callback workflow.
 
 ## Retained parent components
 

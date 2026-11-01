@@ -186,7 +186,7 @@ The parent captures the saved definition through `ProcessOperationAdmission::inp
 
 A runtime switch returns HTTP 422 (`process.option_invalid`) if it would discard an omitted field. For example, switching Docker to systemd requires explicit `image: null`, `ports: []`, and `volumes: []` for populated Docker fields. The SDK uses `clearImage: true` for an explicit null image and `clearWorkingDirectory: true` for an explicit null directory.
 
-The Gateway validates the new specification before changing the runtime, holds the same admission and runtime locks as other Process operations, and verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
+The Gateway validates and stores the new specification, then starts the same Node209 cfgmgmt/SSH convergence workflow as create. Its inputs contain the public unit or Docker definition; only environment values use the named `process-update-operation-{id}` execution copy. The shared terminal reader projects completion without an intent, private-material or result callback. Swamp verifies the exact ownership marker before replacing the unit or container. A Process desired `running` restarts with the new specification; one desired `stopped` is installed but stays stopped. Docker may need a replacement container, but its Orbit Process ID and managed container name stay the same.
 
 Update does not delete named volumes, but replacing a container discards its writable layer. Follow [Move data before removing an override](#move-data-before-removing-an-override) before replacing a stateful container; preserving its ID and links is not a backup.
 
@@ -253,13 +253,13 @@ Systemd replacement installs a checked candidate unit and restores the earlier u
 
 ## On the Node
 
-Direct Process create and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
+Direct Process create, update and destroy use the fixed Node209 workflows with official cfgmgmt and SSH. They do not enter the per-Node control callback or invoke agent actions. The Gateway supplies public definitions and environment-only execution copies, then projects the native terminal result.
 
 Some shared paths still have other callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Per-Node `operation-process-control` and `operation-process-update` | Start/restart and update. Create/destroy are excluded from their admitted kinds. |
+| Per-Node `operation-process-control` | Start/restart. Create/update/destroy use the Node209 convergence and removal workflows. |
 | Native `processAction` and Process installer | Instance transfer, deployment, rollback, definition installation, Node role and Analytics work. Transfer retirement still uses the local remove action. |
 | Gateway `bootstrapCollector` and agent unit stage/activate | AI-router collector convergence. |
 | Gateway synchronous removal and agent `process.remove` | AI-router teardown/rename and Node-role dependent cleanup. |

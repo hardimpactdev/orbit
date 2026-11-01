@@ -7,7 +7,6 @@ import {
   GatewayOperation,
 } from "../_lib/direct.ts";
 import { type LocalCommand, localProcessAction } from "./native-action.ts";
-import { createMethods } from "./create.ts";
 import { Input } from "./process-input.ts";
 import { Preparation, startActions, startMethods } from "./start.ts";
 
@@ -84,11 +83,10 @@ export function processControl(
     gatewayHttp(ctx.globalArgs.gatewayUrl, ctx.globalArgs.caFile),
   action = processAction(),
   start = startActions(),
-  install = localProcessAction,
 ) {
   return {
     type: "@nckrtl/process-control",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     globalArguments: Globals,
     resources: {
       startPreparation: {
@@ -100,7 +98,6 @@ export function processControl(
     },
     methods: {
       ...startMethods(makeHttp, start),
-      ...createMethods(makeHttp, install, start),
       control: {
         description: "Apply admitted Process control on its exact Node worker",
         arguments: Args,

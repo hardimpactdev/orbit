@@ -122,7 +122,7 @@ it('supplies a public first-visit systemd unit with no environment copy when non
         ->and($input['intent']['control'])->not->toHaveKey('agent_sha256');
 });
 
-it('starts update directly with only record admission serialization and keeps private definition bytes out of its input', function (): void {
+it('passes public update intent and only environment bytes through its own native execution copy', function (): void {
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     $process = Process::query()->sole();
@@ -130,21 +130,55 @@ it('starts update directly with only record admission serialization and keeps pr
     app()->instance(ProcessAdmissionLock::class, Mockery::mock(ProcessAdmissionLock::class)->shouldNotReceive('run')->getMock());
 
     config(['dependency_detection.services_node_id' => $this->node->id, 'operation_executor.worker_node_ids' => [(string) $this->node->id]]);
-    $this->patchJson('/api/v1/processes/'.$process->id, ['environment' => ['PASSWORD' => 'update-private-value']])->assertAccepted()->assertJsonPath('data.kind', 'process.update');
+    $secret = 'update-private-value';
+    $this->patchJson('/api/v1/processes/'.$process->id, ['environment' => ['PASSWORD' => $secret], 'image' => 'example:updated'])
+        ->assertAccepted()->assertJsonPath('data.kind', 'process.update')->assertDontSee($secret);
 
     $operation = Operation::query()->where('kind', 'process.update')->sole();
     expect($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676')
         ->and($operation->lock_key)->toBeNull()
-        ->and($operation->input['installation'])->toBe(['$secret' => 'process.installation', 'id' => $process->id])
-        ->and($operation->input)->not->toHaveKeys(['environment', 'command', 'content', 'image'])
-        ->and(json_encode($operation->toArray()))->not->toContain('update-private-value');
-    config(['dependency_detection.services_node_id' => $this->node->id]);
+        ->and($operation->input)->not->toHaveKeys(['installation', 'agent_sha256', 'environment', 'command', 'content', 'image'])
+        ->and(json_encode($operation->toArray()))->not->toContain($secret);
     $path = '/api/v1/direct-operations/'.$operation->id;
     $query = '?run_id='.$operation->state['swamp_run_id'];
-    $this->getJson($path.$query)->assertOk()->assertJsonPath('data.input.installation.process_id', $process->id)
-        ->assertJsonMissingPath('data.input.installation.definition');
-    $this->getJson($path.'/private-material'.$query)->assertOk()->assertJsonPath('data.installation.definition.environment.PASSWORD', 'update-private-value');
+    $input = $this->getJson($path.$query)->assertOk()->assertDontSee($secret)->json('data.input');
+    expect($input['intent']['installation']['process_id'])->toBe($process->id)
+        ->and($input['intent']['installation']['definition']['image'])->toBe('example:updated')
+        ->and($input['intent']['installation']['definition'])->not->toHaveKey('environment')
+        ->and($input['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'process-update-operation-'.$operation->id]);
+    $puts = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'vault.put'));
+    expect($puts)->toHaveCount(1)
+        ->and(json_decode($puts[0]['payload']['value'], true, flags: JSON_THROW_ON_ERROR))->toBe(['PASSWORD' => $secret]);
+    $runs = array_values(array_filter($this->socket->sent, fn (array $message): bool => $message['type'] === 'workflow.run'));
+    expect(end($runs)['payload']['workflowIdOrName'])->toBe('operation-process-create')
+        ->and(end($runs)['payload']['inputs']['kind'])->toBe('process.update')
+        ->and(json_encode(end($runs), JSON_THROW_ON_ERROR))->not->toContain($secret);
+    $this->getJson($path.'/private-material'.$query)->assertUnprocessable();
     Queue::assertNothingPushed();
+});
+
+it('passes a changed systemd unit publicly while keeping managed update environment private', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'node', 'target_id' => $this->node->id, 'name' => 'update-unit',
+        'runtime' => 'systemd', 'command' => ['/usr/bin/true'], 'start' => false,
+    ])->assertAccepted();
+    Operation::query()->sole()->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    $process = Process::query()->sole();
+    $secret = 'managed-systemd-update-private';
+    $process->update(['status' => 'active', 'systemd_activation_pending' => false,
+        'runtime_config' => [...$process->runtime_config, 'environment' => ['TOKEN' => $secret]]]);
+    $this->patchJson('/api/v1/processes/'.$process->id, ['command' => ['/usr/bin/sleep', '45']])->assertAccepted();
+    $operation = Operation::query()->where('kind', 'process.update')->sole();
+    $input = $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$operation->state['swamp_run_id'])
+        ->assertOk()->assertDontSee($secret)->json('data.input');
+    $installation = $input['intent']['installation'];
+    expect($installation['unit'])->toContain('ExecStart=', '45', 'EnvironmentFile=')
+        ->and($installation['unit'])->not->toContain($secret)
+        ->and(hash('sha256', $installation['unit']))->toBe($installation['content_hash'])
+        ->and($installation['activation_pending'])->toBeTrue()
+        ->and($installation['has_environment'])->toBeTrue()
+        ->and($input['execution_secrets']['environment']['key'])->toBe('process-update-operation-'.$operation->id)
+        ->and($operation->input)->not->toHaveKeys(['installation', 'agent_sha256']);
 });
 
 it('settles pending activation metadata from a bounded native update result', function (): void {
@@ -238,14 +272,18 @@ it('projects lifecycle terminal history and preserves a failed Process for fix f
     $this->postJson('/api/v1/processes', $this->payload)->assertAccepted();
     $process = Process::query()->sole();
     $operation = Operation::query()->sole();
-    if ($verb === 'destroy') {
+    if ($verb !== 'create') {
         $operation->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
         $process->update(['status' => 'active']);
-        $this->deleteJson('/api/v1/processes/'.$process->id)->assertAccepted();
-        $operation = Operation::query()->where('kind', 'process.destroy')->sole();
+        if ($verb === 'destroy') {
+            $this->deleteJson('/api/v1/processes/'.$process->id)->assertAccepted();
+        } else {
+            $this->patchJson('/api/v1/processes/'.$process->id, ['image' => 'example:updated'])->assertAccepted();
+        }
+        $operation = Operation::query()->where('kind', 'process.'.$verb)->sole();
     }
     $run = $operation->state['swamp_run_id'];
-    $history = ['id' => $run, 'workflowName' => 'operation-process-'.$verb, 'status' => $status,
+    $history = ['id' => $run, 'workflowName' => 'operation-process-'.($verb === 'update' ? 'create' : $verb), 'status' => $status,
         'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
         'startedAt' => '2026-11-01T00:00:00Z', 'completedAt' => '2026-11-01T00:00:01Z',
         'jobs' => [['name' => 'process', 'steps' => $status === 'failed' ? [] : [
@@ -269,7 +307,7 @@ it('projects lifecycle terminal history and preserves a failed Process for fix f
     } else {
         expect($process->fresh()->status->value)->toBe('active');
     }
-})->with([['create', 'succeeded'], ['create', 'failed'], ['destroy', 'succeeded'], ['destroy', 'failed']]);
+})->with([['create', 'succeeded'], ['create', 'failed'], ['update', 'succeeded'], ['update', 'failed'], ['destroy', 'succeeded'], ['destroy', 'failed']]);
 
 it('keeps activation pending until native acceptance records the rendered unit hash', function (): void {
     $this->postJson('/api/v1/processes', [

@@ -23,7 +23,7 @@ final readonly class ProcessControlProjection implements DirectOperationProjecti
 
     public function input(Operation $operation): array
     {
-        if (in_array($operation->kind, ['process.create', 'process.destroy'], true)) {
+        if (in_array($operation->kind, ['process.create', 'process.update', 'process.destroy'], true)) {
             return app(ProcessLifecycleInput::class)->forOperation($operation);
         }
 
