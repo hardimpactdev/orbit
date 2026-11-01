@@ -278,6 +278,8 @@ The `Recipe artifact mirror` workflow, `.github/workflows/php-build-mirror.yml`,
 
 Sury, Launchpad, and Zabbly can delete superseded builds. The mirror keeps rollbacks, new Nodes, images, and CI on the exact build after that.
 
+Once upstream deletes a build, the mirror holds the only durable copy. The recipe URL stays as the pin's provenance and as the source that the workflow seeds a new pin from, while upstream still serves it. So every installer tries the mirror first, then the recipe URL, the native `composer` Tool Manager's package transaction included. A download that fails moves on to the next URL. A file that does not match its recipe digest fails at once and never falls back.
+
 #### Bump Vite+
 
 Change both `vp` and `vp-cli` versions, URLs, and integrity pins together. Regenerate `apps/gateway/resources/machine-software/vite-plus-package-lock.json` with the recipe's Node/npm, using a private package whose only dependency is the exact `vite-plus` version and `npm install --package-lock-only --ignore-scripts`. Review the complete lock, including platform packages. Update `tools.vp.lock_sha256` to the file's SHA-256. This digest is part of the recipe identity. Both images and Nodes install the locked runtime with scripts disabled and keep the existing global tool store.

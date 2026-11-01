@@ -23,6 +23,15 @@ Deno.test("manager setup accepts only admitted public pins and binds shipped fil
   }
 });
 
+Deno.test("composer apt artifacts carry their mirror-first candidate URLs", () => {
+  const artifact = { urls: ["https://mirror.example/git_" + "a".repeat(64) + ".deb", "https://origin.example/git.deb"], algorithm: "sha256", digest: "a".repeat(64) };
+  const value = (packed: unknown) => ({ manager: "composer", input: { user: "orbit", version: "2.9.5-1" }, apt: { snapshot: "20260101T000000Z", packages: [{ name: "git", version: "1:2.55.0", artifact: packed }] }, packages: [] });
+  assertEquals(Setup.safeParse(value(artifact)).success, true);
+  assertEquals(Setup.safeParse(value({ url: artifact.urls[1], algorithm: "sha256", digest: artifact.digest })).success, false);
+  assertEquals(Setup.safeParse(value({ ...artifact, urls: [] })).success, false);
+  assertEquals(Setup.safeParse(value({ ...artifact, urls: ["http://origin.example/git.deb"] })).success, false);
+});
+
 Deno.test("manager setup scripts refuse foreign launchers and recover interrupted owned scopes", async () => {
   const result = await new Deno.Command("python3", { args: [new URL("tool_setup_scripts_test.py", import.meta.url).pathname], env: { PYTHONDONTWRITEBYTECODE: "1" }, stderr: "piped" }).output();
   assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));

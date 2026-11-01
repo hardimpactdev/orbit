@@ -1,15 +1,41 @@
 """Install the enrollment's exact OS package set from its admitted snapshot/artifacts."""
 
 import hashlib
+import http.client
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
 
 OS_RELEASE = pathlib.Path("/etc/os-release")
+
+
+def fetch(artifact, path):
+    """Try each admitted URL in order, mirror first. A wrong digest fails closed; it never falls back."""
+    urls = artifact["urls"]
+    for index, url in enumerate(urls):
+        try:
+            # Like the Node agent's curl --max-time 600: a stalled or broken download moves on.
+            with (
+                urllib.request.urlopen(url, timeout=600) as response,
+                path.open("wb") as target,
+            ):
+                shutil.copyfileobj(response, target)
+        except (OSError, http.client.HTTPException):
+            if index == len(urls) - 1:
+                raise
+            continue
+        with path.open("rb") as stream:
+            if (
+                hashlib.file_digest(stream, artifact["algorithm"]).hexdigest()
+                != artifact["digest"]
+            ):
+                raise ValueError("node.tool_artifact_mismatch")
+        return
 
 
 def install(value):
@@ -54,18 +80,7 @@ def install(value):
                 argv.append(package["name"] + "=" + package["version"])
             else:
                 path = work / (package["name"] + ".deb")
-                with (
-                    urllib.request.urlopen(artifact["url"]) as response,
-                    path.open("wb") as target,
-                ):
-                    __import__("shutil").copyfileobj(response, target)
-                if (
-                    hashlib.file_digest(
-                        path.open("rb"), artifact["algorithm"]
-                    ).hexdigest()
-                    != artifact["digest"]
-                ):
-                    raise ValueError("node.tool_artifact_mismatch")
+                fetch(artifact, path)
                 found = [
                     subprocess.check_output(
                         ["dpkg-deb", "-f", str(path), field], text=True
