@@ -57,7 +57,7 @@ export async function assets(
 }
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.11.1.1",
+    version: "2026.11.01.1",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         known_hosts_script: {
