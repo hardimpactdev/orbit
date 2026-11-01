@@ -5,6 +5,8 @@ or Gateway kind. Its workflow inputs are `expectations_hash` and `expectations`.
 The latter contains `proof_project_id` (62 in the proof fixture) and the complete
 recorded VM identity/work facts captured by `TaskVmReaperInput`.
 
+The plan names its inspect steps in target order. Selection receives only those statuses and the stat exit code, signal, stdout and stderr. It never receives the complete workflow step context.
+
 The native selector uses Task `created_at` for one-shot `proof …` groups (45 minutes).
 Persistent `topology …` groups use the existing root-owned host marker
 `/var/lib/orbit/swamp-proof/last-run`: sixty minutes without a run, with an eight
@@ -19,9 +21,9 @@ topology or cleanup receipt. Selection budget:
 `timeout 10`; native `queueTimeout`: 15 seconds. Cleanup remains the existing
 `tasks.cancel` / `task_vm.destroy` workflows with their own phase budgets.
 
-The F13 request fixture format requires an admitted Gateway Operation. B must
-supply its schedule mode before this producer can attach a valid
-`bin/swamp-proof` fixture; this directory does not invent a kind or binding.
+The F13 request fixture format requires an admitted Gateway Operation. The proof runner must
+supply schedule mode before this producer can attach a valid
+`bin/swamp-proof` fixture; this directory does not invent a kind or binding. F coordinates the schedule-mode slot with D.
 The topology proof must exercise expired proof and ordinary groups, a claimed
 orphan, an unclaimed pool VM, changed expectations, hung turn/check native cancel,
 workspace/Route ownership refusal and completed-group residual cleanup through

@@ -22,7 +22,11 @@ const Input = z.object({
     expectations_hash: z.string().regex(/^[a-f0-9]{64}$/),
     proof_project_id: z.number().int().positive().nullable(),
     vms: z.array(Vm),
-    steps: z.record(z.string(), z.unknown()).default({}),
+    inspect_statuses: z.array(z.string()).default([]),
+    inspect_exit_codes: z.array(z.number().nullable()).default([]),
+    inspect_signals: z.array(z.string().nullable()).default([]),
+    inspect_stdout: z.array(z.string()).default([]),
+    inspect_stderr: z.array(z.string()).default([]),
 }).strict();
 type Inputs = z.infer<typeof Input>;
 type VmFacts = z.infer<typeof Vm>;
@@ -78,9 +82,15 @@ export function selectStuckVms(raw: unknown, now = new Date()) {
                 const index = targets.findIndex((target) =>
                     target.task_vm_id === vm.task_vm_id
                 );
-                const activity = index < 0
-                    ? undefined
-                    : lastRunEpoch(input.steps[`inspect-${index}`]);
+                const activity = index < 0 ? undefined : lastRunEpoch({
+                    status: input.inspect_statuses[index],
+                    outputs: {
+                        exitCode: input.inspect_exit_codes[index],
+                        signal: input.inspect_signals[index],
+                        stdout: input.inspect_stdout[index],
+                        stderr: input.inspect_stderr[index],
+                    },
+                });
                 if (activity !== undefined) {
                     const last = Math.max(
                         Date.parse(vm.group_created_at),
@@ -121,7 +131,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-reaper-input",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         plan: {
             schema: z.record(z.string(), z.unknown()),
@@ -140,7 +150,13 @@ export const behavior = {
                 "Select pinned proof VM hosts for one native last-run stat each",
             arguments: Input,
             execute: async (args: Inputs, ctx: Context) => {
-                const result = { targets: readTargets(Input.parse(args)) };
+                const targets = readTargets(Input.parse(args));
+                const result = {
+                    targets,
+                    inspect_steps: targets.map((_, index) =>
+                        `inspect-${index}`
+                    ),
+                };
                 await ctx.writeResource("plan", "plan", result);
                 return result;
             },

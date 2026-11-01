@@ -4,30 +4,30 @@
   "proof_project_id": 62,
   "runs": [
     {
-      "completed_at": "2026-11-01T12:24:21.319Z",
+      "completed_at": "2026-11-01T13:31:49.573Z",
       "phases": [
         {
-          "ms": 66,
+          "ms": 50,
           "name": "plan",
           "status": "succeeded"
         },
         {
-          "ms": 161,
+          "ms": 121,
           "name": "inspect-0",
           "status": "succeeded"
         },
         {
-          "ms": 157,
+          "ms": 118,
           "name": "inspect-1",
           "status": "succeeded"
         },
         {
-          "ms": 161,
+          "ms": 121,
           "name": "inspect-2",
           "status": "failed"
         },
         {
-          "ms": 157,
+          "ms": 118,
           "name": "inspect-3",
           "status": "failed"
         },
@@ -37,96 +37,96 @@
           "status": "succeeded"
         }
       ],
-      "run_id": "219d8ae6-303b-4a20-9e0b-51ccb6140751",
-      "started_at": "2026-11-01T12:24:21.026Z",
+      "run_id": "c1f820b7-8f46-41a9-a94c-6a90b08a5db4",
+      "started_at": "2026-11-01T13:31:49.339Z",
       "status": "succeeded",
-      "run_seconds": 0.293
+      "run_seconds": 0.234
     },
     {
-      "completed_at": "2026-11-01T12:24:23.453Z",
+      "completed_at": "2026-11-01T13:31:51.474Z",
       "phases": [
         {
-          "ms": 67,
+          "ms": 49,
           "name": "plan",
           "status": "succeeded"
         },
         {
-          "ms": 154,
+          "ms": 127,
           "name": "inspect-0",
           "status": "succeeded"
         },
         {
-          "ms": 155,
+          "ms": 128,
           "name": "inspect-1",
           "status": "succeeded"
         },
         {
-          "ms": 151,
+          "ms": 128,
           "name": "inspect-2",
           "status": "failed"
         },
         {
-          "ms": 151,
+          "ms": 124,
           "name": "inspect-3",
           "status": "failed"
         },
         {
-          "ms": 30,
+          "ms": 33,
           "name": "result",
           "status": "succeeded"
         }
       ],
-      "run_id": "b62569d2-6a59-491c-bad3-c6d8b9282645",
-      "started_at": "2026-11-01T12:24:23.148Z",
+      "run_id": "93f7e02a-0856-4233-b784-fc4d42cd526e",
+      "started_at": "2026-11-01T13:31:51.234Z",
       "status": "succeeded",
-      "run_seconds": 0.305
+      "run_seconds": 0.24
     },
     {
-      "completed_at": "2026-11-01T12:24:25.444Z",
+      "completed_at": "2026-11-01T13:31:53.385Z",
       "phases": [
         {
-          "ms": 53,
+          "ms": 58,
           "name": "plan",
           "status": "succeeded"
         },
         {
-          "ms": 123,
+          "ms": 134,
           "name": "inspect-0",
           "status": "succeeded"
         },
         {
-          "ms": 120,
+          "ms": 129,
           "name": "inspect-1",
           "status": "succeeded"
         },
         {
-          "ms": 119,
+          "ms": 127,
           "name": "inspect-2",
           "status": "failed"
         },
         {
-          "ms": 121,
+          "ms": 132,
           "name": "inspect-3",
           "status": "failed"
         },
         {
-          "ms": 24,
+          "ms": 28,
           "name": "result",
           "status": "succeeded"
         }
       ],
-      "run_id": "d12d3d78-cf2a-4ac8-abc3-625cbb039e1d",
-      "started_at": "2026-11-01T12:24:25.203Z",
+      "run_id": "b6b10cfc-28e5-42b8-90ca-c5cb070f70c7",
+      "started_at": "2026-11-01T13:31:53.128Z",
       "status": "succeeded",
-      "run_seconds": 0.241
+      "run_seconds": 0.257
     }
   ],
   "sample": 3,
-  "p95_seconds": 0.305,
+  "p95_seconds": 0.257,
   "selection_budget_seconds": 30,
   "queue_timeout_seconds": 15,
   "cleanup": "existing tasks.cancel and task_vm.destroy own their phases and budgets",
-  "f10": "pending B schedule mode; shared cleanup source dependency PR2320 3f5a37ac189e975ca90f7c48043cc4ed6a65e6ea consumed",
+  "f10": "pending schedule-mode topology receipt; F coordinates its slot with D; canonical cleanup source PR2320 is merged",
   "stat_timeout_seconds": 15,
   "remote_timeout_seconds": 10,
   "cadence": "20 */5 * * * *"

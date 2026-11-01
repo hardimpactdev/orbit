@@ -120,6 +120,24 @@ const ssh = {
         host_keys: ["ssh-ed25519 public"],
     },
 };
+const compactInspections = (steps: unknown[]) => {
+    const rows = steps as {
+        status: string;
+        outputs?: {
+            exitCode?: number | null;
+            signal?: string | null;
+            stdout?: string;
+            stderr?: string;
+        };
+    }[];
+    return {
+        inspect_statuses: rows.map((row) => row.status),
+        inspect_exit_codes: rows.map((row) => row.outputs?.exitCode ?? null),
+        inspect_signals: rows.map((row) => row.outputs?.signal ?? null),
+        inspect_stdout: rows.map((row) => row.outputs?.stdout ?? ""),
+        inspect_stderr: rows.map((row) => row.outputs?.stderr ?? ""),
+    };
+};
 const topology = (patch: Partial<typeof vm> = {}, step: unknown = undefined) =>
     selectStuckVms({
         expectations_hash: "a".repeat(64),
@@ -132,7 +150,7 @@ const topology = (patch: Partial<typeof vm> = {}, step: unknown = undefined) =>
             group_created_at: "2026-11-01T10:00:00Z",
             ...patch,
         }],
-        steps: step === undefined ? {} : { "inspect-0": step },
+        ...compactInspections(step === undefined ? [] : [step]),
     }, now).requests;
 const stat = (stdout: string, exitCode = 0, stderr = "") => ({
     status: "succeeded",
@@ -208,4 +226,20 @@ Deno.test("topology title is special only inside the proof Project and unknown p
         }),
         [],
     );
+});
+Deno.test("compact inspection results keep their planned VM order without unrelated step context", () => {
+    const recorded = {
+        ...vm,
+        project_id: 62,
+        group_title: "topology app-dev@v1 lane21",
+        group_created_at: "2026-11-01T10:00:00Z",
+        ssh,
+    };
+    const result = selectStuckVms({
+        expectations_hash: "a".repeat(64),
+        proof_project_id: 62,
+        vms: [recorded, { ...recorded, task_vm_id: 18 }],
+        ...compactInspections([stat(String(now.getTime() / 1000)), missing]),
+    }, now);
+    assertEquals(result.requests.map((request) => request.task_vm_id), [18]);
 });
