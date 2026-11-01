@@ -11,7 +11,7 @@ def profile(value):
         return {"kind": "none"}
     app = Path(value["application"])
     composer = app / "composer.json"
-    entry = app / value.get("entry_point", "artisan")
+    entry = app / (value.get("entry_point") or "artisan")
     if not composer.exists() and not composer.is_symlink():
         return {"kind": "partial" if entry.exists() else "none"}
     if composer.is_symlink() or not composer.is_file() or composer.stat().st_size > 1048576:

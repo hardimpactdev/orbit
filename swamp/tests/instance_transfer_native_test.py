@@ -1,7 +1,10 @@
 """Native transfer graph with real disposable source/archive effects and no fleet publication."""
 import json
+import os
+import signal
 import subprocess
 import sys
+import threading
 
 import yaml
 from native_harness import ROOT, NativeTestCase
@@ -71,11 +74,14 @@ else:shutil.copyfile(source,destination)
     def git(self, path, *args):
         return subprocess.run(["git", "-C", str(path), *args], capture_output=True, check=True).stdout.decode().strip()
 
-    def run_transfer(self, success=True):
+    def transfer_arguments(self):
         argv = ["workflow", "run", "operation-instance-transfer"]
         for key, value in {"operation_id": 7003, "node_id": 9, "kind": "instance.transfer", "intent": self.intent, "execution_secrets": {}}.items():
             argv += ["--input", key + "=" + (value if isinstance(value, str) else json.dumps(value))]
-        run = json.loads(self.cli(*argv, success=success).stdout)
+        return argv
+
+    def run_transfer(self, success=True):
+        run = json.loads(self.cli(*self.transfer_arguments(), success=success).stdout)
         history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
         return run, history
 
@@ -109,7 +115,7 @@ else:shutil.copyfile(source,destination)
         for step in self.child["jobs"][0]["steps"]:
             if step["name"] in ("activate", "discard-destination-runtime"):
                 step["task"] = {"type": "behavior", "behaviorType": "command/shell",
-                    "behaviorName": '${{ "fixture-' + step["name"] + '-" + run.id + "-" + string(self._index) }}',
+                    "behaviorName": '${{ "fixture-' + step["name"][:9] + '-" + run.id + "-" + string(self._index) }}',
                     "methodName": "execute", "inputs": {"run": "false" if step["name"] == "activate" else "true"}}
         self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
         run, history = self.run_transfer(success=False)
@@ -119,3 +125,74 @@ else:shutil.copyfile(source,destination)
         result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
         self.assertFalse(result["cutover"])
         self.assertTrue(result["restored"], json.dumps([{k:step[k] for k in ("name","status","error","outputs") if k in step} for step in history["jobs"][0]["steps"] if step["name"] in ("forward","restore","discard-assets","discard","result") or step["status"] == "failed"]))
+
+    def test_result_write_failure_never_retires_source(self):
+        for step in self.child["jobs"][0]["steps"]:
+            if step["name"] == "result":
+                step["task"]["methodName"] = "complete"
+                step["task"]["inputs"] = {"cutover": False, "outcomes": {}}
+        self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
+        run, history = self.run_transfer(success=False)
+        self.assertEqual(run["status"], "failed")
+        self.assertTrue(self.source.exists())
+        self.assertTrue(self.destination.exists())
+        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["retire-source"]["status"], "skipped")
+
+    def test_nonempty_vite_process_batch_uses_real_stop_input_schema(self):
+        connection = self.intent["source"]["ssh_execution"]
+        control = {"process_id": 8, "runtime": "systemd", "name": "orbit-process-8-vite.service", "on_demand": True,
+                   "directory": str(self.source), "vite": {"path": "/fixture/vite", "instance_id": 8}}
+        self.intent["processes"]["source"] = [{"id": 8, "secret_field": "unused",
+            "intent": {"control": control, "ssh_execution": connection},
+            "control_intent": {"control": control, "ssh_execution": connection},
+            "stop_intent": {"control": {k: control[k] for k in ("process_id", "runtime", "name", "on_demand")} | {"vite": None}, "ssh_execution": connection}}]
+        for action in ("stop", "create", "destroy"):
+            child = yaml.safe_load((ROOT / f"workflows/workflow-operation-process-{action}.yaml").read_text())
+            child.pop("target", None)
+            child["jobs"] = [{"name": "fixture", "steps": [{"name": "accepted", "task": {"type": "behavior", "behaviorType": "command/shell",
+                "behaviorName": '${{ "fixture-' + action + '-"+run.id }}', "methodName": "execute", "inputs": {"run": "true"}}}]}]
+            (self.repo / f"workflows/workflow-operation-process-{action}.yaml").write_text(yaml.safe_dump(child, sort_keys=False))
+        run, history = self.run_transfer()
+        self.assertEqual(run["status"], "succeeded")
+        steps = {s["name"]: s for s in history["jobs"][0]["steps"]}
+        self.assertEqual(steps["pause-0"]["status"], "succeeded")
+        self.assertEqual(steps["retire-runtime-0"]["status"], "succeeded")
+
+    def test_native_cancel_after_forward_keeps_the_terminal_placement_receipt(self):
+        barrier = self.repo / "forward-ready"
+        os.mkfifo(barrier)
+        hold = self.repo / "hold.py"
+        hold.write_text("import signal,sys\nwith open(sys.argv[1], 'w') as stream: stream.write('ready')\nsignal.pause()\n")
+        steps = self.child["jobs"][0]["steps"]
+        index = next(i for i, step in enumerate(steps) if step["name"] == "result")
+        receipt = steps[index]
+        steps.insert(index, {"name": "cancel-barrier", "dependsOn": receipt["dependsOn"],
+            "task": {"type": "behavior", "behaviorType": "command/shell", "behaviorName": '${{ "cancel-barrier-" + run.id }}',
+                "methodName": "execute", "inputs": {"run": 'python3 "$HOLD" "$BARRIER"', "env": {"HOLD": str(hold), "BARRIER": str(barrier)}}}})
+        receipt["dependsOn"] = [{"step": "cancel-barrier", "condition": {"type": "always"}}]
+        self.workflow_path.write_text(yaml.safe_dump(self.child, sort_keys=False))
+        env = dict(os.environ, SWAMP_NO_UPDATE_CHECK="1", SWAMP_NO_TELEMETRY="1")
+        for key in ("SWAMP_SERVER_URL", "SWAMP_SERVE_URL", "SWAMP_SERVER_TOKEN", "SWAMP_SERVER_TOKEN_FILE", "SWAMP_REPO_DIR", "SWAMP_CA_CERT", "SWAMP_EXTENSIONS_DIR"):
+            env.pop(key, None)
+        process = subprocess.Popen([os.environ.get("SWAMP_BIN", "swamp"), *self.transfer_arguments(), "--json"],
+            cwd=self.repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        ready = threading.Event()
+        def receive():
+            with barrier.open() as stream:
+                if stream.read() == "ready": ready.set()
+        threading.Thread(target=receive, daemon=True).start()
+        try:
+            self.assertTrue(ready.wait(90), "native forward did not reach cancellation barrier")
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=60)
+            run = json.loads(stdout)
+            self.assertEqual(run["status"], "cancelled", stderr)
+            history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+            result = json.loads(next(step["outputs"]["stdout"] for step in history["jobs"][0]["steps"] if step["name"] == "result"))
+            self.assertTrue(result["cutover"])
+            self.assertTrue(self.destination.exists())
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=10)

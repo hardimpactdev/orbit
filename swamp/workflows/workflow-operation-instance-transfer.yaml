@@ -74,8 +74,8 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-1" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-1" }}'
+          globalArgs: &ref_1
+            name: '${{ "itr-destination-" + run.id }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
@@ -121,8 +121,8 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-3" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-3" }}'
+          globalArgs: &ref_0
+            name: '${{ "itr-source-" + run.id }}'
             transport:
               kind: ssh
               user: '${{ inputs.intent.source.ssh_execution.target.user }}'
@@ -149,18 +149,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-4" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-4" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             argv:
@@ -185,18 +174,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-5" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-5" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             argv:
@@ -221,18 +199,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-6" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-6" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             argv:
@@ -274,18 +241,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-8" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-8" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -327,7 +283,7 @@ jobs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'
             kind: process.stop
-            intent: '${{ self.member.control_intent }}'
+            intent: '${{ self.member.stop_intent }}'
             execution_secrets: {}
       - name: archive-assets
         target: orbit-node-209
@@ -363,18 +319,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-12" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-12" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -391,18 +336,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-13" }}'
           methodName: copy
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-13" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             src: '${{ "/tmp/orbit-transfer-" + run.id + ".tar" }}'
@@ -420,20 +354,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-14" }}'
           methodName: copy
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-14" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             src: '${{ "/tmp/orbit-transfer-" + run.id + ".download.tar" }}'
@@ -470,20 +391,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-16" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-16" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -514,20 +422,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-18" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-18" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             argv:
@@ -549,20 +444,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-19" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-19" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             argv:
@@ -603,20 +485,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-21" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-21" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -746,7 +615,11 @@ jobs:
         guard: >-
           ${{ ("forward" in steps) && steps["forward"].status == "succeeded" &&
           steps.forward.outputs.result.ready || !("destination-proof" in steps)
-          || steps["destination-proof"].status != "succeeded" }}
+          || steps["destination-proof"].status != "succeeded" || !(("restore" in
+          steps) && steps["restore"].status == "succeeded" &&
+          steps.restore.outputs.result.ready) ||
+          steps.exists(n,n.startsWith("restore-source-runtime-") &&
+          steps[n].status == "failed") }}
         forEach:
           item: member
           in: '${{ inputs.intent.processes.destination }}'
@@ -809,20 +682,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-29" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-29" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -855,7 +715,8 @@ jobs:
               type: always
         guard: >-
           ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) }}
+          && steps.forward.outputs.result.ready) || !("result" in steps) ||
+          steps.result.status != "succeeded" }}
         forEach:
           item: member
           in: '${{ inputs.intent.processes.source }}'
@@ -879,7 +740,8 @@ jobs:
               type: always
         guard: >-
           ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) ||
+          && steps.forward.outputs.result.ready) || !("result" in steps) ||
+          steps.result.status != "succeeded" ||
           steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status ==
           "failed") }}
         task:
@@ -899,7 +761,8 @@ jobs:
               type: always
         guard: >-
           ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) ||
+          && steps.forward.outputs.result.ready) || !("result" in steps) ||
+          steps.result.status != "succeeded" ||
           steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status ==
           "failed") }}
         task:
@@ -907,18 +770,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-33" }}'
           methodName: script
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-33" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             interpreter: python3
@@ -931,7 +783,8 @@ jobs:
               type: always
         guard: >-
           ${{ !(("forward" in steps) && steps["forward"].status == "succeeded"
-          && steps.forward.outputs.result.ready) ||
+          && steps.forward.outputs.result.ready) || !("result" in steps) ||
+          steps.result.status != "succeeded" ||
           steps["source-proof"].outputs.common ==
           steps["source-proof"].outputs.git_directory }}
         task:
@@ -939,18 +792,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-34" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-34" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             argv:
@@ -973,18 +815,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-35" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-35" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.source.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.source.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.source.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.source.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: '${{ inputs.intent.source.ssh_execution.target.host_keys }}'
+          globalArgs: *ref_0
           inputs:
             hosts: 'name:target'
             argv:
@@ -1004,20 +835,7 @@ jobs:
           behaviorType: '@swamp/ssh'
           behaviorName: '${{ "itr-" + run.id + "-36" }}'
           methodName: exec
-          globalArgs:
-            name: '${{ "itr-" + run.id + "-36" }}'
-            transport:
-              kind: ssh
-              user: '${{ inputs.intent.destination.ssh_execution.target.user }}'
-              port: '${{ inputs.intent.destination.ssh_execution.target.port }}'
-              identityFile: '${{ inputs.intent.destination.ssh_execution.identity_file }}'
-            hosts:
-              - name: target
-                address: '${{ inputs.intent.destination.ssh_execution.target.host }}'
-                transport:
-                  hostKeys: >-
-                    ${{ inputs.intent.destination.ssh_execution.target.host_keys
-                    }}
+          globalArgs: *ref_1
           inputs:
             hosts: 'name:target'
             argv:

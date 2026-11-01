@@ -22,7 +22,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Full native input and one terminal clone projection; no phase callbacks. */
-final readonly class InstanceCloneProjection implements DirectOperationProjection, NativeOperationProjection, DirectOperationWorkflowInput
+final readonly class InstanceCloneProjection implements DirectOperationProjection, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct) {}
 

@@ -41,12 +41,14 @@ export function cloneWorkflow(): Fields {
             inputs,
         });
     }
+    const connections: Record<string, Fields> = {};
     function globals(side: "candidate" | "target"): Fields {
+        if (connections[side]) return connections[side];
         const ssh = side === "candidate"
             ? "inputs.intent.candidate.ssh_execution"
             : "inputs.intent.ssh_execution";
-        return {
-            name: id(),
+        return connections[side] = {
+            name: expr('"icl-' + side + '-" + run.id'),
             transport: {
                 kind: "ssh",
                 user: expr(`${ssh}.target.user`),

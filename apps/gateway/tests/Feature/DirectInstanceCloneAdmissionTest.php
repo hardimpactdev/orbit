@@ -107,6 +107,8 @@ it('projects only the native terminal clone result and preserves the candidate',
     app(InstanceCloneProjection::class)->apply($operation, $done);
     $completed = $target->refresh()->clone_completed_at;
     app(InstanceCloneProjection::class)->apply($operation, $done);
+    expect(app(StartInstanceCloneAction::class)->execute($this->candidate, $this->data)->id)->toBe($operation->id)
+        ->and(Operation::query()->count())->toBe(1);
     expect($target->refresh()->status->value)->toBe('active')->and($target->starting_commit)->toBe(str_repeat('c', 40))
         ->and($target->clone_candidate_commit)->toBe(str_repeat('c', 40))->and($target->clone_completed_at)->toEqual($completed)
         ->and($target->environment_owned_keys)->toBe(['APP_KEY'])->and($operation->refresh()->lock_key)->toBeNull()

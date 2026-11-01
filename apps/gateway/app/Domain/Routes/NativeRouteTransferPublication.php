@@ -45,11 +45,9 @@ final readonly class NativeRouteTransferPublication
         $routes = Route::query()->with(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node', 'transitionCluster.routerAssignment.node', 'transitionNode'])
             ->whereHas('targets', fn ($query) => $query->where('instance_id', $instance->id))->orderBy('id')->get();
         $before = $this->sites->all();
-        $domains = $routes->pluck('domain')->all();
         $previous = $desired = $workloads = [];
         $capture = app(NativeRouteMutationInput::class);
         $candidates = [];
-        $after = $before->reject(static fn (DevelopmentSite $site): bool => in_array($site->domain, $domains, true))->values();
         $movedIds = array_column(RouteExecutionProof::objects($plan['routes']), 'route_id');
         $placement = ValidatedData::object($plan['destination_placement']);
         foreach ($routes as $stored) {
@@ -89,7 +87,6 @@ final readonly class NativeRouteTransferPublication
             } elseif (! $before->contains(static fn (DevelopmentSite $site): bool => $site->domain === $route->domain)) {
                 continue;
             }
-            $after->push(...$this->sites->projectSites($route));
             $candidates[$route->id] = $route;
         }
         foreach ($candidates as $route) {

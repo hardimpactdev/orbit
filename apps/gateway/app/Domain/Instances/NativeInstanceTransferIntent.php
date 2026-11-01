@@ -30,6 +30,9 @@ final readonly class NativeInstanceTransferIntent
     {
         $instance = Instance::query()->with(['project', 'node'])->findOrFail($transfer->instance_id);
         $destination = $transfer->destinationNode;
+        if (TaskVm::forNode($destination) !== null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Transfer to a task VM requires its native workspace child.', 503);
+        }
         $root = data_get($destination->settings, 'apps.path');
         if (! is_string($root) || ! str_starts_with($root, '/')) {
             throw new ResourceOperationException('operation.kind_unavailable', 'A stored destination apps root is required.', 503);

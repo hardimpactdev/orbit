@@ -256,7 +256,9 @@ it('captures Vite and SSR port intent without Gateway runtime discovery', functi
     $this->destination->update(['settings' => ['apps' => ['path' => '/srv/apps']]]);
     $operation = app(StartInstanceTransferAction::class)->execute($this->instance, new TransferInstanceData($this->destination->id, null, null));
     $public = app(NativeInstanceTransferProjection::class)->workflowInput($operation);
-    expect($public['intent']['processes']['destination'][0]['intent']['vite_plan']['listener']['port'])->toBe(5173);
+    expect($public['intent']['processes']['destination'][0]['intent']['vite_plan']['listener']['port'])->toBe(5173)
+        ->and($public['intent']['processes']['source'][0]['stop_intent']['control']['vite'])->toBeNull()
+        ->and(array_keys($public['intent']['processes']['source'][0]['stop_intent']['control']))->toEqualCanonicalizing(['process_id', 'runtime', 'name', 'on_demand', 'vite']);
     $operation->update(['state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
     app(NativeInstanceTransferProjection::class)->apply($operation, native_transfer_result('cutover'));
     expect($this->instance->fresh()->vite_port)->toBe(5173)->and($this->instance->fresh()->ssr_port)->toBe(13714);
@@ -276,7 +278,6 @@ it('keeps source placement when native failure has no physical cutover receipt',
 });
 
 it('keeps root and participant public reads effect-free before and after cutover', function (): void {
-    $this->destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     native_transfer_process($this);
     $operation = native_transfer_operation($this);
     $projection = app(NativeInstanceTransferProjection::class);

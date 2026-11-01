@@ -52,10 +52,12 @@ export function transferWorkflow(): Fields {
             inputs,
         }, guard);
     }
+    const connections: Record<string, Fields> = {};
     function globals(side: string): Fields {
+        if (connections[side]) return connections[side];
         const ssh = `inputs.intent.${side}.ssh_execution`;
-        return {
-            name: identity(),
+        return connections[side] = {
+            name: expr('"itr-' + side + '-" + run.id'),
             transport: {
                 kind: "ssh",
                 user: expr(`${ssh}.target.user`),
@@ -116,6 +118,8 @@ export function transferWorkflow(): Fields {
                     intent: expr(
                         installing
                             ? "self.member.intent"
+                            : action === "stop"
+                            ? "self.member.stop_intent"
                             : "self.member.control_intent",
                     ),
                     execution_secrets: installing
@@ -271,7 +275,7 @@ export function transferWorkflow(): Fields {
         "discard-destination-runtime",
         "destination",
         "destroy",
-        `${forwardOk} || !("destination-proof" in steps) || steps["destination-proof"].status != "succeeded"`,
+        `${forwardOk} || !("destination-proof" in steps) || steps["destination-proof"].status != "succeeded" || !(${restored}) || steps.exists(n,n.startsWith("restore-source-runtime-") && steps[n].status == "failed")`,
     );
     script(
         "discard",
@@ -286,7 +290,9 @@ export function transferWorkflow(): Fields {
         transfer_id: expr("inputs.intent.transfer_id"),
         outcomes: expr("steps"),
     }, "");
-    process("retire-runtime", "source", "destroy", `!(${forwardOk})`);
+    const retire =
+        `!(${forwardOk}) || !("result" in steps) || steps.result.status != "succeeded"`;
+    process("retire-runtime", "source", "destroy", retire);
     script(
         "retire-source",
         "source",
@@ -294,7 +300,7 @@ export function transferWorkflow(): Fields {
         {
             proof: expr(outputs("source-proof")),
         },
-        `!(${forwardOk}) || steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status == "failed")`,
+        `${retire} || steps.exists(n,n.startsWith("retire-runtime-") && steps[n].status == "failed")`,
     );
     ssh(
         "prune-worktree",
@@ -309,7 +315,7 @@ export function transferWorkflow(): Fields {
                 "prune",
             ],
         },
-        `!(${forwardOk}) || ${outputs("source-proof")}.common == ${
+        `${retire} || ${outputs("source-proof")}.common == ${
             outputs("source-proof")
         }.git_directory`,
     );

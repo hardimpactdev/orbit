@@ -23,7 +23,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Stores the physical placement selected by the native terminal result, including later retirement failures. */
-final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, NativeOperationProjection, DirectOperationWorkflowInput, DirectOperationPublicView
+final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(private DirectOperation $direct, private NativeRouteTransferPlan $routes) {}
 
@@ -34,7 +34,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
     {
-        if (!in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
+        if (! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             throw $this->conflict();
         }
     }
@@ -47,6 +47,7 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
     public function publicInput(Operation $operation, int $callerNodeId): array
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
+
         return ['direct_transfer' => $operation->input['direct_transfer'], 'process_runtime' => app(InstanceTransferProcesses::class)->input($operation, $callerNodeId)];
     }
 
@@ -58,9 +59,11 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
         $processes = $copies = [];
         foreach (['source', 'destination'] as $side) {
             $batch = app(ProcessInstallationBatch::class)->nativeInput($operation, $side.'_installations');
-            $processes[$side] = array_map(static fn(array $member): array => [...$member,
-                'control_intent' => Arr::only($member['intent'], ['control','ssh_execution']),
-                'secret_field' => 'node_'.$member['node_id'].'_member_'.$member['id']], $batch['members']);
+            $processes[$side] = array_map(static fn (array $member): array => [...$member,
+                'control_intent' => Arr::only(ValidatedData::object($member['intent']), ['control', 'ssh_execution']),
+                'stop_intent' => ['ssh_execution' => ValidatedData::object($member['intent'])['ssh_execution'],
+                    'control' => [...Arr::only(ValidatedData::object(ValidatedData::object($member['intent'])['control']), ['process_id', 'runtime', 'name', 'on_demand']), 'vite' => null]],
+                'secret_field' => 'node_'.ValidatedData::integer($member['node_id']).'_member_'.ValidatedData::integer($member['id'])], $batch['members']);
             $copies = [...$copies, ...$batch['execution_secrets']];
         }
 

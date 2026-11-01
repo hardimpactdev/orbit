@@ -96,6 +96,8 @@ class SourceActions(unittest.TestCase):
         with self.assertRaises(tarfile.FilterError):
             module("transfer_install").install({"path": str(self.base / "target"), "archive": str(archive)})
         self.assertFalse((self.base / "escape").exists())
+        self.assertFalse((self.base / "target").exists())
+        self.assertEqual(list(self.base.glob(".orbit-transfer-*")), [])
 
     def test_environment_protection_refuses_symlinks(self):
         private = self.base / "private"
@@ -108,6 +110,6 @@ class SourceActions(unittest.TestCase):
 
     def test_profile_returns_only_constraint_and_framework_metadata(self):
         (self.source / "composer.json").write_text('{"require":{"php":"^8.4","secret/package":"private"},"config":{"token":"private"}}')
-        result = module("profile").profile({"application": str(self.source), "project_type": "laravel-package"})
+        result = module("profile").profile({"application": str(self.source), "project_type": "laravel-package", "entry_point": None})
         self.assertNotIn("private", str(result))
         self.assertEqual(result["kind"], "composer")

@@ -23,7 +23,6 @@ use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
-use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceCreateEnvironmentSeed;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceDestroyPhpSecret;
@@ -59,7 +58,6 @@ use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
-use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
@@ -78,7 +76,6 @@ final class InstancesServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
-        InstanceCloneCandidateInspector::class => RemoteInstanceCloneCandidateInspector::class,
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
