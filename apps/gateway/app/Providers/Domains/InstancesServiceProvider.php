@@ -31,7 +31,6 @@ use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
-use App\Domain\Instances\Registration\RegistrationSourceManager;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Operations\OperationSecretSource;
@@ -54,7 +53,6 @@ use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
-use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
@@ -67,7 +65,6 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
-        RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
