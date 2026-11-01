@@ -60,3 +60,12 @@ Deno.test("manager-only capture omits package and receives the canonical empty s
   assertEquals(WriteInput.parse(captured).package, "");
   assertEquals(WriteInput.safeParse({ ...captured, kind: "tool.install" }).success, false);
 });
+
+Deno.test("the chosen candidate travels as argv JSON data, never inside the mutation source", async () => {
+  const ctx = { extensionFile: (p: string) => new URL(p, import.meta.url).pathname, writeResource: () => Promise.resolve(null) };
+  const { input, facts } = fixture("tool.install", "apt");
+  const candidate = { ready: true, version: "9.9.9-candidate" };
+  const assets = await behavior.methods.assets.execute({ input, action: "mutate", before: { ...facts, scope: "present" }, candidate }, ctx);
+  assertEquals(assets.script_body.includes("9.9.9-candidate"), false);
+  assertEquals(JSON.parse(assets.candidate_json), candidate);
+});

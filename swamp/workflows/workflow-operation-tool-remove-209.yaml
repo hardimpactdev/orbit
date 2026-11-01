@@ -161,7 +161,7 @@ jobs:
       behaviorName: '${{ "tool-remove-" + run.id + "-" + string(self._index) }}'
       methodName: exec
       globalArgs: *ssh
-      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/timeout","180","/usr/bin/python3","-I","-c",steps["before_assets-0"].outputs.repository_body,"cleanup",steps["before_assets-0"].outputs.repository_json] }}'}
+      inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["sh","-c",''/usr/bin/timeout 180 "$@"; result=$?; if [ "$result" -eq 124 ]; then echo "repository: 180s budget exceeded" >&2; fi; exit "$result"'',"repository","/usr/bin/python3","-I","-c",steps["before_assets-0"].outputs.repository_body,"cleanup",steps["before_assets-0"].outputs.repository_json] }}'}
   - name: result
     target: orbit-node-209
     dependsOn: [{step: after, condition: {type: always}}, {step: repository_cleanup, condition: {type: always}}]

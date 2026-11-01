@@ -1,5 +1,7 @@
+import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -25,7 +27,8 @@ def install(package):
 
 
 if INPUT.get("repository"):
-    version = INPUT["candidate"]["version"]
+    # The chosen candidate arrives as argv JSON data, never as script source.
+    version = json.loads(sys.argv[1])["version"]
     if not isinstance(version, str) or not version or any(c.isspace() for c in version):
         raise ValueError("Invalid apt repository candidate")
     source = "/etc/apt/sources.list.d/orbit-" + INPUT["repository"]["name"] + ".sources"

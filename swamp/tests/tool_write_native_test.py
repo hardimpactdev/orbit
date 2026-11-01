@@ -141,6 +141,11 @@ if not body and 'managed apt repository phase' in args[-1]:
   marker.write_text(command[-1])
  else:marker.unlink(missing_ok=True)
  print('{"ready":true}');raise SystemExit(0)
+mutation_argv=[]
+if not body:
+ import shlex
+ command=shlex.split(args[-1]);index=len(command)-1-command[::-1].index('-c')
+ body=command[index+1];mutation_argv=command[index+2:]
 tree=ast.parse(body)
 node=next((n for n in tree.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='QUERY_INPUT'),None)
 if node:
@@ -165,6 +170,8 @@ elif action=='candidate':
  else:print('{"version":"2.0.0"}')
 else:
  assert ('sudo' in args[-1]) == (manager=='apt')
+ assert len(mutation_argv)==1
+ if input.get('repository'):assert json.loads(mutation_argv[0])['version']=='2.0.0' and '2.0.0' not in body
  if not Path(NO_EFFECT).exists():Path(STATE).write_text('2.0.0')
  if Path(LOST).exists():Path(LOST).unlink();raise SystemExit(1)
  print('{"ready":true}')
