@@ -261,18 +261,18 @@ jobs:
         target: orbit-node-209
         writes: true
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "worker_tokens-"+run.id }}', methodName: execute, inputs: {run: /home/orbit/.local/bin/swamp worker token list --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json, env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
       - name: access_tokens
         target: orbit-node-209
         writes: true
         dependsOn: [{step: worker_tokens, condition: *ref_13}]
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "access_tokens-"+run.id }}', methodName: execute, inputs: {run: /home/orbit/.local/bin/swamp access token list --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json, env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
       - name: tokens
         target: orbit-node-209
         task: {type: behavior, behaviorType: '@nckrtl/node-removal-command', behaviorName: '${{ "tokens-"+run.id }}', methodName: tokens, inputs: {node_id: '${{ inputs.intent.node_id }}', worker_stdout: '${{ steps.worker_tokens.outputs.stdout }}', server_stdout: '${{ steps.access_tokens.outputs.stdout }}'}}
         dependsOn: [{step: access_tokens, condition: *ref_13}]
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
   - name: phase_revoke_worker
     dependsOn:
       - job: phase_worker_tokens
@@ -282,8 +282,8 @@ jobs:
         target: orbit-node-209
         writes: true
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "revoke-worker-"+run.id+"-"+string(self._index) }}', methodName: execute, inputs: {run: '/home/orbit/.local/bin/swamp worker token revoke ''${{ self.token }}'' --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json', env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        forEach: {item: token, in: '${{ steps.tokens.outputs.worker }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        forEach: {item: token, in: '${{ inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.worker }}'}
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
   - name: phase_revoke_access
     dependsOn:
       - job: phase_revoke_worker
@@ -293,8 +293,8 @@ jobs:
         target: orbit-node-209
         writes: true
         task: {type: behavior, behaviorType: command/shell, behaviorName: '${{ "revoke-access-"+run.id+"-"+string(self._index) }}', methodName: execute, inputs: {run: '/home/orbit/.local/bin/swamp access token revoke ''${{ self.token }}'' --repo-dir /home/orbit/apps/orbit-monorepo-staging/checkout/swamp --json', env: {SWAMP_HOME: /home/orbit/.swamp, SWAMP_CONFIG_DIR: /home/orbit/.config/swamp, SWAMP_NO_UPDATE_CHECK: '1', SWAMP_NO_TELEMETRY: '1'}}}
-        forEach: {item: token, in: '${{ steps.tokens.outputs.server }}'}
-        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") }}'
+        forEach: {item: token, in: '${{ inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.server }}'}
+        guard: '${{ steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled") || inputs.intent.task_vm_guest }}'
   - name: phase_keys_assets
     dependsOn:
       - job: phase_revoke_access

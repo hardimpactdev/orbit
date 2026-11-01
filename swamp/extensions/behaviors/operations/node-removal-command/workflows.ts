@@ -119,8 +119,17 @@ function workflow(
         const prior = typeof step.guard === "string"
             ? step.guard.slice(3, -2).trim()
             : "";
+        const tokenPhase = name === "operation-node-remove" &&
+            [
+                "worker_tokens",
+                "access_tokens",
+                "tokens",
+                "revoke_worker",
+                "revoke_access",
+            ].includes(String(step.name));
         step.guard = ex(
             'steps.exists(k,steps[k].status == "failed" || steps[k].status == "cancelled")' +
+                (tokenPhase ? " || inputs.intent.task_vm_guest" : "") +
                 (prior ? " || (" + prior + ")" : ""),
         );
     }
@@ -506,7 +515,12 @@ export function nodeRemovalWorkflow() {
             cli + " worker token revoke '${{ self.token }}'" + cliFlags,
             "tokens",
         ),
-        forEach: { item: "token", in: ex("steps.tokens.outputs.worker") },
+        forEach: {
+            item: "token",
+            in: ex(
+                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.worker",
+            ),
+        },
         task: {
             ...(shell(
                 "revoke_worker",
@@ -522,7 +536,12 @@ export function nodeRemovalWorkflow() {
             cli + " access token revoke '${{ self.token }}'" + cliFlags,
             "revoke_worker",
         ),
-        forEach: { item: "token", in: ex("steps.tokens.outputs.server") },
+        forEach: {
+            item: "token",
+            in: ex(
+                "inputs.intent.task_vm_guest ? [] : steps.tokens.outputs.server",
+            ),
+        },
         task: {
             ...(shell(
                 "revoke_access",
