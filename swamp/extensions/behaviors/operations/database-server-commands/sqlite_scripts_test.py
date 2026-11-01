@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -13,7 +14,6 @@ import unittest
 import uuid
 
 HERE = Path(__file__).resolve().parent
-PROGRAM = HERE / 'scripts/sqlite_actions.py'
 
 
 class SqliteProgramTest(unittest.TestCase):
@@ -24,6 +24,14 @@ class SqliteProgramTest(unittest.TestCase):
         self.worker = pwd.getpwnam('daemon')
         self.app = pwd.getpwnam('nobody')
         os.chmod(self.root, 0o755)
+        scripts = self.root / 'scripts'
+        scripts.mkdir(mode=0o755)
+        scripts.chmod(0o755)
+        for name in ('sqlite_actions.py', 'sqlite_seed_common.py', 'sqlite_clone_common.py'):
+            selected = scripts / name
+            shutil.copyfile(HERE / 'scripts' / name, selected)
+            selected.chmod(0o644)
+        self.program = scripts / 'sqlite_actions.py'
         self.source = self.root / 'source'
         self.target = self.root / 'target'
         for directory, user in [(self.source, self.worker), (self.target, self.app)]:
@@ -53,7 +61,7 @@ class SqliteProgramTest(unittest.TestCase):
                 os.initgroups(user.pw_name, user.pw_gid)
                 os.setgid(user.pw_gid)
                 os.setuid(user.pw_uid)
-        result = subprocess.run(['/usr/bin/python3', '-B', str(PROGRAM), action, str(seconds)],
+        result = subprocess.run(['/usr/bin/python3', '-B', str(self.program), action, str(seconds)],
             input=json.dumps(data), text=True, capture_output=True, preexec_fn=drop, timeout=seconds + 5)
         self.assertNotIn('private-sqlite-sentinel', result.stdout + result.stderr)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -180,10 +188,11 @@ class SqliteProgramTest(unittest.TestCase):
     def test_target_cleanup_checks_operation_and_never_removes_replaced_files(self):
         _, prepared = self.seed()
         incoming = Path(prepared['incoming'])
-        incoming.unlink()
+        original = incoming.rename(self.root / 'original-incoming')
         incoming.write_bytes(b'foreign')
         os.chown(incoming, self.worker.pw_uid, self.worker.pw_gid)
         os.chmod(incoming, 0o600)
+        self.assertNotEqual(incoming.stat().st_ino, original.stat().st_ino)
         self.assertFalse(self.call('seedTarget', dict(self.target_input, mode='cleanup'))['ok'])
         self.assertEqual(incoming.read_bytes(), b'foreign')
         incoming.unlink()
