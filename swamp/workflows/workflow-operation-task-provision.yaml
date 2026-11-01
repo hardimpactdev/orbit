@@ -130,8 +130,10 @@ jobs:
       inputs:
         hosts: name:target
         argv:
-        - /usr/bin/timeout
-        - '30'
+        - sh
+        - -c
+        - '/usr/bin/timeout 30 "$@"; result=$?; if [ "$result" -eq 124 ]; then printf "%s\n" "proof_club: 30s budget exceeded" >&2; fi; exit "$result"'
+        - proof_club
         - sudo
         - -n
         - python3

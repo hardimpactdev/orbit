@@ -37,8 +37,8 @@ def store(material, user, destination=DESTINATION):
 
 def main():
     try:
-        if os.geteuid() != 0 or len(sys.argv) != 2:
-            raise ValueError('Sandbox credential delivery requires its captured account and root.')
+        if os.geteuid() != 0 or len(sys.argv) != 2 or sys.argv[1] != 'orbit':
+            raise ValueError('Sandbox credential delivery requires the orbit account and root.')
         store(sys.stdin.buffer.read(16385), sys.argv[1])
     except (ValueError, KeyError, OSError):
         print(json.dumps({'error_code': 'tasks.proof_credential_write_failed'}))
