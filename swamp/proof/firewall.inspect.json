@@ -1,0 +1,81 @@
+{
+  "kind": "firewall.inspect",
+  "workflow": "operation-firewall-inspect",
+  "topology": "app-dev",
+  "budget_seconds": 1,
+  "queue_timeout_seconds": null,
+  "envelope": {
+    "operation_id": "${proof.operation_id}",
+    "node_id": "${proof.target.node_id}",
+    "kind": "firewall.inspect",
+    "intent": {
+      "ssh": {
+        "identity_file": "${proof.control.identity_file}",
+        "control_node_id": "${proof.control.node_id}",
+        "public_key": "${proof.control.public_key}",
+        "target": {
+          "name": "${proof.target.name}",
+          "host": "${proof.target.host}",
+          "user": "${proof.target.user}",
+          "port": "${proof.target.port}",
+          "host_keys": "${proof.target.host_keys}"
+        }
+      },
+      "expected": [
+        {
+          "name": "proof-owned",
+          "shape": {
+            "comment": "proof-owned",
+            "action": "allow",
+            "direction": "in",
+            "source": "192.0.2.1",
+            "destination": "any",
+            "port": "443",
+            "protocol": "tcp",
+            "in_interface": null,
+            "out_interface": null,
+            "family": "v4"
+          }
+        }
+      ]
+    },
+    "execution_secrets": {}
+  },
+  "secrets": [],
+  "target_setup": "firewall.inspect/target-setup.sh",
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "inspection",
+      "step": "result",
+      "match": {}
+    }
+  },
+  "phases": [
+    {
+      "name": "read",
+      "job": "inspection",
+      "step": "read",
+      "budget_seconds": 1
+    },
+    {
+      "name": "compare",
+      "job": "inspection",
+      "step": "result",
+      "budget_seconds": 1
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/firewall.inspect/parity.py"
+    ],
+    "cases": [
+      "active-backend",
+      "owned-rule-exact",
+      "unmanaged-ssh-preserved",
+      "inspection-read-only"
+    ]
+  }
+}

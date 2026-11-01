@@ -238,7 +238,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | Source, newest first | Lesson |
 | --- | --- |
 | #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
-| PLAN F10 | A behavior-changing kind merges only with a proof receipt: real Swamp on 209 against a disposable task VM, F9 parity tests and the F8 budget. |
+| PLAN F10 | A behavior-changing kind merges only with a proof receipt: pinned Swamp in an isolated Shark Task VM, official SSH to its target container, F9 parity and F8 budgets. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, legacy edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
