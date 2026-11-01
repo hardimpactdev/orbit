@@ -295,7 +295,7 @@ class FixtureTests(unittest.TestCase):
                     job = next(job for job in flow["jobs"] if job["name"] == step["job"])
                     self.assertIn(step["step"], [entry["name"] for entry in job["steps"]])
                 for hook in fixture.get("before_request", []):
-                    self.assertTrue((path.parent / hook["argv"][2]).resolve().is_file())
+                    self.assertTrue((root.parent / hook["argv"][2]).resolve().is_file())
 
 
 if __name__ == "__main__":

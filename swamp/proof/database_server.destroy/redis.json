@@ -80,7 +80,7 @@
       "argv": [
         "python3",
         "-I",
-        "../database-lifecycle/parity.py",
+        "swamp/proof/database-lifecycle/parity.py",
         "mark",
         "proof-server-destroy-redis-${proof.run}",
         "redis",
