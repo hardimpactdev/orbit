@@ -11,6 +11,11 @@ import {
 export const Args = WorkerConfig.extend({ node_id: z.literal(209) });
 const KnownHostsArgs = z.object({ node_id: z.literal(209) }).strict();
 const KnownHostsAssets = z.object({ script_path: z.string() }).strict();
+const CredentialAssets = z.object({
+    check_path: z.string(),
+    renew_path: z.string(),
+})
+    .strict();
 export const Assets = z.object({
     unit: z.string(),
     checker: z.string(),
@@ -57,11 +62,16 @@ export async function assets(
 }
 export const behavior = {
     type: "@nckrtl/node-worker-assets",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
         known_hosts_script: {
             schema: KnownHostsAssets,
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
+        credential_scripts: {
+            schema: CredentialAssets,
             lifetime: "infinite",
             garbageCollection: 10,
         },
@@ -85,6 +95,35 @@ export const behavior = {
                     ),
                 });
                 await ctx.writeResource("known_hosts_script", "script", result);
+                return result;
+            },
+        },
+        credential_scripts: {
+            description:
+                "Locate the public credential expiry check and renewal",
+            arguments: KnownHostsArgs,
+            execute: async (raw: unknown, ctx: {
+                extensionFile: (path: string) => Promise<string> | string;
+                writeResource: (
+                    spec: string,
+                    name: string,
+                    value: unknown,
+                ) => Promise<unknown>;
+            }) => {
+                KnownHostsArgs.parse(raw);
+                const result = CredentialAssets.parse({
+                    check_path: await ctx.extensionFile(
+                        "scripts/credential_check.py",
+                    ),
+                    renew_path: await ctx.extensionFile(
+                        "scripts/credential_renew.py",
+                    ),
+                });
+                await ctx.writeResource(
+                    "credential_scripts",
+                    "scripts",
+                    result,
+                );
                 return result;
             },
         },
