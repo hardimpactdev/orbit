@@ -111,7 +111,7 @@ jobs:
     allowFailure: true
     forEach: *active
     dependsOn: [{condition: {type: succeeded}, step: candidate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["python3","-I","-c",steps["candidate_assets-0"].outputs.script_body,steps["candidate_assets-0"].outputs.repository_json] }}', sudo: false}, methodName: exec, type: behavior}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["python3","-I","-c",steps["candidate_assets-0"].outputs.script_body,steps["candidate_assets-0"].outputs.repository_json] }}', sudo: false, timeoutSec: 120}, methodName: exec, type: behavior}
   - name: candidate
     target: orbit-node-209
     allowFailure: true
@@ -144,7 +144,7 @@ jobs:
     forEach: *active
     writes: true
     dependsOn: [{condition: {type: succeeded}, step: mutate_assets}]
-    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ ["python3","-I","-c",steps["mutate_assets-0"].outputs.script_body,steps["mutate_assets-0"].outputs.candidate_json,steps["mutate_assets-0"].outputs.repository_json] }}', sudo: '${{ inputs.intent.manager=="apt" }}'}, methodName: exec, type: behavior}
+    task: {behaviorName: '${{ "tool-write-"+run.id+"-"+string(self._index) }}', behaviorType: '@swamp/ssh', globalArgs: *ssh, inputs: {hosts: 'name:target', argv: '${{ (inputs.intent.platform == "linux" ? ["timeout","900"] : []) + ["python3","-I","-c",steps["mutate_assets-0"].outputs.script_body,steps["mutate_assets-0"].outputs.candidate_json,steps["mutate_assets-0"].outputs.repository_json] }}', timeoutSec: 960, sudo: '${{ inputs.intent.manager=="apt" }}'}, methodName: exec, type: behavior}
   - name: after_query
     target: orbit-node-209
     allowFailure: true
