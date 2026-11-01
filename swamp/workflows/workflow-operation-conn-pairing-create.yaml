@@ -1,0 +1,73 @@
+id: 85fb12d7-c3a6-4d70-a2a8-c2a497374fc8
+name: operation-conn-pairing-create
+description: Create one Conn pairing with a native sensitive credential and public terminal metadata.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: conn.pairing_create
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        pairing_id:
+          type: integer
+        label:
+          type: string
+      required:
+      - url
+      - pairing_id
+      - label
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        admin_session:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^conn-pairing-create-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - admin_session
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: pairing
+  steps:
+  - name: issue
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-pairing'
+      behaviorName: ${{ "conn-pairing-" + run.id }}
+      methodName: issue
+      inputs:
+        intent: ${{ inputs.intent }}
+        env:
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key)
+            }}

@@ -108,7 +108,7 @@ it('settles native failure without result output and preserves captured pairings
     app(SwampCommandStep::class)->projectTerminal($operation, $run, ['job' => 'finish', 'step' => 'result']);
     app(SwampCommandStep::class)->projectTerminal($operation->fresh(), $run, ['job' => 'finish', 'step' => 'result']);
 
-    expect($operation->fresh()->status->value)->toBe('failed');
+    expect($operation->fresh()->status->value)->toBe($status);
     expect($operation->fresh()->error_code)->toBe('operation.native_failed');
     expect($operation->fresh()->result)->toBe(['error_code' => 'operation.native_failed']);
     expect($operation->fresh()->state['swamp_run_id'])->toBe($this->run);

@@ -29,7 +29,7 @@ class ConnRevocationNative(NativeTestCase):
             for job in workflow["jobs"]:
                 for step in job["steps"]:
                     self.assertEqual(step.pop("target"), "orbit-node-209")
-                    self.assertEqual(step.pop("labels"), {"node": "209"})
+                    self.assertNotIn("labels", step)
             (self.repo / "workflows" / filename).write_text(
                 yaml.safe_dump(workflow, sort_keys=False)
             )
@@ -171,6 +171,29 @@ class ConnRevocationNative(NativeTestCase):
         self.assertEqual(result, {"backend": "revoked", "revoked_sessions": 2})
         self.assertEqual(sorted(self.revoked), ["owned", "owned-two"])
         self.assertEqual(self.revoked_links, ["owned-link"])
+
+    def test_multiple_links_use_distinct_native_models_at_default_concurrency(self):
+        self.intent["links"] = ["first-link", "second-link", "third-link"]
+        run, result = self.run_revoke()
+        self.assertEqual(result, {"backend": "revoked", "revoked_sessions": 1})
+        self.assertEqual(sorted(self.revoked_links), sorted(self.intent["links"]))
+        links = [
+            step
+            for job in run["jobs"]
+            for step in job["steps"]
+            if step["name"].startswith("link-")
+        ]
+        self.assertEqual(len(links), 3)
+        resources = [
+            {
+                row["dataId"]
+                for row in step["dataArtifacts"]
+                if row.get("tags", {}).get("type") == "resource"
+            }
+            for step in links
+        ]
+        self.assertTrue(all(resources))
+        self.assertEqual(len(set.union(*resources)), sum(map(len, resources)))
 
     def test_failed_list_is_not_successful_empty_cleanup(self):
         self.fail_list = True

@@ -111,3 +111,37 @@ it('refuses invalid names or missing connection configuration before opening a s
     ['orbit-control-inputs', '--key', '192.0.2.209'],
     ['orbit-control-inputs', 'key', ''],
 ]);
+
+it('reads a schema-sensitive native value only from the matching authenticated vault response', function (): void {
+    $this->socket->reply = static fn (array $request): array => [['type' => 'vault.read-secret', 'id' => $request['id'],
+        'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => 'synthetic-output-private']]]];
+    expect($this->copies->readSecret('orbit-control-inputs', 'native-output-key'))->toBe('synthetic-output-private');
+    expect($this->socket->sent)->toHaveCount(1);
+    expect($this->socket->sent[0]['type'])->toBe('vault.read-secret');
+    expect(json_encode($this->socket->sent))->not->toContain('synthetic-output-private');
+    expect($this->socket->endpoint->bearerToken)->toBe('synthetic-gateway.private');
+    expect($this->socket->closed)->toBeTrue();
+});
+
+it('refuses foreign or missing native output data without retaining private diagnostics', function (string $failure): void {
+    $this->socket->reply = static function (array $request) use ($failure): array {
+        if ($failure === 'refused') {
+            return [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized', 'message' => 'private-native-diagnostic']]];
+        }
+
+        return [['type' => 'vault.read-secret', 'id' => $request['id'], 'payload' => ['data' => [
+            'vaultName' => $failure === 'vault' ? 'other' : $request['payload']['vaultName'],
+            'secretKey' => $failure === 'key' ? 'other' : $request['payload']['secretKey'],
+            'vaultType' => $failure === 'type' ? 'other' : 'local_encryption', 'value' => $failure === 'value' ? null : 'private-native-diagnostic',
+        ]]]];
+    };
+    try {
+        $this->copies->readSecret('orbit-control-inputs', 'native-output-key');
+        test()->fail('A mismatched output must refuse.');
+    } catch (ResourceOperationException $error) {
+        expect($error->errorCode)->toBe('swamp.secret_output_unavailable');
+        expect((string) $error)->not->toContain('private-native-diagnostic');
+        expect($error->getPrevious())->toBeNull();
+    }
+    expect($this->socket->closed)->toBeTrue();
+})->with(['refused', 'vault', 'key', 'type', 'value']);

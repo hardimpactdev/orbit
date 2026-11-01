@@ -66,8 +66,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels: &id001
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
@@ -77,7 +75,6 @@ jobs:
         intent: ${{ inputs.intent }}
   - name: list
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
@@ -102,7 +99,6 @@ jobs:
     guard: ${{ inputs.intent.labels.size() == 0 }}
   - name: select
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
@@ -124,7 +120,6 @@ jobs:
   steps:
   - name: session
     target: orbit-node-209
-    labels: *id001
     task:
       type: workflow
       workflowIdOrName: conn-revoke-session
@@ -146,11 +141,10 @@ jobs:
   steps:
   - name: link
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-link" }}
+      behaviorName: ${{ "conn-" + string(inputs.operation_id) + "-link-" + run.id + "-" + string(self._index) }}
       methodName: execute
       inputs:
         run: '#!/bin/sh
@@ -176,7 +170,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels: *id001
     task:
       type: behavior
       behaviorType: '@nckrtl/conn-revocation-plan'
