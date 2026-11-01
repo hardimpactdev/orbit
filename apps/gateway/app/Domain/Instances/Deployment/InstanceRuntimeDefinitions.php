@@ -159,6 +159,7 @@ final readonly class InstanceRuntimeDefinitions
     private function processInput(Process $row, bool $installation): array
     {
         $input = app(ProcessOperationAdmission::class)->inputForTarget($row, $installation ? 'create' : 'restart', $this->targets->forInstallation($row));
+
         return $installation ? $input : Arr::only($input, ['process_id', 'runtime', 'name', 'on_demand', 'directory', 'vite']);
     }
 
