@@ -168,18 +168,18 @@ function recordOnlyNodeProcessData(Node $node): AddProcessData
     );
 }
 
-it('refuses arbitrary intent at every fixed bootstrap entry point', function (string $method): void {
+it('refuses arbitrary intent at the retained collector bootstrap entry point', function (): void {
     $data = recordOnlyNodeProcessData($this->node);
     $action = app(CreateProcessAction::class);
 
-    expect(fn () => $action->{$method}($data))->toThrow(function (ResourceOperationException $error): void {
+    expect(fn () => $action->bootstrapCollector($data))->toThrow(function (ResourceOperationException $error): void {
         expect($error->errorCode)->toBe('process.bootstrap_invalid');
     });
 
     $this->assertDatabaseCount('processes', 0);
     $this->assertDatabaseCount('operations', 0);
     expect($this->runtime->converged)->toBeEmpty();
-})->with(['bootstrapCollector', 'bootstrapPi', 'bootstrapHorizon']);
+});
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(

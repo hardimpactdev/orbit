@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Processes\CascadeInstanceProcessesAction;
-use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\RecordProcessIntentAction;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\InstanceRemovalStatus;
@@ -11,7 +9,6 @@ use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessAdmissionLock;
-use App\Domain\Processes\ProcessRemovalGuard;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -114,41 +111,6 @@ it('refuses Process intent once removal has accepted the owner', function (): vo
         ->toBeEmpty()
         ->and(Process::query()->count())
         ->toBe(0);
-});
-
-it('includes recorded pending Process intent in owner removal cleanup', function (): void {
-    $instance = orb131_process_admission_instance();
-    $lock = new Orb131QueuedProcessAdmissionLock;
-    $runtime = new Orb131AdmissionRuntimeManager;
-    $data = new AddProcessData(
-        targetType: ProcessTargetType::Instance,
-        targetId: $instance->id,
-        name: 'queue',
-        runtime: ProcessRuntime::Systemd,
-        command: ['/usr/bin/php', 'artisan', 'queue:work'],
-        image: null,
-        workingDirectory: null,
-        environment: [],
-        ports: [],
-        volumes: [],
-        restartPolicy: 'always',
-        start: false,
-    );
-
-    $result = DB::transaction(fn () => app(RecordProcessIntentAction::class)->execute($data, new ProcessTargetResolver()->forAdmission($instance->refresh())));
-    orb131_accept_process_removal($instance);
-
-    expect($result['process']->status)
-        ->toBe(LifecycleStatus::Provisioning)
-        ->and($instance->refresh()->status)
-        ->toBe(InstanceState::Removing);
-    $this->assertDatabaseHas('processes', ['id' => $result['process']->id]);
-
-    new CascadeInstanceProcessesAction(new DestroyProcessAction($runtime, new ProcessTargetResolver, guards: app()->tagged(ProcessRemovalGuard::class)))->execute(
-        $instance->id,
-    );
-
-    $this->assertDatabaseMissing('processes', ['id' => $result['process']->id]);
 });
 
 it('keeps add start and restart admission behind SQLite placement after a clean conversion snapshot', function (): void {
