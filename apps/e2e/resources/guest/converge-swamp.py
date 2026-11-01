@@ -108,12 +108,23 @@ def grants(manifest):
 
 
 def load_source():
-    # Definitions are a fresh copy; no native state or generated models can write into the mount.
+    # Native runs create models too. Replace only source definitions, never their generated models.
+    inventory = ROOT / 'source-files.json'
+    previous = set(json.loads(inventory.read_text())) if inventory.exists() else set()
+    current = {}
     for name in ('extensions', 'models', 'workflows'):
-        destination = REPO / name
-        if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(SOURCE / name, destination, ignore=shutil.ignore_patterns('__pycache__'))
+        for source in (SOURCE / name).rglob('*'):
+            if source.is_file() and '__pycache__' not in source.parts:
+                current[str(source.relative_to(SOURCE))] = source
+    for relative in previous - set(current):
+        (REPO / relative).unlink(missing_ok=True)
+    for relative, source in current.items():
+        destination = REPO / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + '.source-new')
+        shutil.copyfile(source, temporary)
+        temporary.replace(destination)
+    inventory.write_text(json.dumps(sorted(current)))
     manifest = json.loads((SOURCE / 'config/gateway-workflow-grants.json').read_text())
     (ROOT / 'grants.yaml').write_text(json.dumps(grants(manifest)))
     run(['chown', '-R', 'orbit:orbit', str(ROOT)])

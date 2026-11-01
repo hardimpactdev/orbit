@@ -40,14 +40,19 @@ class TopologySwampTest(unittest.TestCase):
                 'workflows': []}))
             (repo / 'vaults/local_encryption').mkdir(parents=True)
             (repo / 'vaults/local_encryption/uuid.yaml').write_text('name: orbit-control-inputs\n')
+            (repo / 'models').mkdir()
+            (repo / 'models/generated.yaml').write_text('native model')
             (repo / '.swamp/data').mkdir(parents=True)
             (repo / '.swamp/data/history').write_text('retained')
             with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), \
                     patch.object(module, 'ROOT', root), patch.object(module, 'run'), patch.object(module, 'native') as native:
                 module.load_source()
+                (source / 'extensions/new.ts').unlink()
+                module.load_source()
             native.assert_not_called()
             self.assertEqual((repo / '.swamp/data/history').read_text(), 'retained')
-            self.assertEqual((repo / 'extensions/new.ts').read_text(), 'new source')
+            self.assertFalse((repo / 'extensions/new.ts').exists())
+            self.assertEqual((repo / 'models/generated.yaml').read_text(), 'native model')
             self.assertTrue((repo / 'vaults/local_encryption/uuid.yaml').exists())
 
     def test_local_credential_never_becomes_a_command_argument(self):
