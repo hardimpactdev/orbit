@@ -1,4 +1,5 @@
 """Legacy source cases executed against real Git, without an agent or live Node."""
+import base64
 import importlib.util
 import json
 import os
@@ -135,6 +136,42 @@ class LegacyCreatePhases(unittest.TestCase):
         self.assertEqual(result['template'], 'PUBLIC=" committed "\n\n')
         self.assertNotIn('never-return-node-value', json.dumps(result))
         self.assertFalse((self.target / '.env').exists())
+
+    def test_nested_application_uses_its_own_public_template_and_php_profile(self):
+        # Legacy ApplicationDirectory chooses the application above its public root.
+        application = self.seed / 'apps/site'
+        application.mkdir(parents=True)
+        (self.seed / '.env.example').write_text('WRONG_ROOT=not-the-application\n')
+        (application / '.env.example').write_text('APP_NAME=" Nested site "\nPUBLIC_MARKER=nested\n')
+        (application / 'composer.json').write_text(json.dumps({'require': {'php': '^8.3', 'laravel/framework': '^12.0',
+                                                                          'private/vendor-package': 'never-return-package'}}))
+        (application / 'artisan').write_text('<?php // public entry point\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'nested application')
+        self.value['resolve']['seed_commit'] = self.git('rev-parse', 'HEAD')
+        self.value['application'] = str(self.target / 'apps/site')
+        self.value['project_type'] = 'laravel-app'
+        (application / '.env').write_text('APP_KEY=never-return-nested-private-value\n')
+        result = self.create()
+        self.assertEqual(result['template'], 'APP_NAME=" Nested site "\nPUBLIC_MARKER=nested\n')
+        self.assertEqual(result['profile']['entry_point'], 'regular')
+        profile = json.loads(base64.b64decode(result['profile']['composer']))
+        self.assertEqual(profile, {'require': {'php': '^8.3', 'laravel/framework': '^12.0'}, 'require-dev': {}})
+        self.assertNotIn('private/vendor-package', json.dumps(profile))
+        self.assertNotIn('never-return-nested-private-value', json.dumps(result))
+        self.assertFalse((self.target / 'apps/site/.env').exists())
+
+    def test_unrouted_monorepo_skips_application_profile_at_repository_root(self):
+        # A monorepo root may contain unrelated or partial framework metadata.
+        (self.seed / 'composer.json').write_text('not application composer metadata\n')
+        (self.seed / 'artisan').write_text('unrelated root marker\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'monorepo root markers')
+        self.value['resolve']['seed_commit'] = self.git('rev-parse', 'HEAD')
+        self.value['project_type'] = 'monorepo'
+        result = self.create()
+        self.assertEqual(result['profile'], {'kind': 'none'})
+        self.assertEqual(result['branch'], 'feature')
 
 
 if __name__ == '__main__':
