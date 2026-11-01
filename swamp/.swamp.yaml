@@ -13,5 +13,5 @@ autoGc: true
 garbageCollection:
   automatic: true
   retention: 30d
-  workflowRuns: 1d
+  workflowRuns: 6h
   outputs: 1d
