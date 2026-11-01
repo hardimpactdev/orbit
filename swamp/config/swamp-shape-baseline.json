@@ -609,20 +609,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/create.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/create.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/destroy_owned.ts",
       "rule": "gateway-http",
       "count": 4,
@@ -655,15 +641,6 @@
       "rule": "private-material",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/database/local_sql.ts",
-      "rule": "custom-control",
-      "count": 3,
-      "evidence": [
-        "setTimeout",
-        "sleep"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/database/native_effect.ts",

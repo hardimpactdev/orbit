@@ -20,6 +20,8 @@ A server's `driver` names its kind. A `mysql` server runs MySQL, a `pgsql` serve
 
 ## Execution
 
+Managed database creation supplies public names and vault descriptors to placed native steps on 209. Official SSH runs one script action at a time on the admitted Node. Native fan-out creates databases and applies grants. Ownership checks precede changes; existing data and passwords survive repair and resume. SQL readiness makes one observation and leaves recovery to native resume. Server startup observes Docker’s healthy, unhealthy or die event without a family readiness deadline. The Gateway projects the recorded Connection after native success.
+
 Database actions return one [Operation](/reference/operations) with HTTP 202. The Gateway validates the request and records intent. Swamp runs one native DAG on the admitted Nodes and returns a bounded result. The CLI follows the Operation; use `--idempotency-key` after a lost start response. List and show read Gateway records. Tables, schema, describe and read-only queries run in the native Database read workflow.
 
 When a read starts, the workflow receives full non-secret intent and vault key names. Its placed steps run on 209 and use official SSH to the admitted Node; the Gateway supplies private material through the shared execution copy. Separate script files enforce read-only access and redact bounded rows before native output. The shared terminal subscriber records the typed result.

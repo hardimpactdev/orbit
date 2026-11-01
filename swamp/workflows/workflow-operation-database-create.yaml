@@ -1,58 +1,314 @@
 id: b77987fa-6c2a-4ba7-9b35-c1739ef369b1
 name: operation-database-create
-description: Create the admitted managed databases or Valkey ACL user on its exact Node.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Create admitted databases and users through native action steps over official SSH from209.
 writes: true
-vaults: []
+vaults: [orbit-control-inputs]
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.create
-  required:
-  - operation_id
-  - node_id
-  - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.create]}
+    intent: {type: object}
+    execution_secrets: {type: object, properties: {database_create: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-create-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_create], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-- name: server
+- name: actions
+  target: orbit-node-209
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: assets
+    <<: &placed {target: orbit-node-209}
+    writes: false
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-create'
-      behaviorName: ${{ "database-create-" + string(inputs.node_id) }}
-      methodName: apply
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-create-command-assets', behaviorName: '${{ "database-create-assets-" + run.id }}'}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    <<: &remote {target: orbit-node-209}
+    writes: false
+    task:
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-create-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: {name: '${{ "database-create-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}']
+  - name: copy
+    <<: *remote
+    writes: false
+    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}
+        direction: to
+        recursive: true
+  - name: prepared
+    <<: *placed
+    writes: false
+    dependsOn: [{step: copy, condition: {type: always}}]
+    task: {type: assert, expr: 'steps.copy.status == "succeeded"', severity: high, message: Database creation files unavailable.}
+  - name: action_01_sql_probe_user
+    <<: *remote
+    dependsOn: [{step: prepared, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_01_sql_probe_user")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
-    dependsOn:
-    - step: apply
-      condition:
-        type: succeeded
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: sql_probe_user
+        item: {}
+  - name: action_02_sql_probe_databases
+    <<: *remote
+    dependsOn: [{step: action_01_sql_probe_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_02_sql_probe_databases")) && steps[k].status == "failed") }}'
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-create'
-      behaviorName: ${{ "database-create-" + string(inputs.node_id) }}
-      methodName: project
+      type: workflow
+      workflowIdOrName: database-create-action
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: sql_probe_databases
+        item: {}
+  - name: action_03_sql_create_user
+    <<: *remote
+    dependsOn: [{step: action_02_sql_probe_databases, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_03_sql_create_user")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: sql_create_user
+        item: {}
+  - name: action_04_sql_authenticate
+    <<: *remote
+    dependsOn: [{step: action_03_sql_create_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_04_sql_authenticate")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: sql_authenticate
+        item: {}
+  - name: action_05_mysql_grant
+    <<: *remote
+    dependsOn: [{step: action_04_sql_authenticate, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "mysql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_05_mysql_grant")) && steps[k].status == "failed") }}'
+    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: mysql_grant
+        item: {name: '${{ self.selected }}', wildcard: false}
+  - name: action_06_mysql_grant_prefix
+    <<: *remote
+    dependsOn: [{step: action_05_mysql_grant, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "mysql" || inputs.intent.test_prefix == null || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_06_mysql_grant_prefix")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: mysql_grant
+        item: {name: '${{ inputs.intent.test_prefix }}', wildcard: true}
+  - name: action_07_sql_create_database
+    <<: *remote
+    dependsOn: [{step: action_06_mysql_grant_prefix, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_07_sql_create_database")) && steps[k].status == "failed") }}'
+    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: sql_create_database
+        item: {database: '${{ self.selected }}'}
+  - name: action_08_postgres_revoke_database
+    <<: *remote
+    dependsOn: [{step: action_07_sql_create_database, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_08_postgres_revoke_database")) && steps[k].status == "failed") }}'
+    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: postgres_revoke_database
+        item: {database: '${{ self.selected }}'}
+  - name: action_09_postgres_revoke_schema
+    <<: *remote
+    dependsOn: [{step: action_08_postgres_revoke_database, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_09_postgres_revoke_schema")) && steps[k].status == "failed") }}'
+    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: postgres_revoke_schema
+        item: {database: '${{ self.selected }}'}
+  - name: action_10_postgres_grant_schema
+    <<: *remote
+    dependsOn: [{step: action_09_postgres_revoke_schema, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "pgsql" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_10_postgres_grant_schema")) && steps[k].status == "failed") }}'
+    forEach: {item: selected, in: '${{ inputs.intent.databases }}'}
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: postgres_grant_schema
+        item: {database: '${{ self.selected }}'}
+  - name: action_11_valkey_index
+    <<: *remote
+    dependsOn: [{step: action_10_postgres_grant_schema, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_11_valkey_index")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: valkey_index
+        item: {}
+  - name: action_12_valkey_user
+    <<: *remote
+    dependsOn: [{step: action_11_valkey_index, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_12_valkey_user")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: valkey_user
+        item: {}
+  - name: action_13_valkey_set_user
+    <<: *remote
+    dependsOn: [{step: action_12_valkey_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_13_valkey_set_user")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: valkey_set_user
+        item: {}
+  - name: action_14_valkey_save
+    <<: *remote
+    dependsOn: [{step: action_13_valkey_set_user, condition: {type: always}}, {step: assets, condition: {type: succeeded}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.exists(k, (k in ["assets","directory","copy","prepared"] || (k.startsWith("action_") && k < "action_14_valkey_save")) && steps[k].status == "failed") }}'
+    task:
+      type: workflow
+      workflowIdOrName: database-create-action
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        intent_json: ${{ steps.assets.outputs.intent_json }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        action: valkey_save
+        item: {}
+  - name: completed
+    <<: *placed
+    writes: false
+    dependsOn: [{step: action_14_valkey_save, condition: {type: always}}]
+    task: {type: assert, expr: '!steps.exists(k, (k in ["assets","directory","copy","prepared"] || k.startsWith("action_")) && steps[k].status == "failed") && (inputs.intent.driver == "redis" ? steps.action_14_valkey_save.status == "succeeded" : steps.action_04_sql_authenticate.status == "succeeded")', severity: high, message: A database creation action failed.}
+- name: create
+  target: orbit-node-209
+  dependsOn: [{job: actions, condition: {type: always}}]
+  steps:
+  - name: result
+    <<: *placed
+    writes: false
+    task:
+      <<: *metadata
+      methodName: result
+      inputs:
+        completed: ${{ has(steps.completed) && steps.completed.status == "succeeded" }}
+        steps: ${{ steps }}
+  - name: cleanup
+    <<: *remote
+    allowFailure: true
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    guard: ${{ steps.result.outputs.exitCode != 0 }}
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-create-" + string(inputs.operation_id) }}']
+  - name: accept_result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: cleanup, condition: {type: always}}, {step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database creation did not complete.}

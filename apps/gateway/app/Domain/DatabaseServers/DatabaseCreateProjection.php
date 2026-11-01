@@ -11,9 +11,11 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -27,10 +29,16 @@ final readonly class DatabaseCreateProjection implements DirectOperationProjecti
         if ($id === null) {
             throw new ResourceOperationException('database.create_intent_invalid', 'The create belongs to another resource or Node.', 422);
         }
-        $input = DatabaseExecutionIntent::recorded($id)->payload['commands']['database-apply']['input'];
+        $intent = DatabaseExecutionIntent::recorded($id);
+        $input = $intent->payload['commands']['database-apply']['input'];
         $safe = array_intersect_key($input, array_flip(['repair', 'driver', 'username', 'databases', 'test_prefix', 'locale', 'host', 'port', 'container', 'index', 'patterns', 'allow']));
 
-        return $safe;
+        $node = Node::query()->findOrFail($operation->node_id);
+        $safe['ssh'] = ['host' => $node->wireguard_ip, 'user' => $node->user, 'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key) ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
+
+        return ['intent' => $safe, 'execution_secrets' => ['database_create' => app(SwampCommandStep::class)->executionCopy(
+            'orbit-control-inputs', 'database-create-intent-'.$intent->id, json_encode(array_intersect_key($input, array_flip(['password', 'payload'])), JSON_THROW_ON_ERROR),
+        )]];
     }
 
     public function apply(Operation $operation, array $data): Operation

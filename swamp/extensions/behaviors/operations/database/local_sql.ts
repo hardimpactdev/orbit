@@ -189,7 +189,11 @@ export async function runSqlProcess(
     return new TextDecoder().decode(bytes);
   })();
   try {
-    const [_, output, status] = await Promise.all([write, read, child.status]);
+    const [_, output, status] = await Promise.all([
+      write,
+      read,
+      child.status,
+    ]);
     finished = true;
     return { success: status.success, output };
   } finally {
@@ -201,36 +205,18 @@ export async function runSqlProcess(
     }
   }
 }
-const wait = (milliseconds: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error("database.server_admin_failed"));
-      return;
-    }
-    const abort = () => {
-      clearTimeout(timer);
-      reject(new Error("database.server_admin_failed"));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
-
-/** The Node's configured worker runs fixed Docker commands with sudo. */
+/** One SQL client observation or effect; native workflows own retry and resume. */
 export async function invokeSql(
   call: DatabaseSqlCall,
   signal?: AbortSignal,
   runner: SqlRunner = runSqlProcess,
-  clock = Date.now,
-  sleep = wait,
 ): Promise<SqlOutcome> {
   const parsed = SqlInput.safeParse(call.input);
   if (
     call.name !== "database.server-admin" || !parsed.success ||
-    call.sudo === false || !Number.isSafeInteger(call.deadlineMs) ||
-    call.deadlineMs < 1 || call.deadlineMs > 900000
+    call.sudo === false ||
+    !Number.isSafeInteger(call.deadlineMs) || call.deadlineMs < 1 ||
+    call.deadlineMs > 900000
   ) {
     return { error_code: "database.server_admin_invalid" };
   }
@@ -239,38 +225,28 @@ export async function invokeSql(
   if (!Number.isSafeInteger(bound) || bound < 1) {
     return { error_code: "database.server_admin_invalid" };
   }
-  const deadline = clock() +
-    (input.operation === "ready"
+  if (signal?.aborted) return { error_code: "database.server_admin_failed" };
+  try {
+    const deadline = input.operation === "ready"
       ? Math.min(call.deadlineMs, input.timeout_seconds * 1000)
-      : call.deadlineMs);
-  while (true) {
-    if (signal?.aborted) return { error_code: "database.server_admin_failed" };
-    try {
-      const process = sqlProcess(input, Math.max(1, deadline - clock()), bound);
-      // Once a mutation starts, let its bounded SQL client finish instead of abandoning it.
-      if (!call.mutates || input.operation === "ready") process.signal = signal;
-      const result = await runner(process);
-      if (new TextEncoder().encode(result.output).length > bound) {
-        return { error_code: "database.server_admin_invalid" };
-      }
-      if (result.success) {
-        return input.operation === "execute" ? { output: result.output } : {};
-      }
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === "database.server_admin_invalid"
-      ) return { error_code: "database.server_admin_invalid" };
-      // Process/schema exceptions can contain credentials or SQL. Return only a fixed code.
+      : call.deadlineMs;
+    const process = sqlProcess(input, deadline, bound);
+    if (!call.mutates || input.operation === "ready") {
+      process.signal = signal;
     }
-    if (input.operation !== "ready") {
-      return { error_code: "database.server_admin_failed" };
+    const result = await runner(process);
+    if (new TextEncoder().encode(result.output).length > bound) {
+      return { error_code: "database.server_admin_invalid" };
     }
-    if (clock() >= deadline) return { error_code: "database.server_not_ready" };
-    try {
-      await sleep(Math.min(2000, Math.max(1, deadline - clock())), signal);
-    } catch {
-      return { error_code: "database.server_admin_failed" };
+    if (result.success) {
+      return input.operation === "execute" ? { output: result.output } : {};
     }
+    return {
+      error_code: input.operation === "ready"
+        ? "database.server_not_ready"
+        : "database.server_admin_failed",
+    };
+  } catch {
+    return { error_code: "database.server_admin_failed" };
   }
 }

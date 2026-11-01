@@ -1,6 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
-import { createDatabase } from "./create.ts";
+import { createDatabase } from "./clone_create.ts";
 import { destroyDatabase } from "./destroy.ts";
 import { copyMysqlClone } from "./clone_mysql.ts";
 
@@ -15,6 +15,31 @@ const docker = async (...args: string[]) => {
   }
   return new TextDecoder().decode(result.stdout).trim();
 };
+// Docker owns startup probing; the production lower now performs one observation.
+async function waitHealthy(container: string): Promise<void> {
+  const process = new Deno.Command("/usr/bin/sudo", {
+    args: [
+      "-n",
+      "--",
+      "/usr/bin/python3",
+      "-B",
+      new URL(
+        "../database-server-commands/scripts/wait_ready.py",
+        import.meta.url,
+      ).pathname,
+      JSON.stringify({ container }),
+    ],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+    signal: AbortSignal.timeout(120000),
+  }).spawn();
+  const writer = process.stdin.getWriter();
+  await writer.write(new TextEncoder().encode("{}"));
+  await writer.close();
+  const result = await process.output();
+  assertEquals(result.success, true, new TextDecoder().decode(result.stdout));
+}
 export function registerMysqlLocalSqlEffect() {
   Deno.test({
     name:
@@ -39,7 +64,12 @@ export function registerMysqlLocalSqlEffect() {
         invoke({
           operation: "execute",
           password_variable: "MYSQL_PWD",
-          client: ["mysql", "--user=root", "--batch", "--skip-column-names"],
+          client: [
+            "mysql",
+            "--user=root",
+            "--batch",
+            "--skip-column-names",
+          ],
           sql,
         });
       try {
@@ -53,8 +83,17 @@ export function registerMysqlLocalSqlEffect() {
           container,
           "--env",
           "MYSQL_ALLOW_EMPTY_PASSWORD=yes",
+          "--health-cmd",
+          "mysqladmin --protocol=TCP --host=127.0.0.1 ping --silent",
+          "--health-interval",
+          "1s",
+          "--health-timeout",
+          "3s",
+          "--health-retries",
+          "60",
           "mysql:8.4",
         );
+        await waitHealthy(container);
         assertEquals(
           await invoke(
             {
@@ -79,7 +118,12 @@ export function registerMysqlLocalSqlEffect() {
             operation: "execute",
             password: "",
             password_variable: "MYSQL_PWD",
-            client: ["mysql", "--user=root", "--batch", "--skip-column-names"],
+            client: [
+              "mysql",
+              "--user=root",
+              "--batch",
+              "--skip-column-names",
+            ],
             sql:
               `ALTER USER 'root'@'localhost' IDENTIFIED BY '${password}'; CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${password}'; ALTER USER 'root'@'%' IDENTIFIED BY '${password}';`,
           }),
@@ -92,8 +136,9 @@ export function registerMysqlLocalSqlEffect() {
             salt: "YWFhYWFhYWFhYWFhYWFhYQ==",
           },
         };
-        const use = (f: (value: Record<string, unknown>) => Promise<void>) =>
-          f(material);
+        const use = (
+          f: (value: Record<string, unknown>) => Promise<void>,
+        ) => f(material);
         const base = {
           repair: false,
           driver: "mysql",
@@ -108,7 +153,9 @@ export function registerMysqlLocalSqlEffect() {
           patterns: [],
           allow: [],
         };
-        assertEquals(await createDatabase(base, use), { backend: "active" });
+        assertEquals(await createDatabase(base, use), {
+          backend: "active",
+        });
         assertEquals(
           await execute(
             "CREATE DATABASE proof_app_testing_test_1; CREATE DATABASE unrelated; CREATE TABLE proof_app.items (id INTEGER); INSERT INTO proof_app.items VALUES (7);",
@@ -159,7 +206,8 @@ export function registerMysqlLocalSqlEffect() {
               ...call,
               input: {
                 ...call.input,
-                sql: sql.split("\n")[0] + "\nSIGNAL SQLSTATE '45000';\n",
+                sql: sql.split("\n")[0] +
+                  "\nSIGNAL SQLSTATE '45000';\n",
               },
             }, signal);
           }
@@ -199,7 +247,8 @@ export function registerMysqlLocalSqlEffect() {
           { output: "unrelated\n" },
         );
         const large = await execute(
-          "SELECT REPEAT('x',262144);\n/*" + "z".repeat(524288) + "*/",
+          "SELECT REPEAT('x',262144);\n/*" + "z".repeat(524288) +
+            "*/",
         );
         assertEquals("output" in large && large.output.length, 262145);
       } finally {
@@ -254,10 +303,22 @@ export function registerPgsqlLocalSqlEffect() {
           container,
           "--env",
           "POSTGRES_HOST_AUTH_METHOD=trust",
+          "--health-cmd",
+          "pg_isready --host=127.0.0.1 --username=postgres",
+          "--health-interval",
+          "1s",
+          "--health-timeout",
+          "3s",
+          "--health-retries",
+          "60",
           "postgres:18-alpine",
         );
+        await waitHealthy(container);
         assertEquals(
-          await invoke({ operation: "ready", timeout_seconds: 45 }, false),
+          await invoke(
+            { operation: "ready", timeout_seconds: 45 },
+            false,
+          ),
           {},
         );
         assertEquals(
@@ -288,8 +349,9 @@ export function registerPgsqlLocalSqlEffect() {
           test_prefixes: [],
           owners: { proof_app: "proof_owner" },
         };
-        const use = (f: (value: Record<string, unknown>) => Promise<void>) =>
-          f({ password });
+        const use = (
+          f: (value: Record<string, unknown>) => Promise<void>,
+        ) => f({ password });
         assertEquals(await destroyDatabase(destroy, use), {
           error_code: "database.in_use",
         });
@@ -300,7 +362,9 @@ export function registerPgsqlLocalSqlEffect() {
           { output: "t\n" },
         );
         assertEquals(
-          await execute("ALTER DATABASE unrelated OWNER TO postgres;"),
+          await execute(
+            "ALTER DATABASE unrelated OWNER TO postgres;",
+          ),
           { output: "" },
         );
         assertEquals(await destroyDatabase(destroy, use), {

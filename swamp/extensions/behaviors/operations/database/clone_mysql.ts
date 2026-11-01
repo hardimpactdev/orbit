@@ -5,7 +5,7 @@ import {
   CreateInput,
   CreateResult,
   sqlLiteral,
-} from "./create.ts";
+} from "./clone_create.ts";
 import type { PrivateMaterialUse } from "./private_material.ts";
 
 export const MysqlCloneInput = CreateInput.safeExtend({
