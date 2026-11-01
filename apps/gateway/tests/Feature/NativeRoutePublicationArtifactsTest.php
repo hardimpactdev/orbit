@@ -26,12 +26,15 @@ it('captures only affected entries and shares equal artifacts across phases', fu
     $resolved = NativeRoutePublicationArtifacts::resolve($compact['artifacts'], $part);
     expect($resolved['before']['caddy']['content'])->toBe($header."\n".$moving)
         ->and($resolved['after']['caddy']['content'])->toBe($header)
+        ->and($resolved['after']['caddy']['unserved'])->toBeTrue()
+        ->and($resolved['after']['caddy']['had_served_groups'])->toBeTrue()
         ->and($resolved['before']['caddy'])->not->toHaveKey('blocks')
         ->and($resolved['before']['php']['configurations'])->toEqual((object) ['8.4' => "; Managed\n".$pool('1')])
         ->and($resolved['after']['php']['configurations'])->toEqual((object) [])
         ->and($resolved['before']['dns']['records'])->toContain('host-record=moving.test')->not->toContain('survivor')
         ->and(json_decode($resolved['before']['dns']['catalog'], true))->toBe(['domains' => ['moving.test' => ['10.44.0.9']]])
         ->and(json_decode($resolved['after']['dns']['catalog'], true))->toBe(['domains' => []]);
+    expect(app(NativeRoutePublicationArtifacts::class)->restrictCaddy($resolved['after']['caddy'], [$resolved['before']['caddy']])['had_served_groups'])->toBeTrue();
     expect($resolved['before']['caddy']['version'])->toBe(substr(hash('sha256', $resolved['before']['caddy']['content']), 0, 32));
 });
 
@@ -50,4 +53,18 @@ it('retains every distinct intermediate state and repeated same-owner Caddy bloc
         expect($resolved[$phase]['caddy']['content'])->toContain($site('moving', $phase), $site('moving', 'same'))->not->toContain('untouched')
             ->and($resolved[$phase]['dns'])->toBeNull();
     }
+});
+
+it('keeps inline Orbit marker text in the global Caddy header', function (): void {
+    $header = "# Managed by Orbit: Node Caddy build\n# A note containing # orbit: routes inline\n{ admin off }\n";
+    $block = "# orbit: routes moving\nhttps://moving.test { reverse_proxy 10.44.0.9 }\n";
+    $snapshot = static fn (string $content): array => [
+        'caddy' => ['content' => $content, 'version' => str_repeat('a', 32), 'listen_addresses' => [], 'unserved' => false],
+        'php' => ['account_user' => 'orbit', 'configurations' => (object) []], 'dns' => null,
+    ];
+
+    $states = app(NativeRoutePublicationArtifacts::class)->scope(['before' => $snapshot($header), 'after' => $snapshot($header."\n".$block)]);
+
+    expect($states['before']['caddy']['content'])->toBe($header)
+        ->and($states['after']['caddy']['content'])->toBe($header."\n".$block);
 });

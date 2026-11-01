@@ -1,4 +1,8 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+import {
+    assertEquals,
+    assertRejects,
+    assertThrows,
+} from "jsr:@std/assert@1.0.19";
 import { composeCaddy, composePhp } from "./assets.ts";
 import { mergeDns } from "../mutation-command/dns.ts";
 
@@ -21,9 +25,11 @@ const placement = {
     },
     direction: "forward",
 };
-async function snapshot(phase: string) {
-    const content = header + "\n" + block("moving", phase) + "\n" +
-        block("moving", "same") + "\n" + block("survivor", "unchanged");
+async function snapshot(
+    phase: string,
+    content = header + "\n" + block("moving", phase) + "\n" +
+        block("moving", "same") + "\n" + block("survivor", "unchanged"),
+) {
     const version = Array.from(
         new Uint8Array(
             await crypto.subtle.digest(
@@ -61,13 +67,9 @@ async function snapshot(phase: string) {
     };
 }
 
-Deno.test("Gateway sparse artifacts equal full canonical composition through every phase and restore", async () => {
-    const phases = ["before", "prepared", "withdrawn", "after"] as const;
-    const states = Object.fromEntries(
-        await Promise.all(
-            phases.map(async (phase) => [phase, await snapshot(phase)]),
-        ),
-    );
+async function capture(
+    states: Record<string, Awaited<ReturnType<typeof snapshot>>>,
+) {
     const child = new Deno.Command("php", {
         args: [
             new URL(
@@ -86,7 +88,17 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
     await writer.close();
     const output = await child.output();
     assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
-    const compact = JSON.parse(new TextDecoder().decode(output.stdout));
+    return JSON.parse(new TextDecoder().decode(output.stdout));
+}
+
+Deno.test("Gateway sparse artifacts equal full canonical composition through every phase and restore", async () => {
+    const phases = ["before", "prepared", "withdrawn", "after"] as const;
+    const states = Object.fromEntries(
+        await Promise.all(
+            phases.map(async (phase) => [phase, await snapshot(phase)]),
+        ),
+    );
+    const compact = await capture(states);
     const sparse = Object.fromEntries(
         phases.map(
             (phase) => [
@@ -192,4 +204,64 @@ Deno.test("Gateway sparse artifacts equal full canonical composition through eve
         Error,
         "owned_revision_conflict",
     );
+});
+
+Deno.test("sparse create and withdrawal restore refuse a missing Caddyfile when unaffected sites were served", async () => {
+    const survivor = await snapshot(
+        "same",
+        header + "\n" + block("survivor", "unchanged"),
+    );
+    const withMoving = await snapshot(
+        "same",
+        survivor.caddy.content + "\n" + block("moving", "new"),
+    );
+    for (const direction of ["forward", "restore"]) {
+        const [before, after] = direction === "forward"
+            ? [survivor, withMoving]
+            : [withMoving, survivor];
+        const compact = await capture({
+            before,
+            prepared: before,
+            withdrawn: after,
+            after,
+        });
+        const row = compact.publications[0];
+        const original = compact.artifacts
+            .caddy[row[direction === "forward" ? "before" : "after"].caddy];
+        assertEquals(original.content, header);
+        await assertRejects(
+            () =>
+                composeCaddy({
+                    ...placement,
+                    direction,
+                    before: compact.artifacts.caddy[row.before.caddy],
+                    after: compact.artifacts.caddy[row.after.caddy],
+                    current: "",
+                }),
+            Error,
+            "caddy.current_config_missing",
+        );
+    }
+});
+
+Deno.test("sparse create permits a missing Caddyfile on a genuinely empty Node", async () => {
+    const before = await snapshot("same", header);
+    const after = await snapshot(
+        "same",
+        header + "\n" + block("moving", "new"),
+    );
+    const compact = await capture({
+        before,
+        prepared: before,
+        withdrawn: after,
+        after,
+    });
+    const row = compact.publications[0];
+    const result = await composeCaddy({
+        ...placement,
+        before: compact.artifacts.caddy[row.before.caddy],
+        after: compact.artifacts.caddy[row.after.caddy],
+        current: "",
+    });
+    assertEquals(result.caddy.content, after.caddy.content);
 });

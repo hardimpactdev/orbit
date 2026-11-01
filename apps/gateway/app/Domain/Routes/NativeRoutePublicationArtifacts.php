@@ -16,6 +16,7 @@ final readonly class NativeRoutePublicationArtifacts
     public function capture(array $publications): array
     {
         $artifacts = ['caddy' => [], 'php' => [], 'dns' => []];
+        $indexes = [];
         foreach ($publications as &$publication) {
             $states = [];
             foreach (['before', 'prepared', 'withdrawn', 'after'] as $name) {
@@ -30,7 +31,7 @@ final readonly class NativeRoutePublicationArtifacts
                         continue;
                     }
                     $artifact = ValidatedData::object($state[$kind]);
-                    $publication[$name][$kind] = $this->intern($artifacts, $kind, $artifact);
+                    $publication[$name][$kind] = $this->intern($artifacts, $kind, $artifact, $indexes);
                 }
             }
         }
@@ -41,17 +42,23 @@ final readonly class NativeRoutePublicationArtifacts
 
     /** @param array<string,list<array<string,mixed>>> $artifacts
      * @param  array<string,mixed>  $artifact
+     * @param  array<string,array<string,int>>  $indexes
      */
-    public function intern(array &$artifacts, string $kind, array $artifact): int
+    public function intern(array &$artifacts, string $kind, array $artifact, array &$indexes): int
     {
-        $encoded = json_encode($artifact, JSON_THROW_ON_ERROR);
-        foreach ($artifacts[$kind] as $index => $existing) {
-            if (json_encode($existing, JSON_THROW_ON_ERROR) === $encoded) {
-                return $index;
+        if (! isset($indexes[$kind])) {
+            $indexes[$kind] = [];
+            foreach ($artifacts[$kind] as $index => $existing) {
+                $indexes[$kind][hash('sha256', json_encode($existing, JSON_THROW_ON_ERROR))] = $index;
             }
+        }
+        $hash = hash('sha256', json_encode($artifact, JSON_THROW_ON_ERROR));
+        if (isset($indexes[$kind][$hash])) {
+            return $indexes[$kind][$hash];
         }
         $index = count($artifacts[$kind]);
         $artifacts[$kind][] = $artifact;
+        $indexes[$kind][$hash] = $index;
 
         return $index;
     }
@@ -147,19 +154,24 @@ final readonly class NativeRoutePublicationArtifacts
         return $this->caddySubset($caddy, $keys);
     }
 
-    /** @param array<string,mixed> $caddy
+    /** Sparse unserved means no affected blocks; had_served_groups describes the full source snapshot.
+     * @param  array<string,mixed>  $caddy
      * @param  list<string>  $keys
      * @return array<string,mixed>
      */
     private function caddySubset(array $caddy, array $keys): array
     {
-        $header = rtrim(explode('# orbit: ', ValidatedData::string($caddy['content']), 2)[0], "\n")."\n";
-        $groups = array_intersect_key($this->caddyGroups($caddy), array_fill_keys($keys, true));
+        $text = ValidatedData::string($caddy['content']);
+        preg_match('/^# orbit: [^\\s]+ [^\\r\\n]+\\n/m', $text, $marker, PREG_OFFSET_CAPTURE);
+        $header = rtrim(substr($text, 0, $marker[0][1] ?? strlen($text)), "\n")."\n";
+        $allGroups = $this->caddyGroups($caddy);
+        $hadServedGroups = $caddy['had_served_groups'] ?? $allGroups !== [];
+        $groups = array_intersect_key($allGroups, array_fill_keys($keys, true));
         $blocks = array_merge([], ...array_values($groups));
         $content = $header.($blocks === [] ? '' : "\n".implode("\n", $blocks));
         unset($caddy['blocks']);
 
-        return [...$caddy, 'content' => $content, 'version' => substr(hash('sha256', $content), 0, 32), 'unserved' => $blocks === []];
+        return [...$caddy, 'content' => $content, 'version' => substr(hash('sha256', $content), 0, 32), 'unserved' => $blocks === [], 'had_served_groups' => $hadServedGroups];
     }
 
     /** @param array<string,mixed> $php
