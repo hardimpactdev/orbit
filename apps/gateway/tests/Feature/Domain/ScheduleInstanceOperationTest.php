@@ -6,12 +6,14 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Schedules\ScheduleInstanceOperation;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
@@ -97,3 +99,38 @@ function scheduleInstanceParent(Instance $instance, array $input): Operation
         'node_id' => $instance->node_id, 'status' => 'running', 'input' => $input,
         'state' => ['swamp_run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]);
 }
+
+it('starts one native parent with every public member and no command copy', function (): void {
+    $first = scheduleInstanceCopy($this->instance, 'first');
+    $second = scheduleInstanceCopy($this->instance, 'second');
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    ]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'shared.scoped.fixture']);
+
+    $operation = $this->runtime->execute($this->instance);
+    expect(Operation::query()->count())->toBe(1)->and($socket->sent)->toHaveCount(1);
+    $request = $socket->sent[0];
+    expect($request['type'])->toBe('workflow.run')
+        ->and($request['payload']['workflowIdOrName'])->toBe('operation-schedule-install-instance-definitions')
+        ->and(array_column($request['payload']['inputs']['intent']['members'], 'id'))->toEqualCanonicalizing([$first->id, $second->id])
+        ->and(json_encode($request['payload']['inputs']['execution_secrets']))->toBe('{}')
+        ->and(json_encode($request))->not->toContain('schedule-private-fixture')
+        ->and($operation->refresh()->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
+});
+
+it('projects a native root failure onto every captured member without trusting member output', function (): void {
+    $first = scheduleInstanceCopy($this->instance, 'first');
+    $second = scheduleInstanceCopy($this->instance, 'second');
+    $operation = scheduleInstanceParent($this->instance, $this->runtime->capture($this->instance));
+    $this->runtime->apply($operation, ['run_id' => $operation->state['swamp_run_id'], 'status' => 'failed', 'error_code' => 'operation.native_failed',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['ready' => true, 'members' => [['id' => $first->id, 'ready' => true]]]]);
+    foreach ([$first, $second] as $member) {
+        expect($member->refresh()->status->value)->toBe('failed')
+            ->and($member->error_code)->toBe('operation.native_failed')
+            ->and($member->desired_timer_state->value)->toBe('disabled');
+    }
+    expect($operation->refresh()->result)->toBe(['error_code' => 'operation.native_failed'])->and(Operation::query()->count())->toBe(1);
+});
