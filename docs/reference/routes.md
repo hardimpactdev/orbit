@@ -26,6 +26,8 @@ Caddy convergence starts `operation-route-caddy` after intent commits. Its nativ
 
 Route destroy and withdrawal use one native Swamp DAG. Admission captures all current and transition placements, marks desired withdrawal, and retains Route rows and targets. Swamp publishes fresh DNS, Caddy and PHP state on each admitted Node, restores remaining workload URLs and runtime configuration, then removes unused certificate scopes and LAN rules. Only the parent posts the terminal result. The Gateway deletes exactly the captured Route rows after successful destroy; withdrawal keeps them. Offline removal records retained Node cleanup as residue. Explicit provider-absent Nodes are excluded before account resolution while their Route inventory remains complete.
 
+Every composing workflow that forwards an environment execution copy declares `orbit-control-inputs`. This includes both Route mutation phases and the Cluster Router root and publication phases.
+
 Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
 
 Private DNS publication still uses `operation-route-publication` and its existing named primitive. Neither direct workflow uses scheduled discovery, claims, leases or Gateway execution locks. Follow the Swamp run before retrying an uncertain admission. The remaining Route lifecycle kinds refuse admission until their native conversion is available.

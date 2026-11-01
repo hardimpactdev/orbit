@@ -177,7 +177,7 @@ export function mutationWorkflow(mode: "forward" | "restore"): Fields {
         target: "orbit-node-209",
         description:
             "Canonical Route publications and complete native contribution proof.",
-        vaults: [],
+        vaults: ["orbit-control-inputs"],
         inputs: {
             ...envelope,
             properties: {

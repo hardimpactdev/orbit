@@ -1,7 +1,8 @@
 id: 30f3bb33-0431-4fdf-9cd5-b54c5da45354
 name: operation-cluster-router
 description: One immutable Router transition on209 through shared native publication children.
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:

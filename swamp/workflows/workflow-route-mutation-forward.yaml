@@ -2,7 +2,8 @@ id: b2ec4a6d-fc95-4a2c-b6b8-e26c7bf871c7
 name: route-mutation-forward
 target: orbit-node-209
 description: Canonical Route publications and complete native contribution proof.
-vaults: []
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
