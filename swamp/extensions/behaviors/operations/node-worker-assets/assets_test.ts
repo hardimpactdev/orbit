@@ -3,6 +3,7 @@ import {
     assertRejects,
     assertStringIncludes,
 } from "jsr:@std/assert@1";
+import { parse } from "jsr:@std/yaml@1.0.12";
 import { assets, behavior } from "./assets.ts";
 import { Swamp, workerUnit } from "../../node-worker/config.ts";
 
@@ -89,5 +90,47 @@ Deno.test("known-hosts script metadata is fixed209 and written as a native resou
                 },
             })
         );
+    }
+});
+
+Deno.test("manifest scripts reach a remote cache without source checkout access", async () => {
+    const manifest = parse(
+        await Deno.readTextFile(new URL("manifest.yaml", import.meta.url)),
+    ) as {
+        version: string;
+        additionalFiles: string[];
+    };
+    const cache = await Deno.makeTempDir({ prefix: "known-hosts-assets-" });
+    const cacheRoot = new URL(`file://${cache}/`);
+    try {
+        for (const relative of manifest.additionalFiles) {
+            const destination = new URL(relative, cacheRoot);
+            await Deno.mkdir(new URL(".", destination), { recursive: true });
+            await Deno.copyFile(
+                new URL(relative, import.meta.url),
+                destination,
+            );
+        }
+        const context = {
+            extensionFile: (relative: string) =>
+                new URL(relative, cacheRoot).pathname,
+            writeResource: () => Promise.resolve(),
+        };
+        const known = await behavior.methods.known_hosts.execute({
+            node_id: 209,
+        }, context);
+        assertEquals(
+            await Deno.readTextFile(known.script_path),
+            await read("scripts/write_known_hosts.py"),
+        );
+        const installed = await behavior.methods.read.execute({
+            node_id: 209,
+            user: "orbit",
+        }, context);
+        assertStringIncludes(installed.preflight, 'WORKER_USER = "orbit"');
+        assertStringIncludes(installed.checker, "MINIMUM_MEMORY_BYTES");
+        assertEquals(manifest.version, behavior.version);
+    } finally {
+        await Deno.remove(cache, { recursive: true });
     }
 });
