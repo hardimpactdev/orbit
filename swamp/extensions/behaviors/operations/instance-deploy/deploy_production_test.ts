@@ -107,15 +107,6 @@ async function fixture() {
       testing: null,
     },
     definitions_material: {
-      processes: {
-        14: {
-          installation: {
-            runtime: "systemd",
-            content: unit,
-            environment: "TOKEN=private-unit",
-          },
-        },
-      },
       schedules: { [schedule.id]: { command: scheduleCommand } },
     },
   };
@@ -255,7 +246,7 @@ async function fixture() {
       return Promise.resolve();
     },
   };
-  const execute = () => {
+  const execute = async (segment?: "prepare" | "finish") => {
     const trace = async (
       name: string,
       input: Record<string, unknown>,
@@ -286,7 +277,7 @@ async function fixture() {
     const source = localFixture((call) =>
       trace(methods[call.name] ?? call.name, call.input, call.mutates)
     );
-    return deployDirect({
+    const model = deployDirect({
       http: ports.http,
       now: ports.now,
       run: ports.run,
@@ -306,17 +297,6 @@ async function fixture() {
               input.mode !== "inspect",
             ),
         },
-        process: (name, input, _digest) =>
-          ports.invoke({
-            name,
-            input,
-            pin: "fixture",
-            mutates: !["process.check-release", "process.status"].includes(
-              name,
-            ),
-            sudo: true,
-            deadlineMs: 900000,
-          }),
         processControl: (name, input, _digest) =>
           ports.invoke({
             name,
@@ -349,7 +329,15 @@ async function fixture() {
             }
           >,
       },
-    }).methods.run.execute(args, ctx);
+    });
+    if (segment === "finish") return await model.methods.finishProduction.execute(args, ctx);
+    const prepared = await model.methods.prepareProduction.execute(
+      args,
+      ctx,
+    );
+    if (segment === "prepare") return prepared;
+    if (!("ready" in prepared)) return prepared;
+    return await model.methods.finishProduction.execute(args, ctx);
   };
   return {
     args,
@@ -386,10 +374,6 @@ Deno.test("production composes source environment app steps activation definitio
     "instance.inspect-environment-sync",
     "instance.write-environment",
     "instance.activate-release",
-    "process.check-release",
-    "process.stage-unit",
-    "process.activate-unit",
-    "process.status",
     "account.lookup",
     "schedule.install",
     "process.check-release",
@@ -644,8 +628,6 @@ Deno.test("production uncertain activation never asserts a selected release or e
 Deno.test("production Schedule-only aggregate accepts PHP empty Process map without guessing account group", async () => {
   const f = await fixture();
   f.input.runtime_definitions.processes = [];
-  f.material.definitions_material.processes =
-    [] as unknown as typeof f.material.definitions_material.processes;
   assertEquals(await f.execute(), { status: "succeeded" });
   assertEquals(
     f.calls.some((call) => call.name === "process.stage-unit"),
@@ -748,4 +730,21 @@ Deno.test("an active same-root pointer without its immutable journal cannot beco
   assertEquals(f.calls, []);
   assertEquals(await f.failure(), { status: "held" });
   assertEquals(f.posts, []);
+});
+
+
+Deno.test("production retains its execution owner across native Process installation", async () => {
+  const f = await fixture();
+  assertEquals(await f.execute("prepare"), { ready: true });
+  assertEquals(f.resources.get("activeExecution"), { operation_id: f.args.operation_id, run_id: f.args.run_id, active: true });
+  const calls = f.calls.length;
+  const foreign = { ...f.args, operation_id: 999, run_id: "57183972-fd25-4bf8-9ec7-aeaa12b4a880" };
+  const model = deployDirect({ http: () => async () => ({ status: 200, body: { data: {
+    id: foreign.operation_id, kind: foreign.kind, node_id: foreign.node_id, status: "running", cancel_requested: false, input: f.input,
+  } } }) });
+  await assertRejects(() => model.methods.prepareProduction.execute(foreign, f.ctx), Error, "deployment.target_busy");
+  assertEquals(await model.methods.failure.execute(foreign, f.ctx), { status: "held" });
+  assertEquals(f.calls.length, calls);
+  assertEquals(await f.execute("finish"), { status: "succeeded" });
+  assertEquals(f.resources.get("activeExecution"), { operation_id: f.args.operation_id, run_id: f.args.run_id, active: false });
 });

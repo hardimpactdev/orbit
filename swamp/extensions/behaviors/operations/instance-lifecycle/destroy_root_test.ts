@@ -54,6 +54,7 @@ export function setup() {
     return Promise.resolve({ status: 200, body: { data: operation } });
   };
   const ctx = {
+    extensionFile: (path:string) => path,
     globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/test/ca.pem" },
     writeResource: (
       spec: string,

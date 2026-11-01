@@ -6,6 +6,7 @@ namespace App\Domain\Firewall;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -17,7 +18,7 @@ final readonly class FirewallInspectionProjection implements DirectOperationProj
 
     public function input(Operation $operation): array
     {
-        return ['node_id' => $operation->node_id];
+        return ['intent' => $operation->input['intent'], 'execution_secrets' => []];
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -34,6 +35,17 @@ final readonly class FirewallInspectionProjection implements DirectOperationProj
                 throw new \InvalidArgumentException('The native firewall snapshot requires a rule list.');
             }
             $result['live'] = array_map(static fn (mixed $row): array => UfwRuleShape::fromAgentOutput(ValidatedData::object($row))->toAgentInput(), $raw['live']);
+        }
+
+        if (isset($raw['comparison'])) {
+            $comparison = ValidatedData::object($raw['comparison']);
+            $result['comparison'] = [];
+            foreach (['live', 'missing'] as $field) {
+                $rows = RouteExecutionProof::objects($comparison[$field]);
+                $result['comparison'][$field] = array_map(static fn (array $row): array => array_intersect_key($row, array_flip([
+                    'name', 'comment', 'action', 'source', 'destination', 'port', 'protocol', 'interface', 'family', 'match',
+                ])), $rows);
+            }
         }
 
         return $this->direct->project($operation, $data, $result);

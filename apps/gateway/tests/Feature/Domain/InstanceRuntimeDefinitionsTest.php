@@ -8,6 +8,7 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -17,10 +18,11 @@ use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 
 function native_runtime_target(): Instance
 {
-    $node = Node::query()->create(['name' => 'runtime-target', 'platform' => 'linux', 'status' => 'active',
+    $node = Node::query()->create(['name' => 'runtime-target', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'public-runtime-pin', 'platform' => 'linux', 'status' => 'active',
         'user' => 'orbit', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '192.0.2.9']);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $project = Project::query()->create(['name' => 'Runtime', 'slug' => 'native-runtime',
@@ -65,10 +67,11 @@ it('captures canonical production copies and private member material without run
         ->and($runtime['schedules'][0])->toMatchArray(['user' => $instance->production_user, 'home' => $instance->production_home,
             'working_directory' => $instance->production_home.'/current', 'shell' => '/bin/bash', 'login_shell' => false, 'desired' => 'disabled'])
         ->and(array_key_exists('group', $runtime['schedules'][0]))->toBeFalse()
-        ->and(json_encode($runtime))->not->toContain('private-unit-value')
+        ->and(json_encode($runtime))->not->toContain('private-schedule-value')
         ->and(json_encode($runtime))->not->toContain('private-container-value')
         ->and(json_encode($runtime))->not->toContain('private-schedule-value')
-        ->and(json_encode($material))->toContain('private-unit-value', 'private-container-value', 'private-schedule-value')
+        ->and(json_encode($material))->toContain('private-schedule-value')
+        ->and(json_encode($material))->not->toContain('private-unit-value', 'private-container-value')
         ->and(Operation::query()->count())->toBe(0)
         ->and($instance->refresh()->runtime_definitions_captured_at)->not->toBeNull();
 });
@@ -104,7 +107,7 @@ it('refuses private material for another parent Node or owner and changed member
         'terminal' => $parent->status = 'succeeded',
     };
 
-    expect(fn () => $aggregate->material($parent))->toThrow(ResourceOperationException::class);
+    expect(fn () => str_starts_with($change, 'process-') ? $aggregate->processWorkflowInput($parent) : $aggregate->material($parent))->toThrow(ResourceOperationException::class);
 })->with(['node', 'target', 'kind', 'process-owner', 'process-bytes', 'schedule-owner', 'schedule-bytes', 'terminal']);
 
 it('captures only running active restart-on-deploy members for rollback without copying definitions', function (): void {
@@ -199,7 +202,26 @@ it('accepts reordered public intent keys but preserves strict member identity ty
     $runtime['processes'] = array_map(fn (array $entry): array => array_reverse($entry, true), $runtime['processes']);
     $runtime['schedules'] = array_map(fn (array $entry): array => array_reverse($entry, true), $runtime['schedules']);
 
-    expect(json_encode($aggregate->material(native_runtime_parent($instance, $runtime))))->toContain('private-unit-value');
+    expect(json_encode($aggregate->material(native_runtime_parent($instance, $runtime))))->toContain('private-schedule-value');
     $runtime['processes'][0]['on_demand'] = 0;
-    expect(fn () => $aggregate->material(native_runtime_parent($instance, $runtime)))->toThrow(ResourceOperationException::class);
+    expect(fn () => $aggregate->processWorkflowInput(native_runtime_parent($instance, $runtime)))->toThrow(ResourceOperationException::class);
+});
+
+it('publishes full deployment Process inputs with environment-only copies without publishing unit bytes as secrets', function (): void {
+    $instance = native_runtime_target();
+    native_runtime_definitions($instance);
+    $runtime = app(InstanceRuntimeDefinitions::class)->capture($instance);
+    $parent = native_runtime_parent($instance, $runtime);
+    $parent->id = 321;
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture']);
+    $input = app(InstanceRuntimeDefinitions::class)->processWorkflowInput($parent);
+    expect($input['members'])->toHaveCount(2)
+        ->and(json_encode($input))->not->toContain('private-unit-value', 'private-container-value', 'private-schedule-value')
+        ->and(array_values(array_filter($input['members'], fn (array $member): bool => $member['intent']['installation']['runtime'] === 'systemd'))[0]['intent']['installation']['unit'])->toContain('[Service]', 'X-Orbit-Process-ID=')
+        ->and($socket->sent)->toHaveCount(2)
+        ->and(json_encode(array_column(array_column($socket->sent, 'payload'), 'value')))->toContain('private-unit-value')
+        ->and($socket->sent[0]['payload']['value'])->not->toContain('[Service]');
 });

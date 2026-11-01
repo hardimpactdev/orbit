@@ -9,7 +9,9 @@ use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Processes\ProcessInstallationBatch;
 use App\Domain\Routes\NativeRouteTransferPlan;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,7 +23,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** The native parent chooses execution order. These bounded callbacks only change domain state. */
-final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView
+final readonly class NativeInstanceTransferProjection implements DirectOperationProjection, DirectOperationPublicView, DirectOperationWorkflowInput
 {
     public function __construct(private DirectOperation $direct, private NativeRouteTransferPlan $routes) {}
 
@@ -31,6 +33,15 @@ final readonly class NativeInstanceTransferProjection implements DirectOperation
             || ! in_array($callerNodeId, ValidatedData::integerList($operation->input['participant_node_ids'] ?? []), true)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Node is not an admitted transfer participant.', 403);
         }
+    }
+
+    public function workflowInput(Operation $operation): array
+    {
+        $source = app(ProcessInstallationBatch::class)->nativeInput($operation, 'source_installations');
+        $destination = app(ProcessInstallationBatch::class)->nativeInput($operation, 'destination_installations');
+
+        return ['intent' => ['source_processes' => $source['members'], 'destination_processes' => $destination['members']],
+            'execution_secrets' => [...$source['execution_secrets'], ...$destination['execution_secrets']]];
     }
 
     public function input(Operation $operation): array

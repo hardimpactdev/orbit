@@ -6,8 +6,6 @@ namespace App\Domain\Processes;
 
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\StoragePath;
-use App\Domain\Operations\DirectOperationPrivateBindings;
-use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -23,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class ProcessInstallationBatch
 {
     public function __construct(private ProcessOperationAdmission $admission, private ProcessOperationSecrets $secrets,
-        private ProcessControlProjection $projection, private DirectOperationPrivateBindings $bindings) {}
+        private ProcessControlProjection $projection, private ProcessLifecycleInput $native) {}
 
     /** The target's Instance is an admitted placement view, never a saved replacement Instance.
      * @return array<string,mixed>
@@ -54,7 +52,7 @@ final readonly class ProcessInstallationBatch
                 'certificate_scope' => $target->certificateScope, 'environment_file' => $target->environmentFile,
                 'production_release_layout' => $target->productionReleaseLayout, 'route_domain' => $target->routeDomain,
                 'on_demand' => $target->onDemandHostStart,
-                'instance' => Arr::only($placed->getAttributes(), ['checkout_path', 'root', 'source_is_laravel', 'vite_port', 'ssr_port']),
+                'instance' => array_replace(array_fill_keys(['checkout_path', 'root', 'source_is_laravel', 'vite_port', 'ssr_port'], null), Arr::only($placed->getAttributes(), ['checkout_path', 'root', 'source_is_laravel', 'vite_port', 'ssr_port'])),
                 'account' => $account === null ? null : ['user' => $account->user, 'group' => $account->group, 'home' => $account->home]],
             'members' => $members];
     }
@@ -70,91 +68,55 @@ final readonly class ProcessInstallationBatch
                 ValidatedData::integer($batch['node_id'])), ['control', 'installation'])], $this->members($batch));
     }
 
-    /** Render a frozen prospective placement before the native parent starts; no DB cutover is required.
-     * The parent owns vault publication and fixed descriptor names through SwampCommandStep.
-     *
-     * @param  array<string,mixed>  $capture
+    /** Full public prospective intent and environment-only copies, before placement changes.
+     * @return array{members:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function materialForCapture(Instance $instance, ProcessTarget $target, array $capture, ?ManagedUserAccount $account = null): OperationSecretValue
-    {
-        return DB::transaction(function () use ($instance, $target, $capture, $account): OperationSecretValue {
-            $placement = $target->instance;
-            if ($placement === null) {
-                $this->refuse();
-            }
-            $origin = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            $node = Node::query()->findOrFail($target->node->id);
-            if ($origin->node_id !== ($capture['origin_node_id'] ?? null)
-                || $origin->checkout_path !== ($capture['origin_checkout'] ?? null)
-                || $node->status !== LifecycleStatus::Active || $node->platform !== 'linux'
-                || $this->capture($origin, $target, $account) !== $capture) {
-                $this->refuse();
-            }
-            $values = $redactions = [];
-            foreach ($this->members($capture) as $member) {
-                $record = Process::query()->findOrFail(ValidatedData::integer($member['id']));
-                $view = $this->placedProcess($record, $origin->checkout_path, $placement->checkout_path);
-                $value = $this->secrets->materialFor($view, $target, ValidatedData::object($member['input']), $account);
-                $values[(string) $record->id] = ['installation' => $value->value];
-                $redactions = [...$redactions, ...$value->strings()];
-            }
-
-            return new OperationSecretValue($values, $redactions);
-        });
-    }
-
-    /** Fixed fields only; the owning adapter chooses one at registration, never from a request.
-     * Store capture under input.process_installations.<field> and declare that wire field.
-     */
-    public function material(Operation $operation, string $field): OperationSecretValue
+    public function nativeInput(Operation $operation, string $field): array
     {
         if (! in_array($field, ['source_installations', 'destination_installations'], true)
             || ! in_array($operation->kind, ['instance.transfer', 'instance.transfer_rollback'], true)
             || $operation->target_type !== 'instance') {
             $this->refuse();
         }
-        $owner = $this->bindings->ownerNode($operation, $field);
-        $batch = ValidatedData::object(ValidatedData::object($operation->input['process_installations'] ?? [])[$field] ?? []);
-        $instance = Instance::query()->findOrFail($operation->target_id);
-        $snapshot = ValidatedData::object($batch['target']);
-        $placement = ValidatedData::object($snapshot['instance']);
-        if (($batch['instance_id'] ?? null) !== $instance->id || ($batch['node_id'] ?? null) !== $owner
-            || $instance->node_id !== $owner || $instance->checkout_path !== ($placement['checkout_path'] ?? null)) {
-            $this->refuse();
-        }
-        $node = Node::query()->findOrFail($owner);
-        if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
-            $this->refuse();
-        }
-        $placed = clone $instance;
-        $placed->forceFill($placement)->setRelation('node', $node);
-        $target = new ProcessTarget($node, ValidatedData::string($snapshot['user']), ValidatedData::string($snapshot['checkout_path']),
-            certificateScope: ValidatedData::nullableString($snapshot['certificate_scope']), instance: $placed,
-            environmentFile: ValidatedData::string($snapshot['environment_file']), productionReleaseLayout: is_bool($snapshot['production_release_layout']) ? $snapshot['production_release_layout'] : throw new \InvalidArgumentException('A production placement flag is required.'),
-            routeDomain: ValidatedData::nullableString($snapshot['route_domain']), onDemandHostStart: is_bool($snapshot['on_demand']) ? $snapshot['on_demand'] : throw new \InvalidArgumentException('An on-demand flag is required.'));
-        if (! $target->productionReleaseLayout && $target->user !== $node->user) {
-            $this->refuse();
-        }
-        $account = $snapshot['account'] === null ? null : ValidatedData::object($snapshot['account']);
-        $account = $account === null ? null : new ManagedUserAccount(ValidatedData::string($account['user']), ValidatedData::string($account['group']), ValidatedData::string($account['home']));
-        $values = $redactions = [];
-        foreach ($this->members($batch) as $member) {
-            $record = Process::query()->findOrFail(ValidatedData::integer($member['id']));
-            if (! Instance::isMorphType($record->owner_type) || $record->owner_id !== $instance->id
-                || $record->source_definition_id !== $member['source_definition_id'] || $record->status === LifecycleStatus::Removing) {
-                $this->refuse();
-            }
-            $view = $this->placedProcess($record, $placed->checkout_path, $placed->checkout_path);
-            $input = ValidatedData::object($member['input']);
-            if ($this->admission->inputForTarget($view, 'create', $target, $account) !== Arr::except($input, ['agent_sha256'])) {
-                $this->refuse();
-            }
-            $value = $this->secrets->materialFor($view, $target, $input, $account);
-            $values[(string) $record->id] = ['installation' => $value->value];
-            $redactions = [...$redactions, ...$value->strings()];
-        }
 
-        return new OperationSecretValue($values, $redactions);
+        return DB::transaction(function () use ($operation, $field): array {
+            $batch = ValidatedData::object(ValidatedData::object($operation->input['process_installations'])[$field]);
+            $origin = Instance::query()->lockForUpdate()->findOrFail($operation->target_id);
+            $snapshot = ValidatedData::object($batch['target']);
+            $placement = ValidatedData::object($snapshot['instance']);
+            $node = Node::query()->findOrFail(ValidatedData::integer($batch['node_id']));
+            if ($origin->id !== ($batch['instance_id'] ?? null) || $origin->node_id !== ($batch['origin_node_id'] ?? null)
+                || $origin->checkout_path !== ($batch['origin_checkout'] ?? null)
+                || $node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
+                $this->refuse();
+            }
+            $placed = clone $origin;
+            $placed->forceFill([...$placement, 'node_id' => $node->id])->setRelation('node', $node);
+            $target = new ProcessTarget($node, ValidatedData::string($snapshot['user']), ValidatedData::string($snapshot['checkout_path']),
+                certificateScope: ValidatedData::nullableString($snapshot['certificate_scope']), instance: $placed,
+                environmentFile: ValidatedData::string($snapshot['environment_file']), productionReleaseLayout: is_bool($snapshot['production_release_layout']) ? $snapshot['production_release_layout'] : throw new \InvalidArgumentException('A production placement flag is required.'),
+                routeDomain: ValidatedData::nullableString($snapshot['route_domain']), onDemandHostStart: is_bool($snapshot['on_demand']) ? $snapshot['on_demand'] : throw new \InvalidArgumentException('An on-demand flag is required.'));
+            $account = $snapshot['account'] === null ? null : ValidatedData::object($snapshot['account']);
+            $account = $account === null ? null : new ManagedUserAccount(ValidatedData::string($account['user']), ValidatedData::string($account['group']), ValidatedData::string($account['home']));
+            if (Arr::sortRecursive($this->capture($origin, $target, $account)) !== Arr::sortRecursive($batch)) {
+                $this->refuse();
+            }
+            $members = $copies = [];
+            foreach ($this->members($batch) as $member) {
+                $record = Process::query()->findOrFail(ValidatedData::integer($member['id']));
+                $view = $this->placedProcess($record, $origin->checkout_path, $placed->checkout_path);
+                $input = ValidatedData::object($member['input']);
+                $material = ValidatedData::object($this->secrets->materialFor($view, $target, $input, $account)->value);
+                $native = $this->native->forRenderedInstallation($input, $material, $node,
+                    'process-parent-operation-'.$operation->id.'-node-'.$node->id.'-member-'.$record->id);
+                $members[] = ['id' => $record->id, 'node_id' => $node->id, 'intent' => $native['intent']];
+                if (isset($native['execution_secrets']['environment'])) {
+                    $copies['node_'.$node->id.'_member_'.$record->id] = $native['execution_secrets']['environment'];
+                }
+            }
+
+            return ['members' => $members, 'execution_secrets' => $copies];
+        });
     }
 
     /** @param array<string,mixed> $batch

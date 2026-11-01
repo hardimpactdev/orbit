@@ -27,9 +27,3 @@ export const Seed = z.object({
   ).test(value.state_dir)
 );
 export const CleanupInput = z.union([Clone, Seed]);
-export type CleanupIntent = z.infer<typeof CleanupInput>;
-
-/** Safe descriptor only; the reviewed native implementation owns the effect. */
-export function cleanupPayload(raw: unknown) {
-  return { input: CleanupInput.parse(raw) };
-}

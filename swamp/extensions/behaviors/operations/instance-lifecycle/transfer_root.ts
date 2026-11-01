@@ -166,10 +166,11 @@ export function transferRoot(
   };
   return {
     type: "@nckrtl/instance-transfer",
-    version: "2026.10.31.2",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     files: { archive: archiveFile, snapshot: snapshotFile },
     resources: {
+      restoration: { schema: z.object({ ready: z.literal(true), restore: z.boolean() }).strict(), lifetime: "workflow", garbageCollection: 1 },
       sqliteSnapshot: {
         schema: SnapshotRef.nullable(),
         lifetime: "workflow",
@@ -262,7 +263,6 @@ export function transferRoot(
           phase: z.enum([
             "pause",
             "prepare",
-            "install",
             "verify",
             "restore",
             "retire",
@@ -275,7 +275,6 @@ export function transferRoot(
             phase:
               | "pause"
               | "prepare"
-              | "install"
               | "verify"
               | "restore"
               | "retire";
@@ -296,16 +295,21 @@ export function transferRoot(
             throw new Error("instance.transfer_runtime_invalid");
           }
           if (args.phase === "restore") {
-            if (plan.cutover) return { ready: true };
+            if (plan.cutover) {
+              return output(ctx, "restoration", "restoration", { ready: true, restore: false });
+            }
             let paused: unknown;
             try {
               paused = await ctx.readResource("paused");
             } catch {
-              return { ready: true };
+              return output(ctx, "restoration", "restoration", { ready: true, restore: false });
             }
-            if (!paused) return { ready: true };
-            z.object({ attempted: z.literal(true) }).strict().parse(paused);
-            await runtime.restore(batch, gateway(args, ctx));
+            if (!paused) return output(ctx, "restoration", "restoration", { ready: true, restore: false });
+            z.object({ attempted: z.literal(true) }).strict().parse(
+              paused,
+            );
+            await runtime.prepare(batch);
+            return output(ctx, "restoration", "restoration", { ready: true, restore: true });
           } else if (args.phase === "pause") {
             if (plan.cutover) {
               throw new Error("instance.transfer_already_cutover");
@@ -313,13 +317,18 @@ export function transferRoot(
             await output(ctx, "paused", "paused", { attempted: true });
             await runtime.pause(batch, ctx.signal);
           } else {
-            if (!plan.cutover) throw new Error("instance.transfer_not_cutover");
-            if (args.phase === "prepare") await runtime.prepare(batch);
-            if (args.phase === "install") {
-              await runtime.install(batch, gateway(args, ctx));
+            if (!plan.cutover) {
+              throw new Error("instance.transfer_not_cutover");
             }
-            if (args.phase === "verify") await runtime.verify(batch);
-            if (args.phase === "retire") await runtime.retire(batch);
+            if (args.phase === "prepare") {
+              await runtime.prepare(batch);
+            }
+            if (args.phase === "verify") {
+              await runtime.verify(batch);
+            }
+            if (args.phase === "retire") {
+              await runtime.retire(batch);
+            }
           }
           return { ready: true };
         },
@@ -337,7 +346,11 @@ export function transferRoot(
           "Snapshot and seed SQLite on admitted participants; cleanup survives cancellation",
         execute: async (
           args: Effect & {
-            phase: "export" | "install" | "cleanup-source" | "cleanup-target";
+            phase:
+              | "export"
+              | "install"
+              | "cleanup-source"
+              | "cleanup-target";
           },
           ctx: Context,
         ) => {
@@ -353,8 +366,8 @@ export function transferRoot(
           );
           if (cleanup) {
             if (plan.sqlite) {
-              if (source) await sqlite.cleanupSource(plan.sqlite);
-              else await sqlite.cleanupTarget(plan.sqlite);
+              if (source) await sqlite.cleanupSource(plan.sqlite, ctx);
+              else await sqlite.cleanupTarget(plan.sqlite, ctx);
             }
             return { ready: true };
           }
@@ -477,7 +490,9 @@ export function transferRoot(
           );
           const signal = committed ? undefined : ctx.signal;
           const actions = targetActions();
-          if (args.phase === "prepare") return actions.prepare(view, signal);
+          if (args.phase === "prepare") {
+            return actions.prepare(view, signal);
+          }
           if (args.phase === "lan") return actions.lan(view, signal);
           if (args.phase === "environment") {
             await gateway(args, ctx).withPrivateMaterial(async (material) => {
@@ -605,7 +620,10 @@ export function transferRoot(
         description:
           "Project the final native transfer outcome on the root only",
         execute: async (
-          args: Args & { failed: boolean; decision?: z.infer<typeof Decision> },
+          args: Args & {
+            failed: boolean;
+            decision?: z.infer<typeof Decision>;
+          },
           ctx: Context,
         ) => {
           const current = await read(args, ctx, true);

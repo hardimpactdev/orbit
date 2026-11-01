@@ -12,5 +12,5 @@ it('publishes only recorded safe SQLite placement descriptors', function (string
         'source' => $source, 'target' => $target, 'unrelated' => 'private-sentinel',
     ]]);
 
-    expect((new DatabaseSqliteProjection)->input($operation))->toBe(['source' => $source, 'target' => $target]);
+    expect((new DatabaseSqliteProjection)->publicInput($operation, 12))->toBe(['source' => $source, 'target' => $target]);
 })->with(['database.sqlite_export', 'database.sqlite_seed', 'database.sqlite_seed_abandon']);
