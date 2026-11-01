@@ -278,7 +278,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### Recover a lost worker
 
-Swamp requests operation recovery every five minutes through the Services-only [observation API](/reference/gateway-queue#scheduled-work). Gateway state recovery queues the job again for:
+The [observation API](/reference/gateway-queue#scheduled-work) accepts the configured Services peer. Its native runs only read observations. Explicit Gateway state recovery can queue a job again for:
 
 - each `running` operation whose attempt lease is free, because its worker died or its attempt ended without recording the outcome, and
 - each `queued` operation whose job was queued more than 10 minutes ago and has not started, and

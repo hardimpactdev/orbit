@@ -9,7 +9,7 @@ covers:
 
 # Gateway queue
 
-The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as a recipe refresh, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore does not delay the scheduler. The narrow Horizon observation, problem filing, and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists.
+The Gateway scheduler dispatches most of its work. Each scheduled command that does work, such as a recipe refresh, becomes a queued job, and [Laravel Horizon](https://laravel.com/docs/horizon) runs the jobs. A long build therefore does not delay the scheduler. Problem filing and document cleanup run in the scheduler itself, as [Scheduled work](#scheduled-work) lists. Explicit observation passes run in native Swamp workflows.
 
 ## Connection
 
@@ -65,17 +65,13 @@ These commands stay in the scheduler and never go to the queue, also while it is
 | `project-documents:probes:reconcile` | minute | 10 minutes |
 | `project-documents:cleanup:work` | 5 minutes | 60 minutes |
 
-Swamp owns the observation schedules. Fleet Doctor collection and the independent Horizon health check run every 10 minutes. Activity finalization and Horizon metrics run every 5 minutes. Batch and failed-job pruning run daily. These routines do not poll each minute. Collection never files problems; hourly `problems:file` retains its separate lock.
+Observation is explicitly admitted through the configured control-plane peer. Fleet collection and the Horizon health admission use the native Doctor workflow. Maintenance and retention admission use `operation-observation-maintain`, with the full public intent captured before submission. All reads run on Node 209 through official `@swamp/ssh` and the stored target host key. The existing shared terminal subscriber records one typed result.
 
-The configured control-plane peer uses the observation API only to admit native Doctor or maintenance Operations. Node workers use the shared direct Operation endpoints. Admission records safe policy settings and existing queue connection references. It performs no maintenance, locking, retry, or snapshot work.
+Maintenance reads Gateway host uptime/load and the registered Horizon unit's memory, CPU and task counters. It reports how many admitted running Activities meet the interrupted cutoff, capped at 500. Retention reports eligible batch and failed-job counts using the configured 24-hour and 168-hour defaults. Tasks being disabled suppresses the batch count. Eligibility uses the admitted timestamp and strict cutoffs; it does not change Activity status or delete records. Failed reads are reported as unavailable rather than replaced with zero observations.
 
-Swamp classifies Activity and assistance signals from redacted Gateway state reads, then returns selected fingerprints and cursors for one state projection. Collection starts at the current Activity cursor without counting history. Assistance retains its 200-task sample and removes closed task references.
+The observation family is read-only. It does not reset Redis counters, publish Horizon snapshots or prune records. The former private Redis material source and callback-based collection, health, maintenance and retention schedule wrappers are removed. There is no automatic observation cadence in this family; each pass needs explicit admission. No Gateway scheduler, intent callback, family poller or replacement listener is added. `problems:file` retains its separate hourly schedule and lock.
 
-Swamp selects interrupted Activities and expired batch or failed-job records from Gateway state reads. The result projection applies those selected state changes and broadcasts Activity updates. A row that has already finished stays unchanged. Activity finalization remains limited to 500 rows per pass. Tasks being disabled suppresses batch pruning and fleet collection; failed-job pruning still runs. Retention remains `ORBIT_JOB_BATCH_HOURS` (24 hours) and `ORBIT_FAILED_JOBS_HOURS` (168 hours).
-
-Horizon snapshots run directly in Swamp against the existing registered queue Redis connection. Credentials use shared private material and never enter native inputs, outputs or logs. Native schedule concurrency replaces the old Gateway overlap locks and cached receipts. Snapshot counters, trim limits and queue wait calculations keep Horizon's stored format.
-
-Doctor executes one native DAG with exact Node placement. It reads continuous unit and Docker observations through the Gateway and performs other domain reads directly on each admitted Node. Unavailable workers or stale observations produce unverifiable findings and cannot clear earlier findings. The independent Horizon check uses the same Doctor DAG with only the Process family.
+Doctor collects Activity and assistance signals from admitted redacted metadata, then returns fingerprints and cursors for normal state projection. The first collection begins at the current Activity cursor. Assistance retains its 200-task sample and removes closed references. Native liveness comparisons belong to Doctor and the owning operational families; observation maintenance does not repeat them.
 
 ### Without a queue
 
@@ -242,7 +238,7 @@ Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
 Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit tasks:status`](/cli/tasks#orbit-tasksstatus) when task groups stop moving.
 
-A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. The separate Swamp Horizon observation runs every 10 minutes, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
+A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. An explicitly admitted Horizon health collection records that issue; `problems:file` requires two qualifying observations before filing it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
 The collector rebuilds its quota snapshot in Valkey; quota reads never poll the upstream provider.
 
@@ -250,7 +246,7 @@ The collector rebuilds its quota snapshot in Valkey; quota reads never poll the 
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
 
-Fleet problem collection runs as short queued steps, so it cannot hold the [scheduler drain](/reference/gateway-recovery#runtime-handoff), and an in-flight collection step holds Horizon termination for at most its 13-second worker timeout. Only the narrow Horizon observation stays outside its workers, so a stopped Horizon still gets recorded.
+Explicit fleet and Horizon health collection run through native Doctor on Node 209, independently of Horizon workers. A stopped Horizon can therefore be observed without starting or repairing it.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
 

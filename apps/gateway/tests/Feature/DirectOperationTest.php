@@ -138,14 +138,15 @@ it('projects terminal results idempotently and rejects a changed run or outcome'
     expect(fn () => $direct->project($this->operation, [...$data, 'run_id' => 'fabd4059-fb6c-49d8-940e-01ae58aa3f38'], ['ready' => true]))->toThrow(ResourceOperationException::class);
 });
 
-it('finishes a lost start response without a history request or another submission', function (): void {
+it('keeps a lost start response active without a history request or another submission', function (): void {
     $socket = new FakeRoutePublicationSocket(false);
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'private.scoped.fixture']);
 
     expect(fn () => app(StartSwampRun::class)->start($this->operation))->toThrow(ResourceOperationException::class, 'Swamp did not confirm');
 
-    expect($this->operation->fresh()->status)->toBe(OperationStatus::Failed);
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Running);
+    expect($this->operation->fresh()->finished_at)->toBeNull();
     expect($this->operation->fresh()->error_code)->toBe('swamp.start_uncertain');
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
     expect($socket->closed)->toBeTrue();

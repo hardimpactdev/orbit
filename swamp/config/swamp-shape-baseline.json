@@ -308,45 +308,10 @@
       ]
     },
     {
-      "file": "extensions/behaviors/observation/contract.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
       "rule": "inline-script",
       "count": 81,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/maintenance.ts",
-      "rule": "secret-argv",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/observation/mod.ts",
-      "rule": "gateway-http",
-      "count": 3,
-      "evidence": [
-        "<unknown> <unknown>",
-        "POST <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operation-runner/mod.ts",

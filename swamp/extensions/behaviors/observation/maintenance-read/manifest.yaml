@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: '@nckrtl/observation-maintenance'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: One typed read-only observation result from native SSH facts.
+behaviors:
+  - observation/maintenance-read/result.ts
