@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -42,6 +43,8 @@ it('seeds only fixture records with assigned ids and observed public pins', func
     expect(Cluster::query()->count())->toBe(1);
     expect(Project::query()->count())->toBe(1);
     $gateway = Node::query()->findOrFail($result['nodes']['gateway']);
+    expect(app(GatewayServingHost::class)->nodeId())->toBe($gateway->id)
+        ->and(app(GatewayServingHost::class)->is($gateway))->toBeTrue();
     expect($gateway->public_ssh_host)->toBe($facts['nodes'][0]['public_address'])
         ->and($gateway->ssh_host_key)->toBe($facts['nodes'][0]['ssh_host_key'])
         ->and($gateway->wireguard_public_key)->toBe($facts['nodes'][0]['wireguard_public_key']);

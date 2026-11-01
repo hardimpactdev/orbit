@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -94,6 +95,7 @@ final readonly class SwampProofFixtureSeeder
             }
             $nodes['operator']->accessibleNodes()->attach($nodes['gateway']->id);
             $project = Project::query()->create([...$facts['project'], 'task_workspace_routed' => false, 'review_and_merge' => false]);
+            app(GatewayServingHost::class)->remember($nodes['gateway']);
 
             return ['seeded' => true, 'cluster_id' => $cluster->id, 'project_id' => $project->id,
                 'nodes' => array_map(static fn (Node $node): int => $node->id, $nodes)];

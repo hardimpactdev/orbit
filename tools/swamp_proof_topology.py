@@ -149,13 +149,13 @@ def up(gateway, project=None, name='app-dev', path=None, lane=None):
     if not lane or len(lane) > 80 or any(ord(char) < 32 for char in lane):
         raise ProofError('Invalid proof lane title.')
     title = f'topology {topology["name"]}@{topology["version"]} {lane}'
-    state = {'topology': topology['name'], 'topology_version': topology['version'], 'nodes': topology['nodes'],
+    state = {'topology': topology['name'], 'topology_version': topology['version'], 'nodes': topology['nodes'], 'seed_provenance': topology['seed'],
              'commit': commit, 'started_at': utc(), 'ready': False, 'vm': {}, 'nonce': secrets.token_hex(8), 'receipts': []}
     save = lambda: save_state(state, path)
     save()
     try:
         control = provision(gateway, project, title, 'topology', state['nonce'], state['vm'], save)
-        if topology['seed'] is not None and topology['seed'] != state['vm']['seed']:
+        if topology['seed'] is not None and topology['seed']['base_fingerprint'] != state['vm']['seed']:
             raise ProofError('Normal allocation base-image fingerprint differs from the preset seed.')
         host = gateway.request('GET', 'nodes/13')
         if host['name'] != 'shark' or host['status'] != 'active':

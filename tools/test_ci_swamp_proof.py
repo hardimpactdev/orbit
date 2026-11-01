@@ -25,6 +25,7 @@ class FakeGateway:
         self.fail_second = False
         self.cancel_failure = None
         self.host = 13
+        self.seed = proof.topology_for('app-dev')['seed']['base_fingerprint']
         self.resources = {'cpus': 4, 'memory': '8GiB', 'disk': '40GiB', 'topology': True}
         self.confirm_destroyed = True
         self.exclusions = [{'project_id': 62, 'project_slug': 'swamp-proof', 'node_id': 9, 'node_name': 'beast', 'development_instance_count': 0}]
@@ -56,7 +57,7 @@ class FakeGateway:
             operation = {'id': group + 500, 'kind': 'tasks.provision', 'target_type': 'task_group', 'target_id': group,
                          'status': 'succeeded', 'result': {'task_vm_id': group, 'node_id': group + 1000, 'instance_id': group + 2000},
                          'input': {'host_node_id': self.host, 'provider': 'incus', 'vm': {'project': 'orbit-tasks'},
-                                   'create': {'network': 'orbittask0', **self.resources}, 'image_fingerprint': 'a' * 64}}
+                                   'create': {'network': 'orbittask0', **self.resources}, 'image_fingerprint': self.seed}}
             return operation
         if path.endswith('/cancel'):
             group = int(path.split('/')[1])
@@ -263,7 +264,10 @@ class RequestContractTest(unittest.TestCase):
             proof.bind('${proof.target.host}', {'proof.target.host': 'production'}, datetime.now(UTC))
 
     def test_topology_uses_existing_catalog_seed_and_node_prerequisites(self):
-        self.assertEqual(proof.topology_for('app-dev'), {'name': 'app-dev', 'version': 1, 'nodes': ['app-dev'], 'seed': None})
+        topology = proof.topology_for('app-dev')
+        self.assertEqual(topology['nodes'], ['app-dev'])
+        self.assertEqual(topology['seed']['build_id'], 147)
+        self.assertEqual(topology['seed']['base_fingerprint'], '3aaa1160b86e5e1b6a0d244fef2845dd1243997fead7c3baf1d86ff9e2017bd1')
         self.assertEqual(proof.topology_for('app-prod')['nodes'], ['app-prod'])
         self.assertEqual(proof.topology_for('app-prod-2')['nodes'], ['app-prod', 'app-prod-2'])
         self.assertEqual(proof.topology_for('["app-dev","app-prod+ingress"]')['nodes'], ['app-dev', 'app-prod+ingress'])
@@ -306,7 +310,20 @@ class LifecycleTest(unittest.TestCase):
         self.assertEqual(body['project_id'], 62)
         self.assertEqual(body['orchestration'], 'external')
         self.assertEqual(state['nodes'], ['app-dev'])
+        self.assertEqual(state['seed_provenance'], proof.topology_for('app-dev')['seed'])
         self.assertNotIn('topology', body['tasks'][0])
+
+    def test_different_promoted_seed_refuses_before_acquisition_and_cancels_owned_group(self):
+        gateway = FakeGateway()
+        gateway.seed = 'b' * 64
+        action = Mock()
+        with self.assertRaisesRegex(proof.ProofError, 'differs from the preset seed'):
+            self.up(gateway, action)
+        action.assert_not_called()
+        state = sessions.load_state(self.path)
+        self.assertEqual(state['vm']['seed'], 'b' * 64)
+        self.assertEqual(state['seed_provenance'], proof.topology_for('app-dev')['seed'])
+        self.assertTrue(state['vm']['destroyed'])
 
     def test_multi_node_shape_refuses_before_allocating_or_recording_a_session(self):
         gateway = FakeGateway()
@@ -462,7 +479,8 @@ class RequestSequenceTest(unittest.TestCase):
                         'phases': [{'name': 'inspect', 'job': 'effect', 'step': 'result', 'budget_seconds': 2}],
                         'parity': {'command': ['python3', 'parity.py'], 'cases': ['legacy-inspect']}}
         self.state = {'worktree': str(proof.ROOT), 'issue': 'TASK-42', 'commit': 'c' * 40, 'nodes': ['app-dev'],
-                      'vm': {'group_id': 42, 'seed': 'a' * 64}, 'topology': 'app-dev', 'topology_version': 1}
+                      'vm': {'group_id': 42, 'seed': 'a' * 64}, 'topology': 'app-dev', 'topology_version': 1,
+                      'seed_provenance': proof.topology_for('app-dev')['seed']}
         self.operation = {'id': 73, 'kind': 'firewall.inspect', 'status': 'succeeded', 'input': {'node_id': 7, 'generated': '4ba84968-1919-40b2-b919-f0ced3951770'}}
         self.history = {'id': 'exact-root', 'workflowName': 'operation-firewall-inspect', 'inputs': {'operation_id': 73, 'kind': 'firewall.inspect'},
                         'status': 'succeeded', 'startedAt': '2026-11-01T00:00:00Z', 'completedAt': '2026-11-01T00:00:01Z',
@@ -534,6 +552,7 @@ class RequestSequenceTest(unittest.TestCase):
         self.assertEqual(result['native_run_id'], 'exact-root')
         self.assertTrue(any(row.get('operation_id') == 73 and 'operation' not in row for row in snapshots))
         self.assertEqual(result['seed'], 'a' * 64)
+        self.assertEqual(result['seed_provenance'], self.state['seed_provenance'])
         self.assertEqual(result['enrollment'], 'fixture-set')
         self.assertEqual(result['topology_ca'], 'fixture-set')
         self.assertEqual(result['fixture_repositories'], 'separate-caddy')

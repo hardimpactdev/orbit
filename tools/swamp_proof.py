@@ -144,8 +144,19 @@ def topology_for(value, root=ROOT):
             raise ProofError('Topology preset requires name, version, nodes and seed; container images are retired.')
     positive(topology.get('version'), 'topology version')
     seed = topology['seed']
-    if seed is not None and (not isinstance(seed, str) or not re.fullmatch(r'[a-f0-9]{64}', seed)):
-        raise ProofError('Topology seed must be a full base-image SHA256 or null until allocation.')
+    if seed is not None:
+        fields = {'host_node_id', 'recipe', 'build_id', 'base_alias', 'base_fingerprint', 'seed_volume'}
+        if not isinstance(seed, dict) or set(seed) != fields:
+            raise ProofError('Topology seed requires the promoted host, recipe, build, base alias, fingerprint and volume record.')
+        positive(seed['host_node_id'], 'seed host_node_id')
+        positive(seed['build_id'], 'seed build_id')
+        if seed['host_node_id'] != 13 or not isinstance(seed['recipe'], str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', seed['recipe']):
+            raise ProofError('Topology seed must identify the Shark host and full recipe SHA256.')
+        fingerprint = seed['base_fingerprint']
+        if not isinstance(fingerprint, str) or not re.fullmatch(r'[a-f0-9]{64}', fingerprint):
+            raise ProofError('Topology seed requires the full base-image SHA256.')
+        if seed['seed_volume'] != 'orbit-topology-seed-' + fingerprint[:12] or seed['base_alias'] != f'orbit-task-base-recipe-{seed["recipe"][7:19]}-{seed["build_id"]}-base':
+            raise ProofError('Topology seed alias or volume differs from its promoted recipe, build or fingerprint.')
     catalog = json.loads((root / 'apps/e2e/resources/topology-nodes.json').read_text())
     nodes = topology.get('nodes')
     if not isinstance(nodes, list) or not nodes or any(not isinstance(node, str) for node in nodes):
