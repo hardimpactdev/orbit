@@ -1,0 +1,53 @@
+{
+  "kind": "firewall.allow",
+  "workflow": "operation-firewall-direct",
+  "topology": "minimal",
+  "budget_seconds": 300,
+  "request": {
+    "method": "POST",
+    "path": "nodes/${node.target}/firewall-rules/allow",
+    "body": {
+      "name": "a-${proof.run}",
+      "source": "192.0.2.1",
+      "protocol": "tcp",
+      "port": "443"
+    }
+  },
+  "expect": {
+    "status": "succeeded"
+  },
+  "phases": [
+    {
+      "name": "read-before",
+      "job": "firewall",
+      "step": "read-before",
+      "budget_seconds": 120
+    },
+    {
+      "name": "apply",
+      "job": "firewall",
+      "step": "apply-source-0",
+      "budget_seconds": 120
+    },
+    {
+      "name": "verify",
+      "job": "firewall",
+      "step": "verify-source-0",
+      "budget_seconds": 120
+    },
+    {
+      "name": "result",
+      "job": "firewall",
+      "step": "result",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": "swamp/proof/firewall.allow/parity.py",
+  "clean_target": [
+    [
+      "sh",
+      "-c",
+      "ufw --force delete allow from 192.0.2.1 to any port 443 proto tcp >/dev/null 2>&1; true"
+    ]
+  ]
+}
