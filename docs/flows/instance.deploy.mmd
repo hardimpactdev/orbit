@@ -1,37 +1,183 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, deployments.md phases; DECISIONS 4 / R4 (process.stop shape: steps on 209, @swamp/ssh, account from intent) + 1 (token at admission).
+  %% Target design: ADR 0244 task + full intent as inputs, single-swamp-node; DECISIONS 1 (token minted at admission, vault.get), 3 (automatic deploy = Gateway-published native schedule, no POST back), 4 / R1-R4 (process.stop shape); .env through the vault as in instance.create; rule 7 (reload over restart, restart_on_deploy only). docs/reference/deployments.md.
   %% status: draft
+  %% command: instance:deploy
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
   %% lane N icon=server pill=target tone=amber
-  %% lane GH icon=server pill=target tone=purple
   participant CLI as CLI / MCP<br/>orbit · MCP tools
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant N as Target Node<br/>reached over ssh
-  participant GH as GitHub<br/>deploy source
-  CLI->>GW: instance:deploy<br/>{instance: 42, commit?}
-  Note over GW: Validate, freeze intent<br/>secrets, token → vault · #5121
-  GW->>SW: Start run, full intent<br/>steps, account · all steps on 209
-  GW-->>CLI: 202 Accepted<br/>operation #5121
-  SW->>N: Fetch, check out commit<br/>vault.get token · new release dir
-  N->>GH: Fetch the branch<br/>commit must be on first parent
-  SW->>N: Write .env, run steps<br/>before_activation · sudo -u app
-  opt production Instance
-    SW->>N: Activate the release<br/>current link, FPM, Processes
-    SW->>N: After steps, cleanup<br/>after_activation · keep 3
+  participant N as app-prod Node<br/>Node 12 over ssh
+  CLI->>GW: instance:deploy 42<br/>--commit=SHA
+  %%> Command:
+  %%> - `orbit instance:deploy 42`
+  %%> - syntax: `<instance> [--commit=SHA] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Instance; without `--commit`, the newest commit of its deployment branch
+  %%> - `--commit`: a full commit SHA that must be on the branch's first-parent chain
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  %%> - the automatic path below starts the same run without a CLI call
+  Note over GW: Validate, freeze intent<br/>Instance 42 locked · task #5150
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Instance 42 is an active production Instance of Project 7 on Node 12
+  %%> - no other operation holds Instance 42; else `operation.target_busy`
+  %%> Freezes:
+  %%> - the branch and commit, the deploy steps, the shared paths and the release name
+  %%> - the Project's Process and Schedule definitions and the PHP runtime
+  %%> - the account `orbit-app-7` and its home `/home/orbit-app-7`
+  %%> Renders .env:
+  %%> - from the stored environment of Instance 42
+  %%> Result:
+  %%> - deployment 88 recorded as running; task #5150 recorded with the full intent
+  %%> - a manual deploy pauses automatic deployment of Instance 42
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Push token and .env<br/>vault: github-token, env-5150
+  %%> Why:
+  %%> - the repository is private, and only the Gateway holds the GitHub App key
+  %%> - `.env` can hold secrets, which travel only through the vault
+  %%> What it does:
+  %%> - mints a read token for this one repository, valid 1 hour
+  %%> - pushes the token and the rendered `.env` into Swamp's vault
+  %%> Result:
+  %%> - the run reads both with `vault.get`; no step calls the Gateway back
+  GW->>SW: Start run, full intent<br/>operation-instance-deploy
+  %%> What it does:
+  %%> - starts one run on Swamp serve (Node 209); every step runs there
+  %%> Inputs:
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> - the frozen intent; secrets only as vault key names
+  %%> Budget:
+  %%> - the sum of the deploy step timeouts plus 900 s
+  GW-->>CLI: 202 Accepted<br/>task #5150
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task until it ends
+  SW->>N: Prepare the release<br/>vault.get token · new release dir
+  %%> How:
+  %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209, with `command/shell` steps
+  %%> What it does:
+  %%> - fetches the branch into a new folder under `releases/` and checks out exactly the frozen commit
+  %%> - refuses a commit that is not on the branch's first-parent chain (`deployment.commit_not_on_branch`)
+  %%> - links the shared paths, the public storage link and each `.env` link
+  %%> Runs as:
+  %%> - `orbit-app-7`, through sudo
+  SW->>N: Write .env<br/>vault.get env-5150 · home/.env
+  %%> What it does:
+  %%> - writes the rendered `.env` from the vault into `/home/orbit-app-7/.env`, atomically
+  %%> Not included:
+  %%> - restarts nothing; the running release keeps serving
+  SW->>N: Run before steps<br/>before_activation · sudo -u app
+  %%> What it does:
+  %%> - runs each `before_activation` deploy step in order, from the new release, as `orbit-app-7`
+  %%> - for example `composer install`, `php artisan migrate --force`
+  %%> Limits:
+  %%> - each step has its own timeout; a required step that fails stops the run
+  SW->>N: Activate release<br/>atomic swap of current
+  %%> What it does:
+  %%> - checks each served web root and its `.env` links in the new release
+  %%> - replaces the `current` link with one atomic rename
+  %%> Why:
+  %%> - Caddy resolves `current` per request, so new requests use the new release at once
+  opt Instance serves PHP
+    SW->>N: Refresh PHP cache<br/>FPM graceful reload · OPcache
+    %%> What it does:
+    %%> - converges the dedicated PHP-FPM pool of Instance 42 from the frozen PHP runtime
+    %%> - reloads it gracefully, so running requests finish; then resets OPcache and waits for it
+    %%> When a restart is needed:
+    %%> - only when the pool's runtime itself changed, such as the PHP version
   end
-  alt required steps pass
-    SW-->>GW: Run succeeded<br/>terminal event + result
-    Note over GW: Record the deployment<br/>commit, release, task → succeeded
+  SW->>N: Restart Processes<br/>restart_on_deploy · reload first
+  %%> What it does:
+  %%> - installs the frozen Process and Schedule definitions, in the `process.create` and `schedule.create` shape
+  %%> - for each running Process with `restart_on_deploy`: reload when the Process allows it, else restart
+  %%> - for example Horizon: `php artisan horizon:terminate`, so jobs finish first
+  %%> Not included:
+  %%> - Processes without `restart_on_deploy`, and stopped Processes, stay as they are
+  SW->>N: After steps, cleanup<br/>after_activation · keep 3
+  %%> What it does:
+  %%> - runs each `after_activation` deploy step in order, as `orbit-app-7`
+  %%> - then removes old releases; the home keeps at most 3
+  %%> Cleanup:
+  %%> - best effort; a failed cleanup is a warning, not a failed deploy
+  %%> - a release that a running process still uses stays
+  SW->>N: Check the deployment<br/>current → release · Processes up
+  %%> What it does:
+  %%> - reads `current` back and checks it selects the new release and commit
+  %%> - checks that each restarted Process is active
+  alt all required steps pass
+    N-->>SW: release, commit
+    %%> Returns:
+    %%> - the selected release and its commit, and the restarted Processes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the outputs; Swamp never calls the Gateway
+    Note over GW: Record the deployment<br/>release, commit · task succeeded
+    %%> Result:
+    %%> - deployment 88 succeeds with its release and commit
+    %%> - task #5150 succeeds
   else a required step fails
     N--xSW: exit ≠ 0 or timeout
-    SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Record failed deployment<br/>old release stays before switch
+    %%> When:
+    %%> - a required step exits with an error, SSH fails, or the budget runs out
+    SW--xGW: Run failed<br/>failed_step, selected release
+    %%> The Gateway reads:
+    %%> - which step failed, its error code and output tail
+    %%> - which release `current` selects now
+    Note over GW: Record failed deployment<br/>selection kept · task failed
+    %%> Result:
+    %%> - deployment 88 is marked failed; task #5150 fails
+    %%> On the Node:
+    %%> - a failure before activation keeps the old release selected
+    %%> - a failure after activation keeps the new release selected
+    %%> - Orbit undoes no step and no data change; the new release folder stays until a cleanup
+    %%> Retry:
+    %%> - deploy again after a fix; it is a new task with a new release
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5121
+    CLI->>GW: operation:show #5150
+    %%> What it does:
+    %%> - asks for the task's status until it has ended
+    %%> - the CLI uses Reverb events when the `websocket` role is active
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
+  Note over GW,SW: Automatic deploys<br/>second path · no CLI call
+  %%> What it is:
+  %%> - the same deploy run, started by a native Swamp schedule instead of the CLI
+  %%> When:
+  %%> - only while `instance:update 42 --auto-deploy=true` is set and Instance 42 is not paused
+  opt auto-deploy on and unpaused
+    GW->>SW: Publish the schedule<br/>native trigger · every minute
+    %%> What it does:
+    %%> - publishes one native Swamp schedule for Instance 42, with the frozen deploy intent as its inputs
+    %%> - inputs also hold the deployed commit, the blocked commits and the Project's `merge_check`
+    %%> Keeps fresh:
+    %%> - the Gateway republishes the inputs when the intent or deployed commit changes
+    %%> - it keeps a fresh read token and `.env` in the vault while the schedule exists
+    %%> Removes it:
+    %%> - on pause, on a rollback, or when auto-deploy is turned off
+    Note over SW: Find a green commit<br/>ls-remote · merge_check passed
+    %%> What it does:
+    %%> - reads the branch head with the vault token
+    %%> - picks the newest commit that passed `merge_check`, descends from the deployed commit and is not blocked
+    %%> Not found:
+    %%> - the fire ends with `up_to_date`, `gate_pending` or `no_green_commit` and deploys nothing
+    SW->>N: Deploy in the same run<br/>prepare … check · pinned commit
+    %%> What it does:
+    %%> - runs the deploy steps above, pinned to the green commit
+    %%> - no step POSTs back to the Gateway; there is no separate admission
+    SW-->>GW: Fire ended<br/>terminal event · outputs
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event, as for a manual deploy
+    Note over GW: Record fire as a task<br/>deployment row · origin automatic
+    %%> Result:
+    %%> - each fire is a task; a fire that deployed also writes a deployment row with origin automatic
+    %%> - a failed commit is retried later or blocked, by the automatic failure rules
   end
