@@ -74,7 +74,7 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         )
         for step in child["jobs"][0]["steps"]:
             self.assertEqual(step.pop("target"), "orbit-node-209")
-            self.assertEqual(step.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", step)
             task = step["task"]
             if task.get("behaviorType") == "@swamp/ssh":
                 task["globalArgs"].update(
@@ -178,7 +178,7 @@ result=subprocess.run(argv,input=sys.stdin.buffer.read(),capture_output=True)
         steps = json.loads(output.stdout)
         for step in steps:
             step.pop("target")
-            step.pop("labels")
+            step.pop("labels", None)
         steps.append(
             dict(
                 name="verify",

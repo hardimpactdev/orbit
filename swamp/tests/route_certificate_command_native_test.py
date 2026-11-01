@@ -56,7 +56,7 @@ class RouteCertificateNative(_fixture.Certificates):
             )
             for step in workflow["jobs"][0]["steps"]:
                 self.assertEqual(step.pop("target"), "orbit-node-209")
-                self.assertEqual(step.pop("labels"), {"node": "209"})
+                self.assertNotIn("labels", step)
                 task = step["task"]
                 if task["behaviorType"] == "@swamp/ssh":
                     task["globalArgs"].update(
@@ -143,12 +143,14 @@ class RouteCertificateNative(_fixture.Certificates):
 
 
 class CertificateSignerIsolation(_fixture.harness.NativeTestCase):
+    workflow_name = "route-certificate-publish"
+
     def test_parallel_certificate_children_enter_signer_without_sharing_model_lock(
         self,
     ):
         self.real_certificate_signing = True
         production = yaml.safe_load(
-            (ROOT / "workflows/workflow-route-certificate-publish.yaml").read_text()
+            (ROOT / ("workflows/workflow-" + self.workflow_name + ".yaml")).read_text()
         )
         signer = next(
             s["task"] for s in production["jobs"][0]["steps"] if s["name"] == "sign"
@@ -207,3 +209,7 @@ print(json.dumps({'ready':True,'child':os.environ['CHILD']}))
         self.assertTrue(
             all(s["status"] == "succeeded" for s in history["jobs"][0]["steps"])
         )
+
+
+class RoleCertificateSignerIsolation(CertificateSignerIsolation):
+    workflow_name = "node-role-certificate-publish"

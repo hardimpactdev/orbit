@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/certificate-scripts'
-version: 2026.10.31.1
+version: 2026.11.01.1
 visibility: private
 license: MIT
 description: Native script assets for standalone Node-local leaf certificates.
@@ -17,3 +17,4 @@ additionalFiles:
 - scripts/role_paths.py
 - scripts/role_request.py
 - scripts/role_publish.py
+- scripts/sign.py

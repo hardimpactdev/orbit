@@ -170,7 +170,7 @@ jobs:
     dependsOn:
       - {job: source_firewall_job, condition: {type: succeeded}}
     steps:
-      - {name: source_certificates, writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_inventory.outputs.certificate_nodes }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: certificates, target_node_id: '${{ self.participant }}'}}}
+      - {name: source_certificates, writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_inventory.outputs.certificate_nodes }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "cert-remove-" + run.id + "-" + string(self._index) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: certificates, target_node_id: '${{ self.participant }}'}}}
   - name: source_complete_job
     dependsOn:
       - {job: source_certificates_job, condition: {type: succeeded}}

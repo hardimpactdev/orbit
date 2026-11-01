@@ -375,8 +375,6 @@ jobs:
     allowFailure: true
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: restore_prepare_certificates, condition: {type: always}}
     - {step: restore_php, condition: {type: always}}

@@ -33,8 +33,6 @@ jobs:
   steps:
   - name: assets
     target: orbit-node-209
-    labels: &id003
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -44,8 +42,6 @@ jobs:
         leaf: ${{ inputs.leaf }}
   - name: prepare-assets
     target: orbit-node-209
-    labels: &id001
-      node: '209'
     writes: true
     task:
       type: behavior
@@ -71,7 +67,6 @@ jobs:
         - type: skipped
   - name: copy-assets
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -94,7 +89,6 @@ jobs:
         - type: skipped
   - name: request
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -120,7 +114,6 @@ jobs:
         - type: skipped
   - name: request-info
     target: orbit-node-209
-    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -138,38 +131,15 @@ jobs:
         - type: skipped
   - name: sign
     target: orbit-node-209
-    labels: *id003
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: orbit-certificate-signing-http
+      behaviorName: '${{ "certificate-sign-" + run.id }}'
       methodName: execute
       inputs:
-        run: "#!/bin/sh\nset -eu\n/usr/bin/python3 - <<'PYTHON'\nimport json\nimport os\nimport re\nimport\
-          \ ssl\nimport sys\nimport urllib.request\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n\
-          \    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\
-          \n\ntry:\n    operation = os.environ[\"ORBIT_CERTIFICATE_OPERATION_ID\"]\n    run_id = os.environ[\"\
-          ORBIT_CERTIFICATE_RUN_ID\"]\n    if not re.fullmatch(r\"[1-9][0-9]*\", operation):\n       \
-          \ raise ValueError(\"Invalid operation\")\n    raw = json.loads(os.environ[\"ORBIT_CERTIFICATE_REQUESTS\"\
-          ])\n    if os.environ[\"ORBIT_CERTIFICATE_MODE\"] == \"single\":\n        leaf = json.loads(os.environ[\"\
-          ORBIT_CERTIFICATE_LEAF\"])\n        raw = [dict(node_id=leaf[\"node_id\"], scope=leaf[\"scope\"\
-          ], **raw)]\n    else:\n        raw = [record for batch in raw for record in batch]\n    if len(raw)\
-          \ > 256:\n        raise ValueError(\"Too many requests\")\n    requests = [record for record\
-          \ in raw if record.get(\"state\") == \"request\"]\n    if not requests:\n        print(json.dumps({\"\
-          certificates\": []}))\n        sys.exit(0)\n    body = {\"run_id\": run_id, \"requests\": requests}\n\
-          \    if os.environ.get(\"ORBIT_CERTIFICATE_RESTORING\") == \"true\":\n        body[\"restoring\"\
-          ] = True\n    payload = json.dumps(body).encode()\n    url = (\n        \"https://gateway.orbit/api/v1/direct-operations/\"\
-          \n        + operation\n        + \"/certificates/sign\"\n    )\n    request = urllib.request.Request(\n\
-          \        url,\n        data=payload,\n        method=\"POST\",\n        headers={\n        \
-          \    \"Content-Type\": \"application/json\",\n            \"Accept\": \"application/json\",\n\
-          \        },\n    )\n    context = ssl.create_default_context(\n        cafile=\"/usr/local/share/ca-certificates/orbit-managed-root-ca.crt\"\
-          \n    )\n    opener = urllib.request.build_opener(\n        NoRedirect(), urllib.request.HTTPSHandler(context=context)\n\
-          \    )\n    with opener.open(request, timeout=60) as response:\n        raw_response = response.read(16_777_217)\n\
-          \        if len(raw_response) > 16_777_216 or response.status != 200:\n            raise ValueError(\"\
-          Invalid signing response\")\n    result = json.loads(raw_response)[\"data\"]\n    print(json.dumps(result))\n\
-          except Exception:\n    print(json.dumps({\"error_code\": \"app-dev.certificate_sign_failed\"\
-          }))\n    sys.exit(1)\nPYTHON\n"
+        run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"'
         env:
+          ORBIT_CERTIFICATE_SIGN_SCRIPT: '${{ steps.assets.outputs.scripts_directory + "/sign.py" }}'
           ORBIT_CERTIFICATE_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_CERTIFICATE_RUN_ID: ${{ inputs.parent_run_id }}
           ORBIT_CERTIFICATE_MODE: single
@@ -184,7 +154,6 @@ jobs:
         - type: skipped
   - name: signed-info
     target: orbit-node-209
-    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'
@@ -203,7 +172,6 @@ jobs:
         - type: skipped
   - name: publish
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -230,7 +198,6 @@ jobs:
         - type: skipped
   - name: activate
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -251,7 +218,6 @@ jobs:
         type: succeeded
   - name: cleanup-assets
     target: orbit-node-209
-    labels: *id001
     writes: true
     task:
       type: behavior
@@ -271,7 +237,6 @@ jobs:
         type: succeeded
   - name: result
     target: orbit-node-209
-    labels: *id003
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-certificate-assets'

@@ -113,8 +113,6 @@ jobs:
     allowFailure: true
   - name: verify
     target: orbit-node-209
-    labels:
-      node: '209'
     forEach:
       item: probe
       in: '${{ inputs.intent.cluster_router.candidate == null ? [] : inputs.intent.cluster_router.candidate.probes
@@ -531,8 +529,6 @@ jobs:
     allowFailure: true
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - {step: forward_prepare_certificates, condition: {type: always}}
     - {step: forward_php, condition: {type: always}}
