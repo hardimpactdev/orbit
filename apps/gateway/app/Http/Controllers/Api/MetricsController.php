@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Metrics\AdmitMetricsCredentialResetAction;
 use App\Actions\Metrics\AdmitMetricsExporterAction;
 use App\Actions\Metrics\AdmitMetricsRoleAction;
 use App\Data\Metrics\MetricsCredentialsData;
@@ -47,9 +48,10 @@ final class MetricsController extends Controller
         return $this->response($request, $manager->credentials())->header('Cache-Control', 'no-store');
     }
 
-    public function reset(ResetMetricsCredentialsRequest $request, MetricsCredentialManager $manager): JsonResponse
+    #[StartsOperation('metrics.credentials_reset')]
+    public function reset(ResetMetricsCredentialsRequest $request, AdmitMetricsCredentialResetAction $action): JsonResponse
     {
-        return $this->response($request, $manager->reset())->header('Cache-Control', 'no-store');
+        return response()->json(['data' => OperationData::fromModel($action->execute())->toArray(), 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]], 202)->header('Cache-Control', 'no-store');
     }
 
     #[StartsOperation('metrics.exporter_enable')]

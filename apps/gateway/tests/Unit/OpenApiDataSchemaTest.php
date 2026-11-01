@@ -82,6 +82,7 @@ it('publishes accepted Operation responses for Metrics role and exporter writes'
     expect($responses)->toHaveKey('202')->not->toHaveKeys(['200', '201']);
     expect($responses['202']['content']['application/json']['schema']['properties']['data']['$ref'])->toBe('#/components/schemas/Operation');
 })->with([
+    'reset credentials' => ['/api/v1/metrics/credentials/reset', 'post'],
     'enable role' => ['/api/v1/metrics', 'post'],
     'disable role' => ['/api/v1/metrics', 'delete'],
     'enable exporter' => ['/api/v1/metrics/exporters/{node}', 'put'],

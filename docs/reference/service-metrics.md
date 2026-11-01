@@ -3,7 +3,6 @@ title: "Service metrics"
 description: "Caddy proxy traffic and dedicated production PHP-FPM capacity monitoring."
 covers:
   - apps/gateway/app/Infrastructure/Metrics/ServiceMetrics*.php
-  - apps/gateway/app/Infrastructure/Metrics/NativeServiceMetrics*.php
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
   - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php
@@ -71,15 +70,7 @@ Cbox can emit zero OPcache fields after a failed probe. The cache panels require
 
 ## Lifecycle
 
-Role and preference changes converge the services first, and then publish the new Prometheus configuration. Service metrics also reconcile across the fleet whenever a public site appears or disappears. This includes:
-
-- a Route is created, updated, or removed;
-- a Route target is set or cleared; and
-- a Route is published as public.
-
-Production clone completion and production Instance creation or removal also reconcile service metrics.
-
-If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. It skips that Node and continues reconciling the others. The operation that triggered the reconcile, such as an Instance removal on another Node, continues. A later reconcile retries the Node and clears its degradation when it succeeds. Inspect the affected Node's exporter row in `metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
+Explicit role and exporter Operations compose the service workflows and publish the captured Prometheus configuration. Gateway provisioning, role-baseline and Route actions do not execute synchronous Metrics reconciliation. Node parents retain their shared service-metrics lower and recovery contract. Status reports observations and stored degradation metadata; it does not retry convergence.
 
 Removing Metrics removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. Explicit exporter disable stops the owned listeners and removes the exporter unit, binary, pool status lines, and official source-scoped port rules; older rules tied to an interface stay under Node and role convergence ownership. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
 
@@ -97,9 +88,7 @@ Node role and fleet reconciliation use the native service-metrics lower to snaps
 
 When convergence fails on one Node, Orbit tries to restore that Node's exporter and pool state before continuing on the other Nodes. If that recovery fails, the Node's degradation records the `restore` step and `metrics.service_rollback_failed`. An ownership conflict degrades the affected Node without changing unmanaged state.
 
-A Prometheus publication failure still fails the reconcile and restores the changed services in reverse order. If that recovery fails, the reconcile returns `metrics.service_rollback_failed`. A service failure stays recorded until that Node's service reconciliation and publication succeed; successful exporter or cAdvisor snapshots do not clear it. Recording and clearing its step and error code are atomic.
-
-If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node. Orbit stops further remote work, including recovery, after detecting the lost lock.
+Explicit native Operations retain failed step history for recovery. The Gateway performs no reverse-order service restoration and holds no Node execution locks for Metrics.
 
 ### Doctor
 

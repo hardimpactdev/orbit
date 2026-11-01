@@ -11,7 +11,6 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -269,7 +268,5 @@ function router_lan_provision_fakes(): void
             return $observation;
         }
     });
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->zeroOrMoreTimes();
-    app()->instance(MetricsFleetReconciler::class, $metrics);
+
 }

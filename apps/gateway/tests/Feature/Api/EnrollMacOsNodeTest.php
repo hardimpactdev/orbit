@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Metrics\MetricsAccessRevoker;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
@@ -79,12 +78,6 @@ beforeEach(function (): void {
     app()->instance(MetricsAccessRevoker::class, new class implements MetricsAccessRevoker
     {
         public function revoke(): void {}
-    });
-    app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
-    {
-        public function reconcile(): void {}
-
-        public function retire(Node $node): void {}
     });
 
     $operator = Node::query()->create([

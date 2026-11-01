@@ -12,7 +12,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
@@ -853,9 +852,7 @@ it('rolls a failed public activation back to the verified edge so the Ingress No
 })->with(['rollback builds' => [false], 'rollback also fails' => [true]]);
 
 it('publishes an eligible public Route on the same ID and names only the Ingress domain and Router upstream', function (): void {
-    $metrics = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
 
-    app()->instance(MetricsFleetReconciler::class, $metrics);
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
     $edge = new FakePublicRouteEdgeProjector;
     app()->instance(PublicRouteEdgeProjector::class, $edge);

@@ -5,12 +5,6 @@ declare(strict_types=1);
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsCredentialManager;
-use App\Domain\Metrics\MetricsExporterLifecycle;
-use App\Domain\Metrics\MetricsFirewallExpectationProvider;
-use App\Domain\Metrics\MetricsRuntimeLifecycle;
-use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
@@ -21,7 +15,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Yaml\Yaml;
-use Tests\Support\FakeAgentCommandRunner;
 
 it('combines metrics preferences with applicable roles', function (): void {
     $metrics = service_metrics_node('metrics');
@@ -95,49 +88,6 @@ it('publishes no FPM scrape target for an empty node', function (): void {
     $node = service_metrics_node('empty');
     $config = Yaml::parse(new PrometheusConfigRenderer()->render([], [new ServiceMetricsNode($node, false, true)]));
     expect($config['scrape_configs'])->toHaveCount(2);
-});
-
-it('wires selected service monitoring into container-resolved publication and inspection', function (): void {
-    $metrics = service_metrics_node('metrics');
-    $assignment = $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
-    $node = service_metrics_node('workload');
-    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $cluster = Cluster::query()->create(['name' => 'production']);
-    $node->update(['cluster_id' => $cluster->id]);
-    $node->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $cluster->id]);
-    $node->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $cluster->id]);
-    $instance = service_metrics_instance($node, 'monitored', '8.5');
-    $instance->update(['provisioning_step' => 'active', 'source_is_laravel' => false]);
-    $route = Route::query()->create([
-        'project_id' => $instance->project_id, 'cluster_id' => $cluster->id,
-        'domain' => 'app.example.test', 'provenance' => 'explicit',
-        'publication' => 'private', 'status' => 'pending',
-    ]);
-    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['publication' => 'public', 'status' => 'active']);
-    $agents = new FakeAgentCommandRunner()->answer('metrics.runtime', function (array $input) use ($node): array {
-        $jobs = Yaml::parse($input['action']['configuration']['/etc/orbit/metrics/prometheus.yml'])['scrape_configs'];
-        expect(array_column($jobs, 'job_name'))->toContain('orbit-caddy-'.$node->id, 'orbit-fpm-'.$node->id);
-
-        return ['changed' => true];
-    });
-    app()->instance(AgentCommandRunner::class, $agents);
-    $credentials = Mockery::mock(MetricsCredentialManager::class);
-    $credentials->shouldReceive('passwordForConvergence')->once()->andReturn('test-password');
-    $credentials->shouldReceive('verifyActive')->once();
-    app()->instance(MetricsCredentialManager::class, $credentials);
-    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
-    $exporters->shouldReceive('targets')->once()->andReturn([]);
-    app()->instance(MetricsExporterLifecycle::class, $exporters);
-
-    app(MetricsRuntimeLifecycle::class)->converge($metrics, $assignment);
-
-    $inspection = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
-    expect($inspection->runtimeConfiguration->pool)->toContain('pm.status_path = /orbit-fpm-status');
-    expect(array_column(app(MetricsFirewallExpectationProvider::class)->for($node), 'resourceId'))->toContain(
-        'orbit:metrics-service-caddy-allow', 'orbit:metrics-service-caddy-deny',
-        'orbit:metrics-service-fpm-allow', 'orbit:metrics-service-fpm-deny',
-    );
 });
 
 function service_metrics_node(string $name): Node
