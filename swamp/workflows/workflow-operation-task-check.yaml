@@ -200,6 +200,9 @@ jobs:
         steps: ${{ steps }}
         validation: ${{ steps.validation.outputs }}
     dependsOn:
+    - step: validation
+      condition:
+        type: succeeded
     - step: setup-${{ self._index }}
       condition:
         type: always
@@ -313,6 +316,9 @@ jobs:
     - step: base_prepare-${{ self._index }}
       condition:
         type: always
+    - step: setup_result
+      condition:
+        type: succeeded
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
       != 0) }}
   - name: base-${{ self._index }}
@@ -341,6 +347,9 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
+    - step: setup_result
+      condition:
+        type: succeeded
     forEach: *id002
     concurrency: 1
     guard: ${{ !self.deliverable.fails_on_base || !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode
@@ -368,6 +377,9 @@ jobs:
     - step: base-${{ self._index }}
       condition:
         type: always
+    - step: setup_result
+      condition:
+        type: succeeded
     forEach: *id002
     concurrency: 1
     guard: ${{ !steps.setup_result.outputs.passed || (has(steps.project) && has(steps.project.outputs) && steps.project.outputs.exitCode != 0) }}
@@ -393,6 +405,9 @@ jobs:
     - step: project
       condition:
         type: always
+    - step: setup_result
+      condition:
+        type: succeeded
   - name: changed
     target: orbit-node-209
     task:

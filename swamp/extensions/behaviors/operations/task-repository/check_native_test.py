@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import sys
 import unittest
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class NativeCheck(NativeRepository):
         self.git("commit", "-qm", "Base")
         self.inputs["intent"]["base"] = self.git("rev-parse", "HEAD")
 
-    def execute_check(self, success=True):
+    def execute_check(self, success=True, has_result=True):
         intent = self.inputs["intent"]
         intent["setup_steps"] = [
             {**x, "input_json": json.dumps(x)} for x in intent["setup"]
@@ -89,7 +90,60 @@ class NativeCheck(NativeRepository):
             json.dumps(history, indent=2)
         )
         selected = next(x for x in history["jobs"][0]["steps"] if x["name"] == "result")
-        return history, json.loads(selected["outputs"]["stdout"])
+        return history, json.loads(selected["outputs"]["stdout"]) if has_result else None
+
+    def assert_preparation_failure(self, failed_step):
+        self.inputs["intent"].update(
+            phase="handoff",
+            command="touch should-not-run",
+            deliverables=[
+                {
+                    "id": "base-command",
+                    "type": "command",
+                    "command": "touch should-not-run",
+                    "directory": ".",
+                    "fails_on_base": True,
+                    "paths": [],
+                },
+                {
+                    "id": "current-command",
+                    "type": "command",
+                    "command": "touch should-not-run",
+                    "directory": ".",
+                    "fails_on_base": False,
+                    "paths": [],
+                },
+            ],
+        )
+        history, _ = self.execute_check(success=False, has_result=False)
+        self.assertEqual(history["status"], "failed")
+        steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
+        self.assertEqual(steps[failed_step]["status"], "failed")
+        for name in (
+            "setup_result", "before", "project", "base_ready-0", "base_ready-1",
+            "base-0", "base-1", "deliverable-0", "deliverable-1", "after",
+            "local", "mint_github", "push", "result",
+        ):
+            self.assertEqual(steps[name]["status"], "skipped", name)
+        self.assertFalse((self.workspace / "should-not-run").exists())
+        self.assertNotIn("Invalid expression", json.dumps(history))
+        self.assertNotIn("InvalidExpressionError", json.dumps(history))
+        self.assertEqual(steps["cleanup_local"]["status"], "succeeded")
+
+    def test_ssh_failure_skips_checks_without_reading_missing_outputs(self):
+        (self.repo / "tools/ssh").write_text(
+            "#!" + sys.executable
+            + '\nimport sys\nif "-M" in sys.argv or "-O" in sys.argv:raise SystemExit(0)'
+            + '\nsys.stderr.write("fixture SSH unavailable\\n")\nraise SystemExit(255)\n'
+        )
+        self.assert_preparation_failure("prepare_remote")
+
+    def test_asset_copy_failure_skips_checks_without_reading_missing_outputs(self):
+        (self.repo / "tools/scp").write_text(
+            "#!" + sys.executable
+            + '\nimport sys\nsys.stderr.write("fixture asset copy unavailable\\n")\nraise SystemExit(31)\n'
+        )
+        self.assert_preparation_failure("copy_assets")
 
     def test_baseline_setup_is_ordered_before_the_checked_snapshot(self):
         self.inputs["intent"]["setup"] = [
