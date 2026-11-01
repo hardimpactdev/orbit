@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -139,3 +140,39 @@ it('refuses non-reference secret maps before a native request can contain values
     [['identity' => ['vault' => 'orbit-control-inputs', 'key' => "private\nvalue"]]],
     [['bad field' => ['vault' => 'orbit-control-inputs', 'key' => 'key']]],
 ]);
+
+final readonly class SubmissionOnlyCommandInputsProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+{
+    public function input(Operation $operation): array
+    {
+        return ['public_callback' => true];
+    }
+
+    public function workflowInput(Operation $operation): array
+    {
+        return ['intent' => ['submitted' => true]];
+    }
+
+    public function apply(Operation $operation, array $data): Operation
+    {
+        return $operation;
+    }
+}
+
+it('separates submission-only inputs from effect-free public callback inputs', function (): void {
+    $direct = new DirectOperation([new class implements DirectOperationContribution
+    {
+        public function definitions(): array
+        {
+            return ['test.submission_only' => ['workflow' => 'operation-test-submission-only',
+                'projection' => SubmissionOnlyCommandInputsProjection::class, 'workflow_inputs' => true]];
+        }
+    }]);
+    app()->instance(DirectOperation::class, $direct);
+    $operation = new Operation(['kind' => 'test.submission_only', 'node_id' => 9]);
+    $operation->id = 27;
+
+    expect($direct->projection($operation)->input($operation))->toBe(['public_callback' => true])
+        ->and($direct->workflowInputs($operation))->toEqual(['intent' => ['submitted' => true],
+            'execution_secrets' => (object) [], 'operation_id' => 27, 'kind' => 'test.submission_only', 'node_id' => 9]);
+});

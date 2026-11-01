@@ -623,14 +623,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/fleet/recipe-pr/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/recipe-pr/indexes.ts",
       "rule": "custom-control",
       "count": 1,
@@ -1118,20 +1110,6 @@
     },
     {
       "file": "extensions/behaviors/operations/instance-lifecycle/transfer_root.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-lifecycle/transfer_runtime.ts",
       "rule": "private-material",
       "count": 1,
       "evidence": []
@@ -1836,18 +1814,6 @@
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/process-installation.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/processes-schedules/process-installation.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/processes-schedules/process-system.ts",

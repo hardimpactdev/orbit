@@ -11,6 +11,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -28,6 +29,7 @@ beforeEach(function (): void {
     $this->worker = $worker;
     $worker->accessibleNodes()->attach($this->gateway);
     app(GatewayServingHost::class)->remember($this->gateway);
+    Node::query()->forceCreate(['id' => 209, 'name' => 'swamp-executor', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.209', 'wireguard_ip' => '10.44.0.209', 'user' => 'orbit']);
     config(['dependency_detection.services_node_id' => $worker->id]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->run = 'a075eb23-7ac4-4487-80d1-57a038a92676';
@@ -50,11 +52,13 @@ it('admits through the owning API into one direct start without credential hydra
     config(['swamp.run_token' => 'fake.token']);
     $response = $this->postJson('/api/v1/fleet/recipe-pr', array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha'])))->assertAccepted();
     $operation = Operation::findOrFail($response->json('data.id'));
-    expect($socket->sent)->toHaveCount(1)->and($socket->sent[0]['payload']['inputs'])->toBe(['operation_id' => $operation->id, 'kind' => 'fleet.recipe_pr', 'node_id' => $this->gateway->id])
+    expect($socket->sent)->toHaveCount(1)->and($socket->sent[0]['payload']['inputs']['intent'])->toEqual($this->input)
+        ->and($socket->sent[0]['payload']['inputs']['node_id'])->toBe(209)
+        ->and($socket->sent[0]['payload']['inputs']['operation_id'])->toBe($operation->id)
         ->and($operation->state['swamp_run_id'])->toBe($this->run)
         ->and($operation->input)->not->toHaveKey('token')->and($operation->input['author'])->toBe('orbit-acme[bot]')
         ->and($operation->input['deployed_recipe'])->toBe($this->input['deployed_recipe'])
-        ->and($operation->input['github'])->toBe(['$secret' => 'github.installation', 'id' => $this->gateway->id])
+        ->and($operation->input['github'])->toBe(['$secret' => 'github.installation', 'id' => 209])
         ->and($operation->attempts)->toBe(0)->and($operation->worker)->toBeNull()->and($operation->lock_key)->toBeNull();
     expect(app(OperationKinds::class)->definition('fleet.recipe_pr'))->not->toBeNull();
 });
@@ -162,7 +166,7 @@ it('rejects worker-selected identities credentials and stale actions at admissio
 it('exposes only safe admitted input and refuses any family execution primitive', function (): void {
     $this->operation->update(['input' => [...$this->input, 'token' => 'PRIVATE']]);
     $response = $this->getJson('/api/v1/direct-operations/'.$this->operation->id.'?run_id='.$this->run)->assertOk();
-    expect($response->json('data.input'))->toBe($this->input);
+    expect($response->json('data.input'))->toBe(['intent' => $this->input]);
     $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/primitive', ['run_id' => $this->run])->assertUnprocessable();
     expect(array_keys(app(RecipePrProjection::class)->input($this->operation)))->not->toContain('token');
 });
@@ -175,7 +179,9 @@ it('mints only the fixed recipe repository grant for its bound own-Node run', fu
             'permissions' => [...$permissions, 'metadata' => 'read']], 201),
         '*/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'hardimpactdev/orbit']]])]);
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    $this->getJson('/api/v1/direct-operations/'.$this->operation->id.'/private-material?run_id='.$this->run)
+    $this->getJson('/api/v1/direct-operations/'.$this->operation->id.'/private-material?run_id='.$this->run)->assertUnprocessable();
+    Http::assertNothingSent();
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', ['run_id' => $this->run])
         ->assertOk()->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonPath('data.github.repository', 'hardimpactdev/orbit')->assertJsonPath('data.github.permissions', $permissions);
     Http::assertSentCount(3);
@@ -214,3 +220,19 @@ it('projects only matching bounded refusal codes and cancellation', function (st
     ['failed', 'fleet.recipe_pr_credential_unavailable'],
     ['cancelled', null],
 ]);
+
+it('ends mint authority after failed projection and preserves the original outcome on fresh admission', function (): void {
+    Http::preventStrayRequests();
+    $this->operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.native_failed', 'finished_at' => now()]);
+    $this->postJson('/api/v1/direct-operations/'.$this->operation->id.'/github-token', ['run_id' => $this->run])->assertConflict();
+    Http::assertNothingSent();
+    $this->withServerVariables(['REMOTE_ADDR' => $this->worker->wireguard_ip]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'event', 'id' => $message['id'], 'event' => ['kind' => 'started', 'workflowName' => 'operation-fleet-recipe-pr', 'runId' => 'f55044a2-bde6-482d-84c9-87fae6fe3269']]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'fixture-token']);
+    $body = array_intersect_key($this->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha']));
+    $response = $this->withHeader('Idempotency-Key', 'recipe-explicit-fresh-admission')->postJson('/api/v1/fleet/recipe-pr', $body)->assertAccepted();
+    expect($response->json('data.id'))->not->toBe($this->operation->id);
+    expect($this->operation->fresh()->status)->toBe(OperationStatus::Failed);
+});

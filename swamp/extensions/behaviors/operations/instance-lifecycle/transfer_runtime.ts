@@ -1,12 +1,7 @@
 import { z } from "npm:zod@4.4.3";
-import type { GatewayOperation } from "../_lib/direct.ts";
 import { processAction } from "../processes-schedules/process-control.ts";
 import { Input } from "../processes-schedules/process-input.ts";
-import {
-  installProcessLocal,
-  ProcessInstallation,
-  ProcessInstallationMaterial,
-} from "../processes-schedules/process-installation.ts";
+import { ProcessInstallation } from "../processes-schedules/installation-input.ts";
 import { startActions, StartInput } from "../processes-schedules/start.ts";
 import { selectVitePort } from "../processes-schedules/vite-system.ts";
 
@@ -20,8 +15,6 @@ const Member = z.object({
 );
 export const TransferRuntime = z.object({
   node_id: z.number().int().positive(),
-  field: z.enum(["source_installations", "destination_installations"])
-    .nullable(),
   members: z.array(Member).max(4096),
   ports: z.array(z.number().int().min(1024).max(65535)).max(2),
 }).strict().refine((v) =>
@@ -51,44 +44,17 @@ const requireReady = (value: Record<string, unknown>) => {
 /** Canonical Process actions stay inside this owning native transfer root. */
 export function transferRuntimeActions(
   control = processAction(),
-  install = installProcessLocal,
   traffic = startActions(),
   select = selectVitePort,
 ) {
   const prepare = async (runtime: TransferRuntime, signal?: AbortSignal) => {
     for (const member of runtime.members) {
       if (member.input.installation.desired === "running") {
-        requireReady(await traffic.prepare(member.input.control, signal));
-      }
-    }
-  };
-  const installAll = async (
-    runtime: TransferRuntime,
-    gateway: Pick<GatewayOperation, "withPrivateMaterial">,
-    signal?: AbortSignal,
-  ) => {
-    if (runtime.members.length === 0) return;
-    if (runtime.field === null) {
-      throw new Error("instance.transfer_runtime_invalid");
-    }
-    await gateway.withPrivateMaterial(async (material) => {
-      const values = z.record(
-        z.string(),
-        z.object({ installation: ProcessInstallationMaterial }).strict(),
-      ).parse(material[runtime.field!]);
-      for (const member of runtime.members) {
-        const value = values[String(member.id)];
-        if (!value) throw new Error("instance.transfer_runtime_invalid");
         requireReady(
-          await install(
-            member.input.installation,
-            value.installation,
-            undefined,
-            signal,
-          ),
+          await traffic.prepare(member.input.control, signal),
         );
       }
-    });
+    }
   };
   const verify = async (runtime: TransferRuntime, signal?: AbortSignal) => {
     for (const member of runtime.members) {
@@ -121,16 +87,7 @@ export function transferRuntimeActions(
       }
     },
     prepare,
-    install: installAll,
     verify,
-    restore: async (
-      runtime: TransferRuntime,
-      gateway: Pick<GatewayOperation, "withPrivateMaterial">,
-    ) => {
-      await prepare(runtime);
-      await installAll(runtime, gateway);
-      await verify(runtime);
-    },
     retire: async (runtime: TransferRuntime, signal?: AbortSignal) => {
       for (const member of runtime.members) {
         requireReady(

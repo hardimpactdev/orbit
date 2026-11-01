@@ -14,7 +14,7 @@ final readonly class RecipePrProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha', 'author', 'required_check', 'deployed_recipe']));
+        return ['intent' => array_intersect_key($operation->input, array_flip(['action', 'variant', 'date', 'pull_number', 'head_sha', 'author', 'required_check', 'deployed_recipe']))];
     }
 
     public function apply(Operation $operation, array $data): Operation

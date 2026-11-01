@@ -66,9 +66,6 @@ export const transferHttp =
             publication: { node_id: node },
             process_runtime: {
               node_id: node,
-              field: node === 9
-                ? "source_installations"
-                : "destination_installations",
               members: [],
               ports: [],
             },
@@ -182,6 +179,7 @@ export function fixtureSharedBehavior(type: string) {
     leaves: z.array(z.unknown()).optional(),
     requests: z.array(z.unknown()).optional(),
     signed: z.array(z.unknown()).optional(),
+    native_stdout: z.string().optional(),
   }).passthrough();
   type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -193,6 +191,7 @@ export function fixtureSharedBehavior(type: string) {
       "publishCaddy",
       "publishDns",
       "requestAll",
+      "prepareSignBatch",
       "signBatch",
       "publishAll",
     ]
@@ -202,7 +201,9 @@ export function fixtureSharedBehavior(type: string) {
       arguments: Args,
       execute: async (args: z.infer<typeof Args>, ctx: Context) => {
         effect(name, { node: args.target_node_id });
-        const data = name === "requestAll"
+        const data = name === "prepareSignBatch"
+          ? { sign_script: "/dev/null", requests_json: "[]" }
+          : name === "requestAll"
           ? { requests: [] }
           : name === "signBatch"
           ? { certificates: [] }
@@ -244,16 +245,8 @@ export const fixtureRuntime = {
     effect("prepare-runtime");
     return Promise.resolve();
   },
-  install: () => {
-    effect("install-runtime");
-    return Promise.resolve();
-  },
   verify: () => {
     effect("verify-runtime");
-    return Promise.resolve();
-  },
-  restore: () => {
-    effect("restore-runtime");
     return Promise.resolve();
   },
   retire: () => {
@@ -297,4 +290,18 @@ export const fixtureSqlite = {
     effect("sqlite-cleanup-target");
     return Promise.resolve();
   },
+};
+
+
+export const fixtureProcessInstaller = {
+  type: "@nckrtl/fixture-transfer-process-install",
+  version: "2026.11.01.1",
+  methods: { apply: {
+    description: "Record the native child installation boundary",
+    arguments: z.object({ node_id: z.number() }),
+    execute: (args: { node_id: number }) => {
+      effect(args.node_id === 9 ? "restore-runtime" : "install-runtime");
+      return { ready: true };
+    },
+  } },
 };

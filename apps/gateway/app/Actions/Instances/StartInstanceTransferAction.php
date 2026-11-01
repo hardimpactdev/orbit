@@ -68,13 +68,9 @@ final readonly class StartInstanceTransferAction
                 'participant_node_ids' => $routePlan['participant_node_ids'],
                 'environment_fields' => [(string) $source->id => 'source_route_environment', (string) $destination->id => 'destination_route_environment'],
                 'private_bindings' => [
-                    'source_installations' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
-                    'destination_installations' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
                     'source_route_environment' => ['owner_node_id' => $source->id, 'read_node_ids' => [$source->id], 'write_node_ids' => []],
                     'destination_route_environment' => ['owner_node_id' => $destination->id, 'read_node_ids' => [$destination->id], 'write_node_ids' => []],
                 ],
-                'source_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
-                'destination_installations' => ['$secret' => 'instance.transfer_processes', 'id' => $instance->id],
                 'source_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
                 'destination_route_environment' => ['$secret' => 'instance.transfer_route_environment', 'id' => $instance->id],
                 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'transfer_id' => $transfer->id,

@@ -1,8 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.14";
 import {
-  installProcess,
   installProcessLocal,
-  installProcessWithTransport,
+  installProcessMaterial,
 } from "./process-installation.ts";
 
 const content = "# Orbit Process 7\n[Service]\nExecStart=/usr/bin/true\n";
@@ -37,7 +36,7 @@ function fixture(override: Record<string, Record<string, unknown>> = {}) {
     "process.status": { state: "inactive", private: "must-not-escape" },
     "process.check-release": { available: true },
   };
-  const invoke: NonNullable<Parameters<typeof installProcess>[3]> = (
+  const invoke: NonNullable<Parameters<typeof installProcessMaterial>[3]> = (
     name,
     input,
     pin,
@@ -48,25 +47,28 @@ function fixture(override: Record<string, Record<string, unknown>> = {}) {
     );
   };
   const material = {
-    withPrivateMaterial: async (
-      use: (value: Record<string, unknown>) => Promise<void>,
-    ) =>
-      await use({
-        installation: {
-          runtime: "systemd",
-          content,
-          environment: "# Orbit Process 7\nTOKEN=private-value\n",
-        },
-      }),
+    installation: {
+      runtime: "systemd",
+      content,
+      environment: "# Orbit Process 7\nTOKEN=private-value\n",
+    },
   };
   return { calls, invoke, material };
 }
 Deno.test("Process install stages and activates an owned stopped unit, returning only bounded status", async () => {
   const f = fixture();
-  assertEquals(await installProcess(base, f.material, undefined, f.invoke), {
-    ready: true,
-    state: "inactive",
-  });
+  assertEquals(
+    await installProcessMaterial(
+      base,
+      f.material.installation,
+      undefined,
+      f.invoke,
+    ),
+    {
+      ready: true,
+      state: "inactive",
+    },
+  );
   assertEquals(f.calls.map((c) => c.name), [
     "process.stage-unit",
     "process.activate-unit",
@@ -96,9 +98,9 @@ Deno.test("Process install skips only a settled unchanged unit, and activates pe
       const f = fixture({
         "process.stage-unit": { staged: false, previous: true, state },
       });
-      await installProcess(
+      await installProcessMaterial(
         { ...base, activation_pending },
-        f.material,
+        f.material.installation,
         undefined,
         f.invoke,
       );
@@ -120,12 +122,12 @@ Deno.test("Process replacement removes only the admitted retired runtime and pre
     "process.activate-unit": { backup_left: true },
   });
   assertEquals(
-    await installProcess(
+    await installProcessMaterial(
       {
         ...base,
         retired: { runtime: "docker", name: "orbit-process-7-proof" },
       },
-      f.material,
+      f.material.installation,
       undefined,
       f.invoke,
     ),
@@ -160,15 +162,20 @@ Deno.test("Process hash, artifact, runtime and release refusals precede installa
   ) {
     const f = fixture();
     await assertRejects(() =>
-      installProcess({ ...base, ...change }, f.material, undefined, f.invoke)
+      installProcessMaterial(
+        { ...base, ...change },
+        f.material.installation,
+        undefined,
+        f.invoke,
+      )
     );
     assertEquals(f.calls, []);
   }
   const f = fixture({ "process.check-release": { available: false } });
   assertEquals(
-    await installProcess(
+    await installProcessMaterial(
       { ...base, directory: "/home/orbit-app-7/current" },
-      f.material,
+      f.material.installation,
       undefined,
       f.invoke,
     ),
@@ -188,12 +195,12 @@ Deno.test("Process installation refuses typed primitive errors without reading s
       [name]: { error_code: "process.name_collision", output: "private" },
     });
     assertEquals(
-      await installProcess(
+      await installProcessMaterial(
         {
           ...base,
           retired: { runtime: "docker", name: "orbit-process-7-proof" },
         },
-        f.material,
+        f.material.installation,
         undefined,
         f.invoke,
       ),
@@ -204,9 +211,14 @@ Deno.test("Process installation refuses typed primitive errors without reading s
   const f = fixture();
   await assertRejects(
     () =>
-      installProcess(base, f.material, undefined, () => {
-        throw new Error(content);
-      }),
+      installProcessMaterial(
+        base,
+        f.material.installation,
+        undefined,
+        () => {
+          throw new Error(content);
+        },
+      ),
     Error,
     "Private Process installation did not complete",
   );
@@ -233,14 +245,14 @@ Deno.test("Docker installation keeps command/environment callback-local and bind
     environment: { SECRET: "private-value" },
   };
   const material = {
-    withPrivateMaterial: async (
-      use: (value: Record<string, unknown>) => Promise<void>,
-    ) =>
-      await use({
-        installation: { runtime: "docker", spec: input.spec, definition },
-      }),
+    installation: { runtime: "docker", spec: input.spec, definition },
   };
-  const outcome = await installProcess(input, material, undefined, f.invoke);
+  const outcome = await installProcessMaterial(
+    input,
+    material.installation,
+    undefined,
+    f.invoke,
+  );
   assertEquals(outcome, { ready: true, state: "inactive" });
   assertEquals(f.calls.map((c) => c.name), [
     "process.converge-container",
@@ -256,16 +268,16 @@ Deno.test("Docker installation keeps command/environment callback-local and bind
   assertEquals(JSON.stringify(outcome).includes("private"), false);
   f.calls.length = 0;
   await assertRejects(() =>
-    installProcess(
+    installProcessMaterial(
       { ...input, spec: "c".repeat(64) },
-      material,
+      material.installation,
       undefined,
       f.invoke,
     )
   );
   assertEquals(f.calls, []);
   await assertRejects(() =>
-    installProcess(base, material, undefined, f.invoke)
+    installProcessMaterial(base, material.installation, undefined, f.invoke)
   );
   assertEquals(f.calls, []);
 });
@@ -292,38 +304,16 @@ Deno.test("same-root local installer uses the caller transport without Gateway o
   }]);
 });
 
-Deno.test("parent callback installer accepts the canonical SystemTransport without a child or projection", async () => {
-  const f = fixture();
-  let reads = 0;
-  let commands = 0;
-  const privateMaterial = {
-    withPrivateMaterial: async (
-      use: (value: Record<string, unknown>) => Promise<void>,
-    ) => {
-      reads++;
-      await f.material.withPrivateMaterial(use);
-    },
-  };
-  assertEquals(
-    await installProcessWithTransport(
-      { ...base, directory: "/nonexistent-orbit-native-parent-proof" },
-      privateMaterial,
-      () => {
-        commands++;
-        return Promise.resolve({ success: false, stdout: "" });
-      },
-    ),
-    { error_code: "process.release_unavailable" },
-  );
-  assertEquals(reads, 1);
-  assertEquals(commands, 1);
-});
-
 Deno.test("native parent Process installation needs no agent digest", async () => {
   const f = fixture();
   const { agent_sha256: _stamp, ...admitted } = base;
   assertEquals(
-    await installProcess(admitted, f.material, undefined, f.invoke),
+    await installProcessMaterial(
+      admitted,
+      f.material.installation,
+      undefined,
+      f.invoke,
+    ),
     { ready: true, state: "inactive" },
   );
   assertEquals(f.calls.length, 3);
@@ -333,9 +323,9 @@ Deno.test("native parent Process installation needs no agent digest", async () =
 Deno.test("Process installation carries the same admitted dependencies to stage and activation", async () => {
   const f = fixture();
   const paths = ["/srv/state", "/srv/source"];
-  await installProcess(
+  await installProcessMaterial(
     { ...base, required_mount_paths: paths },
-    f.material,
+    f.material.installation,
     undefined,
     f.invoke,
   );
