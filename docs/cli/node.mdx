@@ -11,6 +11,9 @@ covers:
   - packages/php-sdk/src/Responses/Nodes/**
 ---
 
+import { Flow } from '/snippets/flow.jsx'
+import { flows } from '/snippets/flows.jsx'
+
 A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, renames it, assigns and moves its roles, records which Node may act on which, sets its apps root, and removes it.
 
 [Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root and operator-approved task VM host configuration.
@@ -49,6 +52,8 @@ Destructive commands ask for confirmation. The default answer is No. Declining, 
 ## orbit node:add
 
 Add a machine to the fleet. For an existing Node, the same command converges it again after you change its TLD, roles, or settings.
+
+<Flow kind="node.add" src={flows["node.add"]} />
 
 ```bash
 orbit node:add <name> [host] [options]
@@ -137,6 +142,8 @@ Human output shows bytes and durations in readable units. JSON keeps the raw num
 
 Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, PHP runtime policy, temporary-file cleanup and applicable network artifacts. Only an active VPN owner receives the private DNS listener; a Gateway-only Node is a resolver client. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
 
+<Flow kind="node.converge" src={flows["node.converge"]} />
+
 ```bash
 orbit node:converge <node> [--force] [--idempotency-key=KEY] [--json]
 ```
@@ -190,6 +197,8 @@ After a rename, callers must use the new name or the numeric ID. The WireGuard h
 ## orbit node:settings
 
 Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts.
+
+<Flow kind="node.settings" src={flows["node.settings"]} />
 
 ```bash
 orbit node:settings <node> --setting=apps.path:/mnt/apps [--idempotency-key=<key>] [--json]

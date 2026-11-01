@@ -11,6 +11,9 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
+import { Flow } from '/snippets/flow.jsx'
+import { flows } from '/snippets/flows.jsx'
+
 Doctor compares current Node and runtime facts with the Gateway's recorded intent. It reports differences and never repairs them. Native provisioning, deployment, Route, Tool, Schedule and database operations own their configuration checks. Doctor reuses the native firewall comparison for operator rules, matched by port, protocol and source.
 
 ## Commands
@@ -24,6 +27,8 @@ Doctor compares current Node and runtime facts with the Gateway's recorded inten
 ```bash
 orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 ```
+
+<Flow kind="doctor.inspect" src={flows["doctor.inspect"]} />
 
 | Option | Default | Meaning |
 | --- | --- | --- |

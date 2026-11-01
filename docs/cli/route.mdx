@@ -7,6 +7,9 @@ covers:
   - packages/php-sdk/src/Responses/Routes/**
 ---
 
+import { Flow } from '/snippets/flow.jsx'
+import { flows } from '/snippets/flows.jsx'
+
 A Route is a domain that reaches an Instance or a Node service. Orbit creates a Project Route for every Instance of a web-serving Project. The `route` family creates explicit Project Routes and custom proxy Routes, changes their targets, domains, and publication, and removes them.
 
 The [Routes reference](/reference/routes) describes the Route record, domain selection, traffic setup, and the rules that refuse a change while an active Instance depends on a Route.
@@ -28,6 +31,8 @@ Every command accepts `--json`. Route, Project, Instance, and Cluster arguments 
 ## orbit route:create
 
 Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
+
+<Flow kind="route.create" src={flows["route.create"]} />
 
 ```bash
 orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH] [--idempotency-key=KEY]
@@ -104,6 +109,8 @@ orbit route:show <route>
 
 Change the domain or the publication of an explicit Project Route, or the web root of a Route. Give at least one option. Send `--web-root` on its own.
 
+<Flow kind="route.update" src={flows["route.update"]} />
+
 ```bash
 orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH] [--idempotency-key=KEY]
 ```
@@ -145,6 +152,8 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 
 Set the Instance target, or send a complete production target set.
 
+<Flow kind="route.target_set" src={flows["route.target_set"]} />
+
 ```bash
 orbit route:target:set <route> <target> [--targets=ID]... [--reassign=ID:ROUTE]... [--remove=ID]... [--idempotency-key=KEY]
 ```
@@ -180,6 +189,8 @@ Clearing an empty Route returns it unchanged. The Gateway returns `route.target_
 ## orbit route:destroy
 
 Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw the PHP-FPM pools of its development Instances. See [Remove a Route](/reference/routes#remove-a-route). On a `pending` or `failed` replacement Route that never activated, it abandons the domain change and keeps the Route it would replace. See [Remove a replacement that never activated](/reference/routes#remove-a-replacement-that-never-activated).
+
+<Flow kind="route.destroy" src={flows["route.destroy"]} />
 
 ```bash
 orbit route:destroy <route> [--yes] [--offline] [--idempotency-key=KEY] [--json]

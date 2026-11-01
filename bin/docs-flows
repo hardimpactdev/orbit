@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Bundle docs/flows/*.mmd into docs/snippets/flows.jsx for the Flow component on command pages."""
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+if __name__ == '__main__':
+    flows = {path.stem: path.read_text() for path in sorted((ROOT / 'docs/flows').glob('*.mmd'))}
+    (ROOT / 'docs/snippets/flows.jsx').write_text(
+        '// Built by bin/docs-flows from docs/flows/*.mmd. Do not edit.\n'
+        f'export const flows = {json.dumps(flows, indent=2, ensure_ascii=False)}\n'
+    )

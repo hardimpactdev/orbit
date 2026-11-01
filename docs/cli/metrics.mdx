@@ -7,6 +7,9 @@ covers:
   - packages/php-sdk/src/Responses/Metrics/**
 ---
 
+import { Flow } from '/snippets/flow.jsx'
+import { flows } from '/snippets/flows.jsx'
+
 The `metrics` family enables the Metrics role, reports its status, selects exporter Nodes, shows the Grafana credential, and disables the role. The [Metrics reference](/reference/metrics) explains what the role runs, which Nodes it selects, and who may open Grafana.
 
 ## Commands
@@ -66,6 +69,8 @@ Human output prints the URL, the user `admin`, the stored active password and th
 
 Store an `enabled` exporter preference for one Node.
 
+<Flow kind="metrics.exporter_enable" src={flows["metrics.exporter_enable"]} />
+
 ```bash
 orbit metrics:exporter:enable <node> [--json]
 ```
@@ -79,6 +84,8 @@ The command fails with `metrics.exporter_node_inactive` for a Node that is not a
 ## orbit metrics:exporter:disable
 
 Store a `disabled` exporter preference for one Node.
+
+<Flow kind="metrics.exporter_disable" src={flows["metrics.exporter_disable"]} />
 
 ```bash
 orbit metrics:exporter:disable <node> [--json]

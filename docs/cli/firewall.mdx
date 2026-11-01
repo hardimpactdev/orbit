@@ -9,6 +9,9 @@ covers:
   - apps/gateway/database/migrations/2027_01_09_120022_identify_firewall_rules_by_tuple.php
 ---
 
+import { Flow } from '/snippets/flow.jsx'
+import { flows } from '/snippets/flows.jsx'
+
 Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by its port, protocol, and source on one Node.
 
 The Gateway validates and records rule intent, then returns an Operation with `202 Accepted`. Swamp receives the complete admitted rule and SSH target, runs its native DAG from Node 209, and returns typed output for terminal projection. The target needs no worker. The CLI follows the Operation until it ends. The Gateway projects the managed row without inspecting execution again. There is no agent action, child Operation or polled writer.
@@ -146,6 +149,8 @@ Every command accepts `--json` and requires `--node` with a numeric Node ID. All
 
 Allow traffic to one destination port or port range, optionally from one source.
 
+<Flow kind="firewall.allow" src={flows["firewall.allow"]} />
+
 ```bash
 orbit firewall:allow <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
 ```
@@ -173,6 +178,8 @@ Use `--idempotency-key=KEY` to retry the same admission without creating another
 ## orbit firewall:deny
 
 Deny traffic to one destination port or port range, optionally from one source. It accepts the same argument and options as `firewall:allow`.
+
+<Flow kind="firewall.deny" src={flows["firewall.deny"]} />
 
 ```bash
 orbit firewall:deny <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--label=TEXT]
@@ -207,6 +214,8 @@ A rule's `status` is `provisioning`, `active`, `failed`, or `removing`. A failed
 ## orbit firewall:remove
 
 Remove the one rule that matches a port from UFW and delete its record. `--from` and `--protocol` narrow the match; when you omit one, it matches any value. `--from=any` matches only a rule for any source. The CLI asks `Remove firewall rule [443/tcp from any] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
+
+<Flow kind="firewall.remove" src={flows["firewall.remove"]} />
 
 ```bash
 orbit firewall:remove <port> --node=ID [--from=SOURCE] [--protocol=PROTO] [--yes] [--json]
