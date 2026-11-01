@@ -19,6 +19,8 @@ def brew_facts(cask):
         env["HOMEBREW_FORCE_API_AUTO_UPDATE"] = "1"
     binary = str(prefix / "bin/brew")
     manager = query([binary, "--version"], env).stdout.splitlines()[0]
+    if INPUT.get("manager_only"):
+        return {"manager_version": manager, "versions": [], "complete": True}
     args = ["info", "--json=v2", "--cask" if cask else "--formula", "--installed"]
     rows = json.loads(query([binary, *args], env).stdout)["casks" if cask else "formulae"]
     names = query([binary, "list", "--cask" if cask else "--formula", "-1"], env).stdout.splitlines()

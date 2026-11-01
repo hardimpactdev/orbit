@@ -90,8 +90,8 @@ final readonly class StartToolOperationAction
                     'failed_operation' => $tool?->failed_operation?->value, 'error_code' => $tool?->error_code,
                     'intent_only' => $intentOnly,
                     'protected_packages' => $protected,
-                    ...(in_array($verb, ['adopt', 'remove'], true) ? ['ssh' => app(SwampSshExecutionInput::class)->forNode($node)] : []),
-                    ...($verb === 'install' ? app(ToolManagerIntent::class)->input($node, $manager->name()) : []),
+                    'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
+                    'setup' => $verb === 'install' ? app(ToolManagerIntent::class)->nativeInput($node, $manager->name()) : null,
                 ], 'operator', request()->attributes->getString('orbit.request_id'), lockKey: $manager->name()->operationLockKey($nodeId));
             });
         } catch (ResourceOperationException $error) {

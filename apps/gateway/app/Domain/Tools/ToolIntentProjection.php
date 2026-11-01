@@ -23,22 +23,14 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
 
     public function native(Operation $operation): bool
     {
-        return in_array($operation->kind, ['tool.adopt', 'tool.remove'], true);
+        return true;
     }
 
     public function input(Operation $operation): array
     {
-        if (in_array($operation->kind, ['tool.adopt', 'tool.remove'], true)) {
-            return ['intent' => array_intersect_key($operation->input, array_flip([
-                'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version',
-                ...($operation->kind === 'tool.remove' ? ['intent_only'] : []),
-            ])), 'ssh' => $operation->input['ssh']];
-        }
-
-        return ['node_id' => $operation->node_id, ...array_intersect_key($operation->input, array_flip([
-            'manager', 'package', 'user', 'platform', 'architecture',
-            'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'materialize',
-        ]))];
+        return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'setup',
+        ]))], 'ssh' => $operation->input['ssh']];
     }
 
     public function apply(Operation $operation, array $data): Operation

@@ -2690,23 +2690,9 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tools/direct.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/tools/homebrew_program.ts",
-      "rule": "inline-script",
-      "count": 161,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/tools/local.ts",
       "rule": "inline-script",
-      "count": 42,
+      "count": 41,
       "evidence": []
     },
     {
@@ -2729,13 +2715,13 @@
     {
       "file": "extensions/behaviors/operations/tools/materialize_program.ts",
       "rule": "inline-script",
-      "count": 182,
+      "count": 152,
       "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/tools/system_program.ts",
       "rule": "inline-script",
-      "count": 212,
+      "count": 133,
       "evidence": []
     },
     {

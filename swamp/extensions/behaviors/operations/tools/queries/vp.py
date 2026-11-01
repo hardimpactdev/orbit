@@ -20,6 +20,8 @@ def observe():
         return {"scope": "absent" if not found else "conflict"}
     binary, env = str(found[0] / "bin/vp"), {"VP_HOME": str(found[0])}
     manager = query([binary, "--version"], env).stdout.splitlines()[0]
+    if INPUT.get("manager_only"):
+        return {"manager_version": manager, "versions": [], "complete": True}
     entries = json.loads(query([binary, "list", "-g", "--json"], env).stdout)
     names = [p["name"] for p in entries]
     complete = all(isinstance(n, str) and 0 < len(n) <= 255 for n in names) and len(set(names)) == len(names)
