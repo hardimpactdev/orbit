@@ -71,6 +71,11 @@ jobs:
           if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base=$(git rev-parse HEAD^); fi
           deno run --allow-env --allow-read --allow-write="$RUNNER_TEMP/shape.json" --allow-run bin/check-swamp-shape.ts --base "$base" --report "$RUNNER_TEMP/shape.json"
           python3 bin/check-swamp-base-policy.py --base "$base"
+      - name: Validate declared grants with pinned native regex safety
+        if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
+        run: |
+          deno test --allow-read --allow-net=raw.githubusercontent.com bin/check-grant-patterns_test.ts
+          deno run --allow-read --allow-net=raw.githubusercontent.com bin/check-grant-patterns.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() && (!inputs.changed-only || steps.scope.outputs.selected == 'true') }}
         with:

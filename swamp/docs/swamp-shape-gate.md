@@ -46,6 +46,8 @@ Version 2 also checks each kind's public `execution_copies` declarations against
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
 
+The shape CI job also checks every declared vault key pattern with the regex safety and syntax check from the pinned Swamp source. It verifies the upstream file's checksum and requires its revision to match the worker runtime pin. A runtime pin change requires updating this source reference. The check reads public source and policy only; it needs no Swamp account or live access. Expand optional quantified groups into equivalent flat alternatives when Swamp rejects them, and keep the Gateway declaration identical to the manifest.
+
 This manifest is intended source policy, seeded from owner-approved public grant
 metadata and reconciled against current declarations. It is not evidence that a
 live grant is installed. In particular, historical run-only grants do not prove
