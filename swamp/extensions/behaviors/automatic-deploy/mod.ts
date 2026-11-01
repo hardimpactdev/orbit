@@ -53,7 +53,7 @@ export function automaticDeploy(
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
@@ -90,7 +90,7 @@ export function automaticDeploy(
                 context.signal,
               ),
             );
-          const handles: { name: string }[] = [];
+          const handles = new Map<string, { name: string }>();
           const failures: { instance: number; error: unknown }[] = [];
           for (const instance of await client.discover(instances)) {
             try {
@@ -104,7 +104,7 @@ export function automaticDeploy(
                   JSON.stringify(state) ===
                     JSON.stringify(await context.readResource(name))
                 ) return;
-                handles.push(await context.writeResource("state", name, state));
+                handles.set(name, await context.writeResource("state", name, state));
               };
               const deliver = async (state: State) => {
                 for (const event of state.events) {
@@ -158,9 +158,11 @@ export function automaticDeploy(
               failures.push({ instance, error });
             }
           }
-          handles.push(
-            ...await client.development(context, clock(), instances),
-          );
+          for (
+            const handle of await client.development(context, clock(), instances)
+          ) {
+            handles.set(handle.name, handle);
+          }
           if (failures.length) {
             throw new AggregateError(
               failures.map(({ error }) => error),
@@ -175,7 +177,7 @@ export function automaticDeploy(
               ).join("; "),
             );
           }
-          return { dataHandles: handles };
+          return { dataHandles: [...handles.values()] };
         },
       },
     },
