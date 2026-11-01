@@ -88,7 +88,7 @@ it('starts native destroy on an executor Node without a runtime lease or target 
     $id = $this->deleteJson('/api/v1/processes/'.$this->process->id)
         ->assertAccepted()->assertJsonPath('data.kind', 'process.destroy')->json('data.id');
     $operation = Operation::query()->findOrFail($id);
-    expect($operation->input['agent_sha256'])->toBe(app(AgentDelivery::class)->pin($this->node));
+    expect($operation->input)->not->toHaveKey('agent_sha256');
     expect($operation->state)->not->toHaveKey('process_control_writer');
     expect($operation->state['swamp_run_id'])->toBe($this->runId);
     expect($operation->lock_key)->toBeNull();
@@ -142,7 +142,7 @@ it('admits Vite stop and destroy without traffic preparation', function (string 
     expect($operation->input)->not->toHaveKey('vite_plan');
     expect($operation->lock_key)->toBeNull();
     $this->getJson('/api/v1/direct-operations/'.$operation->id.'?run_id='.$this->runId)
-        ->assertOk()->assertJsonPath($verb === 'stop' ? 'data.input.intent.control.vite' : 'data.input.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
+        ->assertOk()->assertJsonPath('data.input.intent.control.vite', $vite)->assertJsonMissingPath('data.input.vite_plan');
 })->with(['stop', 'destroy']);
 
 it('uses one direct start writer for Vite and existing owning admissions', function (): void {

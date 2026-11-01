@@ -55,7 +55,7 @@ Deno.test("production create default uses native system commands rather than the
         data: {
           id: 17,
           node_id: 9,
-          kind: "process.create",
+          kind: "process.update",
           status: "queued",
           input,
           cancel_requested: false,
@@ -71,7 +71,7 @@ Deno.test("production create default uses native system commands rather than the
       behavior.methods.installCreate.execute({
         operation_id: 17,
         node_id: 9,
-        kind: "process.create",
+        kind: "process.update",
         run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
         preparation: { vite: false, proceed: true },
         publication_status: "skipped",

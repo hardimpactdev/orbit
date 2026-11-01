@@ -2,6 +2,18 @@
 
 Use these components inside the owning parent's native workflow. There is no installer behavior, child Operation, Gateway client or hidden replacement workflow. The parent owns dependencies, guards, recovery and terminal projection.
 
+## Direct create and destroy
+
+The direct lifecycle workflows place every step on `orbit-node-209`. They use the canonical SSH input and lane21's shared known_hosts policy. They add no host-key writer or credential type.
+
+`lifecycle({control, installation?, account?, marker?})` validates the full public unit or container definition, the account observation, required mounts and retired artifact identity. Its outputs serialize public metadata. Official cfgmgmt file/directory/systemd models own unit publication and service state; cfgmgmt exec owns reload, image pull and container state. Native dependencies and guards order these actions. Failures retain applied changes; rerun create to converge. The pinned e459 runtime currently omits task global arguments before official SSH preflight during `workflow resume`; the isolated expected-failure regression records that upstream limit. A fresh normal create is the verified recovery path. There is no rollback chain or health retry loop.
+
+Three shipped scripts cover gaps in the official models: `lifecycle_environment.py` atomically writes an immutable 0600 EnvironmentFile from environment-only stdin; `lifecycle_container.py` sends one owned Docker create request with the full argv, labels and environment-only stdin; `lifecycle_listener.py` makes one Vite listener ownership observation. The official Docker container model uses `-e` argv and lacks these complete definition fields, so it cannot carry this private material safely. Every other effect uses the official models.
+
+The direct Gateway contracts declare only run/read on the two workflows and read/write on `orbit-control-inputs` keys matching `^process-create-operation-[1-9][0-9]*$`. The shared terminal subscriber records the result. Direct create/destroy do not use a Gateway intent/private-material/result callback. Retained parent/update consumers below remain separate migration work.
+
+## Retained parent components
+
 The @nckrtl/process-command-assets.read method takes {control, installation?} using the canonical public Process descriptors. It returns shipped script paths plus control_json and installation_json. It performs no host action. The decode({stdout}) method shapes one public script result for native guards and subsequent step inputs. Both metadata steps need the same exact Node placement as the commands.
 
 Pass public serialized descriptors in these environment variables:

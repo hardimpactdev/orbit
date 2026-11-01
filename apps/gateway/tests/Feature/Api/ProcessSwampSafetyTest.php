@@ -14,15 +14,15 @@ use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
     $socket = new FakeRoutePublicationSocket;
-    $socket->reply = fn (array $request): array => [['type' => 'event', 'id' => $request['id'], 'event' => [
-        'kind' => 'started', 'workflowName' => 'operation-process-control', 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
+    $socket->reply = fn (array $request): array => $request['type'] === 'vault.put' ? [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]] : [['type' => 'event', 'id' => $request['id'], 'event' => [
+        'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676',
     ]]];
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'shared.scoped.fixture']);
 
     $this->node = $this->markAsGateway(Node::query()->create([
         'name' => 'executor-safety', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
+        'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     $this->process = Process::query()->create([
@@ -105,7 +105,7 @@ it('also protects Instance-owned executor dependencies at child input admission'
 });
 
 it('still admits Process mutations on a separate workload Node', function (): void {
-    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
+    $executor = Node::query()->create(['name' => 'separate-executor', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.4', 'public_ssh_host' => '192.0.2.4']);
     config(['dependency_detection.services_node_id' => $executor->id]);
 
     $this->postJson('/api/v1/processes/'.$this->process->id.'/start')

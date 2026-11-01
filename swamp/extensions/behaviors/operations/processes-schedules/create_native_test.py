@@ -1,4 +1,5 @@
 """Same-root creation with private material confined to the callback."""
+import shutil
 import hashlib
 import json
 from pathlib import Path
@@ -13,7 +14,8 @@ from native_harness import NativeTestCase
 class ProcessCreationNative(NativeTestCase):
     def setUp(self):
         super().setUp()
-        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules', 'operations/routes')
+        self.copy_behaviors('automatic-deploy', 'operation-runner', 'operations/_lib', 'operations/processes-schedules', 'operations/routes','operations/instance-lifecycle')
+        shutil.copytree(ROOT/'extensions/behaviors/operations',self.repo/'extensions/behaviors/operations',dirs_exist_ok=True)
         helper = self.repo/'extensions/behaviors/operations/node/system_command.ts'
         helper.parent.mkdir(parents=True, exist_ok=True)
         helper.write_bytes((ROOT/'extensions/behaviors/operations/node/system_command.ts').read_bytes())
@@ -31,7 +33,7 @@ class ProcessCreationNative(NativeTestCase):
         installation={'process_id':7,'agent_sha256':'a'*64,'runtime':'systemd','name':'orbit-process-7-proof.service','on_demand':False,'retired':None,'desired':'stopped','activation_pending':False,'content_hash':hashlib.sha256(f'[Service]\nEnvironment=PASSWORD={self.secret}\n'.encode()).hexdigest()}
         control_input={key:installation[key] for key in ('process_id','agent_sha256','runtime','name','on_demand')}
         control_input['vite']=None
-        self.state={'calls':[], 'commands':[], 'caddy':[], 'events':[], 'operation':{'id':17,'node_id':9,'kind':'process.create','status':'queued','cancel_requested':False,'result':None,'input':{'installation':installation,'control':control_input}}}
+        self.state={'calls':[], 'commands':[], 'caddy':[], 'events':[], 'operation':{'id':17,'node_id':9,'kind':'process.update','status':'queued','cancel_requested':False,'result':None,'input':{'installation':installation,'control':control_input}}}
         self.save()
 
     def save(self):

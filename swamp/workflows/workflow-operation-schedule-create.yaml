@@ -96,7 +96,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/cfgmgmt/file'
-          behaviorName: ${{ "schedule-remove_obsolete-" + string(inputs.operation_id) }}
+          behaviorName: '${{ "schedule-remove_obsolete-" + (self.suffix == ".sh" ? "script" : "complete") + "-" + string(inputs.operation_id) }}'
           methodName: apply
           globalArgs:
             nodeHost: ${{ inputs.intent.ssh_execution.target.host }}
