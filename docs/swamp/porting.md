@@ -97,7 +97,7 @@ jobs:
 
 `assets.read` is a family metadata method: resolve shipped files with `ctx.extensionFile`, record public paths with `ctx.writeResource`, and return their paths, plus the script body for `@swamp/ssh`. List scripts and imports under manifest-relative `additionalFiles`. Keep this method and the command on the same worker; never assume a checkout exists there. TypeScript shapes inputs and outputs; operational code lives in script files.
 
-F1 is pending; lane 16 owns it. When it lands, shipped scripts run through its shared wrapper, and its shared projector records `failed_step` and the last 4 KB of redacted stderr as `error.detail` for any failed step. Until then, `REPLACE_F1_RUN` plainly invokes the shipped script. Add no family wrapper. Private stdout never goes into native history. F1 failure output is stderr only: redact the whole stderr, keep the last 4 KiB, re-redact the tail's start for split matches, and drop lines that still hold a partial secret prefix. Scripts catch parser and HTTP errors and print safe text, because stderr becomes public detail (#2271).
+F1 lives in the Gateway's `NativeStepFailure`: stderr only (private stdout never enters native history), redacted, a 4 KiB tail, the partial first line dropped, redacted again. There is no shared script wrapper (A, F1 decision (a)); `REPLACE_F1_RUN` plainly invokes the shipped script. A script that receives a secret never prints it. If it can echo one, for example by running user commands, it redacts its own stderr before exit, as `run_project_step.py` does (#2370). Redact the union of every secret's match ranges, overlaps merged (L17-PR-2370-01). Its native test sets `self.secrets`. Scripts print safe text for parser and HTTP errors (#2271).
 
 On official e459 a `command/shell` step that exits nonzero keeps no outputs, so its stdout and `error_code` are lost. The action therefore sets `ignoreExitCode: true` and is the `terminal_result`; the `accepted` assert on its `exitCode` then fails the run. A kind with several effect steps instead adds a `result` step on `condition: always` that maps the first failed step to an `error_code`, as `instance.create` does.
 
@@ -117,7 +117,7 @@ Add these fields to the family's existing registration and return the full input
 // Projector input(): ['intent' => $fullPublicIntent, 'execution_secrets' => $namesOnlyDescriptors]
 ```
 
-Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOperationAction::execute` when the kind changes a shared target; it is an Operation column, not a declaration key. Add the workflow's `run` and `read` grant and any `execution_copies` vault to `swamp/config/gateway-workflow-grants.json`. Key patterns must pass Swamp's regex-safety check: expand optional groups into a flat alternation.
+Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOperationAction::execute` when the kind changes a shared target, or when a Gateway expiry can reopen the target, so a re-admission never overlaps an old native run (L17-PR-2339-01, L17-PR-2386-01); it is an Operation column, not a declaration key. Add the workflow's `run` and `read` grant and any `execution_copies` vault to `swamp/config/gateway-workflow-grants.json`. Key patterns must pass Swamp's regex-safety check: expand optional groups into a flat alternation.
 
 | Done | Gateway checklist |
 | --- | --- |
@@ -137,7 +137,7 @@ A phase script may hold one fixed literal sleep shorter than a literal timeout, 
 | Run budget | Every kind expires; a measured p95 with headroom wins. Otherwise 30 minutes until the first success, then 1.5× the longest success. `instance.create` has 60 s (PLAN: under 10 s; policy, not proof). |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | No-run rows | Expire after 600 s but keep the lock until the exact native lookup by Operation id proves no run (L17-2300-OD1). Timeouts and transport errors prove nothing. |
-| Phase timeout | Each phase command starts with a literal `timeout <phase budget>`. On exit 124 the shared F1 projector renders `<step> timed out after <N>s`, with no wrapper or epilogue (OD2; pending, lane 16). A remote read may use per-host `timeoutSec` or `defaultTimeoutSec` (#2334). |
+| Phase timeout | Each phase command starts with a bare literal `timeout <phase budget>`. On exit 124 the F1 projector renders `<step> timed out after <N>s`, with no wrapper (OD2, #2418; for `run:` steps, pending lane 16). A remote read may use per-host `timeoutSec` or `defaultTimeoutSec` (#2334). |
 | `queueTimeout` | Explicit on every step (guide rule 6), never the serve's 600 s default. A workflow value reaches every step; a job or step may override it. Keep it below the run budget. |
 
 ## Keep steps few
@@ -155,7 +155,7 @@ Put each test where its project's CI runs it.
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script directly, with shellcheck or ruff. Real-Docker tests clean up with `docker rm --force --volumes` (#2358). |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. A secret-handling test sets `self.secrets` so history is scanned. |
-| Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. |
+| Parity tests from the legacy feature tests, and a generator drift test when a generator writes the workflow | Each legacy case gives the same public result natively. Committed YAML equals readable generator output. Fuzz a hand-written parser against the real library (#2370). |
 | `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or the v0 design on beast until it lands) | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. No secret appears in it or in argv. |
 
 ## Check all seven boundary decisions
@@ -217,7 +217,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](/swamp/
 Continue ports in the approved shape while live admission proof is pending. Use this checklist for every kind PR and its review.
 
 - [ ] Follow the [translation steps](#translate-a-legacy-command) and avoid every [anti-pattern](#anti-patterns).
-- [ ] Keep the legacy phase order, or give a reason for each change. State the expanded step count of a typical run and the steps per legacy call.
+- [ ] Match the legacy order, refusals and error codes, or give a reason (#2387, #2391). State the expanded step count per legacy call.
 - [ ] Name the core feature and official extension checked. Use defaults, and record each deviation's measured reason and removal condition in PLAN.
 - [ ] Delete the old executor and everything only it used. An F9 rebuild deletes the old behaviors and tests it replaces. Remove baseline rows in the last commit, after the last rebase.
 - [ ] **Growth (F15):** list `swamp/` growth per part (behaviors, workflows, scripts, tests and fixtures) next to the Orbit net. Give each growth a [reason](#anti-patterns).
