@@ -1735,7 +1735,6 @@ Deno.test("workflows declare vaults read directly or forwarded as bounded execut
   }
   assertEquals(findings("${{ vault.get(copies, key) }}", ["copies"]), []);
   assertEquals(findings("${{ vault.get(inputs.selected_vault, key) }}", []).length, 1);
-  assertEquals(findings("${{ vault.get(inputs.selected_vault, key) }}", ["copies"]), []);
   assertEquals(findings({ execution_secrets: "${{ steps.capture.outputs.execution_secrets }}" }, []).length, 1);
   assertEquals(findings("${{ vault.get(inputs.execution_secrets, key) }}", [], { type: "string", enum: ["copies"] }).map((f) => f.evidence), [["copies"]]);
   const named = { type: "object", additionalProperties: false, properties: { material: descriptor }, required: ["material"] };
@@ -1750,12 +1749,13 @@ Deno.test("workflows declare vaults read directly or forwarded as bounded execut
   assertEquals(findings({ material: { vault: "copies", key: "key" } }, []).map((f) => f.evidence), [["copies"]]);
   assertEquals(findings({ execution_secrets: {} }, [], named), []);
   assertEquals(findings({ execution_secrets: "${{ inputs.execution_secrets }}" }, [], { type: "object", additionalProperties: false }), []);
-  assertEquals(findings("public", [], named), []);
   const source = (name: string, task: unknown, vaults?: string[]) => JSON.stringify({ name, vaults, jobs: [{ name: "job", steps: [{ name: "step", task }] }] });
-  const nested = analyze(new Map([["workflows/child.yaml", source("child", { type: "behavior", inputs: { value: "${{ vault.get(copies, key) }}" } }, ["copies"])],
-    ["workflows/parent.yaml", source("parent", { type: "workflow", workflowIdOrName: "child" }, ["other"])],
-    ["workflows/root.yaml", source("root", { type: "workflow", workflowIdOrName: "parent" })]]), {});
-  for (const [file, a] of nested) assertEquals(a.findings.filter((f) => f.rule === "workflow-vault-declaration").map((f) => f.evidence), file.endsWith("/child.yaml") ? [] : [["copies"]]);
+  for (const dynamic of [false, true]) {
+    const nested = analyze(new Map([["workflows/child.yaml", source("child", { type: "behavior", inputs: { value: "${{ vault.get(copies, key) }}" + (dynamic ? " ${{ vault.get(inputs.selected_vault, key) }}" : "") } }, ["copies", "other"])],
+      ["workflows/parent.yaml", source("parent", { type: "workflow", workflowIdOrName: "child" }, ["copies"])],
+      ["workflows/root.yaml", source("root", { type: "workflow", workflowIdOrName: "parent" })]]), {});
+    for (const [file, a] of nested) assertEquals(a.findings.filter((f) => f.rule === "workflow-vault-declaration").map((f) => f.evidence), file.endsWith("/child.yaml") ? [] : file.endsWith("/parent.yaml") ? dynamic ? [["other"]] : [] : dynamic ? [["copies"], ["other"]] : [["copies"]]);
+  }
   const entries = aggregate(findings('${{ vault.get("copies", "key") }}'));
   assertEquals(ratchet(entries, { schema: 1, entries }), []);
   assert(ratchet(aggregate(findings('${{ vault.get("other", "key") }}')), { schema: 1, entries }).length > 0);

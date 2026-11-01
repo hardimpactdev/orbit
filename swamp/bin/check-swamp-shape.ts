@@ -1465,7 +1465,7 @@ export function analyzeYaml(
     return result;
   }
   const requiredVaults = new Set<string>();
-  let readsVault = false;
+  let unresolvedVault = false;
   const descriptorVaults = (value: unknown): string[] => {
     if (Array.isArray(value)) return value.flatMap(descriptorVaults);
     const v = object(value), properties = object(v.properties), vault = object(properties.vault);
@@ -1566,17 +1566,18 @@ export function analyzeYaml(
     if (nativeIdentity && !wholeVault(value)) add("secret-native-source");
     if (file.startsWith("workflows/") && path[0] === "jobs") {
       descriptorVaults(value).forEach((name) => requiredVaults.add(name));
-      if (path.at(-1) === "execution_secrets" && Object.keys(object(value)).length) readsVault = true;
       if (typeof value === "string") {
-        readsVault ||= /\bvault\.get\s*\(/.test(value) || path.at(-1) === "execution_secrets" && !/\binputs\./.test(value);
-        for (const m of value.matchAll(/\bvault\.get\s*\(\s*(?:(["'])(.*?)\1|([\w-]+))\s*,/g)) requiredVaults.add(m[2] ?? m[3]);
+        const literal = /\bvault\.get\s*\(\s*(?:(["'])(.*?)\1|([\w-]+))\s*,/g;
+        for (const m of value.matchAll(literal)) requiredVaults.add(m[2] ?? m[3]);
+        const dynamic = new Set([...value.replace(literal, "").matchAll(/\bvault\.get\s*\(\s*([^,]+)/g)].map((call) => call[1].trim()));
         for (const m of value.matchAll(/\binputs(?:\.[A-Za-z_]\w*)+/g)) {
           let schema = object(data.inputs);
           for (const key of m[0].split(".").slice(1)) schema = object(object(schema.properties)[key] ?? schema.additionalProperties);
           descriptorVaults(schema).forEach((name) => requiredVaults.add(name));
           const selector = [...value.matchAll(/\bvault\.get\s*\(\s*([^,]+)/g)].some((call) => call[1].trim() === m[0]);
-          if ((m[0].endsWith(".vault") || selector) && Array.isArray(schema.enum)) schema.enum.forEach((name) => { if (typeof name === "string") requiredVaults.add(name); });
+          if ((m[0].endsWith(".vault") || selector) && Array.isArray(schema.enum)) { dynamic.delete(m[0]); schema.enum.forEach((name) => { if (typeof name === "string") requiredVaults.add(name); }); }
         }
+        unresolvedVault ||= dynamic.size > 0 || path.includes("execution_secrets") && value.includes("${{") && !/\binputs\./.test(value) && path.at(-1) !== "key";
       }
     }
     if (typeof value === "string") {
@@ -1686,8 +1687,8 @@ export function analyzeYaml(
   };
   walk(data, []);
   result.declaredVaults = Array.isArray(data.vaults) ? data.vaults.filter((v): v is string => typeof v === "string") : [];
-  result.vaultReads = [...(requiredVaults.size ? requiredVaults : readsVault ? result.declaredVaults : [])];
-  if (readsVault && !requiredVaults.size && (!Array.isArray(data.vaults) || !data.vaults.length)) add("workflow-vault-declaration", ["dynamic vault reference"]);
+  result.vaultReads = [...new Set([...requiredVaults, ...(unresolvedVault ? result.declaredVaults : [])])];
+  if (unresolvedVault && !requiredVaults.size && (!Array.isArray(data.vaults) || !data.vaults.length)) add("workflow-vault-declaration", ["dynamic vault reference"]);
   for (const name of [...requiredVaults].sort()) {
     if (!Array.isArray(data.vaults) || !data.vaults.includes(name)) add("workflow-vault-declaration", [name]);
   }
