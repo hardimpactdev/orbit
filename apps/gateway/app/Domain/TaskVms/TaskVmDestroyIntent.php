@@ -27,8 +27,31 @@ final readonly class TaskVmDestroyIntent
     /** @return array<string,mixed> */
     public function capture(TaskVm $vm): array
     {
+        return $this->captureCleanup($vm);
+    }
+
+    /** The owning Tasks parent removes this workspace before executing the destroy child.
+     * @return array<string,mixed>
+     */
+    public function captureForWorkspace(TaskVm $vm, Instance $ownedInstance): array
+    {
+        $workspace = Instance::query()->findOrFail($ownedInstance->id);
+        if ($vm->node_id === null || $workspace->node_id !== $vm->node_id) {
+            throw new ResourceOperationException('task_vm.workspace_mismatch', 'Cleanup requires the workspace on its exact VM Node.', 409);
+        }
+
+        return $this->captureCleanup($vm, $workspace);
+    }
+
+    /** @return array<string,mixed> */
+    private function captureCleanup(TaskVm $vm, ?Instance $workspace = null): array
+    {
+        if (Operation::query()->where('target_type', 'task_vm')->where('target_id', $vm->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
+            throw new ResourceOperationException('operation.target_busy', 'The earlier VM Operation must settle before capturing cleanup.', 409);
+        }
         $this->preserved($vm);
-        $this->available($vm);
+        $this->available($vm, $workspace);
         $host = $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole();
         if ($host->status !== LifecycleStatus::Active || $vm->name !== 'tvm-'.$vm->id) {
@@ -61,17 +84,36 @@ final readonly class TaskVmDestroyIntent
         $vm = TaskVm::query()->when($lock, static fn ($q) => $q->lockForUpdate())->findOrFail($operation->target_id);
         $input = $operation->input;
         if ($operation->kind !== 'task_vm.destroy' || $operation->target_type !== 'task_vm'
-            || ($input['task_vm_id'] ?? null) !== $vm->id || ($input['node_id'] ?? null) !== $operation->node_id
-            || ($vm->provider === TaskVmProviderKind::Incus && $vm->host_node_id !== $operation->node_id) || ($input['guest_node_id'] ?? null) !== $vm->node_id
-            || ($input['group_id'] ?? null) !== $vm->group_id || ($input['name'] ?? null) !== $vm->name
-            || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip || ($input['provider'] ?? null) !== $vm->provider->value
-            || ($input['provider_id'] ?? null) !== $vm->provider_id || ($input['model_key_required'] ?? null) !== ($vm->model_key !== null)) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'Destroy no longer owns its admitted VM, provider and cleanup scope.', 422);
+            || ($input['node_id'] ?? null) !== $operation->node_id) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Destroy requires its admitted standalone Operation.', 422);
         }
+        $this->assertCaptured($vm, $input);
         $this->preserved($vm);
         $this->available($vm);
 
         return $vm;
+    }
+
+    /** Same captured cleanup identity, independent of the owning parent's Operation kind.
+     * @param  array<string,mixed>  $input
+     */
+    public function assertCaptured(TaskVm $vm, array $input): void
+    {
+        if (($input['task_vm_id'] ?? null) !== $vm->id
+            || ($vm->provider === TaskVmProviderKind::Incus && ($input['node_id'] ?? null) !== $vm->host_node_id)
+            || ($input['guest_node_id'] ?? null) !== $vm->node_id || ($input['group_id'] ?? null) !== $vm->group_id
+            || ($input['name'] ?? null) !== $vm->name || ($input['wireguard_ip'] ?? null) !== $vm->wireguard_ip
+            || ($input['provider'] ?? null) !== $vm->provider->value || ($input['provider_id'] ?? null) !== $vm->provider_id
+            || ($input['model_key_required'] ?? null) !== ($vm->model_key !== null)) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'Destroy no longer owns its admitted VM, provider and cleanup scope.', 422);
+        }
+    }
+
+    /** Final projection runs under its parent's terminal lock; the owning group root is still active. */
+    public function assertRemovedWorkspace(TaskVm $vm): void
+    {
+        $this->preserved($vm);
+        $this->resources($vm);
     }
 
     /** @return array<string,mixed> */
@@ -89,18 +131,27 @@ final readonly class TaskVmDestroyIntent
         }
     }
 
-    private function available(TaskVm $vm): void
+    private function available(TaskVm $vm, ?Instance $workspace = null): void
     {
         if (Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
             ->where(static fn ($q) => $q->where(static fn ($q) => $q->where('target_type', 'node')->where('target_id', $vm->node_id))
                 ->when($vm->group_id !== null, static fn ($q) => $q->orWhere(static fn ($q) => $q->where('target_type', 'task_group')->where('target_id', $vm->group_id))))->exists()) {
             throw new ResourceOperationException('operation.target_busy', 'The guest Node or task group Operation must settle before deleting this VM.', 409);
         }
+        $this->resources($vm, $workspace);
+    }
+
+    private function resources(TaskVm $vm, ?Instance $workspace = null): void
+    {
         if ($vm->node instanceof Node) {
-            app(NodeRemovalPolicy::class)->protected($vm->node, $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole());
+            app(NodeRemovalPolicy::class)->protected($vm->node, $vm->provider === TaskVmProviderKind::Incus ? Node::query()->findOrFail($vm->host_node_id) : Node::query()->where('status', LifecycleStatus::Active)->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->sole(), $workspace);
             app(NodeRemovalPolicy::class)->resources($vm->node, offline: true);
         }
-        if ($vm->node_id !== null && (Instance::query()->where('node_id', $vm->node_id)->exists()
+        $instances = Instance::query()->where('node_id', $vm->node_id);
+        if ($workspace !== null) {
+            $instances->whereKeyNot($workspace->id);
+        }
+        if ($vm->node_id !== null && ($instances->exists()
             || Route::query()->where(static fn ($q) => $q->where('node_id', $vm->node_id)->orWhere('generation_basis_node_id', $vm->node_id)
                 ->orWhere('transition_node_id', $vm->node_id)->orWhereHas('targets.instance', static fn ($q) => $q->where('node_id', $vm->node_id)))->exists())) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Remove the owning workspace and Route through their native parent before deleting this VM.', 409);

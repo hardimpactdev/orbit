@@ -106,3 +106,40 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.assertEqual(run['status'],'failed')
         self.assertFalse(json.loads(self.state.read_text())['exists'])
         self.assertEqual(history['jobs'][0]['steps'][-1]['status'],'skipped')
+
+
+    def test_tasks_cancel_parent_preserves_envelope_through_existing_destroy_child(self):
+        self.envelope['kind'] = 'tasks.cancel'
+        self.envelope['intent']['model_intent'] = {'task_vm_id': 42, 'gateway_node_id': 14,
+                                                  'model_router_node_id': 6, 'model_origin': 'http://192.0.2.6'}
+        # Keep the real model child's closed input contract at the HTTP fixture boundary.
+        model = yaml.safe_load((self.repo / 'workflows/workflow-task-vm-model-revoke.yaml').read_text())
+        model['inputs'] = yaml.safe_load((ROOT / 'workflows/workflow-task-vm-model-revoke.yaml').read_text())['inputs']
+        task = model['jobs'][0]['steps'][0]['task']
+        task['inputs']['env'].update({'ROOT_ID': '${{ string(inputs.operation_id) }}',
+                                     'ROOT_NODE': '${{ string(inputs.node_id) }}', 'ROOT_KIND': '${{ inputs.kind }}'})
+        task['inputs']['run'] = 'printf \'{"root_operation_id":%s,"root_node_id":%s,"root_kind":"%s"}\\n\' "$ROOT_ID" "$ROOT_NODE" "$ROOT_KIND" >> "$CALLS"\n' + task['inputs']['run']
+        (self.repo / 'workflows/workflow-task-vm-model-revoke.yaml').write_text(yaml.safe_dump(model, sort_keys=False))
+        model_inputs = {**self.envelope, 'intent': self.envelope['intent']['model_intent']}
+        self.cli('workflow', 'run', 'task-vm-model-revoke', '--input', json.dumps(model_inputs))
+        parent = {'id': str(uuid.uuid4()), 'name': 'task-cancel-destroy-parent',
+                  'inputs': {'type': 'object', 'additionalProperties': True},
+                  'jobs': [{'name': 'cleanup', 'steps': [
+                      {'name': 'vm', 'task': {'type': 'workflow', 'workflowIdOrName': 'task-vm-destroy',
+                       'inputs': {key: '${{ inputs.' + key + ' }}' for key in self.envelope}}},
+                      {'name': 'result', 'dependsOn': [{'step': 'vm', 'condition': {'type': 'succeeded'}}],
+                       'task': {'type': 'behavior', 'behaviorType': 'command/shell', 'behaviorName': '${{ "cancel-result-"+run.id }}',
+                                'methodName': 'execute', 'inputs': {'run': 'printf \'%s\\n\' "$RESULT"',
+                                'env': {'RESULT': '${{ steps.vm.outputs.result.result_json }}'}}}}]}]}
+        (self.repo / 'workflows/workflow-task-cancel-destroy-parent.yaml').write_text(yaml.safe_dump(parent, sort_keys=False))
+        run = json.loads(self.cli('workflow', 'run', 'task-cancel-destroy-parent', '--input', json.dumps(self.envelope)).stdout)
+        history = json.loads(self.cli('workflow', 'history', 'get', run['id']).stdout)
+        receipt = json.loads(history['jobs'][0]['steps'][-1]['outputs']['stdout'])
+        self.assertTrue(receipt['cleanup_complete'])
+        self.assertEqual(receipt['task_vm_id'], 42)
+        self.assertTrue(receipt['removal']['removed'])
+        observed = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        root = next(row for row in observed if 'root_kind' in row)
+        self.assertEqual(root, {'root_operation_id': self.envelope['operation_id'],
+                                'root_kind': 'tasks.cancel', 'root_node_id': self.envelope['node_id']})
+        self.assertFalse(json.loads(self.state.read_text())['exists'])
