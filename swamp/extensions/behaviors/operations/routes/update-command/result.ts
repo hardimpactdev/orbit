@@ -1,3 +1,4 @@
+import { Snapshot } from "../../firewall/inspection-result.ts";
 import { z } from "npm:zod@4.4.3";
 const Id = z.number().int().positive();
 const Phase = z.object({
@@ -197,6 +198,25 @@ export const behavior = {
             ) => {
                 const result = selectRemoval(args);
                 await ctx.writeResource("selection", "selection", result);
+                return result;
+            },
+        },
+        upstream: {
+            description:
+                "Require an exact admitted allowance from the canonical firewall snapshot",
+            arguments: z.object({ stdout: z.string() }),
+            execute: async (args: { stdout: string }, ctx: Context) => {
+                const snapshot = Snapshot.parse(JSON.parse(args.stdout));
+                if (
+                    snapshot.backend !== "active" ||
+                    !snapshot.comparison.live.some((row) =>
+                        row.match === "exact"
+                    )
+                ) {
+                    throw new Error("route.upstream_firewall_mismatch");
+                }
+                const result = { ready: true, migrated_node_ids: [] };
+                await ctx.writeResource("phase", "phase", result);
                 return result;
             },
         },

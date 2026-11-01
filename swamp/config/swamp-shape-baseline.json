@@ -308,6 +308,12 @@
       ]
     },
     {
+      "file": "extensions/behaviors/observation/doctor_native_runtime.ts",
+      "rule": "inline-script",
+      "count": 81,
+      "evidence": []
+    },
+    {
       "file": "extensions/behaviors/operation-runner/mod.ts",
       "rule": "gateway-http",
       "count": 3,

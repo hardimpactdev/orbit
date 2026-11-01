@@ -90,7 +90,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-mutation-command",
-    version: "2026.11.01.3",
+    version: "2026.11.01.2",
     resources: {
         lan_changes: {
             schema: z.object({
@@ -155,24 +155,6 @@ export const behavior = {
         },
     },
     methods: {
-        firewallAssets: {
-            description: "Locate the shared read-only firewall policy",
-            arguments: z.object({
-                expected: z.array(z.record(z.string(), z.unknown())),
-            }),
-            execute: async (
-                args: { expected: Record<string, unknown>[] },
-                ctx: Context,
-            ) => {
-                const value = {
-                    script: ctx.extensionFile("scripts/verify_upstream.py"),
-                    scripts_directory: ctx.extensionFile("scripts"),
-                    input_json: JSON.stringify({ expected: args.expected }),
-                };
-                await ctx.writeResource("assets", "firewall", value);
-                return value;
-            },
-        },
         lanChanges: {
             description:
                 "Shape visible tuple commands from the pinned UFW observation",
