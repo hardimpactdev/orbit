@@ -11,17 +11,17 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 
 Porting happens in a production-equivalent dev topology, never against production.
 
-1. **Claim** the kind from `port-queue.md` on beast. Five topology slots exist, so at most five port lanes run at once.
+1. **Claim** the kind from the port queue (`port-queue-*.md` in `~/swamp-execution` on beast). Five topology slots exist, so at most five port lanes run at once.
 2. **Read the legacy code and tests** at `6291bb036` (F9), and write the parity tests first.
 3. **Start the topology** with `bin/swamp-proof up --topology <name>`.
 4. **Port** in your beast worktree with the [translation steps](#translate-a-legacy-command) and the template.
 5. **Run** the whole path in the topology as often as you need: request, admission, Swamp, Nodes and projection. Read full stderr and step timings.
-6. **Write the receipt** with `bin/swamp-proof receipt` once the parity tests pass within budget (F8). The PR carries it. Then run `bin/swamp-proof down`; idle topologies die after 60 minutes (F11).
+6. **Write the receipt** with the final run (`bin/swamp-proof receipt`) once parity passes within budget (F8). The PR carries it. Then run `bin/swamp-proof down`.
 7. **Review and merge.** Lane 26 reviews and records lessons, and the sub-orchestrator merges. One live check after the load confirms it landed.
 
 A topology is built from Node roles (F14). Its Gateway VM carries the `gateway` and `swamp` roles, with pinned official Swamp, a local datastore and vault. Its Nodes carry what the kind needs: `app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router` or `database`, joined by WireGuard like the fleet. Topologies are versioned in `swamp/proof/topologies/`. A topology fault fixes the topology in the same PR and bumps its version (F12). Several kinds may share one run, and every receipt names the topology version. Known differences from production: test repositories instead of GitHub App installs, the Orbit CA instead of public certificates, and no production data or scale.
 
-Never load `swamp/` into production serve or log in to 209 for a port. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior and needs a receipt, even when the title says "retire" or "remove" (#2257, #2259). Only deletion, docs and test PRs fix forward. A live user-facing outage fix may merge without a receipt if the PR says so; one live check follows the load. Keep each kind's parity tests, phases, phase budgets and `queueTimeout` in `swamp/proof/<kind>.json` (`swamp/proof/README.md`).
+Never load `swamp/` into production serve or log in to 209 for a port. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior and needs a receipt, even when the title says "retire" or "remove" (#2257, #2259). Deletion, docs and test PRs fix forward. An outage fix may merge without a receipt if the PR says so; a live check follows the load. Each kind keeps a proof file, `swamp/proof/<kind>.json` (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). It holds the `prepare` and `request` CLI calls, a partial expected `envelope`, budgets, F9 phases, parity tests, `queue_timeout_seconds` and the default `topology`. No secret appears in it or in argv.
 
 ### Translate a legacy command
 
@@ -107,7 +107,7 @@ One script file owns one action group, such as all git commands for a checkout. 
 Add these fields to the family's existing registration and return the full input envelope from its projector.
 
 ```php
-'REPLACE_KIND' => [ // in the family's existing registration; keep its workflow and projector
+'REPLACE_KIND' => [ // in the family's direct-operations.php; keep its admission, workflow and projector
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'execute', 'step' => 'action'],
     // only when the run reads a Gateway-owned secret:
@@ -150,11 +150,11 @@ Put each test where its project's CI runs it.
 | Where | What it proves |
 | --- | --- |
 | `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
-| `swamp/extensions/behaviors/operations/<family>/*_test.ts` and script tests | Typed behaviors with Deno; each shipped script file directly, plus shellcheck or ruff. |
+| `swamp/extensions/behaviors/operations/<family>/*_test.ts`, and `swamp/tests` script tests | Typed behaviors with Deno; each shipped script file directly, plus shellcheck or ruff. |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. Generate readable YAML, not JSON in YAML behind `deno-fmt-ignore`. |
-| `swamp/proof/<kind>.json` | The kind's proof file: parity tests, F9 phases with budgets, `queueTimeout` and topology. |
+| `swamp/proof/<kind>.json` | The proof file: `prepare` and `request` CLI calls, partial `envelope`, budgets, F9 phases, parity tests, `queueTimeout` and topology. |
 
 ## Check all seven boundary decisions
 
@@ -200,7 +200,7 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding; lane 21 moves per-Node worker steps to 209 | `target: orbit-node-209`, then `@swamp/ssh` |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |
 | A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
-| `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist; the manual does not say when `in` is evaluated | Read an earlier job's outputs, as [`database-destroy-actions`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does, or pass the list to a `type: workflow` child |
+| `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read `inputs`, literals or an earlier job's outputs, as [`database-destroy-actions`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-destroy-actions.yaml) does, or pass the list to a child, as [`database-clone-mysql`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-database-clone-mysql.yaml) does |
 | Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
 | `data.query` or another unbounded data read in step inputs | Every write adds a record, until one dispatch frame passes 64 MiB and the worker loops (B7, #2310) | Write one stable record per channel and read `data.latest(name, spec)` |
 | A kind without a measured p95 and budget, or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |

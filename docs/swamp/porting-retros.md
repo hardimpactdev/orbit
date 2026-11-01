@@ -54,7 +54,9 @@ A port may change the legacy phase order only with a written reason that a sub-o
 
 | Kind | Approved by | Legacy order | Native order | Reason | Parity tests |
 | --- | --- | --- | --- | --- | --- |
-| `websocket.app_attach`, `websocket.app_detach` (lane 23) | B, 2026-11-01 | Remote read-only inspection, then the Gateway commits the attachment and environment, then the Gateway builds Caddy | Admission records immutable prospective intent only; native read-only inspection; lane 8's prospective Route child; terminal projection stores the attachment and environment only if inspection succeeded, also when publication fails | A Gateway commit between native phases would need a forbidden step callback | Refusal leaves state unchanged; a failed build keeps the desired state; unknown or cancelled roots keep unresolved intent |
+| `websocket.app_attach`, `websocket.app_detach` (lane 23) | B, 2026-11-01 | Remote read-only inspection, then the Gateway commits the attachment and environment, then the Gateway builds Caddy | Admission records immutable prospective intent only; native read-only inspection; lane 8's prospective Route child; terminal projection stores the attachment and environment only if inspection succeeded, also when publication fails | A Gateway commit between native phases would need a forbidden step callback | Refusal leaves state unchanged; a failed build keeps the desired state |
+
+For the WebSocket attach deviation, unknown or cancelled roots keep their unresolved intent.
 
 ## Proof receipts
 

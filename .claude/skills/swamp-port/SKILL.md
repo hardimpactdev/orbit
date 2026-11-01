@@ -9,13 +9,13 @@ Port one family or parent kind per PR, inside a production-equivalent dev topolo
 
 ## The loop (F13)
 
-1. Claim the kind from `port-queue.md` on beast. At most five port lanes run at once, one per topology slot.
+1. Claim the kind from the port queue (`port-queue-*.md` in `~/swamp-execution` on beast). At most five port lanes run at once, one per topology slot.
 2. Call Recall `resolve` for the kind and its family. Read the [Swamp manual](https://swamp-club.com/manual) pages for workflows, behavior definitions, vaults and remote execution.
 3. **The legacy sequence is the spec (F9).** Read the pre-Swamp Gateway action, its agent actions and its feature tests at the migration baseline: `git show 6291bb036:<path>`. List its phases in order, with each phase's Node and edge cases, including values the Gateway rewrites before execution, such as setup macros (#2304). Write the parity tests first.
 4. Start the topology: `bin/swamp-proof up --topology <name>`. Its Gateway VM carries the `gateway` and `swamp` roles (F14); its Nodes carry what the kind needs (`app-dev`, `app-prod`, `app-prod-2`, optional `+ingress`, `router`, `database`), joined by WireGuard. Topologies are versioned in `swamp/proof/topologies/`.
 5. Port in your beast worktree (Build it, below). Each legacy phase becomes one script-file step. A phase-order change needs a written reason in the PR body, approved by a sub-orchestrator; lane 26 lists it under "Documented F9 deviations" in `docs/swamp/porting-retros.md`.
 6. Run the whole path in the topology as often as you need: request, Gateway admission and intent, Swamp, Nodes and terminal projection. Read full stderr and per-step timings. Fix Gateway and Swamp bugs alike.
-7. When the parity tests pass within budget (F8), write the receipt with `bin/swamp-proof receipt` and put it in the PR. Run `bin/swamp-proof down`; idle topologies die after 60 minutes (F11). A topology fault fixes the topology in the same PR and bumps its version (F12).
+7. When the parity tests pass within budget (F8), the final run writes the receipt (`bin/swamp-proof receipt` in B's tool); put it in the PR. The topology differs from production: test repositories, the Orbit CA, no production data or scale. Its Swamp worker enrolls as `orbit-node-209`, so workflows keep `target: orbit-node-209` unchanged. Run `bin/swamp-proof down`; idle topologies die after 60 minutes (F11). A topology fault fixes the topology in the same PR and bumps its version (F12).
 8. Lane 26 reviews and records lessons; the sub-orchestrator merges; one short live check after the load confirms it landed. It is not a second proof.
 
 Never load `swamp/` into production serve or log in to 209 for a port. If Swamp has a real gap, stop and send it to your sub-orchestrator with evidence. Do not build around it.
@@ -49,7 +49,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - Report Orbit app and test net lines and Swamp lines separately.
 - State the measured p95, its sample, the run budget and `queueTimeout` in the PR body. Every workflow, children included, sets an explicit `queueTimeout`.
 - Receipt (F13): a kind whose behavior changes carries a `bin/swamp-proof receipt` from its topology run. Any change under `swamp/workflows/`, to a grant or to a declaration counts as a behavior change. Only deletion, docs and test PRs fix forward. A live-outage fix may merge without a receipt if it says so; a live check follows the load.
-- Proof file: `swamp/proof/<kind>.json` holds the parity tests, F9 phases with budgets, `queueTimeout` and default topology (`swamp/proof/README.md`).
+- Proof file: `swamp/proof/<kind>.json` (`swamp/proof/README.md`, or `designs/swamp-proof-fixture-v0.md` on beast until it lands) holds the `prepare` and `request` CLI calls, a partial expected `envelope`, budgets, F9 phases, parity tests, `queue_timeout_seconds` and default topology. No secret appears in the file or in argv; a kind gets secrets through the topology Gateway's normal path.
 
 ## Review a kind PR
 
