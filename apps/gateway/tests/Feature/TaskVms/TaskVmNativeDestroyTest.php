@@ -10,6 +10,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\TaskVms\TaskVmDestroyIntent;
 use App\Domain\TaskVms\TaskVmDestroyProjection;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -25,6 +26,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Task;
+use App\Models\TaskReviewedCommit;
 use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -265,3 +267,99 @@ it('refuses competing VM Node and Tasks roots before workspace capture', functio
         ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
     expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->node->status)->toBe(LifecycleStatus::Failed);
 })->with(['task_vm', 'node', 'task_group']);
+
+function destroyCleanupParent(TaskVm $vm, array $captured, string $kind = 'tasks.cancel'): Operation
+{
+    return Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $vm->group_id,
+        'node_id' => $captured['node_id'], 'status' => OperationStatus::Running, 'input' => $captured, 'triggered_by' => 'fixture']);
+}
+
+it('validates each ending parent at dispatch without recapture or execution copy writes', function (string $kind): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $gateway = Node::query()->create(['name' => 'dispatch-gateway', 'public_ssh_host' => '192.0.2.14', 'user' => 'orbit', 'status' => LifecycleStatus::Active]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'PRIVATE-DISPATCH-UPCLOUD'));
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $message): array => [['type' => 'vault.put', 'id' => $message['id'], 'payload' => ['data' => ['vaultName' => $message['payload']['vaultName'], 'secretKey' => $message['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
+    $parent = destroyCleanupParent($this->vm, $captured, $kind);
+    $before = [$this->vm->fresh()->getRawOriginal(), $workspace->fresh()->getRawOriginal(), $this->vm->fresh()->node->getRawOriginal()];
+    expect($socket->sent)->toHaveCount(1);
+    $owned = app(TaskVmDestroyIntent::class)->ownedForWorkspace($this->vm, $workspace, $captured, $parent->id);
+    expect($owned->id)->toBe($this->vm->id)->and($socket->sent)->toHaveCount(1)
+        ->and([$this->vm->fresh()->getRawOriginal(), $workspace->fresh()->getRawOriginal(), $this->vm->fresh()->node->getRawOriginal()])->toBe($before)
+        ->and($parent->fresh()->input)->toBe($captured);
+})->with(['tasks.cancel', 'tasks.maintenance_finish']);
+
+it('refuses VM guest or workspace drift before dispatch even with stale model objects', function (string $change): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
+    $parent = destroyCleanupParent($this->vm, $captured);
+    if (in_array($change, ['provider_id', 'name', 'wireguard_ip'], true)) {
+        TaskVm::query()->whereKey($this->vm->id)->update([$change => $change === 'wireguard_ip' ? '10.44.0.199' : 'changed']);
+    } elseif ($change === 'model-key') {
+        $this->vm->fresh()->update(['model_key' => 'late-model-key']);
+    } elseif (in_array($change, ['provider', 'guest', 'group', 'host-id'], true)) {
+        TaskVm::query()->whereKey($this->vm->id)->update(match ($change) {
+            'provider' => ['provider' => 'upcloud'], 'guest' => ['node_id' => null], 'group' => ['group_id' => null],
+            default => ['host_node_id' => $this->vm->node_id],
+        });
+    } elseif ($change === 'guest-name' || $change === 'guest-wg') {
+        Node::query()->whereKey($this->vm->node_id)->update([$change === 'guest-name' ? 'name' : 'wireguard_ip' => $change === 'guest-name' ? 'changed' : '10.44.0.199']);
+    } elseif ($change === 'host') {
+        $this->host->update(['status' => LifecycleStatus::Failed]);
+    } elseif ($change === 'owner') {
+        Instance::query()->whereKey($workspace->id)->update(['task_workspace_owner_id' => null]);
+    } elseif ($change === 'path') {
+        Instance::query()->whereKey($workspace->id)->update(['checkout_path' => '/another/workspace']);
+    } else {
+        Instance::query()->whereKey($workspace->id)->update(['task_workspace_routed' => true]);
+    }
+    expect(fn () => app(TaskVmDestroyIntent::class)->ownedForWorkspace($this->vm, $workspace, $captured, $parent->id))->toThrow(ResourceOperationException::class);
+    expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+})->with(['provider_id', 'name', 'wireguard_ip', 'provider', 'guest', 'group', 'host-id', 'model-key', 'guest-name', 'guest-wg', 'host', 'owner', 'path', 'routed']);
+
+it('only excludes its verified nonterminal ending parent from busy checks', function (string $change): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
+    $parent = destroyCleanupParent($this->vm, $captured);
+    if ($change === 'kind') {
+        $parent->update(['kind' => 'tasks.check']);
+    } elseif ($change === 'group') {
+        $parent->update(['target_id' => $this->vm->group_id + 1]);
+    } elseif ($change === 'target') {
+        $parent->update(['target_type' => 'task_vm']);
+    } elseif ($change === 'node') {
+        $parent->update(['node_id' => null]);
+    } elseif ($change === 'terminal') {
+        $parent->update(['status' => OperationStatus::Succeeded]);
+    } else {
+        Operation::query()->create(['kind' => 'fixture.active', 'target_type' => $change === 'competing-node' ? 'node' : $change,
+            'target_id' => match ($change) {
+                'competing-node' => $this->vm->node_id, 'task_vm' => $this->vm->id, default => $this->vm->group_id
+            },
+            'status' => OperationStatus::Queued, 'input' => [], 'triggered_by' => 'fixture']);
+    }
+    expect(fn () => app(TaskVmDestroyIntent::class)->ownedForWorkspace($this->vm, $workspace, $captured, $parent->id))->toThrow(ResourceOperationException::class);
+    expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->destroyed_at)->toBeNull();
+})->with(['kind', 'group', 'target', 'node', 'terminal', 'competing-node', 'task_vm', 'task_group']);
+
+it('retains preservation and new foreign resource refusals at dispatch', function (string $resource): void {
+    $workspace = destroyOwnedWorkspace($this->vm);
+    $captured = DB::transaction(fn () => app(TaskVmDestroyIntent::class)->captureForWorkspace($this->vm->fresh(), $workspace));
+    $parent = destroyCleanupParent($this->vm, $captured);
+    if ($resource === 'database') {
+        DatabaseServer::query()->create(['node_id' => $this->vm->node_id, 'slug' => 'late', 'driver' => 'mysql', 'tag' => '8.4', 'root_password' => 'fixture', 'status' => 'active', 'port' => 3306]);
+    } elseif ($resource === 'route') {
+        Route::query()->create(['project_id' => $workspace->project_id, 'node_id' => $workspace->node_id,
+            'domain' => 'late-workspace.orbit', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    } else {
+        $group = $this->vm->fresh()->group;
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('c', 40), 'source' => TaskReviewedCommitSource::OrbitPush]);
+    }
+    expect(fn () => app(TaskVmDestroyIntent::class)->ownedForWorkspace($this->vm, $workspace, $captured, $parent->id))->toThrow(ResourceOperationException::class);
+    expect($workspace->fresh())->not->toBeNull()->and($this->vm->fresh()->pi_token)->toBe('retained-pi');
+})->with(['database', 'route', 'unpublished-work']);
