@@ -130,9 +130,9 @@ A kind whose behavior changes merges only with a receipt from `bin/swamp-proof <
 
 A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" or "remove" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
 
-Each proof runs on a topology from the versioned library in `swamp/proof/topologies/`, named like task topologies: `app-dev`, `app-prod`, `app-prod-2`, each optionally `+ingress`, plus `router` and `database` (F12). A topology is a declarative definition plus a prebuilt task VM image from `task_vm.image_build`. One proof may cover several kinds that share a topology. Every receipt names the topology version. When a proof fails because of the topology, not the kind, the same PR fixes the topology and bumps its version. Lane 26 records each receipt in [Swamp port retros](/swamp/porting-retros#proof-receipts).
+Each proof runs on a topology from the versioned library in `swamp/proof/topologies/`, named like task topologies: `app-dev`, `app-prod`, `app-prod-2`, each optionally `+ingress`, plus `router` and `database` (F12). A topology is a declarative `topology.json` plus a prebuilt image from `task_vm.image_build`; until the image exists, setup builds containers at proof time and the receipt says so. `bin/swamp-proof --topology <name> <kind>...` proves several kinds together. Every receipt names the topology version. When a proof fails because of the topology, not the kind, the same PR fixes the topology and bumps its version. Lane 26 records each receipt in [Swamp port retros](/swamp/porting-retros#proof-receipts).
 
-Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). Copy `envelope` from a real Gateway admission and bind only environment values, such as `${proof.target.host_keys}`. List throwaway `secrets` for every vault key the run reads, never a real credential. Map each F9 `phases` entry to its native step and phase budget, and point `parity` at the ported legacy tests. `queue_timeout_seconds` equals the workflow's `queueTimeout`.
+Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). Copy `envelope` from a real Gateway admission and bind only environment values, such as `${proof.target.host_keys}`. List throwaway `secrets` for every vault key the run reads, never a real credential. Map each F9 `phases` entry to its native step and phase budget, and point `parity` at the ported legacy tests. `queue_timeout_seconds` equals the workflow's `queueTimeout`. Set `topology` to the kind's default topology.
 
 ## Keep steps few
 
@@ -150,8 +150,7 @@ Put each test where its project's CI runs it.
 
 | Where | What it proves |
 | --- | --- |
-| `apps/gateway/tests/Feature/<Family>/*NativeTest.php` or the family's admission test | Admission, validation, refusal, lock key, execution copy, the exact input envelope, and projection of success and failure from a history fixture. |
-| `apps/gateway/tests/Feature/Operations/GatewayWorkflowGrantCheckTest.php` | The grant manifest covers the new workflow and its vault keys. |
+| `apps/gateway/tests/Feature/<Family>/*NativeTest.php`, plus `Operations/GatewayWorkflowGrantCheckTest.php` | Admission, refusal, lock key, execution copy, the input envelope, projection of success and failure, and grant coverage for the workflow and its vault keys. |
 | `swamp/extensions/behaviors/operations/<family>/*_test.ts` | Typed decision and result behaviors, with Deno. |
 | `swamp/tests/<family>_native_test.py` or `operations/<family>/*_native_test.py` | The workflow on the shared native harness: success, refusal before any write, first-failure skip chain and public result. |
 | `swamp/tests` script tests | Each shipped script file directly, plus shellcheck or ruff. |
@@ -205,10 +204,10 @@ Each of these is a review BLOCK. Most come from the [conformance ledger](#change
 | A many-action TypeScript behavior, an agent action port, a spawn wrapper, one `exec` per listed command, a window `assert` before each phase, or a rewritten shipped script | Swamp cannot show, guard or resume the actions; the code that runs is not the linted file | One step per action group; public input as argv after the body |
 | `forEach.in` reading outputs of a step in the same job | e459 expands it before the outputs exist | Read an earlier job's outputs, or fan out in a child workflow |
 | Reading failed or skipped outputs, all-pairs `always` edges, the whole `${{ steps }}` map in a result step, or an echo step after it | CEL fails with `No such key`; #2261 and #2253 grew dozens of edges | Read `"x" in steps && steps.x.status` for the steps you need; chain jobs on `succeeded` |
-| Strict format checks on a third-party token | GitHub stateless tokens contain dots; the check refused a valid mint | Check only documented properties: length, scope, expiry |
+| `data.query` or another unbounded data read in step inputs | Every write adds a record, until one dispatch frame passes 64 MiB and the worker loops (B7, #2310) | Write one stable record per channel and read `data.latest(name, spec)` |
 | A kind without a measured p95 and budget, or a non-default Swamp setting without a PLAN row | Runs wait for minutes, as op 6639 did; deviations hide from audit | [Set the time budget](#set-the-time-budget); record reason and removal condition in PLAN |
 | A workflow that reads a vault without `vaults:` | Validate passes, the run fails (op 6413) | Declare every vault it reads; `vaults: []` when none is a convention |
-| A secret in `run:`, argv, inputs or `set -x`; a CA or GitHub App key in a vault; a secret returned from a Node | History and `ps` expose it; e459 cannot mark `@swamp/ssh` output sensitive | `env` from `vault.get`, then stdin or a 0600 file; generate Gateway-owned secrets at admission |
+| A secret in `run:`, argv, inputs or `set -x`; a CA or GitHub App key in a vault; a secret returned from a Node | History and `ps` expose it; e459 cannot mark `@swamp/ssh` output sensitive; root-of-trust keys stay in the Gateway | `env` from `vault.get`, then stdin or a 0600 file; the mint and sign primitives; generate Gateway-owned secrets at admission; Node-held keys stay on the Node (decision 3) |
 | A failure reporter, Gateway re-read timer, binding loop or retry | Duplicates Swamp and stalls Operations | Native status and one history read per terminal delivery |
 | Redesigning the legacy sequence without a written reason | The legacy Gateway ran each kind reliably; a redesign loses edge cases | Keep the legacy phases, or give the reason in the PR |
 
@@ -237,14 +236,14 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | Source, newest first | Lesson |
 | --- | --- |
 | Retro #2248, A ruling | Legacy polled UpCloud until the VM started; the one-shot observe is a regression. A bounded poll for external state inside a phase script is allowed under coreutils `timeout`. |
-| #2258, #2259 | Swamp rejects grant patterns with a quantified group holding `+` or `*`; use a flat alternation. Name `forEach` models from `self._index`, matching `globalArgs.name`, within 64 characters. |
+| #2258, #2259 | At grant time, Swamp rejects a pattern with a quantified group holding `+` or `*`; use a flat alternation and run `bin/check-grant-patterns.ts` in `swamp/`. Name `forEach` models from `self._index`, with matching `@swamp/ssh` `globalArgs.name`. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
-| Lane 17 on #2281 | The F9 spec is the legacy code at `6291bb036`, never an intermediate Swamp port. Legacy `SweepTaskVmHosts.php:64-80` stops a host's work at its first failure; other hosts continue. |
+| #2281, lanes 17 and 27 | F9 means the legacy code at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
-| PLAN F10, F12 | Prove on two shark task VMs with throwaway Swamp state, never production serve or 209. Several kinds may share a proof. Receipts name the topology version. |
+| #2310 (B7 outage) | A `data.query` in step inputs grew with every capture, to 847 records and 117 MB in one dispatch. Read one stable record with `data.latest`. |
+| PLAN F10, F12 | `bin/swamp-proof` proves on two shark task VMs with throwaway Swamp state on a versioned topology, never production serve or 209. Receipts name the topology version. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
-| Orchestrator, lane 27 diagrams, #2281 | Count native steps against legacy calls; over about two per call needs a reason. #2281 ran about 22 steps for about 6 calls and rewrote a script's source. |
 | Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |

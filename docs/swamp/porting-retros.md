@@ -1,6 +1,6 @@
 ---
 title: "Swamp port retros"
-description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings."
+description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings, and one row per F10 proof receipt."
 ---
 
 # Swamp port retros
