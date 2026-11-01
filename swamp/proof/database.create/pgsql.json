@@ -1,0 +1,97 @@
+{
+  "kind": "database.create",
+  "workflow": "operation-database-create",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 120,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-managed-pgsql-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=pgsql",
+        "--port=55471",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:create",
+      "proof-db-pgsql-${proof.run}",
+      "--server=proof-managed-pgsql-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "server_id": "${capture.server_id}",
+    "connection_id": "${match.positive_int}",
+    "driver": "pgsql",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "create",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "probe-user",
+      "job": "actions",
+      "step": "action_01_sql_probe_user",
+      "budget_seconds": 120
+    },
+    {
+      "name": "probe-databases",
+      "job": "actions",
+      "step": "action_02_sql_probe_databases",
+      "budget_seconds": 120
+    },
+    {
+      "name": "create-owner",
+      "job": "actions",
+      "step": "action_03_sql_create_user",
+      "budget_seconds": 120
+    },
+    {
+      "name": "authenticate-owner",
+      "job": "actions",
+      "step": "action_04_sql_authenticate",
+      "budget_seconds": 120
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-lifecycle/parity.py",
+      "create",
+      "proof-db-pgsql-${proof.run}",
+      "pgsql",
+      "55471",
+      "${topology.app-dev.wireguard_ip}",
+      "--server=proof-managed-pgsql-${proof.run}",
+      "--node-id=${topology.app-dev.node_id}"
+    ],
+    "cases": [
+      "managed-connection-projected",
+      "sql-owner-authenticated-to-created-database",
+      "duplicate-slug-refused",
+      "in-use-server-refused-with-records-intact"
+    ]
+  }
+}

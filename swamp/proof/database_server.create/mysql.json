@@ -1,0 +1,72 @@
+{
+  "kind": "database_server.create",
+  "workflow": "operation-database-server-create",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:server:create",
+      "proof-server-create-mysql-${proof.run}",
+      "--node=${topology.app-dev.node_id}",
+      "--driver=mysql",
+      "--port=33172",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "driver": "mysql",
+    "process_id": "${match.positive_int}",
+    "container": "${match.nonempty_string}",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "server",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "provision-and-admin-readiness",
+      "job": "server",
+      "step": "initial",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "scrub-and-readiness",
+      "job": "server",
+      "step": "scrub",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-lifecycle/parity.py",
+      "server-create",
+      "proof-server-create-mysql-${proof.run}",
+      "mysql",
+      "33172",
+      "${topology.app-dev.wireguard_ip}",
+      "--node-id=${topology.app-dev.node_id}"
+    ],
+    "cases": [
+      "owned-running-server",
+      "initialization-secret-scrubbed",
+      "private-port-and-data-mount",
+      "exact-create-retains-identities",
+      "changed-port-refused"
+    ]
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "kind": "database_server.destroy",
+  "workflow": "operation-database-server-destroy",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-server-destroy-mysql-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=mysql",
+        "--port=33173",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:server:destroy",
+      "proof-server-destroy-mysql-${proof.run}",
+      "--force",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "server_id": "${capture.server_id}",
+    "process_id": "${match.positive_int}",
+    "container": "${match.nonempty_string}",
+    "record_only": false
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "inspect-removal-set",
+      "job": "plan",
+      "step": "plan",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database-lifecycle/parity.py",
+      "server-destroy",
+      "proof-server-destroy-mysql-${proof.run}",
+      "mysql",
+      "33173",
+      "${topology.app-dev.wireguard_ip}",
+      "--server-id=${capture.server_id}",
+      "--node-id=${topology.app-dev.node_id}"
+    ],
+    "cases": [
+      "server-record-absent",
+      "all-process-containers-absent",
+      "named-volume-and-marker-retained"
+    ]
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/database-lifecycle/parity.py",
+        "mark",
+        "proof-server-destroy-mysql-${proof.run}",
+        "mysql",
+        "33173",
+        "${topology.app-dev.wireguard_ip}",
+        "--node-id=${topology.app-dev.node_id}"
+      ],
+      "timeout_seconds": 120
+    }
+  ]
+}
