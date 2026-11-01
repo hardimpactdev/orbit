@@ -1,0 +1,153 @@
+sequenceDiagram
+  %% Target design: ADR 0243/0244 task, DECISIONS R1-R4, single-swamp-node (per-Node workers retired), agent-observer-swamp-acts. docs/reference/node-provisioning.md#remove-a-node.
+  %% status: draft
+  %% command: node:remove
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  %% lane P icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant N as Node 12<br/>reached over ssh
+  participant P as Fleet Nodes<br/>vpn hub · Metrics
+  CLI->>GW: node:remove 12<br/>--force · --offline
+  %%> Command:
+  %%> - `orbit node:remove 12 --force`
+  %%> - syntax: `<node> [--force] [--offline] [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the Node, by numeric id
+  %%> - `--force` confirms without a prompt and consents to shedding Node 12's roles; required without a terminal and with `--json`
+  %%> - `--offline` also allows removal when Node 12 can't be reached
+  %%> What it does:
+  %%> - removes Node 12 from Orbit and hands the machine back, reachable over public SSH
+  %%> - keeps user data, package managers and unrelated SSH keys on the machine
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Check guards, record<br/>Node 12 removing · task #6202
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12
+  %%> - Node 12 has no Instances, Database servers, Schedules, active Routes or operator firewall rules
+  %%> - Node 12 is not your own Node, the Gateway Node, the `vpn` Node or the Swamp Node 209
+  %%> - a task VM host has no task VMs and no task VM host setting; a task VM guest is removed by its own lifecycle
+  %%> - no other change runs for Node 12; the Gateway holds one lock per Node and one for the hub
+  %%> Builds:
+  %%> - the role removal steps for each role, the public SSH rule, and the list of Orbit files and units on Node 12
+  %%> - the participants: the hub, the DNS catalog, the Metrics Node and the Cluster Router, with their addresses and SSH host keys
+  %%> Result:
+  %%> - Node 12 marked `removing`, so hub and DNS renders leave it out
+  %%> - task #6202 recorded with the full intent
+  GW->>SW: Start run, full intent<br/>operation-node-remove
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - Node 12's addresses and SSH host keys, its managed user and its Orbit SSH block
+  %%> - the role removal steps, the files to remove, and each participant's change
+  %%> - the `offline` flag; the SSH identity comes from the `swamp` role
+  GW-->>CLI: 202 Accepted<br/>task #6202
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Probe Node 12<br/>@swamp/ssh · new connection
+  %%> What it does:
+  %%> - opens a new SSH connection over WireGuard and runs `true`
+  %%> Why:
+  %%> - a shared connection can outlive a stopped sshd, so only a new one proves Node 12 is reachable
+  %%> Result:
+  %%> - an unreachable Node fails here with `node.unreachable`, unless `--offline` was given
+  alt Node 12 is reachable
+    opt Node 12 has roles
+      SW->>N: Shed each role<br/>shared role remove steps
+      %%> What it does:
+      %%> - runs the same steps as `node:role:remove` for each role, in the same run
+      %%> - removes the role's runtime, certificates and firewall rules; keeps its data and container volumes
+      %%> Not included:
+      %%> - a child task per role
+    end
+    SW->>N: Restore public SSH<br/>ufw orbit:public-ssh-recovery
+    %%> What it does:
+    %%> - adds the public SSH recovery rule while the tunnel still works
+    %%> - checks that SSH answers on the public address
+    %%> Why:
+    %%> - without it, the machine is reachable only through its provider console once the peer goes
+    %%> macOS:
+    %%> - skipped; Orbit never managed the Mac's firewall
+    SW->>N: Remove the Node agent<br/>orbit-agent · exporters · units
+    %%> What it does:
+    %%> - stops and disables `orbit-agent`, node-exporter, cAdvisor and the PHP-FPM exporter
+    %%> - deletes their units and files in `/etc/orbit`, then reloads systemd once
+    %%> How:
+    %%> - official `@swamp/cfgmgmt/systemd` and `@swamp/cfgmgmt/file` behaviors over SSH from 209
+    %%> Not included:
+    %%> - per-Node worker stop, files and token revocation; per-Node workers are retired
+    SW->>N: Remove the Orbit SSH block<br/>authorized_keys · marked block
+    %%> What it does:
+    %%> - deletes only the lines between the Orbit markers
+    %%> - keeps every other key, so operator access stays
+    %%> Why last:
+    %%> - after this step Swamp can no longer log in to Node 12
+  else --offline and unreachable
+    Note over SW: Leave Node 12 untouched<br/>retained_on_node
+    %%> What it does:
+    %%> - skips every step on Node 12
+    %%> Result:
+    %%> - the result lists what stays on the machine: the Node agent, its files and the Orbit SSH block
+  end
+  SW->>P: Withdraw the hub peer<br/>wg syncconf · drop DNS records
+  %%> How:
+  %%> - Swamp reaches the `vpn` Node over `@swamp/ssh` from 209; there is no worker on Node 1
+  %%> What it does:
+  %%> - removes Node 12's peer, validates the hub configuration and live-syncs it with `wg syncconf`; other peers keep their tunnels
+  %%> - removes Node 12's private names from the DNS catalog and reloads the listener
+  %%> Cluster:
+  %%> - a Cluster Router drops Node 12 from its LAN rules, through the shared firewall step
+  opt a Metrics Node exists
+    SW->>P: Drop the Metrics target<br/>validate, reload Prometheus
+    %%> What it does:
+    %%> - removes Node 12 from the Prometheus configuration and validates it with `promtool`
+    %%> - reloads Prometheus while it runs; no restart
+  end
+  SW->>P: Check Node 12 is gone<br/>wg show · DNS · Prometheus
+  %%> What it does:
+  %%> - checks that the hub has no peer for Node 12, and that DNS and Prometheus no longer name it
+  %%> Why:
+  %%> - the removal only counts when the fleet shows it
+  alt every step passes
+    P-->>SW: Node 12 absent
+    %%> Returns:
+    %%> - `removed: true`, with `roles_shed` and `retained_on_node`
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the run's outputs; Swamp never calls the Gateway
+    Note over GW: Delete Node 12 records<br/>task succeeded
+    %%> Result:
+    %%> - Node 12, its role assignments, access grants and SSH host key pins are deleted
+    %%> - task #6202 succeeds and lists `roles_shed` and `retained_on_node`
+  else a step fails
+    N--xSW: exit ≠ 0
+    %%> When:
+    %%> - a role removal, the public SSH check, a file removal or a participant change fails, or the budget ends
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code, and which steps finished
+    Note over GW: Keep Node 12, mark failed<br/>task failed · rerun is safe
+    %%> Result:
+    %%> - Node 12 stays, marked failed at that step, with its records
+    %%> - task #6202 fails
+    %%> On the Node:
+    %%> - finished steps stay; there is no rollback
+    %%> - public SSH is restored before anything else goes, so the machine stays reachable
+    %%> Retry:
+    %%> - run the same `node:remove` again after fixing the cause; finished steps find nothing left to remove
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #6202
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
