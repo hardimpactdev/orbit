@@ -2,6 +2,7 @@
   "version": 2,
   "principal": "user:orbit-gateway",
   "vaults": [
+    {"vault": "orbit-control-inputs", "key_pattern": "^database-clone-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^task-vm-upcloud-token$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-destroy-owned-intent-[1-9][0-9]*-server-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^metrics-role-operation-[1-9][0-9]*$", "actions": ["write", "read"]},

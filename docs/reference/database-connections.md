@@ -35,6 +35,12 @@ Clone steps refresh admitted cancellation before effects. Cancellation after exp
 
 Successful projections make bounded record changes: attach a created or cloned connection, mark its clone complete, or remove the admitted connection records. They do not re-run SQL, inspect a Node, check receipts or validate native execution.
 
+## Native database clones
+
+Standalone `database.clone` captures its non-secret source, target and SSH identities at admission. One209 workflow uses official SSH for each action. MySQL creation reuses the native create DAG with one password-only execution copy; a replayable copy action checks the source and target ownership again before resetting the admitted targets and importing. SQLite keeps the local reflink path and consistent-backup alternative. Cross-Node snapshots travel through official SSH copy via a private209 scratch directory, with size and digest verification before installation.
+
+The native child completes source, incoming-file and209 scratch cleanup before returning its public result. A failed child is retried as a whole by root resume; a successful child is skipped when only terminal projection resumes. Missing outcomes fail without attaching the target. The Gateway stores credentials and projects the final connection and attachment; steps make no Gateway calls. Instance-parent clone and transfer composition remains in its existing parent workflow.
+
 ## Drivers and fields
 
 Each record has a unique slug: lowercase words joined by hyphens, at most 63 characters. Each driver takes its own fields.

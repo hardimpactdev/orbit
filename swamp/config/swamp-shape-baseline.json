@@ -492,20 +492,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/database/clone.ts",
-      "rule": "gateway-http",
-      "count": 5,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/clone.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/native_effect.ts",
       "rule": "gateway-http",
       "count": 2,
