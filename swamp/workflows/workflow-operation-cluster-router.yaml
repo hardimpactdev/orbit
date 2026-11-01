@@ -26,11 +26,13 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
+queueTimeout: 600
 jobs:
 - name: router
   steps:
   - name: prepare
     target: orbit-node-209
+    queueTimeout: 600
     guard: ${{ inputs.intent.cluster_router.noop || inputs.intent.cluster_router.candidate == null }}
     task:
       type: workflow
@@ -43,6 +45,7 @@ jobs:
         intent: ${{ inputs.intent.cluster_router.candidate }}
   - name: forward
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: prepare, condition: {type: always}}
     guard: ${{ inputs.intent.cluster_router.noop || steps.exists(key, key == "prepare" && steps[key].status == "failed")
@@ -59,6 +62,7 @@ jobs:
         parent_run_id: ${{ run.id }}
   - name: restore
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: forward, condition: {type: always}}
     guard: ${{ !("forward" in steps) || steps.forward.status != "succeeded" || steps.forward.outputs.result.ready
@@ -75,6 +79,7 @@ jobs:
         parent_run_id: ${{ run.id }}
   - name: retire
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: forward, condition: {type: always}}
     forEach:
@@ -97,6 +102,7 @@ jobs:
           host_keys: ${{ self.old.host_keys }}
   - name: result
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: prepare, condition: {type: always}}
     - {step: forward, condition: {type: always}}
@@ -113,6 +119,7 @@ jobs:
         steps: ${{ steps }}
   - name: complete
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: result, condition: {type: succeeded}}
     task:

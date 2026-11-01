@@ -22,3 +22,26 @@ Each action remains a separate native step. The child proves every admitted Node
 Root signing admission includes both differences. Every certificate child gives its shell signer a distinct behavior name using that child run ID, so concurrent fan-out items do not share a model lock. The signing request still carries the original parent run ID.
 
 Certificate signing and decoding steps use a control-worker target alone. Retained role certificate fan-outs give each request, publication and record item a run-and-item behavior identity; the original run ID remains the signing authority. A failed leaf does not prove the parent is terminal while another contribution remains running. Recovery uses authoritative native history and the normal shared projection. Queue failures, model-lock failures and cancellation acknowledgement are distinct evidence; none authorizes a family poller, forced projection or replay.
+
+## Proof budget and phase order
+
+The existing Gateway budget for each Router set or unset is 2,700 seconds. It is provisional: no full successful Router run has supplied a p95. Op 6592 took 2,417.179 seconds including restoration; its forward phase took 1,345.582 seconds and restoration 944.722 seconds. Its 119 probe observations had a queue-inclusive p95 of 654 seconds and maximum 707 seconds. These are failed-run observations, not SSH execution times or a successful p95.
+
+The Router parent, prepare, forward, restore and probe workflows declare a 600-second queue timeout on every step and at workflow level. This makes the existing pinned-serve default explicit. It does not claim to fix probe fan-out starvation. The prepare account, package and Caddy actions run through official SSH exec under coreutils `timeout` at 30, 600 and 300 seconds. HTTP and TLS workload probes each run under a 10-second coreutils timeout. Each official SSH execution timeout adds 30 seconds beyond its remote process bound, so its inherited 300-second limit cannot shorten the package phase. The shared Route children own the execution bounds of their phases; this Router declaration cannot impose a process timeout inside another workflow.
+
+The legacy spec is `6291bb036:apps/gateway/app/Actions/Clusters/SetClusterRouterAction.php`. Its ordered phases and proof readback are:
+
+| Phase | Effect Node | Required proof |
+| --- | --- | --- |
+| Baseline/account/packages | Candidate Router | Correct admitted account, installed Caddy and managed ingress rules. |
+| Router certificates | Candidate Router and affected workload Nodes | Node-local keys, exact admitted public CA and valid signed pair for every affected scope. |
+| Firewall policy | Candidate Router and affected workloads | Managed member allowances; no unrelated policy withdrawal. |
+| Workload verification | Candidate Router to each workload | TLS hostname and chain checks succeed before Caddy/DNS publication. |
+| Router Caddy | Candidate and old Router | Loaded Caddy agrees with the admitted prepared/after catalog; candidate serves the proof hostname. |
+| DNS publication and assignment | DNS participants and Gateway | Fresh authoritative answer selects the candidate; Gateway selects only the admitted assignment. |
+| Old Router cleanup | Old Router and affected workloads | DNS grace finishes before old sites, scoped certificates and allowances are removed. |
+| Return | Same participants with reversed selection | Separate normal Router set, terminal receipt and original serving/DNS selection restored. |
+
+The native factory also retains its existing PHP and URL/environment publication steps. This timeout change adds no phase or changes their order. A forward failure and its restoration are failure evidence; they cannot count as a successful cutover and return.
+
+The F13 topology is `["app-dev+ingress", "spare+router", "spare-2+router"]`, with a dev Cluster and the topology Gateway's normal CA/sign primitive. Lane 11 owns the catalog additions. Before admission, verify both Router candidates, their Caddy and DNS state, and the route/workload inventory. Capture the forward Operation/run and actual cutover readback before admitting the separate return. A successful pair supplies the first measured timing baseline. Production Cluster 9 is outside this proof.

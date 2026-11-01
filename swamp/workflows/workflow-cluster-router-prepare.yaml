@@ -25,11 +25,13 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
+queueTimeout: 600
 jobs:
 - name: prepare
   steps:
   - name: account_assets
     target: orbit-node-209
+    queueTimeout: 600
     task:
       type: behavior
       behaviorType: '@nckrtl/node-role-command'
@@ -40,13 +42,14 @@ jobs:
         input: '${{ {"user": inputs.intent.user} }}'
   - name: account_command
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: account_assets, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "cluster-router-ssh-" + run.id }}
-      methodName: script
+      methodName: exec
       globalArgs:
         name: ${{ "cluster-router-ssh-" + run.id }}
         transport:
@@ -61,11 +64,18 @@ jobs:
             hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
-        interpreter: python3
         sudo: false
-        script: ${{ steps["account_assets"].outputs.script_body }}
+        timeoutSec: 60
+        argv:
+        - /usr/bin/timeout
+        - '30'
+        - /usr/bin/python3
+        - -I
+        - -c
+        - ${{ steps["account_assets"].outputs.script_body }}
   - name: account
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: account_command, condition: {type: succeeded}}
     task:
@@ -77,6 +87,7 @@ jobs:
         stdout: ${{ steps["account_command"].outputs.stdout }}
   - name: packages_assets
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: account, condition: {type: succeeded}}
     task:
@@ -89,6 +100,7 @@ jobs:
         packages: ${{ inputs.intent.prerequisites.packages }}
   - name: packages
     target: orbit-node-209
+    queueTimeout: 600
     writes: true
     dependsOn:
     - {step: packages_assets, condition: {type: succeeded}}
@@ -96,7 +108,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "cluster-router-ssh-" + run.id }}
-      methodName: script
+      methodName: exec
       globalArgs:
         name: ${{ "cluster-router-ssh-" + run.id }}
         transport:
@@ -111,11 +123,18 @@ jobs:
             hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
-        interpreter: python3
         sudo: true
-        script: ${{ steps["packages_assets"].outputs.script_body }}
+        timeoutSec: 630
+        argv:
+        - /usr/bin/timeout
+        - '600'
+        - /usr/bin/python3
+        - -I
+        - -c
+        - ${{ steps["packages_assets"].outputs.script_body }}
   - name: caddy_assets
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: packages, condition: {type: succeeded}}
     task:
@@ -128,6 +147,7 @@ jobs:
         input: ${{ inputs.intent.caddy_package }}
   - name: caddy_command
     target: orbit-node-209
+    queueTimeout: 600
     writes: true
     dependsOn:
     - {step: caddy_assets, condition: {type: succeeded}}
@@ -135,7 +155,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       behaviorName: ${{ "cluster-router-ssh-" + run.id }}
-      methodName: script
+      methodName: exec
       globalArgs:
         name: ${{ "cluster-router-ssh-" + run.id }}
         transport:
@@ -150,11 +170,18 @@ jobs:
             hostKeys: ${{ inputs.intent.host_keys }}
       inputs:
         hosts: name:target
-        interpreter: python3
         sudo: true
-        script: ${{ steps["caddy_assets"].outputs.script_body }}
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - '300'
+        - /usr/bin/python3
+        - -I
+        - -c
+        - ${{ steps["caddy_assets"].outputs.script_body }}
   - name: caddy
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: caddy_command, condition: {type: succeeded}}
     task:
@@ -166,6 +193,7 @@ jobs:
         stdout: ${{ steps["caddy_command"].outputs.stdout }}
   - name: firewall
     target: orbit-node-209
+    queueTimeout: 600
     dependsOn:
     - {step: caddy, condition: {type: succeeded}}
     task:
