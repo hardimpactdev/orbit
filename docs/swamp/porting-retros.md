@@ -5,16 +5,22 @@ description: "One row per merged PR that touches swamp/: what it ported, steps p
 
 # Swamp port retros
 
-Lane 26 adds one row for each merged PR that touches `swamp/`. The lessons go into the [porting reference](/swamp/porting#changelog). No PR below has an F10 receipt; the evidence column lists what the PR ran instead. Every PR below merged before F10, so every behavior-changing row needs a re-proof, as do earlier ports such as #2238, #2243, #2244 and #2246. Step counts are estimates from workflow definitions, not run history. Swamp lines are the PR's additions and deletions under `swamp/` (F15). Only #2310 and #2369 had a lane 26 review before merge; #2281 and #2304 were reviewed after.
+Lane 26 adds one row for each merged PR that changes a kind's behavior, through `swamp/` or the Gateway. The lessons go into the [porting reference](/swamp/porting). No PR below has an F10 receipt; the evidence column lists what the PR ran instead. Every PR below merged before F10, so every behavior-changing row needs a re-proof, as do earlier ports such as #2238, #2243, #2244 and #2246. Step counts are estimates from workflow definitions, not run history. Swamp lines are the PR's additions and deletions under `swamp/` (F15). Only #2310 and #2369 had a lane 26 review before merge; #2281 and #2304 were reviewed after.
 
 ## Behavior-changing PRs
 
-These PRs change what a kind does. Each one needs an F10 re-proof.
+These PRs change what a kind does. Each one needs an F10 re-proof unless its row says otherwise.
 
 | PR | Ported or changed | Swamp lines | Steps per legacy call | Budget | Pre-F10 evidence | Findings |
 | --- | --- | --- | --- | --- | --- | --- |
+| #2370 | F1 setup runner normalizes UTF-8 before one-pass redaction and keeps whole lines within 4 KiB (B) | +152 / −16 | Unchanged | None | Outage exception; held create and destroy | The second tail pass still reprocesses markers (bounded); an oversize newest line keeps nothing |
+| #2364 | `env:sync` CLI follows its Operation (B) | None | Not a kind | None | CLI and SDK tests | No receipt needed: no admission or projection change |
+| #2359 | Cluster Router kinds get an explicit 3,900 s budget (C) | None | Unchanged | 3,900 s from op 6592's 2,417 s × 1.5 | Budget dataset tests | A measured basis, not a borrowed value; replace with the 14-day p95 after the first success |
+| #2339 | Failed `task_vm.image_build` attempts settle, and completed cleanup releases its claim (C) | None | Unchanged | None | Gateway regressions | Build 147 stayed running after op 6689 timed out and blocked every retry |
+| #2322 | WebSocket parent signing limited to the admitted phase's leaves (B) | None | Unchanged | None | 6 issuance cases red before | Signing is receipt class; lane 23's F13 proof covers it |
+| #2312 | Pinned Swamp load entry installed before the release gate needs it (lane 16) | None | Not a kind | None | 21 Python regressions | A's rulings, per lane 17's policy record: entry never restarts serve; a served/disk mismatch pauses the release; enabling the runner is receipt class |
 | #2366 | Gate follows sibling-module imports in poll helpers; strict UpCloud `poll_read()` (lane 0b) | +256 / −84 | Not a kind | Gate rule | Recorded receipt exception for the `upcloud.py` move (A's merge feed); gate tests | The DNS allowance is gone; only external HTTPS polls qualify |
-| #2363 | Club key delivered only to disposable proof Task VMs (lane 25) | +314 / −10 | One `@swamp/ssh` exec step | Action 30 s; `queueTimeout` 10 | Bootstrap exception; the first `up` is the receipt | Lane 26 review: the OD2 line needed an `sh -c` wrapper. On exit 1 without `okExitCodes`, the refusal code is lost |
+| #2363 | Club key delivered only to disposable proof Task VMs (lane 25) | +314 / −10 | One `@swamp/ssh` exec step | Action 30 s; `queueTimeout` 10 | Bootstrap exception; the first `up` is the receipt | Lane 26 review: on exit 1 without `okExitCodes`, the refusal code is lost. No workflow-level `queueTimeout` (L17-PR-2363-02). Its `sh -c` timeout wrapper predates the OD2 projector rule |
 | #2360 | Gate proves external polling origins and HTTP failure propagation (lane 0b) | +387 / −42 | Not a kind | Gate rule | Gate tests | Closes L17-PR-2325-01 |
 | #2355 | Setup keeps only a fully redacted stderr tail (B) | +74 / −33 | Unchanged | None | Outage exception | Decoding after redaction joined split secrets, and the second pass grew short-value tails; #2370 (open) fixes both |
 | #2332 | Automatic-deploy policy returns one checkpoint handle per resource name; `swamp.vault_sync_unavailable` with 0 attempts and a null result is a definite pre-submission failure (E) | +67 / −15 | Not a kind | None | Outage exception on E's independent review PASS against the skill; receipt after `up` | A duplicate `development-315` output broke policy and tick. The body lacked "merges without a topology receipt". CI does not check `deno fmt`, and main is not fmt-clean |
@@ -30,7 +36,7 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 | #2325 | Bounded external-state polls in phase scripts (lane 0b) | +847 / −15 | Not a kind | Gate rule | Gate tests | Python poll acceptance had no URL or HTTP failure check (L17-PR-2325-01), fixed in #2360 |
 | #2320 | F11 cancel of owned routed workspaces (C) | +138 / −18 | Inspect, withdraw, teardown, VM: the legacy order | Workflow `queueTimeout` 60 | Live-fix path: cancel groups 2195, 2199, 2201, 2203 | F9 reason and parity disposition pending from C |
 | #2335 | `instance.run_steps` setup guard (old shape) | +15 / −34 | Unchanged | None | Outage exception; live proof `instance:setup` 780 pending | A stale "running means replay" guard failed every run in 2 s (ops 6703, 6704) after the Gateway began marking Operations running before the native run starts (#1894) |
-| #2334 | Doctor reads bounded by `@swamp/ssh` per-host timeouts | +25 / −2 | Unchanged | Read bound 60 s; queueTimeout 60 | Outage exception | Result step takes `results: ${{ steps }}` over a fleet fan-out |
+| #2334 | Doctor reads bounded by `@swamp/ssh` per-host timeouts | +25 / −2 | Unchanged | Read bound 60 s; queueTimeout 60 | Outage exception | Result step takes `results: ${{ steps }}` over a fleet fan-out (L17-PR-2334-01, current policy only) |
 | #2304 | `instance.create` setup macros and failure output | +176 / −11 | Unchanged (zero new steps) | None | Native regressions, 2 cases in 72 s; outage exception | Passed `@orbit/ci-caches` to Bash raw (op 6659, exit 127); merged 2.5 min after opening with no lane 26 review |
 | #2310 | Observation context read bounded to one record (B7) | +55 / −4 | Unchanged | None | Native tests; outage exception, live proof after load | `data.query` in step inputs grew to 847 records, 117 MB per dispatch; three touched workflows lack `queueTimeout` |
 | #2281 | `task_vm.sweep_host` on 209 | +1,840 / −1,453 | About 22 steps for about 6 calls | p95 2.57 s (n=7, harness), budget 300 s | None | Legacy parity tests in `6291bb036:apps/gateway/tests/Feature/TaskVms/TaskVmSweepTest.php` (about 23 cases) not run against the port; TypeScript rewrites a script; no phase `timeout` |
@@ -76,6 +82,23 @@ A port may change the legacy phase order only with a written reason that a sub-o
 | `websocket.app_attach`, `websocket.app_detach` (lane 23) | B, 2026-11-01 | Remote read-only inspection, then the Gateway commits the attachment and environment, then the Gateway builds Caddy | Admission records immutable prospective intent only; native read-only inspection; lane 8's prospective Route child; terminal projection stores the attachment and environment only if inspection succeeded, also when publication fails | A Gateway commit between native phases would need a forbidden step callback | Refusal leaves state unchanged; a failed build keeps the desired state |
 
 For the WebSocket attach deviation, unknown or cancelled roots keep their unresolved intent.
+
+## Lesson history
+
+The porting reference's earlier changelog rows, newest first; lane 17 wrote v0 in #2268. Each lesson now lives in the rule it changed.
+
+| Source, newest first | Lesson |
+| --- | --- |
+| #2258, #2259 | At grant time, Swamp rejects a pattern with a quantified group holding `+` or `*`; use a flat alternation and run `bin/check-grant-patterns.ts` in `swamp/`. Name `forEach` models from `self._index`, with matching `@swamp/ssh` `globalArgs.name`. |
+| #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
+| #2273, #2358, lane 9 | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. Forced removal beats `--rm`, so real-Docker cleanup passes `--volumes` (moby 29.1.3). |
+| Lane 17 on #2201, #2208, #2210, #2304, #2310 | No step receives a Gateway macro; #2304 expands it through `GatewaySetupSteps` after checking admitted digests. Read `data.latest`, and set `queueTimeout` everywhere. #2210 rewrote a script. |
+| PLAN F9–F15 | Port inside a versioned dev topology, built from Node roles, through `bin/swamp-proof`; the receipt names the topology version. Split `swamp/` growth by part beside the Orbit net (F15). |
+| #2335 (B) | When the Gateway start contract changes, such as `StartSwampRun` marking an Operation `running` before its run starts (#1894), re-check every step-start status guard. A proof dates from everything the kind runs. |
+| #2304 (B), lane 17, A | Keep legacy exit-code and error-name cases or explain each change. Private stdout never enters native history; F1 output is a stderr tail, redacted before and after cutting. |
+| PLAN F8, F11, L17-PR-2324-01 (closed by #2348), OD1 | Every kind expires: measured budget, else 30 minutes, then the longest success times 1.5. No-run rows expire at 600 s but keep their lock until native lookup proves no run. |
+| Retro #2237, #2248, #2249, #2251, #2253, #2261, #2281, lanes 17 and 27 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to 20 steps per legacy call (#2253). F9 means legacy code and tests at `6291bb036`. |
+| #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
 
 ## Proof receipts
 
