@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeNetworkConvergeInput;
 use App\Domain\Nodes\NodeNetworkParticipantInput;
 use App\Domain\Nodes\NodeNetworkProjection;
 use App\Domain\Nodes\NodeWireGuardInput;
@@ -32,68 +33,23 @@ function nativeNetworkFixture(): array
     $context->update(['wireguard_public_key' => base64_encode(str_repeat('c', 32)), 'tld' => 'departing.test']);
     config(['swamp_workers.nodes' => []]);
     expect(app(DirectOperation::class)->definition('node.network_converge'))->not->toBeNull();
-    $snapshot = app(NodeWireGuardInput::class)->capture($context, $context->id);
-    $input = ['_wireguard' => $snapshot, 'configuration' => ['$secret' => 'node.vpn_configuration', 'id' => $hub->id], 'participant_node_ids' => [$context->id, $hub->id],
-        'private_bindings' => ['configuration' => ['owner_node_id' => $hub->id, 'read_node_ids' => [$hub->id], 'write_node_ids' => []]]];
+    $snapshot = app(NodeNetworkConvergeInput::class)->capture($context, false);
+    $input = ['intent' => $snapshot, 'participant_node_ids' => [209, $context->id, $hub->id]];
     $operation = Operation::query()->create(['kind' => 'node.network_converge', 'target_type' => 'node', 'target_id' => $context->id, 'node_id' => $context->id, 'input' => $input, 'status' => 'running', 'sequence' => 1, 'attempts' => 0, 'state' => ['swamp_run_id' => 'ff3b7992-7376-4ac7-a49f-ed45bedc8de5']]);
 
     return [$operation, $context, $hub, $snapshot, new NodeVpnConfigurationSource(new VpnConfigurationRepository(app(VpnSettings::class), $home))];
 }
 
-it('places the hub on its exact logical worker without a Gateway SSH identity', function (): void {
-    [$operation, $peer, $hub, $snapshot] = nativeNetworkFixture();
-    expect($snapshot)->toMatchArray(['executor_node_id' => $hub->id, 'hub_id' => $hub->id, 'context_node_id' => $peer->id, 'excluded_node_id' => $peer->id]);
-    expect($snapshot)->not->toHaveKeys(['transport', 'private_key', 'bootstrap_identity']);
-    expect(NodeWireGuardInput::bound($operation))->toBe($snapshot);
-});
-
-it('hydrates the existing private key for its immutable admitted hub owner', function (): void {
-    [$operation, $peer, $hub, $snapshot, $source] = nativeNetworkFixture();
-    $value = $source->resolve($operation, $hub->id, '', 'configuration');
-    expect($source->ownerId($operation))->toBe($hub->id);
-    expect($value->value)->toMatchArray(['snapshot' => $snapshot, 'private_key' => base64_encode(str_repeat('p', 32))]);
-    expect(json_encode($value))->not->toContain(base64_encode(str_repeat('p', 32)));
-    expect(array_column($value->value['peers'], 'node_id'))->toContain($peer->id);
-});
-
-it('lets only the admitted hub participant read network root status without posting a result', function (): void {
-    [$operation, $peer, $hub, $snapshot] = nativeNetworkFixture();
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $query = '?run_id='.$operation->state['swamp_run_id'];
-    $this->withServerVariables(['REMOTE_ADDR' => $hub->wireguard_ip])
-        ->getJson($path.$query)->assertOk()
-        ->assertJsonPath('data.node_id', $peer->id)
-        ->assertJsonPath('data.kind', 'node.network_converge')
-        ->assertJsonPath('data.input.hub', $snapshot)
-        ->assertJsonMissingPath('data.input.network');
-    $this->postJson($path.'/result', ['run_id' => $operation->state['swamp_run_id'],
-        'status' => 'running', 'started_at' => now()->toISOString(), 'result' => []])->assertForbidden();
-    $foreign = FleetFixtures::node('network-unadmitted');
-    $this->withServerVariables(['REMOTE_ADDR' => $foreign->wireguard_ip])
-        ->getJson($path.$query)->assertForbidden();
-});
-
-it('refuses changed hub authority before private hydration', function (string $case): void {
-    [$operation, $peer, $hub, , $source] = nativeNetworkFixture();
-    $input = $operation->input;
-    match ($case) {
-        'caller' => $input['private_bindings']['configuration']['read_node_ids'] = [$peer->id],
-        'owner' => $input['private_bindings']['configuration']['owner_node_id'] = $peer->id,
-        'participant' => $input['participant_node_ids'] = [$peer->id],
-        'target' => $operation->target_id = $hub->id,
-        'excluded' => $input['_wireguard']['excluded_node_id'] = $hub->id,
-    };
-    $operation->input = $input;
-    expect(fn () => $source->resolve($operation, $hub->id, '', 'configuration'))->toThrow(ResourceOperationException::class);
-})->with(['caller', 'owner', 'participant', 'target', 'excluded']);
-
-it('reads current public peers after admission inside the native hub lock', function (): void {
-    [$operation, $peer, $hub, , $source] = nativeNetworkFixture();
-    $fresh = FleetFixtures::node('native-fresh', [RoleName::Database]);
-    $fresh->update(['wireguard_public_key' => base64_encode(str_repeat('f', 32))]);
-    $peer->update(['status' => 'removing']);
-    $value = $source->resolve($operation, $hub->id, '', 'configuration')->value;
-    expect(array_column($value['peers'], 'node_id'))->toContain($fresh->id)->not->toContain($peer->id);
+it('captures pinned peer and hub SSH inputs without private material or worker selection', function (): void {
+    [$operation, $peer, $hub] = nativeNetworkFixture();
+    expect($operation->input['intent']['ssh']['target']['host'])->toBe($peer->wireguard_ip);
+    expect($operation->input['intent']['hub_ssh']['target']['host'])->toBe($hub->wireguard_ip);
+    expect(app(DirectOperation::class)->definition('node.network_converge'))->toMatchArray([
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'network', 'step' => 'result'],
+    ])->not->toHaveKey('private_material');
+    expect(NodeWireGuardInput::bound($operation))->toBeNull();
+    expect(json_encode(app(NodeNetworkProjection::class)->input($operation)))
+        ->not->toContain(base64_encode(str_repeat('p', 32)));
 });
 
 it('captures removal router and DNS policy without children or peer installation', function (): void {
@@ -136,15 +92,13 @@ it('does not assign a peer key on a cancelled native callback', function (): voi
     expect($peer->refresh()->wireguard_public_key)->toBe($original);
 });
 
-it('restores only the admitted public peer key during native failure recovery', function (): void {
+it('leaves the recorded key unchanged when the native root fails after a host effect', function (): void {
     [$operation, $peer] = nativeNetworkFixture();
     $original = $peer->wireguard_public_key;
-    $operation->update(['input' => [...$operation->input, '_network' => ['existing_key' => $original]]]);
-    $peer->update(['wireguard_public_key' => base64_encode(str_repeat('n', 32))]);
     app(NodeNetworkProjection::class)->apply($operation, [
-        'run_id' => $operation->state['swamp_run_id'], 'status' => 'running',
-        'started_at' => now()->toISOString(),
-        'result' => ['network_proven' => false, 'restore_peer_key' => true],
+        'run_id' => $operation->state['swamp_run_id'], 'status' => 'failed',
+        'started_at' => now()->subSecond()->toISOString(), 'finished_at' => now()->toISOString(),
+        'error_code' => 'operation.native_failed', 'result' => [],
     ]);
     expect($peer->refresh()->wireguard_public_key)->toBe($original);
 });
@@ -174,11 +128,10 @@ it('admits one idempotent public network root with immutable participants', func
     $this->post($path, [], ['Accept' => 'application/json'])->assertAccepted()->assertJsonPath('data.id', $first->json('data.id'));
     $operation = Operation::query()->sole();
     expect($operation->node_id)->toBe($peer->id);
-    expect($operation->input['participant_node_ids'])->toBe([$peer->id, $hub->id]);
-    expect($operation->input['private_bindings']['configuration'])->toBe([
-        'owner_node_id' => $hub->id, 'read_node_ids' => [$hub->id], 'write_node_ids' => [],
-    ]);
-    expect($operation->input['_network']['existing_key'])->toBe($peer->wireguard_public_key);
+    expect($operation->input['participant_node_ids'])->toBe([209, $peer->id, $hub->id]);
+    expect($operation->input)->not->toHaveKeys(['configuration', 'private_bindings', '_wireguard']);
+    expect($operation->input['intent']['existing_key'])->toBe($peer->wireguard_public_key);
+    expect($socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['intent']);
     expect($operation->request_id)->not->toBeNull();
     expect($operation->parent_operation_id)->toBeNull();
     expect($socket->sent)->toHaveCount(1);
@@ -205,13 +158,13 @@ it('refuses public network programs credentials and caller placement before inte
     expect(Operation::query()->exists())->toBeFalse();
 })->with(['program', 'configuration', 'worker_credentials', 'participant_node_ids']);
 
-it('refuses an unselected public network target before intent', function (): void {
+it('refuses a target with no recorded SSH pin before intent', function (): void {
     [$existing, $peer] = nativeNetworkFixture();
     $existing->delete();
     $gateway = FleetFixtures::node('native-gateway', [RoleName::Gateway]);
-    config(['swamp_workers.nodes' => [$gateway->id]]);
+    $peer->update(['ssh_host_key' => null]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $this->post("/api/v1/nodes/{$peer->id}/network/converge", [], ['Accept' => 'application/json'])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'node.network_unsupported');
+        ->assertServiceUnavailable()->assertJsonPath('error.code', 'swamp.ssh_target_unavailable');
     expect(Operation::query()->exists())->toBeFalse();
 });

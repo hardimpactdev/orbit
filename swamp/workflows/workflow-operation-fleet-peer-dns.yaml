@@ -1,27 +1,111 @@
+# deno-fmt-ignore-file
+# Generated from network-command/workflows.ts
 id: f05d2ee0-5aa7-4271-9924-fda8b65a786d
 name: operation-fleet-peer-dns
-description: Reconcile one directly admitted peer DNS policy on its exact Node worker.
+description: Pinned official SSH from209; full public input and typed terminal output.
 vaults: []
+target: orbit-node-209
 inputs:
+  type: object
   properties:
-    operation_id: { type: integer, minimum: 1 }
-    node_id: { type: integer, minimum: 1 }
-    kind: { type: string, enum: [fleet.peer_dns] }
-  required: [operation_id, node_id, kind]
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - fleet.peer_dns
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
+  additionalProperties: false
 jobs:
-  - name: node
-    target: '${{ inputs.node_id == 209 ? "swamp209-migration-a" : "orbit-node-" + string(inputs.node_id) }}'
-    labels: { node: "${{ string(inputs.node_id) }}" }
-    writes: true
+  - name: dns
     steps:
-      - name: reconcile
-        task:
-          type: behavior
-          behaviorType: "@nckrtl/fleet-peer-dns"
-          behaviorName: '${{ "peer-dns-node-" + string(inputs.node_id) }}'
-          methodName: reconcile
-          inputs:
-            operation_id: "${{ inputs.operation_id }}"
-            node_id: "${{ inputs.node_id }}"
-            kind: "${{ inputs.kind }}"
-            run_id: "${{ run.id }}"
+      - name: inspect_asset
+        target: orbit-node-209
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "inspect_asset-"+run.id }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.server} }}'}}
+      - name: inspect
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "inspect-"+run.id }}', methodName: script, globalArgs: {name: '${{ "inspect-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.inspect_asset.outputs.script_body }}'}}
+      - name: decision
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decision-"+run.id }}', methodName: decideDns, inputs: {stdout: '${{ steps.inspect.outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}', require_uplink: true}}
+      - name: persist_asset
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "persist_asset-"+run.id }}', methodName: read, inputs: {action: dns_persist, input: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}'}}
+      - name: persist
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "persist-"+run.id }}', methodName: script, globalArgs: {name: '${{ "persist-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.persist_asset.outputs.script_body }}'}}
+      - name: set_dns
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_dns-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_dns-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns","orbit",inputs.intent.server] }}'}}
+      - name: set_domains
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_domains-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_domains-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain","orbit"]+inputs.intent.domains.map(d,"~"+d) }}'}}
+      - name: set_default_route
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_default_route-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_default_route-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/resolvectl, default-route, orbit, 'no']}}
+      - name: clear_old_dns
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "clear_old_dns-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "clear_old_dns-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns",steps.decision.outputs.old_link,""] }}'}}
+      - name: clear_old_domains
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "clear_old_domains-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "clear_old_domains-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain",steps.decision.outputs.old_link,""] }}'}}
+      - name: restore_default_route
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "restore_default_route-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "restore_default_route-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","default-route",steps.decision.outputs.old_link,"yes"] }}'}}
+      - name: restore_uplink
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "restore_uplink-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "restore_uplink-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/networkctl","reconfigure",steps.decision.outputs.old_link] }}'}}
+      - name: verify_asset
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "verify_asset-"+run.id }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.server} }}'}}
+      - name: verify
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "verify-"+run.id }}', methodName: script, globalArgs: {name: '${{ "verify-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.verify_asset.outputs.script_body }}'}}
+      - name: result
+        target: orbit-node-209
+        dependsOn: [{step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}, {step: verify, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "result-"+run.id }}', methodName: dnsResult, inputs: {stdout: '${{ steps.verify.outputs.stdout }}', policy: '${{ {"server":inputs.intent.server,"dns_server":inputs.intent.dns_server,"domains":inputs.intent.domains,"public_key":inputs.intent.public_key} }}'}}

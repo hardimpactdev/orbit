@@ -96,7 +96,7 @@ final readonly class NodeWireGuardInput
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
             || ! in_array($operation->kind, ['node.add',
-                'node.network_converge', 'node.wireguard_hub_converge', 'task_vm.destroy',
+                'node.wireguard_hub_converge', 'task_vm.destroy',
                 'task_vm.enroll', 'task_vm.prepare_runtime', 'task_vm.provision', 'tasks.provision'], true)
             || ! array_key_exists('excluded_node_id', $snapshot)
             || ($snapshot['excluded_node_id'] !== null && $snapshot['excluded_node_id'] !== $snapshot['context_node_id'])

@@ -1,517 +1,161 @@
-{
-  "id": "3c0eb942-9c7f-438d-8d4c-7c739642c155",
-  "name": "operation-node-network-converge",
-  "description": "One native peer and canonical hub DAG without Gateway children.",
-  "inputs": {
-    "type": "object",
-    "properties": {
-      "operation_id": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "node_id": {
-        "type": "integer",
-        "minimum": 1
-      },
-      "kind": {
-        "type": "string",
-        "enum": [
-          "node.network_converge"
-        ]
-      }
-    },
-    "required": [
-      "operation_id",
-      "node_id",
-      "kind"
-    ],
-    "additionalProperties": false
-  },
-  "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-  "labels": {
-    "node": "${{ string(inputs.node_id) }}"
-  },
-  "jobs": [
-    {
-      "name": "admission",
-      "steps": [
-        {
-          "name": "admit",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "admit",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "peer_key",
-      "dependsOn": [
-        {
-          "job": "admission",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "prepare",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "prepare",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "prepared",
-          "dependsOn": [
-            {
-              "step": "prepare",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.prepare.outputs.status == \"succeeded\"",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "record",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "record",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "prepared",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        }
-      ]
-    },
-    {
-      "name": "hub",
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.executor_node_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.executor_node_id) }}"
-      },
-      "dependsOn": [
-        {
-          "job": "peer_key",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "hub_publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        }
-      ]
-    },
-    {
-      "name": "peer_publish",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "steps": [
-        {
-          "name": "hub_result",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "hubResult",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}",
-              "hub_outcome": "${{ steps.hub_publish.outputs }}"
-            }
-          },
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "hub_proven",
-          "dependsOn": [
-            {
-              "step": "hub_result",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.hub_result.outputs.ok",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "hub_proven",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "published",
-          "dependsOn": [
-            {
-              "step": "publish",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.publish.outputs.status == \"succeeded\"",
-            "message": "The native network stage refused its admitted input",
-            "severity": "high"
-          }
-        },
-        {
-          "name": "commit",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "commit",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}",
-              "prepared": "${{ steps.prepare.outputs }}",
-              "published": "${{ steps.publish.outputs }}"
-            }
-          },
-          "dependsOn": [
-            {
-              "step": "published",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}"
-        },
-        {
-          "name": "committed",
-          "dependsOn": [
-            {
-              "step": "commit",
-              "condition": {
-                "type": "succeeded"
-              }
-            }
-          ],
-          "guard": "${{ !steps.admit.outputs.ready }}",
-          "task": {
-            "type": "assert",
-            "expr": "steps.commit.outputs.status == \"succeeded\"",
-            "message": "The native peer commit refused its admitted input",
-            "severity": "high"
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_peer_key",
-      "dependsOn": [
-        {
-          "job": "peer_key",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_peer_key",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_peer_key",
-      "dependsOn": [
-        {
-          "job": "recover_peer_key",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_peer_key",
-          "writes": true,
-          "guard": "${{ !steps.recover_peer_key.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_hub",
-      "dependsOn": [
-        {
-          "job": "hub",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_hub",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_hub",
-      "dependsOn": [
-        {
-          "job": "recover_hub",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_hub",
-          "writes": true,
-          "guard": "${{ !steps.recover_hub.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "recover_peer_publish",
-      "dependsOn": [
-        {
-          "job": "peer_publish",
-          "condition": {
-            "type": "failed"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(inputs.node_id) }}",
-      "labels": {
-        "node": "${{ string(inputs.node_id) }}"
-      },
-      "steps": [
-        {
-          "name": "recover_peer_publish",
-          "writes": true,
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-network-direct",
-            "behaviorName": "${{ \"node-network-\" + string(inputs.node_id) }}",
-            "methodName": "recover",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "admission": "${{ steps.admit.outputs }}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "restore_hub_peer_publish",
-      "dependsOn": [
-        {
-          "job": "recover_peer_publish",
-          "condition": {
-            "type": "succeeded"
-          }
-        }
-      ],
-      "target": "${{ \"orbit-node-\" + string(steps.admit.outputs.hub.hub_id) }}",
-      "labels": {
-        "node": "${{ string(steps.admit.outputs.hub.hub_id) }}"
-      },
-      "steps": [
-        {
-          "name": "restore_hub_peer_publish",
-          "writes": true,
-          "guard": "${{ !steps.recover_peer_publish.outputs.restore_hub }}",
-          "task": {
-            "type": "behavior",
-            "behaviorType": "@nckrtl/node-wireguard-direct",
-            "behaviorName": "${{ \"wireguard-hub-\" + string(steps.admit.outputs.hub.hub_id) }}",
-            "methodName": "publish",
-            "inputs": {
-              "operation_id": "${{ inputs.operation_id }}",
-              "kind": "${{ inputs.kind }}",
-              "node_id": "${{ inputs.node_id }}",
-              "run_id": "${{ run.id }}",
-              "snapshot": "${{ steps.admit.outputs.hub }}"
-            }
-          }
-        }
-      ]
-    }
-  ]
-}
+# deno-fmt-ignore-file
+# Generated from network-command/workflows.ts
+id: 3c0eb942-9c7f-438d-8d4c-7c739642c155
+name: operation-node-network-converge
+description: Pinned official SSH from209; full public input and typed terminal output.
+vaults: []
+target: orbit-node-209
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+        - node.network_converge
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: false
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
+  additionalProperties: false
+jobs:
+  - name: network
+    steps:
+      - name: prepare_key_asset
+        target: orbit-node-209
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "prepare_key_asset-"+run.id }}', methodName: read, inputs: {action: prepare_key, input: '${{ {"existing_key":inputs.intent.existing_key} }}'}}
+      - name: prepare_key
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: &ref_0 {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "prepare_key-"+run.id }}', methodName: script, globalArgs: {name: '${{ "prepare_key-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.prepare_key_asset.outputs.script_body }}'}}
+      - name: key
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "key-"+run.id }}', methodName: key, inputs: {stdout: '${{ steps.prepare_key.outputs.stdout }}', existing_key: '${{ inputs.intent.existing_key }}', other_public_keys: '${{ inputs.intent.other_public_keys+[inputs.intent.peer.server_public_key] }}'}}
+      - name: publish_hub_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "publish_hub_asset-"+run.id }}', methodName: read, inputs: {action: hub_peer, input: '${{ {"existing_key":inputs.intent.existing_key,"public_key":steps.key.outputs.public_key,"address":inputs.intent.peer.address} }}'}}
+      - name: publish_hub
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "publish_hub-"+run.id }}', methodName: script, globalArgs: {name: '${{ "publish_hub-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.hub_ssh.target.user }}', port: '${{ inputs.intent.hub_ssh.target.port }}', identityFile: '${{ inputs.intent.hub_ssh.identity_file }}', hostKeys: '${{ inputs.intent.hub_ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.hub_ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.publish_hub_asset.outputs.script_body }}'}}
+      - name: configure_peer_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "configure_peer_asset-"+run.id }}', methodName: read, inputs: {action: peer_config, input: '${{ {"public_key":steps.key.outputs.public_key,"peer":inputs.intent.peer} }}'}}
+      - name: configure_peer
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "configure_peer-"+run.id }}', methodName: script, globalArgs: {name: '${{ "configure_peer-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.configure_peer_asset.outputs.script_body }}'}}
+      - name: enable_peer
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "enable_peer-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "enable_peer-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/systemctl, enable, wg-quick@orbit]}}
+      - name: apply_peer_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "apply_peer_asset-"+run.id }}', methodName: read, inputs: {action: apply_peer, input: {}}}
+      - name: apply_peer
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "apply_peer-"+run.id }}', methodName: script, globalArgs: {name: '${{ "apply_peer-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.apply_peer_asset.outputs.script_body }}'}}
+      - name: trust_firewall
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}]
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "trust_firewall-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "trust_firewall-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ inputs.intent.trust_argv }}'}}
+      - name: inspect_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "inspect_asset-"+run.id }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
+      - name: inspect
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "inspect-"+run.id }}', methodName: script, globalArgs: {name: '${{ "inspect-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.inspect_asset.outputs.script_body }}'}}
+      - name: decision
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "decision-"+run.id }}', methodName: decideDns, inputs: {stdout: '${{ steps.inspect.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}
+      - name: persist_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "persist_asset-"+run.id }}', methodName: read, inputs: {action: dns_persist, input: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}'}}
+      - name: persist
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "persist-"+run.id }}', methodName: script, globalArgs: {name: '${{ "persist-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.persist_asset.outputs.script_body }}'}}
+      - name: set_dns
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_dns-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_dns-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns","orbit",inputs.intent.peer.dns_server] }}'}}
+      - name: set_domains
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_domains-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_domains-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain","orbit"]+inputs.intent.peer.domains.map(d,"~"+d) }}'}}
+      - name: set_default_route
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "set_default_route-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "set_default_route-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/resolvectl, default-route, orbit, 'no']}}
+      - name: clear_old_dns
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "clear_old_dns-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "clear_old_dns-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","dns",steps.decision.outputs.old_link,""] }}'}}
+      - name: clear_old_domains
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "clear_old_domains-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "clear_old_domains-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","domain",steps.decision.outputs.old_link,""] }}'}}
+      - name: restore_default_route
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "restore_default_route-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "restore_default_route-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/resolvectl","default-route",steps.decision.outputs.old_link,"yes"] }}'}}
+      - name: restore_uplink
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}]
+        guard: '${{ !steps.decision.outputs.changed || steps.decision.outputs.old_link == "orbit" }}'
+        writes: true
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "restore_uplink-"+run.id }}', methodName: exec, globalArgs: {name: '${{ "restore_uplink-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["/usr/bin/networkctl","reconfigure",steps.decision.outputs.old_link] }}'}}
+      - name: verify_asset
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "verify_asset-"+run.id }}', methodName: read, inputs: {action: dns_inspect, input: '${{ {"server":inputs.intent.peer.dns_server} }}'}}
+      - name: verify
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "verify-"+run.id }}', methodName: script, globalArgs: {name: '${{ "verify-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]}, inputs: {hosts: 'name:target', sudo: true, interpreter: python3, script: '${{ steps.verify_asset.outputs.script_body }}'}}
+      - name: result
+        target: orbit-node-209
+        dependsOn: [{step: prepare_key_asset, condition: *ref_0}, {step: prepare_key, condition: *ref_0}, {step: key, condition: *ref_0}, {step: publish_hub_asset, condition: *ref_0}, {step: publish_hub, condition: *ref_0}, {step: configure_peer_asset, condition: *ref_0}, {step: configure_peer, condition: *ref_0}, {step: enable_peer, condition: *ref_0}, {step: apply_peer_asset, condition: *ref_0}, {step: apply_peer, condition: *ref_0}, {step: trust_firewall, condition: *ref_0}, {step: inspect_asset, condition: *ref_0}, {step: inspect, condition: *ref_0}, {step: decision, condition: *ref_0}, {step: persist_asset, condition: *ref_0}, {step: persist, condition: *ref_0}, {step: set_dns, condition: *ref_0}, {step: set_domains, condition: *ref_0}, {step: set_default_route, condition: *ref_0}, {step: clear_old_dns, condition: *ref_0}, {step: clear_old_domains, condition: *ref_0}, {step: restore_default_route, condition: *ref_0}, {step: restore_uplink, condition: *ref_0}, {step: verify_asset, condition: *ref_0}, {step: verify, condition: *ref_0}]
+        task: {type: behavior, behaviorType: '@nckrtl/network-command', behaviorName: '${{ "result-"+run.id }}', methodName: networkResult, inputs: {stdout: '${{ steps.verify.outputs.stdout }}', policy: '${{ {"server":inputs.intent.peer.dns_server,"dns_server":inputs.intent.peer.dns_server,"domains":inputs.intent.peer.domains,"public_key":steps.key.outputs.public_key} }}', retained: '${{ inputs.intent.peer.retain }}', require_uplink: '${{ inputs.intent.peer.operator_dns == null }}'}}

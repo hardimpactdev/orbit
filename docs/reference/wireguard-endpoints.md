@@ -44,13 +44,13 @@ The selected value must pass the same check before the Gateway renders the peer 
 
 ## Native peer convergence
 
-The Gateway records one `node.network_converge` intent. Its native Swamp DAG prepares the peer key, records that public key, publishes the hub, then publishes and commits the peer configuration. Every effect uses the exact `orbit-node-<id>` target and matching `node` label. An unavailable worker waits in Swamp; another Node never takes its place.
+The Gateway records the full public `node.network_converge` intent, including pinned SSH connections for the peer and VPN owner. All native steps run on Node 209. Official `@swamp/ssh` prepares the peer key, updates that peer on the hub, writes the peer configuration, applies it, and sets the resolver and firewall policy. The typed terminal result records the public key only after the native steps succeed. There are no effect-time Gateway reads, callbacks, or child Operations.
 
-All parents use the native `wireguard-hub-<hub-id>` model lock. The locked method reads fresh peer records and the existing `node.vpn_configuration` private material. The hub private key remains inside that effect callback. Router LAN changes reuse the Routes family’s canonical system lower; peer DNS repair preserves the running tunnel when it succeeds. The admitted hub executor may read its bounded public hub view to recheck the parent identity and cancellation. Only the root Node may post the parent result.
+Private WireGuard keys stay on their hosts. The hub update preserves every other peer and the existing Interface section. It serializes with the host's existing WireGuard tool lock and uses `wg syncconf`; VPN1 receives no Swamp binary or worker, and an active tunnel is not restarted. An uncertain SSH outcome remains a failed native step. Resume through native workflow recovery; no hidden rollback or retry loop claims completion.
 
-An exact `task_vm.destroy` parent may place shared hub publication on its admitted active Gateway worker. The six-field hub snapshot keeps the actual hub owner and records the Gateway executor. Its `configuration` binding admits only that Gateway reader. Private connection metadata comes from the hub's pinned SSH endpoint and the existing Gateway identity path; the shared native method reads it fresh inside `wireguard-hub-<hub-id>` and invokes the canonical bootstrap SSH transport. It never runs the hub command locally on the Gateway. Other parents must supply their own closed ownership predicate; this shared contract grants no enrollment, provision, or Node removal authority.
+`fleet.peer_dns` also runs on 209 with the stored WireGuard host pin. Separate native steps inspect the current resolver, publish its persistent policy, set DNS, domains and default-route, restore any old uplink, and inspect the result. The typed result checks the admitted policy and usable uplink. It never calls an agent action or restarts the tunnel. The Gateway records the native result without repeating the comparison.
 
-Failure recovery restores only the admitted peer transaction and original public key, then republishes the hub. A lost commit reply with matching active files and no pending transaction preserves the applied key. The parent still reports failure because that lost reply did not prove completion.
+The retained enrollment and TaskVM parents still use their own admitted hub contract. Their publication and recovery authority is not changed by these two direct-operation ports.
 
 ## Recover an invalid stored endpoint
 

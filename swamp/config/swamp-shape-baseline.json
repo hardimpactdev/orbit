@@ -586,20 +586,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
-      "rule": "agent-dynamic",
-      "count": 2,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/fleet/peer_dns.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/fleet/recipe_direct.ts",
       "rule": "gateway-http",
       "count": 4,
@@ -1507,14 +1493,6 @@
       "rule": "inline-script",
       "count": 296,
       "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/network_root.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
     },
     {
       "file": "extensions/behaviors/operations/node/observer_install_system.ts",
