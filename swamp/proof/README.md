@@ -16,7 +16,7 @@ Persistent groups are titled `topology <topology>@<version> <lane>`. F11 cancels
 
 ## Request format
 
-Each `swamp/proof/<kind>.json` declares `kind`, `workflow`, `topology`, `budget_seconds`, `queue_timeout_seconds`, `prepare`, `before_request`, `request`, `envelope`, `expect`, `phases`, and `parity`. The two hooks are optional. Queue timeout must be a positive integer equal to the source workflow's explicit `queueTimeout`. Missing, null and default dispatch budgets are refused. The first distributed pilot uses F8's 1800-second unproven budget and an explicit 10-second dispatch budget; its first successful native worker run supplies the measured replacement (longest success times 1.5). Local inline native timings do not include worker dispatch or cold startup.
+Each `swamp/proof/<kind>.json` declares `kind`, `workflow`, `topology`, `budget_seconds`, `queue_timeout_seconds`, `prepare`, `before_request`, `request`, `envelope`, `expect`, `phases`, and `parity`. The two hooks are optional. Queue timeout must be a positive integer equal to the source workflow's explicit `queueTimeout`. Missing, null and default dispatch budgets are refused. The firewall pilot uses a 30-second dispatch budget and a 1089-second run budget, from F8's longest recorded success times 1.5 (Operation 6605: 726 seconds; Operation 6734: 21 seconds). Phase budgets initially use the run budget, then take the first topology success's step times times 1.5. The long success may include worker wait; local inline fixture timings exclude remote dispatch and cannot set the pilot budget.
 
 ```json
 {
