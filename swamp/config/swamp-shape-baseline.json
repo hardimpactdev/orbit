@@ -408,12 +408,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/certificates/role-publication.ts",
-      "rule": "inline-script",
-      "count": 30,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/certificates/system.ts",
       "rule": "inline-script",
       "count": 125,

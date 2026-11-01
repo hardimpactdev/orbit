@@ -84,11 +84,20 @@ Deno.test("shared chain installs the admitted agent before role effects and foot
       '${{ "orbit-node-" + string(inputs.node_id) }}',
     );
     assertEquals("labels" in workflow, false);
-    assertFalse(
-      jobs.some((job) =>
-        job.steps.some((step) => step.task.type === "workflow")
-      ),
+    const children = jobs.flatMap((job) => job.steps).filter((step) =>
+      step.task.type === "workflow"
     );
+    assertEquals(children.length, role ? 1 : 0);
+    for (const child of children) {
+      assertEquals(
+        (child.task as Record<string, unknown>).workflowIdOrName,
+        "node-role-certificate-publish",
+      );
+      assertEquals(
+        child.task.inputs?.parent_run_id,
+        "${{ (has(inputs.parent_run_id) ? inputs.parent_run_id : run.id) }}",
+      );
+    }
   }
 });
 
