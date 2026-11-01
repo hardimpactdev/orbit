@@ -1,6 +1,5 @@
 import { z } from "npm:zod@4.4.3";
 import { type DatabaseSqlCall as NodeCall, invokeSql } from "./local_sql.ts";
-import { nativeEffect } from "./native_effect.ts";
 import { sqlClient, SqlRefusal } from "./destroy_sql.ts";
 import {
   mysqlInventory,
@@ -10,21 +9,8 @@ import {
 import { ValkeyClient } from "./valkey_client.ts";
 import type { PrivateMaterialUse } from "./private_material.ts";
 
-const Name = z.string().regex(/^[A-Za-z0-9_]{1,64}$/);
-const User = z.string().min(1).max(128).refine((v) => !/[\s\0]/.test(v));
-export const DestroyInput = z.object({
-  driver: z.enum(["mysql", "pgsql", "redis"]),
-  container: z.string().regex(
-    /^orbit-process-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  ).nullable(),
-  host: z.ipv4(),
-  port: z.number().int().min(1).max(65535),
-  default_open: z.boolean(),
-  databases: z.array(Name).max(10000),
-  users: z.array(User).max(10000),
-  test_prefixes: z.array(Name).max(1000),
-  owners: z.record(Name, Name),
-}).strict().refine((v) => v.driver === "redis" || v.container !== null);
+import { DestroyInput, Name } from "./destroy_input.ts";
+export { DestroyInput } from "./destroy_input.ts";
 const Material = z.object({
   password: z.string().max(16384).refine((v) => !v.includes("\0")),
 }).strict();
@@ -283,31 +269,3 @@ export async function destroyDatabase(
     throw new Error("database.destroy_outcome_unknown");
   }
 }
-export function databaseDestroy(
-  makeHttp?: Parameters<typeof nativeEffect>[4],
-  invoke: (call: NodeCall, signal?: AbortSignal) => Promise<unknown> =
-    invokeSql,
-  connect: (
-    host: string,
-    port: number,
-  ) => Promise<Pick<ValkeyClient, "command" | "close">> = ValkeyClient.connect,
-) {
-  return nativeEffect(
-    "database.destroy",
-    "@nckrtl/database-destroy",
-    DestroyResult,
-    (input, gateway, signal) =>
-      destroyDatabase(
-        input,
-        (use) => gateway.withPrivateMaterial(use),
-        signal,
-        invoke,
-        connect,
-      ),
-    makeHttp,
-  );
-}
-export const behavior = {
-  ...databaseDestroy(),
-  type: "@nckrtl/database-destroy",
-};

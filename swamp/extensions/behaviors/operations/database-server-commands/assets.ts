@@ -62,9 +62,11 @@ export const behavior = {
                 "Shape bounded public native step outcomes for the shared terminal projector",
             arguments: z.object({
                 completed: z.boolean(),
+                backend: z.enum(["active", "absent"]).optional(),
                 failure_code: z.enum([
                     "database.server_create_outcome_unknown",
                     "database.user_create_outcome_unknown",
+                    "database.destroy_outcome_unknown",
                 ]).optional(),
                 steps: z.record(
                     z.string(),
@@ -77,9 +79,11 @@ export const behavior = {
             execute: async (
                 args: {
                     completed: boolean;
+                    backend?: "active" | "absent";
                     failure_code?:
                         | "database.server_create_outcome_unknown"
-                        | "database.user_create_outcome_unknown";
+                        | "database.user_create_outcome_unknown"
+                        | "database.destroy_outcome_unknown";
                     steps: Record<
                         string,
                         { status: string; outputs?: Record<string, unknown> }
@@ -90,7 +94,7 @@ export const behavior = {
                 const failure = args.failure_code ??
                     "database.server_create_outcome_unknown";
                 let result: Record<string, unknown> = args.completed
-                    ? { backend: "active" }
+                    ? { backend: args.backend ?? "active" }
                     : { error_code: failure };
                 for (const step of Object.values(args.steps)) {
                     const outputs = step.outputs ?? {};

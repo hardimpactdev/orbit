@@ -1,0 +1,280 @@
+id: d452ab9b-bb4d-4414-9324-6149f98086bc
+name: database-destroy-actions
+description: Inventory and fence the removal set, drop each resource, restore on refusal and shape one public result.
+writes: true
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.destroy]}
+    intent: {type: object}
+    execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-destroy-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: prepare
+  target: orbit-node-209
+  steps:
+  - name: assets
+    <<: &placed {target: orbit-node-209}
+    writes: false
+    task:
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-server-command-assets', behaviorName: '${{ "db-destroy-assets-" + run.id }}'}
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    <<: *placed
+    task:
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-destroy-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: &ssh_globals {name: '${{ "database-destroy-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+  - name: copy
+    <<: *placed
+    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}
+        direction: to
+        recursive: true
+  - name: inventory
+    <<: &command {target: orbit-node-209, allowFailure: true}
+    writes: false
+    dependsOn: [{step: copy, condition: {type: succeeded}}, {step: assets, condition: {type: succeeded}}]
+    guard: ${{ inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0 }}
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', inventory, '{}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: inventory_checked
+    <<: *placed
+    writes: false
+    dependsOn: [{step: inventory, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0) ? true : (has(steps.inventory) && has(steps.inventory.outputs) && steps.inventory.outputs.exitCode == 0)', severity: high, message: Database inventory failed.}
+  - name: plan
+    <<: *placed
+    writes: false
+    dependsOn: [{step: inventory_checked, condition: {type: succeeded}}, {step: inventory, condition: {type: always}}]
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-destroy-plan'
+      behaviorName: ${{ "database-destroy-plan-" + run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+        inventory: '${{ (inputs.intent.driver != "mysql" || size(inputs.intent.test_prefixes) == 0) ? "{\"databases\":[]}" : steps.inventory.outputs.stdout }}'
+- name: inspect
+  target: orbit-node-209
+  dependsOn: [{job: prepare, condition: {type: succeeded}}]
+  steps:
+  - name: ownership
+    <<: *command
+    guard: '${{ inputs.intent.driver == "redis" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', ownership, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: ownership_checked
+    <<: *placed
+    writes: false
+    dependsOn: [{step: ownership, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver == "redis" ? true : (has(steps.ownership) && has(steps.ownership.outputs) && steps.ownership.outputs.exitCode == 0 && steps.ownership.outputs.stdout == "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
+  - name: fence
+    <<: *command
+    dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}]
+    guard: '${{ inputs.intent.driver != "pgsql" || steps.ownership_checked.status != "succeeded" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', fence, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: fence_checked
+    <<: *placed
+    writes: false
+    dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver != "pgsql" ? true : (has(steps.fence) && has(steps.fence.outputs) && steps.fence.outputs.exitCode == 0 && steps.fence.outputs.stdout == "{\"ready\": true}\n")) && steps.ownership_checked.status == "succeeded"', severity: high, message: Database removal safety check failed.}
+  - name: blockers
+    <<: *command
+    dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}, {step: fence_checked, condition: {type: always}}]
+    guard: '${{ inputs.intent.driver == "redis" || steps.fence_checked.status != "succeeded" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', blockers, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: acl_snapshot
+    <<: *command
+    dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}, {step: fence_checked, condition: {type: always}}, {step: blockers, condition: {type: always}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.fence_checked.status != "succeeded" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_snapshot, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: safe
+    <<: *placed
+    writes: false
+    dependsOn: [{step: ownership, condition: {type: always}}, {step: ownership_checked, condition: {type: always}}, {step: fence, condition: {type: always}}, {step: fence_checked, condition: {type: always}}, {step: blockers, condition: {type: always}}, {step: acl_snapshot, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver == "redis" ? true : (has(steps.blockers) && has(steps.blockers.outputs) && steps.blockers.outputs.exitCode == 0 && steps.blockers.outputs.stdout == "{\"ready\": true}\n")) && (inputs.intent.driver != "redis" ? true : (has(steps.acl_snapshot) && has(steps.acl_snapshot.outputs) && steps.acl_snapshot.outputs.exitCode == 0 && steps.acl_snapshot.outputs.stdout == "{\"ready\": true}\n")) && steps.fence_checked.status == "succeeded"', severity: high, message: Database removal safety check failed.}
+- name: databases
+  target: orbit-node-209
+  dependsOn: [{job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
+  steps:
+  - name: drop_database
+    <<: *command
+    guard: '${{ inputs.intent.driver == "redis" }}'
+    forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.databases : [] }}'}
+    task:
+      <<: *ssh
+      behaviorName: ${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_database-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_database, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: databases_removed
+    <<: *placed
+    writes: false
+    dependsOn: [{step: drop_database, condition: {type: always}}]
+    task: {type: assert, expr: '!steps.exists(k, k.startsWith("drop_database-") && (steps[k].status != "succeeded" || steps[k].outputs.exitCode != 0 || steps[k].outputs.stdout != "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
+- name: users
+  target: orbit-node-209
+  dependsOn: [{job: databases, condition: {type: succeeded}}, {job: inspect, condition: {type: succeeded}}, {job: prepare, condition: {type: succeeded}}]
+  steps:
+  - name: drop_user
+    <<: *command
+    guard: '${{ inputs.intent.driver == "redis" }}'
+    forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
+    task:
+      <<: *ssh
+      behaviorName: ${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-drop_user-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', drop_user, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: acl_remove
+    <<: *command
+    dependsOn: [{step: drop_user, condition: {type: always}}]
+    guard: '${{ inputs.intent.driver != "redis" }}'
+    forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
+    task:
+      <<: *ssh
+      behaviorName: ${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_remove-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_remove, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: users_removed
+    <<: *placed
+    writes: false
+    dependsOn: [{step: drop_user, condition: {type: always}}, {step: acl_remove, condition: {type: always}}]
+    task: {type: assert, expr: '!steps.exists(k, (k.startsWith("drop_user-") || k.startsWith("acl_remove-")) && steps[k].status != "skipped" && (steps[k].status != "succeeded" || steps[k].outputs.exitCode != 0 || steps[k].outputs.stdout != "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
+  - name: acl_save
+    <<: *command
+    dependsOn: [{step: drop_user, condition: {type: always}}, {step: acl_remove, condition: {type: always}}, {step: users_removed, condition: {type: always}}]
+    guard: '${{ inputs.intent.driver != "redis" || steps.users_removed.status != "succeeded" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: persisted
+    <<: *placed
+    writes: false
+    dependsOn: [{step: drop_user, condition: {type: always}}, {step: acl_remove, condition: {type: always}}, {step: users_removed, condition: {type: always}}, {step: acl_save, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver != "redis" ? true : (has(steps.acl_save) && has(steps.acl_save.outputs) && steps.acl_save.outputs.exitCode == 0 && steps.acl_save.outputs.stdout == "{\"ready\": true}\n")) && steps.users_removed.status == "succeeded"', severity: high, message: Database removal safety check failed.}
+- name: cleanup
+  target: orbit-node-209
+  dependsOn: [{job: prepare, condition: {type: always}}, {job: inspect, condition: {type: always}}, {job: databases, condition: {type: always}}, {job: users, condition: {type: always}}]
+  steps:
+  - name: restore
+    <<: *command
+    guard: '${{ !has(steps.plan) || inputs.intent.driver != "pgsql" || !has(steps.fence) || steps.fence.status == "skipped" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', restore, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: acl_restore
+    <<: *command
+    dependsOn: [{step: restore, condition: {type: always}}]
+    guard: '${{ !has(steps.plan) || inputs.intent.driver != "redis" || !has(steps.acl_snapshot) || steps.acl_snapshot.status != "succeeded" || steps.acl_snapshot.outputs.exitCode != 0 || (has(steps.persisted) && steps.persisted.status == "succeeded") }}'
+    forEach: {item: selected, in: '${{ has(steps.plan) && has(steps.plan.outputs) ? steps.plan.outputs.users : [] }}'}
+    task:
+      <<: *ssh
+      behaviorName: ${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + string(self._index) }}
+      globalArgs: {<<: *ssh_globals, name: '${{ "db-destroy-acl_restore-" + string(inputs.operation_id) + "-" + string(self._index) }}'}
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore, '${{ steps.plan.outputs.json }}', '${{ self.selected }}', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: acl_restore_save
+    <<: *command
+    dependsOn: [{step: restore, condition: {type: always}}, {step: acl_restore, condition: {type: always}}]
+    guard: '${{ !has(steps.plan) || inputs.intent.driver != "redis" || !has(steps.acl_snapshot) || steps.acl_snapshot.status != "succeeded" || steps.acl_snapshot.outputs.exitCode != 0 || (has(steps.persisted) && steps.persisted.status == "succeeded") }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) + "/destroy.py" }}', '${{ steps.assets.outputs.intent_json }}', acl_restore_save, '${{ steps.plan.outputs.json }}', '', '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+        stdin: ${{ vault.get(inputs.execution_secrets.database_destroy.vault, inputs.execution_secrets.database_destroy.key) }}
+        okExitCodes: [0, 1]
+  - name: cleanup_checked
+    <<: *placed
+    writes: false
+    dependsOn: [{step: restore, condition: {type: always}}, {step: acl_restore, condition: {type: always}}, {step: acl_restore_save, condition: {type: always}}]
+    task: {type: assert, expr: '(inputs.intent.driver != "pgsql" || !has(steps.fence) ? true : (has(steps.restore) && has(steps.restore.outputs) && steps.restore.outputs.exitCode == 0 && steps.restore.outputs.stdout == "{\"ready\": true}\n")) && !steps.exists(k, k.startsWith("acl_restore-") && steps[k].status != "skipped" && (steps[k].status != "succeeded" || steps[k].outputs.exitCode != 0 || steps[k].outputs.stdout != "{\"ready\": true}\n")) && (!has(steps.plan) || inputs.intent.driver != "redis" || !has(steps.acl_snapshot) || steps.acl_snapshot.status != "succeeded" || steps.acl_snapshot.outputs.exitCode != 0 || (has(steps.persisted) && steps.persisted.status == "succeeded") ? true : (has(steps.acl_restore_save) && has(steps.acl_restore_save.outputs) && steps.acl_restore_save.outputs.exitCode == 0 && steps.acl_restore_save.outputs.stdout == "{\"ready\": true}\n"))', severity: high, message: Database removal safety check failed.}
+  - name: result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: restore, condition: {type: always}}, {step: acl_restore, condition: {type: always}}, {step: acl_restore_save, condition: {type: always}}, {step: cleanup_checked, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: result
+      inputs:
+        completed: ${{ has(steps.persisted) && steps.persisted.status == "succeeded" && steps.cleanup_checked.status == "succeeded" }}
+        backend: absent
+        failure_code: database.destroy_outcome_unknown
+        steps: ${{ steps }}
+  - name: cleanup_files
+    <<: *placed
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    guard: ${{ steps.cleanup_checked.status != "succeeded" }}
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-destroy-" + string(inputs.operation_id) }}']
+  - name: accept_result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: cleanup_files, condition: {type: always}}, {step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0 && steps.cleanup_files.status == "succeeded", severity: high, message: Database removal did not complete.}

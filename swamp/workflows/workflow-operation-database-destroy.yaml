@@ -1,58 +1,52 @@
 id: ad81876c-b31c-4ea4-8930-e9468294471a
 name: operation-database-destroy
-description: Remove the admitted databases and users using one native workflow.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Remove admitted databases and unshared users through native SSH actions from209.
 writes: true
-vaults: []
+vaults: [orbit-control-inputs]
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database.destroy
-  required:
-  - operation_id
-  - node_id
-  - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database.destroy]}
+    intent: {type: object}
+    execution_secrets: {type: object, properties: {database_destroy: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-destroy-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [database_destroy], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-- name: server
+- name: remove
+  target: orbit-node-209
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: remove
+    target: orbit-node-209
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-destroy'
-      behaviorName: ${{ "database-destroy-" + string(inputs.node_id) }}
-      methodName: apply
+      type: workflow
+      workflowIdOrName: database-destroy-actions
       inputs:
         operation_id: ${{ inputs.operation_id }}
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
-    dependsOn:
-    - step: apply
-      condition:
-        type: succeeded
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+- name: result
+  target: orbit-node-209
+  dependsOn: [{job: remove, condition: {type: always}}]
+  steps:
+  - name: result
+    target: orbit-node-209
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-destroy'
-      behaviorName: ${{ "database-destroy-" + string(inputs.node_id) }}
-      methodName: project
+      behaviorType: '@nckrtl/database-server-command-assets'
+      behaviorName: ${{ "db-destroy-result-" + run.id }}
+      methodName: result
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
+        completed: ${{ steps.remove.status == "succeeded" }}
+        backend: absent
+        failure_code: database.destroy_outcome_unknown
+        steps: ${{ steps }}
+  - name: accept_result
+    target: orbit-node-209
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database removal did not complete.}

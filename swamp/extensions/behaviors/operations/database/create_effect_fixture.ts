@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { invokeSql } from "./local_sql.ts";
+import { destroyDatabase } from "../../../../tests/_support/database_destroy_command.ts";
 import { createDatabase } from "../../../../tests/_support/database_create_command.ts";
 
 const randomPassword = () =>
@@ -167,6 +168,62 @@ export function registerCreateEffect(driver: "mysql" | "pgsql") {
           "output" in proof && proof.output,
           "proof_sentinel\n",
         );
+        const removal = {
+          driver,
+          container,
+          host: "127.0.0.1",
+          port: pg ? 5432 : 3306,
+          default_open: false,
+          databases: input.databases,
+          users: [input.username],
+          test_prefixes: pg ? [] : ["proof_test"],
+          owners: Object.fromEntries(
+            input.databases.map((name) => [name, input.username]),
+          ),
+        };
+        if (pg) {
+          await invoke(
+            "ALTER DATABASE foreign_database OWNER TO proof_owner;",
+            true,
+          );
+          assertEquals(await destroyDatabase(removal, password), {
+            error_code: "database.in_use",
+          });
+          const restored = await invoke(
+            "SELECT datallowconn FROM pg_database WHERE datname='proof_main';",
+            false,
+          );
+          assertEquals("output" in restored && restored.output, "t\n");
+          await invoke(
+            "ALTER DATABASE foreign_database OWNER TO postgres;",
+            true,
+          );
+        } else {
+          await invoke(
+            "CREATE DATABASE proof_test_3; SET GLOBAL sql_mode='NO_BACKSLASH_ESCAPES';",
+            true,
+          );
+        }
+        assertEquals(await destroyDatabase(removal, password), {
+          backend: "absent",
+        });
+        const absent = await invoke(
+          pg
+            ? "SELECT datname FROM pg_database WHERE datname IN ('proof_main','proof_test');"
+            : "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME IN ('proof_main','proof_test','proof_test_3');",
+          false,
+        );
+        assertEquals("output" in absent && absent.output, "");
+        const foreign = await invoke(
+          pg
+            ? "SELECT datname FROM pg_database WHERE datname='foreign_database';"
+            : "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='foreign_database';",
+          false,
+        );
+        assertEquals(
+          "output" in foreign && foreign.output,
+          "foreign_database\n",
+        );
       } finally {
         if (started) {
           const removal = await new Deno.Command("docker", {
@@ -304,6 +361,57 @@ export function registerValkeyCreateEffect() {
         } finally {
           app.close();
         }
+        await client.command("LPUSH", "proof:queue", "preserved");
+        const removal = {
+          driver: "redis",
+          container: null,
+          host: "127.0.0.1",
+          port,
+          default_open: false,
+          databases: [],
+          users: ["default", "proof-queue"],
+          test_prefixes: [],
+          owners: {},
+        };
+        const blockSave = await new Deno.Command("docker", {
+          args: [
+            "exec",
+            container,
+            "sh",
+            "-c",
+            "mv /tmp/users.acl /tmp/users.acl.saved; mkdir /tmp/users.acl",
+          ],
+          stdout: "null",
+          stderr: "null",
+        }).output();
+        assertEquals(blockSave.success, true);
+        assertEquals(await destroyDatabase(removal, password), {
+          error_code: "database.server_command_failed",
+        });
+        const restored = await client.command("ACL", "GETUSER", "proof-queue");
+        assertEquals(Array.isArray(restored), true);
+        assertEquals(await client.command("LLEN", "proof:queue"), 1);
+        const unblockSave = await new Deno.Command("docker", {
+          args: [
+            "exec",
+            container,
+            "sh",
+            "-c",
+            "rmdir /tmp/users.acl; mv /tmp/users.acl.saved /tmp/users.acl",
+          ],
+          stdout: "null",
+          stderr: "null",
+        }).output();
+        assertEquals(unblockSave.success, true);
+        assertEquals(await destroyDatabase(removal, password), {
+          backend: "absent",
+        });
+        assertEquals(
+          await client.command("ACL", "GETUSER", "proof-queue"),
+          null,
+        );
+        assertEquals(await client.command("LLEN", "proof:queue"), 1);
+        assertEquals(await client.command("AUTH", "default", password), "OK");
       } finally {
         client?.close();
         if (started) {
