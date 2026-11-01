@@ -48,21 +48,20 @@ final readonly class InstanceDeploymentSecrets implements OperationSecretSource
             throw $this->forbidden();
         }
         $admitted = ValidatedData::object($operation->input['deployment']);
+        if ($admitted['variant'] === 'development') {
+            throw $this->forbidden();
+        }
         if ($admitted['project_id'] !== $instance->project_id
             || $admitted['repository'] !== $instance->project->repository_url
             || $admitted['node_user'] !== $instance->node->user) {
             throw $this->forbidden();
         }
-        if ($admitted['variant'] !== 'development'
-            && ($admitted['user'] !== $instance->production_user || $admitted['home'] !== $instance->production_home)) {
+        if ($admitted['user'] !== $instance->production_user || $admitted['home'] !== $instance->production_home) {
             throw $this->forbidden();
         }
         if ($parameter === 'vp_materialize' && DirectOperation::owns($operation)) {
             return new OperationSecretValue(InstanceDeploymentIntent::admitted($operation)['needs_vp']
                 ? (app(ToolManagerIntent::class)->input($instance->node, ToolManagerName::Vp)['materialize'] ?? []) : []);
-        }
-        if ($admitted['variant'] === 'development' && in_array($parameter, ['environment_material', 'definitions_material'], true)) {
-            return new OperationSecretValue([]);
         }
         if ($parameter === 'environment_material') {
             return new OperationSecretValue(app(InstanceDeploymentEnvironmentMaterial::class)->read($operation));

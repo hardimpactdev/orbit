@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Instances\Deployment\AutomaticDeployHistory;
+use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -13,10 +14,12 @@ use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
 use Illuminate\Contracts\Console\Kernel;
 use Tests\Support\FakeRoutePublicationSocket;
@@ -48,6 +51,9 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
             'environment_material' => ['$secret' => 'instance.deployment', 'id' => $instance->id],
             'definitions_material' => ['$secret' => 'instance.deployment', 'id' => $instance->id]],
         'state' => ['instance_deploy_writer' => 'direct', 'swamp_run_id' => '402775cd-6ab4-46d1-a92e-f84ae368fe62']]);
+    if (! $production) {
+        $operation->update(['input' => [...$operation->input, 'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance, $vp), 'github' => ['$secret' => 'github.installation', 'id' => $instance->node_id]]]);
+    }
     $candidate = ['name' => InstanceDeploymentIntent::releaseName($operation), 'commit' => str_repeat('a', 40)];
     $payload = ['instance_id' => $instance->id, 'commit' => str_repeat('a', 40),
         'release' => $production ? $candidate : null,
@@ -60,65 +66,71 @@ function native_deploy_projection_fixture(TestCase $test, bool $production = fal
     return [$instance, $operation, '/api/v1/direct-operations/'.$operation->id, $body, $payload];
 }
 
-it('returns immutable Node execution intent without an agent action digest', function (): void {
+function project_development_terminal(Operation $operation, string $status, array $payload): array
+{
+    $runId = $operation->state['swamp_run_id'];
+    $history = ['id' => $runId, 'workflowName' => 'operation-instance-deploy-direct', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $operation->kind],
+        'startedAt' => '2026-10-31T02:00:00Z', 'completedAt' => '2026-10-31T02:00:01Z',
+        'jobs' => [['name' => 'development-result', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => json_encode($payload, JSON_THROW_ON_ERROR)]]]]]];
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'workflow.history.get', 'id' => $request['id'], 'payload' => ['data' => $history]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.read_token' => 'synthetic-native-reader']);
+    $step = app(SwampCommandStep::class);
+    $selector = ['job' => 'development-result', 'step' => 'result'];
+    $result = $step->projectTerminal($operation, ['id' => $runId, 'status' => $status], $selector);
+    $step->projectTerminal($result, ['id' => $runId, 'status' => $status], $selector);
+
+    return [$result, $socket];
+}
+
+it('refuses development callback and private-material paths before creating history', function (): void {
     [, $operation, $path, $body] = native_deploy_projection_fixture($this);
-    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()
-        ->assertJsonPath('data.input.platform', 'linux')->assertJsonPath('data.input.architecture', 'x86_64');
-    expect($operation->fresh()->input)->not->toHaveKey('agent_sha256');
-});
-
-it('starts one history row through the existing bound direct endpoint without a child', function (): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
-    $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'running');
-    $this->postJson($path.'/result', $body)->assertOk();
-    expect(InstanceDeployment::query()->where('instance_id', $instance->id)->count())->toBe(1)
-        ->and(Operation::query()->count())->toBe(1)->and($operation->fresh()->state['deployment_id'])->toBeInt();
-});
-
-it('projects native checkout success and keeps terminal replay independent of later configuration', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this);
-    $this->postJson($path.'/result', $body)->assertOk();
-    $body = [...$body, 'status' => 'succeeded', 'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload];
-    $response = $this->postJson($path.'/result', $body)->assertOk()->assertJsonPath('data.status', 'succeeded');
-    $historyId = $response->json('data.result.deployment_id');
-    expect($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40))
-        ->and(InstanceDeployment::query()->findOrFail($historyId)->status)->toBe('succeeded');
-    $original = $instance->checkout_path;
-    $instance->update(['checkout_path' => '/changed/after/completion', 'seed_commit' => str_repeat('b', 40)]);
-    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk()->assertJsonPath('data.input.deployment.home', $original);
-    $this->postJson($path.'/result', $body)->assertOk();
-    expect($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
-        ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1);
-});
-
-it('records only bounded public facts from the owning root result', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this);
-    $payload['program'] = 'private command';
-    $this->postJson($path.'/result', [...$body, 'status' => 'succeeded', 'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload])
-        ->assertOk()->assertJsonMissingPath('data.result.program');
-    expect(json_encode($operation->fresh()->result))->not->toContain('private command')
-        ->and($instance->fresh()->seed_commit)->toBe(str_repeat('a', 40));
-});
-
-it('refuses a wrong native binding before history starts', function (): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
-    $this->postJson($path.'/result', [...$body, 'run_id' => 'de337214-5652-4636-a510-aecf37b57824'])
-        ->assertConflict()->assertJsonPath('error.code', 'operation.run_mismatch');
+    $this->getJson($path.'?run_id='.$body['run_id'])->assertForbidden();
+    $this->postJson($path.'/result', $body)->assertForbidden();
+    $this->getJson($path.'/private-material?run_id='.$body['run_id'])->assertUnprocessable();
     expect(InstanceDeployment::query()->count())->toBe(0)->and($operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
-it('records public Vite runtime references from its actual development parent without children', function (): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this, vp: true);
+it('projects only the bound native development terminal once and advances seed only on success', function (string $native, OperationStatus $expected): void {
+    [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this);
+    $operation->update(['lock_key' => 'instance:'.$instance->id]);
+    $seed = $instance->seed_commit;
+    [$result, $socket] = project_development_terminal($operation, $native, $payload);
+    expect($result->status)->toBe($expected)->and($result->lock_key)->toBeNull()
+        ->and($socket->sent)->toHaveCount(1)->and(InstanceDeployment::query()->count())->toBe(1)
+        ->and($instance->fresh()->seed_commit)->toBe($native === 'succeeded' ? str_repeat('a', 40) : $seed);
+})->with([
+    ['succeeded', OperationStatus::Succeeded], ['failed', OperationStatus::Failed],
+    ['interrupted', OperationStatus::Interrupted], ['cancelled', OperationStatus::Cancelled],
+]);
+
+it('records only bounded public native facts and preserves terminal idempotency after owner changes', function (): void {
+    [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this);
+    [$result] = project_development_terminal($operation, 'succeeded', [...$payload, 'program' => 'private-command-sentinel']);
+    expect(json_encode($result->result))->not->toContain('private-command-sentinel');
+    $instance->update(['checkout_path' => '/changed/after/completion', 'seed_commit' => str_repeat('b', 40)]);
+    [, $socket] = project_development_terminal($result, 'succeeded', $payload);
+    expect($socket->sent)->toBeEmpty()->and($instance->fresh()->seed_commit)->toBe(str_repeat('b', 40))
+        ->and(InstanceDeployment::query()->count())->toBe(1);
+});
+
+it('records verified Vite pins from the development terminal against its admitted checkout', function (): void {
+    [$instance, $operation, , , $payload] = native_deploy_projection_fixture($this, vp: true);
     $runtime = ['store' => '/opt/orbit/vite-plus', 'vp_version' => '1.4.0', 'node_version' => '24.22.0',
-        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'checking'];
+        'package_manager' => 'npm', 'package_manager_version' => '11.12.0', 'package_manager_hash' => null, 'status' => 'active'];
+    project_development_terminal($operation, 'succeeded', [...$payload, 'vp_environment' => $runtime]);
+    expect($instance->fresh()->vp_environment)->toMatchArray([...$runtime, 'checkout_path' => $instance->checkout_path]);
+});
 
-    $this->postJson($path.'/result', [...$body, 'result' => ['vp_environment' => $runtime]])->assertOk();
-    $runtime['status'] = 'active';
-    $this->postJson($path.'/result', [...$body, 'result' => ['vp_environment' => $runtime]])->assertOk();
-
-    expect($instance->fresh()->vp_environment)->toMatchArray([...$runtime, 'checkout_path' => $instance->checkout_path])
-        ->and(InstanceDeployment::query()->count())->toBe(1)->and(Operation::query()->count())->toBe(1)
-        ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
+it('leaves a production deploy held when the native root terminates before its callback', function (): void {
+    [$instance, $operation] = native_deploy_projection_fixture($this, production: true);
+    $operation->update(['status' => OperationStatus::Running, 'lock_key' => 'instance:'.$instance->id]);
+    [$result, $socket] = project_development_terminal($operation, 'succeeded', []);
+    expect(app(DirectOperation::class)->usesNativeTerminal($operation))->toBeFalse()
+        ->and($socket->sent)->toBeEmpty()->and($result->status)->toBe(OperationStatus::Running)
+        ->and($result->lock_key)->toBe('instance:'.$instance->id)->and(InstanceDeployment::query()->count())->toBe(0);
 });
 
 it('admits the real dev writer with only a native start and no Gateway step execution', function (): void {
@@ -145,31 +157,14 @@ it('admits the real dev writer with only a native start and no Gateway step exec
         ->and($socket->sent[0]['payload']['inputs'])->toMatchArray(['operation_id' => $operation->id,
             'kind' => 'instance.deploy', 'node_id' => $instance->node_id])
         ->and($socket->sent[0]['payload']['inputs']['intent']['deployment']['variant'])->toBe('development')
-        ->and($socket->sent[0]['payload']['inputs']['intent']['process_members'])->toBe([]);
+        ->and($socket->sent[0]['payload']['inputs']['intent']['ssh_execution']['control_node_id'])->toBe(209)
+        ->and($operation->input)->not->toHaveKeys(['git_read', 'vp_materialize', 'environment_material', 'definitions_material']);
 });
 
 it('uses the sole native declaration even when a retired writer flag is set', function (): void {
     config(['swamp.direct_writers' => ['instance.deploy' => 'polled']]);
     expect(app(DirectOperation::class)->writer('instance.deploy', ['development' => true]))->toBe('direct')
         ->and(app(OperationKinds::class)->definition('instance.deploy')['workflow'])->toBe('operation-instance-deploy-direct');
-});
-
-it('transports public repository Git absence privately without Agent or child execution', function (): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
-
-    $this->getJson($path.'/private-material?run_id='.$body['run_id'])->assertOk()
-        ->assertJsonPath('data.git_read', null)->assertJsonPath('data.vp_materialize', []);
-
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued)
-        ->and(Operation::query()->count())->toBe(1);
-});
-
-it('keeps private delivery bound to admitted ownership without runtime execution', function (): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
-    $other = Node::query()->create(['name' => 'foreign-deploy-node', 'public_ssh_host' => '192.0.2.199', 'status' => 'active', 'user' => 'orbit', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.199']);
-    $instance->update(['node_id' => $other->id]);
-    $this->getJson($path.'/private-material?run_id='.$body['run_id'])->assertUnprocessable();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
 it('refuses manual deployment until the existing default Route repair finishes', function (): void {
@@ -251,76 +246,22 @@ it('exposes only pending authoritative development publication instead of the di
     expect($instance->fresh()->development_projection_pending)->toBeTrue();
 });
 
-it('settles a native pre-effect interruption and releases the Instance hold without advancing seed', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this);
-    $operation->update(['lock_key' => 'instance:'.$instance->id]);
-    $seed = $instance->seed_commit;
-    $this->postJson($path.'/result', $body)->assertOk();
-    $payload['failed_step'] = 'source_preparation';
-    $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
-        'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload])->assertOk()->assertJsonPath('data.status', 'failed');
-    expect($operation->fresh()->lock_key)->toBeNull()->and($instance->fresh()->seed_commit)->toBe($seed)
-        ->and(InstanceDeployment::query()->sole()->error_code)->toBe('deployment.interrupted');
-});
-
-it('projects only the bounded redacted failed-step tail into the Operation and history', function (): void {
-    [, , $path, $body, $payload] = native_deploy_projection_fixture($this);
-    $this->postJson($path.'/result', $body)->assertOk();
-    $payload['failed_step'] = 'before_activation';
-    $payload['output_tail'] = 'Build failed: TOKEN=[REDACTED]';
-    $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'deployment.step_failed',
-        'finished_at' => '2026-10-31T02:00:01.000Z', 'result' => $payload])->assertOk()
-        ->assertJsonPath('data.result.output_tail', $payload['output_tail']);
-    $events = InstanceDeployment::query()->sole()->events;
-    expect(base64_decode($events[0]['value_base64'], true))->toBe($payload['output_tail']);
-});
-
-it('advertises the canonical automatic eligibility for an ambiguous app-dev plus app-prod Node', function (): void {
-    [$instance] = native_deploy_projection_fixture($this);
-    NodeRole::query()->create(['node_id' => $instance->node_id, 'role' => RoleName::AppProd, 'status' => 'active']);
-    $this->getJson('/api/v1/instances/'.$instance->id)->assertOk()->assertJsonPath('data.auto_deploy.eligible', false);
-});
-
-it('settles a cancelled interrupted native step as failed unknown and releases the shared target hold', function (): void {
-    [$instance, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, vp: true);
-    $seed = $instance->fresh()->seed_commit;
-    $operation->update(['lock_key' => 'instance:'.$instance->id, 'cancel_requested_at' => now()]);
-    $this->postJson($path.'/result', $body)->assertOk();
-    $payload['failed_step'] = 'before_activation.install';
-    $payload['step_outcome'] = 'unknown';
-    $terminal = [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
-        'finished_at' => '2026-10-31T02:01:00.000Z', 'result' => $payload];
-    $this->postJson($path.'/result', $terminal)->assertOk()->assertJsonPath('data.status', 'failed')
-        ->assertJsonPath('data.result.failed_step', 'before_activation.install')
-        ->assertJsonPath('data.result.step_outcome', 'unknown');
-    $this->postJson($path.'/result', $terminal)->assertOk();
-    expect($operation->refresh()->lock_key)->toBeNull()->and($operation->error_code)->toBe('deployment.interrupted')
-        ->and($instance->fresh()->seed_commit)->toBe($seed)->and(InstanceDeployment::query()->sole()->status)->toBe('failed')
-        ->and(Operation::query()->count())->toBe(1);
-});
-
-it('records an interrupted native result without Gateway step or receipt validation', function (): void {
-    [, $operation, $path, $body, $payload] = native_deploy_projection_fixture($this, vp: true);
-    $payload['failed_step'] = 'before_activation.install';
-    $payload['step_outcome'] = 'unknown';
-    $this->postJson($path.'/result', [...$body, 'status' => 'failed', 'error_code' => 'deployment.interrupted',
-        'finished_at' => '2026-10-31T02:01:00.000Z', 'result' => $payload])->assertOk();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
-        ->and($operation->fresh()->result['step_outcome'])->toBe('unknown');
-});
-
-it('refuses private Git hydration after admitted source ownership changes', function (string $change): void {
-    [$instance, $operation, $path, $body] = native_deploy_projection_fixture($this);
-    if ($change === 'repository') {
-        $instance->project->update(['repository_url' => 'https://example.test/foreign.git']);
-    } else {
-        $instance->node->update(['user' => 'foreign']);
-    }
-    $this->getJson($path.'?run_id='.$body['run_id'])->assertOk();
-    $this->getJson($path.'/private-material?run_id='.$body['run_id'])
-        ->assertUnprocessable()->assertJsonPath('error.code', 'operation.execution_forbidden');
-    expect($operation->fresh()->status)->toBe(OperationStatus::Queued);
-})->with(['repository', 'account']);
+it('refuses development Git grants after captured ownership changes', function (string $change): void {
+    [$instance, $operation] = native_deploy_projection_fixture($this);
+    $instance->project->update(['repository_url' => 'https://github.com/example/owned.git']);
+    $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    $operation->update(['input' => [...$operation->input, 'deployment' => $intent,
+        'development_runtime' => app(DevelopmentDeployInput::class)->capture($instance->fresh(), false)]]);
+    $grant = app(DirectOperation::class)->githubTokenGrant($operation->fresh());
+    expect($grant->repository->owner.'/'.$grant->repository->name)->toBe('example/owned')->and($grant->permissions)->toBe(['contents' => 'read']);
+    match ($change) {
+        'repository' => $instance->project->update(['repository_url' => 'https://github.com/foreign/repository.git']),
+        'account' => $instance->node->update(['user' => 'foreign']),
+        'placement' => $instance->update(['checkout_path' => '/foreign/checkout']),
+        'role' => $instance->node->roles()->update(['status' => 'failed']),
+    };
+    expect(fn () => app(DirectOperation::class)->githubTokenGrant($operation->fresh()))->toThrow(ResourceOperationException::class);
+})->with(['repository', 'account', 'placement', 'role']);
 
 it('admits an automatic dev commit once and dispatches the direct root', function (): void {
     $instance = dev935_instance();
@@ -351,4 +292,24 @@ it('records production Vite references against the native prepared release', fun
     $this->postJson($path.'/result', [...$body, 'result' => ['release' => $payload['release'], 'vp_environment' => $runtime]])->assertOk();
     expect($instance->fresh()->vp_environment['checkout_path'])->toBe($instance->production_home.'/releases/'.$payload['release']['name'])
         ->and($operation->fresh()->status)->toBe(OperationStatus::Running);
+});
+
+it('copies each exact admitted command privately and refuses changed Project commands', function (): void {
+    [$instance, $operation] = native_deploy_projection_fixture($this);
+    dev935_steps($instance, [new DevelopmentDeployStep('first', 'printf private-copy-sentinel', 30, true), new DevelopmentDeployStep('second', 'true', 60, false)]);
+    $operation->update(['input' => [...$operation->input, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+        'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-gateway-run-token']);
+    $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
+    expect($input['execution_secrets'])->toBe([
+        'step_0' => ['vault' => 'orbit-control-inputs', 'key' => 'development-deploy-operation-'.$operation->id.'-step-0'],
+        'step_1' => ['vault' => 'orbit-control-inputs', 'key' => 'development-deploy-operation-'.$operation->id.'-step-1'],
+    ])->and(json_encode([$input, $operation->fresh()->toArray()]))->not->toContain('private-copy-sentinel');
+    expect($socket->sent)->toHaveCount(2)->and($socket->sent[0]['payload']['value'])->toBe('printf private-copy-sentinel');
+    ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->where('name', 'second')->update(['required' => true]);
+    expect(fn () => app(DevelopmentDeployInput::class)->workflowInput($operation->fresh()))->toThrow(ResourceOperationException::class);
+    expect($socket->sent)->toHaveCount(2);
 });

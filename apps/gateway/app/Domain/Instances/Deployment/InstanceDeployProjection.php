@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Deployment;
 
+use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationGitHubGrant;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Tools\VpEnvironment;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -16,7 +19,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationWorkflowInput
+final readonly class InstanceDeployProjection implements DirectOperationGitHubGrant, DirectOperationProjection, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public function __construct(
         private DirectOperation $direct,
@@ -26,8 +29,21 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         private InstanceVpEnvironmentMaterial $vp,
     ) {}
 
+    public function native(Operation $operation): bool
+    {
+        return (ValidatedData::object($operation->input['deployment'])['variant'] ?? null) === 'development';
+    }
+
+    public function githubTokenGrant(Operation $operation): GitHubTokenGrant
+    {
+        return app(DevelopmentDeployInput::class)->githubTokenGrant($operation);
+    }
+
     public function workflowInput(Operation $operation): array
     {
+        if ($this->native($operation)) {
+            return app(DevelopmentDeployInput::class)->workflowInput($operation);
+        }
         $input = $this->intent->admitted($operation);
         $processes = ValidatedData::object($input['deployment'])['variant'] === 'production'
             ? $this->members->processWorkflowInput($operation) : ['members' => [], 'execution_secrets' => []];

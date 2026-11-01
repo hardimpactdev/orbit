@@ -651,16 +651,10 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
       "rule": "gateway-http",
-      "count": 5,
+      "count": 1,
       "evidence": [
         "<unknown> <unknown>"
       ]
-    },
-    {
-      "file": "extensions/behaviors/operations/instance-deploy/deploy_direct.ts",
-      "rule": "private-material",
-      "count": 2,
-      "evidence": []
     },
     {
       "file": "extensions/behaviors/operations/instance-deploy/deploy_local.ts",

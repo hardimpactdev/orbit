@@ -69,7 +69,7 @@ final class SwampRunSubscriber
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
         $run = $operation->state['swamp_run_id'] ?? null;
-        if (! isset($definition['terminal_result']) || ! is_string($run) || ! Str::isUuid($run)
+        if ($definition === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
             || ($this->following[$operationId]['run'] ?? null) === $run) {
             return;
         }
