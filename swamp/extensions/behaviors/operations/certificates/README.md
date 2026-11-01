@@ -16,14 +16,12 @@ token, private input callback, binding wait or retry is involved. The fixed
 Gateway origin and numeric Operation path cannot be selected by workflow input.
 The TLS client verifies the existing managed CA.
 
-Existing parent DAGs place this HTTP step on control209, then pass its `stdout`
-to the canonical `orbit-certificate-signing` model's pure `sign` or `signBatch`
-decoder as `native_stdout`. `sign` also takes `leaf` and `request`. `signBatch`
-takes `leaves` and nested participant `requests`. The decoder returns the
-existing `signed` or run-scoped `signedBatch` public resource, so publication
-remains on the admitted effect Node.
-`signCertificateBatch(leaves, flatRequests, native_stdout)` only decodes public
-output; it reads no vault and launches no program.
+Native parent DAGs place the HTTP step on control209, then pass its public
+stdout to `@nckrtl/certificate-script-assets.decodeSigned` for one leaf or
+`@nckrtl/node-certificate-assets.signed` for a Node batch. Both reuse
+`signCertificateBatch(leaves, flatRequests, stdout)`; it reads no vault and
+launches no program. The unused `@nckrtl/certificates` dispatcher and its static
+signing model are removed. Publication stays on the admitted effect Node.
 
 The existing signing endpoint accepts up to 256 admitted request records per Node batch. Authorization and certificate policy stay in the Gateway.
 
@@ -33,15 +31,14 @@ Decoding refuses missing, duplicate, foreign or private output. The Gateway owns
 signing authorization and certificate policy. The worker never chooses a domain
 outside the admitted intent.
 
-`certificateActions()` still owns the local
-request/publication/inspection/removal lower while those actions move to visible
-native steps. Admit `user`; `home` is optional and must equal local
-`getent passwd` resolution if supplied. Leaf private keys stay on their Node.
-The Gateway performs no account lookup.
-
-This signing change is the narrow root-of-trust correction. Remaining
-grandfathered local action programs and parent intent/result callbacks are
-removed in their family rewrites; they are not part of this exception.
+`certificateActions()` retains only scope removal for Node residue cleanup.
+Admit `user`; `home` is optional and must equal local `getent passwd` resolution
+if supplied. The residue parent keeps its existing Caddy withdrawal before
+certificate removal and keeps unrelated scopes. The local dispatcher can no
+longer request, sign, publish, trust or reload a certificate. Native certificate
+children own issuance, inspection and activation. The remaining residue parent
+and local removal script keep their tracked conformance debt until that Node
+phase moves to native execution. The Gateway performs no account lookup.
 
 ## Node role pairs
 

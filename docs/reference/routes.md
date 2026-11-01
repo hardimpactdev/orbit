@@ -26,6 +26,8 @@ Caddy convergence starts `operation-route-caddy` after intent commits. Its nativ
 
 Route destroy and withdrawal use one native Swamp DAG. Admission captures all current and transition placements, marks desired withdrawal, and retains Route rows and targets. Swamp publishes fresh DNS, Caddy and PHP state on each admitted Node, restores remaining workload URLs and runtime configuration, then removes unused certificate scopes and LAN rules. Only the parent posts the terminal result. The Gateway deletes exactly the captured Route rows after successful destroy; withdrawal keeps them. Offline removal records retained Node cleanup as residue. Explicit provider-absent Nodes are excluded before account resolution while their Route inventory remains complete.
 
+Swamp calls the shared native `route-certificate-remove` child per admitted scope after Caddy withdrawal and workload URL restoration. Each child checks fresh Caddy references, inspects the result and records its own recovery state.
+
 Every composing workflow that forwards an environment execution copy declares `orbit-control-inputs`. This includes both Route mutation phases and the Cluster Router root and publication phases.
 
 Withdrawal captures remaining application URL writes at admission. Public write inputs and pinned target connections stay in the run intent; environment material uses names-only `orbit-control-inputs` execution-copy descriptors. The existing `route-environment-write` child resolves the whole vault value through official SSH stdin from Node 209. Removal declares no private-material callback. Offline selection skips writes for retained Nodes.
@@ -737,6 +739,8 @@ A single target binding grants development source access when the Route is not a
 A target pool prepares workload certificates under temporary scopes before it changes associations. Gateway-recorded preparation selects those private sites for Caddy. The old associations stay authoritative during preparation. After association commit, environment synchronization and live certificate publication finish before Router publication and authorized Instance removal. A refusal before commit withdraws prepared Caddy sites before removing their certificates. A committed change recovers forward from the saved database proof. A retry keeps that proof until its own database phase commits. Failed Operations preserve the Route phase and error code for the next request. A completed rollback cannot be reported as successful publication.
 
 Cluster Router set and unset each start one native `operation-cluster-router` run. Admission captures the candidate, obsolete assignments, workload Nodes, edge Nodes, DNS Nodes and certificate leaves before committing intent.
+
+Native certificate children own issuance, inspection, trust installation and activation. The retained Node residue cleanup path only removes an admitted certificate scope after Caddy withdrawal. It resolves the admitted user locally and refuses a supplied home that does not match that account. It cannot request, publish, trust or reload certificates.
 
 Admission records each configured Node user from the database without looking up the account on that Node. The native worker resolves its account home and group before installing prerequisites or removing old certificates.
 
