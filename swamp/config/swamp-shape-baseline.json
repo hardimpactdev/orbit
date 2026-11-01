@@ -573,20 +573,6 @@
       "evidence": []
     },
     {
-      "file": "extensions/behaviors/operations/database/connection_update.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/database/connection_update.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/database/destroy_owned.ts",
       "rule": "gateway-http",
       "count": 4,

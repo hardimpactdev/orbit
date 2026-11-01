@@ -40,3 +40,4 @@ additionalFiles:
   - scripts/destroy_sql.py
   - scripts/destroy_valkey.py
   - scripts/server_close.py
+  - scripts/connection_update.py
