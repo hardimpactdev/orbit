@@ -1,0 +1,75 @@
+sequenceDiagram
+  %% Target design: DECISIONS R1 (no Node, no run), root-of-trust-gateway-only (App key stays in the Gateway). docs/reference/github-app.md#register-and-install.
+  %% status: draft
+  %% command: github:app:install
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane GH icon=server pill=target tone=purple
+  participant CLI as CLI / browser<br/>orbit · browser
+  participant GW as Gateway<br/>Laravel API
+  participant GH as GitHub<br/>App registration
+  CLI->>GW: github:app:install<br/>--name=orbit-acme --owner=acme
+  %%> Command:
+  %%> - `orbit github:app:install --name=orbit-acme --owner=acme`
+  %%> - syntax: `[--name=NAME] [--owner=ORGANIZATION] [--json]`
+  %%> Input:
+  %%> - the proposed App name, and optionally the organization that owns the App
+  %%> Requirements:
+  %%> - the browser reaches the Gateway's private HTTPS address, because GitHub redirects back to it
+  Note over GW: No App yet: start one<br/>registration · state · 1 h
+  %%> Requirements:
+  %%> - the Gateway has no GitHub App; otherwise the command only opens the install page
+  %%> Result:
+  %%> - a registration with a random `state` value, which expires after one hour
+  GW-->>CLI: Registration page URL<br/>CLI opens it in the browser
+  %%> What you get:
+  %%> - the URL of a Gateway page that posts the App's manifest to GitHub
+  CLI->>GH: Confirm the App<br/>manifest · name · permissions
+  %%> What it does:
+  %%> - GitHub shows the App name and its seven permissions; you confirm
+  %%> - a taken name makes GitHub ask for another one
+  GH-->>CLI: Redirect to the Gateway<br/>one-time code · state
+  %%> What it does:
+  %%> - the browser carries the one-time code and the `state` value back to the Gateway
+  CLI->>GW: Open the callback<br/>/github/app/callback?code=…
+  %%> What it does:
+  %%> - the browser opens the Gateway's callback with the code
+  Note over GW: Check the registration<br/>state matches · not expired
+  %%> Requirements:
+  %%> - the `state` value belongs to this registration, which has not expired or been used
+  %%> Refuses:
+  %%> - another state, or a replayed callback: `github.registration_invalid`
+  GW->>GH: Exchange the code<br/>POST app-manifests/conversions
+  %%> What it does:
+  %%> - the Gateway itself exchanges the one-time code for the App ID, slug and private key
+  %%> Why no Swamp run:
+  %%> - it touches no Node (R1), and the App key is a root of trust: it never leaves the Gateway, not even through a vault
+  alt GitHub returns the App
+    GH-->>GW: App ID, slug, key
+    %%> Returns:
+    %%> - the App's identity and its private key, once
+    Note over GW: Store the App<br/>key encrypted · Activity entry
+    %%> Result:
+    %%> - the App ID, slug and encrypted private key are stored; the code is consumed
+    %%> - no queue job, no task to follow; the answer comes in the same request
+    GW-->>CLI: App registered<br/>next: install it
+    %%> What you get:
+    %%> - a page that says the App is registered
+    %%> Next:
+    %%> - run `github:app:install` again to install the App on an account and choose its repositories
+  else GitHub refuses
+    GH--xGW: refused or no reply
+    %%> When:
+    %%> - the code expired or was used, or GitHub cannot be reached
+    Note over GW: Mark it failed<br/>github.registration_failed
+    %%> Result:
+    %%> - the registration is marked failed; no App is stored; `github:app:show` shows `failed`
+    %%> On GitHub:
+    %%> - an App registration that GitHub did create stays there; delete it on GitHub
+    %%> Retry:
+    %%> - run `github:app:install` again; it starts a new registration
+    GW-->>CLI: Registration failed<br/>github.registration_failed
+    %%> What you get:
+    %%> - the error at once; there is nothing to follow
+  end
