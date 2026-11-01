@@ -1,58 +1,147 @@
 id: a316a21c-564c-4f25-bc20-713f6f987d20
 name: operation-database-server-close
-description: Close default anonymous access on the admitted Valkey server.
-target: ${{ "orbit-node-" + string(inputs.node_id) }}
-labels:
-  node: ${{ string(inputs.node_id) }}
+description: Probe, close, persist, compensate and disconnect as separate official SSH actions.
 writes: true
-vaults: []
+vaults: [orbit-control-inputs]
 inputs:
+  type: object
   properties:
-    operation_id:
-      type: integer
-      minimum: 1
-    node_id:
-      type: integer
-      minimum: 1
-    kind:
-      type: string
-      enum:
-      - database_server.close
-  required:
-  - operation_id
-  - node_id
-  - kind
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [database_server.close]}
+    intent: {type: object}
+    execution_secrets: {type: object, properties: {server_close: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^database-server-close-intent-[1-9][0-9]*$'}}, required: [vault, key], additionalProperties: false}}, required: [server_close], additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
 jobs:
-- name: server
+- name: closure
+  target: orbit-node-209
   steps:
-  - name: apply
-    dataOutputOverrides:
-    - specName: outcome
-      vary:
-      - run_id
+  - name: assets
+    <<: &placed {target: orbit-node-209}
+    writes: false
     task:
       type: behavior
-      behaviorType: '@nckrtl/database-server-close'
-      behaviorName: ${{ "database-server-close-" + string(inputs.node_id) }}
-      methodName: apply
-      inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-  - name: project
-    dependsOn:
-    - step: apply
-      condition:
-        type: succeeded
+      behaviorType: '@nckrtl/database-server-command-assets'
+      behaviorName: '${{ "db-close-assets-" + run.id }}'
+      methodName: read
+      inputs: {intent: '${{ inputs.intent }}'}
+  - name: directory
+    <<: *placed
     task:
-      type: behavior
-      behaviorType: '@nckrtl/database-server-close'
-      behaviorName: ${{ "database-server-close-" + string(inputs.node_id) }}
-      methodName: project
+      <<: &ssh {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "database-close-" + string(inputs.operation_id) }}', methodName: exec, globalArgs: {name: '${{ "database-close-" + string(inputs.operation_id) }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity}, hosts: [{name: server, address: '${{ inputs.intent.ssh.host }}', transport: {hostKeys: '${{ inputs.intent.ssh.host_keys }}'}}]}}
       inputs:
-        operation_id: ${{ inputs.operation_id }}
-        node_id: ${{ inputs.node_id }}
-        kind: ${{ inputs.kind }}
-        run_id: ${{ run.id }}
-        outcome: ${{ steps.apply.outputs.outcome }}
+        hosts: name:server
+        argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) }}']
+  - name: copy
+    <<: *placed
+    dependsOn: [{step: assets, condition: {type: succeeded}}, {step: directory, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      methodName: copy
+      inputs:
+        hosts: name:server
+        src: ${{ steps.assets.outputs.directory + "/." }}
+        dst: ${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) }}
+        direction: to
+        recursive: true
+  - name: probe
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: copy, condition: {type: succeeded}}, {step: assets, condition: {type: succeeded}}]
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) + "/server_close.py" }}', '${{ steps.assets.outputs.intent_json }}', probe]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_close.vault, inputs.execution_secrets.server_close.key) }}
+        okExitCodes: [0, 1]
+  - name: plan
+    <<: *placed
+    writes: false
+    dependsOn: [{step: probe, condition: {type: always}}]
+    task:
+      <<: &metadata {type: behavior, behaviorType: '@nckrtl/database-close-command-assets', behaviorName: '${{ "db-close-result-" + run.id }}'}
+      methodName: probe
+      inputs:
+        stdout: '${{ has(steps.probe.outputs) ? steps.probe.outputs.stdout : "" }}'
+        exit_code: '${{ has(steps.probe.outputs) ? steps.probe.outputs.exitCode : 1 }}'
+  - name: close
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: plan, condition: {type: succeeded}}]
+    guard: '${{ !steps.plan.outputs.ready || !inputs.intent.default_open }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) + "/server_close.py" }}', '${{ steps.assets.outputs.intent_json }}', close]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_close.vault, inputs.execution_secrets.server_close.key) }}
+        okExitCodes: [0, 1]
+  - name: close_checked
+    <<: *placed
+    writes: false
+    dependsOn: [{step: close, condition: {type: always}}, {step: plan, condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps.plan.outputs.ready && (!inputs.intent.default_open || (has(steps.close) && has(steps.close.outputs) && steps.close.outputs.exitCode == 0 && steps.close.outputs.stdout == "{\"ready\": true}\n"))', severity: high, message: Default-user access was not closed.}
+  - name: save
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: close_checked, condition: {type: succeeded}}]
+    guard: '${{ !inputs.intent.default_open }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) + "/server_close.py" }}', '${{ steps.assets.outputs.intent_json }}', save]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_close.vault, inputs.execution_secrets.server_close.key) }}
+        okExitCodes: [0, 1]
+  - name: saved
+    <<: *placed
+    writes: false
+    dependsOn: [{step: save, condition: {type: always}}, {step: plan, condition: {type: succeeded}}]
+    task: {type: assert, expr: 'steps.plan.outputs.ready && (!inputs.intent.default_open || (has(steps.save) && has(steps.save.outputs) && steps.save.outputs.exitCode == 0 && steps.save.outputs.stdout == "{\"ready\": true}\n"))', severity: high, message: Default-user access was not persisted.}
+  - name: restore
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: plan, condition: {type: always}}, {step: close, condition: {type: always}}, {step: save, condition: {type: always}}, {step: saved, condition: {type: always}}]
+    guard: '${{ !has(steps.plan.outputs) || !steps.plan.outputs.ready || !steps.plan.outputs.was_open || steps.close.status == "skipped" || (has(steps.close.outputs) && steps.close.outputs.exitCode == 1 && steps.close.outputs.stdout == "{\"error_code\": \"database.server_in_use\"}\n") || steps.saved.status == "succeeded" }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) + "/server_close.py" }}', '${{ steps.assets.outputs.intent_json }}', restore]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_close.vault, inputs.execution_secrets.server_close.key) }}
+        okExitCodes: [0, 1]
+  - name: disconnect
+    <<: *placed
+    allowFailure: true
+    dependsOn: [{step: saved, condition: {type: succeeded}}, {step: restore, condition: {type: always}}]
+    guard: '${{ !inputs.intent.default_open }}'
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/python3, -B, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) + "/server_close.py" }}', '${{ steps.assets.outputs.intent_json }}', disconnect]
+        stdin: ${{ vault.get(inputs.execution_secrets.server_close.vault, inputs.execution_secrets.server_close.key) }}
+        okExitCodes: [0, 1]
+  - name: cleanup_files
+    <<: *placed
+    dependsOn: [{step: restore, condition: {type: always}}, {step: disconnect, condition: {type: always}}]
+    task:
+      <<: *ssh
+      inputs:
+        hosts: name:server
+        argv: [/usr/bin/sudo, -n, --, /usr/bin/rm, -rf, --, '${{ "/tmp/orbit-database-close-" + string(inputs.operation_id) }}']
+  - name: result
+    <<: *placed
+    writes: false
+    dependsOn: [{step: cleanup_files, condition: {type: always}}]
+    task:
+      <<: *metadata
+      methodName: result
+      inputs: {default_open: '${{ inputs.intent.default_open }}', steps: '${{ steps }}'}
+  - name: accepted
+    <<: *placed
+    writes: false
+    dependsOn: [{step: result, condition: {type: succeeded}}]
+    task: {type: assert, expr: steps.result.outputs.exitCode == 0, severity: high, message: Database server closure did not complete.}

@@ -51,7 +51,9 @@ return ['database.update' => [
 ], 'database_server.close' => [
     'workflow' => 'operation-database-server-close',
     'projection' => DatabaseServerCloseProjection::class,
-    'private_material' => ['password' => 'database.intent'],
+    'workflow_inputs' => true,
+    'terminal_result' => ['job' => 'closure', 'step' => 'result'],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^database-server-close-intent-[1-9][0-9]*$']],
 ], 'database.sqlite_cleanup' => [
     'workflow' => 'operation-database-cleanup',
     'projection' => DatabaseCleanupProjection::class,

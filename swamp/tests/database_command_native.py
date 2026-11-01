@@ -39,13 +39,13 @@ args=shlex.split(sys.argv[-1]);scripts=[Path(a).stem for a in args if a.endswith
 if not scripts:sys.exit(0)
 m=json.load(sys.stdin);assert m['password'] not in repr(args)
 assert 'payload' not in m or m['payload']['password'] not in repr(args)
-v=json.loads(Path(STATE).read_text());action=args[-4] if scripts[0]=='destroy' else scripts[0]
-item=args[-2] if scripts[0]=='destroy' else json.loads(args[-1])
+v=json.loads(Path(STATE).read_text());action=args[-1] if scripts[0]=='server_close' else args[-4] if scripts[0]=='destroy' else scripts[0]
+item='' if scripts[0]=='server_close' else args[-2] if scripts[0]=='destroy' else json.loads(args[-1])
 fd=os.open(CALLS,os.O_WRONLY|os.O_APPEND);os.write(fd,(json.dumps({'action':action,'item':item})+'\n').encode());os.close(fd)
 if v.get('transport_fail')==action:sys.exit(255)
 if v.get('empty_output')==action:sys.exit(0)
 if v['fail']==action and (not v.get('fail_item') or v['fail_item']==item):print(json.dumps({'error_code':v['code']}));sys.exit(1)
-print(json.dumps({'databases':v.get('inventory',[])} if action=='inventory' else {'ready':True}))
+print(json.dumps({'databases':v.get('inventory',[])} if action=='inventory' else {'ready':True,'was_open':v.get('was_open',True)} if action=='probe' else {'ready':True}))
 '''.replace('STATE', repr(str(self.state))).replace('CALLS', repr(str(self.calls_file))))
         fake.chmod(0o700)
         scp = self.repo / 'fixture-scp'

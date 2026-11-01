@@ -1,120 +1,102 @@
-import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { closeServer } from "./server_close.ts";
-
-const input = { host: "10.44.0.9", port: 6379, default_open: true };
-const use = (f: (material: Record<string, unknown>) => Promise<void>) =>
-  f({ password: "private-root-sentinel" });
-class Client {
-  calls: string[][] = [];
-  clients = "id=17 name=proof\n";
-  open = true;
-  failSave = false;
-  closed = false;
-  command(...args: string[]): Promise<unknown> {
-    this.calls.push(args);
-    if (args[0] === "AUTH") return Promise.resolve("OK");
-    if (args[0] === "CLIENT" && args[1] === "ID") return Promise.resolve(17);
-    if (args[0] === "CLIENT" && args[1] === "LIST") {
-      return Promise.resolve(this.clients);
+import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { behavior } from "../database-server-commands/close_assets.ts";
+const ctx = {
+    extensionFile: (path: string) => "/cache/" + path,
+    writeResource: () => Promise.resolve(),
+};
+const ready = {
+    status: "succeeded",
+    outputs: { exitCode: 0, stdout: '{"ready":true}' },
+};
+const skipped = { status: "skipped" };
+Deno.test("closure decoder refuses missing, malformed and nonzero probe outcomes", async () => {
+    for (
+        const stdout of [
+            "",
+            "{}",
+            '{"ready":true}',
+            '{"ready":false,"was_open":true}',
+        ]
+    ) {
+        assertEquals(
+            await behavior.methods.probe.execute({ stdout, exit_code: 0 }, ctx),
+            { ready: false, was_open: false },
+        );
     }
-    if (args[0] === "ACL" && args[1] === "GETUSER") {
-      return Promise.resolve([
-        "flags",
-        this.open ? ["on", "nopass"] : ["on"],
-        "passwords",
-        [],
-      ]);
-    }
-    if (args[0] === "ACL" && args[1] === "SAVE" && this.failSave) {
-      throw new Error("private-root-sentinel diagnostic");
-    }
-    return Promise.resolve("OK");
-  }
-  close() {
-    this.closed = true;
-  }
-}
-Deno.test("closure refuses other default clients before ACL mutation", async () => {
-  const client = new Client();
-  client.clients += "id=18 name=client\n";
-  assertEquals(
-    await closeServer(input, use, undefined, () => Promise.resolve(client)),
-    { error_code: "database.server_in_use" },
-  );
-  assertEquals(client.calls.some((c) => c[1] === "SETUSER"), false);
-  assertEquals(client.closed, true);
-});
-Deno.test("closure authenticates both first attempt and resume without anonymous fallback", async () => {
-  for (const open of [true, false]) {
-    const client = new Client();
-    client.open = open;
     assertEquals(
-      await closeServer(input, use, undefined, () => Promise.resolve(client)),
-      { backend: "active" },
+        await behavior.methods.probe.execute({
+            stdout: '{"ready":true,"was_open":true}',
+            exit_code: 1,
+        }, ctx),
+        { ready: false, was_open: false },
     );
-    assertEquals(client.calls[0], ["AUTH", "default", "private-root-sentinel"]);
-    assertEquals(client.calls.at(-1), [
-      "CLIENT",
-      "KILL",
-      "USER",
-      "default",
-      "SKIPME",
-      "yes",
-    ]);
-    assertEquals(client.calls.filter((c) => c[1] === "SETUSER").length, 1);
-  }
 });
-Deno.test("save refusal restores only initially anonymous access and discards diagnostics", async () => {
-  for (const open of [true, false]) {
-    const client = new Client();
-    client.open = open;
-    client.failSave = true;
-    const result = await closeServer(
-      input,
-      use,
-      undefined,
-      () => Promise.resolve(client),
+Deno.test("closure result requires persistence, disconnect and scratch cleanup", async () => {
+    const steps = {
+        saved: { status: "succeeded" },
+        disconnect: ready,
+        cleanup_files: { status: "succeeded" },
+        restore: skipped,
+    };
+    assertEquals(
+        JSON.parse(
+            (await behavior.methods.result.execute({
+                default_open: true,
+                steps,
+            }, ctx)).stdout,
+        ),
+        { backend: "active" },
     );
-    assertEquals(result, { error_code: "database.server_command_failed" });
-    assertEquals(client.calls.some((c) => c.includes("nopass")), open);
-    assertEquals(JSON.stringify(result).includes("private"), false);
-  }
+    for (const name of ["saved", "disconnect", "cleanup_files"]) {
+        const result = await behavior.methods.result.execute({
+            default_open: true,
+            steps: { ...steps, [name]: skipped },
+        }, ctx);
+        assertEquals(JSON.parse(result.stdout), {
+            error_code: "database.server_command_failed",
+        });
+    }
 });
-Deno.test("closed server only proves admin login and invalid input never reads material", async () => {
-  const client = new Client();
-  assertEquals(
-    await closeServer(
-      { ...input, default_open: false },
-      use,
-      undefined,
-      () => Promise.resolve(client),
-    ),
-    { backend: "active" },
-  );
-  assertEquals(client.calls.map((c) => c[0]), ["AUTH", "PING"]);
-  let reads = 0;
-  await assertRejects(() =>
-    closeServer({ ...input, host: "foreign.example" }, () => {
-      reads++;
-      return Promise.resolve();
-    })
-  );
-  assertEquals(reads, 0);
+Deno.test("closure restore failure overrides earlier refusal and preserves unknown access", async () => {
+    const result = await behavior.methods.result.execute({
+        default_open: true,
+        steps: {
+            restore: { status: "failed" },
+            probe: {
+                status: "succeeded",
+                outputs: { stdout: '{"error_code":"database.server_in_use"}' },
+            },
+        },
+    }, ctx);
+    assertEquals(JSON.parse(result.stdout), {
+        error_code: "database.server_restore_failed",
+        default_open: "unknown",
+    });
+});
+Deno.test("closed intent needs only its password probe and cleanup", async () => {
+    const result = await behavior.methods.result.execute({
+        default_open: false,
+        steps: {
+            saved: { status: "succeeded" },
+            disconnect: skipped,
+            restore: skipped,
+            cleanup_files: { status: "succeeded" },
+        },
+    }, ctx);
+    assertEquals(JSON.parse(result.stdout), { backend: "active" });
 });
 
-Deno.test("failed nopass restoration reports unknown default access without diagnostics", async () => {
-  const client = new Client();
-  client.failSave = true;
-  const invoke = client.command.bind(client);
-  client.command = (...args: string[]) => {
-    if (args.includes("nopass")) {
-      throw new Error("private-root-sentinel restore");
-    }
-    return invoke(...args);
-  };
-  assertEquals<unknown>(
-    await closeServer(input, use, undefined, () => Promise.resolve(client)),
-    { error_code: "database.server_restore_failed", default_open: "unknown" },
-  );
-  assertEquals(client.closed, true);
+Deno.test("closure scripts preserve client refusal, password delivery and bounded errors", async () => {
+    const result = await new Deno.Command("python3", {
+        args: [
+            "-B",
+            new URL(
+                "../database-server-commands/server_close_scripts_test.py",
+                import.meta.url,
+            ).pathname,
+        ],
+        stdout: "piped",
+        stderr: "piped",
+    }).output();
+    assertEquals(result.success, true, new TextDecoder().decode(result.stderr));
 });

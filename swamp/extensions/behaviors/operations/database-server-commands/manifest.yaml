@@ -5,6 +5,7 @@ visibility: private
 license: MIT
 description: Database server command files and public result shaping.
 behaviors:
+  - operations/database-server-commands/close_assets.ts
   - operations/database-server-commands/assets.ts
   - operations/database-server-commands/destroy_plan.ts
   - operations/database-server-commands/create_assets.ts
@@ -37,3 +38,4 @@ additionalFiles:
   - scripts/destroy.py
   - scripts/destroy_sql.py
   - scripts/destroy_valkey.py
+  - scripts/server_close.py
