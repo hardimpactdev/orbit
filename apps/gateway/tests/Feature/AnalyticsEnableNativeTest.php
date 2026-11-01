@@ -6,6 +6,7 @@ use App\Domain\Analytics\AnalyticsIntentProjection;
 use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Settings\SettingRepository;
@@ -116,11 +117,10 @@ it('keeps captured native input immutable when live Route records change', funct
     expect(app(AnalyticsIntentProjection::class)->input($operation->fresh()))->toBe($before);
 });
 
-it('rolls back desired admission if its execution copy is refused', function (): void {
+it('fails the admitted Operation before its run when its execution copy is refused', function (): void {
     $this->socket->reply = static fn (array $request): array => [['type' => 'error', 'id' => $request['id'], 'error' => ['code' => 'unauthorized']]];
     $this->postJson($this->url)->assertStatus(503)->assertJsonPath('error.code', 'swamp.vault_sync_unavailable');
-    expect(Operation::query()->count())->toBe(0);
-    expect(Route::query()->where('kind', 'analytics_tracking')->exists())->toBeFalse();
+    expect(Operation::query()->sole())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.vault_sync_unavailable');
     expect(array_column($this->socket->sent, 'type'))->toBe(['vault.put']);
 });
 

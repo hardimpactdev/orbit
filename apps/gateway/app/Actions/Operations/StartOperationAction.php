@@ -7,9 +7,8 @@ namespace App\Actions\Operations;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStore;
-use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Operation;
-use Illuminate\Support\Facades\DB;
 
 /** Records validated intent, then submits its single native workflow after commit. */
 final readonly class StartOperationAction
@@ -27,7 +26,7 @@ final readonly class StartOperationAction
         }
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
         if ($operation->wasRecentlyCreated) {
-            DB::afterCommit(static fn () => app(StartSwampRun::class)->start($operation));
+            app(SwampDispatch::class)->start($operation);
         }
 
         return $operation;

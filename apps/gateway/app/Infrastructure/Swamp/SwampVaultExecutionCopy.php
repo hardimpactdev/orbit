@@ -33,14 +33,22 @@ final readonly class SwampVaultExecutionCopy
         $reference = ['vault' => $vault, 'key' => $key];
         $stamp = 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
         $digest = hash('sha256', $value);
-        if (Cache::get($stamp) === $digest) {
-            return $reference;
+        if (Cache::get($stamp) !== $digest) {
+            $endpoint = new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token);
+            app(SwampDispatch::class)->copy(fn () => $this->push($endpoint, $vault, $key, $value, $stamp, $digest));
         }
+
+        return $reference;
+    }
+
+    /** One native vault.put. It never runs under the SQLite write lock; SwampDispatch defers it past commit. */
+    private function push(WebSocketEndpoint $endpoint, string $vault, string $key, #[SensitiveParameter] string $value, string $stamp, string $digest): void
+    {
         $id = bin2hex(random_bytes(16));
         $phase = 'connect';
         $remoteCode = null;
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect($endpoint, 15);
             $phase = 'send';
             $this->socket->send(['type' => 'vault.put', 'id' => $id,
                 'payload' => ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]]);
@@ -69,7 +77,7 @@ final readonly class SwampVaultExecutionCopy
                     $phase = 'cache';
                     Cache::forever($stamp, $digest);
 
-                    return $reference;
+                    return;
                 }
             }
             throw $this->unavailable();

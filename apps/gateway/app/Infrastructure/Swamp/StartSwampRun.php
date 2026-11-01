@@ -135,6 +135,13 @@ final readonly class StartSwampRun
         });
     }
 
+    /** Fails an admitted Operation whose run never started, such as after a failed execution copy. */
+    public function refuse(Operation $operation, string $code): void
+    {
+        Log::info('Swamp direct start', ['operation_id' => $operation->id, 'outcome' => $code, 'duration_ms' => 0]);
+        $this->fail($operation, $code);
+    }
+
     private function fail(Operation $operation, string $code): void
     {
         $uncertain = DB::transaction(function () use ($operation, $code): bool {

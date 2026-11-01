@@ -14,6 +14,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use App\Models\Node;
 use App\Models\Operation;
@@ -69,6 +70,73 @@ it('submits once after admission commits and leaves confirmed native work runnin
     expect($operation->fresh()->sequence)->toBe(3);
     expect(Schema::hasTable('operation_steps'))->toBeFalse();
     expect(array_column($socket->sent, 'type'))->toBe(['workflow.run']);
+});
+
+function vaultAwareSocket(bool $vaultAccepts = true): FakeRoutePublicationSocket
+{
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => match (true) {
+        $request['type'] === 'vault.put' && $vaultAccepts => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+            'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]],
+        $request['type'] === 'vault.put' => [['type' => 'error', 'id' => $request['id'], 'code' => 'vault_put_failed']],
+        default => [['type' => 'event', 'id' => $request['id'], 'event' => [
+            'kind' => 'started', 'workflowName' => $request['payload']['workflowIdOrName'], 'runId' => 'a075eb23-7ac4-4487-80d1-57a038a92676']]],
+    };
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'private.start-token', 'swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/root.pem']);
+
+    return $socket;
+}
+
+it('pushes execution copies after the admission commits and before its run starts', function (): void {
+    $node = Node::query()->create(['name' => 'copy-start', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $socket = vaultAwareSocket();
+
+    $operation = DB::transaction(function () use ($node, $socket): Operation {
+        $operation = app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null);
+        $reference = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'copy-start-'.$operation->id, 'synthetic-secret');
+        expect($reference)->toBe(['vault' => 'orbit-control-inputs', 'key' => 'copy-start-'.$operation->id]);
+        expect($socket->connections)->toBe([]);
+
+        return $operation;
+    });
+
+    expect(array_column($socket->sent, 'type'))->toBe(['vault.put', 'workflow.run']);
+    expect($operation->fresh())->status->toBe(OperationStatus::Running)->error_code->toBeNull();
+});
+
+it('fails the admitted Operation without starting its run when an execution copy fails', function (): void {
+    $node = Node::query()->create(['name' => 'copy-refused', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $socket = vaultAwareSocket(vaultAccepts: false);
+    $admitted = null;
+
+    try {
+        DB::transaction(function () use ($node, &$admitted): void {
+            $admitted = app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null);
+            app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'copy-refused-'.$admitted->id, 'synthetic-secret');
+        });
+        test()->fail('A failed execution copy must refuse the admission.');
+    } catch (ResourceOperationException $error) {
+        expect($error->errorCode)->toBe('swamp.vault_sync_unavailable');
+        expect($error->details)->toBe(['operation_id' => $admitted->id]);
+    }
+
+    expect(array_column($socket->sent, 'type'))->toBe(['vault.put']);
+    expect($admitted->fresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('swamp.vault_sync_unavailable');
+});
+
+it('pushes nothing and starts nothing when the admission rolls back', function (): void {
+    $node = Node::query()->create(['name' => 'copy-rollback', 'public_ssh_host' => '192.0.2.9', 'user' => 'orbit', 'platform' => 'linux', 'status' => 'active']);
+    $socket = vaultAwareSocket();
+
+    expect(fn () => DB::transaction(function () use ($node): void {
+        $operation = app(StartOperationAction::class)->execute('test.start', 'node', $node->id, $node->id, [], null, null);
+        app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'copy-rollback-'.$operation->id, 'synthetic-secret');
+        throw new RuntimeException('admission refused');
+    }))->toThrow(RuntimeException::class, 'admission refused');
+    DB::transaction(static fn (): bool => true);
+
+    expect($socket->connections)->toBe([]);
 });
 
 it('rolls back creation when the admission receipt cannot be stored', function (): void {

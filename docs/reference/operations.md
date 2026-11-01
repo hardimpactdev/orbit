@@ -628,7 +628,9 @@ At observer startup, record-channel recovery or an Operation notice, an unbound 
 
 ### Execution-copy failures
 
-The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. A failed push returns `swamp.vault_sync_unavailable`. The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
+The Gateway pushes execution secrets through the shared `SwampVaultExecutionCopy` client before starting a run. No network call runs inside a database transaction: an admission transaction only records the intent and the Operation. `SwampDispatch` holds the execution copies and run starts until the transaction commits, then pushes every copy and starts the runs. A rolled-back admission pushes and starts nothing. A failed push returns `swamp.vault_sync_unavailable` and fails each Operation admitted in that transaction before its run starts. Outside a transaction, the push runs at once.
+
+The `Swamp execution copy unavailable` warning records the public vault and key names, native request ID, failure phase, a recognized server refusal code and the HTTP handshake status when available. These fields distinguish connection failures from vault refusals. It records no secret value, token, payload, remote message or original exception message. The client does not retry the write.
 
 ### Recover a terminal native result
 
