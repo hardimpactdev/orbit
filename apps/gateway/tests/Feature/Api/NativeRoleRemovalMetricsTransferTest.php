@@ -36,6 +36,8 @@ it('keeps shared exporters and their footprints when the same Metrics assignment
         ->and(array_column(array_column($intent['remove_containers'], 'input'), 'name'))->toBe(['orbit-metrics-prometheus', 'orbit-metrics-grafana'])
         ->and($intent['certificates'])->toBe([]);
     $rules = array_column(array_column($intent['firewall'], 'input'), 'argv');
+    $sharedDeny = array_filter($rules, static fn (array $rule): bool => array_any($rule, static fn (string $argument): bool => in_array($argument, ['orbit:metrics-service-caddy-deny', 'orbit:metrics-service-fpm-deny'], true)));
+    expect($sharedDeny)->toBe([]);
     expect(array_filter($rules, fn (array $rule): bool => in_array($this->source->wireguard_ip, $rule, true)))->not->toBeEmpty()
         ->and(NodeRole::query()->findOrFail($desired->id)->node_id)->toBe($this->target->id)
         ->and(Operation::query()->count())->toBe(0);

@@ -124,7 +124,7 @@ final readonly class NativeNodeRoleRemovalInput
                 $catalog = app(NodeFirewallRuleCatalog::class);
                 $rules = [$catalog->metricsExporter($target, $node), $catalog->metricsCadvisor($target, $node)];
                 foreach (['caddy', 'fpm'] as $kind) {
-                    foreach ([true, false] as $allow) {
+                    foreach ($desiredAssignment === null ? [true, false] : [true] as $allow) {
                         $rules[] = $catalog->metricsService($target, $node, $kind, $allow);
                     }
                 }
