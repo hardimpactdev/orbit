@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Actions\Operations\StartOperationAction;
+use App\Domain\Routes\NativeCaddyPublicationInput;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\CaddyfileSiteDiff;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuildResult;
-use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyLiveReader;
 use App\Models\Node;
@@ -15,7 +16,7 @@ use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Builds a Node's Caddyfile from stored state and pushes it (ADR 0141), for operators and repair.
+ * Submits a Node's complete Caddy publication intent to its native workflow, for operators and repair.
  * `--dry-run` renders without pushing, and `--diff` compares that render with the live file site by site.
  */
 final class CaddyBuildCommand extends Command
@@ -29,9 +30,9 @@ final class CaddyBuildCommand extends Command
         {--diff : With --dry-run, compare the render with the live Caddyfile site by site}';
 
     #[\Override]
-    protected $description = 'Build a Node Caddyfile from stored state and push it, or render it with --dry-run.';
+    protected $description = 'Submit a Node Caddy build, or render it with --dry-run.';
 
-    public function handle(NodeCaddyfileRenderer $renderer, NodeCaddyLiveReader $live, NodeCaddyBuilds $builds): int
+    public function handle(NodeCaddyfileRenderer $renderer, NodeCaddyLiveReader $live, StartOperationAction $operations): int
     {
         if ($this->option('diff') && ! $this->option('dry-run')) {
             $this->error('--diff only compares a render. Pass --dry-run --diff.');
@@ -49,7 +50,7 @@ final class CaddyBuildCommand extends Command
         }
 
         if (! $this->option('dry-run')) {
-            return $this->build($builds, $node);
+            return $this->build($operations, $node);
         }
 
         $caddyfile = $renderer->render($node);
@@ -75,19 +76,19 @@ final class CaddyBuildCommand extends Command
         return $caddyfile->buildable() ? self::SUCCESS : self::FAILURE;
     }
 
-    private function build(NodeCaddyBuilds $builds, Node $node): int
+    private function build(StartOperationAction $operations, Node $node): int
     {
         try {
-            $result = $builds->build($node);
-        } catch (NodeCaddyBuildException $exception) {
+            app(NativeCaddyPublicationInput::class)->forNode($node);
+            $operation = $operations->execute('route.caddy_converge', 'node_route_projection', $node->id, $node->id,
+                ['reason' => 'Manual Caddy build'], 'console', null);
+        } catch (ResourceOperationException $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
         }
 
-        $this->line($result === NodeCaddyBuildResult::Published
-            ? "Published a new Caddyfile on Node [{$node->name}] and reloaded Caddy."
-            : "The Caddyfile on Node [{$node->name}] is current. Nothing changed.");
+        $this->line("Caddy publication submitted for Node [{$node->name}]. Operation [{$operation->id}].");
 
         return self::SUCCESS;
     }
