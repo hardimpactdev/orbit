@@ -140,3 +140,70 @@ class RouteCertificateNative(_fixture.Certificates):
             (self.home / ".orbit/certificates/route-7-router/current").exists()
         )
         self.assertEqual(list(self.fixture.glob("staging-*")), [])
+
+
+class CertificateSignerIsolation(_fixture.harness.NativeTestCase):
+    def test_parallel_certificate_children_enter_signer_without_sharing_model_lock(
+        self,
+    ):
+        self.real_certificate_signing = True
+        production = yaml.safe_load(
+            (ROOT / "workflows/workflow-route-certificate-publish.yaml").read_text()
+        )
+        signer = next(
+            s["task"] for s in production["jobs"][0]["steps"] if s["name"] == "sign"
+        )
+        markers = self.repo / "markers"
+        markers.mkdir()
+        # A rendezvous proves both commands entered concurrently. A shared model
+        # identity makes the first child fail before the second can enter.
+        signer["inputs"] = {
+            "run": "python3 - <<'BARRIER'\n"
+            + """import os,time,json
+from pathlib import Path
+markers=Path(os.environ['MARKERS'])
+(markers/os.environ['CHILD']).touch()
+deadline=time.monotonic()+4
+while len(list(markers.iterdir()))<2:
+    if time.monotonic()>deadline:raise SystemExit('certificate signer serialized')
+    time.sleep(0.01)
+print(json.dumps({'ready':True,'child':os.environ['CHILD']}))
+"""
+            + "BARRIER",
+            "env": {"MARKERS": str(markers), "CHILD": "${{ run.id }}"},
+        }
+        child = {
+            "id": "1368dd69-d7ac-48d5-9ed4-71d3817c7214",
+            "name": "signer-isolation-child",
+            "jobs": [{"name": "sign", "steps": [{"name": "sign", "task": signer}]}],
+        }
+        parent = {
+            "id": "5c8783c2-0416-4649-a375-265c045ed37c",
+            "name": "signer-isolation-parent",
+            "jobs": [
+                {
+                    "name": "fanout",
+                    "steps": [
+                        {
+                            "name": "leaf",
+                            "forEach": {"item": "leaf", "in": "${{ [1,2] }}"},
+                            "task": {
+                                "type": "workflow",
+                                "workflowIdOrName": "signer-isolation-child",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        for workflow in (child, parent):
+            (
+                self.repo / "workflows" / ("workflow-" + workflow["name"] + ".yaml")
+            ).write_text(yaml.safe_dump(workflow, sort_keys=False))
+        run = json.loads(self.cli("workflow", "run", "signer-isolation-parent").stdout)
+        history = json.loads(self.cli("workflow", "history", "get", run["id"]).stdout)
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(len(list(markers.iterdir())), 2)
+        self.assertTrue(
+            all(s["status"] == "succeeded" for s in history["jobs"][0]["steps"])
+        )

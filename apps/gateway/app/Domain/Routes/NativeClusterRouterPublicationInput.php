@@ -117,9 +117,9 @@ final readonly class NativeClusterRouterPublicationInput
         $inventory['old_nodes'] = $oldNodes;
 
         return ['cluster_router' => $inventory, 'route_mutations' => [
-            'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves),
+            'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves, true),
             'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $restoreRetire, $forwardLeaves)],
-            'certificates' => array_values(array_unique([...$forwardLeaves, ...$restoreLeaves], SORT_REGULAR)), 'participant_node_ids' => $participantIds];
+            'certificates' => [...$this->changedLeaves($forwardLeaves, $restoreLeaves), ...$this->changedLeaves($restoreLeaves, $forwardLeaves)], 'participant_node_ids' => $participantIds];
     }
 
     /** @return list<array{port:int,protocol:string,source:string}> */
@@ -152,14 +152,27 @@ final readonly class NativeClusterRouterPublicationInput
      * @param  list<array<string,mixed>>  $previousLeaves
      * @return array<string,mixed>
      */
-    private function stage(array $leaves, array $lan, Collection $sites, Collection $routes, array $rows, array $retire, array $previousLeaves): array
+    private function stage(array $leaves, array $lan, Collection $sites, Collection $routes, array $rows, array $retire, array $previousLeaves, bool $forward = false): array
     {
         return ['routes' => $routes->map(static fn (Route $route): array => ['route_id' => $route->id, 'domain' => $route->domain,
             'node_ids' => $sites->where('domain', $route->domain)->pluck('nodeId')->unique()->values()->all(),
             'certificate_scopes' => array_values(array_map(static fn (array $leaf): array => array_intersect_key($leaf, array_flip(['node_id', 'scope'])),
-                array_filter($leaves, static fn (array $leaf): bool => $leaf['domain'] === $route->domain)))])->all(), 'publications' => $rows, 'certificates' => $leaves,
-            'prepare_certificates' => $leaves, 'url_writes' => [], 'lan' => array_values(array_unique($lan, SORT_REGULAR)),
+                array_filter($leaves, static fn (array $leaf): bool => $leaf['domain'] === $route->domain)))])->all(), 'publications' => $rows, 'certificates' => $forward ? [] : $this->changedLeaves($leaves, $previousLeaves),
+            'prepare_certificates' => $forward ? $this->changedLeaves($leaves, $previousLeaves) : [], 'url_writes' => [], 'lan' => array_values(array_unique($lan, SORT_REGULAR)),
             'retire_lan' => $retire, 'cleanup' => $this->cleanup($previousLeaves, $leaves)];
+    }
+
+    /** @param list<array<string,mixed>> $desired
+     * @param  list<array<string,mixed>>  $previous
+     * @return list<array<string,mixed>>
+     */
+    private function changedLeaves(array $desired, array $previous): array
+    {
+        $identity = fn (array $leaf): array => array_intersect_key($leaf,
+            array_flip(['node_id', 'scope', 'domain', 'root_hash', 'agent_sha256', 'user']));
+        $retained = array_map($identity, $previous);
+
+        return array_values(array_filter($desired, fn (array $leaf): bool => ! in_array($identity($leaf), $retained, true)));
     }
 
     /** @param Collection<int,DevelopmentSite> $sites

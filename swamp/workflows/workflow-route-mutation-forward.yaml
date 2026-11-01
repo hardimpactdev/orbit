@@ -574,7 +574,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: forward-result
+      behaviorName: '${{ "forward-result-" + run.id + "-" + string(self._index) }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}

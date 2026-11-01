@@ -198,7 +198,9 @@ export function routeMutationSteps(
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/route-mutation-command",
-            behaviorName: `${name}-result`,
+            behaviorName: expr(
+                `"${name}-result-" + run.id + "-" + string(self._index)`,
+            ),
             methodName: "result",
             inputs: {
                 stage: expr("self.stage"),
