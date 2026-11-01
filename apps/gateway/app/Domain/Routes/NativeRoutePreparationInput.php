@@ -25,7 +25,7 @@ final readonly class NativeRoutePreparationInput
     {
         $forward = ValidatedData::object(ValidatedData::object($capture['route_mutations'])['forward']);
         $preparedIds = array_keys($instances);
-        $workloadScopes = array_values(array_unique(array_merge(...array_map(static fn (array $row): array => ValidatedData::stringList(array_column(RouteExecutionProof::objects($row['intent']['certificates']), 'scope')), $staged))));
+        $workloadScopes = array_map(static fn (int $id): string => 'app-instance-'.$id, $preparedIds);
         $servingHops = $beforeSites->filter(static fn (DevelopmentSite $site): bool => $site->isProxy() || $site->publicListener)
             ->map(static fn (DevelopmentSite $site): string => $site->addressKey())->all();
         $workloadSites = collect(array_merge(...array_column($staged, 'sites')))

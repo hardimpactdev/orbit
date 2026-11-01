@@ -7,6 +7,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteLifecycleInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
+use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\RouteEnvironmentMaterialSource;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -193,3 +194,10 @@ it('captures public creation with automatic HTTPS and immutable Process checks',
             ->and($capture['intent']['preparation']['probes'][0])->toMatchArray(['protocol' => 'http', 'node_id' => $ingress->id]);
     }
 })->with([false, true]);
+
+it('preserves the target supplier workload TLS site during shared preparation', function (): void {
+    $capture = app(NativeRouteTargetInput::class)->capture($this->routes['pool']->fresh(), $this->proposal);
+    $publication = collect($capture['intent']['preparation']['publications'])->firstWhere('node_id', $this->nodes['new']->id);
+    expect($publication['before']['content'])->toContain('source.target.test')->not->toContain('pool.target.test')
+        ->and($publication['after']['content'])->toContain('source.target.test', 'pool.target.test', 'app-instance-'.$this->instances['new']->id.'-hostname-change');
+});

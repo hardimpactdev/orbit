@@ -116,7 +116,7 @@ final readonly class NativeRouteTargetInput
                 is_int($beforeId) ? $previous->findOrFail($beforeId) : null, $candidates[ValidatedData::integer($member['route_id'])]);
         }
 
-        $prepared = app(NativeRoutePreparationInput::class)->capture($capture, $staged, $desired, $beforeSites, $instances->all());
+        $prepared = app(NativeRoutePreparationInput::class)->capture($capture, $staged, $desired, $beforeSites, $instances->only(ValidatedData::integerList(array_column(RouteExecutionProof::objects($inventory['prepared']), 'instance_id')))->keyBy('id')->all());
         $capture = $prepared['capture'];
         $preparation = $prepared['preparation'];
 
