@@ -53,10 +53,18 @@ function steps() {
         {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: expr('"' + name + '-"+run.id'),
+            behaviorName: expr(
+                (connection === "inputs.intent.hub_ssh"
+                    ? '"network-hub-"'
+                    : '"network-peer-"') + "+run.id",
+            ),
             methodName: method,
             globalArgs: {
-                name: expr('"' + name + '-"+run.id'),
+                name: expr(
+                    (connection === "inputs.intent.hub_ssh"
+                        ? '"network-hub-"'
+                        : '"network-peer-"') + "+run.id",
+                ),
                 transport: {
                     kind: "ssh",
                     user: expr(connection + ".target.user"),
