@@ -1,0 +1,87 @@
+sequenceDiagram
+  %% Target design: ADR 0244 task, DECISIONS R2-R4, swamp-vault-design (Vaultwarden = human copy). docs/reference/vaultwarden.md.
+  %% status: draft
+  %% command: vault:setup
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VW icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VW as Vaultwarden<br/>vault.orbit Route
+  CLI->>GW: vault:setup<br/>--url=… --collection=… …
+  %%> Command:
+  %%> - `orbit vault:setup --url=https://vault.orbit --client-id=user.3f0c… --client-secret-file=./client-secret --master-password-file=./master-password --organization=Orbit --collection=Databases`
+  %%> - syntax: `--url=ORIGIN --client-id=ID --client-secret-file=PATH --master-password-file=PATH --organization=NAME|ID --collection=NAME|ID`
+  %%> Input:
+  %%> - the Vaultwarden origin, the Gateway account's API key and master password, and the organization and collection
+  %%> - the CLI reads the secrets from files, never from arguments
+  Note over GW: Validate, store the intent<br/>task #5167 · secrets to vault
+  %%> Requirements:
+  %%> - the `vault` extension is on; your Node has an access grant to the Gateway
+  %%> - the URL is HTTPS on a `.orbit` host, else `vault.url_invalid`
+  %%> - no other setup, sync or teardown runs, else `vault.sync_busy`
+  %%> - with items published, the organization and collection stay the same, else `vault.items_published`
+  %%> What it does:
+  %%> - stores the setup intent encrypted, then pushes the client secret and master password to the Swamp vault as `vault-setup-5167` after commit (R3)
+  %%> Result:
+  %%> - task #5167 recorded; the current setup, if any, stays in force
+  GW->>SW: Start run, full intent<br/>operation-vault-setup
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209); no Node is a target
+  %%> Inputs:
+  %%> - the URL, client ID, organization and collection, and the vault key names; never the secrets
+  GW-->>CLI: 202 Accepted<br/>task #5167
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`, then prints `vault:status`
+  SW->>VW: Log in<br/>bw login --apikey
+  %%> How:
+  %%> - the official Bitwarden CLI on 209, in a scratch home, trusting only the Orbit root CA
+  %%> - the client secret comes from `vault.get`, in the environment of this one command
+  SW->>VW: Unlock the account<br/>bw unlock · master password
+  %%> What it does:
+  %%> - unlocks the account with the master password from `vault.get`; the session key stays in the run's scratch home
+  SW->>VW: Check the collection<br/>resolve IDs · test write
+  %%> What it does:
+  %%> - resolves the organization and collection names to IDs, and checks the account can write to the collection
+  %%> Why:
+  %%> - the setup only counts when a sync could really publish there
+  SW->>VW: Log out<br/>bw logout · remove scratch home
+  %%> What it does:
+  %%> - logs out and deletes the scratch home, on success and on failure
+  alt the account can write
+    VW-->>SW: collection writable
+    %%> Returns:
+    %%> - the account email and the organization and collection IDs
+    SW-->>GW: Run succeeded<br/>terminal event · IDs
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Store the setup<br/>configured · admit vault.sync
+    %%> Result:
+    %%> - the setup is stored encrypted and `vault:status` shows `configured`
+    %%> - task #5167 succeeds, and the Gateway admits a first `vault.sync`
+  else login, unlock or write fails
+    VW--xSW: refused or no answer
+    %%> When:
+    %%> - a wrong API key or master password, an unknown organization or collection, no write access, or TLS fails
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its safe error code
+    Note over GW: Keep the old setup<br/>task failed · rerun after a fix
+    %%> Result:
+    %%> - the new setup is not stored; an earlier setup stays in force; task #5167 fails
+    %%> Retry:
+    %%> - run the same command again with fixed values; it is a new task
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5167
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
