@@ -1,6 +1,6 @@
 ---
 title: "Swamp port retros"
-description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings."
+description: "One row per merged PR that touches swamp/: what it ported, steps per legacy call, budget, proof and review findings, and one row per F10 proof receipt."
 ---
 
 # Swamp port retros
@@ -17,7 +17,7 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 | #2251 | Cluster routers reach task VM web ports through vpn1 | About 17 steps for 1 call | None | 3 fixture cases | One `exec` per UFW command; op 6650 failed after merge in the "Frame too large" loop |
 | #2249 | `fleet.recipe` from 209 over `@swamp/ssh` | 127 step definitions for about 7 to 9 calls | None | Native tests; no live run | Asset, exec and decode triplets; six window asserts; one-line JSON YAML; `python3 -c` without `-I` |
 | #2248 | UpCloud TaskVM provision, enrollment and destroy | About 85 to 100 steps for about 12 to 15 calls | None | Scratch fixtures | One-shot observe where legacy polled; nonzero exit loses `error_code`; enrollment triplets |
-| #2281 | `task_vm.sweep_host` on 209 | About 22 steps for about 6 calls | p95 2.57 s (n=7, harness), budget 300 s | None | Four cases from the intermediate Swamp port untested (legacy parity unverified: the legacy test path returns 404); TypeScript rewrites a script; no phase `timeout` |
+| #2281 | `task_vm.sweep_host` on 209 | About 22 steps for about 6 calls | p95 2.57 s (n=7, harness), budget 300 s | None | Legacy parity tests in `6291bb036:apps/gateway/tests/Feature/TaskVms/TaskVmSweepTest.php` (about 23 cases) not run against the port; TypeScript rewrites a script; no phase `timeout` |
 | #2273 | `instance.create` with no stored environment | Unchanged | None | Native fixture, 12.7 s | PHP sent an empty map as `[]` |
 | #2271 | Analytics site management in one `site.py` | Fewer: ten scripts became one | None | None | Nonzero exit without `ignoreExitCode` loses `error_code` |
 | #2266 | `instance.create` token format and `branch_in_use` | Unchanged | None | Native scratch tests | Strict token regex; refusal after a write; reads of skipped outputs; no stderr in op 6636 |
@@ -44,3 +44,11 @@ Fix-forward is allowed for these. They need no proof.
 | #2269 | Unused firewall inspection wrapper | None | Unreachable code |
 | #2264 | Route mutation helpers and Valkey ACL writer | 3 removed | Added a retirement procedure to the shape gate guide |
 | #2252 | PHP Instance create and destroy executors | 10 removed | Full Gateway suite red before the PR |
+
+## Proof receipts
+
+Lane 26 adds one row for each F10 receipt. The fault column says whether the proof failed because of the kind or the topology. A topology fault fixes the topology and bumps its version in the same PR.
+
+| Receipt | Kinds | Topology and version | Result | What the proof caught | Fault | Lesson |
+| --- | --- | --- | --- | --- | --- | --- |
+| None yet | | | | | | |
