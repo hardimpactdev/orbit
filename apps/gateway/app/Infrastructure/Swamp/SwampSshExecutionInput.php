@@ -6,6 +6,7 @@ namespace App\Infrastructure\Swamp;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
+use Illuminate\Support\Facades\Config;
 
 /** Public capture for official SSH executed by Node 209 workers; no host effects. */
 final readonly class SwampSshExecutionInput
@@ -16,7 +17,7 @@ final readonly class SwampSshExecutionInput
         return [
             'control_node_id' => 209,
             'identity_file' => '/run/credentials/orbit-node-worker.service/proxy-ssh-identity',
-            'public_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINqVuK+N4gL/sDvGNKnGrYhEtEFnZx9hvH+134PsQgND',
+            'public_key' => Config::string('swamp.ssh_public_key'),
         ];
     }
 

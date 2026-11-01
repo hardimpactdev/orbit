@@ -9,6 +9,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Throwable;
@@ -31,7 +32,7 @@ final readonly class SwampVaultExecutionCopy
             throw $this->unavailable();
         }
         $reference = ['vault' => $vault, 'key' => $key];
-        $stamp = 'swamp:execution-copy:'.hash('sha256', "wss://swamp.orbit\0".$vault."\0".$key);
+        $stamp = 'swamp:execution-copy:'.hash('sha256', $address."\0".Config::integer('swamp.port')."\0".$vault."\0".$key);
         $digest = hash('sha256', $value);
         if (Cache::get($stamp) === $digest) {
             return $reference;
@@ -40,7 +41,7 @@ final readonly class SwampVaultExecutionCopy
         $phase = 'connect';
         $remoteCode = null;
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $ca, $token), 15);
             $phase = 'send';
             $this->socket->send(['type' => 'vault.put', 'id' => $id,
                 'payload' => ['vaultName' => $vault, 'key' => $key, 'value' => $value, 'force' => true]]);
@@ -97,7 +98,7 @@ final readonly class SwampVaultExecutionCopy
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $ca, $token), 15);
             $this->socket->send(['type' => 'vault.read-secret', 'id' => $id, 'payload' => ['vaultName' => $vault, 'secretKey' => $key]]);
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {

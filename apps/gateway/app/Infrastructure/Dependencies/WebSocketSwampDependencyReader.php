@@ -11,6 +11,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use Closure;
+use Illuminate\Support\Facades\Config;
 
 final readonly class WebSocketSwampDependencyReader implements SwampDependencyReader
 {
@@ -30,7 +31,7 @@ final readonly class WebSocketSwampDependencyReader implements SwampDependencyRe
         $socket = ($this->socketFactory)(6 * $maxBytes + 4_096);
         $deadline = microtime(true) + 5.0;
         try {
-            $socket->connect(new WebSocketEndpoint($this->address, 443, 'swamp.orbit', '/', $this->caPath, $this->token), 2.0);
+            $socket->connect(new WebSocketEndpoint($this->address, Config::integer('swamp.port'), 'swamp.orbit', '/', $this->caPath, $this->token), 2.0);
             $id = bin2hex(random_bytes(8));
             $socket->send(['type' => 'data.get', 'id' => $id, 'payload' => ['modelIdOrName' => 'orbit-gateway', 'dataName' => $dataName, 'includeContent' => true, ...($version === null ? [] : ['version' => $version])]]);
             while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {

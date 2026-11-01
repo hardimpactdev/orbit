@@ -8,6 +8,7 @@ use App\Domain\Tasks\SwampRunReader;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Config;
 use RuntimeException;
 
 /** Reads Swamp's own history; no execution or worker credentials. */
@@ -27,7 +28,7 @@ final readonly class WebSocketSwampRunReader implements SwampRunReader
         }
         $deadline = microtime(true) + 5.0;
         try {
-            $this->socket->connect(new WebSocketEndpoint($this->address, 443, 'swamp.orbit', '/', $this->caPath, $this->token), 2.0);
+            $this->socket->connect(new WebSocketEndpoint($this->address, Config::integer('swamp.port'), 'swamp.orbit', '/', $this->caPath, $this->token), 2.0);
             $search = $this->request('workflow.run.search', ['inputs' => ['group' => (string) $groupId], 'limit' => 5], $deadline);
             $data = $search['data'] ?? null;
             $results = is_array($data) ? ($data['results'] ?? null) : null;

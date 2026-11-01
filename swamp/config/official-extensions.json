@@ -1,0 +1,6 @@
+{
+  "@swamp/ssh": "2026.10.23.1",
+  "@swamp/git": "2026.10.23.1",
+  "@swamp/agent-runner": "2026.10.29.1",
+  "@swamp/software-factory": "2026.10.23.1"
+}

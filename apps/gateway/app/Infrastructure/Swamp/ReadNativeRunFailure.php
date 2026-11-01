@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
+use Illuminate\Support\Facades\Config;
 use Throwable;
 
 /** One authenticated history read. It never starts, resumes or hydrates native work. */
@@ -26,7 +27,7 @@ final readonly class ReadNativeRunFailure
         $id = bin2hex(random_bytes(16));
         $deadline = microtime(true) + 2;
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $caPath, $token), 0.5);
+            $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $caPath, $token), 0.5);
             $this->socket->send(['type' => 'workflow.history.get', 'id' => $id, 'payload' => ['workflowIdOrName' => $runId]]);
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
                 foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {

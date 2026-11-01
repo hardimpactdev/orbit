@@ -15,6 +15,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use SensitiveParameter;
@@ -324,7 +325,7 @@ final readonly class SwampCommandStep
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            $this->socket->connect(new WebSocketEndpoint($address, Config::integer('swamp.port'), 'swamp.orbit', '/', $ca, $token), 15);
             $this->socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
