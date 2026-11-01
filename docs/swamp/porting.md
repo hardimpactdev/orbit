@@ -114,6 +114,8 @@ Pass `lockKey: OperationStore::lockKey(REPLACE_TARGET_TYPE, $id)` to `StartOpera
 
 The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A port PR without one fails review.
 
+A phase script may wait for an external system to reach a state, such as an UpCloud VM started, an image ready or DNS visible (A, 2026-11-01). It polls at a fixed interval under coreutils `timeout <phase budget>`, exits 0 on the target state, and exits nonzero with a readable F1 error on a terminal bad state or timeout. The PR states the interval and budget, which count toward the kind's budget. Never retry a failed action this way, never wait on the Gateway or Orbit state, and never wait outside a phase script.
+
 | Item | Rule |
 | --- | --- |
 | Measured p95 | Take step `durationMs` and run start and end times from native history of the kind's runs. Use live runs when they exist, otherwise native harness runs. State the sample size. |
@@ -176,7 +178,7 @@ Use the native feature in the right column. Custom code is allowed only where th
 | Legacy pattern | Native replacement | Manual |
 | --- | --- | --- |
 | Gateway reads intent or private material; secret on stdin or argv | Full intent as `inputs`; `{vault, key}` names; whole `${{ vault.get(...) }}` in `task.inputs.env` or `@swamp/ssh` `stdin` | [Inputs](https://swamp-club.com/manual/reference/workflows#inputs), [Environment mounting](https://swamp-club.com/manual/reference/vaults#environment-variable-mounting) |
-| Retry loop, `attempt < N`, or sleep and poll until ready | An idempotent check step that fails when not ready; keep tool-owned waits. Recovery is a new admission (decision 7) or operator resume, which never reopens the Operation | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
+| Retry loop, `attempt < N`, or sleep and poll until ready | Retry: an idempotent step, then a new admission (decision 7) or operator resume. External state: a bounded poll in the phase script, [as above](#set-the-time-budget) | [Guard](https://swamp-club.com/manual/reference/workflows#guard), [Retry failed steps](https://swamp-club.com/manual/reference/workflows#retry-failed-steps) |
 | Wait for a free worker, or for a person | Per-kind `queueTimeout` (F8; serve default 600 s); `manual_approval` task | [queueTimeout](https://swamp-club.com/manual/reference/workflows#queuetimeout), [Manual approval](https://swamp-club.com/manual/reference/workflows#manual-approval-manual_approval) |
 | Lock file, `flock`, family busy hold | Per-behavior method lock on one shared `behaviorName`, `concurrency`, or the generic admission `lock_key`. Named apt and UFW tool locks stay | [Method locking](https://swamp-club.com/manual/reference/behavior-definitions#per-behavior-method-locking), [Concurrency](https://swamp-club.com/manual/reference/workflows#concurrency) |
 | "Already done" receipt or marker file | `guard` on public state or prior outputs | [Guard](https://swamp-club.com/manual/reference/workflows#guard) |
@@ -233,16 +235,15 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 
 | Source, newest first | Lesson |
 | --- | --- |
-| Retro #2248 | Legacy polled UpCloud until the VM started; a one-shot observe fails on real runs. Waiting for provider state is an open question with sub-orchestrator A. |
+| Retro #2248, A ruling | Legacy polled UpCloud until the VM started; the one-shot observe is a regression. A bounded poll for external state inside a phase script is allowed under coreutils `timeout`. |
 | #2258 | Swamp rejects a grant pattern with a quantified group that holds `+` or `*`, such as `(?:-setup-[0-9]+)?`, at grant time. Expand to a flat alternation and run `bin/check-grant-patterns.ts`. |
 | #2259 | Name each `forEach` model from `self._index`, give `@swamp/ssh` `globalArgs.name` the same expression, and stay within 64 characters. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
-| #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
+| #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
 | PLAN F10 (A, 2026-11-01) | `bin/swamp-proof` runs `swamp/proof/<kind>.json` on two shark task VMs with throwaway Swamp state; no production serve, no 209 login. Live-outage fixes get a live proof after merge. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |
 | Orchestrator, lane 27 diagrams, #2281 | Count native steps against legacy calls; over about two per call needs a reason. #2281 ran about 22 steps for about 6 calls, rewrote a script's source, and stopped after one failed item. |
 | Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, per-phase window asserts and one `exec` per command gave up to 15 steps per legacy call. |
-| Lane 9 create consult | A Node never returns a secret to the Gateway. Generate Gateway-owned secrets at admission; a step returns only public output, such as `.env.example` defaults. |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
