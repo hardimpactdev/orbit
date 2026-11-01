@@ -90,7 +90,9 @@ class NativeCheck(NativeRepository):
             json.dumps(history, indent=2)
         )
         selected = next(x for x in history["jobs"][0]["steps"] if x["name"] == "result")
-        return history, json.loads(selected["outputs"]["stdout"]) if has_result else None
+        return history, json.loads(
+            selected["outputs"]["stdout"]
+        ) if has_result else None
 
     def assert_preparation_failure(self, failed_step):
         self.inputs["intent"].update(
@@ -120,9 +122,20 @@ class NativeCheck(NativeRepository):
         steps = {step["name"]: step for step in history["jobs"][0]["steps"]}
         self.assertEqual(steps[failed_step]["status"], "failed")
         for name in (
-            "setup_result", "before", "project", "base_ready-0", "base_ready-1",
-            "base-0", "base-1", "deliverable-0", "deliverable-1", "after",
-            "local", "mint_github", "push", "result",
+            "setup_result",
+            "before",
+            "project",
+            "base_ready-0",
+            "base_ready-1",
+            "base-0",
+            "base-1",
+            "deliverable-0",
+            "deliverable-1",
+            "after",
+            "local",
+            "mint_github",
+            "push",
+            "result",
         ):
             self.assertEqual(steps[name]["status"], "skipped", name)
         self.assertFalse((self.workspace / "should-not-run").exists())
@@ -132,7 +145,8 @@ class NativeCheck(NativeRepository):
 
     def test_ssh_failure_skips_checks_without_reading_missing_outputs(self):
         (self.repo / "tools/ssh").write_text(
-            "#!" + sys.executable
+            "#!"
+            + sys.executable
             + '\nimport sys\nif "-M" in sys.argv or "-O" in sys.argv:raise SystemExit(0)'
             + '\nsys.stderr.write("fixture SSH unavailable\\n")\nraise SystemExit(255)\n'
         )
@@ -140,7 +154,8 @@ class NativeCheck(NativeRepository):
 
     def test_asset_copy_failure_skips_checks_without_reading_missing_outputs(self):
         (self.repo / "tools/scp").write_text(
-            "#!" + sys.executable
+            "#!"
+            + sys.executable
             + '\nimport sys\nsys.stderr.write("fixture asset copy unavailable\\n")\nraise SystemExit(31)\n'
         )
         self.assert_preparation_failure("copy_assets")
@@ -210,6 +225,32 @@ class NativeCheck(NativeRepository):
         _, result = self.execute_check(success=False)
         self.assertIn("error_code", result)
         self.assertEqual(self.git("rev-parse", "HEAD"), before)
+
+    def test_project_failure_with_skipped_command_deliverable_returns_failed_check(
+        self,
+    ):
+        self.inputs["intent"].update(
+            phase="handoff",
+            command="exit 23",
+            deliverables=[
+                {
+                    "id": "project-check",
+                    "type": "command",
+                    "command": "touch should-not-run",
+                    "directory": ".",
+                    "fails_on_base": False,
+                    "paths": [],
+                }
+            ],
+        )
+        history, result = self.execute_check()
+        self.assertEqual(history["status"], "succeeded")
+        self.assertEqual(result["outcome"], "failed")
+        self.assertEqual(result["exit_code"], 23)
+        self.assertEqual(result["evidence"]["commands"], {})
+        self.assertEqual(result["deliverables"][0]["outcome"], "failed")
+        self.assertIsNone(result["commit"])
+        self.assertFalse((self.workspace / "should-not-run").exists())
 
     def test_mutating_check_cannot_create_a_candidate(self):
         self.inputs["intent"].update(phase="handoff", command="printf moved > code")
