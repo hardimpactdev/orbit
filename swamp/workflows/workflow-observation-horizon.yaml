@@ -35,3 +35,4 @@ jobs:
       inputs:
         context: ${{ steps.context.outputs }}
         reading: ${{ steps.reading.outputs.result }}
+queueTimeout: 60
