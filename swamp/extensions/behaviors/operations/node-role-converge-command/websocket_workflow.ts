@@ -37,7 +37,10 @@ export function websocketWorkflow() {
     steps.push({
         name: "result",
         target: "orbit-node-209",
-        dependsOn: [{ step: "websocket", condition: { type: "succeeded" } }],
+        dependsOn: ["websocket", "websocket_cleanup"].map((step) => ({
+            step,
+            condition: { type: "succeeded" },
+        })),
         task: {
             type: "behavior",
             behaviorType: "@nckrtl/node-role-runtime-assets",

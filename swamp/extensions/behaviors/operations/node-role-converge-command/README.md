@@ -2,7 +2,7 @@
 
 `operation-node-role-converge-209` executes existing Database-only and
 Ingress-only and WebSocket-only assignments from209 when no serving Metrics fleet needs
-reconciliation. Both use the same `node-role-converge` factory: account,
+reconciliation. All three use the same `node-role-converge` factory: account,
 observer binary, packages, peer DNS, observer files/service, CLI, and typed
 terminal contribution. Ingress also installs pinned Caddy, enables its service,
 publishes the complete admitted catalog through `operation-route-caddy`, then
@@ -29,6 +29,24 @@ The exported `roleConvergeSteps(name, intentExpr, fullGlobals, dependency?, guar
 
 `RoleConvergeReceipt` is schema1 with Node/assignment/role identity, role/runtime/certificate/publication proof, baseline, footprint, CLI and follow-up. The final step is `<name>_role_result` (or `role_result` with empty prefix). Optional role lists must bind completed admission-job context before effects. Existing-only forward composition does not provide full prospective, mixed-role, roleless or deferred enrollment restoration/finalization. These remain unsupported; this slice does not unblock complete node.add.
 
-WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation and restoration actions. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev, AppProd and Analytics remain on their existing paths.
+WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation, restoration and release cleanup actions. A source or validation failure before cutover leaves the running service untouched. Cleanup keeps the current and captured prior releases after success. A failed cutover retains its candidate for same-child resume; a failed pre-cutover candidate is removed. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev, AppProd and Analytics remain on their existing paths.
 
 After activation failure the child restores its prior unit and release. Resume the same failed child from `websocket_unit_assets` to republish the admitted unit/link and activate the candidate. Retrying only restart/listener cannot prove completion: readiness checks the exact admitted release link and unit as well as the service and socket. The original before snapshot remains cached upstream of this native resume point.
+
+## Retained caller boundary
+
+WebSocket convergence cannot fall back to the retained add/relocate graph.
+Unsupported mixed-role, absent-assignment or Metrics-fleet convergence refuses
+before effects. The obsolete `websocket.role_converge` and
+`websocket.role_remove` callback registrations and role preparation dispatch
+are deleted. The shared WebSocket installer remains necessary for role
+add/relocate. Synchronous Node enrollment still reaches `WebSocketRoleBaseline`
+through `AddNodeRoleAction::executeDuringProvisioning`; its root must switch
+before that baseline and installer can be deleted.
+
+Database, Ingress and WebSocket already share account, observer, package,
+peer-DNS, CLI and terminal assembly in `root_steps.ts`. AppDev and AppProd are
+the next intended consumers of those duties after their canonical PHP,
+Composer and JavaScript prerequisites are ported. Metrics must consume its
+owning lane's native runtime contribution. These future consumers are not
+claimed as migrated here.

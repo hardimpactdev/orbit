@@ -70,14 +70,24 @@ class WebSocketNative(NativeTestCase):
         return history
 
     def test_success_validates_before_cutover_and_keeps_environment_private(self):
+        obsolete=self.previous.parent/('release.'+'c'*32)
+        obsolete.mkdir();(obsolete/'.env').write_text('old private fixture')
+        foreign=self.previous.parent/'manual';foreign.mkdir()
         history=self.run_runtime()
         self.assertEqual(history['status'],'succeeded')
+        self.assertFalse(obsolete.exists())
+        self.assertTrue(foreign.exists())
         release=self.install.resolve();self.assertNotEqual(release,self.previous)
         self.assertEqual((release/'.env').read_text(),self.environment)
         actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
         self.assertLess(actions.index('unit_verify'),actions.index('stop'))
         self.assertLess(actions.index('artisan_verify'),actions.index('stop'))
         self.assertTrue(json.loads(self.state.read_text())['active'])
+        self.run_runtime()
+        managed=[p for p in self.previous.parent.iterdir() if p.name.startswith('release.')]
+        self.assertEqual(len(managed),2)
+        self.assertNotIn(self.previous,managed)
+        self.assertTrue(foreign.exists())
 
     def test_failed_activation_restores_prior_release_and_unit(self):
         self.failure.write_text('restart')
@@ -89,6 +99,8 @@ class WebSocketNative(NativeTestCase):
         steps={s['name']:s for j in history['jobs'] for s in j['steps']}
         self.assertEqual(steps['websocket_recover']['status'],'succeeded')
         self.assertEqual(steps['result']['status'],'skipped')
+        managed=[p for p in self.previous.parent.iterdir() if p.name.startswith('release.')]
+        self.assertEqual(len(managed),2, 'Retain the captured prior and failed candidate for same-child resume')
         self.failure.unlink()
         # Retrying only activation must never accept the restored old release.
         unsafe=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','websocket_restart',success=False).stdout)
@@ -101,11 +113,32 @@ class WebSocketNative(NativeTestCase):
         self.assertNotEqual(self.install.resolve(),self.previous)
         self.assertEqual((self.install.resolve()/'.env').read_text(),self.environment)
 
+    def test_cleanup_failure_cannot_emit_ready_and_resumes_without_repeating_activation(self):
+        self.failure.write_text('cleanup')
+        history=self.run_runtime(False)
+        steps={s['name']:s for j in history['jobs'] for s in j['steps']}
+        self.assertEqual(steps['result']['status'],'skipped')
+        current=self.install.resolve()
+        self.assertNotEqual(current,self.previous)
+        actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
+        restarts=actions.count('restart')
+        self.failure.unlink()
+        resumed=json.loads(self.cli('workflow','resume','node-role-websocket','--run',history['id'],'--from','websocket_cleanup_assets').stdout)
+        self.assertEqual(resumed['id'],history['id'])
+        self.assertEqual(resumed['status'],'succeeded')
+        self.assertEqual(self.install.resolve(),current)
+        actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
+        self.assertEqual(actions.count('restart'),restarts)
+
     def test_release_validation_failure_leaves_prior_runtime_ready(self):
         self.failure.write_text('artisan_verify')
         self.run_runtime(False)
         self.assertEqual(self.install.resolve(),self.previous)
         self.assertTrue(json.loads(self.state.read_text())['active'])
+        actions=[json.loads(row)['action'] for row in self.audit.read_text().splitlines()]
+        self.assertNotIn('stop',actions)
+        self.assertNotIn('start',actions)
+        self.assertEqual(list(self.previous.parent.iterdir()),[self.previous])
 
 
 if __name__=='__main__':unittest.main()

@@ -33,6 +33,15 @@ const Args = z.discriminatedUnion("action", [
             unit: z.string().optional(),
         }).strict(),
     }),
+    z.object({
+        action: z.literal("websocket_cleanup"),
+        input: z.object({
+            install_path: Path,
+            release: Path,
+            previous: Path.nullable(),
+            retain_candidate: z.boolean(),
+        }).strict(),
+    }),
 ]);
 const Observation = z.object({
     previous: Path.nullable(),
@@ -97,6 +106,7 @@ export const behavior = {
                     "websocket_directory",
                     "websocket_link",
                     "websocket_verify",
+                    "websocket_cleanup",
                 ]),
                 input: z.record(z.string(), z.unknown()),
             }).strict(),
@@ -106,7 +116,8 @@ export const behavior = {
                         | "websocket_observe"
                         | "websocket_directory"
                         | "websocket_link"
-                        | "websocket_verify";
+                        | "websocket_verify"
+                        | "websocket_cleanup";
                     input: Record<string, unknown>;
                 },
                 ctx: Context,

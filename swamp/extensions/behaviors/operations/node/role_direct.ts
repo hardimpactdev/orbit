@@ -39,7 +39,7 @@ const Outcome = z.object({
 }).strict();
 const Current = z.object({
     id: z.number().int().positive(),
-    kind: z.enum(["node.role_add", "node.role_converge", "node.role_relocate"]),
+    kind: z.literal("node.role_converge"),
     node_id: z.number().int().positive(),
     status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
     input: z.preprocess(stripRolePublication, RoleSnapshot),
@@ -73,7 +73,6 @@ const FollowUpArgs = RoleArgs.extend({
 });
 const CliArgs = FollowUpArgs;
 const ProjectArgs = FollowUpArgs.extend({
-    cleanup: z.object({ ready: z.boolean() }).nullable().optional(),
     cli: CliConvergeResult.nullable(),
     dependencies: z.object({ ready: z.boolean() }).passthrough().nullable()
         .optional(),
@@ -91,7 +90,7 @@ function baselineProof(outcomes: z.infer<typeof Outcome>[]) {
     }
     return failure;
 }
-/** Native role aggregation shared by add, converge and relocation before final root projection. */
+/** Retained convergence aggregation; add and relocation use the native parent. */
 export function roleResult(args: z.infer<typeof ProjectArgs>) {
     const snapshot = args.admission.snapshot;
     const installationFailure = args.baseline.length === 0
@@ -233,6 +232,9 @@ export function nodeRoleAdd(
                     const refusal =
                         current.cancel_requested || ctx.signal?.aborted
                             ? "operation.cancelled"
+                            : args.kind === "node.role_converge" &&
+                                    snapshot.role === "websocket"
+                            ? "operation.kind_unavailable"
                             : snapshot.footprint.refusal
                             ? snapshot.footprint.refusal
                             : snapshot.metrics_fleet?.fleet.some((node) =>
@@ -408,6 +410,14 @@ export function nodeRoleAdd(
                                 const ordering = await gatewayActions.order(
                                     undefined,
                                     ctx.signal,
+                                    gatewayActions.order ===
+                                            gatewayCaddyOrdering
+                                        ? await Deno.readTextFile(
+                                            ctx.extensionFile(
+                                                "scripts/caddy_ordering.py",
+                                            ),
+                                        )
+                                        : undefined,
                                 );
                                 if (!ordering.completed) {
                                     return {
@@ -439,6 +449,14 @@ export function nodeRoleAdd(
                                     baseline === convergeRoleBaseline
                                     ? await Deno.readTextFile(
                                         ctx.extensionFile("scripts/recipe.py"),
+                                    )
+                                    : undefined,
+                                args.stage === "prerequisites" &&
+                                    baseline === convergeRoleBaseline
+                                    ? await Deno.readTextFile(
+                                        ctx.extensionFile(
+                                            "scripts/role_prerequisites.py",
+                                        ),
                                     )
                                     : undefined,
                             );
@@ -498,6 +516,11 @@ export function nodeRoleAdd(
                                         php: await Deno.readTextFile(
                                             ctx.extensionFile(
                                                 "scripts/php_runtime.py",
+                                            ),
+                                        ),
+                                        preparation: await Deno.readTextFile(
+                                            ctx.extensionFile(
+                                                "scripts/role_prerequisites.py",
                                             ),
                                         ),
                                         footprint: await Deno.readTextFile(
@@ -560,38 +583,17 @@ export function nodeRoleAdd(
                             : await cli({
                                 ...snapshot.cli,
                                 agent_sha256: snapshot.agent_sha256,
-                            }, { signal: ctx.signal, source:cli===convergeCli?await Deno.readTextFile(ctx.extensionFile("scripts/cli.py")):undefined }),
+                            }, {
+                                signal: ctx.signal,
+                                source: cli === convergeCli
+                                    ? await Deno.readTextFile(
+                                        ctx.extensionFile("scripts/cli.py"),
+                                    )
+                                    : undefined,
+                            }),
                     );
                     await ctx.writeResource("cli_outcome", "cli", outcome);
                     return { ok: !Object.hasOwn(outcome, "error_code") };
-                },
-            },
-            targetReady: {
-                description:
-                    "Record the confirmed target before source cleanup starts",
-                arguments: ProjectArgs,
-                execute: async (
-                    raw: z.infer<typeof ProjectArgs>,
-                    ctx: Context,
-                ) => {
-                    const args = ProjectArgs.parse(raw);
-                    if (args.kind !== "node.role_relocate") {
-                        throw new Error("role.target_root_changed");
-                    }
-                    const { result, code, cancelled } = roleResult(args);
-                    if (code || cancelled) {
-                        throw new Error(code ?? "operation.cancelled");
-                    }
-                    await gateway(args, ctx).project({
-                        status: "running",
-                        started_at: args.admission.started_at,
-                        result: { ...result, target_completed: true },
-                    });
-                    await ctx.writeResource("outcome", "target-ready", {
-                        stage: "target-ready",
-                        ok: true,
-                    });
-                    return { ready: true };
                 },
             },
             project: {
@@ -608,19 +610,9 @@ export function nodeRoleAdd(
                         throw new Error("Projection changed the admitted Node");
                     }
                     const evaluated = roleResult(args);
-                    const cleanupFailed = args.kind === "node.role_relocate" &&
-                        !evaluated.code && args.cleanup?.ready !== true;
-                    const code = cleanupFailed
-                        ? "node_role.source_cleanup_failed"
-                        : evaluated.code;
+                    const code = evaluated.code;
                     const cancelled = evaluated.cancelled;
-                    const result = cleanupFailed
-                        ? {
-                            ...evaluated.result,
-                            error_code: code,
-                            failed_step: "source",
-                        }
-                        : evaluated.result;
+                    const result = evaluated.result;
                     await gateway(args, ctx).project({
                         status: cancelled
                             ? "cancelled"
