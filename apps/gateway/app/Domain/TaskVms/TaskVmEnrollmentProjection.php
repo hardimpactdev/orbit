@@ -42,12 +42,12 @@ final readonly class TaskVmEnrollmentProjection
             ValidatedData::string($node['ssh_host_key'] ?? null),
             ValidatedData::string($node['ssh_host_fingerprint'] ?? null),
         ));
-        Node::query()->findOrFail($nodeId)->update([
+        Node::query()->findOrFail($nodeId)->forceFill([
             'agent_secret_hash' => $node['observer_digest'],
             ...Arr::only($node, ['wireguard_public_key', 'architecture']),
             ...isset($node['address']) ? ['public_ssh_host' => $node['address']] : [],
             'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,
-        ]);
+        ])->save();
         Node::query()->findOrFail($nodeId)->roles()->where('role', RoleName::AppDev)->update(['status' => LifecycleStatus::Active]);
         Process::query()->whereKey(ValidatedData::integer($process['process_id']))->where('owner_type', Node::class)->where('owner_id', $nodeId)->update([
             'status' => LifecycleStatus::Active, 'failed_step' => null, 'error_code' => null,

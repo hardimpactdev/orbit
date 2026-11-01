@@ -191,7 +191,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.01.1",
+  version: "2026.11.01.2",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),

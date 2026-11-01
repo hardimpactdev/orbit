@@ -679,7 +679,7 @@
     {
       "file": "extensions/behaviors/operations/instance-deploy/app_step_runtime.ts",
       "rule": "inline-script",
-      "count": 241,
+      "count": 227,
       "evidence": []
     },
     {
@@ -2240,20 +2240,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/task-vms/sweep-native-fixture.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/task-vms/sweep.ts",
       "rule": "custom-control",
       "count": 1,
@@ -2480,6 +2466,14 @@
       "evidence": []
     },
     {
+      "file": "workflows/workflow-group-fanout.yaml",
+      "rule": "foreach-shared-identity",
+      "count": 1,
+      "evidence": [
+        "groups/conflict-${{ self.conflict.workItem }}"
+      ]
+    },
+    {
       "file": "workflows/workflow-group-run.yaml",
       "rule": "unknown-behavior",
       "count": 2,
@@ -2496,32 +2490,6 @@
       "rule": "unknown-behavior",
       "count": 1,
       "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-behavior",
-      "count": 4,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-production-smoke.yaml",
-      "rule": "unknown-workflow",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-stage-implement.yaml",
-      "rule": "vault-placement",
-      "count": 1,
-      "evidence": []
-    },
-    {
-      "file": "workflows/workflow-group-fanout.yaml",
-      "rule": "foreach-shared-identity",
-      "count": 1,
-      "evidence": [
-        "groups/conflict-${{ self.conflict.workItem }}"
-      ]
     },
     {
       "file": "workflows/workflow-instance-route-workload.yaml",
@@ -2597,6 +2565,24 @@
       "evidence": [
         "deletions/delete"
       ]
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-behavior",
+      "count": 4,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-production-smoke.yaml",
+      "rule": "unknown-workflow",
+      "count": 1,
+      "evidence": []
+    },
+    {
+      "file": "workflows/workflow-stage-implement.yaml",
+      "rule": "vault-placement",
+      "count": 1,
+      "evidence": []
     },
     {
       "file": "workflows/workflow-task-check-ci.yaml",

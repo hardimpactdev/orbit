@@ -16,7 +16,7 @@ const Assets = z.object({
 /** Public schemas and native additionalFiles metadata; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-repository-assets",
-    version: "2026.10.31.1",
+    version: "2026.11.01.2",
     resources: {
         assets: { schema: Assets, lifetime: "infinite", garbageCollection: 10 },
     },

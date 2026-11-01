@@ -59,7 +59,7 @@ it('freezes exact provider and guest placement without reading the host or start
     expect($input['intent']['node_id'])->toBe($this->host->id)->and($input['intent']['guest_node_id'])->toBe($this->guest->id)
         ->and($input['intent']['ssh_execution']['control_node_id'])->toBe(209)
         ->and($input['intent']['provider_input']['host_ssh_execution']['target']['host'])->toBe($this->host->wireguard_ip)
-        ->and($input['intent']['provider_input']['vm'])->toBe(['project' => 'orbit-tasks', 'name' => $this->vm->name])
+        ->and($input['intent']['provider_input']['vm'])->toBe(['project' => 'orbit-tasks', 'name' => $this->vm->name, 'pool' => 'orbit-tasks'])
         ->and($input['execution_secrets'])->toBe([])
         ->and(json_encode($operation->input))->not->toContain('private-pi-token')
         ->and($operation->input)->not->toHaveKeys(['pi_token', 'upcloud_token', 'private_bindings', 'participant_node_ids'])
