@@ -1,5 +1,6 @@
 id: 7f06fed5-557b-41b6-93b4-e67ea72085b3
 name: database-server-container
+queueTimeout: 30
 description: One shared native container replacement, readiness and recovery phase
   for every database engine.
 writes: true

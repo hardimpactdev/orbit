@@ -1,5 +1,6 @@
 id: a316a21c-564c-4f25-bc20-713f6f987d20
 name: operation-database-server-close
+queueTimeout: 30
 description: Probe, close, persist, compensate and disconnect as separate official SSH actions.
 writes: true
 vaults: [orbit-control-inputs]
