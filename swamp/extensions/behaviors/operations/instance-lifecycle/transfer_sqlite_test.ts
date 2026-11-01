@@ -38,7 +38,7 @@ const snapshot: Snapshot = {
   bytes: 4096,
   sha256: pin,
 };
-const ctx = {} as FileContext;
+const ctx = {extensionFile: (path:string) => path} as FileContext;
 Deno.test("SQLite parent refreshes after preparation and receive, then installs the exact snapshot", async () => {
   const calls: string[] = [];
   const actions = transferSqliteActions(

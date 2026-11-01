@@ -8,6 +8,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationPublicView;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -16,7 +17,13 @@ final readonly class DatabaseSqliteProjection implements DirectOperationProjecti
 {
     public function input(Operation $operation): array
     {
-        return array_intersect_key($operation->input, array_flip(['source', 'target']));
+        $intent = $this->publicDescriptors($operation);
+        $intent['source_ssh'] = $this->ssh(Node::query()->findOrFail(ValidatedData::integer(ValidatedData::object($intent['source'] ?? [])['node_id'] ?? null)));
+        if (isset($intent['target'])) {
+            $intent['target_ssh'] = $this->ssh(Node::query()->findOrFail(ValidatedData::integer(ValidatedData::object($intent['target'])['node_id'] ?? null)));
+        }
+
+        return ['intent' => $intent, 'execution_secrets' => []];
     }
 
     public function assertPublicParticipant(Operation $operation, int $callerNodeId): void
@@ -31,7 +38,25 @@ final readonly class DatabaseSqliteProjection implements DirectOperationProjecti
     {
         $this->assertPublicParticipant($operation, $callerNodeId);
 
-        return $this->input($operation);
+        return $this->publicDescriptors($operation);
+    }
+
+    /** @return array<string,mixed> */
+    private function publicDescriptors(Operation $operation): array
+    {
+        return array_intersect_key($operation->input, array_flip(['source', 'target']));
+    }
+
+    /** @return array{host:string,user:string,host_keys:list<string>} */
+    private function ssh(Node $node): array
+    {
+        if (! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            throw new ResourceOperationException('database.sqlite_intent_invalid', 'The recorded SQLite Node has no address.', 422);
+        }
+
+        return ['host' => $node->wireguard_ip, 'user' => $node->user,
+            'host_keys' => is_string($node->ssh_host_key_type) && is_string($node->ssh_host_key)
+                ? [$node->ssh_host_key_type.' '.$node->ssh_host_key] : []];
     }
 
     public function apply(Operation $operation, array $data): Operation

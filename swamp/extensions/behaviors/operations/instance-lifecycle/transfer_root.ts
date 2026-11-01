@@ -166,7 +166,7 @@ export function transferRoot(
   };
   return {
     type: "@nckrtl/instance-transfer",
-    version: "2026.10.31.2",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     files: { archive: archiveFile, snapshot: snapshotFile },
     resources: {
@@ -353,8 +353,8 @@ export function transferRoot(
           );
           if (cleanup) {
             if (plan.sqlite) {
-              if (source) await sqlite.cleanupSource(plan.sqlite);
-              else await sqlite.cleanupTarget(plan.sqlite);
+              if (source) await sqlite.cleanupSource(plan.sqlite, ctx);
+              else await sqlite.cleanupTarget(plan.sqlite, ctx);
             }
             return { ready: true };
           }

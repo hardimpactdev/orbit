@@ -1,0 +1,110 @@
+id: 6a07d0b5-6d80-4b71-9934-b9b756d43a91
+name: database-sqlite-action
+description: Admitted SQLite actions through official SSH from Node 209; native recovery and public terminal projection.
+writes: true
+vaults: []
+inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [database.sqlite_export, database.sqlite_seed,
+        database.sqlite_seed_abandon, database.sqlite_cleanup]}, intent: {type: object}, execution_secrets: {type: object, additionalProperties: false}, action: {type: string, enum: [
+        source_export, source_cleanup, target_prepare, target_install, target_cleanup, target_recover, cleanup]}, snapshot: {type: object}}, required: [operation_id, node_id, kind, intent, execution_secrets,
+    action], additionalProperties: false}
+jobs:
+- name: sqlite
+  target: orbit-node-209
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: read
+      inputs: {kind: '${{ inputs.kind }}', intent: '${{ inputs.intent }}', action: '${{ inputs.action }}', run_id: '${{ run.id }}', snapshot: '${{ has(inputs.snapshot) ? inputs.snapshot
+          : null }}'}
+  - name: directory
+    target: orbit-node-209
+    dependsOn:
+    - {step: assets, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbsi-" + run.id }}
+      globalArgs: {name: '${{ "dbsi-" + run.id }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/mkdir, -p, '${{ "/tmp/orbit-sqlite-action-" + run.id }}']}
+  - name: files
+    target: orbit-node-209
+    dependsOn:
+    - {step: directory, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbsi-" + run.id }}
+      globalArgs: {name: '${{ "dbsi-" + run.id }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
+      methodName: copy
+      inputs: {hosts: 'name:server', src: '${{ steps.assets.outputs.directory + "/." }}', dst: '${{ "/tmp/orbit-sqlite-action-" + run.id }}', direction: to, recursive: true}
+  - name: apply
+    target: orbit-node-209
+    dependsOn:
+    - {step: files, condition: {type: succeeded}}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbsi-" + run.id }}
+      globalArgs: {name: '${{ "dbsi-" + run.id }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: '${{ steps.assets.outputs.argv }}', okExitCodes: [0, 1]}
+  - name: outcome
+    target: orbit-node-209
+    dependsOn:
+    - {step: apply, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: action_result
+      inputs: {action: '${{ inputs.action }}', stdout: '${{ steps.apply.outputs.stdout }}', exit_code: '${{ steps.apply.outputs.exitCode }}'}
+  - name: cleanup_scripts
+    target: orbit-node-209
+    dependsOn:
+    - {step: directory, condition: {type: always}}
+    - {step: files, condition: {type: always}}
+    - {step: apply, condition: {type: always}}
+    - {step: outcome, condition: {type: always}}
+    guard: ${{ steps.assets.status != "succeeded" }}
+    allowFailure: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "dbsi-" + run.id }}
+      globalArgs: {name: '${{ "dbsi-" + run.id }}', transport: {kind: ssh, user: '${{ steps.assets.outputs.ssh.user }}', identityFile: /run/credentials/orbit-node-worker.service/proxy-ssh-identity},
+        hosts: [{name: server, address: '${{ steps.assets.outputs.ssh.host }}', transport: {hostKeys: '${{ steps.assets.outputs.ssh.host_keys }}'}}]}
+      methodName: exec
+      inputs: {hosts: 'name:server', argv: [/usr/bin/rm, -rf, --, '${{ "/tmp/orbit-sqlite-action-" + run.id }}']}
+  - name: result
+    target: orbit-node-209
+    dependsOn:
+    - {step: assets, condition: {type: always}}
+    - {step: directory, condition: {type: always}}
+    - {step: files, condition: {type: always}}
+    - {step: apply, condition: {type: always}}
+    - {step: outcome, condition: {type: always}}
+    - {step: cleanup_scripts, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/database-sqlite-command-assets'
+      behaviorName: ${{ "dbsm-" + run.id }}
+      methodName: child_result
+      inputs: {steps: '${{ steps }}'}
+  - name: accept_result
+    target: orbit-node-209
+    dependsOn:
+    - {step: result, condition: {type: succeeded}}
+    task:
+      type: assert
+      expr: steps.result.outputs.exitCode == 0
+      severity: high
+      message: SQLite action did not complete.

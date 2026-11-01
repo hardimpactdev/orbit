@@ -64,6 +64,7 @@ async function fixture(layout: "checkout" | "worktree" = "checkout") {
   await Deno.writeTextFile(`${source}/database.sqlite-wal`, "unfinished-wal");
   const nativePath = `${directory}/native-archive`;
   const ctx: FileContext = {
+    extensionFile: (path) => path,
     modelId: "1995a0ac-99da-4860-abf0-8b09260710fa",
     modelType: { normalized: "@nckrtl/instance-transfer" },
     createFileWriter: (_spec, name) => ({

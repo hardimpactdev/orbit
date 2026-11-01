@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
@@ -97,7 +98,7 @@ it('submits once after commit and records a native run without acquiring a targe
     DB::commit();
     expect($socket->sent)->toHaveCount(1);
     expect($socket->sent[0])->toMatchArray(['type' => 'workflow.run', 'payload' => [
-        'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => ['operation_id' => $operation->id, 'kind' => 'database.sqlite_cleanup', 'node_id' => $this->node->id],
+        'workflowIdOrName' => 'operation-database-cleanup', 'inputs' => [...app(DirectOperation::class)->workflowInputs($operation)],
         'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
     ]]);
     expect($operation->fresh()->lock_key)->toBeNull();
@@ -107,7 +108,7 @@ it('submits once after commit and records a native run without acquiring a targe
 
 it('exposes no raw admitted input through the shared read boundary', function (): void {
     $this->operation->update(['input' => [...$this->operation->input, 'private' => 'never-return-this']]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input', ['variant' => 'clone', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])->assertDontSee('never-return-this');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.cleanup', ['variant' => 'clone', 'directory' => '/tmp/orbit-sqlite-clone-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'])->assertDontSee('never-return-this');
 });
 
 it('rejects contradictory success and filters cleanup results to their public fields', function (): void {
@@ -122,7 +123,7 @@ it('projects only the admitted cleanup variant and never command or private inte
     $payload['projection']['private'] = 'not-exported';
     $this->intent->update(['payload' => $payload]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()
-        ->assertJsonPath('data.input.variant', 'clone')->assertJsonMissingPath('data.input.command')
+        ->assertJsonPath('data.input.intent.cleanup.variant', 'clone')->assertJsonMissingPath('data.input.command')
         ->assertJsonMissingPath('data.input.password')->assertDontSee('not-exported');
 });
 
@@ -144,8 +145,8 @@ it('projects bound seed cleanup fields and rejects another target or snapshot id
         'snapshot_path' => '/tmp/orbit-sqlite-'.$identity.'.sqlite'];
     $payload = ['commands' => ['database-apply' => ['name' => 'instance.prepare-sqlite-seed', 'input' => $input]], 'projection' => []];
     $this->intent->update(['payload' => $payload]);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'seed')
-        ->assertJsonPath('data.input.operation', $identity)->assertJsonMissingPath('data.input.mode');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.cleanup.variant', 'seed')
+        ->assertJsonPath('data.input.intent.cleanup.operation', $identity)->assertJsonMissingPath('data.input.mode');
     $payload['commands']['database-apply']['input']['snapshot_path'] = '/tmp/foreign.sqlite';
     $this->intent->update(['payload' => $payload]);
     $this->getJson($this->path.'?run_id='.$this->runId)->assertUnprocessable();
@@ -161,7 +162,7 @@ it('refuses first read and projection until the Gateway start response binds the
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'fake.token']);
     app(StartSwampRun::class)->start($this->operation);
-    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.variant', 'clone');
+    $this->getJson($this->path.'?run_id='.$this->runId)->assertOk()->assertJsonPath('data.input.intent.cleanup.variant', 'clone');
     expect($this->agents->calls)->toBe([]);
 });
 

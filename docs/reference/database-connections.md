@@ -90,7 +90,7 @@ Deletion returns `database_connection.required_by_ai_router` (409) while [AI rou
 
 A change to a record does not change the keys that an earlier Instance attachment stored. Attach the connection again to update them. A connection update returns a `database.update` Operation. Proposed attributes remain encrypted until native validation succeeds; failure leaves the record unchanged. Valkey index limits are checked on the server Node.
 
-The workflow receives the captured endpoint, proposed index and SSH identity as public intent. A placed step on209 uses official SSH and the official Valkey CLI to read the server limit. Its admin password comes from a named execution copy in Swamp vaults. An update that only changes the record skips SSH and secret resolution. The shared terminal subscriber applies a successful patch once.
+The workflow receives the captured endpoint, proposed index and SSH identity as public intent. A placed step on Node 209 uses official SSH and the official Valkey CLI to read the server limit. Its admin password comes from a named execution copy in Swamp vaults. An update that only changes the record skips SSH and secret resolution. The shared terminal subscriber applies a successful patch once.
 
 An update to the configured cache for AI router returns `operation.kind_unavailable` until the AI-router workflow can compose native reconvergence. This also applies when the extension switch is off but configured state remains. The Gateway does not update the record and silently leave the collector with old credentials.
 
@@ -142,7 +142,11 @@ A [production clone with a SQLite snapshot](/reference/instance-cloning#sqlite-s
 
 [`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Before any drop, Orbit checks the complete [removal set](/reference/database-servers#remove-a-database). A blocker returns `database.in_use` (409) without changing databases or records. A server failure keeps the record for retry. Orbit never drops a database that it only registered.
 
-Development SQLite copies run directly in Swamp. A same-Node copy stays on that Node. A cross-Node copy writes a native file artifact; the target reads its exact version and verifies its size and digest before installation. Native tests cover WAL consistency, writer locks, file modes and temporary-file cleanup. Gateway tests cover admission and bounded record changes.
+### SQLite snapshots
+
+Standalone SQLite export, seed, seed abandonment and cleanup run as native workflows on Node 209 through official SSH. The Gateway supplies public source and target descriptors plus captured SSH identities and pins; these kinds need no vault execution copy.
+
+Seed uses separate snapshot, target preparation, transfer and installation steps. The target checks the exact size, SQLite integrity and digest before installation. Independent cleanup removes source and transfer scratch after started work. Failed or cancelled seed work also clears its target scratch without deleting an installed database. Seed abandonment removes only its recorded attempt. Terminal projection resumes without another completed effect. Native tests cover file ownership, replay, refusal and cleanup; Gateway tests cover input capture and bounded record changes.
 
 ## Test databases
 
@@ -216,13 +220,9 @@ SQL and credentials travel through the run-bound private-material callback and p
 
 ## Direct SQLite cleanup
 
-SQLite snapshot cleanup uses only the direct `operation-database-cleanup` workflow. Its declaration is the only dispatcher. There is no polled database path. Rollback reverts the kind change.
+SQLite snapshot cleanup uses `operation-database-cleanup` on Node 209. Official SSH runs the shipped cleanup script on the admitted Node, using its captured user and host pins. The Gateway supplies the recorded cleanup descriptor as workflow input and projects the bounded terminal result.
 
-The shared `StartSwampRun` helper starts the workflow after commit with `ORBIT_SWAMP_RUN_TOKEN`. The Gateway exposes only the admitted cleanup fields and projects the bounded result. It has no cleanup primitive, claim, lease, target hold, keyed receipt or Node lock.
-
-The action runs on the admitted Node. Every Node uses its matching `orbit-node-<node_id>` worker and string Node label. Missing placement stays queued under native Swamp defaults.
-
-The worker runs as the Node's configured user. Clone cleanup removes only its owned private snapshot directory. Seed cleanup runs the fixed native program through the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity.
+Clone cleanup removes only its owned private snapshot directory. Seed cleanup uses the Node user's existing passwordless sudo and validates the recorded source, target and snapshot paths. Neither action accepts a caller-supplied command or execution identity. These actions read no secret and need no Swamp worker on the target Node.
 
 ### Direct SQL writes
 
@@ -236,8 +236,6 @@ SQLite writes have an engine attachment limit of zero. `ATTACH` and `VACUUM INTO
 
 ### Instance-owned removal
 
-`database.destroy_owned` captures the owned set and SSH identities once. Its native workflow on209 fans out through official SSH: each SQL server reuses the native inventory, ownership, fence, drop and restore DAG; each SQLite file has one shipped removal action under its admitted Node account. Each child has its own SSH model and scratch directory. Password-only execution copies have one key per admitted SQL server; SQLite removal reads no secret.
+`database.destroy_owned` captures the owned set and SSH identities once. Its native workflow on Node 209 fans out through official SSH: each SQL server reuses the native inventory, ownership, fence, drop and restore DAG; each SQLite file has one shipped removal action under its admitted Node account. Each child has its own SSH model and scratch directory. Password-only execution copies have one key per admitted SQL server; SQLite removal reads no secret.
 
 The Gateway creates no child Operations and performs no remote removal. It deletes the owned connection records only after every native child succeeds. An empty set succeeds without SSH or vault reads. Failure, cancellation or interruption keeps those records. If Swamp omits a failed child’s result, the Operation reports `database.destroy_owned_outcome_unknown`. Attached databases outside the owned set still block admission, and participant GET access remains scoped to that Node. Terminal projection resumes from saved results. Instance removal still uses its existing lower API until its parent workflow is rewritten.
-
-SQLite export, seed and abandon use native source and target steps in one run. Only their admitted source and target Nodes may read the public descriptors; only the root Node may record the result. Cancellation stops new work. Cleanup runs after started work, before the terminal result, and a missing native outcome records failure.
