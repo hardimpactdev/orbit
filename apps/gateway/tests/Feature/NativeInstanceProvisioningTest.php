@@ -184,3 +184,22 @@ it('captures checkout scope and admitted seed values in the private command copy
     expect($command)->toMatchArray(['directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
         ->and(json_encode($public))->not->toContain('private-command');
 });
+
+it('serializes an empty stored environment as a native map before source resolution', function (): void {
+    $this->project->update(['type' => 'monorepo', 'root' => 'public']);
+    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'queued', 'input' => [...$this->input, 'ssh_execution' => [], 'direct_provisioning' => $plan]]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-token']);
+
+    $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
+
+    $material = json_decode($socket->sent[0]['payload']['value'], flags: JSON_THROW_ON_ERROR);
+    expect($material->values)->toBeInstanceOf(stdClass::class);
+    expect(get_object_vars($material->values))->toBe([]);
+    expect($public['intent']['skip_profile'])->toBeTrue();
+    expect($public['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-environment-input-'.$operation->id]);
+});

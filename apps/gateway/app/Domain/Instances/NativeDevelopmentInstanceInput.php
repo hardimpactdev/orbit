@@ -30,7 +30,7 @@ final readonly class NativeDevelopmentInstanceInput
         $plan = ValidatedData::object($input['direct_provisioning']);
         $ssh = $input['ssh_execution'];
         $values = app(InstanceEnvironmentStore::class)->values($instance);
-        $material = new OperationSecretValue(['values' => $values, 'name' => $instance->project->name, 'framework_key' => null]);
+        $material = new OperationSecretValue(['values' => (object) $values, 'name' => $instance->project->name, 'framework_key' => null]);
         $base = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, json_encode($material->value, JSON_THROW_ON_ERROR));
         $programs = ValidatedData::object(app(NativeInstanceProvisioningSetup::class)->resolve($operation, $instance->id, '', 'setup_programs')->value);
         $copies = ['git_read' => InstanceGitHubReadTokens::reference($operation), 'environment' => $base];
