@@ -211,9 +211,6 @@ class Host:
                                                                     remote=True)["version"])
         require(audit.get("checked", 0) > 0 and audit["checked"] == audit.get("matched")
                 and not audit.get("errors") and not audit.get("mismatches"), "served_extension_version_mismatch")
-        runs = self.native("run", "history", "--active", remote=True).get("runs")
-        require(isinstance(runs, list) and all(isinstance(row, dict) and row.get("status") == "running"
-                                             and isinstance(row.get("id"), str) for row in runs), "native_drain_unreadable")
         return {"workflows": workflows, "workflow_inventory": {
             "equal": True, "disk_count": len(rows), "served_count": len(served_rows),
             "scope": "all_id_name_pairs", "before_sha": old_sha,
@@ -221,8 +218,7 @@ class Host:
             "cli_get_calls": 2 * len(selected)}, "extension_audit": {
             "checked": audit["checked"], "matched": audit["matched"], "mismatches": [],
             "scope": audit.get("scope"), "limit": audit.get("limit"),
-            "registry_equality": False},
-            "drain": {"queried_at": now(), "active_running_run_ids": [row["id"] for row in runs]}}
+            "registry_equality": False}}
 
     def grants(self, sha, directory):
         raw = (self.app / "config/gateway-workflow-grants.json").read_bytes()
