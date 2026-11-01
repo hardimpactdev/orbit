@@ -42,7 +42,7 @@ final readonly class CancelRunningSubtaskAction
             TaskAssistance::resolveExternalSubtask($locked, $group);
             $this->markSubtaskCancelled($locked);
 
-            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+            return $locked->fresh() ?? $locked;
         });
 
         return $instanceId === null ? $finish() : app(TaskExecutionLock::class)->synchronized(-$instanceId, $finish, wait: false);

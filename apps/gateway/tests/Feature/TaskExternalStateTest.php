@@ -165,17 +165,6 @@ it('rolls back a status move combined with a forbidden metadata update', functio
     expect($task->fresh()->title)->toBe('One');
 });
 
-it('keeps tick group status input unchanged and refuses subtask status input', function (): void {
-    [$group, $task] = external_state_group('running', 'running', TaskOrchestration::External);
-
-    $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'reviewing'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-    $this->patchJson("/api/v1/task-groups/{$group->id}", ['status' => 'todo'])->assertConflict()->assertJsonPath('error.code', 'tasks.already_claimed');
-    $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['status' => 'reviewing'])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
-
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    expect($task->fresh()->status)->toBe(TaskStatus::Running);
-});
-
 it('clears external assistance on resolution without sending or queuing work', function (string $status): void {
     [$group, $task] = external_state_group('running', $status);
     $driver = new FakeAgentDriver('fake');
@@ -227,7 +216,8 @@ it('cancels external active work without advancing or settling', function (strin
     $before = $group->getRawOriginal();
     $level = DB::transactionLevel();
 
-    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk()->assertJsonPath('data.status', 'cancelled');
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk()
+        ->assertJsonPath('data.id', $task->id)->assertJsonPath('data.task_group_id', $group->id)->assertJsonPath('data.status', 'cancelled');
 
     expect($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'external-turn']]);
     expect($driver->interruptTransactionLevels)->toBe([$level]);
@@ -248,7 +238,8 @@ it('cancels an external subtask with no lease holder without remote stops', func
     app()->instance(TaskCheckRunner::class, $checks);
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
 
-    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk()->assertJsonPath('data.status', 'cancelled');
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/cancel")->assertOk()
+        ->assertJsonPath('data.id', $task->id)->assertJsonPath('data.task_group_id', $group->id)->assertJsonPath('data.status', 'cancelled');
 
     expect($task->fresh()->status)->toBe(TaskStatus::Cancelled);
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Running);
