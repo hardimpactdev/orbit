@@ -36,6 +36,7 @@ it('admits keyed native cancellation without prematurely ending a board group', 
     $id = $this->withHeader('Idempotency-Key', 'cancel.fixture')->postJson($this->url)->assertAccepted()->json('data.id');
     $operation = Operation::query()->findOrFail($id);
     expect($operation->kind)->toBe('tasks.cancel')->and($operation->node_id)->toBe(209)
+        ->and($operation->input['teardown'])->toBe([])
         ->and($this->group->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and(app(DirectOperation::class)->definition('tasks.cancel')['terminal_result'])->toBe(['job' => 'cancel', 'step' => 'result']);
     $this->postJson($this->url)->assertAccepted()->assertJsonPath('data.id', $id);

@@ -87,15 +87,10 @@ jobs:
     - step: withdraw
       condition: *id001
     task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "workspace-routes-withdrawn-" + run.id }}
-      methodName: execute
-      inputs:
-        run: timeout 5 test "$WITHDRAWN" = true
-        env:
-          WITHDRAWN: ${{ string(size(inputs.intent.workspace_routes) == 0 || steps.withdraw.outputs.result.ready)
-            }}
+      type: assert
+      expr: size(inputs.intent.workspace_routes) == 0 || steps.withdraw.outputs.result.ready
+      severity: high
+      message: The exclusive workspace Route must be withdrawn before cleanup.
   - name: teardown
     target: orbit-node-209
     guard: ${{ size(inputs.intent.teardown) == 0 || !steps.inspect.outputs.result.running }}
