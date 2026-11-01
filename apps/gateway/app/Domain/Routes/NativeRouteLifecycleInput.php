@@ -20,7 +20,7 @@ final readonly class NativeRouteLifecycleInput
     /** @param array<string,mixed> $input
      * @return array{intent:array<string,mixed>,certificates:list<array<string,mixed>>,participant_node_ids:list<int>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
-    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null): array
+    public function capture(Route $route, array $input, bool $removing = false, ?int $deletedWorkloadNodeId = null, bool $restorable = true): array
     {
         $route->loadMissing(['targets.instance.node', 'targets.instance.project', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node']);
         $metadata = ['route_id' => $route->id, 'result_route_id' => $route->id, 'effectful' => $removing || ($input['mode'] ?? null) !== 'state_only',
@@ -73,7 +73,7 @@ final readonly class NativeRouteLifecycleInput
         }
         $extra = $inventory === null ? [] : ValidatedData::integerList(array_column($inventory['nodes'], 'node_id'));
         $capture = $this->mutations->capture([$prior], $desired, $desired, [$prior], $beforeSites, $beforeSites,
-            array_values(array_unique([...ValidatedData::integerList($prior['intent']['node_ids']), ...$extra])), static fn (Closure $render): array => $render());
+            array_values(array_unique([...ValidatedData::integerList($prior['intent']['node_ids']), ...$extra])), static fn (Closure $render): array => $render(), restorable: $restorable);
         if ($inventory !== null) {
             $mutation = ValidatedData::object($capture['route_mutations']);
             $forward = ValidatedData::object($mutation['forward']);

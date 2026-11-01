@@ -3,7 +3,9 @@ title: Native Route creation
 description: Route creation through one placed Swamp workflow.
 ---
 
-Route creation freezes complete BEFORE and prospective AFTER Caddy, PHP, DNS, certificate, workload and firewall plans before dispatch. One native root on Node 209 prepares workload TLS, proves the captured Router-to-workload endpoint, then reuses the canonical Route publication children. Stored serving markers change only after terminal success. An unchanged active Route requires no host work.
+Route creation freezes BEFORE and prospective AFTER Caddy, PHP, DNS, certificate, workload and firewall plans before dispatch.
+
+Publication intent contains only changed Caddy site groups, PHP pools and DNS entries. Equal artifacts are stored once and referenced by the publication phases. The native children merge these admitted changes with the current Node files, retaining unrelated configuration and refusing a conflicting change to an affected entry. One native root on Node 209 prepares workload TLS, proves the captured Router-to-workload endpoint, then reuses the canonical Route publication children. Stored serving markers change only after terminal success. An unchanged active Route requires no host work.
 
 Public Route publication changes use the admitted native Route workflow. The Gateway records the preference and projects the terminal result; it has no separate synchronous public Route publication executor.
 
@@ -13,10 +15,12 @@ Route removal freezes the same actual BEFORE catalog and a catalog without the s
 
 Offline removal uses native, pinned official SSH readiness. Unreachable effect Nodes retain explicit cleanup residue; unavailable private DNS still blocks withdrawal. A clock or a failed native step does not establish cleanup.
 
+Composing withdrawal parents that do not run Route compensation omit the restore branch and its execution copies. Standalone Route removal retains its admitted compensation plan. Withdrawal retains the same DNS-first order and does not copy unrelated Node site inventories into a parent Operation.
+
 Every action uses the admitted target, approved control identity and stored host pins. Environment contents use names-only execution copies read by the existing native environment child. The Gateway signs only public CSRs for the exact admitted forward or restore phase and projects terminal output through the shared reader. Steps do not fetch intent or report progress to the Gateway. Create and removal Operations reject executor callbacks; only the shared native reader projects their terminal result. No agent action runs.
 
 See [Routes](/reference/routes) and [Operations](/reference/operations) for the public command contracts.
 
 Standalone workload and public verification freeze the validated endpoint and the probing Node’s pinned SSH connection before dispatch. The root reuses the canonical native probe child from Node209. Target-unset confirms its admitted empty target set without host work. Private DNS publication freezes the complete catalog and uses the existing DNS publication child. The root records the actual files before publication and uses the same child to restore them after failure. These Operations accept terminal projection from the native reader only; steps do not read or execute Gateway primitives.
 
-Composing parents can supply prospective site values to `NativeRouteMutationInput::capture` without saving attachments first. Freeze the stored catalog and prior Route before applying site changes. Use `DevelopmentSite::withWebSocket` or `withoutWebSocket` for the desired Route sites and candidate catalog; the canonical mutation children retain full publication snapshots and serving participants.
+Composing parents can supply prospective site values to `NativeRouteMutationInput::capture` without saving attachments first. Freeze the stored catalog and prior Route before applying site changes. Use `DevelopmentSite::withWebSocket` or `withoutWebSocket` for the desired Route sites and candidate catalog; the canonical mutation children retain affected publication artifacts and all serving participants.

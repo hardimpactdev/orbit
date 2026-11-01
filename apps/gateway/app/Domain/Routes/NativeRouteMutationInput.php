@@ -35,7 +35,7 @@ final readonly class NativeRouteMutationInput
      * @return array{route_mutations:array<string,mixed>,participant_node_ids:list<int>,certificates:list<array<string,mixed>>,execution_secrets:array<string,array{vault:string,key:string}>}
      */
     public function capture(array $previous, array $desired, array $staged, array $forwardPrior,
-        Collection $beforeSites, Collection $candidateSites, array $extraNodeIds, Closure $render, ?NodeEnrollmentCandidate $enrollment = null): array
+        Collection $beforeSites, Collection $candidateSites, array $extraNodeIds, Closure $render, ?NodeEnrollmentCandidate $enrollment = null, bool $restorable = true): array
     {
         $domains = array_values(array_unique([...array_column($previous, 'domain'), ...array_column($desired, 'domain')]));
         $addressNodes = $candidateSites->filter(static fn (DevelopmentSite $site): bool => $beforeSites->first(static fn (DevelopmentSite $before): bool => $before->addressKey() === $site->addressKey()) != $site)->pluck('nodeId')->all();
@@ -81,10 +81,12 @@ final readonly class NativeRouteMutationInput
         }
         $captureId = bin2hex(random_bytes(8));
         $secrets = [];
-        $forward = $this->stage($desired, $publications, 'forward', $captureId, $secrets);
-        $restore = $this->stage($previous, $publications, 'restore', $captureId, $secrets);
+        $compact = app(NativeRoutePublicationArtifacts::class)->capture($publications);
+        $forward = $this->stage($desired, $compact['publications'], 'forward', $captureId, $secrets);
+        $restore = $restorable ? $this->stage($previous, $compact['publications'], 'restore', $captureId, $secrets) : ['certificates' => []];
         $forward['prepare_certificates'] = array_values(array_unique(array_merge(...array_map(static fn (array $row): array => RouteExecutionProof::objects($row['intent']['certificates']), $staged)), SORT_REGULAR));
-        $allLeaves = array_values(array_unique([...RouteExecutionProof::objects($forward['prepare_certificates']), ...RouteExecutionProof::objects($forward['certificates']), ...RouteExecutionProof::objects($restore['certificates'])], SORT_REGULAR));
+        $previousLeaves = array_merge(...array_map(static fn (array $row): array => RouteExecutionProof::objects($row['intent']['certificates']), $previous));
+        $allLeaves = array_values(array_unique([...RouteExecutionProof::objects($forward['prepare_certificates']), ...RouteExecutionProof::objects($forward['certificates']), ...$previousLeaves], SORT_REGULAR));
         foreach (['forward', 'restore'] as $side) {
             $cleanup = [];
             foreach ($allLeaves as $leaf) {
@@ -139,7 +141,7 @@ final readonly class NativeRouteMutationInput
         $participants = array_values(array_unique($participants));
         sort($participants);
 
-        return ['route_mutations' => ['schema_version' => 1, 'forward' => $forward, 'restore' => $restore],
+        return ['route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'], 'forward' => $forward, ...($restorable ? ['restore' => $restore] : [])],
             'participant_node_ids' => $participants, 'certificates' => $certificates, 'execution_secrets' => $secrets];
     }
 

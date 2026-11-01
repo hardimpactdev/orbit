@@ -7,6 +7,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeClusterRouterIntent;
 use App\Domain\Routes\NativeClusterRouterProjection;
 use App\Domain\Routes\NativeClusterRouterPublicationInput;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
 use App\Domain\Routes\RoutePublicationSites;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Cluster;
@@ -56,7 +57,7 @@ it('captures both Routers through DNS grace without selecting the candidate in t
 
     $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
 
-    $rows = collect($capture['route_mutations']['forward']['publications']);
+    $rows = collect($capture['route_mutations']['forward']['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row));
     $old = $rows->firstWhere('node_id', $this->old->id);
     $candidate = $rows->firstWhere('node_id', $this->candidate->id);
     $dns = $rows->firstWhere('node_id', $this->dns->id);
@@ -122,14 +123,14 @@ it('captures unset by withdrawing Router sites and preserving the workload ident
     $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
 
     $forward = $capture['route_mutations']['forward'];
-    $rows = collect($forward['publications']);
+    $rows = collect($forward['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row));
     expect($rows->firstWhere('node_id', $this->old->id)['after']['caddy']['content'])->not->toContain('app.cluster.test');
-    expect($rows->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])->toContain('app.cluster.test');
+    expect($rows->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])->not->toContain('app.cluster.test');
     expect($forward['routes'][0]['node_ids'])->toBe([$this->workload->id]);
     expect($this->oldRole->fresh()->status->value)->toBe('active');
 });
 
-it('preserves unrelated private sites and excludes their leaf scopes from cleanup', function (): void {
+it('omits unrelated private sites from deltas and excludes their leaf scopes from cleanup', function (): void {
     $other = Route::query()->create(['kind' => 'custom_proxy', 'node_id' => $this->old->id, 'domain' => 'unrelated.private.test',
         'publication' => 'private', 'provenance' => 'explicit', 'status' => 'pending']);
     $other->customProxy()->create(['node_id' => $this->old->id, 'upstream' => 'http://127.0.0.1:4788']);
@@ -139,9 +140,9 @@ it('preserves unrelated private sites and excludes their leaf scopes from cleanu
     $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation, $inventory);
 
     $forward = $capture['route_mutations']['forward'];
-    $old = collect($forward['publications'])->firstWhere('node_id', $this->old->id);
+    $old = collect($forward['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->old->id);
     foreach (['before', 'prepared', 'withdrawn', 'after'] as $phase) {
-        expect($old[$phase]['caddy']['content'])->toContain('unrelated.private.test');
+        expect($old[$phase]['caddy']['content'])->not->toContain('unrelated.private.test');
     }
     expect(array_column($forward['cleanup'], 'scope'))->not->toContain('route-'.$other->id);
 });
@@ -199,7 +200,7 @@ it('captures official Router ingress families and preserves shared workload tupl
         ->and($this->candidateRole->fresh()->status->value)->toBe('provisioning');
 });
 
-it('executes only changed Router leaves once while retaining complete workload publications', function (): void {
+it('executes only changed Router leaves and omits unchanged workload sites', function (): void {
     $capture = app(NativeClusterRouterPublicationInput::class)->capture($this->operation,
         app(NativeClusterRouterIntent::class)->forOperation($this->operation));
 
@@ -210,8 +211,8 @@ it('executes only changed Router leaves once while retaining complete workload p
         ->and($forward['certificates'])->toBe([])->and($restore['prepare_certificates'])->toBe([])
         ->and($capture['certificates'])->toHaveCount(2)
         ->and(array_column($capture['certificates'], 'node_id'))->not->toContain($this->workload->id)
-        ->and(collect($forward['publications'])->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])
-        ->toContain('app.cluster.test')
+        ->and(collect($forward['publications'])->map(static fn (array $row): array => NativeRoutePublicationArtifacts::resolve($capture['route_mutations']['artifacts'], $row))->firstWhere('node_id', $this->workload->id)['after']['caddy']['content'])
+        ->not->toContain('app.cluster.test')
         ->and(array_column($forward['cleanup'], 'node_id'))->toBe([$this->old->id])
         ->and(array_column($restore['cleanup'], 'node_id'))->toBe([$this->candidate->id]);
 });

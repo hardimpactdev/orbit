@@ -23,7 +23,13 @@ final readonly class NativeRoutePreparationInput
      */
     public function capture(array $capture, array $staged, array $desired, Collection $beforeSites, array $instances): array
     {
-        $forward = ValidatedData::object(ValidatedData::object($capture['route_mutations'])['forward']);
+        $mutations = ValidatedData::object($capture['route_mutations']);
+        $forward = ValidatedData::object($mutations['forward']);
+        $artifacts = [];
+        foreach (['caddy', 'php', 'dns'] as $kind) {
+            $artifacts[$kind] = RouteExecutionProof::objects(ValidatedData::object($mutations['artifacts'])[$kind]);
+        }
+        $compact = app(NativeRoutePublicationArtifacts::class);
         $preparedIds = array_keys($instances);
         $workloadScopes = array_map(static fn (int $id): string => 'app-instance-'.$id, $preparedIds);
         $servingHops = $beforeSites->filter(static fn (DevelopmentSite $site): bool => $site->isProxy() || $site->publicListener)
@@ -40,9 +46,13 @@ final readonly class NativeRoutePreparationInput
                 continue;
             }
             $prepared = app(NativeRoutePublicationInput::class)->snapshot(Node::query()->findOrFail($nodeId), $workloadCatalog);
+            $before = app(NativeRoutePublicationInput::class)->snapshot(Node::query()->findOrFail($nodeId), $beforeSites);
+            $pair = $compact->scope(['before' => $before, 'after' => $prepared]);
+            $resolved = NativeRoutePublicationArtifacts::resolve($artifacts, $publication);
+            $references = [ValidatedData::object($pair['before']['caddy']), ValidatedData::object($pair['after']['caddy'])];
             $preparation['publications'][] = [...array_intersect_key($publication, array_flip(['node_id', 'user', 'control_node_id', 'connection', 'host_keys'])),
-                'before' => ValidatedData::object($publication['before'])['caddy'], 'after' => $prepared['caddy'], 'direction' => 'forward',
-                'alternatives' => array_map(static fn (string $stage): mixed => ValidatedData::object($publication[$stage])['caddy'], ['before', 'prepared', 'withdrawn', 'after'])];
+                'before' => $compact->intern($artifacts, 'caddy', $references[0]), 'after' => $compact->intern($artifacts, 'caddy', $references[1]), 'direction' => 'forward',
+                'alternatives' => array_map(static fn (string $stage): int => $compact->intern($artifacts, 'caddy', $compact->restrictCaddy(ValidatedData::object(ValidatedData::object($resolved[$stage])['caddy']), $references)), ['before', 'prepared', 'withdrawn', 'after'])];
         }
         foreach ($desired as $row) {
             $routerId = $row['intent']['router_node_id'];
@@ -64,8 +74,8 @@ final readonly class NativeRoutePreparationInput
             }
         }
         $forward['prepare_certificates'] = $forward['lan'] = [];
-        $mutations = ValidatedData::object($capture['route_mutations']);
         $mutations['forward'] = $forward;
+        $mutations['artifacts'] = $artifacts;
         $capture['route_mutations'] = $mutations;
 
         return ['capture' => $capture, 'preparation' => $preparation];

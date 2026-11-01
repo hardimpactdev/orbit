@@ -262,7 +262,23 @@ function workloadMutationWorkflow(
             "prepare-caddy",
             "publications",
             "operation-route-caddy-delta",
-            expr("self.part"),
+            {
+                node_id: expr("self.part.node_id"),
+                user: expr("self.part.user"),
+                control_node_id: expr("self.part.control_node_id"),
+                connection: expr("self.part.connection"),
+                host_keys: expr("self.part.host_keys"),
+                direction: expr("self.part.direction"),
+                before: expr(
+                    "inputs.intent.route_mutations.artifacts.caddy[self.part.before]",
+                ),
+                after: expr(
+                    "inputs.intent.route_mutations.artifacts.caddy[self.part.after]",
+                ),
+                alternatives: expr(
+                    "self.part.alternatives.map(ref,inputs.intent.route_mutations.artifacts.caddy[ref])",
+                ),
+            },
         );
         preparation(
             "prepare-probe",
