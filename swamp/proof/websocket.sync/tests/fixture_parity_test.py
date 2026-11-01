@@ -139,6 +139,7 @@ class TopologyObservationTests(unittest.TestCase):
                     "41",
                     "12",
                     "10.0.0.12",
+                    "disposable",
                 ],
             ),
             patch("builtins.print"),
@@ -154,9 +155,18 @@ class TopologyObservationTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.run_parity(kind, self.observations(kind))
 
-    def test_rotation_cannot_certify_only_the_unchanged_public_key(self):
-        with self.assertRaisesRegex(AssertionError, "pre-request socket observer"):
-            self.run_parity("websocket.app_rotate", self.observations("websocket.app_rotate"))
+    def test_rotation_requires_the_pre_request_observer_result(self):
+        with (
+            patch.object(
+                parity.subprocess,
+                "run",
+                side_effect=subprocess.CalledProcessError(1, "observer"),
+            ),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            self.run_parity(
+                "websocket.app_rotate", self.observations("websocket.app_rotate")
+            )
 
     def test_foreign_runtime_refused_before_handshake(self):
         operation = self.observations("websocket.sync")

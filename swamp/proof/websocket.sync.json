@@ -63,7 +63,8 @@
       "",
       "${proof.operation_id}",
       "${topology.app-prod.node_id}",
-      "${topology.app-prod.wireguard_ip}"
+      "${topology.app-prod.wireguard_ip}",
+      "${proof.run}"
     ],
     "cases": [
       "native-terminal-result",

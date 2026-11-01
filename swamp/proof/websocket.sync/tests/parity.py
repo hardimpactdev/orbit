@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 
 
 def guest(node, argv):
@@ -34,9 +35,17 @@ def cli(*arguments):
 
 
 def main():
-    kind, subject, unrelated, unrelated_key, before, operation_id, node_id, address = (
-        sys.argv[1:]
-    )
+    (
+        kind,
+        subject,
+        unrelated,
+        unrelated_key,
+        before,
+        operation_id,
+        node_id,
+        address,
+        tag,
+    ) = sys.argv[1:]
     # These are public app ids/keys. App and registry secrets stay on their normal path.
     other = cli("websocket:app:show", unrelated)
     assert other["key"] == unrelated_key
@@ -106,8 +115,19 @@ print('managed-runtime-handshake: PASS')
     )
     guest("app-prod", ["python3", "-c", probe, public])
     if kind == "websocket.app_rotate":
-        raise AssertionError(
-            "Rotation proof is incomplete: F13 needs a supported pre-request socket observer"
+        subprocess.run(
+            [
+                "python3",
+                "-I",
+                str(
+                    Path(__file__).parents[2]
+                    / "websocket.app_rotate/tests/socket_observer.py"
+                ),
+                "check",
+                tag,
+            ],
+            check=True,
+            timeout=20,
         )
     print("F13 public app state and managed-runtime parity: PASS")
 

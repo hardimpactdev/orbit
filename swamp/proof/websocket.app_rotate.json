@@ -63,7 +63,8 @@
       "${capture.subject_key}",
       "${proof.operation_id}",
       "${topology.app-prod.node_id}",
-      "${topology.app-prod.wireguard_ip}"
+      "${topology.app-prod.wireguard_ip}",
+      "${proof.run}"
     ],
     "cases": [
       "native-terminal-result",
@@ -71,7 +72,9 @@
       "unrelated-app-handshake",
       "app-id-and-key-preserved",
       "exact-admitted-runtime",
-      "names-only-registry-copy"
+      "names-only-registry-copy",
+      "pre-existing-subject-socket-closes-4201",
+      "pre-existing-unrelated-socket-survives"
     ]
   },
   "topology": "app-prod",
@@ -142,5 +145,18 @@
       "--json"
     ],
     "operation": "$.id"
-  }
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/websocket.app_rotate/tests/socket_observer.py",
+        "start",
+        "${proof.run}",
+        "${capture.subject_key}",
+        "${capture.unrelated_key}"
+      ]
+    }
+  ]
 }
