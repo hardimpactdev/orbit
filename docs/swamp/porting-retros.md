@@ -20,7 +20,7 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 | #2317 | `queueTimeout: 60` on three observation workflows | Unchanged | queueTimeout only | A's recorded exception: no receipt, failure timing only | Maintain and Doctor still lacked `queueTimeout`; #2334 fixed Doctor, Maintain stays open (L17 2201-01) |
 | #2302 | Observation-context run flood stopped | Not a kind | None | Outage exception | Re-proof candidate under the corrected F10 scope, not a violation |
 | #2300 | Gateway expires native Operations from captured run budgets | Not a kind | Expiry policy | Pre-scope-rule; re-proof candidate | A late native terminal within budget must replace the `timed_out` mark (L17-PR-2300-01) |
-| #2348 | F8 budgets, late native terminal and no-run lock release (lane 16) | Not a kind | 600 s no-run, explicit wins, else 30 min then 1.5× longest success | Outage exception; live check after load | Shared F1 wrapper still has to drop lines holding a partial secret before it is wired |
+| #2348 | F8 budgets, late native terminal and no-run lock release (lane 16) | Not a kind | 600 s no-run, explicit wins, else 30 min then 1.5× longest success | Outage exception; live check after load | Closes L17-PR-2324-01. L17-PR-2300-01 stays open: an already timed-out Operation keeps `timed_out` when its on-time terminal arrives. The unwired F1 wrapper must drop partial-secret lines |
 | #2325 | Bounded external-state polls in phase scripts (lane 0b) | Not a kind | Gate rule | Gate tests | Python poll acceptance had no URL or HTTP failure check (L17-PR-2325-01), fixed in #2360 |
 | #2320 | F11 cancel of owned routed workspaces (C) | Inspect, withdraw, teardown, VM: the legacy order | Workflow `queueTimeout` 60 | Live-fix path: cancel groups 2195, 2199, 2201, 2203 | F9 reason and parity disposition pending from C |
 | #2335 | `instance.run_steps` setup guard (old shape) | Unchanged | None | Outage exception; live proof `instance:setup` 780 pending | A stale "running means replay" guard failed every run in 2 s (ops 6703, 6704) after the Gateway began marking Operations running before the native run starts (#1894) |
@@ -48,6 +48,7 @@ Fix-forward is allowed for these. They need no proof.
 | #2358 | Test fixtures leaking anonymous Docker volumes (tests only) | None | Forced `rm` beat `--rm`; about 1,000 leaked volumes a day on beast until cleanup passed `--volumes` |
 | #2341 | Unused SQLite seed-abandon kind | None | Deletion, −129 net |
 | #2331 | Unreachable standalone certificate kinds (C) | None | Deletion, −911 net |
+| #2318 | Instance clone diagrams (lane 27, docs) | None | L17-PR-2318-01: the parity map cites `InstanceDatabaseCloneTest.php`, which tests database copy, not `instance:clone`. L17-PR-2318-02: "one SSH call per phase" ignores Gateway-only and multi-Node phases |
 | #2296 | Route-comment LAN write branches | One count lowered from 260 to 233 | Deletion, −90 net |
 | #2288 | Unused TypeScript Schedule removal; three Ruff allowances | 3 removed | None |
 | #2287 | `@nckrtl/certificates` dispatcher | One count lowered from 125 to 39 | Partial cleanup lowers a count rather than deleting the row |
