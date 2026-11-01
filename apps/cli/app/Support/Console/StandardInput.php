@@ -18,4 +18,9 @@ final readonly class StandardInput implements StandardInputReader
 
         return is_string($contents) ? $contents : '';
     }
+
+    public function isTerminal(): bool
+    {
+        return defined('STDIN') && stream_isatty(STDIN);
+    }
 }

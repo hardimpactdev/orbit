@@ -115,7 +115,7 @@ Compare schema, table counts, exact row counts for critical tables, sequence val
 
 ### Recreate application logins
 
-Create each needed secondary user on the canonical managed connection with `database:user:create`, using `--read-only` for readers. The CLI currently takes `--password`; use the authenticated API or SDK with a protected request body for secret-bearing user creation and connection updates, so credentials never enter argv or shell history. For connection 9, replace the source postgres login with the canonical managed owner and its privately retrieved credentials; never recreate postgres as an application user.
+Create each needed secondary user on the canonical managed connection with `database:user:create`, using `--read-only` for readers. It reads the password from standard input or a hidden prompt, never from argv. For connection updates, use the authenticated API or SDK with a protected request body, so credentials never enter argv or shell history. For connection 9, replace the source postgres login with the canonical managed owner and its privately retrieved credentials; never recreate postgres as an application user.
 
 Recreate each existing application user with its privately retrieved password and matching prior rights; do not import source admin roles. A repeated user-create resets its password and grants.
 

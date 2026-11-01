@@ -655,7 +655,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['slug'],
             [
                 'username' => null,
-                'password' => null,
                 'read-only' => false,
                 'replication' => false,
                 'idempotency-key' => null,
@@ -1199,7 +1198,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'database:user:create' => [[
             'slug' => 'app',
             '--username' => 'app',
-            '--password' => 'secret',
         ], ...$profileMissing],
         'database:user:list' => [['slug' => 'app'], ...$profileMissing],
         'dns:resolve' => [
