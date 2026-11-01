@@ -103,7 +103,7 @@ final readonly class DoctorProjection implements DirectOperationProjection, Dire
     }
 
     /** @param array<string, mixed> $native */
-    private function report(array $native): DoctorReportData
+    public function report(array $native): DoctorReportData
     {
         $nodes = [];
         foreach (Arr::array($native, 'nodes') as $value) {

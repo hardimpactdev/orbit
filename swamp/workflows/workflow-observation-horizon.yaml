@@ -1,0 +1,37 @@
+id: 09fb7a5a-6b19-4fb6-8f14-16382563f822
+name: observation-horizon
+description: One bounded read-only horizon observation per native scheduled tick.
+trigger:
+  schedule: '45 */10 * * * *'
+jobs:
+- name: observe
+  target: orbit-node-209
+  steps:
+  - name: context
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-schedule'
+      behaviorName: ${{ "observation-select-" + run.id }}
+      methodName: select
+      inputs:
+        candidates: ${{ data.query('modelType == "@nckrtl/observation-schedule" && specName == "context" && attributes.channel == "horizon"').map(c, c.attributes) }}
+  - name: reading
+    dependsOn:
+    - {step: context, condition: {type: succeeded}}
+    task:
+      type: workflow
+      workflowIdOrName: operation-doctor-inspect
+      inputs:
+        node_id: ${{ steps.context.outputs.node_id }}
+        intent: ${{ steps.context.outputs.intent }}
+  - name: result
+    dependsOn:
+    - {step: reading, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/observation-schedule'
+      behaviorName: ${{ "observation-result-" + run.id }}
+      methodName: result
+      inputs:
+        context: ${{ steps.context.outputs }}
+        reading: ${{ steps.reading.outputs.result }}

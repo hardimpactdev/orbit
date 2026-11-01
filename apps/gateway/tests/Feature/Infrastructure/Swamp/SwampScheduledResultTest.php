@@ -85,7 +85,7 @@ beforeEach(function (): void {
 });
 
 it('declares one fixed scheduled workflow and public row selector', function (): void {
-    expect(app(DirectOperation::class)->scheduledResultDefinitions())->toBe([scheduledObservationDeclaration()['workflow_id'] => scheduledObservationDeclaration()]);
+    expect(app(DirectOperation::class)->scheduledResultDefinitions()[scheduledObservationDeclaration()['workflow_id']])->toBe(scheduledObservationDeclaration());
 });
 
 it('projects pending then terminal observations without replacing the original binding', function (): void {
@@ -198,10 +198,14 @@ it('projects a discovered native scheduled result end to end through the existin
     $events = new FakeSwampEventSocket;
     $subscriber = new SwampRunSubscriber(new FakeSwampEventSocket, new NullLogger, scheduled: new SwampScheduledResults($events, new NullLogger));
     $subscriber->pass();
-    $read = $events->sent[0];
-    $events->push(['type' => 'workflow.get', 'id' => $read['id'], 'payload' => ['data' => [
-        'id' => scheduledObservationDeclaration()['workflow_id'], 'name' => 'task-check-ci',
-    ]]]);
+    $replies = [];
+    foreach ($events->sent as $read) {
+        $id = $read['payload']['workflowIdOrName'];
+        $replies[] = ['type' => 'workflow.get', 'id' => $read['id'], 'payload' => ['data' => [
+            'id' => $id, 'name' => app(DirectOperation::class)->scheduledResultDefinitions()[$id]['workflow'],
+        ]]];
+    }
+    $events->push(...$replies);
     $subscriber->pass();
     $feed = array_last($events->sent);
     $this->row['result']['pending'] = false;

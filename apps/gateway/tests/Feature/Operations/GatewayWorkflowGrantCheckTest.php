@@ -7,7 +7,7 @@ use App\Domain\Operations\GatewayWorkflowGrantCheck;
 use Symfony\Component\Process\Process;
 
 it('checks intended policy against the booted Gateway declarations including contributions', function (): void {
-    $definitions = app(DirectOperation::class)->definitions();
+    $definitions = app(DirectOperation::class)->grantDefinitions();
     $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
 
     expect((new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
@@ -16,13 +16,17 @@ it('checks intended policy against the booted Gateway declarations including con
 });
 
 it('refuses missing intent for booted core, computed and extension declarations', function (string $workflow): void {
-    $definitions = app(DirectOperation::class)->definitions();
+    $definitions = app(DirectOperation::class)->grantDefinitions();
     $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
     $policy['workflows'] = array_values(array_filter($policy['workflows'], fn (array $entry): bool => $entry['workflow'] !== $workflow));
 
     expect(fn () => (new GatewayWorkflowGrantCheck)->execute($definitions, $policy))
         ->toThrow(LogicException::class, $workflow);
 })->with([
+    'Task CI cadence' => 'task-check-ci',
+    'Observation context' => 'observation-context',
+    'Fleet cadence' => 'observation-collection',
+    'Horizon cadence' => 'observation-horizon',
     'Horizon' => 'operation-process-horizon-handoff',
     'Worker known-hosts' => 'operation-node-worker-known-hosts',
     'Schedule create' => 'operation-schedule-create',
@@ -49,7 +53,7 @@ it('runs the required registry entrypoint with intended grant validation without
 });
 
 it('requires execution copy key intent from core and loaded extension declarations', function (string $kind): void {
-    $definitions = app(DirectOperation::class)->definitions();
+    $definitions = app(DirectOperation::class)->grantDefinitions();
     $policy = json_decode(file_get_contents(base_path('../../swamp/config/gateway-workflow-grants.json')), true, flags: JSON_THROW_ON_ERROR);
     $copy = $definitions[$kind]['execution_copies'][0];
     $policy['vaults'] = array_values(array_filter($policy['vaults'], fn (array $entry): bool => $entry['vault'] !== $copy['vault'] || $entry['key_pattern'] !== $copy['key_pattern']));

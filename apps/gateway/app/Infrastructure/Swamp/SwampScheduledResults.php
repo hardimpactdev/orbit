@@ -120,6 +120,9 @@ final class SwampScheduledResults
         if (count($this->readable) !== count(app(DirectOperation::class)->scheduledResultDefinitions())) {
             return;
         }
+        foreach (array_unique(array_column(app(DirectOperation::class)->scheduledResultDefinitions(), 'projection')) as $projection) {
+            app($projection)->activate();
+        }
         $this->feedRequest = bin2hex(random_bytes(16));
         $this->socket->send(['type' => 'commits.subscribe', 'id' => $this->feedRequest, 'payload' => ['cursor' => $this->cursor]]);
         // One startup/rejoin recovery of saved hints; no elapsed-time history retry.

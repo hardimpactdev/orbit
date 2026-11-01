@@ -82,7 +82,7 @@ final readonly class DirectOperation
             'terminal_result' => self::terminalResult($declaration['terminal_result'] ?? null), 'rows' => $declaration['rows']];
     }
 
-    /** @return array<string,array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows:string}> */
+    /** @return array<string,array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string},rows?:string,context_workflow?:string,projection?:class-string<ScheduledResultProjection>}> */
     public function scheduledResultDefinitions(): array
     {
         $scheduled = [];
@@ -98,7 +98,36 @@ final readonly class DirectOperation
             $scheduled[$id] = $declaration;
         }
 
+        foreach (glob(__DIR__.'/../*/scheduled-results.php') ?: [] as $file) {
+            foreach (require $file as $id => $declaration) {
+                if (! Str::isUuid($id) || isset($scheduled[$id]) || count($declaration) !== 4
+                    || ! is_string($declaration['context_workflow'] ?? null)
+                    || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['context_workflow']) !== 1
+                    || ! is_string($declaration['workflow'] ?? null)
+                    || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $declaration['workflow']) !== 1
+                    || ! is_a($declaration['projection'] ?? '', ScheduledResultProjection::class, true)) {
+                    throw new LogicException('A standalone schedule requires one fixed projection and workflow identity.');
+                }
+                $scheduled[$id] = [...$declaration, 'workflow_id' => $id,
+                    'terminal_result' => self::terminalResult($declaration['terminal_result'] ?? null)];
+            }
+        }
+
         return $scheduled;
+    }
+
+    /** @return array<string,array{workflow:string,execution_copies?:list<array{vault:string,key_pattern:string}>}> */
+    public function grantDefinitions(): array
+    {
+        $required = array_map(static fn (array $definition): array => ['workflow' => $definition['workflow'], 'execution_copies' => $definition['execution_copies'] ?? []], $this->definitions);
+        foreach ($this->scheduledResultDefinitions() as $schedule) {
+            $required['schedule:'.$schedule['workflow']] = ['workflow' => $schedule['workflow']];
+            if (isset($schedule['context_workflow'])) {
+                $required['context:'.$schedule['context_workflow']] = ['workflow' => $schedule['context_workflow']];
+            }
+        }
+
+        return $required;
     }
 
     public static function executionCopySignature(mixed $copy): string
