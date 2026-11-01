@@ -1698,6 +1698,7 @@ Deno.test("forEach model identities use the item or index, with no grandfather g
       "shared",
       '${{ "shared-" + run.id }}',
       '${{ "self.node" }}',
+      '${{ "shared" // self.node\n }}',
       "literal-self._index",
       "${{ self.other }}",
       "${{ inputs.self.node }}",

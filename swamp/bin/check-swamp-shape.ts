@@ -1694,7 +1694,7 @@ export function analyzeYaml(
           const reference = new RegExp(`(?<![\\w.])self\\s*\\.\\s*(?:_index|${item})\\b`);
           const name = String(task.behaviorName ?? task.modelIdOrName ?? task.behavior ?? "");
           const perItem = [...name.matchAll(/\$\{\{([\s\S]*?)\}\}/g)].some((m) =>
-            reference.test(m[1].replace(/\bself\s*\[\s*(['"])([A-Za-z_]\w*)\1\s*\]/g, "self.$2").replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, ""))
+            reference.test(m[1].replace(/\bself\s*\[\s*(['"])([A-Za-z_]\w*)\1\s*\]/g, "self.$2").replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, "").replace(/\/\/[^\r\n]*/g, ""))
           );
           if (!perItem) add("foreach-shared-identity", [`${job.name}/${step.name}`]);
         }
