@@ -17,7 +17,9 @@ return [
     'fleet.docker_migrate' => [
         'workflow' => 'operation-fleet-docker-migrate',
         'projection' => DockerMigrationProjection::class,
-        'private_material' => ['processes' => 'fleet.docker_processes'],
+        'workflow_inputs' => true,
+        'terminal_result' => ['job' => 'result', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],
     ],
     'fleet.rollout' => [
         'workflow' => 'operation-fleet-rollout',

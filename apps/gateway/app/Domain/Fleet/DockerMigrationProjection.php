@@ -15,11 +15,13 @@ final readonly class DockerMigrationProjection implements DirectOperationProject
 {
     public function input(Operation $operation): array
     {
-        $input = Arr::only($operation->input, ['mode', 'migration']);
+        $input = Arr::only($operation->input, ['mode', 'migration', 'ssh_execution']);
         $migration = ValidatedData::object($input['migration']);
         $input['migration'] = [...$migration, 'process_states' => (object) $migration['process_states'], 'process_specs' => (object) $migration['process_specs']];
 
-        return $input;
+        $native = $input['mode'] === 'plan' ? ['processes' => [], 'execution_secrets' => []] : app(DockerMigrationIntent::class)->nativeInput($operation);
+
+        return ['intent' => [...$input, 'processes' => $native['processes']], 'execution_secrets' => $native['execution_secrets']];
     }
 
     public function apply(Operation $operation, array $data): Operation
