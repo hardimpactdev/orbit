@@ -20,8 +20,8 @@ class Topology:
 
     def execute(self, node, argv):
         reply = subprocess.run(
-            [*self.prefix, node, "--argv=" + json.dumps(argv)],
-            capture_output=True, text=True, timeout=1800, check=False,
+            [*self.prefix, node, "--timeout=1800", "--argv=" + json.dumps(argv)],
+            capture_output=True, text=True, timeout=1830, check=False,
         )
         try:
             value = json.loads(reply.stdout)

@@ -80,6 +80,13 @@ def check(topology, outputs=None):
 
 
 class ParityTests(unittest.TestCase):
+    def test_guest_timeout_is_explicit(self):
+        with patch.dict("os.environ", {"PROOF_EXEC": "bin/e2e-topology exec TASK-proof"}), \
+                patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "{}", "")) as call:
+            parity.Topology().cli("database:show", SLUG)
+            self.assertIn("--timeout=1800", call.call_args.args[0])
+            self.assertEqual(call.call_args.kwargs["timeout"], 1830)
+
     def test_each_kind_and_engine(self):
         for mode in ["create", "server-create", "server-destroy"]:
             for driver in ["mysql", "pgsql", "redis"]:

@@ -24,7 +24,7 @@ Instance-owned test databases, PostgreSQL parallel pools and locale, adoption, f
 
 ## How checks run
 
-Parity runs on the proof VM host with the staged worktree as cwd and reads only the five allowed `PROOF_*` variables. Every CLI or workload read uses `PROOF_EXEC`; no production CLI profile or SSH key is copied. `observe.py` runs on `app-dev` through that executor as sudo Python. It captures Docker/private ACL data locally and emits only fixed booleans and selected public metadata. It never echoes Docker diagnostics, environment values, ACL hashes or credentials.
+Parity runs on the proof VM host with the staged worktree as cwd and reads only the five allowed `PROOF_*` variables. Every CLI or workload read uses `PROOF_EXEC`; no production CLI profile or SSH key is copied. CLI follows set the guest timeout to 1,800 seconds with a 30-second outer margin, avoiding the topology executor's 60-second default. `observe.py` runs on `app-dev` through that executor as sudo Python. It captures Docker/private ACL data locally and emits only fixed booleans and selected public metadata. It never echoes Docker diagnostics, environment values, ACL hashes or credentials.
 
 Destroy's `before_request` and parity both run from the staged repository root, with repo-relative script paths and no fallback. After the normal server-create prepare call, it verifies the owned container/volume and writes a small run-specific marker into that disposable named volume. Parity checks the exact marker after normal destruction. It never writes Gateway or Swamp state. A missing marker fails before admission; no deletion or silent replacement repairs the evidence.
 
