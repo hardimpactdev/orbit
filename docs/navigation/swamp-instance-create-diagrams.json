@@ -1,0 +1,10 @@
+{
+  "navigation": [
+    {
+      "tab": "Documentation",
+      "group": "Architecture",
+      "order": 33,
+      "pages": ["swamp/diagrams/instance-create"]
+    }
+  ]
+}
