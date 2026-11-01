@@ -62,12 +62,14 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 
 | Preference | Node | Result |
 | --- | --- | --- |
-| none | Has an active or provisioning role | Selected |
-| none | Has no role | Not selected |
+| none | Has an active or provisioning role that takes part in Metrics | Selected |
+| none | Has no such role | Not selected |
 | `enabled` | Any eligible Node | Selected |
 | `disabled` | Any eligible Node except the Metrics Node | Not selected |
 | any | Not eligible | Not selected |
 | any | The Metrics Node, when eligible | Selected |
+
+Every role takes part in Metrics except `swamp`. Adding, converging, removing or relocating `swamp` captures no Metrics fleet, so its root skips the Metrics phases. Metrics for the swamp Node comes with the Metrics port (wave 7).
 
 `orbit metrics:exporter:enable` and `orbit metrics:exporter:disable` return an accepted native Operation and store the desired preference. Node 209 runs the official cfgmgmt package, fetch, file, systemd and firewall models. The captured public intent fixes the target, SSH identity, unit configuration, source-scoped port rules and complete Prometheus configuration. Steps read no Gateway state. Admission refuses a second active exporter change for the same Metrics owner before writing its preference.
 

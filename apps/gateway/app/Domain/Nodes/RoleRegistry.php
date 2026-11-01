@@ -118,6 +118,8 @@ final readonly class RoleRegistry
                 assignableDuringProvisioning: false,
                 mutable: true,
                 relocatable: true,
+                // Metrics for the swamp Node comes with the Metrics port (wave 7).
+                metrics: false,
             ),
             RoleName::Analytics => new RoleDefinition(
                 name: $role,

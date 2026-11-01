@@ -19,7 +19,7 @@ Swamp serve listens on loopback port 9418 on Node 209. A hand-written Caddy Proc
 
 ## Decision
 
-`swamp` is a relocatable singleton with no conflicts. Generic role add accepts it; `node:add --role` does not. It is a Caddy role: its convergence installs the pinned Caddy package and publishes the Node's Caddyfile, even before a site exists. Its recipe profile and bootstrap packages are `caddy`. It adds no firewall rule, because WireGuard member trust already admits HTTPS to the Node. It joins fleet rollout group 4.
+`swamp` is a relocatable singleton with no conflicts. Generic role add accepts it; `node:add --role` does not. It is a Caddy role: its convergence installs the pinned Caddy package and publishes the Node's Caddyfile, even before a site exists. Its recipe profile and bootstrap packages are `caddy`. It adds no firewall rule, because WireGuard member trust already admits HTTPS to the Node. It joins fleet rollout group 4. It takes no part in Metrics yet: its role definition sets `metrics: false`, so its transitions capture no Metrics fleet and it selects no role-default exporter. Metrics for the swamp Node comes with the Metrics port (wave 7).
 
 `swamp.orbit` is a private custom proxy Route on the `swamp` Node. Custom proxy sites already use HTTP/1.1 to a loopback upstream, keep the client `Host`, set the forwarded headers, flush immediately and allow one-hour reads, which Swamp's WebSockets need. Route convergence issues the certificate. The private DNS generator answers with the Route Node's WireGuard address.
 
