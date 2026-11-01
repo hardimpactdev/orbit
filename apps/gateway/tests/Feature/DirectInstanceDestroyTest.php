@@ -170,8 +170,7 @@ it('stores the owning SQLite artifact and records desired state without executin
         ->and($recorded['direct_destroy']['node_user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['user'])->toBe($this->node->user)
         ->and($recorded['direct_destroy']['teardown'][0]['steps'])->toBe([])
-        ->and($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($input['members'][0]['worktree_inventory'])
-        ->and($recorded['direct_destroy']['members'][0]['source']['operation'])->toBe($input['removal_id'])
+        ->and($recorded['members'][0]['worktree_inventory'])->toBe($input['members'][0]['worktree_inventory'])
         ->and($recorded['direct_destroy']['routes'])->toBe([])
         ->and($recorded['native_destroy']['route_mutations']['forward']['publications'])->toBe([])
         ->and($this->instance->refresh()->status->value)->toBe('removing')
@@ -441,7 +440,7 @@ it('keeps the complete admitted Route inventory immutable before successful proj
 function directDestroyResult(array $intent, array $databaseIds = []): array
 {
     return ['removal_id' => $intent['removal_id'], 'removed' => true,
-        'instance_ids' => array_column($intent['direct_destroy']['members'], 'instance_id')];
+        'instance_ids' => array_column($intent['members'], 'instance_id')];
 }
 
 function directDestroyFixture(Instance $instance): array
@@ -571,14 +570,14 @@ it('upgrades a saved standalone worktree retry to independent forced removal', f
     $snapshot = directDestroyFixture($this->instance);
     $snapshot['force'] = false;
     $initial = app(DirectInstanceDestroyIntent::class)->record($snapshot);
-    expect($initial['direct_destroy']['members'][0]['independent_worktree'])->toBeFalse();
+    expect($initial['force'])->toBeFalse();
     $removal = InstanceRemoval::query()->sole();
     $removal->update(['status' => 'failed', 'failed_step' => 'source_preparation', 'error_code' => 'instance.destroy_failed']);
 
     $retry = app(StartInstanceDestroyAction::class)->snapshot($this->instance->refresh(), true);
     $recorded = app(DirectInstanceDestroyIntent::class)->record($retry);
 
-    expect($recorded['direct_destroy']['members'][0]['independent_worktree'])->toBeTrue();
-    expect($recorded['direct_destroy']['members'][0]['worktrees'])->toBe($initial['direct_destroy']['members'][0]['worktrees']);
+    expect($recorded['force'])->toBeTrue();
+    expect($recorded['members'][0]['worktree_inventory'])->toBe($initial['members'][0]['worktree_inventory']);
     expect($recorded['direct_destroy']['database'])->toBe($initial['direct_destroy']['database']);
 });

@@ -9,10 +9,7 @@ use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\InstanceDeploymentSecrets;
 use App\Domain\Instances\Deployment\ProductionDeployment;
-use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
-use App\Domain\Instances\DevelopmentInstanceProvisioner;
-use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -25,8 +22,6 @@ use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceDestroyTeardownSecret;
-use App\Domain\Instances\InstanceLifecycleGitSecret;
-use App\Domain\Instances\InstanceLifecycleUrlSecret;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Instances\ProductionInstanceProvisioner;
@@ -37,15 +32,12 @@ use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
-use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -53,8 +45,6 @@ use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\RecordedProductionInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
-use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
-use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
@@ -77,16 +67,12 @@ final class InstancesServiceProvider extends ServiceProvider
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
-        DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
-        DevelopmentInstanceBranchInspector::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
-        DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceSourceRemoval::class => RecordedProductionInstanceSourceRemoval::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
         ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProductionRepositoryBinding::class => RemoteProductionRepositoryBinding::class,
-        DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         DevelopmentSourceAccess::class => NativeDevelopmentSourceAccess::class,
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
@@ -102,16 +88,12 @@ final class InstancesServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, InstanceLifecycleGitSecret::class, InstanceLifecycleUrlSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
+        $this->app->tag([NativeInstanceProvisioningSetup::class, InstanceDestroyTeardownSecret::class, NativeInstanceEnvironmentMaterial::class, InstanceDeploymentSecrets::class], OperationSecretSource::class);
         $this->app->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
             static fn (int $limit): WebSocketClient => new StreamWebSocketClient($limit, $limit),
             Config::string('swamp.address'), Config::string('swamp.read_token'), Config::string('swamp.ca_path'),
         ));
         $this->app->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
         $this->app->scoped(InstanceEnvironmentOperationLock::class, NativeInstanceEnvironmentOperationLock::class);
-        $this->app->singleton(
-            DevelopmentInstanceSourceFinalizer::class,
-            static fn (): DevelopmentInstanceSourceFinalizer => app(RemoteDevelopmentInstanceSourceRemoval::class),
-        );
     }
 }
