@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -102,7 +103,7 @@ class TopologyObservationTests(unittest.TestCase):
         }
         return operation
 
-    def run_parity(self, kind, operation):
+    def run_parity(self, kind, operation, native_outputs=None):
         def execute(node, argv):
             if node == "app-prod":
                 self.assertEqual("python3", argv[0])
@@ -126,6 +127,15 @@ class TopologyObservationTests(unittest.TestCase):
             )
 
         with (
+            tempfile.NamedTemporaryFile(mode="w+", suffix=".json") as selected,
+            patch.dict(
+                "os.environ",
+                {
+                    "PROOF_OPERATION_ID": "41",
+                    "PROOF_RUN": "disposable",
+                    "PROOF_OUTPUTS": selected.name,
+                },
+            ),
             patch.object(parity, "guest", side_effect=execute),
             patch(
                 "sys.argv",
@@ -136,14 +146,24 @@ class TopologyObservationTests(unittest.TestCase):
                     "other",
                     "other-key",
                     "subject-key",
-                    "41",
                     "12",
                     "10.0.0.12",
-                    "disposable",
                 ],
             ),
             patch("builtins.print"),
         ):
+            json.dump(
+                native_outputs
+                if native_outputs is not None
+                else {
+                    "accepted": True,
+                    "stdout": json.dumps(
+                        {"outcome": "succeeded", "data": {"backend": "applied"}}
+                    ),
+                },
+                selected,
+            )
+            selected.flush()
             parity.main()
 
     def test_public_observations_reach_managed_app_prod(self):
@@ -166,6 +186,14 @@ class TopologyObservationTests(unittest.TestCase):
         ):
             self.run_parity(
                 "websocket.app_rotate", self.observations("websocket.app_rotate")
+            )
+
+    def test_wrapped_outputs_cannot_replace_the_selected_native_object(self):
+        with self.assertRaisesRegex(AssertionError, "Selected native outputs"):
+            self.run_parity(
+                "websocket.sync",
+                self.observations("websocket.sync"),
+                {"data": {"accepted": True, "stdout": "{}"}},
             )
 
     def test_foreign_runtime_refused_before_handshake(self):

@@ -41,11 +41,20 @@ def main():
         unrelated,
         unrelated_key,
         before,
-        operation_id,
         node_id,
         address,
-        tag,
     ) = sys.argv[1:]
+    operation_id = os.environ["PROOF_OPERATION_ID"]
+    outputs = json.loads(Path(os.environ["PROOF_OUTPUTS"]).read_text())
+    assert (
+        isinstance(outputs, dict)
+        and outputs.get("accepted") is True
+        and isinstance(outputs.get("stdout"), str)
+    ), "Selected native outputs are missing"
+    assert json.loads(outputs["stdout"]) == {
+        "outcome": "succeeded",
+        "data": {"backend": "applied"},
+    }
     # These are public app ids/keys. App and registry secrets stay on their normal path.
     other = cli("websocket:app:show", unrelated)
     assert other["key"] == unrelated_key
@@ -124,10 +133,9 @@ print('managed-runtime-handshake: PASS')
                     / "websocket.app_rotate/tests/socket_observer.py"
                 ),
                 "check",
-                tag,
             ],
             check=True,
-            timeout=20,
+            timeout=50,
         )
     print("F13 public app state and managed-runtime parity: PASS")
 

@@ -2,7 +2,12 @@
 
 import importlib.util
 import io
+import json
+import os
+import shlex
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,7 +122,9 @@ class SocketObserverTests(unittest.TestCase):
                 {"state": "spawned"},
                 {"state": "executed", "exit_code": 124},
             ]
-            with self.assertRaises(AssertionError):
+            with self.assertRaisesRegex(
+                RuntimeError, "websocket.proof_readiness_failed"
+            ):
                 observer.host("start", "run", "subject-public-key", "other-public-key")
 
     def test_old_observer_success_cannot_certify_this_request(self):
@@ -135,6 +142,79 @@ class SocketObserverTests(unittest.TestCase):
             ]
             with self.assertRaises(AssertionError):
                 observer.host("check", "run")
+
+    def test_fixture_hook_executes_from_the_kind_directory_before_admission(self):
+        kind_dir = Path(__file__).parents[1]
+        fixture = json.loads(Path(str(kind_dir) + ".json").read_text())
+        argv = [
+            part.replace("${capture.subject_key}", "subject-public-key").replace(
+                "${capture.unrelated_key}", "other-public-key"
+            )
+            for part in fixture["before_request"][0]["argv"]
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            driver = Path(folder, "topology_driver.py")
+            driver.write_text("""import json
+import sys
+action = sys.argv[1]
+if action == 'spawn':
+    result = {'state': 'spawned'}
+elif action == 'exec':
+    result = {'state': 'executed', 'exit_code': 0, 'stdout': ''}
+elif action == 'logs':
+    nonce = sys.argv[4].removeprefix('ws-rot-')
+    result = {'state': 'logs', 'output': 'WS_PROOF_READY:' + nonce}
+else:
+    raise AssertionError('Unsupported topology action')
+print(json.dumps(result))
+""")
+            environment = {
+                name: value
+                for name, value in os.environ.items()
+                if not name.startswith("PROOF_")
+            }
+            environment.update(
+                {
+                    "PROOF_RUN": "fixture-run",
+                    "PROOF_KIND_DIR": str(kind_dir),
+                    "PROOF_EXEC": shlex.join(
+                        [sys.executable, str(driver), "exec", "fixture"]
+                    ),
+                    "TMPDIR": folder,
+                }
+            )
+            completed = subprocess.run(
+                argv,
+                cwd=kind_dir,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("F13 socket observer start: PASS", completed.stdout)
+
+    def test_before_request_uses_run_identity_without_an_operation_id(self):
+        with (
+            patch.dict(
+                "os.environ",
+                {"PROOF_RUN": "59f7512a-3ee9-44f9-ae1b-1101b99f55cc"},
+                clear=True,
+            ),
+            patch(
+                "sys.argv",
+                ["observer.py", "start", "subject-public-key", "other-public-key"],
+            ),
+            patch.object(observer, "host") as host,
+        ):
+            self.assertEqual(0, observer.main())
+        host.assert_called_once_with(
+            "start",
+            "59f7512a-3ee9-44f9-ae1b-1101b99f55cc",
+            "subject-public-key",
+            "other-public-key",
+        )
 
     def test_observer_without_rotation_expires_instead_of_passing(self):
         subject, unrelated = self.sockets()

@@ -160,7 +160,7 @@ def topology(action, name, *arguments):
 
 
 def host(mode, tag, *keys):
-    assert re.fullmatch(r"[a-z0-9-]{1,30}", tag)
+    assert re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", tag)
     state = Path(tempfile.gettempdir()) / ("orbit-proof-ws-rotate-" + tag + ".json")
     if mode == "start":
         nonce = uuid.uuid4().hex
@@ -196,10 +196,19 @@ def host(mode, tag, *keys):
         observed["name"],
         phase,
     ]
-    waited = topology(
-        "exec", observed["name"], "--argv=" + json.dumps(wait_argv), "--timeout=20"
+    failure = (
+        "websocket.proof_readiness_failed"
+        if mode == "start"
+        else "websocket.proof_rotation_unconfirmed"
     )
-    assert waited["state"] == "executed" and waited["exit_code"] == 0
+    try:
+        waited = topology(
+            "exec", observed["name"], "--argv=" + json.dumps(wait_argv), "--timeout=20"
+        )
+    except (AssertionError, subprocess.TimeoutExpired):
+        raise RuntimeError(failure) from None
+    if waited["state"] != "executed" or waited["exit_code"] != 0:
+        raise RuntimeError(failure)
     logs = topology("logs", observed["name"], "--lines=100")
     assert logs["state"] == "logs"
     marker = "WS_PROOF_READY:" if mode == "start" else "WS_PROOF_ROTATION_PASS:"
@@ -212,18 +221,20 @@ def host(mode, tag, *keys):
 
 
 def main():
-    mode, tag, *keys = sys.argv[1:]
+    mode, *arguments = sys.argv[1:]
     if mode == "observe":
+        tag, *keys = arguments
         try:
             observe(*keys, tag)
         except (AssertionError, OSError, ValueError, KeyError):
             print("WS_PROOF_ROTATION_FAILED:" + tag, flush=True)
             return 1
     elif mode == "wait":
-        wait_journal(keys[0], tag, keys[1])
+        tag, name, phase = arguments
+        wait_journal(name, tag, phase)
     else:
         assert mode in ("start", "check")
-        host(mode, tag, *keys)
+        host(mode, os.environ["PROOF_RUN"], *arguments)
     return 0
 
 

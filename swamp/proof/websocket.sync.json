@@ -60,11 +60,9 @@
       "proof-sync-${proof.run}",
       "proof-sync-other-${proof.run}",
       "${capture.unrelated_key}",
-      "",
-      "${proof.operation_id}",
+      "${capture.subject_key}",
       "${topology.app-prod.node_id}",
-      "${topology.app-prod.wireguard_ip}",
-      "${proof.run}"
+      "${topology.app-prod.wireguard_ip}"
     ],
     "cases": [
       "native-terminal-result",
