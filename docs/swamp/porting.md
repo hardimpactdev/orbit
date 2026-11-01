@@ -11,7 +11,7 @@ Start every kind PR from this page. Review every kind PR against it and the [bin
 
 Porting happens in a production-equivalent dev topology, never against production.
 
-1. **Claim** the kind from `port-queue.md` in `~/swamp-execution` on beast; `port-queue-B.md` and `port-queue-C.md` feed it. At most five port lanes run at once.
+1. **Claim** the kind from `port-queue.md` in `~/swamp-execution` on beast; `port-queue-B.md` and `port-queue-C.md` feed it. Five topology slots exist, so at most five port lanes run at once.
 2. **Read the legacy code and tests** at `6291bb036` (F9), and write the parity tests first.
 3. **Start the topology** with `bin/swamp-proof up --topology <name>`.
 4. **Port** in your beast worktree with the [translation steps](#translate-a-legacy-command) and the template.
@@ -244,6 +244,6 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | PLAN F10, F12, F13, F14 | Port inside a versioned dev topology through `bin/swamp-proof`; the PR carries the receipt, which names the topology version. Topologies are built from Node roles. |
 | #2304 (B) | Legacy edge cases include values the Gateway rewrites before execution, such as setup macros. A runner that discards child output makes every failure unreadable. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
-| PLAN F8, F11, orchestrator rulings | Measured p95 per kind, else the longest successful run times 1.5. Topologies die after 60 idle minutes (8 h at most); one-shot proof runs 45 minutes after creation. |
-| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to 20 steps per legacy call. #2248's one-shot observe regressed legacy polling. |
+| PLAN F8, F11, orchestrator rulings | Measured p95 per kind, else the longest successful run times 1.5. Topologies die after 60 minutes without a run (8 h at most); one-shot proof runs 45 minutes after creation. |
+| Retro #2237, #2248, #2249, #2251, #2253, #2261 | Asset, exec and decode triplets, all-pairs `always` edges, window asserts and one `exec` per command gave up to about 20 steps per legacy call (#2253). #2248's one-shot observe regressed legacy polling. |
 | #2266, lane 5, v2 review | Refuse before the first write and accept documented token formats. A nonzero `command/shell` exit drops outputs; use `ignoreExitCode` plus an `assert`. `forEach` fails over same-job outputs. |
