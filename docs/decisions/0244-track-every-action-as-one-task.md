@@ -5,7 +5,7 @@ description: "Every action the Gateway performs is one task record with a driver
 
 # ADR 0244: Track every action as one task
 
-Draft for Nick's review, 2026-11-01. Every action the Gateway performs is a **task**: one record with one status machine, one history, one log read, one cancel and one budget. A task has a **driver** that says what does the work: a `command`, a Swamp `workflow`, or a `pi` agent turn. All three drivers execute as Swamp runs. A recurring job is a **Schedule** that starts tasks from a template. Operations become tasks, the Schedule run path moves onto native Swamp schedules, and the task board keeps only board state.
+Every action the Gateway performs is a **task**: one record with one status machine, one history, one log read, one cancel and one budget. A task has a **driver** that says what does the work: a `command`, a Swamp `workflow`, or a `pi` agent turn. All three drivers execute as Swamp runs. A recurring job is a **Schedule** that starts tasks from a template. Operations become tasks, the Schedule run path moves onto native Swamp schedules, and the task board keeps only board state.
 
 ## Status
 
@@ -19,13 +19,13 @@ Orbit tracks work in three places today. Each has its own status, history, logs 
 
 | | Schedules | Operations | Tasks extension |
 | --- | --- | --- | --- |
-| Record | `schedules` row (UUID), Project `schedule_definitions` | `operations` row, keyed by `(kind, idempotency_key)` | `tasks` row: group or subtask; `agent_threads`, `task_vms`, `task_checks`, comments, questions |
+| Record | `schedules` row (UUID), Project `schedule_definitions` | `operations` row, keyed by `(kind, idempotency_key)` | `tasks` row: task group or group step; `agent_threads`, `task_vms`, `task_checks`, comments, questions |
 | Trigger | systemd timer on the host Node; its oneshot unit curls `POST /schedules/{id}/run` | API admission | Swamp `groups-driver` tick (every minute) and the software factory |
 | Execution | `schedule.run` Operation → `operation-schedule-run` over `@swamp/ssh` | `StartSwampRun` → one native workflow per kind | Each stage starts one keyed Operation (`tasks.provision`, `check`, `turn`, `publish`, …); Pi runs the turn in the VM |
-| Status | `provisioning/active/failed/removing` plus `last_run_status` | `queued/running/waiting/succeeded/failed/cancelled/interrupted` | group: ten board states; subtask: seven; thread: five; VM: six; check: six |
+| Status | `provisioning/active/failed/removing` plus `last_run_status` | `queued/running/waiting/succeeded/failed/cancelled/interrupted` | task group: ten board states; group step: seven; thread: five; VM: six; check: six |
 | History | latest run only | one row per run; steps live in Swamp native history (30 days) | Operations, comments, receipts, threads, and Swamp history |
 | Logs | journal through the frozen orbit-agent (`schedule.logs`) | 4 KiB error tail; full logs only in Swamp | transcripts (`tasks:agent:show`), `tasks:swamp-runs` reads `swamp.orbit` directly |
-| Cancel | generic `operation-cancel` | native Swamp cancel of the bound run | `tasks:cancel` (itself an Operation), `tasks:subtask:cancel`, and `operation-cancel` |
+| Cancel | generic `operation-cancel` | native Swamp cancel of the bound run | `tasks:cancel` (itself an Operation), `tasks:subtask:cancel` for a group step, and `operation-cancel` |
 | Retries | none; a failed curl loses the run | Swamp owns them; the Gateway never re-runs | new cycle key; Durable retries inside a turn |
 | Budgets | `timeout_seconds` | per-kind or history-based run budget; expiry fails the record | factory attempt caps; `maxRunSeconds: 7200`; the stuck-VM rule exists only in memory |
 
@@ -74,7 +74,8 @@ queued ─▶ running ◀─▶ waiting
 ### History and logs
 
 - The task row is the history entry. The parent and schedule links give the tree and the run history of a Schedule.
-- Step detail stays in Swamp native run history and follows its 30-day retention. Orbit copies no step log.
+- Step detail stays in Swamp native run history. Orbit copies no step log.
+- Retention: a task with an effect or a failure is kept 30 days. A scheduled fire whose projection reports no effect is a no-op and is pruned after 24 hours. Swamp's native retention prunes the matching run history where it fits.
 - `task:logs <id>` is the one log read. The driver picks the reader: Swamp `workflow.history.logs` for `command` and `workflow`, and the Pi transcript for `pi`.
 - The Activity log stays the audit of HTTP commands. It links to tasks through `request_id` and is not a second task history.
 
@@ -93,9 +94,9 @@ queued ─▶ running ◀─▶ waiting
 | `timeout_seconds` | all | Today's run budget: per kind, per Schedule, or 1.5 × the longest success in 14 days. |
 | `idle_seconds` | `workflow`, `pi` | No step or transcript progress for this long. |
 | `waiting_seconds` | all | Time in `waiting` with reason `human`. |
-| `tokens` | `pi` | Token cap for the turn. |
+| `tokens` | `pi` | The current token cap for a turn. |
 
-Expiry marks the task `failed` with `task.budget_exceeded` and the budget name, and calls native cancel. The `lock_key` stays held until Swamp confirms the run ended, as today. The stuck task VM rule (no progress for 60 minutes, assistance unanswered for 2 hours) becomes the default `idle_seconds` and `waiting_seconds` of a task group's root task.
+Expiry marks the task `failed` with `task.budget_exceeded` and the budget name, and calls native cancel. The `lock_key` stays held until Swamp confirms the run ended, as today. The `pi` driver keeps the existing defaults: 60 minutes idle and 2 hours waiting, the stuck task VM rule, on a task group's root task, and the current token cap. This ADR sets no new numbers.
 
 ### The driver interface
 
@@ -128,15 +129,17 @@ Start, attach, terminal projection, lost-result recovery and cancel stay shared.
 | `workflow` | A native Swamp workflow of placed Orbit steps | the kind's own workflow, as today | Swamp step logs | Every Operation kind today except `tasks.turn`. |
 | `pi` | One Pi agent turn in a task VM | `operation-task-turn` over `@swamp/ssh` | Pi transcript, by cursor | `usage` holds tokens and cost. Its workflow interrupts Pi when the run is cancelled. |
 
-A task group maps onto the tree. The group keeps its board record: plan, subtasks, deliverables, workspace, PR and comments. Its execution is one root task with driver `workflow`, the group's software factory run. Each stage action is a child task: `tasks.provision`, `check` and `publish` use `workflow`, and `tasks.turn` uses `pi`. The task VM is the group's workspace, not a driver. `TaskMaintenanceContinuation` moves into the group's Swamp run.
+A task group maps onto the tree. The task group keeps its board record: plan, group steps, deliverables, workspace, PR and comments. Its execution is one root task with driver `workflow`, the group's software factory run. Each stage action is a child task: `tasks.provision`, `check` and `publish` use `workflow`, and `tasks.turn` uses `pi`. The task VM is the group's workspace, not a driver. `TaskMaintenanceContinuation` moves into the group's Swamp run.
 
 ### Schedules
 
 A Schedule is a cadence plus a task template: `name`, `target`, `calendar`, `kind`, `input`, `budget` and `enabled`. It holds no run state. Its last run is its newest task.
 
-- The trigger is a native Swamp schedule. The Gateway publishes the full template as inputs with `workflow.trigger.set` (`SwampSchedulePublisher`) when the Schedule is created, changed, enabled or disabled.
+- The end-state trigger is a native Swamp schedule, for user Schedules as well. The Gateway publishes the full template as inputs with `workflow.trigger.set` (`SwampSchedulePublisher`) when the Schedule is created, changed, enabled or disabled.
 - Each fire is a Swamp root run. The Gateway's shared run reader records a task for it when it sees the run start (`trigger: schedule`, `schedule_id`, `swamp_run_id`, idempotency key `schedule:<id>:<run id>`). It projects the result like any other task. Steps never call the Gateway.
 - `schedule:run` admits a task from the template through normal admission.
+- Per-minute app schedulers (`laravel-scheduler` on production Instances) move to native triggers last. They move only after measured Swamp serve load and an outage test show that it is safe. Until then systemd stays their start trigger, and each fire is still recorded as a task through `schedule:run` admission.
+- Jobs that the Gateway's own Laravel scheduler runs are not tasks. Gateway self-maintenance is not orchestration (boundary decision 9).
 - A user Schedule uses the `command` driver. A Swamp upkeep job (`fleet-maintenance`, `observation-collection`, `automatic-production-deploy`, …) is a Schedule whose kind uses the `workflow` driver. Every native Swamp schedule is then an Orbit Schedule, and none exists outside Orbit.
 
 ### What is removed or merged
@@ -148,45 +151,48 @@ A Schedule is a cadence plus a task template: `name`, `target`, `calendar`, `kin
 - The Schedule path loses its systemd units (`orbit-schedule-*.service` and `.timer`), the curl `/run` call, the unused `/complete` callback, `last_run_at` and `last_run_status`, `RemoteScheduleRuntimeManager`, the agent `schedule.logs` command, and the uncalled `CascadeInstanceSchedulesAction`.
 - Per-family `scheduled-results.php` maps fold into the one Schedule-to-task projection.
 - `TaskMaintenanceContinuation` leaves the Gateway.
-- The Tasks extension's group and subtask stop using the word "task". Proposal: group becomes **work item**, the term the software factory already uses, and subtask becomes **work step**.
+- This ADR does not rename the task group or the group step. A separate follow-up renames them so that "task" means only the tracked action.
 
 ### Migration
 
 Each step is one Orbit PR with its Gateway, Swamp, CLI, web, SDK and documentation changes. Each step leaves one working path.
 
-1. **Free the name.** Rename the Tasks extension's group and subtask (table `tasks` becomes `work_items`, `tasks:*` becomes `work:*`). No behaviour changes.
+1. **Free the name.** The separate rename follow-up moves the task group and group step off the `tasks` table and the `tasks:*` commands. Step 2 waits for it.
 2. **Operations become tasks.** Rename the table, model, API, CLI, MCP and web panel. Add `driver`, `parent_id`, `schedule_id` and the `swamp_run_id` column; backfill `driver` from the kind and `parent_id` from group targets. Drop `interrupted` and the Kit columns. Rewrite the stale `operations.md` as the task reference.
 3. **One log read.** Add `task:logs` with the Swamp and Pi readers. Delete `tasks:swamp-runs`.
-4. **Budgets.** Add `idle_seconds`, `waiting_seconds` and `tokens` to the shared expiry, with the stuck-VM defaults on group root tasks.
-5. **Schedules on native triggers.** Add the template fields and publish each Schedule as a native trigger on `task-command-run`. Record fires as tasks. A one-time workflow removes the systemd units from each host. Delete the timer, curl, callback and agent log paths.
+4. **Budgets.** Add `idle_seconds`, `waiting_seconds` and `tokens` to the shared expiry, with the existing `pi` defaults on group root tasks.
+5. **Schedules on native triggers.** Add the template fields and record every fire as a task, including fires that systemd still starts. Publish each Schedule except the per-minute app schedulers as a native trigger on `task-command-run`. A one-time workflow removes the moved Schedules' systemd units. Delete the callback and agent log paths, and add the 24-hour no-op pruning.
 6. **Upkeep jobs become Schedules.** Register each native Swamp schedule as an Orbit Schedule with a `workflow` kind, published by the Gateway. Fold `scheduled-results.php`.
 7. **Groups as task trees.** The factory run becomes the group's root task, and stage actions become its children. Move `TaskMaintenanceContinuation` into Swamp. Replace the group cancel paths.
+8. **App schedulers that fire every minute.** After the serve load measurement and the outage test pass, move `laravel-scheduler` Schedules to native triggers. Delete the timer and curl path.
 
-### Open questions for Nick
+### Resolved questions
 
-1. **Trigger.** Are native Swamp schedules the trigger for user Schedules too, replacing the systemd timers? Recommended: yes.
-2. **Names.** Is "work item" and "work step" right for today's task group and subtask? Or does the group keep the name "task", and the tracked action get another name?
-3. **Tick volume.** Does each fire of a per-minute tick keep 30-day retention, or does Orbit prune no-op fires after one day?
-4. **Gateway internals.** Do jobs that the Gateway's own Laravel scheduler runs (for example `ObserveParkedTaskVms`) become tasks as well? Recommended: no. They are Gateway housekeeping, not fleet actions.
-5. **Budget defaults.** Which default token cap does a `pi` turn get, and are 60 minutes idle and 2 hours waiting the right group defaults?
+The orchestrator decided the open questions on 2026-11-01:
+
+1. Native Swamp schedules replace systemd timers for user Schedules as the end state. App schedulers that fire every minute move last, behind the load and outage gate.
+2. The task group and group step keep their names here. Their rename is a separate follow-up.
+3. Tasks with an effect or a failure are kept 30 days; no-op scheduled fires are pruned after 24 hours.
+4. The Gateway's own Laravel scheduler jobs are not tasks.
+5. The `pi` driver keeps its existing budget defaults.
 
 ## Rejected alternatives
 
 - **A view that joins the three tables.** It hides three status machines behind one page and keeps three cancels and three log paths.
 - **Keep systemd timers as the trigger.** They need a unit per Schedule on each host and a curl back to the Gateway, and a lost curl loses the run. Native Swamp schedules already run Orbit's upkeep jobs.
-- **Track only fires that do work.** Deciding which fires matter needs per-family rules. Every fire is a task, and lists filter by Schedule.
+- **Track only fires that do work.** Deciding which fires matter before they run needs per-family rules. Every fire is a task; a no-op fire is pruned after 24 hours.
 - **Make the task VM a driver.** A VM is a workspace that lives across many actions. The Pi turn is the action.
 
 ## Consequences
 
 - One list answers "what is Orbit doing and what did it do", for every driver.
-- Per-minute driver ticks create about 1,440 tasks a day each. Lists filter by Schedule and retention prunes them. A separate decision can replace the ticks with event-driven starts.
+- Per-minute driver ticks create about 1,440 tasks a day each. Lists filter by Schedule, and no-op fires are pruned after 24 hours. A separate decision can replace the ticks with event-driven starts.
 - A Schedule fire no longer depends on the Gateway being up, but its task is recorded only when the Gateway sees the run. Lost-start recovery uses the existing one-shot `workflow.run.search`.
-- The renames touch every client in steps 1 and 2.
+- The Operation rename touches every client in step 2.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/web, packages/php-sdk
 - ADRs: [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), [0218](/decisions/0218-take-long-commands-off-the-request-path), [0229](/decisions/0229-let-an-orchestrator-drive-task-work-through-gateway-operations), [0238](/decisions/0238-trial-two-swamp-slices-before-a-wider-move)
-- Detail: [Operations](/reference/operations) becomes the task reference; [Schedules](/reference/schedules); [Tasks](/reference/tasks) becomes the work item reference
+- Detail: [Operations](/reference/operations) becomes the task reference; [Schedules](/reference/schedules); [Tasks](/reference/tasks)
 - Verify: Swamp workflows under `swamp/` change in the same PRs. Gateway task admission, projection, cancel and budget expiry tests per driver; a Schedule-fire projection test; the Swamp workflow grants check; a proof receipt for the `command` and `pi` drivers
