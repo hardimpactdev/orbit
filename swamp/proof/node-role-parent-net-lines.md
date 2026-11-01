@@ -7,7 +7,7 @@ Comparison base: `adcf542120a14cea21cad594a83c9e669053b722`. Includes the import
 | Docs/other | 26 | 3 | +23 |
 | Gateway production | 609 | 65 | +544 |
 | Gateway tests | 428 | 9 | +419 |
-| Swamp docs/proof | 2148 | 6 | +2142 |
+| Swamp docs/proof | 2158 | 6 | +2152 |
 | Swamp production | 5066 | 1767 | +3299 |
 | Swamp tests | 2353 | 327 | +2026 |
 
@@ -134,7 +134,7 @@ Comparison base: `adcf542120a14cea21cad594a83c9e669053b722`. Includes the import
 | `swamp/extensions/behaviors/operations/routes/residue-local_test.ts` | 0 | 163 | -163 | 163 |
 | `swamp/extensions/behaviors/operations/routes/router-preparation.ts` | 35 | 129 | -94 | 129 |
 | `swamp/extensions/behaviors/operations/routes/router-preparation_test.py` | 13 | 2 | +11 | 2 |
-| `swamp/proof/node-role-parent-README.md` | 31 | 0 | +31 | 0 |
+| `swamp/proof/node-role-parent-README.md` | 41 | 0 | +41 | 0 |
 | `swamp/proof/node-role-parent-parity.py` | 109 | 0 | +109 | 0 |
 | `swamp/proof/node-role-parent-timings.json` | 40 | 0 | +40 | 0 |
 | `swamp/proof/node.role_add/app-prod.json` | 97 | 0 | +97 | 0 |
