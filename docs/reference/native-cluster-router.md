@@ -27,7 +27,9 @@ Certificate signing and decoding steps use a control-worker target alone. Retain
 
 The existing Gateway budget for each Router set or unset is 2,700 seconds. It is provisional: no full successful Router run has supplied a p95. Op 6592 took 2,417.179 seconds including restoration; its forward phase took 1,345.582 seconds and restoration 944.722 seconds. Its 119 probe observations had a queue-inclusive p95 of 654 seconds and maximum 707 seconds. These are failed-run observations, not SSH execution times or a successful p95.
 
-The Router parent, prepare, forward, restore and probe workflows declare a 600-second queue timeout on every step and at workflow level. This makes the existing pinned-serve default explicit. It does not claim to fix probe fan-out starvation. The prepare account, package and Caddy actions run through official SSH exec under coreutils `timeout` at 30, 600 and 300 seconds. HTTP and TLS workload probes each run under a 10-second coreutils timeout. Each official SSH execution timeout adds 30 seconds beyond its remote process bound, so its inherited 300-second limit cannot shorten the package phase. The shared Route children own the execution bounds of their phases; this Router declaration cannot impose a process timeout inside another workflow.
+The Router parent, prepare, forward, restore and probe workflows declare a 600-second queue timeout on every step and at workflow level. This makes the existing pinned-serve default explicit. It does not claim to fix probe fan-out starvation. The prepare account, package and Caddy actions run through official SSH exec under coreutils `timeout` at 30, 600 and 300 seconds. HTTP and TLS workload probes each run under a 10-second coreutils timeout. Each official SSH execution timeout adds 30 seconds beyond its remote process bound, so its inherited 300-second limit cannot shorten the package phase.
+
+The shared Route children own the execution bounds of their phases; this Router declaration cannot impose a process timeout inside another workflow.
 
 The legacy spec is `6291bb036:apps/gateway/app/Actions/Clusters/SetClusterRouterAction.php`. Its ordered phases and proof readback are:
 
