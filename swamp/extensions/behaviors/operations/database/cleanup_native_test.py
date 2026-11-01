@@ -61,11 +61,21 @@ class DatabaseCleanupNative(NativeTestCase):
         self.state['loseCleanup']=True
         self.save()
         self.run_workflow(success=False)
+        state = self.read()
+        self.assertEqual(state['operation']['status'], 'running')
+        self.assertIsNone(state['operation']['result'])
+        self.assertEqual(len(state['calls']), 2)
+        history = json.loads(self.cli('workflow', 'history', 'get', self.run_id).stdout)
+        self.assertEqual(history['status'], 'failed')
+        # This fixture has no Gateway reader. Model its existing terminal settlement.
+        self.state = state
+        self.state['operation']['status'] = 'failed'
+        self.save()
         self.cli('workflow','resume','operation-database-cleanup','--run',self.run_id,'--from','cleanup',success=False)
         state=self.read()
         self.assertEqual(state['cleanups'],1)
         self.assertEqual(state['operation']['status'],'failed')
-        self.assertEqual(state['operation']['result'], {'error_code':'operation.native_outcome_unknown'})
+        self.assertIsNone(state['operation']['result'])
 
     def test_native_behavior_lock_serializes_two_cleanups_on_the_same_node(self):
         first=self.state.pop('operation')

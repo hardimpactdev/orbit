@@ -109,8 +109,8 @@ Deno.test("uncertain local result fails natively without projecting false succes
     settings(() => Promise.reject(new Error("uncertain")), () => f.http).methods
       .execute.execute(args, context)
   );
-  assertEquals(f.calls.length, 3);
-  assertEquals((f.calls.at(-1)!.body as { status: string }).status, "failed");
+  assertEquals(f.calls.length, 2);
+  assertEquals((f.calls.at(-1)!.body as { status: string }).status, "running");
 });
 
 Deno.test("settings arguments accept positive Node identities and refuse invalid identities", () => {

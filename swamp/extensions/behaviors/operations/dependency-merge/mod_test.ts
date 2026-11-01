@@ -144,13 +144,7 @@ for (const boundary of ["loseMerge", "loseProjection"] as const) {
     f[boundary] = true;
     const error = await assertRejects(() => f.run());
     assertEquals(String(error).includes(secret), false);
-    if (boundary === "loseMerge") {
-      await assertRejects(
-        () => f.run(),
-        Error,
-        "operation.native_outcome_unknown",
-      );
-    } else assertEquals(await f.run(), { status: "succeeded" });
+    assertEquals(await f.run(), { status: "succeeded" });
     assertEquals(f.writes, 1);
   });
 }
@@ -216,13 +210,7 @@ for (const boundary of ["loseMerge", "loseProjection"] as const) {
     f[boundary] = true;
     await assertRejects(() => f.run());
     f.enabled = false;
-    if (boundary === "loseMerge") {
-      await assertRejects(
-        () => f.run(),
-        Error,
-        "operation.native_outcome_unknown",
-      );
-    } else assertEquals(await f.run(), { status: "succeeded" });
+    assertEquals(await f.run(), { status: "succeeded" });
     assertEquals(f.writes, 1);
   });
 }

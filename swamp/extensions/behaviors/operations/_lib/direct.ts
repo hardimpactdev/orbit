@@ -245,8 +245,8 @@ export async function directOperation(
         result = {};
         status = "cancelled";
       } else {
-        result = { error_code: "operation.native_outcome_unknown" };
-        status = "failed";
+        // Native failure owns terminal settlement; exception text may contain secrets.
+        throw new Error("operation.native_outcome_unknown");
       }
     }
   }

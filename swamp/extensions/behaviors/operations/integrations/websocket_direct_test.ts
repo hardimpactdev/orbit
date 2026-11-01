@@ -107,7 +107,7 @@ Deno.test("WebSocket direct read refuses before Gateway binding and a foreign re
   f.bound = true;
   f.registryId = "c075eb23-7ac4-4487-80d1-57a038a92676";
   await assertRejects(() => f.run(), Error, "operation.native_outcome_unknown");
-  assertEquals(f.operation.status, "failed");
+  assertEquals(f.operation.status, "running");
 });
 
 Deno.test("WebSocket cancellation during a pending wait or applied read wins before completion", async () => {
@@ -201,9 +201,7 @@ Deno.test("WebSocket malformed identities and credential-bearing input never rea
     } else Object.assign(f.operation.input, { secret: "private-sentinel" });
     await assertRejects(() => f.run());
     assertEquals(f.reads, 0);
-    assertEquals(f.operation.result, {
-      error_code: "operation.native_outcome_unknown",
-    });
+    assertEquals(f.operation.result, null);
   }
 });
 
@@ -213,13 +211,11 @@ Deno.test("WebSocket unavailable status proves nothing and native recovery can r
     throw new Error("unavailable-private-diagnostic");
   };
   await assertRejects(() => f.run(), Error, "operation.native_outcome_unknown");
-  assertEquals(f.operation.status, "failed");
-  assertEquals(f.operation.result, {
-    error_code: "operation.native_outcome_unknown",
-  });
+  assertEquals(f.operation.status, "running");
+  assertEquals(f.operation.result, null);
   f.onRegistryRead = undefined;
   f.states = ["applied"];
-  await assertRejects(() => f.run(), Error, "operation.native_outcome_unknown");
+  assertEquals(await f.run(), { status: "succeeded" });
   assertEquals(
     JSON.stringify(f.operation.result).includes("diagnostic"),
     false,

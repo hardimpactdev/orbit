@@ -71,7 +71,7 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
         self.assertEqual(self.read()['effects'],1)
         self.assertEqual(self.read()['operation']['status'],'succeeded')
 
-    def test_uncertain_node_action_keeps_terminal_failure_without_repeating_effect(self):
+    def test_uncertain_node_action_fails_natively_without_a_failed_callback(self):
         for kind in ('tool.install','tool.update','tool.remove'):
             self.state['operation']['kind'] = kind
             self.state['operation']['status'] = 'queued'
@@ -80,8 +80,16 @@ execute: async (...args: Parameters<typeof fixture.methods.apply.execute>) => {
             self.state['loseNode'] = True
             self.save()
             self.run_workflow(success=False)
-            self.assertEqual(self.read()['operation']['status'], 'failed')
-            self.assertEqual(self.read()['operation']['result'], {'error_code': 'operation.native_outcome_unknown'})
+            state = self.read()
+            self.assertEqual(state['operation']['status'], 'running')
+            self.assertIsNone(state['operation']['result'])
+            self.assertEqual(len(state['calls']), 2)
+            history = json.loads(self.cli('workflow', 'history', 'get', self.run_id).stdout)
+            self.assertEqual(history['status'], 'failed')
+            self.assertNotIn('uncertain local Tool response', json.dumps(history))
+            # This fixture has no Gateway reader. Model its existing terminal settlement.
+            state['operation']['status'] = 'failed'
+            (self.repo / 'native-tools-direct.json').write_text(json.dumps(state))
             self.cli('workflow','resume','operation-tool-install-direct' if self.state['operation']['kind'] == 'tool.install' else 'operation-tool-direct','--run',self.run_id,'--from','apply',success=False)
             self.assertEqual(self.read()['effects'],1)
             self.assertEqual(self.read()['operation']['status'],'failed')
