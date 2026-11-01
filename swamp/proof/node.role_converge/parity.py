@@ -111,7 +111,6 @@ def role_certificate(intent):
     spec = importlib.util.spec_from_file_location("canonical_role_paths", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    directory = module.role_directory("role-websocket")
     leaves = intent["certificates"]["leaves"]
     require(
         len(leaves) == 1
@@ -119,8 +118,9 @@ def role_certificate(intent):
         and leaves[0]["scope"] == "role-websocket",
         "unexpected-websocket-leaf",
     )
+    name, directory, _ = module.role_paths(leaves[0])
     return {
-        "leaf": str(directory / "websocket.pem"),
+        "leaf": str(directory / (name + ".pem")),
         "root": str(directory / "root-ca.pem"),
         "root_hash": leaves[0]["root_hash"],
     }
