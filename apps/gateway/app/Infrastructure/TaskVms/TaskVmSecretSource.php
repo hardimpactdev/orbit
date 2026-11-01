@@ -29,7 +29,7 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
     public function targetTypes(): array
     {
         return match ($this->source) {
-            'upcloud.api' => ['task_vm_upcloud_image', 'task_vm_sweep'],
+            'upcloud.api' => ['task_vm_upcloud_image'],
             'task_vm.package_cache_github' => ['task_vm_cache'],
             'task_vm.image_bootstrap' => ['task_vm_upcloud_image'],
             default => ['task_vm'],
@@ -45,11 +45,6 @@ final readonly class TaskVmSecretSource implements OperationSecretSource
         if ($operation->target_type === 'task_vm_upcloud_image') {
             $build = UpCloudTaskVmImageBuild::query()->find($id);
             if ($build?->intent === null || $build->intent['node_id'] !== $operation->node_id) {
-                return null;
-            }
-        } elseif ($operation->target_type === 'task_vm_sweep') {
-            if ($operation->kind !== 'task_vm.sweep_host' || ($operation->input['provider'] ?? null) !== 'upcloud'
-                || ($operation->input['node_id'] ?? null) !== $id || $operation->node_id !== $id) {
                 return null;
             }
         } elseif ($operation->target_type === 'task_vm_cache' && ($operation->kind !== 'task_vm.fill_package_cache' || $operation->node_id !== $id || ($operation->input['host_node_id'] ?? null) !== $id)) {

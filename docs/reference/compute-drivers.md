@@ -680,7 +680,9 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state.
+The Gateway scheduler queues `SweepTaskVmHosts` every ten minutes. It runs while task VMs are enabled or the [UpCloud](#sweep-upcloud) token file is set. While task VMs are enabled, the sweep admits an Operation for each active configured host. `task_vm.sweep_host` runs on Node209 and reaches each Incus host through official pinned SSH. The Gateway supplies complete public ownership intent and vault descriptors before dispatch. Swamp reads provider inventory, selects only the admitted cleanup scope and returns its final observation; executing steps do not read Gateway state. 
+
+Provider children isolate SSH and vault inputs. Native cleanup children iterate a completed plan, then the root publishes one result. A provider or SSH failure never supplies a missing-VM observation. Cancellation remains terminal; an interrupted run projects failed. The generic Operation lock serializes admissions per host and releases on terminal projection.
 
 The native run checks that the host's Incus project exists with `incus project show`. It then compares the instance names with the task VM rows. Incus lists a project that does not exist as empty, so a missing project fails the host, and the job changes nothing there:
 
@@ -772,9 +774,9 @@ Successful publication alone cannot move the base alias: smoke verification and 
 
 A failed recipe build does not retry because the Gateway restarts or releases code. Run `task-vms:build-recipe --retry` after fixing the cause. An Incus build with retained resources can resume its failed stage. A failed prune resumes without rebuilding or moving the alias again. A newer recipe generation fences every subsequent effect and promotion of the older build. The Gateway retains build state, validation and immutable recipe intent; Swamp owns ordering, waits and recovery.
 
-Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the returned owned orphans, through commands that recheck ownership before deletion. Active and recent failed builders remain protected.
+Host sweeps use independent Operations, so one failed host does not block another host. The Gateway reads ownership and reports strays. Swamp deletes only the admitted owned orphans. Incus uses official SSH from 209; UpCloud uses the existing provider API helper and a shared vault execution copy. Active and recent failed builders remain protected.
 
-The sweep reads volume names before live VM rows, so a claim recorded during the read keeps its clone. Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
+Admission captures live VM names and the highest allocated VM and build IDs before native inventory. New allocations remain outside that cleanup scope. Native cleanup removes VM instances before selecting their orphan topology volumes, and verifies VM absence before deleting a volume. Cleanup and resume compete for the same build fence: cleanup blocks resume, and a successful resume prevents a stale sweep from deleting the builder or smoke VM. Two distinct sweep Operations must miss a VM before its row fails; a replay of one observation cannot fail it. Doctor retains its read-only path.
 
 ### Incus provider
 

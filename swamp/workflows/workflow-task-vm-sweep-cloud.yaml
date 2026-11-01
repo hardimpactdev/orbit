@@ -1,0 +1,260 @@
+id: e7de7f6f-f9ef-48f7-91d7-05a05deec696
+name: task-vm-sweep-cloud
+description: Sweep the captured cloud inventory through native cleanup children.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - task_vm.sweep_host
+    intent:
+      type: object
+      properties:
+        node_id:
+          type: integer
+          minimum: 1
+        provider:
+          type: string
+          enum:
+          - incus
+          - upcloud
+        ci_runner:
+          type: boolean
+        stray_vm_ids: &id002
+          type: array
+          items:
+            type: integer
+            minimum: 1
+          maxItems: 4096
+        image_cutoff:
+          type: integer
+        running_stamps:
+          type: array
+          items:
+            type: string
+        scope:
+          type: object
+          properties:
+            live_names:
+              type: array
+              items: &id001
+                type: string
+                pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$
+              maxItems: 4096
+            max_task_vm_id:
+              type: integer
+              minimum: 0
+            project: *id001
+            pool: *id001
+            operator_owned:
+              type: array
+              items:
+                type: string
+              maxItems: 4096
+            max_build_id:
+              type: integer
+              minimum: 0
+            recorded_build_ids: *id002
+            retired_build_ids: *id002
+            protected_build_ids: *id002
+          required:
+          - live_names
+          - max_task_vm_id
+          additionalProperties: false
+        ssh_execution:
+          type:
+          - object
+          - 'null'
+      required:
+      - node_id
+      - provider
+      - ci_runner
+      - stray_vm_ids
+      - image_cutoff
+      - running_stamps
+      - scope
+      - ssh_execution
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^task-vm-upcloud-token$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+      propertyNames:
+        enum:
+        - upcloud
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: sweep
+  steps:
+  - name: assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-assets-"+run.id }}
+      methodName: assets
+      inputs:
+        scope: ${{ inputs.intent.scope }}
+  - name: cloud-api
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-lifecycle-input'
+      behaviorName: ${{ "swp-cloud-api-"+run.id }}
+      methodName: api_assets
+      inputs: {}
+    dependsOn:
+    - step: assets
+      condition:
+        type: succeeded
+  - name: cloud-inventory
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "swp-cloud-inventory-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec python3 -B "$SCRIPT"
+
+          '
+        env:
+          SCRIPT: ${{ steps.assets.outputs.cloud_inventory }}
+          PYTHONPATH: ${{ steps["cloud-api"].outputs.directory }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
+    dependsOn:
+    - step: cloud-api
+      condition:
+        type: succeeded
+  - name: plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-plan-"+run.id }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+        report: true
+        stdout: ${{ steps["cloud-inventory"].outputs.stdout }}
+    dependsOn:
+    - step: cloud-inventory
+      condition:
+        type: succeeded
+  - name: cloud-servers
+    target: orbit-node-209
+    dependsOn:
+    - step: plan
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-sweep-cloud-cleanup
+      inputs:
+        scope: ${{ inputs.intent.scope }}
+        resources: ${{ steps.plan.outputs.servers }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: cloud-templates
+    target: orbit-node-209
+    dependsOn:
+    - step: cloud-servers
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-sweep-cloud-cleanup
+      inputs:
+        scope: ${{ inputs.intent.scope }}
+        resources: ${{ steps.plan.outputs.templates }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+  - name: cloud-after
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "swp-cloud-after-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec python3 -B "$SCRIPT"
+
+          '
+        env:
+          SCRIPT: ${{ steps.assets.outputs.cloud_inventory }}
+          PYTHONPATH: ${{ steps["cloud-api"].outputs.directory }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault, inputs.execution_secrets.upcloud.key) }}
+    dependsOn:
+    - step: cloud-templates
+      condition:
+        type: succeeded
+  - name: after-plan
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-after-plan-"+run.id }}
+      methodName: plan
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps["cloud-after"].outputs.stdout }}
+    dependsOn:
+    - step: cloud-after
+      condition:
+        type: succeeded
+  - name: format
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-sweep-input'
+      behaviorName: ${{ "swp-format-"+run.id }}
+      methodName: terminal
+      inputs:
+        observed_names: ${{ steps["after-plan"].outputs.observed_names }}
+        deleted_names: ${{ steps.plan.outputs.servers.map(r,r.name) + steps.plan.outputs.templates.map(r,r.name) }}
+    dependsOn:
+    - step: after-plan
+      condition:
+        type: succeeded
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "swp-result-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$RESULT"
+
+          '
+        env:
+          RESULT: ${{ steps.format.outputs.result_json }}
+    dependsOn:
+    - step: format
+      condition:
+        type: succeeded

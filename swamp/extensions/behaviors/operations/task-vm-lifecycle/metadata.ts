@@ -15,8 +15,13 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
+        api_assets: {
+            lifetime: "infinite",
+            garbageCollection: 10,
+            schema: z.object({ directory: z.string() }),
+        },
         provider_input: {
             schema: z.object({ intent: ProviderInput, input_json: z.string() }),
             lifetime: "infinite",
@@ -53,6 +58,21 @@ export const behavior = {
         },
     },
     methods: {
+        api_assets: {
+            description:
+                "Resolve the canonical UpCloud API library on this worker",
+            arguments: z.object({}).strict(),
+            async execute(_args: Record<string, never>, ctx: Context) {
+                const path = ctx.extensionFile("scripts/upcloud.py");
+                return {
+                    dataHandles: [
+                        await ctx.writeResource("api_assets", "api_assets", {
+                            directory: path.slice(0, path.lastIndexOf("/")),
+                        }),
+                    ],
+                };
+            },
+        },
         discover: {
             description:
                 "Resolve the exact labelled UpCloud VM after an uncertain create",

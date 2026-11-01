@@ -1,0 +1,13 @@
+manifestVersion: 1
+name: "@nckrtl/task-vm-sweep-input"
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Public sweep ownership selection; native209 SSH and provider steps own cleanup.
+behaviors:
+  - operations/task-vm-sweep/metadata.ts
+additionalFiles:
+  - scripts/incus_inventory.py
+  - scripts/incus_remove.py
+  - scripts/cloud_inventory.py
+  - scripts/cloud_remove.py
