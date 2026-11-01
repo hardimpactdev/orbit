@@ -1,11 +1,12 @@
 manifestVersion: 1
 name: "@nckrtl/route-mutation-command"
-version: 2026.11.01.3
+version: 2026.11.01.4
 visibility: private
 license: MIT
 description: Public Route mutation intent and native one-action assets.
 behaviors:
   - operations/routes/mutation-command/assets.ts
 additionalFiles:
+  - scripts/route_dns_grace.sh
   - scripts/write_environment.py
   - scripts/route_lan.py

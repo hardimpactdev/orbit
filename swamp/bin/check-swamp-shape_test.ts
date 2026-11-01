@@ -591,16 +591,35 @@ Deno.test("phase controls reject computed intervals and failed-command retries",
     );
   }
 });
-Deno.test("Route private DNS grace allows only the approved file, step and literal command", () => {
-  const file = "workflows/workflow-route-dns-grace.yaml";
-  const workflow = {
+Deno.test("Route DNS grace uses the general shipped-script rule; its old inline form has no exception", async () => {
+  const workflow = "workflows/workflow-route-dns-grace.yaml";
+  const assets =
+    "extensions/behaviors/operations/routes/mutation-command/assets.ts";
+  const script =
+    "extensions/behaviors/operations/routes/mutation-command/scripts/route_dns_grace.sh";
+  const files = new Map(
+    [workflow, assets, script].map(
+      (file) => [
+        file,
+        Deno.readTextFileSync(new URL("../" + file, import.meta.url)),
+      ]
+    ),
+  );
+  assertEquals(await phaseControls(files), []);
+  const changed = new Map(files);
+  changed.set(
+    workflow,
+    files.get(workflow)!.replace("timeout 35", 'timeout "$BUDGET"'),
+  );
+  assert(changed.get(workflow) !== files.get(workflow));
+  assert((await phaseControls(changed)).length > 0);
+  const inline = JSON.stringify({
     name: "route-dns-grace",
     jobs: [{
       name: "grace",
       steps: [{
         name: "wait-private-dns-ttl",
         target: "orbit-node-209",
-        labels: { node: "209" },
         task: {
           type: "behavior",
           behaviorType: "command/shell",
@@ -610,81 +629,12 @@ Deno.test("Route private DNS grace allows only the approved file, step and liter
         },
       }],
     }],
-  };
-  const source = JSON.stringify(workflow);
-  assertEquals(analyzeYaml(file, source).findings, []);
-  const labelsOnly = JSON.parse(source);
-  delete labelsOnly.jobs[0].steps[0].target;
-  assertEquals(analyzeYaml(file, JSON.stringify(labelsOnly)).findings, []);
-  const targetOnly = JSON.parse(source);
-  delete targetOnly.jobs[0].steps[0].labels;
-  assertEquals(analyzeYaml(file, JSON.stringify(targetOnly)).findings, []);
-  const rejected = (path: string, source: string) =>
-    assert(
-      analyzeYaml(path, source).findings.some((f) =>
-        f.rule === "custom-control"
-      ),
-      `${path}: ${source}`,
-    );
-  const unplaced = structuredClone(labelsOnly);
-  delete unplaced.jobs[0].steps[0].labels;
-  rejected(file, JSON.stringify(unplaced));
-  for (const labels of [{ node: "18" }, { node: 209 }, {}]) {
-    const changed = structuredClone(labelsOnly);
-    changed.jobs[0].steps[0].labels = labels;
-    rejected(file, JSON.stringify(changed));
-  }
-  const foreignTarget = structuredClone(targetOnly);
-  foreignTarget.jobs[0].steps[0].target = "orbit-node-18";
-  rejected(file, JSON.stringify(foreignTarget));
-  for (const scope of ["workflow", "job"]) {
-    const changed = structuredClone(labelsOnly);
-    const placement = scope === "workflow" ? changed : changed.jobs[0];
-    placement.target = "orbit-node-18";
-    rejected(file, JSON.stringify(changed));
-    placement.target = "orbit-node-209";
-    assertEquals(analyzeYaml(file, JSON.stringify(changed)).findings, []);
-  }
-  for (const path of [
-    "workflows/other.yaml",
-    "models/workflow-route-dns-grace.yaml",
-    "workflows/nested/workflow-route-dns-grace.yaml",
-  ]) rejected(path, source);
-  for (const [from, to] of [
-    ['"name":"grace"', '"name":"other"'],
-    ['"name":"wait-private-dns-ttl"', '"name":"other"'],
-    ['"target":"orbit-node-209"', '"target":"orbit-node-210"'],
-    ['"node":"209"', '"node":"210"'],
-    ['"node":"209"', '"node":209'],
-    ['"node":"209"', '"node":"209","other":"value"'],
-    ['"type":"behavior"', '"type":"model_method"'],
-    ['"behaviorType":"command/shell"', '"behaviorType":"@example/shell"'],
-    ['"behaviorName":"route-dns-grace"', '"behaviorName":"other"'],
-    ['"methodName":"execute"', '"methodName":"other"'],
-    ['"inputs":{', '"globalArgs":{},"inputs":{'],
-    ['"run":', '"env":{},"run":'],
-  ]) rejected(file, source.replace(from, to));
-  for (const run of [
-    "/usr/bin/sleep 30",
-    "sleep 31",
-    "/usr/bin/sleep -- 31",
-    "sudo /usr/bin/sleep 31",
-    "/usr/bin/sleep 31; echo done",
-    "/usr/bin/sleep 31\necho done",
-    "/usr/bin/sleep 31 # comment",
-    "/usr/bin/sleep ${{ inputs.seconds }}",
-    "sh -c '/usr/bin/sleep 31'",
-  ]) {
-    const changed = structuredClone(workflow);
-    changed.jobs[0].steps[0].task.inputs.run = run;
-    rejected(file, JSON.stringify(changed));
-  }
-  const duplicateStep = structuredClone(workflow);
-  duplicateStep.jobs[0].steps.push(duplicateStep.jobs[0].steps[0]);
-  rejected(file, JSON.stringify(duplicateStep));
-  const duplicateJob = structuredClone(workflow);
-  duplicateJob.jobs.push(duplicateJob.jobs[0]);
-  rejected(file, JSON.stringify(duplicateJob));
+  });
+  assert(
+    analyzeYaml(workflow, inline).findings.some((f) =>
+      f.rule === "custom-control"
+    ),
+  );
 });
 const officialSshFixture = Deno.readTextFileSync(
   new URL("../tests/fixtures/shape/official-ssh-vault.yaml", import.meta.url),
