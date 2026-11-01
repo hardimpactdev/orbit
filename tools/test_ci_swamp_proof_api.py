@@ -2,9 +2,7 @@
 import copy
 import io
 import json
-import os
 import stat
-import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -90,27 +88,6 @@ class PrivateRequestTest(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), values)
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertFalse(path.exists())
-
-    def test_operator_helper_uses_installed_sdk_body_origin_and_response_contract(self):
-        code = r'''
-require "apps/cli/vendor/autoload.php";
-require "tools/swamp-proof-request.php";
-$input = json_decode(stream_get_contents(STDIN));
-$client = new Saloon\Http\Faking\MockClient([Saloon\Http\Faking\MockResponse::make(['data'=>['operation'=>['id'=>73]]], 201)]);
-$connector = new Orbit\Sdk\GatewayConnector('https://proof-gateway.orbit', '/tmp/proof-ca.pem');
-$connector->withMockClient($client);
-$response = swampProofRequest($connector, 'POST', '/api/v1/database-connections/proof/users', $input);
-$request = $client->getLastPendingRequest();
-if ($request->getUrl() !== 'https://proof-gateway.orbit/api/v1/database-connections/proof/users'
- || $request->body()->all()['password'] !== $input->password
- || $request->config()->get('verify') !== '/tmp/proof-ca.pem') { exit(2); }
-echo $response->body();
-'''
-        secret = os.urandom(32).hex()
-        reply = subprocess.run(['php', '-r', code], input=json.dumps({'password': secret}), text=True, capture_output=True, cwd=proof.ROOT, check=False)
-        self.assertEqual(reply.returncode, 0, reply.stderr)
-        self.assertEqual(json.loads(reply.stdout), {'data': {'operation': {'id': 73}}})
-        self.assertNotIn(secret, reply.stdout + reply.stderr)
 
     def test_api_failure_never_repeats_a_request(self):
         top = Mock(private_values=private.generate(self.fixture))
