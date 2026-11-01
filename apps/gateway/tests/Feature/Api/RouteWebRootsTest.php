@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\DestroyInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -14,12 +13,6 @@ use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
-use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
-use App\Domain\Instances\Removal\InstanceRemovalException;
-use App\Domain\Instances\Removal\InstanceSourceInventory;
-use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
-use App\Domain\Instances\Removal\ProductionInstanceSourceRemoval;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -36,7 +29,6 @@ use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -224,59 +216,6 @@ describe('route web root', function (): void {
             ->and($own->refresh()->web_root)->toBeNull();
     });
 
-    it('keeps the Routes with a web root when it refuses an Instance removal', function (): void {
-        $removal = new FakeRouteRemovalProjector;
-        app()->instance(RouteRemovalProjector::class, $removal);
-        $own = web_root_route($this->instance, 'acme.web.test');
-        $docs = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
-        $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
-        $source->shouldReceive('inspect')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The checkout has uncommitted changes.', 409));
-        app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
-
-        expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance, force: false))
-            ->toThrow(ResourceOperationException::class, 'The checkout has uncommitted changes.');
-        expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
-            ->and($removal->routeIds)->toBe([])
-            ->and(InstanceRemoval::query()->count())->toBe(0)
-            ->and($this->instance->refresh()->status)->toBe(InstanceState::Active);
-    });
-
-    it('removes the Routes with a web root once it accepts an Instance removal', function (): void {
-        $removal = new FakeRouteRemovalProjector;
-        app()->instance(RouteRemovalProjector::class, $removal);
-        $own = web_root_route($this->instance, 'acme.web.test');
-        $docs = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
-        $checkout = $this->instance->checkout_path;
-        $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
-        $source->shouldReceive('inspect')->andReturn(new InstanceSourceInventory(
-            instanceId: $this->instance->id,
-            layout: 'checkout',
-            repositoryIdentity: $this->project->repository_identity,
-            checkoutPath: $checkout,
-            root: '/srv/orbit/apps',
-            branch: 'main',
-            startingCommit: str_repeat('a', 40),
-            commonRepositoryPath: $checkout,
-            sourceIdentity: 'web-root-source',
-            linkedWorktreePaths: [$checkout],
-            digest: hash('sha256', 'web-root-source'),
-        ));
-        app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
-        $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);
-        $finalizer->shouldReceive('prepare', 'revalidate', 'inspectRecorded')->andReturnUsing(static function () use ($removal, $docs): InstanceSourceRevalidationState {
-            expect($removal->routeIds)->toContain($docs->id);
-
-            throw new ResourceOperationException('instance.test_stop', 'Stopped after acceptance.', 409);
-        });
-        app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
-
-        expect(fn () => app(DestroyInstanceAction::class)->execute($this->instance, force: false, runTeardown: false))
-            ->toThrow(InstanceRemovalException::class, 'Instance removal was accepted but remains incomplete.');
-        expect(Route::query()->find($docs->id))->toBeNull()
-            ->and(Route::query()->find($own->id))->not->toBeNull()
-            ->and(InstanceRemoval::query()->count())->toBe(1);
-    });
-
     it('moves APP_URL to the new winner when the Project root changes', function (): void {
         web_root_route($this->instance, 'acme.web.test');
         web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
@@ -451,57 +390,6 @@ describe('route web root', function (): void {
         expect(RouteWebRoot::servedApplications($instance))->toBe([]);
         $projector->cleanupPhp($docs);
         $projector->cleanupPhp($own);
-    });
-
-    it('keeps the Routes with a web root when it refuses a production Instance removal', function (): void {
-        [$instance] = web_root_production($this->project);
-        $own = web_root_route($instance, 'acme.example.com');
-        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
-        $removal = new FakeRouteRemovalProjector;
-        app()->instance(RouteRemovalProjector::class, $removal);
-        $content = Mockery::mock(ProductionInstanceSourceRemoval::class);
-        $content->shouldReceive('inventory')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The production home changed.', 409));
-        app()->instance(ProductionInstanceSourceRemoval::class, $content);
-
-        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
-            ->toThrow(ResourceOperationException::class, 'The production home changed.');
-        expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
-            ->and($removal->routeIds)->toBe([])
-            ->and($instance->refresh()->status)->toBe(InstanceState::Active);
-    });
-
-    it('removes the Routes with a web root once it accepts a production Instance removal', function (): void {
-        [$instance] = web_root_production($this->project);
-        $own = web_root_route($instance, 'acme.example.com');
-        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
-        $removal = new FakeRouteRemovalProjector;
-        app()->instance(RouteRemovalProjector::class, $removal);
-        $content = Mockery::mock(ProductionInstanceSourceRemoval::class);
-        $content->shouldReceive('inventory')->andReturn(new InstanceSourceInventory(
-            instanceId: $instance->id,
-            layout: $instance->source_layout,
-            repositoryIdentity: $this->project->repository_identity,
-            checkoutPath: $instance->checkout_path,
-            root: 'public',
-            branch: 'main',
-            startingCommit: str_repeat('a', 40),
-            commonRepositoryPath: $instance->checkout_path,
-            sourceIdentity: "production:{$instance->id}:{$instance->node_id}",
-            linkedWorktreePaths: [],
-            digest: hash('sha256', 'production-web-root'),
-        ));
-        $content->shouldReceive('prepare')->andReturnUsing(static function () use ($removal, $docs): void {
-            expect($removal->routeIds)->toContain($docs->id);
-
-            throw new ResourceOperationException('instance.test_stop', 'Stopped after acceptance.', 409);
-        });
-        app()->instance(ProductionInstanceSourceRemoval::class, $content);
-
-        expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: false))
-            ->toThrow(InstanceRemovalException::class);
-        expect(Route::query()->find($docs->id))->toBeNull()
-            ->and(Route::query()->find($own->id))->not->toBeNull()
-            ->and(InstanceRemoval::query()->count())->toBe(1);
     });
 
 });

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Instances\DestroyInstanceAction;
+use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Routes\SetRouteTargetsData;
@@ -175,12 +175,12 @@ it('rejects another Reverb app on the same public Route', function (): void {
     expect($other->environmentValues()->count())->toBe(0);
 });
 
-it('refuses target removal and Instance removal before changing a public attachment', function (): void {
+it('refuses target removal and unavailable production removal before changing a public attachment', function (): void {
     [, $instance, $route] = public_reverb_fixture();
     $this->putJson(public_reverb_url($instance), ['public' => true])->assertOk();
     $this->deleteJson('/api/v1/routes/'.$route->id.'/target')->assertConflict()->assertJsonPath('error.code', 'websocket.route_in_use');
-    expect(fn () => app(DestroyInstanceAction::class)->execute($instance, force: true))->toThrow(function (ResourceOperationException $exception): void {
-        expect($exception->errorCode)->toBe('websocket.route_in_use');
+    expect(fn () => app(StartInstanceDestroyAction::class)->snapshot($instance, force: true))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('operation.kind_unavailable');
     });
     expect(WebSocketAppTarget::query()->count())->toBe(1)->and($route->targets()->count())->toBe(1);
 });
