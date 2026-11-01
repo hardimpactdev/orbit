@@ -109,7 +109,21 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
 
 
     def test_tasks_cancel_parent_preserves_envelope_through_existing_destroy_child(self):
-        self.envelope['kind'] = 'tasks.cancel'
+        self.assert_ending_parent('tasks.cancel')
+
+    def test_maintenance_finish_parent_preserves_envelope_through_existing_destroy_child(self):
+        self.assert_ending_parent('tasks.maintenance_finish')
+
+    def test_standalone_destroy_refuses_tasks_ending_kinds_before_effects(self):
+        for kind in ('tasks.cancel', 'tasks.maintenance_finish'):
+            self.envelope['kind'] = kind
+            refused = self.cli('workflow', 'run', 'operation-task-vm-destroy', '--input', json.dumps(self.envelope), success=False)
+            self.assertIn('input_validation_failed', refused.stdout + refused.stderr)
+        self.assertTrue(json.loads(self.state.read_text())['exists'])
+        self.assertFalse(self.calls.exists())
+
+    def assert_ending_parent(self, kind):
+        self.envelope['kind'] = kind
         self.envelope['intent']['model_intent'] = {'task_vm_id': 42, 'gateway_node_id': 14,
                                                   'model_router_node_id': 6, 'model_origin': 'http://192.0.2.6'}
         # Keep the real model child's closed input contract at the HTTP fixture boundary.
@@ -139,7 +153,9 @@ class TaskVmDestroyNative(lifecycle.TaskVmLifecycleFixture):
         self.assertEqual(receipt['task_vm_id'], 42)
         self.assertTrue(receipt['removal']['removed'])
         observed = [json.loads(line) for line in self.calls.read_text().splitlines()]
-        root = next(row for row in observed if 'root_kind' in row)
-        self.assertEqual(root, {'root_operation_id': self.envelope['operation_id'],
-                                'root_kind': 'tasks.cancel', 'root_node_id': self.envelope['node_id']})
+        roots = [row for row in observed if 'root_kind' in row]
+        self.assertEqual(len(roots), 2)
+        for root in roots:
+            self.assertEqual(root, {'root_operation_id': self.envelope['operation_id'],
+                                    'root_kind': kind, 'root_node_id': self.envelope['node_id']})
         self.assertFalse(json.loads(self.state.read_text())['exists'])
