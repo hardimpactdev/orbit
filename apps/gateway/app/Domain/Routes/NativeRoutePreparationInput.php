@@ -30,6 +30,7 @@ final readonly class NativeRoutePreparationInput
             $artifacts[$kind] = RouteExecutionProof::objects(ValidatedData::object($mutations['artifacts'])[$kind]);
         }
         $compact = app(NativeRoutePublicationArtifacts::class);
+        $indexes = [];
         $preparedIds = array_keys($instances);
         $workloadScopes = array_map(static fn (int $id): string => 'app-instance-'.$id, $preparedIds);
         $servingHops = $beforeSites->filter(static fn (DevelopmentSite $site): bool => $site->isProxy() || $site->publicListener)
@@ -51,8 +52,10 @@ final readonly class NativeRoutePreparationInput
             $resolved = NativeRoutePublicationArtifacts::resolve($artifacts, $publication);
             $references = [ValidatedData::object($pair['before']['caddy']), ValidatedData::object($pair['after']['caddy'])];
             $preparation['publications'][] = [...array_intersect_key($publication, array_flip(['node_id', 'user', 'control_node_id', 'connection', 'host_keys'])),
-                'before' => $compact->intern($artifacts, 'caddy', $references[0]), 'after' => $compact->intern($artifacts, 'caddy', $references[1]), 'direction' => 'forward',
-                'alternatives' => array_map(static fn (string $stage): int => $compact->intern($artifacts, 'caddy', $compact->restrictCaddy(ValidatedData::object(ValidatedData::object($resolved[$stage])['caddy']), $references)), ['before', 'prepared', 'withdrawn', 'after'])];
+                'before' => $compact->intern($artifacts, 'caddy', $references[0], $indexes), 'after' => $compact->intern($artifacts, 'caddy', $references[1], $indexes), 'direction' => 'forward',
+                'alternatives' => array_map(static function (string $stage) use ($compact, &$artifacts, &$indexes, $resolved, $references): int {
+                    return $compact->intern($artifacts, 'caddy', $compact->restrictCaddy(ValidatedData::object(ValidatedData::object($resolved[$stage])['caddy']), $references), $indexes);
+                }, ['before', 'prepared', 'withdrawn', 'after'])];
         }
         foreach ($desired as $row) {
             $routerId = $row['intent']['router_node_id'];

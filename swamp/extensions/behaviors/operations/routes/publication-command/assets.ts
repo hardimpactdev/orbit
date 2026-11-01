@@ -16,7 +16,9 @@ const Placement = z.object({
     connection: PublicationConnection,
     direction: z.enum(["forward", "restore"]),
 });
+/** Sparse unserved means no affected blocks; full snapshots retain their own served groups. */
 const Section = CaddyInput.extend({
+    had_served_groups: z.boolean().optional(),
     blocks: z.array(
         z.object({ source: z.string(), name: z.string(), block: z.string() }),
     ).optional(),
@@ -31,7 +33,7 @@ const CaddyArgs = Placement.extend({
 export async function composeCaddy(raw: unknown) {
     const value = CaddyArgs.parse(raw);
     for (const caddy of [value.before, value.after, ...value.alternatives]) {
-        const { blocks: _blocks, ...input } = caddy;
+        const { blocks: _blocks, had_served_groups: _served, ...input } = caddy;
         await prepareCaddyInput({
             node_id: value.node_id,
             user: value.user,
@@ -50,6 +52,7 @@ export async function composeCaddy(raw: unknown) {
         value.current,
         value.alternatives.map((state) => state.content),
         value.retain_removed,
+        before.had_served_groups,
     );
     const version = Array.from(
         new Uint8Array(
@@ -171,7 +174,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.10.31.4",
+    version: "2026.11.1.1",
     resources: {
         caddy: {
             schema: CaddyPublication,
