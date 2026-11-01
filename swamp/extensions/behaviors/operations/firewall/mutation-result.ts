@@ -104,12 +104,18 @@ export const behavior = {
     version: "2026.11.01.1",
     resources: {
         preflight: {
+            lifetime: "1d",
+            garbageCollection: 10,
             schema: z.object({ ready: z.literal(true) }),
         },
         observation: {
+            lifetime: "1d",
+            garbageCollection: 10,
             schema: z.object({ legacy: z.boolean() }),
         },
         result: {
+            lifetime: "1d",
+            garbageCollection: 10,
             schema: z.object({ stdout: z.string(), exitCode: z.literal(0) }),
         },
     },
