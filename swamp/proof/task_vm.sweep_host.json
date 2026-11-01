@@ -65,6 +65,7 @@
   "parity": {
     "command": [
       "python3",
+      "-I",
       "swamp/proof/task_vm.sweep_host/parity.py"
     ],
     "cases": [

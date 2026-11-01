@@ -1,6 +1,9 @@
 """Legacy sweep policy parity at the shipped phase boundary; no live provider calls."""
+import contextlib
 import copy
 import importlib.util
+import io
+import json
 import sys
 import time
 import unittest
@@ -102,3 +105,46 @@ class SweepPhaseParity(unittest.TestCase):
                 INCUS.rows(raw)
         with self.assertRaises(ValueError):
             CLOUD.inventory(lambda *_: {'servers': {'server': None}})
+
+
+class SweepStrayParity(unittest.TestCase):
+    def test_reports_every_project_and_pool_without_deleting_foreign_resources(self):
+        value = intent();value['scope']['operator_owned'] = ['default/operator']
+        calls = []
+        def read(args):
+            calls.append(args)
+            path = args[-1]
+            if path == '/1.0/instances?all-projects=true':
+                return ['/1.0/instances/operator?project=default', '/1.0/instances/stray?project=other']
+            if path == '/1.0/storage-pools':
+                return ['/1.0/storage-pools/tasks', '/1.0/storage-pools/other-pool']
+            if 'image' in args:
+                return [{'fingerprint': 'a' * 64}]
+            return [path.split('?')[0] + '/scratch?project=other']
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            INCUS.report_strays(value, read)
+            INCUS.report_strays(value, read)
+        reports = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(len(reports), 6)
+        self.assertEqual({r['pool'] for r in reports if r['warning'] == 'unowned_volume'}, {'tasks', 'other-pool'})
+        self.assertEqual([r['name'] for r in reports if r['warning'] == 'unowned_instance'], ['stray', 'stray'])
+        self.assertFalse(any('delete' in args for args in calls))
+
+    def test_ci_role_project_is_owned_without_operator_exceptions(self):
+        value = intent()
+        def read(args):
+            path = args[-1]
+            if 'image' in args:
+                return []
+            if path == '/1.0/storage-pools':
+                return ['/1.0/storage-pools/tasks']
+            if path == '/1.0/instances?all-projects=true':
+                return ['/1.0/instances/ci-1?project=orbit-ci']
+            return ['/1.0/storage-pools/tasks/volumes/custom/cache?project=orbit-ci']
+        for is_ci, count in ((True, 0), (False, 2)):
+            value['ci_runner'] = is_ci
+            output = io.StringIO()
+            with contextlib.redirect_stderr(output):
+                INCUS.report_strays(value, read)
+            self.assertEqual(len(output.getvalue().splitlines()), count)

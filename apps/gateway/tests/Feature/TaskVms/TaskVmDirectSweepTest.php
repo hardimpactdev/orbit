@@ -10,12 +10,14 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\TaskVmSweepProjection;
 use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\TaskVms\UpCloudApi;
+use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVm;
@@ -213,3 +215,27 @@ it('settles cancellation and interruption without inventing a missing observatio
     expect($operation->fresh()->status)->toBe($status === 'interrupted' ? OperationStatus::Failed : OperationStatus::Cancelled)
         ->and($operation->fresh()->lock_key)->toBeNull()->and($vm->fresh()->state)->toBe(TaskVmState::Ready);
 })->with(['cancelled', 'interrupted']);
+
+it('admits other active hosts independently when one native host fails', function (): void {
+    $other = $this->host->replicate();
+    $other->fill(['name' => 'sweep-other', 'wireguard_ip' => '10.44.0.10', 'public_ssh_host' => '192.0.2.10'])->save();
+    $inactive = $this->host->replicate();
+    $inactive->fill(['name' => 'sweep-inactive', 'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '192.0.2.11', 'status' => LifecycleStatus::Failed])->save();
+    TaskVmSettingsBuilder::bind(['hosts' => array_map(TaskVmSettingsBuilder::host(...), [$this->host->id, $other->id, $inactive->id])]);
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    $operations = Operation::query()->where('kind', 'task_vm.sweep_host')->orderBy('id')->get();
+    expect($operations->pluck('node_id')->all())->toBe([$this->host->id, $other->id]);
+    app(TaskVmSweepProjection::class)->apply($operations[0], ['run_id' => $operations[0]->state['swamp_run_id'], 'status' => 'failed',
+        'started_at' => '2026-10-31T00:00:00Z', 'finished_at' => '2026-10-31T00:00:01Z',
+        'result' => ['error_code' => 'operation.native_failed'], 'error_code' => 'operation.native_failed']);
+    directSweepProject($operations[1]);
+    expect($operations[0]->fresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operations[1]->fresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('admits no Incus sweep while task VMs are disabled', function (): void {
+    app()->instance(TaskVmSettings::class, TaskVmSettingsBuilder::off(['hosts' => app(TaskVmSettings::class)->hosts]));
+    app()->call([new SweepTaskVmHosts, 'handle']);
+    $this->assertDatabaseCount('operations', 0);
+    expect($this->socket->sent)->toBe([]);
+});
