@@ -276,7 +276,7 @@ class ShapeGate(unittest.TestCase):
             for name in ("config", "extensions", ".swamp.yaml"):
                 (root / name).rename(swamp / name)
             (swamp / "bin").mkdir()
-            for name in ("check-swamp-shape.ts", "swamp-shape-relocations.ts", "workflow-placement.ts", "swamp-shape-python.py", "swamp_shape_host_tools.py"):
+            for name in ("check-swamp-shape.ts", "bounded-phase-scripts.ts", "swamp-shape-relocations.ts", "workflow-placement.ts", "swamp-shape-python.py", "swamp_shape_host_tools.py", "swamp_shape_polling.py"):
                 (swamp / "bin" / name).write_bytes((ROOT / "bin" / name).read_bytes())
             helper = swamp / "bin/swamp-shape-relocations.ts"
             # Only this disposable fixture substitutes its synthetic witness.

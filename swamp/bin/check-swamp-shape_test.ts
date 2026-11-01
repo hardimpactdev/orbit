@@ -16,6 +16,7 @@ import {
   isGatewayPrimitive,
   ratchet,
   SCHEMA,
+  toolFindings,
   workflowCoverage,
 } from "./check-swamp-shape.ts";
 const file = "extensions/behaviors/example.ts";
@@ -60,6 +61,334 @@ Deno.test("step inputs read one bounded data record, never a query or version hi
     ).includes("unbounded-data-input"),
     false,
   );
+});
+const pollFile = "scripts/poll.py";
+const externalPoll = `import time
+
+def api(method, path):
+    raise RuntimeError("fixture is never executed")
+
+def wait_started():
+    while True:
+        state = api('GET', 'server/example')['state']
+        if state == 'started':
+            return
+        if state not in ('stopped', 'maintenance'):
+            raise RuntimeError('provider entered a bad terminal state')
+        time.sleep(3)
+`;
+const phaseWorkflow = (runs: string[], extraSteps: unknown[] = []) =>
+  JSON.stringify({
+    name: "example",
+    jobs: [{
+      name: "phase",
+      target: "orbit-node-209",
+      steps: [
+        ...extraSteps,
+        ...runs.map((run, i) => ({
+          name: `phase-${i}`,
+          task: {
+            type: "behavior",
+            behaviorType: "command/shell",
+            behaviorName: `phase-${i}`,
+            methodName: "execute",
+            inputs: {
+              run,
+              env: {
+                ORBIT_PROVIDER_SCRIPT: "${{ steps.input.outputs.script }}",
+              },
+            },
+          },
+        })),
+      ],
+    }],
+  });
+async function phaseControls(files: Map<string, string>) {
+  return [...analyze(files, inventory).values()].flatMap((a) => a.findings)
+    .concat(await toolFindings(files)).filter((f) =>
+      f.rule === "custom-control"
+    );
+}
+Deno.test("phase script accepts a literal-bounded external-state poll and a shorter single wait", async () => {
+  const files = new Map([
+    [
+      "workflows/phase.yaml",
+      phaseWorkflow([
+        "exec timeout 30 /usr/bin/python3 -B scripts/poll.py",
+        "bash scripts/grace.sh",
+      ]),
+    ],
+    [pollFile, externalPoll],
+    ["scripts/grace.sh", "#!/bin/bash\ntimeout 35 /usr/bin/sleep 31\n"],
+  ]);
+  assertEquals(await phaseControls(files), []);
+});
+Deno.test("phase script resolves the shipped metadata asset through the step environment", async () => {
+  const files = new Map([
+    [
+      "extensions/behaviors/provider/assets.ts",
+      `export const behavior = {
+      type: "@example/provider", methods: {input: {execute(args, ctx) {
+        return {script: ctx.extensionFile("scripts/upcloud.py")};
+      }}}};`,
+    ],
+    ["extensions/behaviors/provider/scripts/upcloud.py", externalPoll],
+    [
+      "workflows/phase.yaml",
+      phaseWorkflow([
+        'exec timeout 30 /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" wait-started',
+      ], [
+        {
+          name: "input",
+          task: {
+            type: "behavior",
+            behaviorType: "@example/provider",
+            methodName: "input",
+          },
+        },
+      ]),
+    ],
+  ]);
+  assertEquals(await phaseControls(files), []);
+  files.set(
+    "workflows/phase.yaml",
+    files.get("workflows/phase.yaml")!.replace("timeout 30 ", ""),
+  );
+  assert((await phaseControls(files)).length > 0);
+});
+const shellPoll = `#!/bin/bash
+set -e
+while true; do
+    state=$(curl --fail --silent https://provider.example/state)
+    case "$state" in
+        started) exit 0;;
+        failed) echo "provider entered a bad terminal state" >&2; exit 1;;
+    esac
+    sleep 3
+done
+`;
+Deno.test("phase script accepts shell state polling and a Python one-shot wait under a step timeout", async () => {
+  assertEquals(
+    await phaseControls(
+      new Map([
+        [
+          "workflows/phase.yaml",
+          phaseWorkflow([
+            "timeout 30 bash scripts/poll.sh",
+            "timeout 35 python3 scripts/grace.py",
+          ]),
+        ],
+        ["scripts/poll.sh", shellPoll],
+        ["scripts/grace.py", "import time\ntime.sleep(31)\n"],
+      ]),
+    ),
+    [],
+  );
+});
+Deno.test("phase script does not allow action retries, swallowed request failures or a disconnected state selector", async () => {
+  for (
+    const source of [
+      shellPoll.replace("state=$(curl", "other=$(curl"),
+      shellPoll.replace("--fail --silent", "--silent"),
+      shellPoll.replace("--fail --silent", "--fail --retry 3"),
+      shellPoll.replace("sleep 3", 'sleep "$INTERVAL"'),
+      shellPoll.replace("set -e", "set +e"),
+      shellPoll.replace("set -e", "set -e\nset +e"),
+      shellPoll.replace("set -e", "") + "set -e\n",
+      shellPoll.replace("--fail --silent", "--fail --form key=value"),
+      shellPoll.replace("--fail --silent", "--fail --json '{}'"),
+      shellPoll.replace("--fail --silent", "--fail -sXPOST"),
+      shellPoll.replace("set -e", "set -e\ncommand set +e"),
+      shellPoll.replace("/state)", "/state & )"),
+      shellPoll.replace(
+        'echo "provider entered a bad terminal state" >&2; ',
+        "",
+      ),
+      shellPoll.replace("    sleep 3", "    deploy\n    sleep 3"),
+      shellPoll.replace("    state=", "    state=").replace(
+        "/state)",
+        "/state) || true",
+      ),
+    ]
+  ) {
+    assert(
+      (await phaseControls(
+        new Map([
+          [
+            "workflows/phase.yaml",
+            phaseWorkflow(["timeout 30 bash scripts/poll.sh"]),
+          ],
+          ["scripts/poll.sh", source],
+        ]),
+      )).length > 0,
+      source,
+    );
+  }
+});
+Deno.test("phase controls reject inline waits and files without a literal bound on every invocation", async () => {
+  for (
+    const runs of [
+      [],
+      ["python3 scripts/poll.py"],
+      ["timeout $BUDGET python3 scripts/poll.py"],
+      ["timeout 30 python3 scripts/poll.py", "python3 scripts/poll.py"],
+      ["timeout 30 python3 scripts/poll.py; echo done"],
+      ["timeout 30 python3 scripts/poll.py $(python3 scripts/poll.py)"],
+    ]
+  ) {
+    assert(
+      (await phaseControls(
+        new Map([
+          ["workflows/phase.yaml", phaseWorkflow(runs)],
+          [pollFile, externalPoll],
+        ]),
+      )).length > 0,
+      JSON.stringify(runs),
+    );
+  }
+  for (
+    const run of [
+      "timeout 35 sleep 31",
+      "timeout 30 bash -c 'while true; do sleep 3; done'",
+    ]
+  ) {
+    assert(
+      (await phaseControls(
+        new Map([["workflows/phase.yaml", phaseWorkflow([run])]]),
+      )).length > 0,
+      run,
+    );
+  }
+});
+Deno.test("phase file bounds do not bless another script's unbounded call", async () => {
+  for (
+    const wrapper of [
+      "#!/bin/bash\npython3 scripts/poll.py\n",
+      "import poll\npoll.wait_started()\n",
+      "from scripts.poll import wait_started\nwait_started()\n",
+      "from .poll import wait_started\nwait_started()\n",
+      "from scripts import (poll,)\npoll.wait_started()\n",
+    ]
+  ) {
+    const name = wrapper.startsWith("#!")
+      ? "scripts/wrapper.sh"
+      : "scripts/wrapper.py";
+    assert(
+      (await phaseControls(
+        new Map([
+          [
+            "workflows/phase.yaml",
+            phaseWorkflow([
+              "timeout 30 python3 scripts/poll.py",
+              `bash ${name}`,
+            ]),
+          ],
+          [pollFile, externalPoll],
+          [name, wrapper],
+        ]),
+      )).length > 0,
+      wrapper,
+    );
+  }
+});
+Deno.test("phase budgets follow bounded script imports but not unused test harness imports", async () => {
+  const wrapper = "from scripts.poll import wait_started\nwait_started()\n";
+  assertEquals(
+    await phaseControls(
+      new Map([
+        [
+          "workflows/phase.yaml",
+          phaseWorkflow(["timeout 30 python3 scripts/wrapper.py"]),
+        ],
+        [pollFile, externalPoll],
+        ["scripts/wrapper.py", wrapper],
+        ["tests/test_provider.py", "import poll\n"],
+      ]),
+    ),
+    [],
+  );
+  assert(
+    (await phaseControls(
+      new Map([
+        [
+          "workflows/phase.yaml",
+          phaseWorkflow([
+            "timeout 30 python3 scripts/poll.py",
+            "python3 scripts/wrapper.py",
+          ]),
+        ],
+        [pollFile, externalPoll],
+        ["scripts/wrapper.py", "import intermediate\n"],
+        ["scripts/intermediate.py", wrapper],
+      ]),
+    )).length > 0,
+  );
+});
+Deno.test("phase controls reject computed intervals and failed-command retries", async () => {
+  for (
+    const source of [
+      externalPoll.replace("time.sleep(3)", "time.sleep(interval)"),
+      externalPoll.replace("time.sleep(3)", "time.sleep(1 + 2)"),
+      externalPoll.replace("time.sleep(3)", "time.sleep(30)"),
+      externalPoll.replace("time.sleep(3)", "time.sleep(0)"),
+      externalPoll.replace("import time", "import asyncio").replace(
+        "time.sleep(3)",
+        "asyncio.sleep(3)",
+      ),
+      externalPoll.replace(
+        "time.sleep(3)",
+        "if False:\n            time.sleep(3)",
+      ),
+      externalPoll.replace(
+        "        if state ==",
+        "        state = 'maintenance'\n        if state ==",
+      ),
+      externalPoll.replace(
+        "state = api('GET', 'server/example')['state']",
+        "state = api('POST', 'server/example')['state']",
+      ),
+      externalPoll.replace(
+        "state = api('GET', 'server/example')['state']",
+        "try:\n            state = api('GET', 'server/example')['state']\n        except OSError:\n            continue",
+      ),
+    ]
+  ) {
+    assert(
+      (await phaseControls(
+        new Map([
+          [
+            "workflows/phase.yaml",
+            phaseWorkflow(["timeout 30 python3 scripts/poll.py"]),
+          ],
+          [pollFile, source],
+        ]),
+      )).length > 0,
+      source,
+    );
+  }
+  for (
+    const source of [
+      "#!/bin/bash\nsleep 31\n",
+      '#!/bin/bash\ntimeout 35 sleep "$INTERVAL"\n',
+      "#!/bin/bash\ntimeout 35 bash -c 'until curl --fail https://provider.example; do sleep 3; done'\n",
+      "#!/bin/bash\ntimeout 35 sleep 31\nflock /tmp/workflow.lock true\n",
+      "#!/bin/bash\ntimeout 35 sleep 31\npython3 -c 'import fcntl; fcntl.flock(0, fcntl.LOCK_EX)'\n",
+      "#!/bin/bash\ntimeout 35 sleep 31\npython3 -c 'import time; time.sleep(99)'\n",
+    ]
+  ) {
+    assert(
+      (await phaseControls(
+        new Map([
+          [
+            "workflows/phase.yaml",
+            phaseWorkflow(["bash scripts/grace.sh"]),
+          ],
+          ["scripts/grace.sh", source],
+        ]),
+      )).length > 0,
+      source,
+    );
+  }
 });
 Deno.test("Route private DNS grace allows only the approved file, step and literal command", () => {
   const file = "workflows/workflow-route-dns-grace.yaml";

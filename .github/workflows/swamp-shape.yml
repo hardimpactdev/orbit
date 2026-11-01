@@ -52,12 +52,12 @@ jobs:
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
           python3 -m venv "$RUNNER_TEMP/shape-tools"
-          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1
+          "$RUNNER_TEMP/shape-tools/bin/pip" install --disable-pip-version-check ruff==0.17.0 shellcheck-py==0.11.0.1 shfmt-py==4.2.0
           echo "$RUNNER_TEMP/shape-tools/bin" >> "$GITHUB_PATH"
       - name: Check shape regression fixtures
         if: ${{ !inputs.changed-only || steps.scope.outputs.selected == 'true' }}
         run: |
-          deno test --allow-env --allow-read bin/check-swamp-shape_test.ts
+          deno test --allow-env --allow-read --allow-run=python3,ruff,shellcheck bin/check-swamp-shape_test.ts
           python3 tests/swamp_shape_gate_test.py
           python3 tests/swamp_validate_ci_test.py
           python3 tests/swamp_deno_shards_test.py
