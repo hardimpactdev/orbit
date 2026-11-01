@@ -473,6 +473,10 @@ export function roleConvergeSteps(
                     "k.startsWith(" + JSON.stringify(dest + "-") + ")",
                 )
                 .replaceAll(
+                    JSON.stringify(source + "-0") + " in steps",
+                    JSON.stringify(dest + "-0") + " in steps",
+                )
+                .replaceAll(
                     JSON.stringify(source) + " in steps",
                     JSON.stringify(dest) + " in steps",
                 );

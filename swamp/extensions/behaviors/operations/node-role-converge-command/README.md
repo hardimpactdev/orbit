@@ -29,6 +29,13 @@ The exported `roleConvergeSteps(name, intentExpr, fullGlobals, dependency?, guar
 
 `RoleConvergeReceipt` is schema1 with Node/assignment/role identity, role/runtime/certificate/publication proof, baseline, footprint, CLI and follow-up. The final step is `<name>_role_result` (or `role_result` with empty prefix). Optional role lists must bind completed admission-job context before effects. Forward composition does not provide complete roleless enrollment or deferred parent restoration/finalization. These remain unsupported; this slice does not unblock complete node.add.
 
+For direct embedding, that step exposes the receipt fields flat:
+`steps["<name>_role_result"].outputs.role_proven`, `outputs.node_id`, and the
+other receipt fields. There is no intermediate `outputs.result` object.
+A workflow child has its own output envelope; its wrapping is a separate
+contract. Native parent run `5d3aa473-c6bf-4fd7-884f-90d27d273b49` verifies the
+direct form.
+
 Owning add and relocation parents can capture a supported contribution after recording the actual assignment. `NativeNodeRoleConvergeInput::supportsContribution(Node, RoleName)` has no worker or sole-role requirement. `capture(Node, NodeRole, snapshot)` preserves `snapshot.created` and verifies the stored assignment plus snapshot identity. `created` is required in native intent and survives successful and failed receipts. Other roles on the Node do not themselves refuse capture; missing required artifact or Metrics contributions still do. This is forward contribution support, not acceptance of a complete add, relocation or enrollment parent. The existing private renderer is `NodeRoleRuntimeSource::resolveRoleMaterial(snapshot, ownerNodeId)`; the execution-copy runtime key is `node-role-{operation_id}-runtime_material`.
 
 WebSocket uses visible source, Composer, private environment, release/unit validation, service activation, listener observation, restoration and release cleanup actions. A source or validation failure before cutover leaves the running service untouched. Cleanup keeps the current and captured prior releases after success. A failed cutover retains its candidate for same-child resume; a failed pre-cutover candidate is removed. Its complete captured PHP/Caddy/DNS catalogs use the canonical Route children. The Gateway records certificate and serving state from terminal outputs. AppDev, AppProd and Analytics remain on their existing paths.
