@@ -15,15 +15,15 @@ final class RouteRenderContext
 {
     private NativeRouteNodeRender|NodeEnrollmentCandidate|null $candidate = null;
 
-    /** @var ?array{node_id:int,settings:array<string,mixed>} */
+    /** @var ?array{node_id:int,settings:array<string,mixed>|null} */
     private ?array $preparedSettings = null;
 
     /** @template T
-     * @param  array<string,mixed>  $settings
+     * @param  array<string,mixed>|null  $settings
      * @param  Closure():T  $render
      * @return T
      */
-    public function renderSettings(Node $node, array $settings, Closure $render): mixed
+    public function renderSettings(Node $node, ?array $settings, Closure $render): mixed
     {
         $previous = $this->preparedSettings;
         $this->preparedSettings = ['node_id' => $node->id, 'settings' => $settings];

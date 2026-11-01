@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Fleet\NodeFootprintArtifact;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Routes\CaddyPublicationPlan;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Routes\RouteRenderContext;
@@ -52,6 +53,10 @@ final readonly class NodeConvergeInput
         if ($candidate !== null && $candidate->nodeId !== $actual->id) {
             throw new ResourceOperationException('node.footprint_invalid', 'The footprint candidate must name the actual reserved Node.', 422);
         }
+        $settingsProvided = func_num_args() >= 3;
+        $normalizer = app(NodeSettingsNormalizer::class);
+        $effectiveSettings = $settingsProvided
+            ? $normalizer->storedOver($actual->settings, $normalizer->fromStored($normalizedPublicSettings)) : null;
         $render = app(RouteRenderContext::class);
         $capture = function () use ($actual): array {
             $result = $this->capture($actual, false, false);
@@ -59,8 +64,8 @@ final readonly class NodeConvergeInput
 
             return $result;
         };
-        $settings = fn (): array => $normalizedPublicSettings === null ? $capture()
-            : $render->renderSettings($actual, $normalizedPublicSettings, $capture);
+        $settings = fn (): array => ! $settingsProvided ? $capture()
+            : $render->renderSettings($actual, $effectiveSettings, $capture);
 
         return $candidate === null ? $settings() : $render->renderEnrollment($candidate, $settings);
     }
