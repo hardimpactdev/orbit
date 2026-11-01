@@ -72,13 +72,9 @@ inputs:
 jobs:
 - name: publication
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: probe
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -111,8 +107,6 @@ jobs:
           printf '{"present":%s,"initial":%s}\n' "$present" "$initial"
   - name: input
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/php-monitor-command'
@@ -127,8 +121,6 @@ jobs:
         type: succeeded
   - name: apply-pool
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -155,8 +147,6 @@ jobs:
     guard: ${{ !steps.input.outputs.present }}
   - name: validate
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -180,8 +170,6 @@ jobs:
     guard: ${{ !steps.input.outputs.present }}
   - name: reload
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -203,8 +191,6 @@ jobs:
     guard: ${{ !steps.input.outputs.present }}
 - name: completion
   target: orbit-node-209
-  labels:
-    node: '209'
   dependsOn:
   - job: publication
     condition:
@@ -212,8 +198,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

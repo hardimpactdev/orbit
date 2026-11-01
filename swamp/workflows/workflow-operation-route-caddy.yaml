@@ -81,13 +81,9 @@ inputs:
 jobs:
 - name: publication
   target: orbit-node-209
-  labels:
-    node: '209'
   steps:
   - name: input
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@nckrtl/caddy-public-input'
@@ -97,8 +93,6 @@ jobs:
         publication: ${{ inputs.intent.caddy_publication }}
   - name: apply-config
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -135,8 +129,6 @@ jobs:
         type: succeeded
   - name: validate
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -156,8 +148,6 @@ jobs:
         type: succeeded
   - name: reload
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -177,8 +167,6 @@ jobs:
         type: succeeded
 - name: completion
   target: orbit-node-209
-  labels:
-    node: '209'
   dependsOn:
   - job: publication
     condition:
@@ -186,8 +174,6 @@ jobs:
   steps:
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

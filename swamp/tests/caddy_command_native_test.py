@@ -57,11 +57,11 @@ if name=='systemctl' and os.environ.get('FIXTURE_FAIL')=='reload': sys.exit(1)
 
         workflow = patch_strings(workflow)
         for job in workflow["jobs"]:
-            job.pop("target")
-            job.pop("labels")
+            self.assertEqual(job.pop("target"), "orbit-node-209")
+            self.assertNotIn("labels", job)
             for step in job["steps"]:
                 self.assertEqual(step.pop("target"), "orbit-node-209")
-                self.assertEqual(step.pop("labels"), {"node": "209"})
+                self.assertNotIn("labels", step)
         folder = self.repo / "extensions/behaviors/operations/routes"
         folder.mkdir(parents=True)
         import shutil
