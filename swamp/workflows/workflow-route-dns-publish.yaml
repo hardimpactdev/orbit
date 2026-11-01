@@ -30,8 +30,6 @@ jobs:
   steps:
   - name: read-records
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -57,8 +55,6 @@ jobs:
         - /etc/dnsmasq.d/orbit-records.conf
   - name: read-catalog
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -77,8 +73,6 @@ jobs:
         type: succeeded
   - name: compose
     target: orbit-node-209
-    labels:
-      node: '209'
     dependsOn:
     - step: read-catalog
       condition:
@@ -97,8 +91,6 @@ jobs:
           catalog: ${{ steps["read-catalog"].outputs.stdout }}
   - name: catalog-directory
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -120,8 +112,6 @@ jobs:
         type: succeeded
   - name: records
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -147,8 +137,6 @@ jobs:
         type: succeeded
   - name: catalog
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -174,8 +162,6 @@ jobs:
         type: succeeded
   - name: validate
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -194,8 +180,6 @@ jobs:
         type: succeeded
   - name: restart-backend
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -215,8 +199,6 @@ jobs:
         type: succeeded
   - name: listener
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -237,8 +219,6 @@ jobs:
         type: succeeded
   - name: result
     target: orbit-node-209
-    labels:
-      node: '209'
     task:
       type: behavior
       behaviorType: command/shell

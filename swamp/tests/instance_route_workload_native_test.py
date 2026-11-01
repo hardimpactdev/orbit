@@ -76,7 +76,7 @@ raise SystemExit(result.returncode)
         workflow = yaml.safe_load(raw)
         for step in workflow["jobs"][0]["steps"]:
             self.assertEqual(step.pop("target"), "orbit-node-209")
-            self.assertEqual(step.pop("labels"), {"node": "209"})
+            self.assertNotIn("labels", step)
             if step["name"] == "runtime-pool":
                 step["task"]["globalArgs"]["path"] = str(self.pool)
                 step["task"]["globalArgs"].pop("owner")
@@ -138,9 +138,21 @@ raise SystemExit(result.returncode)
         self.assertEqual(self.audit.read_text().splitlines(), ["source"])
         self.assertEqual(self.pool.read_text(), "old-pool")
 
+    def test_empty_plan_skips_every_effect_and_completes(self):
+        self.run_workload()
+        self.assertFalse(self.audit.exists())
+        self.assertEqual(self.pool.read_text(), "old-pool")
+
     def test_production_uses_the_official_file_before_validate_reload(self):
         self.production()
-        self.run_workload()
+        history = self.run_workload()
+        names = []
+        for phase in ("served-command", "runtime-validate", "runtime-reload"):
+            name = f"irw-{history['id']}-{phase}-0"
+            model = json.loads(self.cli("model", "get", name).stdout)
+            self.assertEqual(model["globalArguments"]["name"], name)
+            names.append(model["name"])
+        self.assertEqual(len(set(names)), 3)
         self.assertEqual(self.pool.read_text(), "candidate-pool")
         self.assertEqual(
             self.audit.read_text().splitlines(),

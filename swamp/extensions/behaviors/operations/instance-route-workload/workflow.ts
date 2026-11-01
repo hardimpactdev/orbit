@@ -6,7 +6,6 @@ const failed = 'steps.exists(key, steps[key].status == "failed")';
 export function workloadWorkflow(): Fields {
     const steps: Fields[] = [];
     const globals = {
-        name: expr('"instance-route-workload-" + run.id'),
         transport: {
             kind: "ssh",
             user: expr("inputs.intent.connection.nodeUser"),
@@ -29,6 +28,13 @@ export function workloadWorkflow(): Fields {
     const runtime =
         "inputs.intent.plan.runtime != null ? [inputs.intent.plan.runtime] : []";
     function add(name: string, list: string, task: Fields) {
+        const behaviorName = expr(
+            `"irw-" + run.id + "-${name}-" + string(self._index)`,
+        );
+        task.behaviorName = behaviorName;
+        if (task.behaviorType === "@swamp/ssh") {
+            task.globalArgs = { ...globals, name: behaviorName };
+        }
         steps.push({
             name,
             ...placement,
@@ -42,16 +48,13 @@ export function workloadWorkflow(): Fields {
         add(name + "-assets", list, {
             type: "behavior",
             behaviorType: "@nckrtl/instance-route-workload",
-            behaviorName: name + "-assets",
             methodName: "read",
             inputs: { action, input: expr(input) },
         });
         add(name + "-command", list, {
             type: "behavior",
             behaviorType: "@swamp/ssh",
-            behaviorName: globals.name,
             methodName: "script",
-            globalArgs: globals,
             inputs: {
                 hosts: "name:target",
                 interpreter: "python3",
@@ -62,7 +65,6 @@ export function workloadWorkflow(): Fields {
         add(name, list, {
             type: "behavior",
             behaviorType: "@nckrtl/instance-route-workload",
-            behaviorName: name + "-decode",
             methodName: "decode",
             inputs: {
                 stdout: expr(`steps["${name}-command-0"].outputs.stdout`),
@@ -80,9 +82,7 @@ export function workloadWorkflow(): Fields {
     add("runtime-identity", runtime, {
         type: "behavior",
         behaviorType: "@swamp/ssh",
-        behaviorName: globals.name,
         methodName: "exec",
-        globalArgs: globals,
         inputs: {
             hosts: "name:target",
             sudo: true,
@@ -99,9 +99,6 @@ export function workloadWorkflow(): Fields {
     add("runtime-pool", runtime, {
         type: "behavior",
         behaviorType: "@swamp/cfgmgmt/file",
-        behaviorName: expr(
-            '"instance-route-pool-" + string(inputs.intent.instance_id)',
-        ),
         methodName: "apply",
         globalArgs: {
             nodeHost: expr("inputs.intent.connection.nodeHost"),
@@ -123,7 +120,6 @@ export function workloadWorkflow(): Fields {
     add("runtime-pool-proof", runtime, {
         type: "behavior",
         behaviorType: "@nckrtl/instance-route-workload",
-        behaviorName: "runtime-pool-proof",
         methodName: "verifyPool",
         inputs: {
             expected: expr("self.part.pool_sha256"),
@@ -133,9 +129,7 @@ export function workloadWorkflow(): Fields {
     add("runtime-validate", runtime, {
         type: "behavior",
         behaviorType: "@swamp/ssh",
-        behaviorName: globals.name,
         methodName: "exec",
-        globalArgs: globals,
         inputs: {
             hosts: "name:target",
             sudo: true,
@@ -156,9 +150,7 @@ export function workloadWorkflow(): Fields {
     add("runtime-reload", runtime, {
         type: "behavior",
         behaviorType: "@swamp/ssh",
-        behaviorName: globals.name,
         methodName: "exec",
-        globalArgs: globals,
         inputs: {
             hosts: "name:target",
             sudo: true,
