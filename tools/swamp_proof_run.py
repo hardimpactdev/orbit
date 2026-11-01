@@ -24,7 +24,7 @@ from swamp_proof import (
 )
 from swamp_proof_api import generate, private_api, redact, secret_file
 from swamp_proof_requests import cli_argv, compare_input, json_path, prepare
-from swamp_proof_topology import save_state
+from swamp_proof_topology import WORKLOAD_ROLES, save_state
 from swamp_proof_transport import pins
 
 SWAMP = '/home/orbit/.orbit/swamp'
@@ -263,7 +263,7 @@ def run_kind(state, kind, receipt, save, topology=None, clock=time.monotonic, pa
                    topology=state['topology'], topology_version=state['topology_version'], nodes=state['nodes'],
                    seed=state['vm']['seed'], vm=dict(state['vm']), gateway_install=state.get('gateway_install'),
                    gateway_status=state.get('gateway_status'), sandbox_verified=state.get('sandbox_verified'), destroyed=False,
-                   workload_roles='recorded_not_converged', limitations=fixture.get('limitations', []))
+                   limitations=fixture.get('limitations', []), **WORKLOAD_ROLES)
     receipt.update(enrollment='fixture-set', topology_ca='fixture-set', fixture_repositories='separate-caddy', github_token_path='not_exercised')
     save()
     try:

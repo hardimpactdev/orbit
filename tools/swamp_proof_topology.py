@@ -25,6 +25,10 @@ from swamp_proof import (
 from swamp_proof_transport import Guest, command
 
 CLUB_FILE = '/home/orbit/.config/swamp/club-api-key'
+WORKLOAD_ROLES = {
+    'workload_roles': 'recorded_not_converged',
+    'workload_roles_reason': 'Base app-dev/app-prod role convergence has no accepted native child in up v1.',
+}
 
 
 def state_path(root=ROOT):
@@ -120,7 +124,7 @@ def bootstrap(guest, control, state, bundle):
     gateway = harness_json(guest, user, state, 'operator', ['orbit', 'gateway:status', '--json'])
     if sandbox.get('ready') is not True or sandbox.get('worker') != 'orbit-node-209' or gateway.get('release_sha') != state['commit'] or not gateway.get('release'):
         raise ProofError('Topology Gateway release or isolated native worker is unconfirmed.')
-    state.update(gateway_install='adopt', gateway_status=gateway, sandbox_verified=sandbox, ready=True, ready_at=utc())
+    state.update(gateway_install='adopt', gateway_status=gateway, sandbox_verified=sandbox, ready=True, ready_at=utc(), **WORKLOAD_ROLES)
     return state
 
 

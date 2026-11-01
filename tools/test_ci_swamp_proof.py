@@ -549,6 +549,7 @@ class RequestSequenceTest(unittest.TestCase):
             self.assertEqual(result['proof_pass'], parity_exit == 0)
             self.assertEqual(result['limitations'], ['fixture enrollment only'])
             self.assertEqual(result['workload_roles'], 'recorded_not_converged')
+            self.assertEqual(result['workload_roles_reason'], sessions.WORKLOAD_ROLES['workload_roles_reason'])
             self.assertEqual(result['request']['body']['password'], '[REDACTED:password]')
             self.assertNotIn(self.api_secret, json.dumps(snapshots))
             self.assertFalse(self.parity_secret_file.exists())
@@ -715,6 +716,8 @@ class AcquisitionReadinessTest(unittest.TestCase):
                     sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
                     self.assertTrue(instance['ready'])
                     self.assertEqual(instance['gateway_install'], 'adopt')
+                    self.assertEqual(instance['workload_roles'], 'recorded_not_converged')
+                    self.assertTrue(instance['workload_roles_reason'])
                 else:
                     with self.assertRaises(proof.ProofError):
                         sessions.bootstrap(Mock(), {'node': {'user': 'orbit'}}, instance, b'bundle')
