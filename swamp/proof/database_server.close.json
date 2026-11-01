@@ -1,0 +1,163 @@
+{
+  "kind": "database_server.close",
+  "workflow": "operation-database-server-close",
+  "topology": [
+    "app-dev+database"
+  ],
+  "budget_seconds": 1800,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "process:create",
+        "proof-close-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--runtime=docker",
+        "--image=valkey/valkey:8.1",
+        "--command=valkey-server",
+        "--command=--appendonly",
+        "--command=yes",
+        "--command=--dir",
+        "--command=/data",
+        "--port=${topology.app-dev.wireguard_ip}:63983:6379/tcp",
+        "--volume=orbit-proof-close-${proof.run}-data:/data",
+        "--restart=unless-stopped",
+        "--start",
+        "--json"
+      ],
+      "capture": {
+        "process_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:create",
+        "proof-close-client-${proof.run}",
+        "--driver=redis",
+        "--node=${topology.app-dev.node_id}",
+        "--host=${topology.app-dev.wireguard_ip}",
+        "--port=63983",
+        "--database=0",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:server:create",
+        "proof-close-${proof.run}",
+        "--node=${topology.app-dev.node_id}",
+        "--driver=redis",
+        "--process=${capture.process_id}",
+        "--connection=proof-close-client-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "server_id": "$.target_id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "database:destroy",
+        "proof-close-client-${proof.run}",
+        "--force",
+        "--json"
+      ]
+    }
+  ],
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "swamp/proof/database_server.close/parity.py",
+        "before",
+        "proof-close-${proof.run}",
+        "--server-id=${capture.server_id}",
+        "--process-id=${capture.process_id}",
+        "--node-id=${topology.app-dev.node_id}",
+        "--ip=${topology.app-dev.wireguard_ip}"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "database:server:close",
+      "proof-close-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "server_id": "${capture.server_id}",
+    "driver": "redis",
+    "intent_id": "${match.positive_int}"
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "closure",
+      "step": "result",
+      "match": {
+        "exitCode": 0
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "observe-foreign-clients",
+      "job": "closure",
+      "step": "probe",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "close-default",
+      "job": "closure",
+      "step": "close",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "persist-acl",
+      "job": "closure",
+      "step": "save",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "disconnect-default-clients",
+      "job": "closure",
+      "step": "disconnect",
+      "budget_seconds": 1800
+    },
+    {
+      "name": "cleanup-scratch",
+      "job": "closure",
+      "step": "cleanup_files",
+      "budget_seconds": 1800
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/database_server.close/parity.py",
+      "parity",
+      "proof-close-${proof.run}",
+      "--server-id=${capture.server_id}",
+      "--process-id=${capture.process_id}",
+      "--node-id=${topology.app-dev.node_id}",
+      "--ip=${topology.app-dev.wireguard_ip}"
+    ],
+    "cases": [
+      "exact-native-public-closure",
+      "anonymous-refused-saved-hashed-acl",
+      "same-server-process-volume-marker",
+      "already-closed-preserves-policy",
+      "scratch-cleaned"
+    ]
+  }
+}
