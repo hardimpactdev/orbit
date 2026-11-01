@@ -87,6 +87,10 @@ const PhpArgs = Placement.extend({ before: Php, after: Php }).strict();
 export function planPhp(raw: unknown) {
     const value = PhpArgs.parse(raw);
     if (
+        Object.keys(value.before.configurations).length === 0 &&
+        Object.keys(value.after.configurations).length === 0
+    ) return { versions: [], versions_json: "[]" };
+    if (
         value.before.account_user !== value.user ||
         value.after.account_user !== value.user
     ) throw new Error("php.account_conflict");

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeEnrollmentCandidate;
+use App\Domain\Nodes\NodeRoleCertificateInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\NativeRouteMutationPlan;
 use App\Domain\Routes\NativeRouteNodeMutationInput;
@@ -12,12 +14,14 @@ use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Setting;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -74,6 +78,69 @@ it('keeps recorded domains and captures address changes even without Route mutat
     $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
     expect($publication['after']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.41')
         ->and($publication['before']['dns']['records'])->toContain('host-record=development.snapshot.old.test,10.44.0.31');
+});
+
+it('keeps an enrollment role site only in prospective Route publications before terminal certificate markers', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $stored = $this->node->fresh()->getAttributes();
+    $settings = Setting::query()->get()->toArray();
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+
+    $input = $this->capture->capture($this->node, $candidate, null);
+
+    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($publication['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
+    foreach (['prepared', 'withdrawn', 'after'] as $phase) {
+        expect($publication[$phase]['caddy']['content'])->toContain('# orbit: websocket reverb.orbit', '10.44.0.41');
+    }
+    $dns = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->gateway->id);
+    expect($dns['after']['dns']['records'])->toContain('host-record=reverb.orbit,10.44.0.41')
+        ->and($dns['before']['dns']['records'])->not->toContain('host-record=reverb.orbit,10.44.0.41');
+    $restore = collect($input['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($restore['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit')
+        ->and($this->node->fresh()->getAttributes())->toBe($stored)
+        ->and(Setting::query()->get()->toArray())->toBe($settings)
+        ->and(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeFalse()
+        ->and(app(RouteRenderContext::class)->nodeId())->toBeNull()
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('retains stored role certificates in before while applying captured withdrawal only to prospective publications', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    app(CaddySiteCertificates::class)->record($this->node->id, 'websocket');
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket, removing: true);
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+
+    $input = $this->capture->capture($this->node, $candidate, null);
+
+    $publication = collect($input['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($publication['before']['caddy']['content'])->toContain('# orbit: websocket reverb.orbit');
+    foreach (['prepared', 'withdrawn', 'after'] as $phase) {
+        expect($publication[$phase]['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit');
+    }
+    expect(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeTrue();
+});
+
+it('restores certificate and address render scopes when prospective publication capture fails', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $plan = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $this->node->update(['ssh_host_key' => null]);
+    $candidate = new NativeRouteNodeRender($this->node->id, '10.44.0.41', 'new.test', roleCertificates: $plan);
+    $context = app(RouteRenderContext::class);
+    $outer = ['leaves' => [['node_id' => $this->gateway->id, 'scope' => 'role-analytics']], 'withdrawals' => []];
+
+    $context->renderRoleCertificates($outer, function () use ($candidate, $context): void {
+        expect(fn () => $this->capture->capture($this->node, $candidate, null))->toThrow(ResourceOperationException::class);
+        expect($context->roleCertificatePublished($this->gateway->id, 'analytics'))->toBeTrue()
+            ->and($context->roleCertificatePublished($this->node->id, 'websocket'))->toBeNull();
+    });
+
+    expect(app(CaddySiteCertificates::class)->published($this->node->id, 'websocket'))->toBeFalse()
+        ->and($context->nodeId())->toBeNull()
+        ->and($context->roleCertificatePublished($this->gateway->id, 'analytics'))->toBeNull()
+        ->and(Route::query()->count())->toBe(1)
+        ->and($this->route->fresh()->replaced_by_route_id)->toBeNull();
 });
 
 it('refuses discovery inside a prospective context or for a different actual Node', function (): void {
@@ -187,4 +254,127 @@ it('publishes an address change on a Node that serves only a custom proxy', func
         ->and($publication['before']['caddy']['content'])->toContain('10.44.0.61', 'proxy.literal.test')
         ->and($publication['after']['caddy']['content'])->toContain('10.44.0.62', 'proxy.literal.test')
         ->and($node->fresh()->wireguard_ip)->toBe('10.44.0.61');
+});
+
+function route_enrollment_candidate(Node $node, ?int $nodeId = null): NodeEnrollmentCandidate
+{
+    return new NodeEnrollmentCandidate($nodeId ?? $node->id, 'prospective-name', 'newuser', 'linux', 'x86_64',
+        '10.44.0.41', '192.0.2.41', 22, null, 'old.test', '192.168.6.41', null, null);
+}
+
+it('renders the full enrollment candidate only after actual capture and restores the original account', function (): void {
+    $this->node->update(['lan_ip' => '192.168.6.31']);
+    $stored = $this->node->fresh()->getAttributes();
+    $candidate = route_enrollment_candidate($this->node);
+    $capture = $this->capture->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), null);
+    $forward = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    $restore = collect($capture['route_mutations']['restore']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($forward['before']['caddy']['content'])->toContain('10.44.0.31')->not->toContain('10.44.0.41')
+        ->and($forward['after']['caddy']['content'])->toContain('10.44.0.41')
+        ->and($forward['after']['php']['account_user'])->toBe('newuser')
+        ->and($forward['before']['php']['account_user'])->toBe('orbit')
+        ->and($forward['connection']['nodeUser'])->toBe('newuser')->and($forward['user'])->toBe('newuser')
+        ->and($forward['connection']['become'])->toBeTrue()
+        ->and($restore['connection']['nodeUser'])->toBe('orbit')->and($restore['user'])->toBe('orbit')
+        ->and($capture['route_mutations']['forward']['certificates'][0]['user'])->toBe('newuser')
+        ->and($capture['route_mutations']['restore']['certificates'][0]['user'])->toBe('orbit')
+        ->and($this->node->fresh()->getAttributes())->toBe($stored)
+        ->and(app(RouteRenderContext::class)->enrollment())->toBeNull();
+});
+
+it('captures explicit pending pins only for the same enrollment target in both phases', function (): void {
+    $this->node->update(['ssh_host_key_type' => null, 'ssh_host_key' => null]);
+    $candidate = route_enrollment_candidate($this->node);
+    $capture = $this->capture->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), null);
+    foreach (['forward', 'restore'] as $mode) {
+        $rows = collect($capture['route_mutations'][$mode]['publications']);
+        $pending = $rows->whereNull('host_keys')->values();
+        expect($pending)->toHaveCount(1)->and($pending[0]['node_id'])->toBe($this->node->id)
+            ->and($pending[0]['connection']['nodeHost'])->toBe($candidate->wireguardIp)
+            ->and($pending[0]['connection']['nodeUser'])->toBe($candidate->user)
+            ->and($rows->firstWhere('node_id', $this->gateway->id)['host_keys'])->toBe(['ssh-ed25519 fixture-host-key']);
+    }
+    expect($this->node->fresh()->ssh_host_key)->toBeNull();
+});
+
+it('refuses a mismatched enrollment descriptor before reserving Route changes', function (): void {
+    $candidate = route_enrollment_candidate($this->node, $this->gateway->id);
+    expect(fn () => new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate))
+        ->toThrow(ResourceOperationException::class);
+    expect(Route::query()->count())->toBe(1);
+});
+
+it('still refuses an unpinned stored participant outside the explicit enrollment target', function (): void {
+    $this->gateway->update(['ssh_host_key_type' => null, 'ssh_host_key' => null]);
+    $candidate = route_enrollment_candidate($this->node);
+    expect(fn () => $this->capture->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), null))
+        ->toThrow(ResourceOperationException::class);
+    expect(Route::query()->count())->toBe(1)->and(app(RouteRenderContext::class)->enrollment())->toBeNull();
+});
+
+it('captures candidate LAN upstreams and firewall tuples with actual restoration artifacts', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'enrollment-lan', 'tld' => 'old.test', 'state' => 'active']);
+    $router = instance_analytics_node('enrollment-router', '10.44.0.51', $cluster, RoleName::Router);
+    $router->update(['lan_ip' => '192.168.6.51', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'router-pin']);
+    $this->node->update(['cluster_id' => $cluster->id, 'lan_ip' => '192.168.6.31']);
+    $this->route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
+    $candidate = new NodeEnrollmentCandidate($this->node->id, 'candidate-lan', 'newuser', 'linux', 'x86_64',
+        '10.44.0.41', '192.0.2.41', 22, $cluster->id, 'old.test', '192.168.6.41', null, null);
+    $capture = $this->capture->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), $cluster->id);
+    $routerPublication = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $router->id);
+    expect($routerPublication['before']['caddy']['content'])->toContain('192.168.6.31')->not->toContain('192.168.6.41')
+        ->and($routerPublication['after']['caddy']['content'])->toContain('192.168.6.41')->not->toContain('192.168.6.31')
+        ->and(collect($capture['route_mutations']['forward']['retire_lan'])->firstWhere('node_id', $this->node->id)['rules'][0]['ensure'])->toBe('present')
+        ->and($this->node->fresh()->lan_ip)->toBe('192.168.6.31');
+});
+
+it('captures pending publication for a provisional role target without an actual WireGuard address', function (): void {
+    $this->instance->update(['status' => 'reserved', 'provisioning_step' => 'reserved']);
+    $this->route->update(['status' => 'retiring']);
+    $this->route->targets()->delete();
+    $this->route->delete();
+    $this->node->update(['wireguard_ip' => null, 'ssh_host_key_type' => null, 'ssh_host_key' => null, 'status' => 'provisioning']);
+    $this->node->roles()->create(['role' => 'websocket', 'status' => 'provisioning']);
+    $candidate = route_enrollment_candidate($this->node);
+    $certificates = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $capture = $this->capture->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, $certificates, $candidate), null);
+    $row = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+    expect($row)->not->toBeNull()->and($row['host_keys'])->toBeNull()
+        ->and($row['after']['caddy']['content'])->toContain('10.44.0.41')
+        ->and($row['before']['caddy']['content'])->not->toContain('10.44.0.41')
+        ->and($this->node->fresh()->wireguard_ip)->toBeNull();
+});
+
+it('keeps stored BEFORE readiness even under a caller certificate scope and restores that scope', function (): void {
+    $this->node->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $outer = app(NodeRoleCertificateInput::class)->capture($this->node, RoleName::WebSocket);
+    $context = app(RouteRenderContext::class);
+    $context->renderRoleCertificates($outer, function () use ($context): void {
+        $capture = $this->capture->capture($this->node, $this->candidate, null);
+        $row = collect($capture['route_mutations']['forward']['publications'])->firstWhere('node_id', $this->node->id);
+        expect($row['before']['caddy']['content'])->not->toContain('# orbit: websocket reverb.orbit')
+            ->and($context->roleCertificatePublished($this->node->id, 'websocket'))->toBeTrue();
+    });
+    expect($context->roleCertificatePublished($this->node->id, 'websocket'))->toBeNull();
+});
+
+it('uses the prospective account for development URL writes and the stored account for restoration', function (): void {
+    $this->route->update(['web_root' => 'docs/public']);
+    $this->instance->update(['selected_php_version' => '8.5']);
+    config(['swamp.address' => '192.0.2.209', 'swamp.ca_path' => '/public/root.pem', 'swamp.run_token' => 'synthetic-token']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => [
+        'vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    app()->forgetInstance(NativeRouteNodeMutationInput::class);
+    $candidate = route_enrollment_candidate($this->node);
+    $capture = app(NativeRouteNodeMutationInput::class)->capture($this->node,
+        new NativeRouteNodeRender($this->node->id, $candidate->wireguardIp, $candidate->tld, enrollment: $candidate), null);
+    expect($capture['route_mutations']['forward']['url_writes'][0]['input']['owner'])->toBe('newuser')
+        ->and($capture['route_mutations']['restore']['url_writes'][0]['input']['owner'])->toBe('orbit');
 });

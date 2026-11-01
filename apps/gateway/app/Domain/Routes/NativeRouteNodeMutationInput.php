@@ -12,6 +12,7 @@ use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 
 /** Complete Route supplier for the owning Node admission; no Operation or Node mutation.
@@ -27,11 +28,11 @@ final readonly class NativeRouteNodeMutationInput
      */
     public function capture(Node $actual, NativeRouteNodeRender $candidate, ?int $clusterId): array
     {
-        if ($actual->id !== $candidate->nodeId || app(RouteRenderContext::class)->nodeId() !== null) {
+        if ($actual->id !== $candidate->nodeId || ($candidate->enrollment !== null && $candidate->enrollment->clusterId !== $clusterId) || app(RouteRenderContext::class)->nodeId() !== null) {
             throw new ResourceOperationException('route.node_render_invalid', 'Discover mutations from the actual Node outside a prospective render.', 422);
         }
 
-        return DB::transaction(function () use ($actual, $candidate, $clusterId): array {
+        return app(RouteRenderContext::class)->renderActual(fn (): array => DB::transaction(function () use ($actual, $candidate, $clusterId): array {
             $actual = Node::query()->findOrFail($actual->id);
             $beforeSites = $this->sites->all();
             $changes = $this->reconciler->activePrivatePlacementChanges([
@@ -53,9 +54,9 @@ final readonly class NativeRouteNodeMutationInput
             foreach ($routes as $route) {
                 $previous[] = $this->route($route);
             }
-            $desired = app(RouteRenderContext::class)->render($candidate, fn (): array => $this->desiredRoutes($routes, $batch, false));
-            $staged = app(RouteRenderContext::class)->render($candidate, fn (): array => $this->desiredRoutes($routes, $batch, true));
-            $forwardPrior = app(RouteRenderContext::class)->render($candidate, function () use ($routes): array {
+            $desired = $this->render($candidate, fn (): array => $this->desiredRoutes($routes, $batch, false));
+            $staged = $this->render($candidate, fn (): array => $this->desiredRoutes($routes, $batch, true));
+            $forwardPrior = $this->render($candidate, function () use ($routes): array {
                 $result = [];
                 foreach ($routes as $route) {
                     $result[] = $this->route($route);
@@ -79,20 +80,36 @@ final readonly class NativeRouteNodeMutationInput
                     $candidateTracking->unsetRelations();
                     $candidateTracking->forceFill($trackingChange['after']);
                     $candidateTracking->replacement_step = RouteReplacementStep::Cleanup;
-                    $desired[] = app(RouteRenderContext::class)->render($candidate, fn (): array => $this->route($candidateTracking));
+                    $desired[] = $this->render($candidate, fn (): array => $this->route($candidateTracking));
                     $candidateTracking->replacement_step = null;
-                    $staged[] = app(RouteRenderContext::class)->render($candidate, fn (): array => $this->route($candidateTracking));
-                    $forwardPrior[] = app(RouteRenderContext::class)->render($candidate, fn (): array => $this->route($tracking));
+                    $staged[] = $this->render($candidate, fn (): array => $this->route($candidateTracking));
+                    $forwardPrior[] = $this->render($candidate, fn (): array => $this->route($tracking));
                 }
             }
             $capture = app(NativeRouteMutationInput::class)->capture($previous, $desired, $staged, $forwardPrior,
-                $beforeSites, app(RouteRenderContext::class)->render($candidate, fn () => $this->sites->all()),
-                ValidatedData::integerList($batch['node_ids']),
-                fn (\Closure $render): array => app(RouteRenderContext::class)->render($candidate, $render));
+                $beforeSites, $this->render($candidate, fn () => $this->sites->all()),
+                [...ValidatedData::integerList($batch['node_ids']), ...($candidate->enrollment === null ? [] : [$actual->id])],
+                fn (Closure $render): array => $this->render($candidate, $render), $candidate->enrollment);
             $capture['route_mutations'] += ['batch' => $batch, 'analytics_changes' => $analyticsChanges];
 
             return $capture;
-        });
+        }));
+    }
+
+    /** Prospective publications follow the parent's captured role certificate actions.
+     * @template T
+     *
+     * @param  Closure():T  $render
+     * @return T
+     */
+    private function render(NativeRouteNodeRender $candidate, Closure $render): mixed
+    {
+        $context = app(RouteRenderContext::class);
+
+        $ready = fn () => $context->renderRoleCertificates($candidate->roleCertificates, $render);
+
+        return $candidate->enrollment === null ? $context->render($candidate, $ready)
+            : $context->renderEnrollment($candidate->enrollment, $ready);
     }
 
     /** @param iterable<Route> $routes

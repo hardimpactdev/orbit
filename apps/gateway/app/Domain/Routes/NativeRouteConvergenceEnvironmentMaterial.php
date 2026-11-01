@@ -66,7 +66,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                     throw new ResourceOperationException('env.configuration_missing', 'The Instance has no stored environment configuration.', 409);
                 }
                 $writes[] = ['instance_id' => $instance->id, 'name' => 'instance.write-environment', 'input' => [
-                    'base' => $context->path, 'user' => $context->executionUser, 'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
+                    'base' => $context->path, 'user' => $context->environment === 'production' ? $context->executionUser : app(RouteRenderContext::class)->user($instance->node), 'maximum' => InstanceEnvironmentValidator::MaximumFileBytes,
                     'require_home' => $context->environment === 'production', 'content' => $this->renderer->render($context, $values),
                     'mode' => 'write', 'file' => '.env', 'managed_keys' => [],
                 ]];
@@ -95,7 +95,7 @@ final readonly class NativeRouteConvergenceEnvironmentMaterial
                     'input' => [...$common, ...($member['production']
                         ? ['directory' => (string) $directory, 'user' => $instance->production_user, 'home' => $instance->production_home]
                         : ['directory' => rtrim($instance->checkout_path, '/').($directory === '' ? '' : '/'.$directory),
-                            'owner' => $instance->node->user, 'app_key_stored' => false, 'require_artisan' => true])]];
+                            'owner' => app(RouteRenderContext::class)->user($instance->node), 'app_key_stored' => false, 'require_artisan' => true])]];
             }
         }
 

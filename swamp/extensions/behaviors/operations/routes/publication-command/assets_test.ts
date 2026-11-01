@@ -250,3 +250,15 @@ Deno.test("PHP account and version-move policy are checked before any file opera
         "account_conflict",
     );
 });
+
+Deno.test("empty enrollment PHP snapshots need no account migration or pool effects", () => {
+    for (const direction of ["forward", "restore"] as const) {
+        assertEquals(planPhp({
+            ...placement,
+            direction,
+            user: direction === "forward" ? "newuser" : "orbit",
+            before: { account_user: "orbit", configurations: {} },
+            after: { account_user: "newuser", configurations: {} },
+        }), { versions: [], versions_json: "[]" });
+    }
+});

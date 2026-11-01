@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
+use App\Domain\Nodes\NodeEnrollmentCandidate;
 use App\Models\Node;
 use Closure;
 use Illuminate\Container\Attributes\Scoped;
@@ -12,7 +13,7 @@ use Illuminate\Container\Attributes\Scoped;
 #[Scoped]
 final class RouteRenderContext
 {
-    private ?NativeRouteNodeRender $candidate = null;
+    private NativeRouteNodeRender|NodeEnrollmentCandidate|null $candidate = null;
 
     /** @var ?array{leaves:list<array{node_id:int,scope:string}>,withdrawals:list<array{node_id:int,scope:string}>} */
     private ?array $roleCertificates = null;
@@ -65,6 +66,75 @@ final class RouteRenderContext
         } finally {
             $this->candidate = $previous;
         }
+    }
+
+    /** @template T
+     * @param  Closure():T  $render
+     * @return T
+     */
+    public function renderEnrollment(NodeEnrollmentCandidate $candidate, Closure $render): mixed
+    {
+        Node::query()->findOrFail($candidate->nodeId);
+        $previous = $this->candidate;
+        $this->candidate = $candidate;
+        try {
+            return $render();
+        } finally {
+            $this->candidate = $previous;
+        }
+    }
+
+    /** Capture stored BEFORE values even when the caller is already rendering a prospective view.
+     * @template T
+     *
+     * @param  Closure():T  $render
+     * @return T
+     */
+    public function renderActual(Closure $render): mixed
+    {
+        $candidate = $this->candidate;
+        $certificates = $this->roleCertificates;
+        $this->candidate = null;
+        $this->roleCertificates = null;
+        try {
+            return $render();
+        } finally {
+            $this->candidate = $candidate;
+            $this->roleCertificates = $certificates;
+        }
+    }
+
+    public function enrollment(): ?NodeEnrollmentCandidate
+    {
+        return $this->candidate instanceof NodeEnrollmentCandidate ? $this->candidate : null;
+    }
+
+    public function name(Node $node): string
+    {
+        $candidate = $this->enrollment();
+
+        return $candidate?->nodeId === $node->id ? $candidate->name : $node->name;
+    }
+
+    public function user(Node $node): string
+    {
+        $candidate = $this->enrollment();
+
+        return $candidate?->nodeId === $node->id ? $candidate->user : $node->user;
+    }
+
+    public function lanIp(Node $node): ?string
+    {
+        $candidate = $this->enrollment();
+
+        return $candidate?->nodeId === $node->id ? $candidate->lanIp : $node->lan_ip;
+    }
+
+    public function clusterId(Node $node): ?int
+    {
+        $candidate = $this->enrollment();
+
+        return $candidate?->nodeId === $node->id ? $candidate->clusterId : $node->cluster_id;
     }
 
     public function nodeId(): ?int
