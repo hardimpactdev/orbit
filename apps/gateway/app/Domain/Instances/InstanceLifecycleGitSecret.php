@@ -10,12 +10,10 @@ use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Domain\TaskVms\TaskVmEnrollmentOwner;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Operation;
 use App\Models\Project;
-use App\Models\Task;
 use InvalidArgumentException;
 
 /** Resolves the admitted Project's existing Git access only in request memory. */
@@ -33,7 +31,7 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     /** @return list<string> */
     public function targetTypes(): array
     {
-        return ['instance', 'task_group'];
+        return ['instance'];
     }
 
     public function ownerId(Operation $operation): ?int
@@ -81,18 +79,6 @@ final readonly class InstanceLifecycleGitSecret implements OperationSecretSource
     /** @return array<string, mixed>|null */
     private function input(Operation $operation): ?array
     {
-        if ($operation->kind === 'tasks.provision' && $operation->target_type === 'task_group') {
-            $group = Task::topLevel()->find($operation->target_id);
-            $vm = TaskVmEnrollmentOwner::owned($operation);
-            $id = $operation->input['instance_id'] ?? null;
-            $instance = is_int($id) ? Instance::query()->find($id) : null;
-
-            return $vm !== null && $group !== null && $instance !== null
-                && $instance->task_workspace_owner_id === $group->id && $instance->node_id === $vm->node_id
-                && $instance->project_id === $group->project_id && $group->taskable_id === $instance->id
-                ? $operation->input : null;
-        }
-
         return in_array($operation->kind, self::InstanceKinds, true) && $operation->target_type === 'instance'
             && $operation->target_id === ($operation->input['instance_id'] ?? null)
             ? $operation->input : null;

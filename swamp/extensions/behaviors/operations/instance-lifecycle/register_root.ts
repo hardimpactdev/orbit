@@ -1,3 +1,4 @@
+import { classifyProvisioningProfile } from "./source_profile.ts";
 import { z } from "npm:zod@4.4.3";
 import { gatewayHttp } from "../../automatic-deploy/gateway.ts";
 import { Globals } from "../_lib/direct.ts";
@@ -8,7 +9,7 @@ import {
 } from "../_lib/direct.ts";
 import type { NodeCall } from "../_lib/node-agent.ts";
 import { runLocalSource } from "./source_system.ts";
-import { classifyProvisioningProfile } from "./provisioning_source.ts";
+
 import { repositoryIdentity } from "./source_identity.ts";
 
 const Args = DirectArgs.extend({

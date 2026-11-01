@@ -1,0 +1,158 @@
+id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
+name: operation-task-provision
+description: Compose canonical VM provision, source checkout and ordered setup from
+  full inputs on209; no guest worker or Gateway step callbacks.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      enum:
+      - tasks.provision
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: provision
+  target: orbit-node-209
+  steps:
+  - name: vm_inputs
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-vm_inputs" }}
+      methodName: vm_inputs
+      inputs:
+        execution_secrets: ${{ inputs.execution_secrets }}
+    dependsOn: []
+  - name: vm
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-provision
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ steps.vm_inputs.outputs.execution_secrets }}
+    dependsOn:
+    - step: vm_inputs
+      condition:
+        type: succeeded
+  - name: guest
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-guest" }}
+      methodName: guest
+      inputs:
+        intent: ${{ inputs.intent }}
+        vm: ${{ steps.vm.outputs.result }}
+    dependsOn:
+    - step: vm
+      condition:
+        type: succeeded
+  - name: source
+    target: orbit-node-209
+    dependsOn:
+    - step: guest
+      condition:
+        type: succeeded
+    task:
+      type: workflow
+      workflowIdOrName: task-workspace-source
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.intent }}
+        execution_secrets: ${{ inputs.execution_secrets }}
+        workspace: ${{ steps.guest.outputs.workspace }}
+  - name: shape_result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-shape_result" }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        steps: ${{ steps }}
+    dependsOn:
+    - step: vm
+      condition:
+        type: always
+    - step: guest
+      condition:
+        type: always
+    - step: source
+      condition:
+        type: always
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-result" }}
+      methodName: execute
+      inputs:
+        run: 'printf ''%s\n'' "$ORBIT_RESULT"
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+    dependsOn:
+    - step: shape_result
+      condition:
+        type: succeeded
+  - name: outcome
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-outcome" }}
+      methodName: execute
+      inputs:
+        run: 'python3 -c ''import json,os,sys; sys.exit(1 if "error_code" in json.loads(os.environ["ORBIT_RESULT"])
+          else 0)''
+
+          '
+        env:
+          ORBIT_RESULT: ${{ steps.shape_result.outputs.result_json }}
+    dependsOn:
+    - step: result
+      condition:
+        type: succeeded

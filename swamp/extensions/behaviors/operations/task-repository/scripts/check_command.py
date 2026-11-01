@@ -8,15 +8,20 @@ from check_common import command, inside
 from repository_common import Refusal, checkout
 
 
+def command_source(item):
+    source = item["command"]
+    if source == "@orbit/ci-caches":
+        source = (Path(__file__).parent / "check_ci_caches.sh").read_text()
+    return source
+
+
 def execute():
     value = json.load(sys.stdin)
     item = json.loads(sys.argv[1])
     root = checkout(
         {**value, "checkout_path": sys.argv[2]} if len(sys.argv) > 2 else value
     )
-    source = item["command"]
-    if source == "@orbit/ci-caches":
-        source = (Path(__file__).parent / "check_ci_caches.sh").read_text()
+    source = command_source(item)
     return command(
         source, inside(root, item.get("directory", ".")), value.get("ssr_port")
     )

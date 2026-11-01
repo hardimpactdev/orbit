@@ -2414,14 +2414,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/tasks/provision.ts",
-      "rule": "gateway-http",
-      "count": 1,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/tools/local.ts",
       "rule": "inline-script",
       "count": 41,

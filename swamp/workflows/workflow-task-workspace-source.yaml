@@ -1,0 +1,568 @@
+description: Prepare one captured Tasks source checkout and ordered setup through
+  official SSH from209.
+id: 46a068b0-6512-4c23-8729-e5bdc43c136c
+inputs:
+  additionalProperties: false
+  properties:
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+    intent:
+      type: object
+    kind:
+      enum:
+      - tasks.provision
+      type: string
+    node_id:
+      minimum: 1
+      type: integer
+    operation_id:
+      minimum: 1
+      type: integer
+    workspace:
+      type: object
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  - workspace
+  type: object
+jobs:
+- name: source
+  steps:
+  - name: prepare
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-prepare" }}
+      methodName: prepare
+      inputs:
+        intent: ${{ inputs.intent }}
+    dependsOn: []
+  - name: directory
+    target: orbit-node-209
+    task:
+      type: workflow
+      workflowIdOrName: task-vm-workspace
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: ${{ inputs.workspace }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: control
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-control" }}
+      methodName: execute
+      inputs:
+        run: 'mkdir -p -- "$ORBIT_ROOT"
+
+          '
+        env:
+          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: clone_private
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-clone-private" }}
+      methodName: execute
+      inputs:
+        run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+
+          '
+        env:
+          ORBIT_BRANCH: ${{ inputs.intent.workspace.default_branch }}
+          ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
+            }}
+          GIT_TERMINAL_PROMPT: '0'
+          GIT_CONFIG_COUNT: '3'
+          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0: ${{ vault.get(inputs.execution_secrets.git_authorization.vault,
+            inputs.execution_secrets.git_authorization.key) }}
+          GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_1: 'git@github.com:'
+          GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_2: ssh://git@github.com/
+    dependsOn:
+    - step: control
+      condition:
+        type: succeeded
+    guard: ${{ !has(inputs.execution_secrets.git_authorization) }}
+    allowFailure: true
+  - name: clone_public
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-clone-public" }}
+      methodName: execute
+      inputs:
+        run: 'git clone --branch "$ORBIT_BRANCH" -- "$ORBIT_REPOSITORY" "$ORBIT_SOURCE"
+
+          '
+        env:
+          ORBIT_BRANCH: ${{ inputs.intent.workspace.default_branch }}
+          ORBIT_REPOSITORY: ${{ inputs.intent.workspace.repository }}
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
+            }}
+          GIT_TERMINAL_PROMPT: '0'
+    dependsOn:
+    - step: control
+      condition:
+        type: succeeded
+    guard: ${{ has(inputs.execution_secrets.git_authorization) }}
+    allowFailure: true
+  - name: bundle
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-bundle" }}
+      methodName: execute
+      inputs:
+        run: 'git -C "$ORBIT_SOURCE" bundle create "$ORBIT_BUNDLE" --all
+
+          '
+        env:
+          ORBIT_SOURCE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source"
+            }}
+          ORBIT_BUNDLE: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
+            }}
+    dependsOn:
+    - step: clone_private
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    - step: clone_public
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    allowFailure: true
+  - name: prepare_remote
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/mkdir
+        - -p
+        - --
+        - ${{ "/tmp/orbit-task-provision-"+run.id }}
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: copy_assets
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: copy
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        src: ${{ steps.prepare.outputs.directory }}
+        dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/" }}
+        direction: to
+        recursive: true
+    dependsOn:
+    - step: prepare_remote
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: copy_bundle
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: copy
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        src: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id+"/source.bundle"
+          }}
+        dst: ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
+        direction: to
+    dependsOn:
+    - step: bundle
+      condition:
+        type: succeeded
+    - step: prepare_remote
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: import
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - clone
+        - --
+        - ${{ "/tmp/orbit-task-provision-"+run.id+"/source.bundle" }}
+        - ${{ inputs.intent.workspace.checkout_path }}
+    dependsOn:
+    - step: directory
+      condition:
+        type: succeeded
+    - step: copy_bundle
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: origin
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - remote
+        - set-url
+        - origin
+        - ${{ inputs.intent.workspace.repository }}
+    dependsOn:
+    - step: import
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: branch
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/git
+        - -C
+        - ${{ inputs.intent.workspace.checkout_path }}
+        - switch
+        - -c
+        - ${{ inputs.intent.workspace.branch }}
+    dependsOn:
+    - step: origin
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: observe
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-provision-"+run.id+"/scripts/provision_profile.py"
+          }}
+        stdin: ${{ steps.prepare.outputs.input_json }}
+    dependsOn:
+    - step: branch
+      condition:
+        type: succeeded
+    - step: copy_assets
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: profile
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-profile" }}
+      methodName: profile
+      inputs:
+        intent: ${{ inputs.intent }}
+        observation: ${{ steps.observe.outputs.stdout }}
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: setup-${{ self._index }}
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-setup-"+run.id+"-"+string(self._index) }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "tp-setup-"+run.id+"-"+string(self._index) }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/python3
+        - -B
+        - ${{ "/tmp/orbit-task-provision-"+run.id+"/scripts/provision_setup.py" }}
+        - ${{ self.setup.input_json }}
+        stdin: ${{ steps.prepare.outputs.input_json }}
+        timeoutSec: ${{ self.setup.timeout_seconds }}
+    dependsOn:
+    - step: profile
+      condition:
+        type: succeeded
+    forEach:
+      item: setup
+      in: ${{ inputs.intent.workspace.setup }}
+    concurrency: 1
+    guard: ${{ has(steps.profile.outputs.error_code) || (self._index > 0 && (!("setup-"+string(self._index-1)
+      in steps) || steps["setup-"+string(self._index-1)].status != "succeeded")) }}
+    allowFailure: true
+  - name: result
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-provision-data'
+      behaviorName: ${{ "tp-data-"+run.id+"-result" }}
+      methodName: source_result
+      inputs:
+        intent: ${{ inputs.intent }}
+        steps: ${{ steps }}
+    dependsOn:
+    - step: prepare
+      condition:
+        type: always
+    - step: directory
+      condition:
+        type: always
+    - step: control
+      condition:
+        type: always
+    - step: clone_private
+      condition:
+        type: always
+    - step: clone_public
+      condition:
+        type: always
+    - step: bundle
+      condition:
+        type: always
+    - step: prepare_remote
+      condition:
+        type: always
+    - step: copy_assets
+      condition:
+        type: always
+    - step: copy_bundle
+      condition:
+        type: always
+    - step: import
+      condition:
+        type: always
+    - step: origin
+      condition:
+        type: always
+    - step: branch
+      condition:
+        type: always
+    - step: observe
+      condition:
+        type: always
+    - step: profile
+      condition:
+        type: always
+    - step: setup-${{ self._index }}
+      condition:
+        type: always
+  - name: cleanup
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "tp-"+run.id+"-cleanup" }}
+      methodName: execute
+      inputs:
+        run: 'rm -rf -- "$ORBIT_ROOT"
+
+          '
+        env:
+          ORBIT_ROOT: ${{ "/home/orbit/.cache/orbit-task-provision/"+run.id }}
+    dependsOn:
+    - step: result
+      condition:
+        type: always
+    allowFailure: true
+  - name: cleanup_remote
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ "tp-ssh-"+run.id }}
+      methodName: exec
+      globalArgs:
+        hosts:
+        - address: ${{ inputs.workspace.ssh_execution.target.host }}
+          name: target
+          transport:
+            hostKeys: ${{ inputs.workspace.ssh_execution.target.host_keys }}
+        name: ${{ "task-provision-ssh-"+run.id }}
+        transport:
+          identityFile: ${{ inputs.workspace.ssh_execution.identity_file }}
+          kind: ssh
+          port: ${{ inputs.workspace.ssh_execution.target.port }}
+          user: ${{ inputs.workspace.ssh_execution.target.user }}
+      inputs:
+        hosts: name:target
+        argv:
+        - /usr/bin/rm
+        - -rf
+        - --
+        - ${{ "/tmp/orbit-task-provision-"+run.id }}
+    dependsOn:
+    - step: result
+      condition:
+        type: always
+    allowFailure: true
+  target: orbit-node-209
+name: task-workspace-source
+vaults:
+- orbit-control-inputs

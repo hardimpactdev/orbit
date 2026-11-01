@@ -1,6 +1,7 @@
+import { ProvisioningRefusal } from "./source_profile.ts";
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { prepareProvisioningVp } from "./provisioning_vp.ts";
-import { ProvisioningRefusal } from "./provisioning_source.ts";
+
 import type { VpLocal } from "../instance-deploy/vp_local.ts";
 
 function fixture(installed = false) {
