@@ -228,7 +228,7 @@ Check the completed port and report what the evidence proves.
 
 - [ ] Cover success and refusal. Check redacted failure detail, cancellation and interrupted projection.
 - [ ] Validate completed YAML with the pinned native runtime. Run focused native tests, script lint, and Gateway admission, identity and projection tests.
-- [ ] Separate source conformance from checks, served-source uptake and live/grant evidence. Cite this page in the review.
+- [ ] Separate source conformance from checks, served-source uptake and live evidence. Check guard-error semantics before alleging a silent skip (#2320). Cite this page.
 
 ## Changelog
 
