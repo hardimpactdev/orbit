@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/{app/Domain/Gateway/GatewayCacheStore.php,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,resources/sigstore/trusted_root.json}
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
-  - '{apps/gateway/app/**/GatewayReleases/**,swamp/workflows/workflow-operation-gateway-swamp-load.yaml}'
+  - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
   - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
