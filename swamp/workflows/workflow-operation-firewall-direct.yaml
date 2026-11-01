@@ -67,7 +67,7 @@ jobs:
       inputs:
         hosts: 'name:target'
         sudo: true
-        argv: [sh, -c, '/usr/bin/timeout 60 "$@"; result=$?; if [ "$result" -eq 124 ]; then printf "%s\n" "allowlist: 60s budget exceeded" >&2; fi; exit "$result"', allowlist, python3, -I, -c, '${{ steps["allowlist-assets"].outputs.script }}', '${{ steps["allowlist-assets"].outputs.input }}']
+        argv: [/usr/bin/timeout, '60', python3, -I, -c, '${{ steps["allowlist-assets"].outputs.script }}', '${{ steps["allowlist-assets"].outputs.input }}']
         okExitCodes: [0, 1]
   - name: backend
     target: orbit-node-209
