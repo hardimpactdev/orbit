@@ -21,6 +21,12 @@ Instance deploy, rollback, [task provision](/reference/tasks#provision-an-extern
 
 Production deployments include a resumable `process_restart` step after PHP refresh. It restarts active Instance Processes before after-activation commands. A completed restart step is skipped on recovery. An interrupted restart step can restart a Process again. A stored deploy plan from before this step was introduced keeps its original steps after a Gateway upgrade. See [Deploy](/reference/deployments#deploy) for the opt-out and failure behavior.
 
+## Instance failure alerts
+
+Every `instance.create` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.
+
+The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
+
 ## Native public participants
 
 A direct Operation may admit immutable `input.participant_node_ids`. A foreign participant may use the existing direct-operation GET with the bound root run ID while the parent is unfinished. A projection implementing `DirectOperationPublicView` asserts its participant ownership and returns fresh public input for that authenticated Node. The response preserves the parent Node identity, omits the parent result and uses `Cache-Control: no-store`. Participation grants neither a result POST nor private-material access; those have their own shared authorization.
