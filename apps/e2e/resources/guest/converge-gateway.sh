@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 checkout=/home/orbit/orbit
 gateway=$checkout/apps/gateway
+runtime_gateway=/home/orbit/runtime/current/apps/gateway
 orbit_env=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite)
 # PHP is never installed here: the recipe base image carries the recipe's exact PHP build (ADR 0216).
 gateway_prerequisites() {
@@ -56,23 +57,39 @@ case ${1-} in
     [[ $# -eq 1 ]] || exit 64
     "${orbit_env[@]}" php /usr/local/bin/topology-ca.php
     ;;
-  configure-mounted)
+  runtime)
+    [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    [[ ! -e /home/orbit/runtime/current && ! -L /home/orbit/runtime/current ]] || { echo 'e2e.gateway_runtime_exists' >&2; exit 65; }
+    chown orbit:orbit /var/lib/orbit-e2e/gateway-source.bundle
+    chmod 0600 /var/lib/orbit-e2e/gateway-source.bundle
+    trap 'rm -f -- /var/lib/orbit-e2e/gateway-source.bundle' EXIT
+    install -d -o orbit -g orbit -m 0700 /home/orbit/runtime
+    "${orbit_env[@]}" git clone --no-checkout /var/lib/orbit-e2e/gateway-source.bundle /home/orbit/runtime/current
+    "${orbit_env[@]}" git -C /home/orbit/runtime/current checkout --detach "$2"
+    "${orbit_env[@]}" git -C /home/orbit/runtime/current remote remove origin
+    # Dependency copies keep Composer's relative autoload roots inside the independent checkout.
+    for project in apps/gateway apps/cli packages/php-sdk; do
+      [[ -f "$checkout/$project/vendor/autoload.php" ]] || exit 66
+      "${orbit_env[@]}" cp -a "$checkout/$project/vendor" "/home/orbit/runtime/current/$project/vendor"
+    done
+    "${orbit_env[@]}" cp "$gateway/.env" "$runtime_gateway/.env"
+    "${orbit_env[@]}" sed -i '/^ORBIT_GATEWAY_CHECKOUT=/d' "$runtime_gateway/.env"
+    "${orbit_env[@]}" bash -c 'printf "ORBIT_GATEWAY_CHECKOUT=%s\n" "$1" >>"$1/.env"' orbit-e2e "$runtime_gateway"
+    ;;
+  prepare-release|deploy-release)
+    [[ $# -eq 2 && "$2" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    cd "$runtime_gateway"
+    action=${1%-release}
+    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan "gateway:release:$action" "$2" --no-interaction
+    ;;
+  configure)
     [[ $# -eq 1 ]] || exit 64
-    cd "$gateway"
-    candidate=$(mktemp /etc/caddy/orbit-topology.XXXXXX)
-    trap 'rm -f -- "$candidate"' EXIT
-    "${orbit_env[@]}" php /usr/local/bin/topology-gateway-services.php >"$candidate"
-    caddy validate --config "$candidate" --adapter caddyfile >/dev/null
-    install -o root -g caddy -m 0644 "$candidate" /etc/caddy/Caddyfile
-    systemctl enable --now php8.5-fpm caddy
-    systemctl reload caddy
-    printf '%s\n' '{"gateway_install":"mounted_source","release_runner_exercised":false}'
+    cd "$runtime_gateway"
+    "${orbit_env[@]}" env ORBIT_GATEWAY_CHECKOUT="$runtime_gateway" php artisan gateway:release:configure --no-interaction
     ;;
   services)
     [[ $# -eq 1 ]] || exit 64
     systemctl is-active --quiet caddy php8.5-fpm dnsmasq
-    curl --fail --silent --show-error --noproxy '*' --connect-timeout 5 --max-time 10 \
-      --cacert /home/orbit/.orbit/ca/root.pem --resolve gateway.orbit:443:10.44.0.1 https://gateway.orbit/up >/dev/null
     ;;
   *) exit 64 ;;
 esac

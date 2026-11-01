@@ -110,7 +110,7 @@ Until native Gateway bootstrap supplies a CA, acquisition creates a disposable R
 
 Composition prepares Swamp beside the test Gateway, with its own data and credentials. Preparation installs assets and settings without starting services. The explicit start stage starts serve and its worker and waits for readiness. It reads the runtime version and checksum from `swamp/extensions/behaviors/node-worker/config.ts`, installs the official binary and the official extensions pinned in `swamp/extensions/models/upstream_extensions.json`, and loads the mounted worktree's definitions into a private sandbox at `/home/orbit/.orbit/swamp/repository`.
 
-That lock is the only pin source; the loaded copy replaces what native pulls write. Serve starts with `--club-api-key-file`, and CLI calls read `SWAMP_API_KEY_FILE`. The worker enrolls as `orbit-node-209` with `node=209`; workflows keep their normal placement and use official SSH to reach the topology Nodes. Swamp starts before the mounted Gateway services are configured. The datastore, local-encryption vaults, tokens, TLS certificate and SSH identity belong only to that topology.
+That lock is the only pin source; the loaded copy replaces what native pulls write. Serve starts with `--club-api-key-file`, and CLI calls read `SWAMP_API_KEY_FILE`. The worker enrolls as `orbit-node-209` with `node=209`; workflows keep their normal placement and use official SSH to reach the topology Nodes. The normal release configuration step precedes preparation and deployment. Swamp starts before release deployment invokes native effects. The datastore, local-encryption vaults, tokens, TLS certificate and SSH identity belong only to that topology.
 
 Set `ORBIT_E2E_SWAMP_CLUB_TOKEN_FILE` to an owned mode-0600 file containing the sandbox collective token. The harness sends its contents only on guest-exec stdin. It never stores the token in topology state or evidence. A missing file refuses acquisition with `e2e.swamp_club_credential_missing`; an unsafe file refuses with `e2e.swamp_club_credential_invalid`. Do not use a production credential.
 
@@ -124,7 +124,9 @@ Read native history through the existing harness, replacing `RUN_ID` with the ad
 bin/e2e-topology exec TASK-58 gateway --argv='["env","SWAMP_HOME=/home/orbit/.orbit/swamp/home","SWAMP_CONFIG_DIR=/home/orbit/.orbit/swamp/config","swamp","workflow","history","get","RUN_ID","--repo-dir","/home/orbit/.orbit/swamp/repository","--server","wss://localhost:19470","--token-file","/home/orbit/.orbit/swamp/credentials/operator","--ca-cert","/home/orbit/.orbit/swamp/tls/cert.pem","--json"]'
 ```
 
-The disposable topology Gateway runs from `/home/orbit/orbit/apps/gateway`. After migrations and fixture seeding, the harness uses the canonical Gateway certificate, checkout access, PHP-FPM, and Node Caddy renderers to start its services. The release runner is not part of this installation. The read-only native preparation inspection of a fresh local commit refused with `gateway.release_layout_missing` because the shared release repository and environment did not exist. Proof receipts record `gateway_install: mounted_source` and `release_runner_exercised: false`. No production GitHub App credential is supplied.
+The mounted PR source stays at `/home/orbit/orbit`. The harness exports its exact committed source into `/home/orbit/runtime/current/apps/gateway` without a remote origin, then runs the real `gateway:release:configure` after seeding and before `gateway:release:prepare` and `gateway:release:deploy`. All environment values belong to the topology. Mounted-source installation is permitted only when a release step requires a production credential.
+
+This checkpoint stops on a fresh layout: `gateway:release:configure` returns `gateway.release_not_adopted` at `configuration`, with “The Gateway is not running from a release. Run gateway:release:adopt first.” The command refreshes an adopted release; it does not create the initial shared layout or private configuration cache. That refusal is preserved and no preparation, deployment, or acquired receipt follows it.
 
 Before the first migration, `converge-gateway.sh prerequisites` checks that Caddy and dnsmasq are installed. A missing package refuses with `e2e.gateway_prerequisite_missing` and names it. Add missing prerequisites to the base image recipe; the harness does not install them during acquisition. Every topology Node, including the Gateway, remains a VM copy of `node-template`.
 
@@ -143,7 +145,10 @@ Every Node keeps the template's root disk, which has the size of the base image'
 | `prepare.gateway` | Prepares the mounted Gateway environment, migrates the fresh database, and creates its disposable CA |
 | `fixture.enrollment` | Seeds the topology records from observed public identities, then configures fixture WG and trust |
 | `start.swamp` | Starts the topology serve and worker |
-| `configure.gateway` | Configures Gateway services from the mounted PR using canonical certificate, checkout, FPM and Caddy components |
+| `runtime.gateway` | Copies the committed PR into an independent checkout with no remote origin |
+| `configure.gateway` | Runs the real release configuration command with fixture environment values; a refusal stops acquisition |
+| `prepare-release.gateway` | Prepares the captured commit through the normal release runner |
+| `deploy-release.gateway` | Deploys that commit through the normal release runner |
 | `enroll.operator` | Registers the roleless operator, grants it Gateway access, and points its CLI at the topology Gateway and CA |
 | `roles.<node>` | From the operator, uses `orbit cluster:router:set <cluster> <node> --json` for a declared Router, and `orbit node:role:add <node> <role> --json` for other extra roles. These commands follow their Operation to terminal. `ingress` first puts the Node in its own Cluster. |
 | `readiness` | Runs the readiness probes |

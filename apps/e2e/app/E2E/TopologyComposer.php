@@ -70,6 +70,10 @@ final readonly class TopologyComposer
         StageTimer::run($progress, 'seed.gateway', fn (): array => $this->fixtures->seed($target, $input));
         $this->run('fixture.gateway-leaf', $gateway, 'converge-gateway.sh', ['fixture-gateway-leaf']);
         $steps['fixture.enrollment'] = true;
+        StageTimer::run($progress, 'runtime.gateway', fn () => $this->runtime->prepare($target, $worktree, $commit));
+        $steps['runtime.gateway'] = true;
+        StageTimer::run($progress, 'configure.gateway', fn () => $this->run('configure.gateway', $gateway, 'converge-gateway.sh', ['configure']));
+        $steps['configure.gateway'] = true;
 
         StageTimer::run($progress, 'fixture.network', fn () => $this->network->converge($target, $input['nodes']));
         StageTimer::run($progress, 'fixture.trust', function () use ($target, $gateway): void {
@@ -93,9 +97,10 @@ final readonly class TopologyComposer
         });
         StageTimer::run($progress, 'start.swamp', fn () => $this->swamp->start($target));
         $steps['start.swamp'] = true;
-        StageTimer::run($progress, 'configure.gateway', fn () => $this->runtime->prepare($target, $worktree, $commit));
+        StageTimer::run($progress, 'prepare-release.gateway', fn () => $this->run('prepare-release.gateway', $gateway, 'converge-gateway.sh', ['prepare-release', $commit]));
+        StageTimer::run($progress, 'deploy-release.gateway', fn () => $this->run('deploy-release.gateway', $gateway, 'converge-gateway.sh', ['deploy-release', $commit]));
         StageTimer::run($progress, 'services.gateway', fn () => $this->run('services.gateway', $gateway, 'converge-gateway.sh', ['services']));
-        $steps['configure.gateway'] = true;
+        $steps['deploy-release.gateway'] = true;
 
         StageTimer::run($progress, 'enroll.operator', function () use ($gatewayAddress, $instances): void {
             $this->run('enroll.operator', $instances['operator'], 'converge-operator.sh', ['configure-cli', $gatewayAddress]);
@@ -193,6 +198,14 @@ final readonly class TopologyComposer
 
     private function provisioningSuffix(string $script, GuestCommandResult $result): string
     {
+        if ($script === 'converge-gateway.sh') {
+            $failure = json_decode($result->stdout, true);
+            if (is_array($failure) && is_string($failure['error_code'] ?? null) && is_string($failure['step'] ?? null)
+                && preg_match('/\Agateway\.[a-z0-9._-]{1,96}\z/D', $failure['error_code']) === 1
+                && preg_match('/\A[a-z0-9:-]{1,64}\z/D', $failure['step']) === 1) {
+                return " at Orbit step {$failure['step']} ({$failure['error_code']})";
+            }
+        }
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             $script === 'converge-node.sh' => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',

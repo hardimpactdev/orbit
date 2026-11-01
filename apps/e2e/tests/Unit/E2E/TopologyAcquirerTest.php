@@ -135,9 +135,6 @@ function acquirerResponder(FakeIncus $incus, array &$steps, ?Closure $override =
         if ($argv[0] === 'uname') {
             return ["x86_64\n", '', 0];
         }
-        if ($script === 'converge-gateway.sh' && ($argv[1] ?? null) === 'configure-mounted') {
-            return ['{"gateway_install":"mounted_source","release_runner_exercised":false}', '', 0];
-        }
         if ($script === 'verify-topology.sh') {
             return [json_encode([
                 'probe' => $argv[1], 'passed' => true, 'identity' => $argv[2], 'checked_at' => '2026-10-12T12:00:00Z',
@@ -284,6 +281,8 @@ describe('TopologyAcquirer', function () {
                 'prepare-node.sh fixture-facts @operator',
                 'converge-gateway.sh seed @gateway',
                 'converge-gateway.sh fixture-gateway-leaf @gateway',
+                'converge-gateway.sh runtime @gateway',
+                'converge-gateway.sh configure @gateway',
                 'prepare-node.sh fixture-trust @gateway',
                 'prepare-node.sh gateway-authorize @gateway',
                 'prepare-node.sh fixture-trust @app-dev',
@@ -292,11 +291,12 @@ describe('TopologyAcquirer', function () {
                 'prepare-node.sh gateway-authorize @operator',
                 'topology-repositories.py 10.232.1.10 @gateway',
                 'converge-swamp.py start @gateway',
-                'converge-gateway.sh configure-mounted @gateway',
+                'converge-gateway.sh prepare-release @gateway',
+                'converge-gateway.sh deploy-release @gateway',
                 'converge-gateway.sh services @gateway',
                 'converge-operator.sh configure-cli @operator',
             ])
-            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'prepare.swamp', 'prepare.gateway', 'fixture.repository', 'fixture.identities', 'seed.gateway', 'fixture.network', 'fixture.trust', 'fixture.repositories', 'start.swamp', 'configure.gateway', 'services.gateway', 'enroll.operator', 'compose', 'readiness'])
+            ->and($timings)->toBe(['reserve', 'start', 'scripts', 'prepare.swamp', 'prepare.gateway', 'fixture.repository', 'fixture.identities', 'seed.gateway', 'runtime.gateway', 'configure.gateway', 'fixture.network', 'fixture.trust', 'fixture.repositories', 'start.swamp', 'prepare-release.gateway', 'deploy-release.gateway', 'services.gateway', 'enroll.operator', 'compose', 'readiness'])
             ->and($topology->toArray()['nodes'])->toBe(['gateway', 'app-dev', 'operator'])
             ->and(array_keys($topology->construction->nodes))->toBe(['gateway', 'app-dev', 'operator'])
             ->and(IssueState::forWorktree('TST-9', $worktree)->requireTopology()->toArray())->toBe($topology->toArray())
@@ -408,15 +408,15 @@ describe('TopologyAcquirer', function () {
             ->and(IssueState::forWorktree('TST-9', $worktree)->hasAttempt())->toBeFalse();
     });
 
-    it('propagates mounted service setup refusal and never probes services after it', function (): void {
+    it('propagates real configure refusal and never calls release preparation or services after it', function (): void {
         ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(
-            static fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-gateway.sh' && ($argv[1] ?? null) === 'configure-mounted'
-                ? ['', 'gateway.fpm_start_failed', 1] : null,
+            static fn (string $instance, array $argv): ?array => $argv[0] === '/usr/local/bin/converge-gateway.sh' && ($argv[1] ?? null) === 'configure'
+                ? [json_encode(['error_code' => 'gateway.release_not_adopted', 'step' => 'configuration', 'message' => 'The Gateway is not running from a release. Run gateway:release:adopt first.']), '', 1] : null,
         );
 
         expect(fn () => $acquirer->acquire($request, TopologyRecipe::compose(['app-dev'])))
-            ->toThrow(RuntimeException::class, 'e2e.gateway_mounted_configuration_failed.');
-        expect(array_filter($incus->execs, static fn (array $exec): bool => in_array($exec['argv'][1] ?? null, ['services'], true)))->toBe([]);
+            ->toThrow(RuntimeException::class, 'at Orbit step configuration (gateway.release_not_adopted)');
+        expect(array_filter($incus->execs, static fn (array $exec): bool => in_array($exec['argv'][1] ?? null, ['prepare-release', 'deploy-release', 'services'], true)))->toBe([]);
     });
 
     it('rolls back when readiness never passes and lists the failed probes', function () {
