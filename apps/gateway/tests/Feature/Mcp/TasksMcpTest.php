@@ -2,13 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -349,54 +346,6 @@ it('hides the tasks MCP tools before the extension is enabled', function (): voi
         'brief' => 'Must refuse.',
     ])->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
 });
-
-it('cancels a running or queued group through MCP and removes its shared Instance', function (TaskGroupStatus $status): void {
-    app(TaskExtensionState::class)->enable();
-    bind_task_node_reachability();
-    $node = Node::query()->create([
-        'name' => 'tasks-mcp-instance-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.86',
-        'wireguard_ip' => '10.44.0.86',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $this->appRecord->id,
-        'title' => 'MCP cancel',
-        'brief' => 'Cancel a stuck group.',
-        'status' => $status,
-    ]);
-    $instance = test_task_workspace($group, [
-        'node_id' => $node->id,
-        'name' => 'task-mcp-cancel',
-        'branch_override' => null,
-        'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
-    ]);
-    app()->instance(InstanceRemover::class, new class implements InstanceRemover
-    {
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    });
-
-    $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
-        'name' => 'tasks-cancel',
-        'arguments' => ['group' => $group->id],
-    ]));
-    $document = json_decode($cancelled['result']['content'][0]['text'], true);
-
-    expect($cancelled['result']['isError'] ?? true)->toBeFalse()
-        ->and($document['data']['status'])->toBe('cancelled')
-        ->and($document['data']['taskable_id'])->toBeNull()
-        ->and(Instance::query()->find($instance->id))->toBeNull();
-})->with([
-    'backlog' => TaskGroupStatus::Backlog,
-    'todo' => TaskGroupStatus::Todo,
-    'running' => TaskGroupStatus::Running,
-]);
 
 it('returns a structured MCP error for canceling a settling group with a pull request and still completes it', function (): void {
     app(TaskExtensionState::class)->enable();

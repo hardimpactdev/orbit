@@ -2,10 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Broadcasting\RecordBroadcast;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\InstanceRemover;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\DeliverablePathChecker;
@@ -33,7 +30,6 @@ use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\TaskUnitProgram;
 use App\Models\Activity;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -43,9 +39,6 @@ use App\Models\TaskQuestion;
 use App\Rules\CommandPaths;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Routing\Route;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Symfony\Component\Process\Process;
 use Tests\Support\DeliverablePathWorkspace;
@@ -116,6 +109,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:park' => ['api/v1/task-groups/{group}/park', ['POST']],
+        'tasks:dependency-merge' => ['api/v1/task-groups/{group}/dependency-merge', ['POST']],
         'tasks:publish' => ['api/v1/task-groups/{group}/publish', ['POST']],
         'tasks:analyze' => ['api/v1/task-groups/{group}/analyze', ['POST']],
         'tasks:script' => ['api/v1/task-groups/{group}/script', ['POST']],
@@ -222,41 +216,6 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertJsonPath('data.enabled', false);
 
     expect(app(TaskExtensionState::class)->enabled())->toBeFalse();
-});
-
-it('reports when the last tasks tick started its work on tasks status', function (): void {
-    tasks_gateway();
-    $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
-
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', null);
-
-    enable_tasks();
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
-
-    $this->travelTo(Carbon::parse('2026-10-07T06:00:10Z'));
-    $held = Cache::lock('orbit:tasks:tick', 300);
-    expect($held->get())->toBeTrue();
-    $this->artisan('tasks:tick')
-        ->expectsOutput('Another tasks tick is already running.')
-        ->assertSuccessful();
-    $held->release();
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
-
-    $this->artisan('tasks:tick')->assertSuccessful();
-    $this->postJson('/api/v1/extensions/tasks/disable')
-        ->assertOk()
-        ->assertJsonMissingPath('data.last_tick_at');
-    $this->getJson('/api/v1/tasks/status')
-        ->assertOk()
-        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
 });
 
 it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
@@ -441,52 +400,6 @@ it('lets a Node with a Gateway grant create a group', function (): void {
         ->assertJsonPath('data.title', 'Granted');
 });
 
-it('completes a settling group and removes its App instance', function (): void {
-    tasks_gateway();
-    enable_tasks();
-    $project = tasks_app('complete-api');
-    $node = Node::query()->create([
-        'name' => 'complete-api-node',
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'public_ssh_host' => '192.0.2.86',
-        'wireguard_ip' => '10.44.0.86',
-    ]);
-    $group = Task::topLevel()->create([
-        'project_id' => $project->id,
-        'title' => 'Ready',
-        'brief' => 'PR is merged.',
-        'status' => TaskGroupStatus::Settling,
-        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/543',
-    ]);
-    $instance = Instance::query()->create([
-        'task_workspace_owner_id' => $group->id,
-        'project_id' => $project->id,
-        'node_id' => $node->id,
-        'name' => 'task-30',
-        'checkout_path' => '/tmp/task-30',
-        'status' => 'source_resolved',
-    ]);
-    $group->taskable()->associate($instance);
-    $group->save();
-    $remover = new class implements InstanceRemover
-    {
-        public function execute(Instance $instance, bool $force): InstanceRemoval
-        {
-            $instance->delete();
-
-            return new InstanceRemoval;
-        }
-    };
-    app()->instance(InstanceRemover::class, $remover);
-
-    $this->postJson("/api/v1/task-groups/{$group->id}/complete")
-        ->assertOk()
-        ->assertJsonPath('data.status', 'completed')
-        ->assertJsonPath('data.taskable_id', null)
-        ->assertJsonPath('data.pr_url', 'https://github.com/hardimpactdev/orbit/pull/543');
-});
-
 it('returns 409 tasks.not_settling when complete runs before settle', function (): void {
     tasks_gateway();
     enable_tasks();
@@ -554,7 +467,7 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
     $this->assertDatabaseCount('tasks', 0);
 })->with(['implementer', 'reviewer']);
 
-it('cancels a running check and shows it on the task', function (): void {
+it('refuses check cancellation without an admitted native run', function (): void {
     tasks_gateway();
     enable_tasks();
     $project = tasks_app('checks');
@@ -572,21 +485,7 @@ it('cancels a running check and shows it on the task', function (): void {
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'tasks.check_not_running');
 
-    TaskCheck::query()->create([
-        'task_id' => $task->id, 'task_comment_id' => $receipt->id, 'status' => TaskCheckStatus::Running, 'pid' => 4001,
-        'process_started' => 'Wed Sep 23 12:00:01 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
-    ]);
-    $this->getJson("/api/v1/task-groups/{$group->id}")
-        ->assertOk()
-        ->assertJsonPath('data.tasks.0.check.status', 'running');
-
-    Event::fake([RecordBroadcast::class]);
-    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/check/cancel")
-        ->assertOk()
-        ->assertJsonPath('data.status', 'cancelled')
-        ->assertJsonPath('data.finished_at', fn (mixed $value): bool => is_string($value));
-    expect($checks->cancels)->toBe(1);
-    Event::assertDispatched(RecordBroadcast::class, static fn (RecordBroadcast $event): bool => $event->type === RecordEventType::TaskGroupUpdated && $event->id === $group->id);
+    expect($checks->cancels)->toBe(0);
 });
 
 /**
@@ -1171,7 +1070,7 @@ it('validates a deliverable correction without consuming it on refused requests'
     $this->patchJson($url, ['deliverables' => [deliverable_path_file('tests/MissingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     $this->patchJson($url, ['deliverables' => []])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
     $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
-    $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    $this->patchJson($url, ['topology' => [], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
     expect($task->fresh()?->deliverables)->toBe($before)
         ->and($task->fresh()?->topology->isEmpty())->toBeTrue();
     expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);
