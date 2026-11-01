@@ -15,7 +15,6 @@ const roots = [
     "operation-database-cleanup",
     "operation-database-destroy",
     "operation-database-destroy-owned",
-    "operation-database-sqlite-export",
     "operation-database-sqlite-seed",
     "operation-instance-create",
     "operation-instance-setup-direct",

@@ -13,4 +13,4 @@ it('publishes only recorded safe SQLite placement descriptors', function (string
     ]]);
 
     expect((new DatabaseSqliteProjection)->publicInput($operation, 12))->toBe(['source' => $source, 'target' => $target]);
-})->with(['database.sqlite_export', 'database.sqlite_seed']);
+})->with(['database.sqlite_seed']);

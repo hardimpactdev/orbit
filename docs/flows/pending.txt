@@ -4,7 +4,6 @@ conn.pairing_revoke
 database.clone
 database.destroy_owned
 database.sqlite_cleanup
-database.sqlite_export
 database.sqlite_seed
 database_server.close
 fleet.cli_converge
