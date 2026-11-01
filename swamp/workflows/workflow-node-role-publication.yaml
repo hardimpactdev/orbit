@@ -1,0 +1,29 @@
+id: 6af0c187-03db-4162-8b53-e4f86ed120be
+name: node-role-publication
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+      const: node.role_converge
+    intent:
+      type: object
+  required:
+    - operation_id
+    - node_id
+    - kind
+    - intent
+  additionalProperties: false
+jobs:
+  - name: publish
+    steps:
+      - {name: publication_php, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.publications.filter(p, p.after.php != null) }}'}, dependsOn: [], guard: '${{ (false) }}', task: {type: workflow, workflowIdOrName: operation-route-php-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: &ref_0 {}, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', user: '${{ self.part.connection.nodeUser }}', before: '${{ self.part.before.php }}', after: '${{ self.part.after.php }}', direction: forward}}}}
+      - {name: publication_caddy, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.publications.filter(p, p.after.caddy != null) }}'}, dependsOn: [{step: publication_php, condition: {type: always}}], guard: '${{ (steps.exists(key, (key == "publication_php" || key.startsWith("publication_php-")) && steps[key].status in ["failed", "cancelled"])) }}', task: {type: workflow, workflowIdOrName: operation-route-caddy-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: *ref_0, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', user: '${{ self.part.connection.nodeUser }}', before: '${{ self.part.before.caddy }}', after: '${{ self.part.after.caddy }}', alternatives: '${{ [self.part.before.caddy, self.part.after.caddy] }}', direction: forward, retain_removed: false}}}}
+      - {name: publication_dns, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.publications.filter(p, p.after.dns != null) }}'}, dependsOn: [{step: publication_php, condition: {type: always}}, {step: publication_caddy, condition: {type: always}}], guard: '${{ (steps.exists(key, (key == "publication_php" || key.startsWith("publication_php-")) && steps[key].status in ["failed", "cancelled"]) || steps.exists(key, (key == "publication_caddy" || key.startsWith("publication_caddy-")) && steps[key].status in ["failed", "cancelled"])) }}', task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: *ref_0, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', before: '${{ self.part.before.dns }}', after: '${{ self.part.after.dns }}', alternatives: '${{ [self.part.before.dns, self.part.after.dns] }}'}}}}
+      - {name: result, target: orbit-node-209, dependsOn: [{step: publication_php, condition: {type: always}}, {step: publication_caddy, condition: {type: always}}, {step: publication_dns, condition: {type: always}}], task: {type: behavior, behaviorType: '@nckrtl/route-mutation-command', behaviorName: publication-contribution, methodName: result, inputs: {stage: {routes: []}, mode: forward, required: {publication_php: '${{ size(inputs.intent.publications.filter(p, p.after.php != null)) }}', publication_caddy: '${{ size(inputs.intent.publications.filter(p, p.after.caddy != null)) }}', publication_dns: '${{ size(inputs.intent.publications.filter(p, p.after.dns != null)) }}'}, outcomes: '${{ steps }}'}}}

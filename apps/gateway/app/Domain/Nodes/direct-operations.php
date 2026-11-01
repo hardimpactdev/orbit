@@ -64,7 +64,7 @@ return ['node.worker_known_hosts' => [
     'workflow' => 'operation-node-role-converge-209',
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'result', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-observer$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-[0-9]+-(observer|runtime_material)$']],
     'projection' => NodeRoleDirectProjection::class,
     'private_material' => ['secret_hash' => 'node.agent_secret_hash', 'runtime_material' => 'node.role_runtime', 'metrics_runtime' => 'metrics.fleet_runtime'],
 ], 'node.role_relocate' => [

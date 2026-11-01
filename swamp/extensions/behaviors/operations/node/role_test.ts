@@ -66,7 +66,7 @@ class RoleFixture extends Fixture {
     }) satisfies Http;
   }
 }
-const runtime = (kind = "websocket.role_converge", optional = false): Step => ({
+const runtime = (kind = "analytics.role_converge", optional = false): Step => ({
   type: "child",
   key: "role-runtime",
   kind,
@@ -111,7 +111,7 @@ Deno.test("role parent releases its lease for a waiting runtime and continues af
   f.roleChildren.set("role-runtime", {
     id: 21,
     key: "role-runtime",
-    kind: "websocket.role_converge",
+    kind: "analytics.role_converge",
     node_id: 2,
     status: "waiting",
     result: null,
@@ -138,7 +138,7 @@ Deno.test("a refused existing runtime stops before later effects and keeps recor
   f.roleChildren.set("role-runtime", {
     id: 21,
     key: "role-runtime",
-    kind: "websocket.role_converge",
+    kind: "analytics.role_converge",
     node_id: 2,
     status: "failed",
     result: {},
@@ -371,7 +371,7 @@ Deno.test("first-role refusal starts the recorded peer compensation before final
   f.roleChildren.set("role-runtime", {
     id: 21,
     key: "role-runtime",
-    kind: "websocket.role_converge",
+    kind: "analytics.role_converge",
     node_id: 2,
     status: "failed",
     result: {},
@@ -505,4 +505,10 @@ Deno.test("CI purge proof precedes firewall removal and is reused after a lost r
 
   assertEquals(f.runs().filter((name) => name === "ci-runner.host").length, 1);
   assertEquals(f.runs().slice(-2), ["firewall.rules", "node.role-result"]);
+});
+
+Deno.test("the retired WebSocket converge child cannot be dispatched by a retained role plan", async () => {
+  const f = new RoleFixture([runtime("websocket.role_converge")]);
+  await assertRejects(() => f.execute());
+  assertEquals(f.calls.some((c) => c.path.endsWith("/children") && c.body.key), false);
 });

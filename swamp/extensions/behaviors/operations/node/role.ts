@@ -67,7 +67,6 @@ const Child = Common.extend({
     "metrics.reconcile",
     "metrics.role_converge",
     "analytics.role_converge",
-    "websocket.role_converge",
     "metrics.role_remove",
     "analytics.role_remove",
     "websocket.role_remove",

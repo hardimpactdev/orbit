@@ -107,7 +107,7 @@ export async function removeWebSocketRuntime(
   return { completed: true };
 }
 
-function webSocketUnit(
+export function webSocketUnit(
   path: string,
   user: string,
   group: string,

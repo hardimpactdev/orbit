@@ -57,6 +57,9 @@ export function integrations(
           args: { kind: string; worker: string },
           ctx: Context,
         ) => {
+          if (!args.kind.startsWith("ai_router.")) {
+            throw new Error("integration.kind_invalid");
+          }
           const executor = new Executor(makeHttp(ctx));
           const attempt = `assignment-${args.worker}`;
           const assigned = await ctx.readResource(attempt);
@@ -146,16 +149,10 @@ export function integrations(
             }, 30_000);
             try {
               if (
-                (operation.kind === "ai_router.collector_converge" ||
-                  /^websocket\.role_(converge|remove)$/
-                    .test(operation.kind)) &&
+                operation.kind === "ai_router.collector_converge" &&
                 operation.input.flow === undefined
               ) {
-                const role = operation.kind !== "ai_router.collector_converge";
-                const prepareKey = role ? "role-prepare" : "collector-prepare";
-                const prepareName = role
-                  ? "integration.prepare-role"
-                  : "ai_router.prepare";
+                const prepareKey = "collector-prepare";
                 const prepared = operation.step_results[prepareKey];
                 if (prepared === undefined) {
                   const result = z.object({ prepared: z.literal(true) }).parse(
@@ -163,7 +160,7 @@ export function integrations(
                       worker: args.worker,
                       key: prepareKey,
                       transport: "gateway",
-                      name: prepareName,
+                      name: "ai_router.prepare",
                       input: {},
                     }),
                   );
