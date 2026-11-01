@@ -120,32 +120,40 @@ const Selection = z.object({
         z.object({ node_id: Id, steps: z.array(z.string()) }),
     ),
 });
+type RemovalIntent = Record<string, unknown> & {
+    effectful: boolean;
+    offline: boolean;
+    workloads: { node_id: number }[];
+    route_mutations: {
+        forward: Record<string, unknown> & {
+            publications: { node_id: number; before: { dns: unknown } }[];
+        };
+        restore: Record<string, unknown>;
+    };
+};
 export function selectRemoval(
     raw: { intent: Record<string, unknown>; steps: z.infer<typeof States> },
 ) {
-    const intent = structuredClone(raw.intent) as Record<string, any>;
-    const publications = intent.route_mutations.forward.publications as Record<
-        string,
-        any
-    >[];
+    const intent = structuredClone(raw.intent) as RemovalIntent;
+    const publications = intent.route_mutations.forward.publications;
     const missing = publications.filter((_part, i) =>
         !succeeded(raw.steps, `reachable-${i}`)
     );
     const admitted = missing.length === 0 ||
         intent.offline && missing.every((part) => part.before.dns === null);
     const excluded = missing.map((part) => part.node_id);
-    for (const side of ["forward", "restore"]) {
+    for (const side of ["forward", "restore"] as const) {
         for (
             const [key, rows] of Object.entries(intent.route_mutations[side])
         ) {
             if (Array.isArray(rows)) {
-                intent.route_mutations[side][key] = rows.filter((row) =>
-                    !excluded.includes(row.node_id)
-                );
+                intent.route_mutations[side][key] = rows.filter((
+                    row: { node_id?: number },
+                ) => !excluded.includes(row.node_id ?? 0));
             }
         }
     }
-    intent.workloads = intent.workloads.filter((row: Record<string, any>) =>
+    intent.workloads = intent.workloads.filter((row) =>
         !excluded.includes(row.node_id)
     );
     if (!admitted) {
