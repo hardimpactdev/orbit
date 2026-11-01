@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 
 def load(name):
-    spec=importlib.util.spec_from_file_location(name,Path(__file__).parent/'scripts'/(name+'.py'))
+    spec=importlib.util.spec_from_file_location(name,Path(__file__).parent.parent/'fleet-recipe/scripts'/(name+'.py'))
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
 

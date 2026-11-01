@@ -320,7 +320,7 @@ jobs:
           ORBIT_VAULT_CONFIGURATION: ${{ vault.get(inputs.execution_secrets.configuration.vault,
             inputs.execution_secrets.configuration.key) }}
           ORBIT_VAULT_ITEM: ${{ self.item.input_json }}
-      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-delete" }}
+      behaviorName: ${{ "vault-sync-" + string(inputs.operation_id) + "-delete-" + string(self._index) }}
     forEach:
       item: item
       in: ${{ steps.plan.outputs.deletes }}

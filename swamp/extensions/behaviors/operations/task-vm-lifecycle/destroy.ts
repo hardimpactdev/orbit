@@ -4,15 +4,15 @@ const Id = z.number().int().positive();
 const Intent = z.object({
     task_vm_id: Id,
     guest_node_id: Id.nullable(),
-    provider: z.literal("incus"),
+    provider: z.enum(["incus", "upcloud"]),
     provider_input: ProviderInput,
     model_key_required: z.boolean(),
     removal: z.record(z.string(), z.unknown()).nullable(),
 }).passthrough().superRefine((v, ctx) => {
     if (
-        !v.provider_input.vm?.pool ||
+        (v.provider === "incus" && !v.provider_input.vm?.pool) ||
         v.task_vm_id !== v.provider_input.task_vm_id ||
-        v.provider_input.provider !== "incus" ||
+        v.provider_input.provider !== v.provider ||
         (v.guest_node_id !== null &&
             (v.removal?.node_id !== v.guest_node_id ||
                 v.removal?.machine_deleted !== true))
@@ -30,6 +30,7 @@ type Context = {
 };
 export function seedPresent(raw: unknown, stdout: string): boolean {
     const intent = Intent.parse(raw);
+    if (intent.provider === "upcloud") return false;
     const rows = z.array(
         z.object({ name: z.string(), type: z.string() }).passthrough(),
     ).parse(JSON.parse(stdout));
@@ -64,7 +65,7 @@ export function destroyTerminal(
     }
     if (
         provider.task_vm_id !== intent.task_vm_id ||
-        provider.provider !== "incus" ||
+        provider.provider !== intent.provider ||
         provider.action !== "delete" || !provider.absent || provider.running
     ) throw new Error("task_vm.destroy_incomplete");
     const removal = intent.guest_node_id === null ? null : z.object({
@@ -88,10 +89,11 @@ export function destroyTerminal(
 }
 export const behavior = {
     type: "@nckrtl/task-vm-destroy-input",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
         plan: {
             schema: z.object({
+                provider: z.enum(["incus", "upcloud"]),
                 model_required: z.boolean(),
                 node_present: z.boolean(),
                 seed_observe_argv: z.array(z.string()),
@@ -135,7 +137,7 @@ export const behavior = {
             },
         },
         plan: {
-            description: "Read the admitted Incus destruction scope",
+            description: "Read the admitted provider destruction scope",
             arguments: z.object({ intent: Intent }),
             async execute(
                 args: { intent: z.infer<typeof Intent> },
@@ -144,36 +146,41 @@ export const behavior = {
                 return {
                     dataHandles: [
                         await ctx.writeResource("plan", "plan", {
+                            provider: args.intent.provider,
                             model_required: args.intent.model_key_required,
                             node_present: args.intent.guest_node_id !== null,
-                            seed_observe_argv: [
-                                "/usr/bin/sudo",
-                                "-n",
-                                "--",
-                                "/usr/bin/incus",
-                                "--project",
-                                args.intent.provider_input.vm!.project,
-                                "storage",
-                                "volume",
-                                "list",
-                                args.intent.provider_input.vm!.pool!,
-                                "--format",
-                                "json",
-                            ],
-                            seed_delete_argv: [
-                                "/usr/bin/sudo",
-                                "-n",
-                                "--",
-                                "/usr/bin/incus",
-                                "--project",
-                                args.intent.provider_input.vm!.project,
-                                "storage",
-                                "volume",
-                                "delete",
-                                args.intent.provider_input.vm!.pool!,
-                                args.intent.provider_input.name +
-                                "-topology-seed",
-                            ],
+                            seed_observe_argv: args.intent.provider === "incus"
+                                ? [
+                                    "/usr/bin/sudo",
+                                    "-n",
+                                    "--",
+                                    "/usr/bin/incus",
+                                    "--project",
+                                    args.intent.provider_input.vm!.project,
+                                    "storage",
+                                    "volume",
+                                    "list",
+                                    args.intent.provider_input.vm!.pool!,
+                                    "--format",
+                                    "json",
+                                ]
+                                : [],
+                            seed_delete_argv: args.intent.provider === "incus"
+                                ? [
+                                    "/usr/bin/sudo",
+                                    "-n",
+                                    "--",
+                                    "/usr/bin/incus",
+                                    "--project",
+                                    args.intent.provider_input.vm!.project,
+                                    "storage",
+                                    "volume",
+                                    "delete",
+                                    args.intent.provider_input.vm!.pool!,
+                                    args.intent.provider_input.name +
+                                    "-topology-seed",
+                                ]
+                                : [],
                         }),
                     ],
                 };

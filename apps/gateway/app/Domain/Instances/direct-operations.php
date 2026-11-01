@@ -38,7 +38,7 @@ return [
             'environment_seeded_keys' => ['job' => 'prepare', 'step' => 'env-capture', 'field' => 'keys'],
             'vp_environment' => ['job' => 'vp-install', 'step' => 'vp-result', 'field' => 'runtime'],
         ]],
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-(?:git-operation-|create-environment-(?:input-|result-)|create-)[1-9][0-9]*(?:-setup-[0-9]+)?$']]],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(?:instance-git-operation-[1-9][0-9]*|instance-git-operation-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-input-[1-9][0-9]*|instance-create-environment-input-[1-9][0-9]*-setup-[0-9]+|instance-create-environment-result-[1-9][0-9]*|instance-create-environment-result-[1-9][0-9]*-setup-[0-9]+|instance-create-[1-9][0-9]*|instance-create-[1-9][0-9]*-setup-[0-9]+)$']]],
     'instance.sync_environment' => [
         'workflow' => 'operation-instance-environment',
         'projection' => NativeInstanceEnvironmentProjection::class,

@@ -8,8 +8,26 @@ import {
 } from "../_lib/direct.ts";
 import { RoleLeaf } from "../certificates/role-input.ts";
 
+const Connection = z.object({
+  node_id: z.number().int().positive(),
+  ssh: z.object({
+    control_node_id: z.literal(209),
+    identity_file: z.literal(
+      "/run/credentials/orbit-node-worker.service/proxy-ssh-identity",
+    ),
+    public_key: z.string().min(1),
+    target: z.object({
+      name: z.literal("target"),
+      host: z.string().min(1),
+      user: z.string().min(1),
+      port: z.number().int().positive(),
+      host_keys: z.array(z.string().min(1)).min(1),
+    }).strict(),
+  }).strict(),
+}).strict();
 export const RoleCertificates = z.object({
   leaves: z.array(RoleLeaf).max(256),
+  connections: z.array(Connection).max(256).optional(),
   withdrawals: z.array(
     z.object({
       node_id: z.number().int().positive(),
@@ -18,7 +36,8 @@ export const RoleCertificates = z.object({
   ).max(256),
 }).strict().refine(
   (plan) =>
-    new Set(plan.leaves.map((leaf) => `${leaf.node_id}:${leaf.scope}`)).size ===
+    new Set(plan.leaves.map((leaf) => `${leaf.node_id}:${leaf.scope}`))
+      .size ===
       plan.leaves.length,
   { message: "Role certificate placements must be unique" },
 );
@@ -64,7 +83,9 @@ export function roleCertificates(
       current.node_id !== args.node_id ||
       !["queued", "running"].includes(current.status)
     ) {
-      throw new Error("Certificate plan differs from its native role root");
+      throw new Error(
+        "Certificate plan differs from its native role root",
+      );
     }
     if (beforeEffect && (current.cancel_requested || ctx.signal?.aborted)) {
       throw new DirectOperationCancelled({ effectRunning: false });
@@ -77,10 +98,14 @@ export function roleCertificates(
   });
   return {
     type: "@nckrtl/node-role-certificates",
-    version: "2026.10.31.1",
+    version: "2026.11.01.1",
     globalArguments: Globals,
     resources: {
-      inventory: { schema: inventory, lifetime: "1d", garbageCollection: 1 },
+      inventory: {
+        schema: inventory,
+        lifetime: "1d",
+        garbageCollection: 1,
+      },
       phase: { schema: Phase, lifetime: "1d", garbageCollection: 1 },
       completion: { schema: ready, lifetime: "1d", garbageCollection: 1 },
     },
@@ -90,9 +115,23 @@ export function roleCertificates(
         arguments: Args,
         execute: async (args: z.infer<typeof Args>, ctx: Context) => {
           const { plan } = await read(args, ctx, true);
+          const ids = plan.leaves.map((leaf) => leaf.node_id);
+          const connections = plan.connections ?? [];
+          if (
+            new Set(connections.map((c) => c.node_id)).size !==
+              connections.length ||
+            connections.some((c) => !ids.includes(c.node_id)) ||
+            ids.some((id) => !connections.some((c) => c.node_id === id))
+          ) {
+            throw new Error(
+              "Role certificate SSH intent differs from its admitted leaves",
+            );
+          }
           const result = inventory.parse({
             ...plan,
-            node_ids: [...new Set(plan.leaves.map((leaf) => leaf.node_id))]
+            node_ids: [
+              ...new Set(plan.leaves.map((leaf) => leaf.node_id)),
+            ]
               .sort(
                 (a, b) => a - b,
               ),
@@ -103,7 +142,9 @@ export function roleCertificates(
       },
       record: {
         description: "Record successful native role certificate publication",
-        arguments: Args.extend({ target_node_id: z.number().int().positive() }),
+        arguments: Args.extend({
+          target_node_id: z.number().int().positive(),
+        }),
         execute: async (
           args: z.infer<typeof Args> & { target_node_id: number },
           ctx: Context,

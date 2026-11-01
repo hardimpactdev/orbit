@@ -1,0 +1,272 @@
+id: c45e0963-7699-4f7c-88d3-54fbe75a749e
+name: task-vm-provider-upcloud
+description: Create the exact admitted UpCloud VM from209; no guest worker or Gateway callback.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind:
+      type: string
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          vault:
+            type: string
+            enum:
+            - orbit-control-inputs
+          key:
+            type: string
+            pattern: ^(task-vm-upcloud-token|task-vm-provider-bootstrap-[1-9][0-9]*)$
+        required:
+        - vault
+        - key
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: provider
+  target: orbit-node-209
+  steps:
+  - name: input
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-cloud-input'
+      behaviorName: ${{ "cloud-input-"+run.id }}
+      methodName: read
+      inputs:
+        intent: ${{ inputs.intent }}
+    dependsOn: []
+  - name: list
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" list
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+  - name: plans
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" plans
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    dependsOn:
+    - step: input
+      condition:
+        type: succeeded
+  - name: choose
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-cloud-input'
+      behaviorName: ${{ "cloud-input-"+run.id }}
+      methodName: choose
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.list.outputs.stdout }}
+        plans_stdout: ${{ steps.plans.outputs.stdout }}
+    dependsOn:
+    - step: list
+      condition:
+        type: succeeded
+    - step: plans
+      condition:
+        type: succeeded
+  - name: create
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" create
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+          ORBIT_CLOUD_CHOICE: ${{ steps.choose.outputs.input_json }}
+          ORBIT_PROVIDER_BOOTSTRAP: ${{ vault.get(inputs.execution_secrets.bootstrap.vault,inputs.execution_secrets.bootstrap.key)
+            }}
+    dependsOn:
+    - step: choose
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: discover
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" discover
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+    dependsOn:
+    - step: create
+      condition:
+        type: always
+    - step: choose
+      condition:
+        type: succeeded
+  - name: selected
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-cloud-input'
+      behaviorName: ${{ "cloud-input-"+run.id }}
+      methodName: choose
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.discover.outputs.stdout }}
+        plans_stdout: ${{ steps.plans.outputs.stdout }}
+    dependsOn:
+    - step: discover
+      condition:
+        type: succeeded
+  - name: inspect
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+          ORBIT_CLOUD_CHOICE: ${{ steps.selected.outputs.input_json }}
+    dependsOn:
+    - step: selected
+      condition:
+        type: succeeded
+  - name: observed
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-cloud-input'
+      behaviorName: ${{ "cloud-input-"+run.id }}
+      methodName: observe
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.inspect.outputs.stdout }}
+        provider_id: ${{ steps.selected.outputs.provider_id }}
+    dependsOn:
+    - step: inspect
+      condition:
+        type: succeeded
+  - name: start
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" start
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+          ORBIT_CLOUD_CHOICE: ${{ steps.observed.outputs.input_json }}
+    dependsOn:
+    - step: observed
+      condition:
+        type: succeeded
+    allowFailure: true
+  - name: observe
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "cloud-"+run.id }}
+      methodName: execute
+      inputs:
+        run: 'exec /usr/bin/python3 -B "$ORBIT_PROVIDER_SCRIPT" observe
+
+          '
+        env:
+          ORBIT_PROVIDER_SCRIPT: ${{ steps.input.outputs.script }}
+          ORBIT_PROVIDER_INTENT: ${{ steps.input.outputs.input_json }}
+          ORBIT_UPCLOUD_TOKEN: ${{ vault.get(inputs.execution_secrets.upcloud.vault,inputs.execution_secrets.upcloud.key)
+            }}
+          ORBIT_CLOUD_CHOICE: ${{ steps.observed.outputs.input_json }}
+    dependsOn:
+    - step: start
+      condition:
+        type: always
+    - step: observed
+      condition:
+        type: succeeded
+  - name: provider
+    target: orbit-node-209
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-vm-cloud-input'
+      behaviorName: ${{ "cloud-input-"+run.id }}
+      methodName: result
+      inputs:
+        intent: ${{ inputs.intent }}
+        stdout: ${{ steps.observe.outputs.stdout }}
+        provider_id: ${{ steps.selected.outputs.provider_id }}
+    dependsOn:
+    - step: observe
+      condition:
+        type: succeeded

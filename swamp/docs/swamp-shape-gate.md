@@ -46,6 +46,8 @@ Version 2 also checks each kind's public `execution_copies` declarations against
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
 
+The shape CI job also checks every declared vault key pattern with the regex safety and syntax check from the pinned Swamp source. It verifies the upstream file's checksum and requires its revision to match the worker runtime pin. A runtime pin change requires updating this source reference. The check reads public source and policy only; it needs no Swamp account or live access. Expand optional quantified groups into equivalent flat alternatives when Swamp rejects them, and keep the Gateway declaration identical to the manifest.
+
 This manifest is intended source policy, seeded from owner-approved public grant
 metadata and reconciled against current declarations. It is not evidence that a
 live grant is installed. In particular, historical run-only grants do not prove
@@ -135,6 +137,8 @@ uses stdin for its public script body and has no separate stdin argument. Use
 values do not belong in argv or the script body.
 
 Each `forEach` behavior or model-method step uses a per-item model name: a CEL expression referencing `self._index` or its `self.<item>` binding. A shared name serializes execution on Swamp's model lock and can lose receipts. Existing `foreach-shared-identity` findings are grandfathered in the baseline; new findings or increased caps fail. Node removal serving and certificate-restoration loops use a separate model name for each run, phase and iteration. Node, worker and SSH workflows have no remaining allowance for shared iteration identities. Workflow-child and non-model tasks have no model identity and are outside this check.
+
+Route workload preparation and Vault sync deletion use a separate model for each iteration. Neither workflow has a shared-iteration allowance.
 
 Every workflow, including a child, declares the vaults its steps read or forward through execution-copy descriptors in its top-level `vaults` list. The `workflow-vault-declaration` rule checks literal `vault.get` names and bounded descriptor schemas, including maps, child inputs and transitive child requirements. Child vault lists intersect with their parent's list; a parent's declaration cannot replace the child's. Existing findings are grandfathered; new missing vaults or cap growth fail. Node SSH key convergence explicitly declares `orbit-control-inputs` for its bootstrap identity; it has no vault-declaration allowance.
 

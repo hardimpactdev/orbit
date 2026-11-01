@@ -27,7 +27,7 @@ return ['task_vm.hub_converge' => [
     'projection' => TaskVmDestroyProjection::class,
     'workflow_inputs' => true,
     'terminal_result' => ['job' => 'destroy', 'step' => 'result'],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-model-key-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
 ], 'task_vm.provision' => [
     'workflow' => 'operation-task-vm-provision',
     'projection' => TaskVmProvisionProjection::class,
@@ -35,7 +35,7 @@ return ['task_vm.hub_converge' => [
     'terminal_result' => ['job' => 'provision', 'step' => 'result'],
     'private_material' => [],
     'secret_outputs' => [],
-    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
+    'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token)$']],
 ], 'task_vm.fill_package_cache' => [
     'workflow' => 'operation-task-vm-cache-fill',
     'projection' => TaskVmPackageCacheProjection::class,

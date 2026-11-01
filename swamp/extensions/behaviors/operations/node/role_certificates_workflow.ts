@@ -23,10 +23,6 @@ export function roleCertificateJobs(
     }
     const guard = options.blocked ? { guard: expr(options.blocked) } : {};
     const inventory = `${prefix}_inventory`;
-    const request = `${prefix}_request_`;
-    const sign = `${prefix}_sign`;
-    const signInput = `${sign}-http-input`;
-    const signHttp = `${sign}-http`;
     const publish = `${prefix}_publish_`;
     const record = `${prefix}_record_`;
     const complete = `${prefix}_complete`;
@@ -37,8 +33,6 @@ export function roleCertificateJobs(
         `has(steps.${inventory}) && has(${plan}) ? ${plan}.node_ids : []`;
     const key = (leaf: string) =>
         `string(${leaf}.node_id) + "_" + ${leaf}.scope`;
-    const requestFor = (leaf: string) =>
-        `steps["${request}" + ${key(leaf)}].outputs.request`;
     const rootTask = (methodName: string, extra: Fields = {}) => ({
         type: "behavior",
         behaviorType: "@nckrtl/node-role-certificates",
@@ -50,44 +44,22 @@ export function roleCertificateJobs(
         methodName,
         inputs: { ...args, ...extra },
     });
-    const placed = {
-        target: expr('"orbit-node-" + string(self.leaf.node_id)'),
-
-        forEach: { item: "leaf", in: expr(leaves) },
-    };
-    const certificateTask = (methodName: string, extra: Fields) => ({
-        type: "behavior",
-        behaviorType: "@nckrtl/certificates",
-        behaviorName: expr(
-            '"cert-' + methodName.toLowerCase() +
-                '-" + run.id + "-" + string(self._index)',
-        ),
-        methodName,
-        inputs: {
-            ...args,
-            target_node_id: expr("self.leaf.node_id"),
-            leaf: expr("self.leaf"),
-            ...extra,
+    const connection =
+        `${plan}.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh`;
+    const ssh = {
+        name: expr('"role-certificate-" + run.id + "-" + string(self._index)'),
+        transport: {
+            kind: "ssh",
+            user: expr(connection + ".target.user"),
+            port: expr(connection + ".target.port"),
+            identityFile: expr(connection + ".identity_file"),
         },
-    });
-    const signed = `steps.${sign}.outputs.certificates.filter(c, ` +
-        "c.node_id == self.leaf.node_id && c.scope == self.leaf.scope)[0]";
-    const signature = `${requestFor("self.leaf")}.state == "current" ? ` +
-        '{"skipped": true} : ' +
-        `{"certificate_base64": ${signed}.certificate_base64, ` +
-        `"root_certificate_base64": ${signed}.root_certificate_base64}`;
-    const requests = `(${leaves}).map(leaf, [` +
-        `${requestFor("leaf")}.state == "current" ? ` +
-        '{"node_id": leaf.node_id, "scope": leaf.scope, "state": "current"} : ' +
-        '{"node_id": leaf.node_id, "scope": leaf.scope, "state": "request", ' +
-        `"request_base64": ${requestFor("leaf")}.request_base64}])`;
-    const signingGuard = expr(
-        `(${
-            options.blocked
-                ? options.blocked + " || "
-                : ""
-        }(${leaves}).size() == 0)`,
-    );
+        hosts: [{
+            name: "target",
+            address: expr(connection + ".target.host"),
+            transport: { hostKeys: expr(connection + ".target.host_keys") },
+        }],
+    };
     const jobs: Fields[] = [{
         name: `${inventory}_job`,
         dependsOn: [dependency(afterJob)],
@@ -98,96 +70,25 @@ export function roleCertificateJobs(
             task: rootTask("inventory"),
         }],
     }, {
-        name: `${prefix}_requests_job`,
+        name: `${prefix}_publish_job`,
         dependsOn: [dependency(`${inventory}_job`)],
         steps: [{
-            name: request + expr(key("self.leaf")),
-            writes: true,
-            ...placed,
-            ...guard,
-            task: certificateTask("roleRequest", {}),
-        }],
-    }, {
-        name: `${sign}_job`,
-        dependsOn: [dependency(`${prefix}_requests_job`)],
-        steps: [{
-            name: signInput,
-            writes: true,
-            target: "orbit-node-209",
-
-            guard: signingGuard,
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/certificates",
-                behaviorName: expr('"certificate-batch-" + run.id'),
-                methodName: "prepareSignBatch",
-                inputs: {
-                    ...args,
-                    leaves: expr(leaves),
-                    requests: expr(requests),
-                },
-            },
-        }, {
-            name: signHttp,
-            writes: true,
-            target: "orbit-node-209",
-
-            guard: signingGuard,
-            dependsOn: [{ step: signInput, condition: { type: "succeeded" } }],
-            task: {
-                type: "behavior",
-                behaviorType: "command/shell",
-                behaviorName: expr('"certificate-sign-" + run.id'),
-                methodName: "execute",
-                inputs: {
-                    run: '/usr/bin/python3 -B "$ORBIT_CERTIFICATE_SIGN_SCRIPT"',
-                    env: {
-                        ORBIT_CERTIFICATE_SIGN_SCRIPT: expr(
-                            `steps["${signInput}"].outputs.sign_script`,
-                        ),
-                        ORBIT_CERTIFICATE_OPERATION_ID: expr(
-                            "string(inputs.operation_id)",
-                        ),
-                        ORBIT_CERTIFICATE_RUN_ID: expr("run.id"),
-                        ORBIT_CERTIFICATE_MODE: "batch",
-                        ORBIT_CERTIFICATE_REQUESTS: expr(
-                            `steps["${signInput}"].outputs.requests_json`,
-                        ),
-                    },
-                },
-            },
-        }, {
-            name: sign,
-            writes: true,
-            target: "orbit-node-209",
-
-            guard: signingGuard,
-            dependsOn: [{ step: signHttp, condition: { type: "succeeded" } }],
-            task: {
-                type: "behavior",
-                behaviorType: "@nckrtl/certificates",
-                behaviorName: expr('"certificate-batch-" + run.id'),
-                methodName: "signBatch",
-                inputs: {
-                    ...args,
-                    leaves: expr(leaves),
-                    requests: expr(requests),
-                    native_stdout: expr(`steps["${signHttp}"].outputs.stdout`),
-                },
-            },
-        }],
-    }, {
-        name: `${prefix}_publish_job`,
-        dependsOn: [dependency(`${sign}_job`)],
-        steps: [{
             name: publish + expr(key("self.leaf")),
-            writes: true,
-            ...placed,
+            target: "orbit-node-209",
+            forEach: { item: "leaf", in: expr(leaves) },
             ...guard,
-            task: certificateTask("rolePublish", {
-                request: expr(requestFor("self.leaf")),
-                signed: expr(signature),
-            }),
+            task: {
+                type: "workflow",
+                workflowIdOrName: "node-role-certificate-publish",
+                inputs: {
+                    operation_id: expr("inputs.operation_id"),
+                    node_id: expr("inputs.node_id"),
+                    kind: expr("inputs.kind"),
+                    parent_run_id: expr("run.id"),
+                    leaf: expr("self.leaf"),
+                    ssh,
+                },
+            },
         }],
     }, {
         name: `${prefix}_record_job`,

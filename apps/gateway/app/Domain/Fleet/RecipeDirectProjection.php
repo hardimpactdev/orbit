@@ -8,6 +8,8 @@ use App\Domain\Nodes\NodeFootprintProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\TaskVmImageBuild;
@@ -23,7 +25,15 @@ final readonly class RecipeDirectProjection implements DirectOperationProjection
         $input = $operation->input;
         unset($input['secret_hash']);
 
-        return $input;
+        $node = Node::query()->findOrFail($operation->node_id);
+        $hash = $node->agent_secret_hash;
+        if (! is_string($hash) || preg_match('/\A[a-f0-9]{64}\z/D', $hash) !== 1) {
+            throw new ResourceOperationException('node.agent_identity_missing', 'Recipe convergence requires the existing observer identity.', 409);
+        }
+
+        return ['intent' => $input, 'execution_secrets' => ['observer' => app(SwampCommandStep::class)->executionCopy(
+            'orbit-control-inputs', 'recipe-operation-'.$operation->id.'-observer', $hash,
+        )]];
     }
 
     public function apply(Operation $operation, array $data): Operation

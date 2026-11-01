@@ -1,0 +1,20 @@
+manifestVersion: 1
+name: '@nckrtl/fleet-recipe-command'
+version: 2026.11.01.1
+visibility: private
+license: MIT
+description: Shared signed recipe policies and single-action host programs.
+behaviors:
+  - operations/fleet-recipe/assets.ts
+  - operations/fleet-recipe/node_role.ts
+  - operations/fleet-recipe/node_converge.ts
+  - operations/fleet-recipe/observer_assets.ts
+  - operations/fleet-recipe/fleet_release.ts
+additionalFiles:
+  - scripts/recipe.py
+  - scripts/php_runtime.py
+  - scripts/footprint.py
+  - scripts/cli.py
+  - scripts/file.py
+  - scripts/observer_identity.py
+  - scripts/observer_checkout.py

@@ -4,7 +4,7 @@ import {
   assertRejects,
   assertThrows,
 } from "jsr:@std/assert@1";
-import { nodeConverge } from "./converge_direct.ts";
+import { nodeConverge } from "../fleet-recipe/node_converge.ts";
 import { Args, Snapshot, Stage } from "./converge_direct_contract.ts";
 import {
   footprintActions,
@@ -55,6 +55,7 @@ function fixture() {
     return Promise.resolve({ status: 200, body: { data: current } });
   };
   const context = {
+    extensionFile: (path:string) => new URL("../fleet-recipe/"+path,import.meta.url).pathname,
     globalArgs: { gatewayUrl: "https://gateway.orbit", caFile: "/tmp/test-ca" },
     writeResource: (_s: string, _n: string, v: unknown) => {
       writes.push(v);

@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     Action,
+    discoverProvider,
     observation,
     ProviderInput,
     ProviderReceipt,
@@ -14,8 +15,13 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/task-vm-lifecycle-input",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     resources: {
+        provider_input: {
+            schema: z.object({ intent: ProviderInput, input_json: z.string() }),
+            lifetime: "infinite",
+            garbageCollection: 10,
+        },
         ssh_assets: {
             schema: z.object({ script_body: z.string() }),
             lifetime: "1d",
@@ -47,6 +53,40 @@ export const behavior = {
         },
     },
     methods: {
+        discover: {
+            description:
+                "Resolve the exact labelled UpCloud VM after an uncertain create",
+            arguments: z.object({
+                intent: ProviderInput,
+                stdout: z.string(),
+                action: Action,
+            }),
+            async execute(
+                args: {
+                    intent: unknown;
+                    stdout: string;
+                    action: z.infer<typeof Action>;
+                },
+                ctx: Context,
+            ) {
+                const intent = discoverProvider(args.intent, args.stdout);
+                return {
+                    dataHandles: [
+                        await ctx.writeResource(
+                            "provider_input",
+                            "provider_input",
+                            {
+                                intent,
+                                input_json: JSON.stringify({
+                                    ...intent,
+                                    action: args.action,
+                                }),
+                            },
+                        ),
+                    ],
+                };
+            },
+        },
         ssh_firewall: {
             description: "Resolve the fixed TaskVM SSH firewall script",
             arguments: z.object({}).strict(),

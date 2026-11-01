@@ -60,17 +60,15 @@ final readonly class TaskVmSettings
         $enabled = ($config['enabled'] ?? null) === true;
         $swampHost = self::caddySwampHost();
         $range = TaskVmConfig::wireguardRange($config['wireguard_range'] ?? null);
-        $clusterId = TaskVmConfig::filled($config['dev_cluster_id'] ?? null);
+        $clusterId = self::devClusterId();
         $origin = TaskVmConfig::filled($config['model_proxy_origin'] ?? null);
-        $scalars = TaskVmConfig::validate(['dev_cluster_id' => $clusterId, 'model_proxy_origin' => $origin], [
-            'dev_cluster_id' => $clusterId === null ? [] : ['required', 'integer', 'min:1'],
+        TaskVmConfig::validate(['model_proxy_origin' => $origin], [
             'model_proxy_origin' => $origin === null ? [] : ['required', 'string', static function (string $attribute, mixed $value, Closure $fail): void {
                 if (self::origin($value) === null) {
                     $fail('model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.');
                 }
             }],
         ], [
-            'dev_cluster_id' => 'dev_cluster_id must be a Cluster id.',
             'model_proxy_origin' => 'model_proxy_origin must be an http(s) origin, for example http://10.44.0.3:8317.',
         ]);
 
@@ -128,7 +126,7 @@ final readonly class TaskVmSettings
 
         return new self(
             enabled: $enabled,
-            devClusterId: $clusterId === null ? null : $scalars->integer('dev_cluster_id'),
+            devClusterId: $clusterId,
             wireguardRange: $range->value(),
             hosts: $hosts,
             modelProxyOrigin: self::origin($origin),
@@ -141,6 +139,19 @@ final readonly class TaskVmSettings
             topologyPaths: $topology,
             swampHost: $swampHost,
         );
+    }
+
+    /** Read the canonical Cluster setting without validating unrelated image configuration. */
+    public static function devClusterId(): ?int
+    {
+        $value = TaskVmConfig::filled(Config::get('task_vms.dev_cluster_id'));
+        if ($value === null) {
+            return null;
+        }
+
+        return TaskVmConfig::validate(['dev_cluster_id' => $value], [
+            'dev_cluster_id' => ['required', 'integer', 'min:1'],
+        ], ['dev_cluster_id' => 'dev_cluster_id must be a Cluster id.'])->integer('dev_cluster_id');
     }
 
     /**

@@ -47,7 +47,6 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
@@ -534,98 +533,6 @@ describe('placement', function (): void {
             ->and(app(TaskVmProvider::class))->toBeInstanceOf(TaskVmProviders::class);
     });
 
-    it('creates one server from the newest verified template with the pinned host key and one public IPv4 interface', function (): void {
-        $this->upcloud->template('orbit-task-base-20261010000000');
-        $current = $this->upcloud->template('orbit-task-base-20261011000001', app(RecipeImageBuilds::class)->currentRecipe()->identity);
-        $this->upcloud->template('orbit-task-base-20261012000000-unverified');
-        $vm = tvm_up_vm();
-
-        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
-        $vm->refresh();
-
-        $request = $this->upcloud->created[0];
-        $userData = json_decode(substr($request['user_data'], 14), true);
-        expect($this->upcloud->created)->toHaveCount(1)
-            ->and($request['title'])->toBe($vm->name)
-            ->and($request['hostname'])->toBe($vm->name)
-            ->and($request['labels'])->toBe(['label' => [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]])
-            ->and($request['networking'])->toBe(['interfaces' => ['interface' => [['type' => 'public', 'ip_addresses' => ['ip_address' => [['family' => 'IPv4']]]]]]])
-            ->and($request['storage_devices']['storage_device'][0])->toMatchArray(['action' => 'clone', 'storage' => $current, 'size' => 30, 'tier' => 'standard'])
-            ->and($request)->toMatchArray(['zone' => 'nl-ams1', 'plan' => 'STARTER-2xCPU-4GB', 'metadata' => 'yes', 'remote_access_enabled' => 'no'])
-            ->and($request['login_user'])->toBe(['username' => 'root', 'ssh_keys' => ['ssh_key' => [TVM_UP_GATEWAY_KEY]]])
-            ->and($userData['users'][0]['ssh_authorized_keys'])->toBe(['ssh-ed25519 AAAA gateway'])
-            ->and($userData['disable_root'])->toBeTrue()
-            ->and($userData['ssh_keys']['ed25519_public'])->toBe($vm->ssh_host_key)
-            ->and($userData['ssh_keys']['ed25519_private'])->toContain('BEGIN OPENSSH PRIVATE KEY')
-            ->and($vm->provider_id)->toBe(array_key_first($this->upcloud->servers))
-            ->and($this->upcloud->servers[$vm->provider_id]['state'])->toBe('started');
-
-        // The pinned fingerprint is the one ssh-keygen reads from the key.
-        $file = tempnam(sys_get_temp_dir(), 'pub');
-        file_put_contents($file, $vm->ssh_host_key);
-        $listed = Process::run(['ssh-keygen', '-l', '-E', 'sha256', '-f', $file])->output();
-        unlink($file);
-        expect($listed)->toContain(app(UpCloudTaskVmProvider::class)->sshHostFingerprint($vm).' ');
-    });
-
-    it('launches an existing allocation from its recorded UUID even when a newer template has the same recipe', function (): void {
-        $identity = 'sha256:'.str_repeat('a', 64);
-        $template = $this->upcloud->template('orbit-task-base-20261010000000', $identity);
-        $vm = tvm_up_vm();
-        $vm->update(['recipe_identity' => $identity, 'image_fingerprint' => $template]);
-        $this->upcloud->template('orbit-task-base-20261012000000', $identity);
-
-        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
-
-        expect($this->upcloud->created[0]['storage_devices']['storage_device'][0]['storage'])->toBe($template)
-            ->and($vm->refresh()->recipe_identity)->toBe($identity);
-    });
-
-    it('finds a server whose create answer was lost and never sends a second create', function (): void {
-        $this->upcloud->template('orbit-task-base-20261011000000');
-        $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
-        $uuid = $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]], 'stopped');
-
-        app(UpCloudTaskVmProvider::class)->create($vm, 'ssh-ed25519 AAAA gateway');
-
-        expect($this->upcloud->created)->toBe([])
-            ->and($vm->refresh()->provider_id)->toBe($uuid)
-            ->and($vm->ssh_host_key)->toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey')
-            ->and($this->upcloud->count("POST server/{$uuid}/start"))->toBe(1);
-    });
-
-    it('refuses a create while the account runs max_vms task VM servers, also lost ones', function (): void {
-        $this->upcloud->template('orbit-task-base-20261011000000');
-        $this->upcloud->server('tvm-901', [['key' => 'orbit-task-vm', 'value' => '901']]);
-        $this->upcloud->server('tvm-902', [['key' => 'orbit-task-vm', 'value' => '902']]);
-        $this->upcloud->server('web', [['key' => 'other', 'value' => 'x']]);
-
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))
-            ->toThrow(TaskVmException::class, 'UpCloud already runs 2 task VM servers, the limit of 2.')
-            ->and($this->upcloud->created)->toBe([]);
-    });
-
-    it('gives the disk the storage tier of the plan, none for a plan without storage, and refuses an unknown plan', function (): void {
-        $this->upcloud->template('orbit-task-base-20261011000000', app(RecipeImageBuilds::class)->currentRecipe()->identity);
-        tvm_up_settings(['plan' => 'CLOUDNATIVE-2xCPU-4GB']);
-        app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway');
-
-        expect($this->upcloud->created[0]['storage_devices']['storage_device'][0])->not->toHaveKey('tier');
-
-        tvm_up_settings(['plan' => '2xCPU-4GB']);
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))->toThrow(TaskVmException::class, 'UpCloud lists no such plan')
-            ->and($this->upcloud->created)->toHaveCount(1);
-    });
-
-    it('refuses a create without a verified template', function (): void {
-        $this->upcloud->storages = [];
-        $this->upcloud->template('orbit-task-base-20261012000000-unverified');
-
-        expect(fn () => app(UpCloudTaskVmProvider::class)->create(tvm_up_vm(), 'ssh-ed25519 AAAA gateway'))
-            ->toThrow(TaskVmException::class, 'task-vms:build-upcloud-image')
-            ->and($this->upcloud->created)->toBe([]);
-    });
-
     it('reads readiness over the guest connection with the recorded pinned key', function (): void {
         $vm = tvm_up_vm(hostKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKey');
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
@@ -645,25 +552,6 @@ describe('placement', function (): void {
         $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]], $state);
         expect(app(UpCloudTaskVmProvider::class)->observe($vm))->settled->toBeFalse();
     })->with(['maintenance', 'error']);
-
-    it('stops a server cleanly for a park and deletes it with its disk on destroy', function (): void {
-        $vm = tvm_up_vm(TaskVmState::Ready);
-        $uuid = $this->upcloud->server($vm->name, [['key' => 'orbit-task-vm', 'value' => (string) $vm->id]]);
-        $provider = app(UpCloudTaskVmProvider::class);
-
-        $provider->stop($vm);
-        expect($this->upcloud->servers[$uuid]['stop_type'])->toBe('soft');
-
-        $provider->start($vm);
-        expect($this->upcloud->servers[$uuid]['state'])->toBe('started');
-
-        $provider->destroy($vm->refresh());
-        $provider->destroy($vm);
-
-        expect($this->upcloud->servers)->toBe([])
-            ->and($this->upcloud->count("DELETE server/{$uuid}?storages=1"))->toBe(1)
-            ->and($provider->observe($vm))->toBeNull();
-    });
 
     it('reads the label of a server that the list shows without labels', function (): void {
         $this->upcloud->listWithoutLabels = true;
