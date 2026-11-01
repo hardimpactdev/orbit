@@ -55,11 +55,7 @@ jobs:
     steps:
       - name: assets
         target: orbit-node-209
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/REPLACE_KIND-assets'
-          behaviorName: '${{ "assets-" + run.id }}'
-          methodName: read
+        task: {type: behavior, behaviorType: '@nckrtl/REPLACE_KIND-assets', behaviorName: '${{ "assets-" + run.id }}', methodName: read}
       - name: action
         target: orbit-node-209
         dependsOn: [{step: assets, condition: {type: succeeded}}]
@@ -124,13 +120,15 @@ The execution plan (`PLAN.md` on beast, F8) requires a budget for every kind. A 
 | Run budget | Set it from the measured p95 with headroom, not a guess. PLAN sets the `instance.create` policy: under 10 s, budget 60 s. That is a target, not measured proof. |
 | Enforcement | Serve `max-run-duration` caps runs at the longest legitimate kind; the extensions lane sets it. At the kind budget the Gateway marks `operation.timed_out` and cancels (decision 4). Add no family timer or poller. |
 | Phase timeout | Each phase script runs under coreutils `timeout <phase budget>`, inside `run:` or as the first `@swamp/ssh` `argv` items. |
-| `queueTimeout` | Every step gets one, so it fails fast when no worker is free. Set it on the workflow so every step inherits it. Guide rule 6 follows F8 here. |
+| `queueTimeout` | Every step gets one, so it fails fast when no worker is free (guide rule 6). A workflow-level value is inherited by every step. Keep it below the run budget. |
 
 ## Prove the kind (F10)
 
 A kind whose behavior changes merges only with a receipt from `bin/swamp-proof <kind>`. It creates two disposable task VMs on shark. The control VM runs pinned official Swamp and official extensions with a throwaway datastore and vault, and loads the PR branch's `swamp/`. The target VM plays the Node and is reached over `@swamp/ssh`, as 209 reaches Nodes. The command runs the kind with real intent inputs, runs the F9 parity tests, measures phase timings against F8, writes the receipt to the PR and destroys both VMs.
 
 A proof that loads `swamp/` into production serve or logs in to 209 is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration changes behavior, even when the PR title says "retire" (#2257, #2259). Only deletion, docs and test PRs fix forward. A PR that fixes a live user-facing outage may merge without a receipt if it says so; the extensions lane then proves it live right after the load.
+
+Each kind adds `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`; until lane 25 commits it, `designs/swamp-proof-fixture-v0.md` on beast). Copy `envelope` from a real Gateway admission and bind only environment values, such as `${proof.target.host_keys}`. List throwaway `secrets` for every vault key the run reads, never a real credential. Map each F9 `phases` entry to its native step and phase budget, and point `parity` at the ported legacy tests. `queue_timeout_seconds` equals the workflow's `queueTimeout`.
 
 ## Keep steps few
 
@@ -155,6 +153,7 @@ Put each test where its project's CI runs it.
 | `swamp/tests` script tests | Each shipped script file directly, plus shellcheck or ruff. |
 | Parity tests ported from the legacy feature tests | Every legacy case, including edge cases, gives the same public result natively. |
 | A generator drift test, when a generator writes the workflow | The committed YAML equals the generator output. Generate readable YAML, not JSON in YAML behind `deno-fmt-ignore`. |
+| `swamp/proof/<kind>.json` | The F10 fixture: envelope, throwaway secrets, target setup, expected result, F9 phases with budgets, and the parity command. |
 
 ## Check all seven boundary decisions
 
@@ -239,7 +238,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | #2259 | Name each `forEach` model from `self._index`, give `@swamp/ssh` `globalArgs.name` the same expression, and stay within 64 characters. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
 | #2273 instance create | Op 6639 took 957 s for 4.6 s of SSH work: keep steps few. PHP encodes an empty map as `[]`: encode empty input maps as objects. |
-| PLAN F10 (A, 2026-11-01) | `bin/swamp-proof` runs the kind on two shark task VMs with throwaway Swamp state; no production serve, no 209 login. Live-outage fixes merge first and get a live proof. |
+| PLAN F10 (A, 2026-11-01) | `bin/swamp-proof` runs `swamp/proof/<kind>.json` on two shark task VMs with throwaway Swamp state; no production serve, no 209 login. Live-outage fixes get a live proof after merge. |
 | PLAN F9 | The legacy Gateway sequence is the spec: one legacy phase per script-file step, edge cases carried over, legacy feature tests as parity tests. |
 | PLAN F8 (rewritten) | Measured p95 and budget per kind; serve `max-run-duration` ceiling, `queueTimeout` on every step, coreutils `timeout` per phase script, Gateway `operation.timed_out` at the kind budget. |
 | v1 check and conformance ledger | Swamp has no step retry key. Copy placement from `firewall.inspect`. Placement, model names, embedded scripts, many-action behaviors and callbacks are the top defects. |

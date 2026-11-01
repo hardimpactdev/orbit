@@ -44,6 +44,7 @@ Copy the workflow and Gateway declaration from the [template](../../../docs/swam
 - Report Orbit app and test net lines and Swamp lines separately.
 - State the measured p95, its sample, the run budget and `queueTimeout` in the PR body.
 - F10: a kind whose behavior changes attaches a receipt from `bin/swamp-proof <kind>`. It runs the kind on two disposable shark task VMs: a control VM with pinned official Swamp, a throwaway datastore and vault and the PR branch's `swamp/`, and a target VM reached over `@swamp/ssh`. It runs the F9 parity tests and checks the F8 budget. A proof through production serve or a 209 login is not a receipt. Any change under `swamp/workflows/`, to a grant or to a declaration counts as a behavior change. A live-outage fix may merge first if it says so; the extensions lane proves it live after the load.
+- F10 fixture: add `swamp/proof/<kind>.json` in fixture format v0 (`swamp/proof/README.md`, or `designs/swamp-proof-fixture-v0.md` on beast until it lands). Take `envelope` from a real Gateway admission, bind only environment values, use throwaway `secrets`, map F9 `phases` to steps with budgets, and point `parity` at the ported legacy tests.
 
 ## Review a kind PR
 
