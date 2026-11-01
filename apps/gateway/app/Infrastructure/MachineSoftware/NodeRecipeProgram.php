@@ -26,14 +26,28 @@ final readonly class NodeRecipeProgram
     /** @return array<string, ToolPin> */
     public function tools(Node $node, MachineRecipe $recipe): array
     {
-        $architecture = self::architecture($node);
+        self::architecture($node);
         $node->load('roles');
-        $names = $node->roles->isEmpty() ? $recipe->profile('operator', $architecture) : [];
         foreach ($node->roles as $role) {
             if ($role->status !== LifecycleStatus::Active) {
                 throw new ResourceOperationException('node.recipe_role_inactive', 'Every assigned role must be active before recipe convergence.', 409);
             }
-            $names = [...$names, ...$recipe->profile($role->role->value, $architecture)];
+        }
+
+        return $this->toolsForRoles($node, $recipe, array_values($node->roles->map(static fn ($role): RoleName => $role->role)->all()));
+    }
+
+    /** Public selection for roles already admitted by their owning parent.
+     *
+     * @param  list<RoleName>  $roles
+     * @return array<string,ToolPin>
+     */
+    public function toolsForRoles(Node $node, MachineRecipe $recipe, array $roles): array
+    {
+        $architecture = self::architecture($node);
+        $names = $roles === [] ? $recipe->profile('operator', $architecture) : [];
+        foreach ($roles as $role) {
+            $names = [...$names, ...$recipe->profile($role->value, $architecture)];
         }
         if (is_array($node->settings['task_vms'] ?? null)) {
             $names = [...$names, ...RecipeLoader::IncusPackages];

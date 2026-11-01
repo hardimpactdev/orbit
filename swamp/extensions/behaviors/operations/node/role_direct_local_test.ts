@@ -61,12 +61,22 @@ Deno.test("role prerequisites use the actual account and canonical system progra
     const calls: SystemCommand[] = [];
     const inputs: Record<string, unknown>[] = [];
     const run = roleBaseline(fake(calls), {
-        program: (_program, input) => {
+        program: (program, input) => {
+            assertEquals(program.includes("def prerequisites(data):"), true);
             inputs.push(input);
             return Promise.resolve({});
         },
     });
-    assertEquals(await run(snapshot(), "prerequisites"), { ok: true });
+    const source = await Deno.readTextFile(
+        new URL(
+            "../fleet-recipe/scripts/role_prerequisites.py",
+            import.meta.url,
+        ),
+    );
+    assertEquals(
+        await run(snapshot(), "prerequisites", undefined, undefined, source),
+        { ok: true },
+    );
     assertEquals(calls.length, 1);
     assertEquals(inputs, [{
         name: "role.install-prerequisites",
@@ -124,10 +134,19 @@ Deno.test("absent accounts and prerequisite failures return only safe domain cod
         program: () =>
             Promise.resolve({ error_code: "role.prerequisite_failed" }),
     });
-    assertEquals(await run(snapshot(), "prerequisites"), {
-        ok: false,
-        error_code: "role.prerequisite_failed",
-    });
+    const source = await Deno.readTextFile(
+        new URL(
+            "../fleet-recipe/scripts/role_prerequisites.py",
+            import.meta.url,
+        ),
+    );
+    assertEquals(
+        await run(snapshot(), "prerequisites", undefined, undefined, source),
+        {
+            ok: false,
+            error_code: "role.prerequisite_failed",
+        },
+    );
 });
 Deno.test("CI and firewall stages compose canonical system actions", async () => {
     const effects: string[] = [];

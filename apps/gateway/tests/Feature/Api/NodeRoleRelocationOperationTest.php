@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Nodes\NodeRoleDirectProjection;
+use App\Domain\Nodes\NodeRoleParentProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -12,7 +12,9 @@ use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Settings\SettingValueProtection;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
+use App\Infrastructure\AgentView\WebSocketClient;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\Fleet\FleetFixtures;
 
 beforeEach(function (): void {
@@ -32,12 +34,16 @@ beforeEach(function (): void {
     FleetFixtures::node('relocation-gateway', [RoleName::Gateway]);
     $this->source = FleetFixtures::node('relocation-source', [RoleName::WebSocket]);
     $this->target = FleetFixtures::node('relocation-target');
-    $this->target->update(['agent_secret_hash' => str_repeat('e', 64)]);
+    $this->target->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
     config(['swamp_workers.nodes' => [$this->source->id, $this->target->id]]);
     app(NodeRoleRuntimeInput::class)->prepare($this->source, $this->source->roles()->sole());
     $agents = Mockery::mock(AgentCommandRunner::class);
     $agents->shouldNotReceive('run', 'install');
     app()->instance(AgentCommandRunner::class, $agents);
+    config(['swamp.run_token' => 'fixture.run']);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = fn (array $sent): array => [['type' => 'vault.put', 'id' => $sent['id'], 'payload' => ['data' => ['vaultName' => $sent['payload']['vaultName'], 'secretKey' => $sent['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
     DB::beginTransaction();
 });
 afterEach(function (): void {
@@ -63,7 +69,7 @@ it('copies source credentials without replacing an existing destination credenti
         ->and($this->target->roles()->sole()->id)->toBe($assignmentId)
         ->and($settings->get($source, $key))->toBe('source-private')
         ->and($settings->get($target, $key))->toBe($existing ?? 'source-private')
-        ->and($operation->input['_relocate']['withdrawal_grace_seconds'])->toBe(31)
+        ->and($operation->input['intent']['withdrawal_grace_seconds'])->toBe(31)
         ->and($operation->input['participant_node_ids'])->toContain($this->source->id, $this->target->id);
 })->with([null, 'existing-target-private']);
 
@@ -71,11 +77,11 @@ it('retains source credentials on failure and deletes only those credentials aft
     $operation = app(AdmitNodeRoleOperationAction::class)->relocate($this->target, RoleName::WebSocket, true);
     $run = '405c68f5-e089-46db-bbeb-03a458b1c6c4';
     $operation->update(['state' => [...$operation->state, 'swamp_run_id' => $run]]);
-    app(NodeRoleDirectProjection::class)->apply($operation, [
-        'run_id' => $run, 'status' => $completed ? 'running' : 'failed',
+    app(NodeRoleParentProjection::class)->apply($operation, [
+        'run_id' => $run, 'status' => $completed ? 'succeeded' : 'failed',
         'started_at' => '2026-10-31T10:30:00Z', 'finished_at' => '2026-10-31T10:31:00Z',
         'error_code' => $completed ? null : 'node_role.runtime_failed',
-        'result' => $completed ? ['source_completed' => true] : ['error_code' => 'node_role.runtime_failed'],
+        'result' => ['source_completed' => $completed, 'target_completed' => $completed, 'target' => ['role_proven' => $completed, 'runtime_proven' => $completed, 'certificates_proven' => $completed, 'publication_proven' => $completed, 'footprint' => ['footprint_proven' => true, 'artifacts' => []], 'cli' => ['outcome' => 'skipped']], 'error_code' => 'node_role.runtime_failed'],
     ]);
     $settings = app(SettingRepository::class);
     $key = 'websocket.reverb.laravel_app_key';

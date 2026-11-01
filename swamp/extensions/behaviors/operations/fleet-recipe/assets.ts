@@ -59,6 +59,8 @@ const Action = z.enum([
     "dns-validate",
     "dns-restore",
     "tmpfiles",
+    "role-prerequisites",
+    "caddy-ordering",
 ]);
 const Read = z.object({
     action: Action,
@@ -213,7 +215,7 @@ export function publicResult(raw: z.infer<typeof ResultArgs>) {
 }
 export const behavior = {
     type: "@nckrtl/fleet-recipe-command",
-    version: "2026.11.01.1",
+    version: "2026.11.01.4",
     resources: {
         assets: {
             schema: z.object({ script_body: z.string() }),
@@ -298,7 +300,11 @@ export const behavior = {
                         "dns-restore",
                     ].includes(a.action),
                     php = ["php-runtime", "php-pools"].includes(a.action);
-                const file = footprint
+                const file = a.action === "role-prerequisites"
+                    ? "role_prerequisites.py"
+                    : a.action === "caddy-ordering"
+                    ? "caddy_ordering.py"
+                    : footprint
                     ? "footprint.py"
                     : php
                     ? "php_runtime.py"
@@ -352,7 +358,12 @@ export const behavior = {
                     : "";
                 const result = {
                     script_body: 'import sys\nsys.argv=["recipe",' +
-                        JSON.stringify(command) + "]\n" + check + source,
+                        JSON.stringify(command) + "]\n" + check + source +
+                        (a.action === "role-prerequisites"
+                            ? '\nif result.get("error_code"):\n    sys.exit(1)\n'
+                            : a.action === "caddy-ordering"
+                            ? '\nresult=main()\nif not result.get("completed"):\n    sys.exit(1)\n'
+                            : ""),
                 };
                 await ctx.writeResource("assets", "assets", result);
                 return result;

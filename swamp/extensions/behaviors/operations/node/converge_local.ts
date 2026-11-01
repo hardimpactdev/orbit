@@ -160,7 +160,7 @@ export async function publishDns(
 async function cleanResidue(
     snapshot: Snapshot,
     signal?: AbortSignal,
-    scripts?: { php: string; footprint: string },
+    scripts?: { php: string; footprint: string; preparation?: string },
 ) {
     const program = async (
         source: string,
@@ -200,7 +200,7 @@ async function cleanResidue(
 }
 
 export function convergeDependencies(
-    scripts?: { php: string; footprint: string },
+    scripts?: { php: string; footprint: string; preparation?: string },
 ): LocalDependencies {
     return {
         system: localSystemCommand,

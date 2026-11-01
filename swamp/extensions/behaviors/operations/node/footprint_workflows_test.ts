@@ -5,6 +5,7 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import {
     footprintWorkflow,
     generatedFootprintWorkflows,
+    retainedRoleConvergeWorkflow,
 } from "./footprint_workflows.ts";
 
 type Job = {
@@ -23,15 +24,11 @@ type Job = {
 Deno.test("checked-in footprint DAGs match their single template", async () => {
     for (const { path, text } of generatedFootprintWorkflows()) {
         assertEquals(await Deno.readTextFile(path), text);
-        const role = true;
         assertEquals(
             parse(text),
             path.pathname.endsWith("node-role-remove-direct.yaml")
                 ? roleRemovalWorkflow()
-                : footprintWorkflow(
-                    role,
-                    path.pathname.endsWith("node-role-relocate-direct.yaml"),
-                ),
+                : retainedRoleConvergeWorkflow(),
         );
     }
 });

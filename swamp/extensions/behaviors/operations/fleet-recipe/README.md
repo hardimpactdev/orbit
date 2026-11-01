@@ -13,3 +13,18 @@ Only the observer identity hash has an execution copy. Its exact positive-ID key
 Source checks use the frozen official runtime in an isolated local repository. SSH fixtures never contact Nodes. Live publication, grants and any 12-Node rollout remain separate owner actions.
 
 Private DNS validates a staged snapshot before file publication. Native steps activate the listener and check one DNS answer plus its loaded catalog digest. Known activation failures restore the captured prior data and service state; compensation may finish after the maintenance window closes.
+
+`role_prerequisites.py` is the single Caddy-package and role-prerequisite policy.
+Both retained Node provisioning and native role contributions receive these
+bytes through the Fleet manifest context. The optional `install_packages=false`
+mode requires parent-verified package coverage and still checks the managed
+account and Composer scope before creating directories. It does not run APT.
+
+The shared Caddy VPN ordering action is shipped as `caddy_ordering.py`.
+Retained Gateway roles and native application roles consume the same filesystem
+checks, systemd drop-in and recovery policy.
+
+The ordering action performs one ownership check, publication and service
+transaction. Its old host lock and timed wait loop are removed; Swamp owns
+execution ordering. The existing drop-in, directory and service recovery checks
+still apply.

@@ -1,8 +1,11 @@
 # deno-fmt-ignore-file
-# Generated: deno run --allow-read --allow-write extensions/behaviors/operations/node/footprint_workflows.ts
+# Generated from node-role-parent/workflows.ts
 id: 48ce785a-7429-463e-a776-7b5a59bb2961
 name: operation-node-role-relocate-direct
-description: One exact-Node native root; generated from the shared footprint chain.
+vaults:
+  - orbit-control-inputs
+queueTimeout: 30
+target: orbit-node-209
 inputs:
   type: object
   properties:
@@ -15,462 +18,59 @@ inputs:
     kind:
       type: string
       enum: [node.role_relocate]
+    intent:
+      type: object
+    execution_secrets:
+      type: object
+      additionalProperties: {type: object, properties: {vault: {type: string, enum: [orbit-control-inputs]}, key: {type: string, pattern: '^node-role-[0-9]+-(observer|runtime_material)$'}}, required: [vault, key], additionalProperties: false}
   required:
     - operation_id
     - node_id
     - kind
+    - intent
+    - execution_secrets
   additionalProperties: false
-target: '${{ "orbit-node-" + string(inputs.node_id) }}'
 jobs:
-  - name: admission
-    steps:
-      - {name: admit, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: admit, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: agent_install_job
-    dependsOn:
-      - {job: admission, condition: {type: succeeded}}
-    steps:
-      - {name: agent_install, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: agent-install, binary_changed: false}}}
-      - {name: agent_install_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent_install, condition: {type: succeeded}}], task: {type: assert, expr: steps.agent_install.outputs.ok, severity: high, message: The agent-install stage refused its admitted footprint}}
-  - name: caddy_package_job
-    dependsOn:
-      - {job: agent_install_job, condition: {type: succeeded}}
-    steps:
-      - {name: caddy_package, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: caddy-package, binary_changed: false}}}
-      - {name: caddy_package_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy_package, condition: {type: succeeded}}], task: {type: assert, expr: steps.caddy_package.outputs.ok, severity: high, message: The caddy-package stage refused its admitted footprint}}
-  - name: storage_job
-    dependsOn:
-      - {job: caddy_package_job, condition: {type: succeeded}}
-    steps:
-      - {name: storage, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: storage}}}
-      - {name: storage_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: storage, condition: {type: succeeded}}], task: {type: assert, expr: steps.storage.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: prerequisites_job
-    dependsOn:
-      - {job: storage_job, condition: {type: succeeded}}
-    steps:
-      - {name: prerequisites, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: prerequisites}}}
-      - {name: prerequisites_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: prerequisites, condition: {type: succeeded}}], task: {type: assert, expr: steps.prerequisites.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: javascript_job
-    dependsOn:
-      - {job: prerequisites_job, condition: {type: succeeded}}
-    steps:
-      - {name: javascript, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: javascript}}}
-      - {name: javascript_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: javascript, condition: {type: succeeded}}], task: {type: assert, expr: steps.javascript.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: hibernation_job
-    dependsOn:
-      - {job: javascript_job, condition: {type: succeeded}}
-    steps:
-      - {name: hibernation, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: hibernation}}}
-      - {name: hibernation_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: hibernation, condition: {type: succeeded}}], task: {type: assert, expr: steps.hibernation.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: manager_vp_job
-    dependsOn:
-      - {job: hibernation_job, condition: {type: succeeded}}
-    steps:
-      - {name: manager_vp, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: manager-vp}}}
-      - {name: manager_vp_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: manager_vp, condition: {type: succeeded}}], task: {type: assert, expr: steps.manager_vp.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: manager_composer_job
-    dependsOn:
-      - {job: manager_vp_job, condition: {type: succeeded}}
-    steps:
-      - {name: manager_composer, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: manager-composer}}}
-      - {name: manager_composer_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: manager_composer, condition: {type: succeeded}}], task: {type: assert, expr: steps.manager_composer.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: analytics_storage_job
-    dependsOn:
-      - {job: manager_composer_job, condition: {type: succeeded}}
-    steps:
-      - {name: analytics_storage, writes: true, guard: '${{ !steps.admit.outputs.ready }}', target: '${{ "orbit-node-" + string(steps.admit.outputs.snapshot.runtime != null && steps.admit.outputs.snapshot.runtime.role == "analytics" ? steps.admit.outputs.snapshot.runtime.clickhouse.node_id : inputs.node_id) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: analyticsStorage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}'}}}
-  - name: runtime_job
-    dependsOn:
-      - {job: analytics_storage_job, condition: {type: succeeded}}
-    steps:
-      - {name: runtime, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: runtime}}}
-      - {name: runtime_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: runtime, condition: {type: succeeded}}], task: {type: assert, expr: steps.runtime.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: gateway_dns_job
-    dependsOn:
-      - {job: runtime_job, condition: {type: succeeded}}
-    steps:
-      - {name: gateway_dns, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: gateway-dns}}}
-      - {name: gateway_dns_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: gateway_dns, condition: {type: succeeded}}], task: {type: assert, expr: steps.gateway_dns.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: ci_host_job
-    dependsOn:
-      - {job: gateway_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: ci_host, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: ci-host}}}
-      - {name: ci_host_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: ci_host, condition: {type: succeeded}}], task: {type: assert, expr: steps.ci_host.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: firewall_job
-    dependsOn:
-      - {job: ci_host_job, condition: {type: succeeded}}
-    steps:
-      - {name: firewall, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: firewall}}}
-      - {name: firewall_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: firewall, condition: {type: succeeded}}], task: {type: assert, expr: steps.firewall.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: router_lan_job
-    dependsOn:
-      - {job: firewall_job, condition: {type: succeeded}}
-    steps:
-      - {name: router_lan, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: baseline, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}', stage: router-lan}}}
-      - {name: router_lan_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: router_lan, condition: {type: succeeded}}], task: {type: assert, expr: steps.router_lan.outputs.ok, severity: high, message: The role baseline stage refused}}
-  - name: role_metrics_capture_job
-    dependsOn:
-      - {job: router_lan_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_capture, writes: true, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: capture, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: role_metrics_availability_job
-    dependsOn:
-      - {job: role_metrics_capture_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_availability, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: assert, expr: steps.role_metrics_capture.outputs.available, message: metrics.no_worker, severity: high}}
-  - name: role_metrics_snapshot_job
-    dependsOn:
-      - {job: role_metrics_availability_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_snapshot, writes: true, forEach: {item: id, in: '${{ has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) ? steps.role_metrics_capture.outputs.ids : [] }}'}, target: '${{ "orbit-node-" + string(self.id) }}', labels: {node: '${{ string(self.id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(self.id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: snapshot, node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}', metrics_address: '${{ steps.role_metrics_capture.outputs.plan.metrics_address }}'}}}
-      - {name: role_metrics_snapshot_ready, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', dependsOn: [{step: role_metrics_snapshot, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: checkpoint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: snapshot, ready: '${{ steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_snapshot-" + string(id) in steps && "outputs" in steps["role_metrics_snapshot-" + string(id)] && steps["role_metrics_snapshot-" + string(id)].outputs.ok) }}'}}}
-  - name: role_metrics_apply_job
-    dependsOn:
-      - {job: role_metrics_snapshot_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_apply, writes: true, forEach: {item: id, in: '${{ has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) ? steps.role_metrics_capture.outputs.ids : [] }}'}, target: '${{ "orbit-node-" + string(self.id) }}', labels: {node: '${{ string(self.id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(self.id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: apply, node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}', metrics_address: '${{ steps.role_metrics_capture.outputs.plan.metrics_address }}'}}}
-      - {name: role_metrics_apply_ready, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', dependsOn: [{step: role_metrics_apply, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: checkpoint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: apply, ready: '${{ steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_apply-" + string(id) in steps && "outputs" in steps["role_metrics_apply-" + string(id)] && steps["role_metrics_apply-" + string(id)].outputs.ok) }}'}}}
-  - name: role_metrics_service_job
-    dependsOn:
-      - {job: role_metrics_apply_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_service, writes: true, forEach: {item: id, in: '${{ has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) ? steps.role_metrics_capture.outputs.ids : [] }}'}, target: '${{ "orbit-node-" + string(self.id) }}', labels: {node: '${{ string(self.id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(self.id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: service, node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}', metrics_address: '${{ steps.role_metrics_capture.outputs.plan.metrics_address }}'}}}
-      - {name: role_metrics_service_ready, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', dependsOn: [{step: role_metrics_service, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: checkpoint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: service, ready: '${{ steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_service-" + string(id) in steps && "outputs" in steps["role_metrics_service-" + string(id)] && steps["role_metrics_service-" + string(id)].outputs.ok) }}'}}}
-  - name: role_metrics_verify_job
-    dependsOn:
-      - {job: role_metrics_service_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_verify, writes: false, forEach: {item: id, in: '${{ has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) ? steps.role_metrics_capture.outputs.ids : [] }}'}, target: '${{ "orbit-node-" + string(self.id) }}', labels: {node: '${{ string(self.id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(self.id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: verify, node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}', metrics_address: '${{ steps.role_metrics_capture.outputs.plan.metrics_address }}'}}}
-      - {name: role_metrics_verify_ready, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) }}', dependsOn: [{step: role_metrics_verify, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: checkpoint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: verify, ready: '${{ steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_verify-" + string(id) in steps && "outputs" in steps["role_metrics_verify-" + string(id)] && steps["role_metrics_verify-" + string(id)].outputs.ok) }}'}}}
-  - name: role_metrics_runtime_job
-    dependsOn:
-      - {job: role_metrics_verify_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_metrics_runtime, writes: true, target: '${{ "orbit-node-" + string(has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) && steps.role_metrics_capture.outputs.plan != null ? steps.role_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}', labels: {node: '${{ string(has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) && steps.role_metrics_capture.outputs.plan != null ? steps.role_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) || (!(has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs)) || !steps.role_metrics_capture.outputs.runtime_required) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(steps.role_metrics_capture.outputs.plan != null ? steps.role_metrics_capture.outputs.plan.metrics_node_id : inputs.node_id) }}', methodName: runtime, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == steps.role_metrics_capture.outputs.plan.metrics_node_id)[0] }}'}}}
-  - name: role_metrics_restore_job
-    dependsOn:
-      - {job: role_metrics_runtime_job, condition: {type: always}}
-    steps:
-      - {name: role_metrics_restore, writes: true, forEach: {item: id, in: '${{ has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs) ? steps.role_metrics_capture.outputs.ids : [] }}'}, target: '${{ "orbit-node-" + string(self.id) }}', labels: {node: '${{ string(self.id) }}'}, guard: '${{ (!steps.admit.outputs.ready) || (!((!has(steps.role_metrics_runtime) || steps.role_metrics_runtime.status == "skipped" || (has(steps.role_metrics_runtime.outputs) && !steps.role_metrics_runtime.outputs.committed)) && (steps.role_metrics_capture.outputs.runtime_required || !(steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_verify-" + string(id) in steps && "outputs" in steps["role_metrics_verify-" + string(id)] && steps["role_metrics_verify-" + string(id)].outputs.ok))) && "role_metrics_snapshot-" + string(self.id) in steps && "outputs" in steps["role_metrics_snapshot-" + string(self.id)] && steps["role_metrics_snapshot-" + string(self.id)].outputs.ok && "role_metrics_apply-" + string(self.id) in steps && "outputs" in steps["role_metrics_apply-" + string(self.id)] && (!("role_metrics_apply-" + string(self.id) in steps && steps["role_metrics_apply-" + string(self.id)].status == "failed" && !("outputs" in steps["role_metrics_apply-" + string(self.id)])) && !("role_metrics_service-" + string(self.id) in steps && steps["role_metrics_service-" + string(self.id)].status == "failed" && !("outputs" in steps["role_metrics_service-" + string(self.id)]))))) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(self.id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', phase: restore, node: '${{ steps.role_metrics_capture.outputs.plan.fleet.filter(node, node.node_id == self.id)[0] }}', metrics_address: '${{ steps.role_metrics_capture.outputs.plan.metrics_address }}', snapshot: '${{ steps["role_metrics_snapshot-" + string(self.id)].outputs }}'}}}
-  - name: role_metrics_complete_job
-    dependsOn:
-      - {job: role_metrics_restore_job, condition: {type: always}}
-    steps:
-      - {name: role_metrics_complete, writes: true, target: '${{ "orbit-node-" + string(inputs.node_id) }}', labels: {node: '${{ string(inputs.node_id) }}'}, guard: '${{ (!steps.admit.outputs.ready) || (!(has(steps.role_metrics_capture) && has(steps.role_metrics_capture.outputs))) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-metrics', behaviorName: '${{ "node-role-metrics-" + string(inputs.node_id) }}', methodName: complete, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', enabled: '${{ steps.role_metrics_capture.outputs.plan != null }}', ready: '${{ (steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_verify-" + string(id) in steps && "outputs" in steps["role_metrics_verify-" + string(id)] && steps["role_metrics_verify-" + string(id)].outputs.ok)) && (!steps.role_metrics_capture.outputs.runtime_required || (has(steps.role_metrics_runtime) && has(steps.role_metrics_runtime.outputs) && steps.role_metrics_runtime.outputs.ok)) }}', committed: '${{ (has(steps.role_metrics_runtime) && has(steps.role_metrics_runtime.outputs) && steps.role_metrics_runtime.outputs.committed) }}', restored: '${{ steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_restore-" + string(id) in steps && "outputs" in steps["role_metrics_restore-" + string(id)] && steps["role_metrics_restore-" + string(id)].outputs.ok) }}', error_code: '${{ steps.role_metrics_capture.outputs.plan == null || ((steps.role_metrics_capture.outputs.ids.all(id, "role_metrics_verify-" + string(id) in steps && "outputs" in steps["role_metrics_verify-" + string(id)] && steps["role_metrics_verify-" + string(id)].outputs.ok)) && (!steps.role_metrics_capture.outputs.runtime_required || (has(steps.role_metrics_runtime) && has(steps.role_metrics_runtime.outputs) && steps.role_metrics_runtime.outputs.ok))) ? null : (!steps.role_metrics_capture.outputs.available ? "metrics.no_worker" : (has(steps.role_metrics_runtime) && has(steps.role_metrics_runtime.outputs) && has(steps.role_metrics_runtime.outputs.error_code) ? steps.role_metrics_runtime.outputs.error_code : "metrics.fleet_failed")) }}'}}}
-  - name: role_certificates_inventory_job
-    dependsOn:
-      - {job: role_metrics_complete_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_certificates_inventory, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-certificates', behaviorName: '${{ "role-cert-" + run.id }}', methodName: inventory, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: role_certificates_publish_job
-    dependsOn:
-      - {job: role_certificates_inventory_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_certificates_publish_${{ string(self.leaf.node_id) + "_" + self.leaf.scope }}', target: orbit-node-209, forEach: {item: leaf, in: '${{ has(steps.role_certificates_inventory) && has(steps.role_certificates_inventory.outputs) ? steps.role_certificates_inventory.outputs.leaves : [] }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: workflow, workflowIdOrName: node-role-certificate-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', parent_run_id: '${{ run.id }}', leaf: '${{ self.leaf }}', ssh: {name: '${{ "role-certificate-" + run.id + "-" + string(self._index) }}', transport: {kind: ssh, user: '${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.target.user }}', port: '${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.target.port }}', identityFile: '${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.identity_file }}'}, hosts: [{name: target, address: '${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.target.host }}', transport: {hostKeys: '${{ steps.role_certificates_inventory.outputs.connections.filter(c, c.node_id == self.leaf.node_id)[0].ssh.target.host_keys }}'}}]}}}}
-  - name: role_certificates_record_job
-    dependsOn:
-      - {job: role_certificates_publish_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_certificates_record_${{ string(self.participant) }}', writes: true, target: '${{ "orbit-node-" + string(inputs.node_id) }}', forEach: {item: participant, in: '${{ has(steps.role_certificates_inventory) && has(steps.role_certificates_inventory.outputs) ? steps.role_certificates_inventory.outputs.node_ids : [] }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-certificates', behaviorName: '${{ "cert-record-" + run.id + "-" + string(self._index) }}', methodName: record, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: role_certificates_complete_job
-    dependsOn:
-      - {job: role_certificates_record_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_certificates_complete, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-certificates', behaviorName: '${{ "role-cert-" + run.id }}', methodName: complete, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: role_publication_inventory_job
-    dependsOn:
-      - {job: role_certificates_complete_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_publication_inventory, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: inventory, inputs: &ref_0 {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: role_publication_php_job
-    dependsOn:
-      - {job: role_publication_inventory_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_publication_php_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.role_publication_inventory.outputs.php_node_ids.filter(node, node != steps.admit.outputs.snapshot.source_removal.node_id) }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishPhp, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: role_publication_caddy_job
-    dependsOn:
-      - {job: role_publication_php_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_publication_caddy_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.role_publication_inventory.outputs.caddy_node_ids.filter(node, node != steps.admit.outputs.snapshot.source_removal.node_id) }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishCaddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: role_publication_serving_state_job
-    dependsOn:
-      - {job: role_publication_caddy_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_publication_serving_state, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: served, inputs: *ref_0}}
-  - name: role_publication_firewall_job
-    dependsOn:
-      - {job: role_publication_serving_state_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_publication_firewall_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.role_publication_inventory.outputs.caddy_node_ids.filter(node, node != steps.admit.outputs.snapshot.source_removal.node_id) }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishFirewall, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: role_publication_dns_job
-    dependsOn:
-      - {job: role_publication_firewall_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'role_publication_dns_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.role_publication_inventory.outputs.dns_node_ids }}'}, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishDns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: role_publication_complete_job
-    dependsOn:
-      - {job: role_publication_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: role_publication_complete, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: complete, inputs: *ref_0}}
-  - name: prepare_footprint_job
-    dependsOn:
-      - {job: role_publication_complete_job, condition: {type: succeeded}}
-    steps:
-      - {name: prepare_footprint, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: prepareFootprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.admit.outputs }}'}}}
-  - name: caddy_job
-    dependsOn:
-      - {job: prepare_footprint_job, condition: {type: succeeded}}
-    steps:
-      - {name: caddy, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: caddy, binary_changed: false}}}
-      - {name: caddy_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: caddy, condition: {type: succeeded}}], task: {type: assert, expr: steps.caddy.outputs.ok, severity: high, message: The caddy stage refused its admitted footprint}}
-  - name: peer_dns_job
-    dependsOn:
-      - {job: caddy_job, condition: {type: succeeded}}
-    steps:
-      - {name: peer_dns, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: peer-dns, binary_changed: false}}}
-      - {name: peer_dns_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: peer_dns, condition: {type: succeeded}}], task: {type: assert, expr: steps.peer_dns.outputs.ok, severity: high, message: The peer-dns stage refused its admitted footprint}}
-  - name: private_dns_job
-    dependsOn:
-      - {job: peer_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: private_dns, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: private-dns, binary_changed: false}}}
-      - {name: private_dns_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: private_dns, condition: {type: succeeded}}], task: {type: assert, expr: steps.private_dns.outputs.ok, severity: high, message: The private-dns stage refused its admitted footprint}}
-  - name: route_residue_job
-    dependsOn:
-      - {job: private_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: route_residue, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: route-residue, binary_changed: false}}}
-      - {name: route_residue_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: route_residue, condition: {type: succeeded}}], task: {type: assert, expr: steps.route_residue.outputs.ok, severity: high, message: The route-residue stage refused its admitted footprint}}
-  - name: php_runtime_job
-    dependsOn:
-      - {job: route_residue_job, condition: {type: succeeded}}
-    steps:
-      - {name: php_runtime, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: php-runtime, binary_changed: false}}}
-      - {name: php_runtime_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: php_runtime, condition: {type: succeeded}}], task: {type: assert, expr: steps.php_runtime.outputs.ok, severity: high, message: The php-runtime stage refused its admitted footprint}}
-  - name: tmpfiles_job
-    dependsOn:
-      - {job: php_runtime_job, condition: {type: succeeded}}
-    steps:
-      - {name: tmpfiles, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: tmpfiles, binary_changed: false}}}
-      - {name: tmpfiles_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: tmpfiles, condition: {type: succeeded}}], task: {type: assert, expr: steps.tmpfiles.outputs.ok, severity: high, message: The tmpfiles stage refused its admitted footprint}}
-  - name: agent_job
-    dependsOn:
-      - {job: tmpfiles_job, condition: {type: succeeded}}
-    steps:
-      - {name: agent, writes: true, guard: '${{ !steps.admit.outputs.ready }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: footprint, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ steps.prepare_footprint.outputs }}', stage: agent, binary_changed: '${{ has(steps.agent_install) && has(steps.agent_install.outputs) && has(steps.agent_install.outputs.binary_changed) ? steps.agent_install.outputs.binary_changed : false }}'}}}
-      - {name: agent_proven, guard: '${{ !steps.admit.outputs.ready }}', dependsOn: [{step: agent, condition: {type: succeeded}}], task: {type: assert, expr: steps.agent.outputs.ok, severity: high, message: The agent stage refused its admitted footprint}}
-  - name: cli_job
-    dependsOn:
-      - {job: admission, condition: {type: always}}
-      - {job: agent_install_job, condition: {type: always}}
-      - {job: caddy_package_job, condition: {type: always}}
-      - {job: storage_job, condition: {type: always}}
-      - {job: prerequisites_job, condition: {type: always}}
-      - {job: javascript_job, condition: {type: always}}
-      - {job: hibernation_job, condition: {type: always}}
-      - {job: manager_vp_job, condition: {type: always}}
-      - {job: manager_composer_job, condition: {type: always}}
-      - {job: analytics_storage_job, condition: {type: always}}
-      - {job: runtime_job, condition: {type: always}}
-      - {job: gateway_dns_job, condition: {type: always}}
-      - {job: ci_host_job, condition: {type: always}}
-      - {job: firewall_job, condition: {type: always}}
-      - {job: router_lan_job, condition: {type: always}}
-      - {job: role_metrics_capture_job, condition: {type: always}}
-      - {job: role_metrics_availability_job, condition: {type: always}}
-      - {job: role_metrics_snapshot_job, condition: {type: always}}
-      - {job: role_metrics_apply_job, condition: {type: always}}
-      - {job: role_metrics_service_job, condition: {type: always}}
-      - {job: role_metrics_verify_job, condition: {type: always}}
-      - {job: role_metrics_runtime_job, condition: {type: always}}
-      - {job: role_metrics_restore_job, condition: {type: always}}
-      - {job: role_metrics_complete_job, condition: {type: always}}
-      - {job: role_certificates_inventory_job, condition: {type: always}}
-      - {job: role_certificates_publish_job, condition: {type: always}}
-      - {job: role_certificates_record_job, condition: {type: always}}
-      - {job: role_certificates_complete_job, condition: {type: always}}
-      - {job: role_publication_inventory_job, condition: {type: always}}
-      - {job: role_publication_php_job, condition: {type: always}}
-      - {job: role_publication_caddy_job, condition: {type: always}}
-      - {job: role_publication_serving_state_job, condition: {type: always}}
-      - {job: role_publication_firewall_job, condition: {type: always}}
-      - {job: role_publication_dns_job, condition: {type: always}}
-      - {job: role_publication_complete_job, condition: {type: always}}
-      - {job: prepare_footprint_job, condition: {type: always}}
-      - {job: caddy_job, condition: {type: always}}
-      - {job: peer_dns_job, condition: {type: always}}
-      - {job: private_dns_job, condition: {type: always}}
-      - {job: route_residue_job, condition: {type: always}}
-      - {job: php_runtime_job, condition: {type: always}}
-      - {job: tmpfiles_job, condition: {type: always}}
-      - {job: agent_job, condition: {type: always}}
-    steps:
-      - {name: cli, writes: true, guard: '${{ !steps.admit.outputs.ready || !has(steps.storage) || !has(steps.storage.outputs) || !steps.storage.outputs.ok || !has(steps.prerequisites) || !has(steps.prerequisites.outputs) || !steps.prerequisites.outputs.ok || !has(steps.javascript) || !has(steps.javascript.outputs) || !steps.javascript.outputs.ok || !has(steps.hibernation) || !has(steps.hibernation.outputs) || !steps.hibernation.outputs.ok || !has(steps.manager_vp) || !has(steps.manager_vp.outputs) || !steps.manager_vp.outputs.ok || !has(steps.manager_composer) || !has(steps.manager_composer.outputs) || !steps.manager_composer.outputs.ok || !has(steps.runtime) || !has(steps.runtime.outputs) || !steps.runtime.outputs.ok || !has(steps.gateway_dns) || !has(steps.gateway_dns.outputs) || !steps.gateway_dns.outputs.ok || !has(steps.ci_host) || !has(steps.ci_host.outputs) || !steps.ci_host.outputs.ok || !has(steps.firewall) || !has(steps.firewall.outputs) || !steps.firewall.outputs.ok || !has(steps.router_lan) || !has(steps.router_lan.outputs) || !steps.router_lan.outputs.ok }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: cli, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs }}', baseline: '${{ (has(steps.storage) && has(steps.storage.outputs) ? [steps.storage.outputs] : []) + (has(steps.prerequisites) && has(steps.prerequisites.outputs) ? [steps.prerequisites.outputs] : []) + (has(steps.javascript) && has(steps.javascript.outputs) ? [steps.javascript.outputs] : []) + (has(steps.hibernation) && has(steps.hibernation.outputs) ? [steps.hibernation.outputs] : []) + (has(steps.manager_vp) && has(steps.manager_vp.outputs) ? [steps.manager_vp.outputs] : []) + (has(steps.manager_composer) && has(steps.manager_composer.outputs) ? [steps.manager_composer.outputs] : []) + (has(steps.runtime) && has(steps.runtime.outputs) ? [steps.runtime.outputs] : []) + (has(steps.gateway_dns) && has(steps.gateway_dns.outputs) ? [steps.gateway_dns.outputs] : []) + (has(steps.ci_host) && has(steps.ci_host.outputs) ? [steps.ci_host.outputs] : []) + (has(steps.firewall) && has(steps.firewall.outputs) ? [steps.firewall.outputs] : []) + (has(steps.router_lan) && has(steps.router_lan.outputs) ? [steps.router_lan.outputs] : []) }}', footprints: '${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs] : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs] : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns) && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs) ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ? [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs] : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent) && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}'}}}
-  - name: target_ready_job
-    dependsOn:
-      - {job: cli_job, condition: {type: succeeded}}
-    steps:
-      - {name: target_ready, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: targetReady, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs }}', baseline: '${{ (has(steps.storage) && has(steps.storage.outputs) ? [steps.storage.outputs] : []) + (has(steps.prerequisites) && has(steps.prerequisites.outputs) ? [steps.prerequisites.outputs] : []) + (has(steps.javascript) && has(steps.javascript.outputs) ? [steps.javascript.outputs] : []) + (has(steps.hibernation) && has(steps.hibernation.outputs) ? [steps.hibernation.outputs] : []) + (has(steps.manager_vp) && has(steps.manager_vp.outputs) ? [steps.manager_vp.outputs] : []) + (has(steps.manager_composer) && has(steps.manager_composer.outputs) ? [steps.manager_composer.outputs] : []) + (has(steps.runtime) && has(steps.runtime.outputs) ? [steps.runtime.outputs] : []) + (has(steps.gateway_dns) && has(steps.gateway_dns.outputs) ? [steps.gateway_dns.outputs] : []) + (has(steps.ci_host) && has(steps.ci_host.outputs) ? [steps.ci_host.outputs] : []) + (has(steps.firewall) && has(steps.firewall.outputs) ? [steps.firewall.outputs] : []) + (has(steps.router_lan) && has(steps.router_lan.outputs) ? [steps.router_lan.outputs] : []) }}', footprints: '${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs] : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs] : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns) && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs) ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ? [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs] : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent) && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}', dependencies: '${{ {"ready": (has(steps.role_metrics_complete) && has(steps.role_metrics_complete.outputs) ? steps.role_metrics_complete.outputs : null) != null && (has(steps.role_metrics_complete) && has(steps.role_metrics_complete.outputs) ? steps.role_metrics_complete.outputs : null).ready && (has(steps.role_certificates_complete) && has(steps.role_certificates_complete.outputs) ? steps.role_certificates_complete.outputs : null) != null && (has(steps.role_certificates_complete) && has(steps.role_certificates_complete.outputs) ? steps.role_certificates_complete.outputs : null).ready && (has(steps.role_publication_complete) && has(steps.role_publication_complete.outputs) ? steps.role_publication_complete.outputs : null) != null && (has(steps.role_publication_complete) && has(steps.role_publication_complete.outputs) ? steps.role_publication_complete.outputs : null).ready} }}', cli: '${{ has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null }}'}}}
-  - name: source_inventory_job
-    dependsOn:
-      - {job: target_ready_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_inventory, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: inventory, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: source_withdrawal_job
-    dependsOn:
-      - {job: source_inventory_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_withdrawal, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: withdraw, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: source_dns_inventory_job
-    dependsOn:
-      - {job: source_withdrawal_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_dns_inventory, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: inventory, inputs: *ref_0}}
-  - name: source_dns_dns_job
-    dependsOn:
-      - {job: source_dns_inventory_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'source_dns_dns_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_dns_inventory.outputs.dns_node_ids }}'}, task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishDns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: source_dns_complete_job
-    dependsOn:
-      - {job: source_dns_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_dns_complete, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: complete, inputs: *ref_0}}
-  - name: source_grace_job
-    dependsOn:
-      - {job: source_dns_complete_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_grace, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: grace, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: source_publication_inventory_job
-    dependsOn:
-      - {job: source_grace_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_publication_inventory, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: inventory, inputs: *ref_0}}
-  - name: source_publication_php_job
-    dependsOn:
-      - {job: source_publication_inventory_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'source_publication_php_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_publication_inventory.outputs.php_node_ids }}'}, task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishPhp, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: source_publication_caddy_job
-    dependsOn:
-      - {job: source_publication_php_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'source_publication_caddy_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_publication_inventory.outputs.caddy_node_ids }}'}, task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishCaddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: source_publication_serving_state_job
-    dependsOn:
-      - {job: source_publication_caddy_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_publication_serving_state, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: served, inputs: *ref_0}}
-  - name: source_publication_firewall_job
-    dependsOn:
-      - {job: source_publication_serving_state_job, condition: {type: succeeded}}
-    steps:
-      - {name: 'source_publication_firewall_${{ self.participant }}', writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_publication_inventory.outputs.caddy_node_ids }}'}, task: {type: behavior, behaviorType: '@nckrtl/route-publication', behaviorName: '${{ "route-publication-node-" + string(self.participant) }}', methodName: publishFirewall, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', target_node_id: '${{ self.participant }}'}}}
-  - name: source_publication_complete_job
-    dependsOn:
-      - {job: source_publication_firewall_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_publication_complete, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-publication', behaviorName: '${{ "node-role-publication-" + string(inputs.node_id) }}', methodName: complete, inputs: *ref_0}}
-  - name: source_public_ssh_job
-    dependsOn:
-      - {job: source_publication_complete_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_public_ssh, writes: true, target: '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}', labels: {node: '${{ string(steps.source_inventory.outputs.node_id) }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: public-ssh, target_node_id: '${{ steps.source_inventory.outputs.node_id }}'}}}
-  - name: source_runtime_job
-    dependsOn:
-      - {job: source_public_ssh_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_runtime, writes: true, target: '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}', labels: {node: '${{ string(steps.source_inventory.outputs.node_id) }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: runtime, target_node_id: '${{ steps.source_inventory.outputs.node_id }}'}}}
-  - name: source_ci_host_job
-    dependsOn:
-      - {job: source_runtime_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_ci_host, writes: true, target: '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}', labels: {node: '${{ string(steps.source_inventory.outputs.node_id) }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: ci-host, target_node_id: '${{ steps.source_inventory.outputs.node_id }}'}}}
-  - name: source_gateway_dns_job
-    dependsOn:
-      - {job: source_ci_host_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_gateway_dns, writes: true, target: '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}', labels: {node: '${{ string(steps.source_inventory.outputs.node_id) }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: gateway-dns, target_node_id: '${{ steps.source_inventory.outputs.node_id }}'}}}
-  - name: source_firewall_job
-    dependsOn:
-      - {job: source_gateway_dns_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_firewall, writes: true, target: '${{ "orbit-node-" + string(steps.source_inventory.outputs.node_id) }}', labels: {node: '${{ string(steps.source_inventory.outputs.node_id) }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: firewall, target_node_id: '${{ steps.source_inventory.outputs.node_id }}'}}}
-  - name: source_certificates_job
-    dependsOn:
-      - {job: source_firewall_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_certificates, writes: true, target: '${{ "orbit-node-" + string(self.participant) }}', labels: {node: '${{ string(self.participant) }}'}, forEach: {item: participant, in: '${{ steps.source_inventory.outputs.certificate_nodes }}'}, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "cert-remove-" + run.id + "-" + string(self._index) }}', methodName: stage, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', stage: certificates, target_node_id: '${{ self.participant }}'}}}
-  - name: source_complete_job
-    dependsOn:
-      - {job: source_certificates_job, condition: {type: succeeded}}
-    steps:
-      - {name: source_complete, writes: true, task: {type: behavior, behaviorType: '@nckrtl/node-role-removal', behaviorName: '${{ "node-role-removal-" + string(inputs.node_id) }}', methodName: complete, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}'}}}
-  - name: projection
-    dependsOn:
-      - {job: admission, condition: {type: always}}
-      - {job: agent_install_job, condition: {type: always}}
-      - {job: caddy_package_job, condition: {type: always}}
-      - {job: storage_job, condition: {type: always}}
-      - {job: prerequisites_job, condition: {type: always}}
-      - {job: javascript_job, condition: {type: always}}
-      - {job: hibernation_job, condition: {type: always}}
-      - {job: manager_vp_job, condition: {type: always}}
-      - {job: manager_composer_job, condition: {type: always}}
-      - {job: analytics_storage_job, condition: {type: always}}
-      - {job: runtime_job, condition: {type: always}}
-      - {job: gateway_dns_job, condition: {type: always}}
-      - {job: ci_host_job, condition: {type: always}}
-      - {job: firewall_job, condition: {type: always}}
-      - {job: router_lan_job, condition: {type: always}}
-      - {job: role_metrics_capture_job, condition: {type: always}}
-      - {job: role_metrics_availability_job, condition: {type: always}}
-      - {job: role_metrics_snapshot_job, condition: {type: always}}
-      - {job: role_metrics_apply_job, condition: {type: always}}
-      - {job: role_metrics_service_job, condition: {type: always}}
-      - {job: role_metrics_verify_job, condition: {type: always}}
-      - {job: role_metrics_runtime_job, condition: {type: always}}
-      - {job: role_metrics_restore_job, condition: {type: always}}
-      - {job: role_metrics_complete_job, condition: {type: always}}
-      - {job: role_certificates_inventory_job, condition: {type: always}}
-      - {job: role_certificates_publish_job, condition: {type: always}}
-      - {job: role_certificates_record_job, condition: {type: always}}
-      - {job: role_certificates_complete_job, condition: {type: always}}
-      - {job: role_publication_inventory_job, condition: {type: always}}
-      - {job: role_publication_php_job, condition: {type: always}}
-      - {job: role_publication_caddy_job, condition: {type: always}}
-      - {job: role_publication_serving_state_job, condition: {type: always}}
-      - {job: role_publication_firewall_job, condition: {type: always}}
-      - {job: role_publication_dns_job, condition: {type: always}}
-      - {job: role_publication_complete_job, condition: {type: always}}
-      - {job: prepare_footprint_job, condition: {type: always}}
-      - {job: caddy_job, condition: {type: always}}
-      - {job: peer_dns_job, condition: {type: always}}
-      - {job: private_dns_job, condition: {type: always}}
-      - {job: route_residue_job, condition: {type: always}}
-      - {job: php_runtime_job, condition: {type: always}}
-      - {job: tmpfiles_job, condition: {type: always}}
-      - {job: agent_job, condition: {type: always}}
-      - {job: cli_job, condition: {type: always}}
-      - {job: target_ready_job, condition: {type: always}}
-      - {job: source_inventory_job, condition: {type: always}}
-      - {job: source_withdrawal_job, condition: {type: always}}
-      - {job: source_dns_inventory_job, condition: {type: always}}
-      - {job: source_dns_dns_job, condition: {type: always}}
-      - {job: source_dns_complete_job, condition: {type: always}}
-      - {job: source_grace_job, condition: {type: always}}
-      - {job: source_publication_inventory_job, condition: {type: always}}
-      - {job: source_publication_php_job, condition: {type: always}}
-      - {job: source_publication_caddy_job, condition: {type: always}}
-      - {job: source_publication_serving_state_job, condition: {type: always}}
-      - {job: source_publication_firewall_job, condition: {type: always}}
-      - {job: source_publication_complete_job, condition: {type: always}}
-      - {job: source_public_ssh_job, condition: {type: always}}
-      - {job: source_runtime_job, condition: {type: always}}
-      - {job: source_ci_host_job, condition: {type: always}}
-      - {job: source_gateway_dns_job, condition: {type: always}}
-      - {job: source_firewall_job, condition: {type: always}}
-      - {job: source_certificates_job, condition: {type: always}}
-      - {job: source_complete_job, condition: {type: always}}
-    steps:
-      - {name: project, writes: true, guard: '${{ !has(steps.admit) || !has(steps.admit.outputs) }}', task: {type: behavior, behaviorType: '@nckrtl/node-role-add-direct', behaviorName: '${{ "node-role-" + string(inputs.node_id) }}', methodName: project, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', run_id: '${{ run.id }}', admission: '${{ has(steps.prepare_footprint) && has(steps.prepare_footprint.outputs) ? steps.prepare_footprint.outputs : steps.admit.outputs }}', baseline: '${{ (has(steps.storage) && has(steps.storage.outputs) ? [steps.storage.outputs] : []) + (has(steps.prerequisites) && has(steps.prerequisites.outputs) ? [steps.prerequisites.outputs] : []) + (has(steps.javascript) && has(steps.javascript.outputs) ? [steps.javascript.outputs] : []) + (has(steps.hibernation) && has(steps.hibernation.outputs) ? [steps.hibernation.outputs] : []) + (has(steps.manager_vp) && has(steps.manager_vp.outputs) ? [steps.manager_vp.outputs] : []) + (has(steps.manager_composer) && has(steps.manager_composer.outputs) ? [steps.manager_composer.outputs] : []) + (has(steps.runtime) && has(steps.runtime.outputs) ? [steps.runtime.outputs] : []) + (has(steps.gateway_dns) && has(steps.gateway_dns.outputs) ? [steps.gateway_dns.outputs] : []) + (has(steps.ci_host) && has(steps.ci_host.outputs) ? [steps.ci_host.outputs] : []) + (has(steps.firewall) && has(steps.firewall.outputs) ? [steps.firewall.outputs] : []) + (has(steps.router_lan) && has(steps.router_lan.outputs) ? [steps.router_lan.outputs] : []) }}', footprints: '${{ (has(steps.agent_install) && has(steps.agent_install.outputs) ? [steps.agent_install.outputs] : []) + (has(steps.caddy_package) && has(steps.caddy_package.outputs) ? [steps.caddy_package.outputs] : []) + (has(steps.caddy) && has(steps.caddy.outputs) ? [steps.caddy.outputs] : []) + (has(steps.peer_dns) && has(steps.peer_dns.outputs) ? [steps.peer_dns.outputs] : []) + (has(steps.private_dns) && has(steps.private_dns.outputs) ? [steps.private_dns.outputs] : []) + (has(steps.route_residue) && has(steps.route_residue.outputs) ? [steps.route_residue.outputs] : []) + (has(steps.php_runtime) && has(steps.php_runtime.outputs) ? [steps.php_runtime.outputs] : []) + (has(steps.tmpfiles) && has(steps.tmpfiles.outputs) ? [steps.tmpfiles.outputs] : []) + (has(steps.agent) && has(steps.agent.outputs) ? [steps.agent.outputs] : []) }}', cleanup: '${{ has(steps.source_complete) && has(steps.source_complete.outputs) ? steps.source_complete.outputs : null }}', dependencies: '${{ {"ready": (has(steps.role_metrics_complete) && has(steps.role_metrics_complete.outputs) ? steps.role_metrics_complete.outputs : null) != null && (has(steps.role_metrics_complete) && has(steps.role_metrics_complete.outputs) ? steps.role_metrics_complete.outputs : null).ready && (has(steps.role_certificates_complete) && has(steps.role_certificates_complete.outputs) ? steps.role_certificates_complete.outputs : null) != null && (has(steps.role_certificates_complete) && has(steps.role_certificates_complete.outputs) ? steps.role_certificates_complete.outputs : null).ready && (has(steps.role_publication_complete) && has(steps.role_publication_complete.outputs) ? steps.role_publication_complete.outputs : null) != null && (has(steps.role_publication_complete) && has(steps.role_publication_complete.outputs) ? steps.role_publication_complete.outputs : null).ready} }}', cli: '${{ has(steps.cli) && has(steps.cli.outputs) ? steps.cli.outputs : null }}'}}}
+  - name: target
+    steps:
+      - {name: role_admission, target: orbit-node-209, task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-command', behaviorName: role-admission, methodName: plan, inputs: {intent: '${{ inputs.intent.target }}'}}, queueTimeout: 30}
+      - {name: account_source, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/node-role-command', behaviorName: '${{ "account_source-"+run.id }}', methodName: read, inputs: {action: account, input: {user: '${{ inputs.intent.target.user }}'}}}, allowFailure: true, dependsOn: [{step: role_admission, condition: {type: succeeded}}]}
+      - {name: observer_source, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/node-bootstrap-command', behaviorName: '${{ "observer_source-"+run.id }}', methodName: observer, inputs: {url: '${{ inputs.intent.target.footprint.payloads.agent.url }}', sha256: '${{ inputs.intent.target.agent_sha256 }}'}}, allowFailure: true, dependsOn: [{step: role_admission, condition: {type: succeeded}}]}
+      - {name: packages_source, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/node-bootstrap-command', behaviorName: '${{ "packages_source-"+run.id }}', methodName: packages, inputs: {releases: '${{ inputs.intent.target.prerequisites.releases }}', packages: '${{ inputs.intent.target.prerequisites.packages.filter(p,p != "caddy") }}'}}, allowFailure: true, dependsOn: [{step: role_admission, condition: {type: succeeded}}]}
+      - {name: role_assets, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/node-role-phase-assets', behaviorName: '${{ "role_assets-"+run.id }}', methodName: bundle, inputs: {intent: '${{ inputs.intent.target }}', prepared_tools: false, sources: {account: '${{ steps["account_source"].outputs.script_body }}', observer_install: '${{ steps["observer_source"].outputs.script_body }}', packages: '${{ steps["packages_source"].outputs.script_body }}'}}}, dependsOn: [{step: account_source, condition: {type: succeeded}}, {step: observer_source, condition: {type: succeeded}}, {step: packages_source, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], allowFailure: true}
+      - {name: prepare_assets, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: role_assets, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: &ref_0 {name: '${{ "role-target-"+run.id }}', transport: &ref_1 {kind: ssh, user: '${{ inputs.intent.target.ssh.target.user }}', port: '${{ inputs.intent.target.ssh.target.port }}', identityFile: '${{ inputs.intent.target.ssh.identity_file }}'}, hosts: &ref_2 [{name: target, address: '${{ inputs.intent.target.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.target.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', argv: [/usr/bin/timeout, '30', /usr/bin/mkdir, '-p', '${{ "/tmp/orbit-role-"+run.id }}']}}, allowFailure: true}
+      - {name: copy_assets, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: prepare_assets, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: copy, globalArgs: *ref_0, inputs: {hosts: 'name:target', src: '${{ steps["role_assets"].outputs.scripts_directory+"/." }}', dst: '${{ "/tmp/orbit-role-"+run.id }}', direction: to, recursive: true}}, allowFailure: true}
+      - {name: account, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: copy_assets, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '30', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/account.py" }}']}}, allowFailure: true}
+      - {name: observer_install, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: account, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '90', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/observer_install.py" }}']}}, allowFailure: true}
+      - {name: packages, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: observer_install, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '600', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_prerequisites.py" }}']}}, allowFailure: true}
+      - {name: runtime, target: orbit-node-209, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: node-role-websocket, inputs: {runtime: '${{ self.role.runtime }}', ssh: '${{ self.role.ssh }}', material: '${{ self.role.runtime_material }}'}, behaviorName: '${{ "runtime-"+run.id+"-"+string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.target.role == "websocket" ? [{"runtime":inputs.intent.target.runtime,"ssh":inputs.intent.target.ssh,"runtime_material":inputs.execution_secrets.runtime_material}] : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: certificates, target: orbit-node-209, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: runtime, condition: {type: always}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ steps.exists(k,k.startsWith("runtime-") && steps[k].status != "succeeded") }}', task: {type: workflow, workflowIdOrName: node-role-certificate-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.role_converge, parent_run_id: '${{ run.id }}', leaf: '${{ self.leaf }}', ssh: {name: '${{ "role-target-"+run.id }}', transport: {kind: ssh, user: '${{ inputs.intent.target.ssh.target.user }}', port: '${{ inputs.intent.target.ssh.target.port }}', identityFile: '${{ inputs.intent.target.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.target.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.target.ssh.target.host_keys }}'}}]}}, behaviorName: '${{ "certificates-"+run.id+"-"+string(self._index) }}'}, forEach: {item: leaf, in: '${{ inputs.intent.target.role == "websocket" ? inputs.intent.target.certificates.leaves : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: caddy_service, target: orbit-node-209, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: runtime, condition: {type: always}}, {step: certificates, condition: {type: always}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ steps.exists(k,(k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status != "succeeded") }}', task: {type: behavior, behaviorType: '@swamp/ssh', methodName: exec, globalArgs: {name: '${{ "caddy_service-"+run.id+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.target.ssh.target.user }}', port: '${{ inputs.intent.target.ssh.target.port }}', identityFile: '${{ inputs.intent.target.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.target.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.target.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '30', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_caddy_service.py" }}']}, behaviorName: '${{ "caddy_service-"+run.id+"-"+string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.target.role in ["ingress","app-prod"] ? [inputs.intent.target] : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: caddy, target: orbit-node-209, dependsOn: [{step: caddy_service, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: operation-route-caddy, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.role_converge, execution_secrets: {}, intent: {caddy_publication: '${{ self.role.caddy }}'}}, behaviorName: '${{ "caddy-"+run.id+"-"+string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.target.role in ["ingress","app-prod"] ? [inputs.intent.target] : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: websocket_caddy_service, target: orbit-node-209, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: runtime, condition: {type: always}}, {step: certificates, condition: {type: always}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ steps.exists(k,(k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status != "succeeded") }}', task: {type: behavior, behaviorType: '@swamp/ssh', methodName: exec, globalArgs: {name: '${{ "websocket_caddy_service-"+run.id+"-"+string(self._index) }}', transport: {kind: ssh, user: '${{ inputs.intent.target.ssh.target.user }}', port: '${{ inputs.intent.target.ssh.target.port }}', identityFile: '${{ inputs.intent.target.ssh.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.target.ssh.target.host }}', transport: {hostKeys: '${{ inputs.intent.target.ssh.target.host_keys }}'}}]}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '30', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_caddy_service.py" }}']}, behaviorName: '${{ "websocket_caddy_service-"+run.id+"-"+string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.target.role == "websocket" ? [inputs.intent.target] : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: publication, target: orbit-node-209, dependsOn: [{step: websocket_caddy_service, condition: {type: succeeded}}, {step: packages, condition: {type: succeeded}}, {step: runtime, condition: {type: always}}, {step: certificates, condition: {type: always}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ steps.exists(k,(k.startsWith("runtime-") || k.startsWith("certificates-")) && steps[k].status != "succeeded") }}', task: {type: workflow, workflowIdOrName: node-role-publication, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: node.role_converge, intent: '${{ self.role }}'}, behaviorName: '${{ "publication-"+run.id+"-"+string(self._index) }}'}, forEach: {item: role, in: '${{ inputs.intent.target.role == "websocket" ? [inputs.intent.target] : [] }}'}, allowFailure: true, queueTimeout: 30}
+      - {name: firewall, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: caddy, condition: {type: always}}, {step: publication, condition: {type: always}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-firewall-"+run.id+"-"+string(self._index) }}', methodName: exec, globalArgs: {name: '${{ "role-firewall-"+run.id+"-"+string(self._index) }}', transport: *ref_1, hosts: *ref_2}, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '60', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_firewall.py" }}']}}, forEach: {item: firewall, in: '${{ inputs.intent.target.role in ["ingress","websocket","app-prod"] ? [inputs.intent.target.firewall] : [] }}'}, guard: '${{ (inputs.intent.target.role in ["ingress","app-prod"] && !("caddy-0" in steps && steps["caddy-0"].status == "succeeded")) || (inputs.intent.target.role == "websocket" && !("publication-0" in steps && steps["publication-0"].status == "succeeded")) }}', allowFailure: true}
+      - {name: peer_dns, target: orbit-node-209, forEach: {item: dns, in: '${{ inputs.intent.target.footprint.network == null ? [] : [inputs.intent.target.footprint.network.peer_dns] }}'}, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: operation-fleet-peer-dns, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: fleet.peer_dns, execution_secrets: {}, intent: {server: '${{ self.dns.dns_server }}', dns_server: '${{ self.dns.dns_server }}', public_key: '${{ self.dns.public_key }}', domains: '${{ self.dns.domains }}', ssh: {control_node_id: 209, identity_file: '${{ inputs.intent.target.ssh.identity_file }}', target: {host: '${{ inputs.intent.target.ssh.target.host }}', user: '${{ inputs.intent.target.ssh.target.user }}', port: '${{ inputs.intent.target.ssh.target.port }}', host_keys: '${{ inputs.intent.target.ssh.target.host_keys }}'}}}}}, allowFailure: true, queueTimeout: 30}
+      - {name: php_runtime, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ ! ("php-runtime" in inputs.intent.target.footprint.payloads) }}', task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '120', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_php_runtime.py" }}']}}, allowFailure: true}
+      - {name: observer, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '120', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', '${{ "ORBIT_ROLE_DELIVERY="+steps["observer_install"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_observer.py" }}'], stdin: '${{ vault.get(inputs.execution_secrets.observer.vault,inputs.execution_secrets.observer.key) }}'}}, allowFailure: true}
+      - {name: cli, target: orbit-node-209, queueTimeout: 30, writes: true, dependsOn: [{step: packages, condition: {type: succeeded}}, {step: role_admission, condition: {type: succeeded}}], guard: '${{ inputs.intent.target.cli.skip_reason != null || inputs.intent.target.cli.plan_error != null }}', task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ "role-target-"+run.id }}', methodName: exec, globalArgs: *ref_0, inputs: {hosts: 'name:target', sudo: true, argv: [/usr/bin/timeout, '240', /usr/bin/env, '${{ "ORBIT_ROLE_INPUT="+steps["role_assets"].outputs.input_json }}', '${{ "ORBIT_ROLE_ACCOUNT="+steps["account"].outputs.stdout }}', /usr/bin/python3, '-B', '${{ "/tmp/orbit-role-"+run.id+"/phase_cli.py" }}']}}, allowFailure: true}
+      - {name: role_result, target: orbit-node-209, dependsOn: [{step: role_admission, condition: {type: always}}, {step: account_source, condition: {type: always}}, {step: observer_source, condition: {type: always}}, {step: packages_source, condition: {type: always}}, {step: role_assets, condition: {type: always}}, {step: prepare_assets, condition: {type: always}}, {step: copy_assets, condition: {type: always}}, {step: account, condition: {type: always}}, {step: observer_install, condition: {type: always}}, {step: packages, condition: {type: always}}, {step: runtime, condition: {type: always}}, {step: certificates, condition: {type: always}}, {step: caddy_service, condition: {type: always}}, {step: caddy, condition: {type: always}}, {step: websocket_caddy_service, condition: {type: always}}, {step: publication, condition: {type: always}}, {step: firewall, condition: {type: always}}, {step: peer_dns, condition: {type: always}}, {step: php_runtime, condition: {type: always}}, {step: observer, condition: {type: always}}, {step: cli, condition: {type: always}}], task: {type: behavior, behaviorType: '@nckrtl/node-role-converge-result', behaviorName: role-result, methodName: assemble, inputs: {intent: '${{ inputs.intent.target }}', steps: {account: {status: '${{ ("account" in steps ? steps["account"].status : "skipped") }}'}, observer_install: {status: '${{ ("observer_install" in steps ? steps["observer_install"].status : "skipped") }}'}, packages: {status: '${{ ("packages" in steps ? steps["packages"].status : "skipped") }}'}, runtime-0: {status: '${{ ("runtime-0" in steps ? steps["runtime-0"].status : "skipped") }}'}, publication-0: {status: '${{ ("publication-0" in steps ? steps["publication-0"].status : "skipped") }}'}, caddy_service-0: {status: '${{ ("caddy_service-0" in steps ? steps["caddy_service-0"].status : "skipped") }}'}, caddy-0: {status: '${{ ("caddy-0" in steps ? steps["caddy-0"].status : "skipped") }}'}, firewall-0: {status: '${{ ("firewall-0" in steps ? steps["firewall-0"].status : "skipped") }}'}, observer: {status: '${{ ("observer" in steps ? steps["observer"].status : "skipped") }}'}, peer_dns-0: {status: '${{ ("peer_dns-0" in steps ? steps["peer_dns-0"].status : "skipped") }}'}, php_runtime: {status: '${{ ("php_runtime" in steps ? steps["php_runtime"].status : "skipped") }}'}, cli: {status: '${{ ("cli" in steps ? steps["cli"].status : "skipped") }}', outputs: '${{ ("cli" in steps && steps["cli"].status == "succeeded" ? steps["cli"].outputs : {}) }}'}}, certificate_statuses: '${{ steps.filter(k,k.startsWith("certificates-")).map(k,steps[k].status) }}'}}, queueTimeout: 30}
+      - {name: target_proven, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: role_result, condition: {type: succeeded}}], task: {type: assert, severity: high, message: The target must be ready before source withdrawal, expr: steps.role_result.outputs.role_proven && steps.role_result.outputs.runtime_proven && steps.role_result.outputs.certificates_proven && steps.role_result.outputs.publication_proven}}
+  - name: source
+    dependsOn:
+      - {job: target, condition: {type: succeeded}}
+    steps:
+      - {name: source_grace, target: orbit-node-209, queueTimeout: 30, task: {type: workflow, workflowIdOrName: route-dns-grace, inputs: {}}}
+      - {name: source_publication_php, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.source.publications.filter(p, p.after.php != null) }}'}, dependsOn: [{step: source_grace, condition: {type: always}}], guard: '${{ (steps.exists(key, (key == "source_grace" || key.startsWith("source_grace-")) && steps[key].status in ["failed", "cancelled"])) }}', task: {type: workflow, workflowIdOrName: operation-route-php-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: &ref_3 {}, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', user: '${{ self.part.connection.nodeUser }}', before: '${{ self.part.before.php }}', after: '${{ self.part.after.php }}', direction: forward}}}, queueTimeout: 30}
+      - {name: source_publication_caddy, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.source.publications.filter(p, p.after.caddy != null) }}'}, dependsOn: [{step: source_grace, condition: {type: always}}, {step: source_publication_php, condition: {type: always}}], guard: '${{ (steps.exists(key, (key == "source_grace" || key.startsWith("source_grace-")) && steps[key].status in ["failed", "cancelled"]) || steps.exists(key, (key == "source_publication_php" || key.startsWith("source_publication_php-")) && steps[key].status in ["failed", "cancelled"])) }}', task: {type: workflow, workflowIdOrName: operation-route-caddy-delta, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: *ref_3, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', user: '${{ self.part.connection.nodeUser }}', before: '${{ self.part.before.caddy }}', after: '${{ self.part.after.caddy }}', alternatives: '${{ [self.part.before.caddy, self.part.after.caddy] }}', direction: forward, retain_removed: false}}}, queueTimeout: 30}
+      - {name: source_publication_dns, target: orbit-node-209, forEach: {item: part, in: '${{ inputs.intent.source.publications.filter(p, p.after.dns != null) }}'}, dependsOn: [{step: source_grace, condition: {type: always}}, {step: source_publication_php, condition: {type: always}}, {step: source_publication_caddy, condition: {type: always}}], guard: '${{ (steps.exists(key, (key == "source_grace" || key.startsWith("source_grace-")) && steps[key].status in ["failed", "cancelled"]) || steps.exists(key, (key == "source_publication_php" || key.startsWith("source_publication_php-")) && steps[key].status in ["failed", "cancelled"]) || steps.exists(key, (key == "source_publication_caddy" || key.startsWith("source_publication_caddy-")) && steps[key].status in ["failed", "cancelled"])) }}', task: {type: workflow, workflowIdOrName: route-dns-publish, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', execution_secrets: *ref_3, intent: {node_id: '${{ self.part.node_id }}', control_node_id: '${{ self.part.control_node_id }}', connection: '${{ self.part.connection }}', host_keys: '${{ self.part.host_keys }}', before: '${{ self.part.before.dns }}', after: '${{ self.part.after.dns }}', alternatives: '${{ [self.part.before.dns, self.part.after.dns] }}'}}}, queueTimeout: 30}
+      - {name: source_publication, target: orbit-node-209, dependsOn: [{step: source_grace, condition: {type: always}}, {step: source_publication_php, condition: {type: always}}, {step: source_publication_caddy, condition: {type: always}}, {step: source_publication_dns, condition: {type: always}}], task: {type: behavior, behaviorType: '@nckrtl/route-mutation-command', behaviorName: source_publication-contribution, methodName: result, inputs: {stage: {routes: []}, mode: forward, required: {source_publication_php: '${{ size(inputs.intent.source.publications.filter(p, p.after.php != null)) }}', source_publication_caddy: '${{ size(inputs.intent.source.publications.filter(p, p.after.caddy != null)) }}', source_publication_dns: '${{ size(inputs.intent.source.publications.filter(p, p.after.dns != null)) }}'}, outcomes: '${{ steps }}'}}, queueTimeout: 30}
+      - {name: source_publication_proven, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: source_publication, condition: {type: succeeded}}], task: {type: assert, expr: steps.source_publication.outputs.ready, severity: high, message: Publish source withdrawal before runtime cleanup}}
+      - {name: source_cleanup, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: source_publication_proven, condition: {type: succeeded}}], task: {type: workflow, workflowIdOrName: node-role-remove, inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.source.node_id }}', kind: node.role_relocate, intent: {schema_version: '${{ inputs.intent.source.schema_version }}', node_id: '${{ inputs.intent.source.node_id }}', assignment_id: '${{ inputs.intent.source.assignment_id }}', role: '${{ inputs.intent.source.role }}', ssh: '${{ inputs.intent.source.ssh }}', stop_units: '${{ inputs.intent.source.stop_units }}', remove_footprints: '${{ inputs.intent.source.remove_footprints }}', reload_units: '${{ inputs.intent.source.reload_units }}', remove_units: '${{ inputs.intent.source.remove_units }}', stop_containers: '${{ inputs.intent.source.stop_containers }}', remove_containers: '${{ inputs.intent.source.remove_containers }}', firewall: '${{ inputs.intent.source.firewall }}', certificates: '${{ inputs.intent.source.certificates }}', ci_host: '${{ inputs.intent.source.ci_host }}', publications: []}, execution_secrets: {}, offline: false}}}
+  - name: result
+    dependsOn:
+      - {job: target, condition: {type: always}}
+      - {job: source, condition: {type: always}}
+    steps:
+      - {name: result, target: orbit-node-209, queueTimeout: 30, task: {type: behavior, behaviorType: '@nckrtl/node-role-parent-result', behaviorName: '${{ "role-parent-result-"+run.id }}', methodName: assemble, inputs: {kind: node.role_relocate, steps: {role_admission: {status: '${{ ("role_admission" in steps ? steps["role_admission"].status : "skipped") }}'}, role_result: {status: '${{ ("role_result" in steps ? steps["role_result"].status : "skipped") }}', outputs: '${{ ("role_result" in steps && steps["role_result"].status == "succeeded" ? steps["role_result"].outputs : {}) }}'}, target_proven: {status: '${{ ("target_proven" in steps ? steps["target_proven"].status : "skipped") }}'}, source_grace: {status: '${{ ("source_grace" in steps ? steps["source_grace"].status : "skipped") }}'}, source_publication: {status: '${{ ("source_publication" in steps ? steps["source_publication"].status : "skipped") }}'}, source_publication_proven: {status: '${{ ("source_publication_proven" in steps ? steps["source_publication_proven"].status : "skipped") }}'}, source_cleanup: {status: '${{ ("source_cleanup" in steps ? steps["source_cleanup"].status : "skipped") }}', outputs: {result: '${{ ("source_cleanup" in steps && steps["source_cleanup"].status == "succeeded" ? steps["source_cleanup"].outputs.result : {}) }}'}}}}}}
+      - {name: accepted, target: orbit-node-209, queueTimeout: 30, dependsOn: [{step: result, condition: {type: succeeded}}], task: {type: assert, expr: steps.result.outputs.ready, severity: high, message: Role parent did not complete}}

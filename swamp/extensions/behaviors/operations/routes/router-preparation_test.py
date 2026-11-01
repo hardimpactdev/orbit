@@ -1,6 +1,6 @@
 """Router package and baseline ports exercise filesystem effects and fixed system argv."""
-import getpass, hashlib, os, pathlib, re, tempfile, types, unittest
-PROGRAM=re.search(r'String.raw`(.*?)`;',pathlib.Path(__file__).with_name('router-preparation.ts').read_text(),re.S)[1]
+import hashlib, os, pathlib, tempfile, types, unittest
+PROGRAM=(pathlib.Path(__file__).parent.parent/'fleet-recipe/scripts/role_prerequisites.py').read_text()
 class PreparationTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=pathlib.Path(self.tmp.name)
@@ -54,4 +54,15 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual([],self.calls);self.ns['OS_RELEASE'].write_text('ID=ubuntu\nVERSION_CODENAME=noble\n');(pathlib.Path(data['home'])/'apps').symlink_to(self.root)
         with self.assertRaises(Exception):self.ns['prerequisites'](data)
         self.assertEqual([],self.calls)
+    def test_prepared_packages_skip_apt_but_verify_composer_scope(self):
+        data=self.baseline();data['install_packages']=False
+        self.ns['prerequisites'](data)
+        self.assertFalse(any(c[0]=='apt-get' for c in self.calls))
+        self.assertTrue(any(c[:2]==('sudo','-u') for c in self.calls))
+        self.assertTrue((self.ns['COMPOSER']/'vendor/bin').is_dir())
+    def test_foreign_composer_scope_refuses_before_apt_or_directory_writes(self):
+        data=self.baseline();scope=self.ns['COMPOSER'];scope.mkdir(parents=True);(scope/'vendor').symlink_to(self.root)
+        with self.assertRaisesRegex(Exception,'role.prerequisite_conflict'):self.ns['prerequisites'](data)
+        self.assertEqual([],self.calls)
+        self.assertFalse((pathlib.Path(data['home'])/'apps').exists())
 if __name__=='__main__':unittest.main()

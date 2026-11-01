@@ -144,6 +144,36 @@ Deno.test("every refused cleanup stage stops later effects and leaves completion
     assertEquals(calls.at(-1)?.name, stage);
   }
 });
+Deno.test("certificate account, home and in-use refusals preserve residue for the parent retry", async () => {
+  const captured = structuredClone(input);
+  for (
+    const code of [
+      "certificate.account_invalid",
+      "certificate.home_mismatch",
+      "certificate.in_use",
+    ]
+  ) {
+    const { deps, calls } = fixture();
+    const invoke = deps.program;
+    deps.program = (program, payload, signal) => {
+      if (payload.name === "certificate.remove-leaf") {
+        calls.push({ name: "certificate.remove-leaf", input: payload });
+        return Promise.resolve({ error_code: code });
+      }
+      return invoke(program, payload, signal);
+    };
+    assertEquals(await cleanRouteResidue(captured, identity, deps), {
+      error_code: code,
+    });
+    assertEquals(calls.map((call) => call.name), [
+      "caddy.publish",
+      "account",
+      "php.converge-shared-pools",
+      "certificate.remove-leaf",
+    ]);
+    assertEquals(captured, input);
+  }
+});
 Deno.test("unknown residue data or missing publication proof cannot report success", async () => {
   const { deps, calls } = fixture();
   await assertRejects(() =>

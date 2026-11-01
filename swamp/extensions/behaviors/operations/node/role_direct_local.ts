@@ -64,6 +64,7 @@ export function roleBaseline(
         phase: z.infer<typeof BaselineStage>,
         signal?: AbortSignal,
         recipeSource?: string,
+        prerequisiteSource?: string,
     ): Promise<BaselineOutcome> => {
         const snapshot = RoleSnapshot.parse(raw);
         const stage = BaselineStage.parse(phase);
@@ -103,6 +104,7 @@ export function roleBaseline(
                     { ...snapshot.prerequisites, ...account },
                     integrations.program,
                     signal,
+                    prerequisiteSource,
                 ),
             );
         }
