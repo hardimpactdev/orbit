@@ -267,9 +267,9 @@ cancelled or skipped shards fail
 the aggregate. The root `Required checks` continues to require this reusable
 workflow.
 
-The reusable workflow accepts `working-directory` and
-`base-ref`. Its bytes can be copied to Orbit's root `.github/workflows/` and called
-with `working-directory: swamp`; lane24 adds it to `Required checks`. Every
+The reusable workflow lives only in Orbit's root
+`.github/workflows/swamp-shape.yml`. It accepts `working-directory` and
+`base-ref`, and `Required checks` calls it with `working-directory: swamp`. Every
 workflow must validate on the checksum-verified runtime pin. All Operations Deno
 tests run with four workers per shard, including disposable database effect tests.
 

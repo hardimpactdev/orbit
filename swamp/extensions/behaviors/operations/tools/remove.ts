@@ -1,7 +1,8 @@
 import { z } from "npm:zod@4.4.3";
 import { AdoptInput, Facts, Observation, queryScript, repositoryError } from "./adopt.ts";
 import { homebrewRemovalBlock } from "./adopt_homebrew.ts";
-import { repositoryJson, safeVersion, sourceInput, ToolRefusal } from "./contract.ts";
+import { repositoryJson, sourceInput, ToolRefusal } from "./contract.ts";
+import { writeInventory } from "./write.ts";
 export const RemoveInput = AdoptInput.safeExtend({ intent_only: z.boolean() });
 type Input = z.infer<typeof RemoveInput>;
 const Public = z.record(z.string(), z.unknown());
@@ -9,11 +10,7 @@ const Probe = z.object({ ready: z.boolean(), present: z.boolean().optional(), fa
 type Context = { extensionFile(name: string): string; writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 export function removalProbe(input: Input, raw: unknown) {
     try {
-        const facts = Facts.parse(JSON.parse(Observation.parse(raw).stdout));
-        if (facts.scope !== "present") throw new ToolRefusal("tool.manager_unavailable");
-        if (facts.error_code || !safeVersion(facts.manager_version) || facts.complete !== true || !facts.versions ||
-            facts.versions.length > 1 || facts.versions.some((v) => !safeVersion(v))) throw new ToolRefusal("tool.version_probe_failed");
-        const present = facts.versions.length === 1;
+        const { facts, present } = writeInventory(raw);
         if (present && input.manager === "composer" && !facts.roots?.includes(input.package)) throw new ToolRefusal("tool.remove_failed");
         if (present && homebrewRemovalBlock(input, facts)) throw new ToolRefusal("tool.remove_failed");
         return { ready: true, present, facts };

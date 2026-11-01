@@ -116,7 +116,10 @@ final readonly class NativeClusterRouterPublicationInput
         }
         $inventory['old_nodes'] = $oldNodes;
 
-        return ['cluster_router' => $inventory, 'route_mutations' => [
+        $compact = app(NativeRoutePublicationArtifacts::class)->capture($rows);
+        $rows = $compact['publications'];
+
+        return ['cluster_router' => $inventory, 'route_mutations' => ['schema_version' => 2, 'artifacts' => $compact['artifacts'],
             'forward' => $this->stage($forwardLeaves, $forwardLan, $after, $routes, $rows, $forwardRetire, $restoreLeaves, true),
             'restore' => $this->stage($restoreLeaves, $restoreLan, $before, $routes, $rows, $restoreRetire, $forwardLeaves)],
             'certificates' => [...$this->changedLeaves($forwardLeaves, $restoreLeaves), ...$this->changedLeaves($restoreLeaves, $forwardLeaves)], 'participant_node_ids' => $participantIds];

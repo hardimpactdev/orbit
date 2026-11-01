@@ -1,5 +1,6 @@
 import {
   assertEquals,
+  assertExists,
   assertRejects,
   assertStringIncludes,
 } from "jsr:@std/assert@1.0.19";
@@ -195,6 +196,7 @@ function fixture() {
   const behavior = automaticDeploy(client, () => fake.now);
   const { context } = createModelTestContext({ globalArgs: {} });
   const write = context.writeResource.bind(context);
+  const writes: Awaited<ReturnType<typeof write>>[] = [];
   const ctx = Object.assign(context, {
     readResource: (name: string) =>
       Promise.resolve(structuredClone(data.get(name) ?? null)),
@@ -205,7 +207,9 @@ function fixture() {
     ) => {
       behavior.resources[spec].schema.parse(value);
       data.set(name, structuredClone(value));
-      return await write(spec, name, value);
+      const handle = await write(spec, name, value);
+      writes.push(handle);
+      return handle;
     },
   });
   return {
@@ -217,6 +221,7 @@ function fixture() {
     operation,
     operations,
     requests,
+    writes,
     data,
     ctx,
     http,
@@ -240,6 +245,15 @@ const deployPosts = (f: ReturnType<typeof fixture>) =>
   f.requests.filter((r) =>
     r.method === "POST" && r.path.endsWith("/deploy/automatic")
   );
+Deno.test("native policy returns only the final production checkpoint handle", async () => {
+  const f = fixture();
+  const result = await f.run();
+  assertEquals(f.writes.length > 1, true);
+  const last = f.writes.at(-1);
+  assertExists(last);
+  assertEquals(result.dataHandles, [last]);
+  assertEquals(deployPosts(f).length, 1);
+});
 function lostIntent(f: ReturnType<typeof fixture>) {
   f.data.set(
     "state-7",

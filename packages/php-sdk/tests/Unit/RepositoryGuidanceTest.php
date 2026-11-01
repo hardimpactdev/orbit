@@ -635,7 +635,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Keep Instance deployment-layout transport limited to the numeric Instance ID and an optional explicit SQLite source path.',
             )
             ->toContain(
-                'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+                'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, and an empty synchronization body. Import and update return the bounded value-free result; synchronization returns the queued operation.',
             )
             ->toContain(
                 'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback starts, trusted automatic pinned deploy starts, and retained-release inspection.',

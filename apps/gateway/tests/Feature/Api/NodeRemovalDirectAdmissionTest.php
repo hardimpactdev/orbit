@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Nodes\NodeRemovalInput;
@@ -14,6 +15,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Nodes\NodeWorkerRollout;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
@@ -138,6 +140,25 @@ it('deletes Gateway records only after successful native terminal output', funct
     }
 })->with(['succeeded', 'failed', 'cancelled', 'interrupted']);
 
+it('keeps a removal whose budget expired as a failed Node record', function (): void {
+    $this->freezeSecond();
+    FleetFixtures::bind();
+    $node = FleetFixtures::node('removal-expired', [RoleName::Database]);
+    $node->update(['status' => LifecycleStatus::Removing]);
+    $node->roles()->update(['status' => LifecycleStatus::Removing]);
+    $snapshot = app(NodeRemovalPlan::class)->build($node, true);
+    $operation = Operation::query()->create(['kind' => 'node.remove', 'node_id' => $node->id, 'target_type' => 'node', 'target_id' => $node->id,
+        'status' => 'running', 'sequence' => 1, 'started_at' => now(), 'state' => ['swamp_run_id' => '3a332a4f-0911-4e9d-9a18-09899b7b1864'],
+        'input' => ['_node_removal' => $snapshot, 'intent' => []]]);
+    $this->travel(2100)->seconds();
+
+    expect(app(ExpireOperationAction::class)->execute($operation)->error_code)->toBe('operation.timed_out')
+        ->and($node->fresh()->status)->toBe(LifecycleStatus::Failed)
+        ->and($node->fresh()->error_code)->toBe('operation.timed_out')
+        ->and($node->fresh()->failed_step)->toBe('remove:operation')
+        ->and($node->roles()->sole()->status)->toBe(LifecycleStatus::Failed);
+});
+
 it('refuses an active role claim before changing membership', function (): void {
     FleetFixtures::bind();
     $node = FleetFixtures::node('removal-claimed-role', [RoleName::Database]);
@@ -194,3 +215,26 @@ it('requires consent for a role that appears before the locked Node is reloaded'
         Node::setEventDispatcher($dispatcher);
     }
 });
+
+it('admits the TaskVM guest token boundary only from records and worker selection', function (string $target): void {
+    FleetFixtures::bind();
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 fixture-bootstrap-public');
+    app()->instance(SshKeyProvider::class, $keys);
+    $node = FleetFixtures::node('removal-token-'.$target);
+    $node->update(['wireguard_public_key' => null]);
+    config(['swamp_workers.nodes' => $target === 'selected' || $target === 'guest-selected-config' ? [$node->id] : []]);
+    if (str_starts_with($target, 'guest')) {
+        TaskVm::query()->create(['node_id' => $node->id, 'name' => $node->name, 'wireguard_ip' => $node->wireguard_ip, 'provider' => 'incus', 'state' => 'destroying']);
+    }
+    if ($target === 'host') {
+        TaskVm::query()->create(['host_node_id' => $node->id, 'name' => 'tvm-child', 'wireguard_ip' => '10.44.0.230', 'provider' => 'incus', 'state' => 'ready']);
+    }
+    $selected = app(NodeWorkerRollout::class)->allows($node);
+    $snapshot = [...app(NodeRemovalPlan::class)->build($node, true), 'task_vm_guest' => true];
+
+    $captured = app(NodeRemovalInput::class)->capture($snapshot);
+
+    expect($selected)->toBe($target === 'selected');
+    expect($captured['intent']['task_vm_guest'])->toBe(str_starts_with($target, 'guest'));
+})->with(['ordinary', 'selected', 'host', 'guest', 'guest-selected-config']);

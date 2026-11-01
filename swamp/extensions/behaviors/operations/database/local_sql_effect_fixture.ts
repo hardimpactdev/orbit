@@ -237,7 +237,7 @@ export function registerMysqlLocalSqlEffect() {
         );
         assertEquals("output" in large && large.output.length, 262145);
       } finally {
-        await docker("rm", "--force", container).catch(() => {});
+        await docker("rm", "--force", "--volumes", container).catch(() => {});
       }
     },
   });
@@ -367,7 +367,7 @@ export function registerPgsqlLocalSqlEffect() {
           { error_code: "database.server_admin_failed" },
         );
       } finally {
-        await docker("rm", "--force", container).catch(() => {});
+        await docker("rm", "--force", "--volumes", container).catch(() => {});
       }
     },
   });

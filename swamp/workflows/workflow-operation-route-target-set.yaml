@@ -139,7 +139,16 @@ jobs:
             operation_id: '${{ inputs.operation_id }}'
             node_id: '${{ inputs.node_id }}'
             kind: '${{ inputs.kind }}'
-            intent: '${{ self.part }}'
+            intent:
+              node_id: ${{ self.part.node_id }}
+              user: ${{ self.part.user }}
+              control_node_id: ${{ self.part.control_node_id }}
+              connection: ${{ self.part.connection }}
+              host_keys: ${{ self.part.host_keys }}
+              direction: ${{ self.part.direction }}
+              before: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.before] }}
+              after: ${{ inputs.intent.route_mutations.artifacts.caddy[self.part.after] }}
+              alternatives: ${{ self.part.alternatives.map(ref,inputs.intent.route_mutations.artifacts.caddy[ref]) }}
             execution_secrets: {}
       - name: prepare-probe
         target: orbit-node-209

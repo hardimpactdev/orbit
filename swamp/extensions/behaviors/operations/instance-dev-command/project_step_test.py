@@ -25,7 +25,7 @@ class ProjectStep(unittest.TestCase):
             answer = self.run_step(path, '[[ "$ORBIT_SEED_PATH" == /captured/default ]] && [[ "$ORBIT_SEED_COMMIT" == ' + 'a'*40 + ' ]] && printf "$PWD" > observed')
             self.assertEqual(answer.returncode, 0)
             self.assertEqual((path/'observed').read_text(), str(path))
-            self.assertEqual(json.loads(answer.stdout), {'exitCode': 0, 'stdout': '', 'stderr': ''})
+            self.assertEqual(json.loads(answer.stdout), {'exitCode': 0, 'stderr': ''})
 
     def test_failure_and_undefined_variable_stop_remaining_command(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
@@ -34,32 +34,137 @@ class ProjectStep(unittest.TestCase):
                 self.assertNotEqual(self.run_step(path, command).returncode, 0)
                 self.assertFalse((path/'after').exists())
 
-    def test_failed_command_retains_both_bounded_redacted_tails(self):
+    def test_failed_command_keeps_only_a_bounded_redacted_stderr_tail(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
             path = Path(folder)
             (path / '.env').write_text('APP_KEY="private-output-sentinel"\n')
-            command = 'printf "%05000d" 0; printf "private-output-sentinel public-tail"; printf "private-output-sentinel failure-tail" >&2; exit 7'
+            command = 'printf "private-output-sentinel public-tail"; printf "private-output-sentinel failure-tail" >&2; exit 7'
             result = self.run_step(path, command)
             self.assertEqual(result.returncode, 7)
             output = json.loads(result.stdout)
+            self.assertEqual(set(output), {'exitCode', 'stderr'})
             self.assertEqual(output['exitCode'], 7)
-            self.assertLessEqual(len(output['stdout'].encode()), 4096)
-            self.assertLessEqual(len(output['stderr'].encode()), 4096)
-            self.assertTrue(output['stdout'].endswith('[REDACTED] public-tail'))
             self.assertEqual(output['stderr'], '[REDACTED] failure-tail')
+            self.assertNotIn('public-tail', result.stdout)
             self.assertNotIn('private-output-sentinel', result.stdout)
+
+    def test_secret_straddling_the_tail_boundary_never_appears_even_partly(self):
+        secret = 'straddle-secret-0123456789abcdef'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            # Put the secret where a plain 4096-byte cut lands inside it, after redaction shortens the buffer.
+            for offset in range(len(secret) + 12):
+                command = (f'printf "%s" "{secret}" >&2; printf "%0{4096 - offset}d" 0 >&2; '
+                           f'printf "\\n{secret}\\n" >&2; exit 3')
+                output = json.loads(self.run_step(path, command).stdout)
+                tail = output['stderr']
+                self.assertLessEqual(len(tail.encode()), 4096)
+                for start in range(len(secret) - 8 + 1):
+                    self.assertNotIn(secret[start:start + 8], tail, f'offset {offset}')
+
+    def test_many_fragment_lines_are_dropped_and_the_tail_stays_bounded(self):
+        secret = 'unique-private-fragment-0123456789'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            command = f'for i in $(seq 512); do printf "x{secret[3:11]}\\n" >&2; done; printf "last-public-line\\n" >&2; exit 7'
+            output = json.loads(self.run_step(path, command).stdout)
+            self.assertLessEqual(len(output['stderr'].encode()), 4096)
+            self.assertNotIn(secret[3:11], output['stderr'])
+            self.assertIn('last-public-line', output['stderr'])
+
+    def test_redaction_cannot_reveal_a_secret_split_at_the_old_capture_boundary(self):
+        secret = 'boundary-secret-' + ''.join(f'{n:02x}' for n in range(249))
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            for offset in [1, 128, 300, 511]:
+                filler = 4096 - len(secret) + offset
+                command = f'printf "%s" "{secret}" >&2; printf "%0{filler}d" 0 >&2; printf "%s" "{secret}" >&2; exit 7'
+                tail = json.loads(self.run_step(path, command).stdout)['stderr']
+                self.assertLessEqual(len(tail.encode()), 4096)
+                for start in range(len(secret) - 7):
+                    self.assertNotIn(secret[start:start + 8], tail, f'offset {offset}')
+
+    def test_capture_cap_never_publishes_its_partial_first_line(self):
+        secret = 'capture-boundary-' + '0123456789abcdef' * 32
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            filler = 1048576 - 2 * len(secret) + 100
+            command = f'printf "%s" "{secret}" >&2; printf "%0{filler}d" 0 >&2; printf "%s\\nsafe diagnostic\\n" "{secret}" >&2; exit 7'
+            self.assertEqual(json.loads(self.run_step(path, command).stdout), {'exitCode': 7, 'stderr': 'safe diagnostic\n'})
+
+    def test_second_redaction_of_short_values_stays_inside_the_byte_bound(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('APP_KEY="R"\n')
+            result = self.run_step(path, 'for ((i=0; i<5000; i++)); do printf "R\\n" >&2; done; exit 7')
+            self.assertLessEqual(len(json.loads(result.stdout)['stderr'].encode()), 4096)
+
+    def test_invalid_utf8_never_joins_pieces_into_a_secret_after_redaction(self):
+        secret = 'unique-private-fragment-0123456789'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'APP_KEY="{secret}"\n')
+            command = ('python3 -c \'import os; value=b"' + secret + '"; '
+                       'os.write(2, b"\\xff".join(value[n:n+7] for n in range(0, len(value), 7)))\'; exit 7')
+            output = json.loads(self.run_step(path, command).stdout)
+            self.assertNotIn(secret, output['stderr'])
+            self.assertLessEqual(len(output['stderr'].encode()), 4096)
+
+    def test_multiline_quoted_dotenv_value_is_redacted_line_by_line(self):
+        body_a, body_b = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7', 'qL8kX2vN5rT7wY9xB3mC6pQ1sD4fG8hJ0kL2zX5cV7bN9mQ3wE'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n{body_a}\n{body_b}\n-----END PRIVATE KEY-----"\nAPP_NAME=proof\n')
+            output = json.loads(self.run_step(path, f'printf "%s\\n%s\\nsafe diagnostic\\n" "{body_a}" "{body_b}" >&2; exit 7').stdout)
+            self.assertNotIn(body_a[:16], output['stderr'])
+            self.assertNotIn(body_b[:16], output['stderr'])
+            self.assertIn('safe diagnostic', output['stderr'])
+
+    def test_unicode_line_separator_inside_a_value_does_not_split_it(self):
+        secret = 'ab\u2028Zq8Lk2Vn5Rt7Wy9Xb3Mc'
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text(f'API_SECRET="{secret}"\n', encoding='utf-8')
+            command = 'python3 -c \'import sys; sys.stderr.write("ab\\u2028Zq8Lk2Vn5Rt7Wy9Xb3Mc\\n")\'; exit 7'
+            output = json.loads(self.run_step(path, command).stdout)
+            self.assertNotIn('Zq8Lk2Vn5Rt7Wy9Xb3Mc', output['stderr'])
+
+    def test_inline_comment_on_an_unquoted_short_value_is_not_part_of_the_secret(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD=hunter2 # local dev\n')
+            output = json.loads(self.run_step(path, 'printf "login failed for password=hunter2\\n" >&2; exit 7').stdout)
+            self.assertNotIn('hunter2', output['stderr'])
+
+    def test_tab_form_feed_and_vertical_tab_escapes_are_read_like_phpdotenv(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD="1234567\\t7654321"\nAPI_SECRET="pw\\f12\\v34"\n')
+            output = json.loads(self.run_step(path, 'printf "1234567\\t7654321\\npw\\f12\\v34\\n" >&2; exit 7').stdout)
+            self.assertNotIn('1234567', output['stderr'])
+            self.assertNotIn('pw', output['stderr'])
+
+    def test_unquoted_value_ends_at_a_hash_without_a_space(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
+            path = Path(folder)
+            (path / '.env').write_text('DB_PASSWORD=abcdefg#hijklmn\n')
+            output = json.loads(self.run_step(path, 'printf "login failed for abcdefg\\n" >&2; exit 7').stdout)
+            self.assertNotIn('abcdefg', output['stderr'])
 
     def test_redacts_escaped_terminal_quotes_and_truncates_unicode_by_bytes(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', '/tmp')) as folder:
             path = Path(folder)
             (path / '.env').write_text('APP_KEY="private-quote-sentinel\\\""\n')
-            result = self.run_step(path, 'printf \'private-quote-sentinel"\'; python3 -c \'print("é" * 5000)\'')
+            result = self.run_step(path, 'printf \'private-quote-sentinel"\' >&2; python3 -c \'import sys; print("é" * 5000, file=sys.stderr)\'')
             output = json.loads(result.stdout)
             self.assertNotIn('private-quote-sentinel', result.stdout)
-            self.assertLessEqual(len(output['stdout'].encode()), 4096)
-            result = self.run_step(path, 'printf \'private-quote-sentinel"\'')
-            self.assertEqual(json.loads(result.stdout)['stdout'], '[REDACTED]')
-
+            self.assertLessEqual(len(output['stderr'].encode()), 4096)
+            result = self.run_step(path, 'printf \'private-quote-sentinel"\' >&2')
+            self.assertEqual(json.loads(result.stdout)['stderr'], '[REDACTED]')
 
 if __name__ == '__main__':
     unittest.main()

@@ -318,9 +318,23 @@ final readonly class DirectOperation
         $this->assertRun($operation, ValidatedData::string($data['run_id']));
         $status = OperationStatus::from(ValidatedData::string($data['status'] ?? 'running'));
         $code = ValidatedData::nullableString($data['error_code'] ?? null);
+        $observedFailure = $operation->state['native_failure'] ?? null;
+        $failure = $data['failure'] ?? null;
+        if (is_array($observedFailure) && (! is_array($failure)
+            || ($failure['failed_step'] ?? null) !== ($observedFailure['failed_step'] ?? null)
+            || ($failure['stderr_recorded'] ?? false) !== true)) {
+            $failure = $observedFailure;
+        }
+        $failedStep = is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null;
         if ($operation->status->terminal()) {
             if ($operation->status !== $status || ($operation->result ?? []) !== $result || $operation->error_code !== $code) {
                 throw new ResourceOperationException('operation.completion_conflict', 'The Operation has another terminal result.', 409);
+            }
+
+            if (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
+                && (! array_key_exists('native_failure', $operation->state ?? []) || ($operation->state['native_failure'] ?? null) !== $failure)) {
+                app(OperationStore::class)->change($operation, ['failed_step' => $failedStep,
+                    'state' => [...($operation->state ?? []), 'native_failure' => $failure]]);
             }
 
             return $operation;
@@ -330,7 +344,8 @@ final readonly class DirectOperation
         app(OperationStore::class)->change($operation, [
             'status' => $status, 'started_at' => $operation->started_at ?? $startedAt, 'finished_at' => $finishedAt,
             'lock_key' => $status->terminal() ? null : $operation->lock_key,
-            'current_step' => null, 'failed_step' => null, 'error_code' => $code, 'result' => $result,
+            'current_step' => null, 'failed_step' => (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) ? $failedStep : null), 'error_code' => $code, 'result' => $result,
+            'state' => [...($operation->state ?? []), 'native_failure' => in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true) ? $failure : null],
         ]);
 
         return $operation->refresh();

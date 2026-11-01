@@ -1765,7 +1765,7 @@ CTRL_DATA_OVERRIDES = {
     'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
     'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
-SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
+SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 
 
 # The create and register responses report a name that Orbit converted to `default` the same way.

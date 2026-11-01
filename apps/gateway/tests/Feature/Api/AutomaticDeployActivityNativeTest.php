@@ -40,8 +40,8 @@ it('admits an existing event key and passes its public intent to one native run'
         ->and(Operation::query()->count())->toBe(1);
 });
 
-it('records the terminal Activity once and preserves the deployment hold', function (): void {
-    $hold = ['result' => 'commit_failed', 'commit' => str_repeat('b', 40)];
+it('projects notable and quiet terminal Activity once and preserves the deployment hold', function (string $result, int $activities): void {
+    $hold = ['result' => $result, 'commit' => str_repeat('b', 40)];
     $this->instance->update(['auto_deploy_state' => $hold]);
     $op = Operation::query()->create(['kind' => 'instance.policy_event', 'target_type' => 'instance_policy',
         'target_id' => $this->instance->id, 'node_id' => $this->gateway->id, 'status' => OperationStatus::Running,
@@ -63,10 +63,10 @@ it('records the terminal Activity once and preserves the deployment hold', funct
     expect($first->status)->toBe(OperationStatus::Succeeded)
         ->and($again->result)->toBe($first->result)
         ->and($socket->sent)->toHaveCount(1)
-        ->and(Activity::query()->where('description', 'auto_deploy.commit_failed')->count())->toBe(1)
+        ->and(Activity::query()->where('description', 'auto_deploy.'.$result)->count())->toBe($activities)
         ->and($this->instance->fresh()->auto_deploy_state)->toBe($hold)
         ->and(Operation::query()->count())->toBe(1);
-});
+})->with(['notable' => ['commit_failed', 1], 'quiet' => ['up_to_date', 0]]);
 
 it('records no Activity for a failed or cancelled native root', function (string $status): void {
     $op = Operation::query()->create(['kind' => 'instance.policy_event', 'target_type' => 'instance_policy',

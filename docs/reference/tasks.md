@@ -170,7 +170,7 @@ To stop a waiting provision, use `tasks:cancel`. Cancellation first requests can
 
 Its native ending DAG checks provider state, withdraws the workspace’s exclusive Route and Caddy publications, runs captured teardown commands only while the VM runs, then composes the canonical TaskVM destroy child. A stopped VM skips guest teardown. The exact group, Project and VM must own the workspace. At most one Route may target it; that Route must belong to the same Project and target only that workspace. Shared or foreign Routes refuse cancellation. Route withdrawal must succeed before VM deletion.
 
-The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed or interrupted cleanup retains the records for recovery; it does not mark the group cancelled. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
+The Gateway retains the owned workspace and VM records until the terminal result confirms complete cleanup. Approved unpublished work must be preserved before admission. Failed, interrupted or timed-out cleanup retains the records for recovery; it does not mark the group cancelled. Its captured VM cleanup [fails like a standalone destroy](/reference/compute-drivers#destroy-a-task-vm): the guest Node becomes `failed`, and another cancel claims it again. A group without a workspace requires no guest effect. Reusing the key returns the same Operation.
 
 A completed group with an owned residual VM or workspace uses this same cleanup and stays `completed`; a completed group with neither returns `tasks.not_cancellable`. A VM without a group uses `task_vm.destroy`.
 

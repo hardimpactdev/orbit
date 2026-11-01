@@ -40,6 +40,7 @@ export const Intent = z.object({
   group_id: Id,
   instance_id: Id,
   project_id: Id,
+  proof_club_required: z.boolean().default(false),
   wireguard_ip: z.ipv4(),
   ssh_identity: WorkspaceInput.shape.ssh_execution.omit({ target: true }),
   workspace: Workspace,
@@ -168,6 +169,16 @@ export function result(
       };
     }
   }
+  if (
+    intent.proof_club_required &&
+    nativeOutputs(steps, "proof_club").step.status !== "succeeded"
+  ) {
+    return {
+      ...receipt,
+      error_code: "tasks.provision_failed",
+      failed_step: "proof_club",
+    };
+  }
   const sourceReceipt = z.record(z.string(), z.unknown()).parse(
     nativeOutputs(steps, "source").outputs.result,
   );
@@ -191,7 +202,7 @@ export function result(
 }
 export const behavior = {
   type: "@nckrtl/task-provision-data",
-  version: "2026.11.01.2",
+  version: "2026.11.01.3",
   resources: {
     public: {
       schema: z.record(z.string(), z.unknown()),
@@ -202,7 +213,7 @@ export const behavior = {
   methods: {
     vm_inputs: {
       description:
-        "Separate Tasks Git descriptors from the canonical VM child input",
+        "Separate Tasks Git and proof descriptors from the canonical VM child input",
       arguments: z.object({
         execution_secrets: z.record(
           z.string(),
@@ -211,11 +222,18 @@ export const behavior = {
       }),
       execute: (
         args: {
-          execution_secrets: Record<string, { vault: string; key: string }>;
+          execution_secrets: Record<
+            string,
+            { vault: string; key: string }
+          >;
         },
         ctx: Context,
       ) => {
-        const { git_authorization: _git, ...copies } = args.execution_secrets;
+        const {
+          git_authorization: _git,
+          proof_club: _proof,
+          ...copies
+        } = args.execution_secrets;
         return data(ctx, { execution_secrets: copies });
       },
     },
@@ -234,8 +252,16 @@ export const behavior = {
       description:
         "Use the provision child's trusted observed pin for the admitted workspace",
       arguments: z.object({ intent: Intent, vm: z.unknown() }),
-      execute: (args: { intent: unknown; vm: unknown }, ctx: Context) =>
-        data(ctx, { workspace: connection(args.intent, args.vm) }),
+      execute: async (
+        args: { intent: unknown; vm: unknown },
+        ctx: Context,
+      ) =>
+        data(ctx, {
+          workspace: connection(args.intent, args.vm),
+          proof_script: await Deno.readTextFile(
+            ctx.extensionFile("scripts/proof_club.py"),
+          ),
+        }),
     },
     profile: {
       description:
@@ -259,7 +285,10 @@ export const behavior = {
         try {
           profile = workspace.skip_profile
             ? { php_version: null, laravel: false }
-            : classifyProvisioningProfile(observation.profile, workspace);
+            : classifyProvisioningProfile(
+              observation.profile,
+              workspace,
+            );
         } catch (error) {
           if (error instanceof ProvisioningRefusal) {
             return data(ctx, {

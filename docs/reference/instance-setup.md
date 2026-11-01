@@ -18,7 +18,11 @@ A Project stores two ordered lists of named commands: setup steps and teardown s
 
 Native create passes stored environment values as a JSON object, including `{}` when the Instance has no stored configuration. Environment capture can seed the template and reach setup without requiring a previous environment import.
 
-Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each setup action retains its exit code and the last 4 KiB of stdout and stderr, with stored environment values redacted. A nonzero exit still fails create.
+Native create expands Gateway-owned setup commands such as `@orbit/ci-caches` through the same supplier as explicit setup. Each setup action keeps its exit code and a stderr tail for failure diagnosis. Command stdout is never kept.
+
+It reads `.env` values the way phpdotenv does, including multi-line quoted values, escapes and inline comments. The runner first normalizes invalid UTF-8, so dropped bytes can never join pieces into a secret. It then redacts every known secret value in one pass across the whole captured stderr. Known secrets are stored environment values and secret-named variables.
+
+It then keeps the last 4 KiB and redacts that tail again. It drops a first line that may start mid-value, and drops any line that still holds an 8-byte fragment of a secret. It keeps only whole lines, at most 4 KiB in total. A nonzero exit still fails create.
 
 Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
@@ -149,7 +153,9 @@ A step cut short by the list budget, or with no time left to start, ends the Ope
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`. Orbit retains a bounded stderr tail internally, without including command output in the public error. Fix or destroy the step, then run `instance:destroy` again.
+The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`.
+
+A failed native run exposes a bounded, redacted stderr tail or native step error in the Operation’s `error.detail`, with its `failed_step`. Known target environment secrets and credential-shaped values are redacted before the 4 KiB tail is taken and again afterward. Stdout is never failure evidence. Fix or destroy the step, then run `instance:destroy` again.
 
 ## Bootstrap the Orbit repository
 

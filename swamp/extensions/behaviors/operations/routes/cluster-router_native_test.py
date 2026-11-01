@@ -101,8 +101,8 @@ PY"""
             connection=connection,
             host_keys=["ssh-ed25519 fixture"],
             **{
-                side: dict(caddy={}, php={}, dns=dict(digest=side))
-                for side in ["before", "prepared", "withdrawn", "after"]
+                side: dict(caddy=0, php=0, dns=index)
+                for index, side in enumerate(["before", "prepared", "withdrawn", "after"])
             },
         )
         leaf = dict(node_id=9, scope="route-7-router")
@@ -130,7 +130,7 @@ PY"""
                     )
                 ],
             ),
-            route_mutations=dict(forward=stage, restore=stage),
+            route_mutations=dict(schema_version=2, artifacts=dict(caddy=[{}], php=[{}], dns=[dict(digest=side) for side in ["before", "prepared", "withdrawn", "after"]]), forward=stage, restore=stage),
         )
         self.state = dict(events=[])
 
@@ -195,7 +195,7 @@ PY"""
         self.assertNotIn("route-lan-apply", events)
 
     def test_empty_optional_fanouts_still_prove_required_publication(self):
-        for phase in self.intent["route_mutations"].values():
+        for phase in [self.intent["route_mutations"][side] for side in ("forward", "restore")]:
             phase["cleanup"] = []
             phase["prepare_certificates"] = []
             phase["certificates"] = []

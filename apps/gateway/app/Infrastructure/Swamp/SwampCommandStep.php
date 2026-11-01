@@ -7,6 +7,7 @@ namespace App\Infrastructure\Swamp;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationResultFields;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -39,16 +40,36 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         $workflow = $direct->definition($operation->kind)['workflow'] ?? null;
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
-        if ($workflow === null || ! $direct->usesNativeTerminal($operation) || $operation->status !== OperationStatus::Running
-            || $operation->error_code !== 'swamp.start_uncertain' || isset($operation->state['swamp_run_id'])
-            || ($operation->state['swamp_start'] ?? null) !== $start) {
+        $timedOut = ExpireOperationAction::awaitsSettlement($operation);
+        if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
+            || (isset($operation->state['swamp_start']) && $operation->state['swamp_start'] !== $start)
+            || (! $timedOut && ($operation->status !== OperationStatus::Running || $operation->error_code !== 'swamp.start_uncertain'
+                || ($operation->state['swamp_start'] ?? null) !== $start))) {
             return;
         }
-        $reply = $this->read('workflow.run.search', ['workflow' => $workflow,
+        $reply = $this->read('workflow.run.search', [...(! $timedOut ? ['workflow' => $workflow] : []),
             'inputs' => ['operation_id' => (string) $operation->id, 'node_id' => (string) $operation->node_id, 'kind' => $operation->kind],
             'tags' => ['orbit_start_key' => $start['key']], 'limit' => 2]);
         $data = $reply['data'] ?? null;
         $rows = is_array($data) ? ($data['results'] ?? null) : null;
+        if ($timedOut && ($reply['total'] ?? null) === 0 && $rows === []) {
+            DB::transaction(function () use ($operation): void {
+                $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+                if (! ExpireOperationAction::awaitsSettlement($current) || isset($current->state['swamp_run_id'])
+                    || $current->kind !== $operation->kind || $current->node_id !== $operation->node_id
+                    || ($current->state['swamp_start'] ?? null) !== ($operation->state['swamp_start'] ?? null)) {
+                    return;
+                }
+                $timeout = $current->state['native_timeout'] ?? [];
+                app(OperationStore::class)->change($current, ['lock_key' => null,
+                    'state' => [...($current->state ?? []), 'native_timeout' => [
+                        ...(is_array($timeout) ? $timeout : []), 'no_run_verified_at' => now()->toISOString(),
+                    ]],
+                ]);
+            });
+
+            return;
+        }
         if (($reply['total'] ?? null) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) !== 1 || ! is_array($rows[0])) {
             throw $this->unavailable();
         }
@@ -65,12 +86,13 @@ final readonly class SwampCommandStep
         }
         DB::transaction(function () use ($operation, $runId, $start): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if ($current->status !== OperationStatus::Running || isset($current->state['swamp_run_id'])
-                || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start
+            if (isset($current->state['swamp_run_id'])
+                || (! ExpireOperationAction::awaitsSettlement($current) && ($current->status !== OperationStatus::Running
+                    || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start))
                 || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
                 return;
             }
-            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => null,
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => ExpireOperationAction::awaitsSettlement($current) ? $current->error_code : null,
                 'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
         });
     }
@@ -79,7 +101,7 @@ final readonly class SwampCommandStep
      * @param  array<string,mixed>  $terminalRun  Native event.run, or its bound id after a late attach miss.
      * @param  array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string}>}  $selector  The fixed family terminal_result declaration.
      */
-    public function projectTerminal(Operation $operation, array $terminalRun, array $selector): Operation
+    public function projectTerminal(Operation $operation, array $terminalRun, array $selector, bool $atDeadline = false): Operation
     {
         $direct = app(DirectOperation::class);
         $runId = $terminalRun['id'] ?? null;
@@ -100,11 +122,28 @@ final readonly class SwampCommandStep
         $inputs = $run['inputs'] ?? null;
         $workflow = $direct->definition($operation->kind)['workflow'] ?? throw $this->unavailable();
         if (($run['id'] ?? null) !== $runId || ($run['workflowName'] ?? null) !== $workflow
-            || ! in_array($run['status'] ?? null, $terminalStatuses, true)
+            || ! in_array($run['status'] ?? null, [...$terminalStatuses, 'pending', 'running', 'suspended'], true)
             || ($hasStatus && $run['status'] !== $terminalRun['status']) || ! is_array($inputs)
             || ($inputs['operation_id'] ?? null) !== $operation->id || ($inputs['node_id'] ?? null) !== $operation->node_id
             || ($inputs['kind'] ?? null) !== $operation->kind) {
             throw $this->unavailable();
+        }
+        if (! in_array($run['status'], $terminalStatuses, true)) {
+            $deadline = OperationRunBudgets::deadline($operation);
+            if (! $atDeadline || $deadline === null || $deadline->isFuture()) {
+                throw $this->unavailable();
+            }
+
+            return app(ExpireOperationAction::class)->execute($operation);
+        }
+        $deadline = OperationRunBudgets::deadline($operation);
+        try {
+            $completedAt = is_string($run['completedAt'] ?? null) ? Carbon::parse($run['completedAt']) : null;
+        } catch (Throwable) {
+            throw $this->unavailable();
+        }
+        if ($deadline !== null && ! $deadline->isFuture() && ($completedAt === null || $completedAt->greaterThan($deadline))) {
+            $operation = app(ExpireOperationAction::class)->execute($operation);
         }
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
@@ -128,7 +167,7 @@ final readonly class SwampCommandStep
             return $direct->projection($current)->apply($current, [
                 'run_id' => $runId, 'status' => $status, 'started_at' => $run['startedAt'], 'finished_at' => $run['completedAt'],
                 'error_code' => in_array($status, ['failed', 'interrupted'], true) ? ($result['error_code'] ?? 'operation.native_failed') : null,
-                'result' => $result,
+                'result' => $result, 'failure' => app(NativeStepFailure::class)->fromRun($run, $current),
             ]);
         });
     }

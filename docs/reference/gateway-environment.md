@@ -37,6 +37,9 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_READ_TOKEN_NAME` | Installed token name, written by `gateway:swamp-reader:install`. |
 | `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` | Installed UTC expiry, written by the installer and checked hourly. |
 | `ORBIT_SWAMP_CA_PATH` | Orbit root CA file. Default `<ORBIT_HOME>/ca/root.pem`, with `ORBIT_HOME` defaulting to `$HOME/.orbit`. |
+| `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Only Project 62 (`swamp-proof`) provision receives a names-only execution copy. Keep its value in the Gateway environment. |
+
+Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key` inside the owned Task VM, mode `0600` for `orbit`. Delivery refuses any other account. The native parent sends it on SSH stdin; neither the Operation input nor its result contains the value. The copy has a 10-second dispatch budget and a 30-second action budget. An action timeout reports the phase and budget on stderr. A missing credential refuses proof placement. Other Projects receive no copy. Normal task cancellation destroys the VM and its private filesystem.
 
 ### Rotate the Swamp reader credential
 

@@ -56,7 +56,7 @@ The Analytics footprint requires these resources. Role convergence is unavailabl
 
 | Step | Result |
 | --- | --- |
-| Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node, and their read-only mounts in that Process. See [ClickHouse configuration](#clickhouse-configuration). |
+| Configure ClickHouse | Plausible's ClickHouse files on the ClickHouse Process's Node. The Process must already mount them read-only. See [ClickHouse configuration](#clickhouse-configuration). |
 | Admit local storage | The rule `orbit:analytics-postgres-local` or `orbit:analytics-clickhouse-local` for each storage Process on the role's own Node. Storage on another Node needs no rule. |
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
@@ -77,7 +77,7 @@ The current lifecycle identifies Plausible by its Node and the name `plausible`,
 
 ClickHouse's defaults assume a large server. On a small Node, its system log tables grow and its background merges run out of memory. So each role convergence applies the four ClickHouse files that Plausible Community Edition ships, unchanged.
 
-The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`. The native footprint mounts each file read-only into the ClickHouse Process at the path that Plausible's own setup uses, then applies the Process restart rules below.
+The native Node footprint publishes Plausible's four ClickHouse files as root with mode `0644` on the Node that runs the ClickHouse Process. It refuses symlinks, foreign ownership, and writable shared paths before publication. It writes a file only when its content differs and restores earlier files if a later publication fails. Failed restoration reports `analytics.clickhouse_recovery_failed`.
 
 | Host file | Container path |
 | --- | --- |
@@ -88,23 +88,15 @@ The native Node footprint publishes Plausible's four ClickHouse files as root wi
 
 `logs.xml` keeps only `query_log`, for 30 days, and turns off ClickHouse's other system log tables. To diagnose ClickHouse itself, use its console log and `query_log`. Tables that ClickHouse wrote earlier keep their data. Orbit does not drop them.
 
-The role adds only the mounts that the Process lacks. It keeps the Process's ID, name, image, command, environment, ports, and other volumes. When another volume uses one of the four container paths, convergence fails with `analytics.clickhouse_mount_conflict` before it changes anything. Remove that volume first.
+The selected ClickHouse Process must already mount these files read-only at the listed container paths. The current native footprint publishes the files but does not add or validate those mounts, replace the container, or restart ClickHouse. Missing mount reconciliation and automatic restart are a known gap in native role convergence. After a file changes, restart the Process through its normal Process operation so ClickHouse reads it. Each restart drops Plausible's ClickHouse connection until ClickHouse is back.
 
-| What changed | What happens to ClickHouse |
-| --- | --- |
-| A mount was added | The Process runtime replaces the container, which reads the files as it starts. |
-| Only a file changed | The Process runtime restarts the container. A stopped Process stays stopped and reads the files at its next start. |
-| Nothing | ClickHouse keeps running. |
-
-Each ClickHouse restart drops Plausible's ClickHouse connection until ClickHouse is back.
-
-To apply the configuration to an existing install, converge the role again with the same two Processes:
+To publish the configuration to an existing install, converge the role again with the same two Processes, then restart ClickHouse if any file changed:
 
 ```bash
 orbit node:role:add NODE analytics --converge --postgres-process=ID --clickhouse-process=ID
 ```
 
-A failure stops convergence at the `clickhouse-config` step, before Plausible runs, and marks the ClickHouse Process `failed`. The next convergence repeats the step and restarts that Process. Removing the role leaves the files and mounts in place.
+A failure stops convergence before Plausible runs and fails the owning Operation. It does not mark the ClickHouse Process failed. A later convergence attempts file publication again. Removing the role leaves the files and existing mounts in place.
 
 ## Update and remove the role
 
@@ -184,7 +176,7 @@ The Process runtime already converges a Docker container on a Node, with logs, r
 
 ### Plausible's own ClickHouse files
 
-Without them, ClickHouse ran a merge loop on a small Node. Orbit uses Plausible's tested files unchanged, instead of its own variant. It mounts single files, because the ClickHouse image keeps its own files in `config.d` and `users.d`.
+Without them, ClickHouse ran a merge loop on a small Node. Orbit uses Plausible's tested files unchanged, instead of its own variant. Use single-file mounts because the ClickHouse image keeps its own files in `config.d` and `users.d`.
 
 ### A dedicated Route kind with two paths
 
