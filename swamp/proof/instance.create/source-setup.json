@@ -1,0 +1,135 @@
+{
+  "kind": "instance.create",
+  "workflow": "operation-instance-create",
+  "topology": "app-dev",
+  "budget_seconds": 952,
+  "queue_timeout_seconds": 15,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "project:create",
+        "proof-create-${proof.run}",
+        "node-package",
+        "https://github.com/octocat/Hello-World.git",
+        "--root=.",
+        "--default-branch=master",
+        "--source-access=github_app",
+        "--json"
+      ],
+      "capture": {
+        "project_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "instance:setup-step:create",
+        "verify-public-source",
+        "--project=${capture.project_id}",
+        "--command=test -f README && test \"$APP_ENV\" = development && git rev-parse --verify HEAD > .orbit-proof-setup",
+        "--timeout=30",
+        "--json"
+      ]
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "instance:create",
+      "${capture.project_id}",
+      "${topology.app-dev.node_id}",
+      "proof-${proof.run}",
+      "--root=.",
+      "--branch=proof-${proof.run}",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "project_id": "${capture.project_id}",
+    "node_id": "${topology.app-dev.node_id}",
+    "task_vm": false,
+    "root": ".",
+    "branch_override": "proof-${proof.run}",
+    "repository": "https://github.com/octocat/Hello-World.git",
+    "default_branch": "master",
+    "run_budget_seconds": 952,
+    "direct_provisioning": {
+      "project_type": "node-package",
+      "skip_profile": false,
+      "phase_plan": {
+        "prepare": {
+          "seconds": 10
+        },
+        "source": {
+          "seconds": 30
+        },
+        "environment": {
+          "seconds": 30
+        },
+        "runtime": {
+          "seconds": 240
+        },
+        "setup": {
+          "seconds": 30
+        },
+        "finish": {
+          "seconds": 5
+        },
+        "queue_timeout_seconds": 15,
+        "queue_allowance_seconds": 600,
+        "kill_allowance_seconds": 7
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "create",
+      "step": "finish-result",
+      "match": {
+        "ready": true
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "prepare",
+      "job": "prepare",
+      "step": "create-prepare",
+      "budget_seconds": 10
+    },
+    {
+      "name": "source",
+      "job": "prepare",
+      "step": "create-source",
+      "budget_seconds": 30
+    },
+    {
+      "name": "environment",
+      "job": "prepare",
+      "step": "env-write",
+      "budget_seconds": 30
+    },
+    {
+      "name": "setup",
+      "job": "create",
+      "step": "finish-setup",
+      "budget_seconds": 30
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "swamp/proof/instance.create/parity.py",
+      "source-setup"
+    ],
+    "cases": [
+      "public-anonymous-new-branch",
+      "empty-stored-environment-object",
+      "ordered-canonical-setup",
+      "Gateway-terminal-projection"
+    ]
+  }
+}

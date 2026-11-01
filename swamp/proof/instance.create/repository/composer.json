@@ -1,0 +1,7 @@
+{
+  "name": "hardimpactdev/swamp-proof-web",
+  "description": "Dependency-free PHP source for the isolated Instance create proof",
+  "type": "project",
+  "license": "MIT",
+  "require": {"php": ">=8.2 <9.0"}
+}

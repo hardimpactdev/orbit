@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/task-repository-scripts'
-version: 2026.11.01.2
+version: 2026.11.01.3
 visibility: private
 license: MIT
 description: Public Tasks repository metadata and separate native script/analysis

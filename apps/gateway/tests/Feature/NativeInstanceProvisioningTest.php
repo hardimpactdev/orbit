@@ -20,6 +20,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
+use Illuminate\Support\Facades\Crypt;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -145,22 +146,23 @@ it('refuses an unavailable create before reserving a new Instance', function ():
 
 it('projects source and environment from the bound native terminal only and is idempotent', function (): void {
     $run = '0c4f71cf-84bd-4b80-8da4-8cd1b39cb8b6';
-    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run,
+        'create_environment' => Crypt::encryptString(json_encode(['values' => ['APP_NAME' => 'Private project', 'MODE' => 'development'], 'name' => 'Project', 'framework_key' => 'base64:synthetic'], JSON_THROW_ON_ERROR))]]);
     $socket = new FakeRoutePublicationSocket;
     $socket->reply = static fn (array $request): array => [['type' => 'vault.read-secret', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => '{"values":{"APP_NAME":"Private project","MODE":"development"}}']]]];
     config(['swamp.run_token' => 'fixture.token']);
     app()->instance(WebSocketClient::class, $socket);
-    $result = ['instance_id' => $this->instance->id, 'ready' => true, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'environment_seeded_keys' => ['APP_NAME', 'MODE'], 'environment_keys' => ['APP_NAME', 'MODE'], 'vp_environment' => null];
+    $result = ['instance_id' => $this->instance->id, 'ready' => true, 'source' => ['branch' => 'proof', 'commit' => str_repeat('a', 40), 'php_version' => null, 'laravel' => false], 'environment_template' => '', 'environment_seeded_keys' => ['APP_DEBUG', 'APP_ENV', 'APP_NAME', 'MODE'], 'environment_keys' => ['APP_DEBUG', 'APP_ENV', 'APP_NAME', 'MODE'], 'vp_environment' => null];
     $data = ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $result];
     $projection = app(DevelopmentInstanceCreateProjection::class);
     $projection->apply($operation, $data);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Active)
         ->and($this->instance->starting_commit)->toBe(str_repeat('a', 40))
         ->and($this->instance->first_setup_pending)->toBeFalse()
-        ->and($this->instance->environment_owned_keys)->toBe(['APP_NAME', 'MODE'])
+        ->and($this->instance->environment_owned_keys)->toBe(['APP_DEBUG', 'APP_ENV', 'APP_NAME', 'MODE'])
         ->and($operation->refresh()->status->value)->toBe('succeeded');
     $projection->apply($operation, $data);
-    expect($socket->sent)->toHaveCount(1);
+    expect($socket->sent)->toBe([]);
 });
 
 it('retains source and VP pins after setup failure for a fresh normal admission', function (): void {
@@ -196,7 +198,7 @@ it('captures checkout scope and admitted seed values in the private command copy
     app()->instance(WebSocketClient::class, $socket);
     config(['swamp.run_token' => 'synthetic-token']);
     $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
-    $command = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    $command = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR)['steps'][0];
     expect($command)->toMatchArray(['directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
         ->and(json_encode($public))->not->toContain('private-command');
 });
@@ -218,4 +220,19 @@ it('serializes an empty stored environment as a native map before source resolut
     expect(get_object_vars($material->values))->toBe([]);
     expect($public['intent']['skip_profile'])->toBeTrue();
     expect($public['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-environment-input-'.$operation->id]);
+    $key = $material->framework_key;
+    $captured = $operation->refresh()->state['create_environment'];
+    expect($captured)->toBeString()->not->toContain($key);
+    app(NativeDevelopmentInstanceInput::class)->create($operation);
+    expect($socket->sent)->toHaveCount(2);
+    $second = json_decode(Crypt::decryptString($operation->refresh()->state['create_environment']), flags: JSON_THROW_ON_ERROR);
+    expect($second->values)->toBeInstanceOf(stdClass::class)->and($second->framework_key)->toBe($key)
+        ->and(json_encode($public))->not->toContain($key);
+    $next = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'queued', 'input' => $operation->input]);
+    app(NativeDevelopmentInstanceInput::class)->create($next);
+    $freshMaterial = json_decode($socket->sent[2]['payload']['value'], flags: JSON_THROW_ON_ERROR);
+    expect($freshMaterial->values)->toBeInstanceOf(stdClass::class)->and($freshMaterial->framework_key)->toBe($key)
+        ->and($next->refresh()->state['create_environment'])->not->toContain($key);
+
 });

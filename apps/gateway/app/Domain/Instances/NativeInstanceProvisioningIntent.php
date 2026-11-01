@@ -52,6 +52,13 @@ final readonly class NativeInstanceProvisioningIntent
             $this->unavailable();
         }
         $plan = $this->common($instance, 'development', (string) $input['user']);
+        $setup = ['instance_id' => $instance->id, 'list' => 'setup',
+            ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)];
+        $phasePlan = ['prepare' => ['seconds' => 10], 'source' => ['seconds' => 30],
+            'environment' => ['seconds' => 30], 'runtime' => ['seconds' => 240],
+            'setup' => ['seconds' => array_sum(array_column(InstanceLifecycleInput::members(['members' => $setup['steps']]), 'timeout_seconds'))],
+            'finish' => ['seconds' => 5], 'queue_timeout_seconds' => 15,
+            'queue_allowance_seconds' => 40 * 15, 'kill_allowance_seconds' => count(InstanceLifecycleInput::members(['members' => $setup['steps']])) + 6];
 
         return [...$plan, 'source' => [
             'repository' => $input['repository'], 'checkout' => $instance->checkout_path,
@@ -60,8 +67,7 @@ final readonly class NativeInstanceProvisioningIntent
         ], 'resolve' => ['instance_name' => $instance->name, 'default_branch' => $input['default_branch'],
             'branch_override' => $input['branch_override'], 'seed_commit' => $input['seed_commit'],
             'network' => true, 'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https']))],
-            'setup' => ['instance_id' => $instance->id, 'list' => 'setup',
-                ...app(StartInstanceStepListAction::class)->appStepAdmission($instance, LifecyclePhase::Setup)],
+            'setup' => $setup, 'phase_plan' => $phasePlan,
             'already_active' => $instance->status === InstanceState::Active && ! $instance->first_setup_pending,
             'retained_source' => in_array($instance->status, [InstanceState::Active, InstanceState::SourceResolved], true) && is_bool($instance->source_is_laravel) ? ['branch' => $instance->branch,
                 'commit' => $instance->starting_commit, 'php_version' => $instance->selected_php_version,

@@ -257,6 +257,17 @@ export function destroySteps(): Fields[] {
         { step: "destroy-processes", condition: { type: "always" } },
         { step: "destroy-verified", condition: { type: "succeeded" } },
     ];
+    a.metadata(
+        "environment-library",
+        "environment_script",
+        {},
+        "@nckrtl/task-repository-assets",
+    );
+    a.sshAction("environment-library-copy", "copy", {
+        src: e(o("environment-library") + ".script_file"),
+        dst: e('"/tmp/orbit-instance-" + run.id + "/project_environment.py"'),
+        direction: "to",
+    });
     a.metadata("step-assets", "read", {
         action: "run_project_step",
         input: {},

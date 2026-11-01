@@ -27,23 +27,27 @@ export function assemble(
     values.APP_ENV ??= "development";
     values.APP_DEBUG ??= "true";
     if (profile.laravel && !values.APP_KEY) {
-        values.APP_KEY = input.framework_key ??
-            "base64:" +
-                btoa(
-                    String.fromCharCode(
-                        ...crypto.getRandomValues(new Uint8Array(32)),
-                    ),
-                );
+        if (!input.framework_key) throw new Error("env.reference_unavailable");
+        values.APP_KEY = input.framework_key;
     }
     const content = renderAccountEnvironment(values, "development", null);
     if (new TextEncoder().encode(content).length > 131072) {
         throw new Error("env.configuration_invalid");
     }
-    return { values, content, keys: Object.keys(values).sort() };
+    return {
+        values,
+        content,
+        testing_content: renderAccountEnvironment(
+            { ...values, APP_ENV: "testing" },
+            "development",
+            null,
+        ),
+        keys: Object.keys(values).sort(),
+    };
 }
 export const behavior = {
     type: "@nckrtl/instance-create-environment",
-    version: "2026.11.01.1",
+    version: "2026.11.01.3",
     resources: {
         result: {
             schema: z.object({
@@ -58,9 +62,9 @@ export const behavior = {
     methods: {
         capture: {
             description:
-                "Capture one private template into native vault output; return names and keys only",
+                "Merge a committed public template with Gateway-owned vault values",
             arguments: z.object({
-                path: z.string(),
+                template: z.string().max(131072),
                 env: z.object({
                     ORBIT_ENVIRONMENT: z.string().meta({ sensitive: true }),
                 }),
@@ -70,7 +74,7 @@ export const behavior = {
             }),
             execute: async (
                 args: {
-                    path: string;
+                    template: string;
                     env: { ORBIT_ENVIRONMENT: string };
                     profile: { laravel: boolean };
                     reference: z.infer<typeof Ref>;
@@ -78,13 +82,8 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
-                const metadata = await Deno.lstat(args.path);
-                if (
-                    !metadata.isFile || metadata.isSymlink ||
-                    metadata.size > 131072
-                ) throw new Error("env.configuration_invalid");
                 const result = assemble(
-                    await Deno.readTextFile(args.path),
+                    args.template,
                     JSON.parse(args.env.ORBIT_ENVIRONMENT),
                     args.profile,
                 );
@@ -93,7 +92,6 @@ export const behavior = {
                     args.reference.key,
                     JSON.stringify({ ...result, directory: args.directory }),
                 );
-                await Deno.remove(args.path);
                 const value = {
                     ready: true,
                     reference: args.reference,

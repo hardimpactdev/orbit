@@ -2,6 +2,11 @@ import { z } from "npm:zod@4.4.3";
 import { inspectDestroySources } from "../instance-lifecycle/destroy_inspection.ts";
 import { destroyResult, requireActions } from "./required.ts";
 import { createResult, Step } from "./result.ts";
+import { createAssets } from "./create_assets.ts";
+import {
+    classifyProvisioningProfile,
+    ProvisioningRefusal,
+} from "../instance-lifecycle/source_profile.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 const Observation = z.object({ stdout: z.string() }).passthrough();
 type Context = {
@@ -10,7 +15,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.01.2",
+    version: "2026.11.01.3",
     resources: {
         assets: {
             schema: z.object({
@@ -21,8 +26,122 @@ export const behavior = {
             garbageCollection: 10,
         },
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
+        phase_assets: {
+            schema: z.object({
+                files: z.array(z.object({
+                    source: z.string(),
+                    destination: z.string(),
+                })),
+            }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
+        create_assets: {
+            schema: z.object({
+                directory: z.string(),
+                intent_json: z.string(),
+            }),
+            lifetime: "1d",
+            garbageCollection: 10,
+        },
     },
     methods: {
+        create_assets: {
+            description:
+                "Resolve the unchanged create phase scripts and their delivery directory",
+            arguments: z.object({ intent: ObjectValue }).strict(),
+            execute: async (
+                args: { intent: Record<string, unknown> },
+                ctx: Context,
+            ) => {
+                const value = {
+                    ...await createAssets((path) => ctx.extensionFile(path)),
+                    intent_json: JSON.stringify(args.intent),
+                };
+                await ctx.writeResource("create_assets", "create", value);
+                return value;
+            },
+        },
+        source_result: {
+            description:
+                "Classify the single source phase's public profile through canonical policy",
+            arguments: z.object({
+                intent: ObjectValue,
+                observation: Observation,
+            }),
+            execute: async (
+                args: {
+                    intent: Record<string, unknown>;
+                    observation: { stdout: string; exitCode?: number };
+                },
+                ctx: Context,
+            ) => {
+                const raw = ObjectValue.parse(
+                    JSON.parse(args.observation.stdout),
+                );
+                if (args.observation.exitCode !== 0) {
+                    const value = {
+                        ready: false,
+                        error_code: z.string().regex(
+                            /^(?:instance|env|app-dev)\.[a-z_]+$/,
+                        ).parse(raw.error_code),
+                    };
+                    await ctx.writeResource("result", "source", value);
+                    return value;
+                }
+                const observed = z.object({
+                    branch: z.string(),
+                    commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/),
+                    profile: z.unknown().optional(),
+                    php_version: z.string().nullable().optional(),
+                    laravel: z.boolean().optional(),
+                    template: z.string().max(131072),
+                }).parse(JSON.parse(args.observation.stdout));
+                let value: Record<string, unknown>;
+                try {
+                    value = {
+                        ready: true,
+                        branch: observed.branch,
+                        commit: observed.commit,
+                        template: observed.template,
+                        ...(args.intent.retained_source != null
+                            ? {
+                                php_version: observed.php_version ?? null,
+                                laravel: observed.laravel ?? false,
+                            }
+                            : classifyProvisioningProfile(observed.profile, {
+                                project_type: z.string().parse(
+                                    args.intent.project_type,
+                                ),
+                                php_versions: z.array(z.string()).min(1).parse(
+                                    args.intent.php_versions,
+                                ),
+                            })),
+                    };
+                } catch (error) {
+                    if (!(error instanceof ProvisioningRefusal)) throw error;
+                    value = { ready: false, error_code: error.code };
+                }
+                await ctx.writeResource("result", "source", value);
+                return value;
+            },
+        },
+        setup_assets: {
+            description:
+                "Resolve the shared ordered setup phase and its canonical command policy",
+            arguments: z.object({}).strict(),
+            execute: async (_args: Record<string, never>, ctx: Context) => {
+                const value = {
+                    files: ["create/setup.py", "scripts/run_project_step.py"]
+                        .map((path) => ({
+                            source: ctx.extensionFile(path),
+                            destination: path,
+                        })),
+                };
+                await ctx.writeResource("phase_assets", "setup", value);
+                return value;
+            },
+        },
         read: {
             description: "Bind one admitted action to its shipped script",
             arguments: z.object({

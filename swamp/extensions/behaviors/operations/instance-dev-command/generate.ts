@@ -1,11 +1,6 @@
 import { stringify } from "jsr:@std/yaml@1.0.11";
-import {
-    createCompletionSteps,
-    createPreparationSteps,
-} from "./create_steps.ts";
-import { vpPreparationJobs } from "../instance-vp-command/steps.ts";
+import { createPhaseSteps } from "./create_factory.ts";
 import { destroySteps } from "./destroy_steps.ts";
-import { expression as e } from "../instance-vp-command/native_steps.ts";
 const reference = {
     type: "object",
     properties: {
@@ -16,7 +11,7 @@ const reference = {
     additionalProperties: false,
 };
 export function workflow(kind: "create" | "destroy") {
-    const steps = kind === "create" ? createCompletionSteps() : destroySteps();
+    const steps = kind === "create" ? [] : destroySteps();
     const terminal = kind === "create" ? "finish-result" : "remove-result";
     steps.push({
         name: "accepted",
@@ -39,6 +34,7 @@ export function workflow(kind: "create" | "destroy") {
         description: "Development Instance " + kind +
             " from209 through separately placed official SSH actions.",
         vaults: ["orbit-control-inputs"],
+        queueTimeout: 15,
         inputs: {
             type: "object",
             properties: {
@@ -61,58 +57,9 @@ export function workflow(kind: "create" | "destroy") {
             additionalProperties: false,
         },
         jobs: kind === "create"
-            ? [
-                {
-                    name: "prepare",
-                    target: "orbit-node-209",
-                    steps: createPreparationSteps(),
-                },
-                ...vpPreparationJobs("vp", "inputs.intent", "prepare"),
-                {
-                    name: "create",
-                    target: "orbit-node-209",
-                    dependsOn: [{
-                        job: "prepare",
-                        condition: { type: "always" },
-                    }, { job: "vp-install", condition: { type: "always" } }],
-                    steps,
-                },
-            ]
+            ? createPhaseSteps().jobs
             : [{ name: kind, target: "orbit-node-209", steps }],
     };
-    if (kind === "create") {
-        for (const job of result.jobs) {
-            const name = String(job.name) + "-admitted";
-            const jobSteps = job.steps as Record<string, unknown>[];
-            for (const step of jobSteps) {
-                if (step.name === "finish-result" || step.name === "accepted") {
-                    continue;
-                }
-                if (step.forEach) {
-                    const loop = step.forEach as { in: string };
-                    loop.in = e(
-                        "inputs.intent.already_active ? [] : (" +
-                            loop.in.slice(3, -3).trim() + ")",
-                    );
-                }
-                step.dependsOn = [
-                    ...((step.dependsOn as Record<string, unknown>[]) ?? []),
-                    { step: name, condition: { type: "succeeded" } },
-                ];
-            }
-            jobSteps.unshift({
-                name,
-                target: "orbit-node-209",
-                guard: e("inputs.intent.already_active"),
-                task: {
-                    type: "assert",
-                    expr: "true",
-                    severity: "high",
-                    message: "The Instance is already active.",
-                },
-            });
-        }
-    }
     return result;
 }
 if (import.meta.main) {
