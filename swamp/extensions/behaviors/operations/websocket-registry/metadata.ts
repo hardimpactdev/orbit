@@ -72,7 +72,7 @@ export function terminal(raw: unknown, steps: z.infer<typeof Steps>) {
             step.status !== "succeeded" ||
             typeof step.outputs?.stdout !== "string"
         ) return fail("websocket.registry_unavailable");
-        if ([124, 137].includes(Number(step.outputs.exitCode))) {
+        if (step.outputs.exitCode === 124 || step.outputs.exitCode === 137) {
             return fail("websocket.registry_pending");
         }
         let result;
