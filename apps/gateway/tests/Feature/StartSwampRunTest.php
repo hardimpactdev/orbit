@@ -27,6 +27,7 @@ use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
 
 beforeEach(function (): void {
+    config(['queue.connections.gateway.driver' => 'sync']);
     app()->instance(DirectOperation::class, new DirectOperation([new class implements DirectOperationContribution
     {
         public function definitions(): array
@@ -345,7 +346,7 @@ function startTerminalHistory(Operation $operation, string $status): array
         'jobs' => [['name' => 'completion', 'steps' => [['name' => 'result', 'outputs' => ['stdout' => '{"ready":true}']]]]]];
 }
 
-it('announces a fast completed binding and projects it through the observer without a queue consumer', function (string $status, string $eventKind): void {
+it('announces a fast completed binding and projects it through the observer and configured queue', function (string $status, string $eventKind): void {
     config(['queue.default' => 'gateway']);
     $operation = startTerminalIntent();
     $history = startTerminalHistory($operation, $status);

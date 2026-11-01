@@ -45,22 +45,22 @@ it('discovers only declared scheduled roots using read authority without run att
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger);
     scheduledDiscoveryRead($reader, $socket);
-    expect($socket->sent[3]['payload'])->toBe(['cursor' => 0]);
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3], 3, 'd075eb23-7ac4-4487-80d1-57a038a92676'));
+    expect(array_last($socket->sent)['payload'])->toBe(['cursor' => 0]);
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent), 3, 'd075eb23-7ac4-4487-80d1-57a038a92676'));
     $reader->pass();
     Bus::assertNothingDispatched();
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3]));
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent)));
     $reader->pass();
-    Bus::assertDispatchedSync(ProjectSwampScheduledTerminal::class, 1);
-    Bus::assertDispatchedSync(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->workflowId === '4a2d9dd5-9f83-41d4-b8df-8e46367ed230'
+    Bus::assertDispatched(ProjectSwampScheduledTerminal::class, 1);
+    Bus::assertDispatched(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->workflowId === '4a2d9dd5-9f83-41d4-b8df-8e46367ed230'
         && $job->runId === 'b075eb23-7ac4-4487-80d1-57a038a92676' && $job->status === null);
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.get', 'workflow.get', 'workflow.get', 'commits.subscribe']);
+    expect(array_column($socket->sent, 'type'))->toBe([...array_fill(0, count(app(DirectOperation::class)->scheduledResultDefinitions()), 'workflow.get'), 'commits.subscribe']);
     expect($socket->endpoints[0]->bearerToken)->toBe('fixture.reader');
 });
 
 it('reads a pending root again only after a new native commit or startup recovery', function (): void {
     $attempts = 0;
-    Bus::shouldReceive('dispatchSync')->andReturnUsing(function () use (&$attempts): bool {
+    Bus::shouldReceive('dispatch')->andReturnUsing(function () use (&$attempts): bool {
         $attempts++;
 
         return false;
@@ -69,50 +69,52 @@ it('reads a pending root again only after a new native commit or startup recover
     $clock = (object) ['now' => 100.0];
     $reader = new SwampScheduledResults($socket, new NullLogger, static fn (): float => $clock->now);
     scheduledDiscoveryRead($reader, $socket);
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3]));
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent)));
     $reader->pass();
     $clock->now = 10_000;
     $reader->pass();
     $reader->pass();
     expect($attempts)->toBe(1);
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3], 8));
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent), 8));
     $reader->pass();
     expect($attempts)->toBe(2);
     $reader->close();
     $next = new FakeSwampEventSocket;
     scheduledDiscoveryRead(new SwampScheduledResults($next, new NullLogger), $next);
     expect($attempts)->toBe(3);
-    expect($next->sent[3]['payload'])->toBe(['cursor' => 8]);
+    expect(array_last($next->sent)['payload'])->toBe(['cursor' => 8]);
 });
 
-it('removes a delivered root while retaining the saved cursor across process restart', function (): void {
+it('removes an acknowledged result while retaining the saved cursor across process restart', function (): void {
     Bus::fake([ProjectSwampScheduledTerminal::class]);
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger);
     scheduledDiscoveryRead($reader, $socket);
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3]));
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent)));
     $reader->pass();
+    $job = Bus::dispatched(ProjectSwampScheduledTerminal::class)->first();
+    SwampScheduledResults::acknowledge($job->checkpoint, $job->runId);
     $reader->close();
     $next = new FakeSwampEventSocket;
     scheduledDiscoveryRead(new SwampScheduledResults($next, new NullLogger), $next);
-    expect($next->sent[3]['payload'])->toBe(['cursor' => 7]);
-    Bus::assertDispatchedSync(ProjectSwampScheduledTerminal::class, 1);
+    expect(array_last($next->sent)['payload'])->toBe(['cursor' => 7]);
+    Bus::assertDispatched(ProjectSwampScheduledTerminal::class, 1);
 });
 
 it('preserves a failed delivery in the same cursor checkpoint without timer retries', function (): void {
-    Bus::shouldReceive('dispatchSync')->once()->andThrow(new RuntimeException('private-diagnostic'));
+    Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('private-diagnostic'));
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger);
     scheduledDiscoveryRead($reader, $socket);
-    $socket->push(scheduledDiscoveryFeed($socket->sent[3]));
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent)));
     $reader->pass();
     $reader->pass();
     $reader->close();
     Bus::fake([ProjectSwampScheduledTerminal::class]);
     $next = new FakeSwampEventSocket;
     scheduledDiscoveryRead(new SwampScheduledResults($next, new NullLogger), $next);
-    expect($next->sent[3]['payload'])->toBe(['cursor' => 7]);
-    Bus::assertDispatchedSync(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->runId === 'b075eb23-7ac4-4487-80d1-57a038a92676');
+    expect(array_last($next->sent)['payload'])->toBe(['cursor' => 7]);
+    Bus::assertDispatched(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->runId === 'b075eb23-7ac4-4487-80d1-57a038a92676');
 });
 
 it('reconnects a lagged feed from the saved cursor without scanning histories', function (): void {
@@ -121,13 +123,13 @@ it('reconnects a lagged feed from the saved cursor without scanning histories', 
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger, static fn (): float => $clock->now);
     scheduledDiscoveryRead($reader, $socket);
-    $socket->push(['type' => 'commits.subscribe', 'id' => $socket->sent[3]['id'], 'payload' => ['changes' => [], 'cursor' => 7, 'head' => 7, 'done' => false]],
-        ['type' => 'error', 'id' => $socket->sent[3]['id'], 'error' => ['code' => 'commits_lagged']]);
+    $socket->push(['type' => 'commits.subscribe', 'id' => array_last($socket->sent)['id'], 'payload' => ['changes' => [], 'cursor' => 7, 'head' => 7, 'done' => false]],
+        ['type' => 'error', 'id' => array_last($socket->sent)['id'], 'error' => ['code' => 'commits_lagged']]);
     $reader->pass();
     $clock->now = 101;
     scheduledDiscoveryRead($reader, $socket);
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.get', 'workflow.get', 'workflow.get', 'commits.subscribe', 'workflow.get', 'workflow.get', 'workflow.get', 'commits.subscribe']);
-    expect($socket->sent[7]['payload'])->toBe(['cursor' => 7]);
+    expect(array_column($socket->sent, 'type'))->toBe([...array_fill(0, count(app(DirectOperation::class)->scheduledResultDefinitions()), 'workflow.get'), 'commits.subscribe', ...array_fill(0, count(app(DirectOperation::class)->scheduledResultDefinitions()), 'workflow.get'), 'commits.subscribe']);
+    expect(array_last($socket->sent)['payload'])->toBe(['cursor' => 7]);
     Bus::assertNothingDispatched();
 });
 
@@ -136,11 +138,11 @@ it('refuses compacted or unavailable discovery without resetting its cursor', fu
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger);
     scheduledDiscoveryRead($reader, $socket);
-    $socket->push(['type' => 'error', 'id' => $socket->sent[3]['id'], 'error' => ['code' => $code]]);
+    $socket->push(['type' => 'error', 'id' => array_last($socket->sent)['id'], 'error' => ['code' => $code]]);
     $reader->pass();
     $reader->close();
     $reader->pass();
-    expect($socket->sent)->toHaveCount(4);
+    expect($socket->sent)->toHaveCount(count(app(DirectOperation::class)->scheduledResultDefinitions()) + 1);
     Bus::assertNothingDispatched();
 })->with(['commits_compacted', 'commit_feed_unavailable', 'forbidden']);
 
@@ -149,13 +151,13 @@ it('rejects malformed feed data before advancing its saved cursor', function ():
     $socket = new FakeSwampEventSocket;
     $reader = new SwampScheduledResults($socket, new NullLogger);
     scheduledDiscoveryRead($reader, $socket);
-    $frame = scheduledDiscoveryFeed($socket->sent[3]);
+    $frame = scheduledDiscoveryFeed(array_last($socket->sent));
     $frame['payload']['changes'][0]['cursor'] = 8;
     $socket->push($frame);
     $reader->pass();
     $next = new FakeSwampEventSocket;
     scheduledDiscoveryRead(new SwampScheduledResults($next, new NullLogger), $next);
-    expect($next->sent[3]['payload'])->toBe(['cursor' => 0]);
+    expect(array_last($next->sent)['payload'])->toBe(['cursor' => 0]);
     Bus::assertNothingDispatched();
 });
 
@@ -172,6 +174,30 @@ it('refuses discovery when the existing reader cannot read the exact workflow', 
         ]]]);
     $reader->pass();
     $reader->pass();
-    expect(array_column($socket->sent, 'type'))->toBe(['workflow.get', 'workflow.get', 'workflow.get']);
+    expect(array_column($socket->sent, 'type'))->toBe(array_fill(0, count(app(DirectOperation::class)->scheduledResultDefinitions()), 'workflow.get'));
     Bus::assertNothingDispatched();
 })->with(['forbidden', 'identity']);
+
+it('acknowledges one queued root without losing a later commit or resurrecting the delivered root', function (): void {
+    Bus::fake([ProjectSwampScheduledTerminal::class]);
+    $socket = new FakeSwampEventSocket;
+    $reader = new SwampScheduledResults($socket, new NullLogger);
+    scheduledDiscoveryRead($reader, $socket);
+    $socket->push(scheduledDiscoveryFeed(array_last($socket->sent)));
+    $reader->pass();
+    $first = Bus::dispatched(ProjectSwampScheduledTerminal::class)->first();
+    $secondRun = 'c075eb23-7ac4-4487-80d1-57a038a92676';
+    $later = scheduledDiscoveryFeed(array_last($socket->sent), 8);
+    $later['payload']['changes'][0]['commit']['ops'][0]['intent']['run']['runId'] = $secondRun;
+    $socket->push($later);
+    $reader->pass();
+    SwampScheduledResults::acknowledge($first->checkpoint, $first->runId);
+    $reader->close();
+    $next = new FakeSwampEventSocket;
+
+    scheduledDiscoveryRead(new SwampScheduledResults($next, new NullLogger), $next);
+
+    expect(array_last($next->sent)['payload'])->toBe(['cursor' => 8]);
+    expect(Bus::dispatched(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->runId === $first->runId))->toHaveCount(1);
+    expect(Bus::dispatched(ProjectSwampScheduledTerminal::class, fn ($job): bool => $job->runId === $secondRun))->toHaveCount(2);
+});

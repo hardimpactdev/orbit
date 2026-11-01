@@ -16,7 +16,7 @@ beforeEach(function (): void {
     $project = Project::query()->create(['name' => 'Read', 'slug' => 'native-read', 'repository_url' => 'https://example.test/read.git']);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'reserved', 'checkout_path' => '/srv/read', 'status' => 'reserved']);
     $this->runId = '8e983d54-e9fb-49c8-853e-02f466d1a840';
-    $this->operation = Operation::query()->create(['kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'started_at' => now()->subMinutes(10), 'dispatched_at' => now()->subMinutes(10), 'lock_key' => 'native-read-fixture', 'state' => ['swamp_run_id' => $this->runId], 'input' => ['instance_id' => $this->instance->id]]);
+    $this->operation = Operation::query()->create(['kind' => 'instance.register', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'started_at' => now()->subSeconds(10), 'dispatched_at' => now()->subSeconds(10), 'lock_key' => 'native-read-fixture', 'state' => ['swamp_run_id' => $this->runId], 'input' => ['instance_id' => $this->instance->id]]);
     $this->native = ['id' => $this->runId, 'workflowName' => 'operation-instance-register', 'status' => 'failed', 'inputs' => ['operation_id' => $this->operation->id, 'kind' => 'instance.register', 'node_id' => $this->node->id]];
     $this->socket = new FakeRoutePublicationSocket;
     $this->socket->reply = fn (array $request): array => [['id' => $request['id'], 'type' => 'workflow.history.get', 'payload' => ['data' => $this->native]]];

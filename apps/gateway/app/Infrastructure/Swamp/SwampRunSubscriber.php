@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\ProjectSwampTerminal;
+use App\Jobs\Operations\RecoverUnboundSwampRun;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -26,6 +30,12 @@ final class SwampRunSubscriber
 
     /** @var array<int,true> One lookup per uncertain Operation in this observer, never a timer retry. */
     private array $lookedUp = [];
+
+    /** @var array<int,int> Gateway deadlines, populated by committed records and startup recovery. */
+    private array $deadlines = [];
+
+    /** @var array<int,string> Terminal notices queued during this connection. */
+    private array $queued = [];
 
     private float $connectionBackoff = 0.0;
 
@@ -47,12 +57,14 @@ final class SwampRunSubscriber
     /** One snapshot at startup or after the record channel rejoins; never a status poll. */
     public function recover(): void
     {
-        $kinds = array_keys(array_filter(app(DirectOperation::class)->definitions(), static fn (array $definition): bool => isset($definition['terminal_result'])));
+        $this->queued = [];
+        $kinds = array_keys(app(DirectOperation::class)->definitions());
         if ($kinds === []) {
             return;
         }
-        foreach (Operation::query()->whereIn('kind', $kinds)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
-            ->where(fn ($query) => $query->whereNotNull('state->swamp_run_id')->orWhere('error_code', 'swamp.start_uncertain'))->lazyById() as $operation) {
+        foreach (Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
+            ->orWhere(fn ($query) => $query->where('error_code', 'operation.timed_out')->whereNotNull('lock_key')))
+            ->lazyById() as $operation) {
             $this->follow($operation->id);
         }
     }
@@ -61,22 +73,29 @@ final class SwampRunSubscriber
     public function follow(int $operationId): void
     {
         $operation = Operation::query()->find($operationId);
-        if ($operation === null || $operation->status->terminal()) {
+        if ($operation !== null) {
+            $operation = app(ExpireOperationAction::class)->execute($operation);
+        }
+        if ($operation === null || ($operation->status->terminal() && ! ExpireOperationAction::awaitsSettlement($operation))) {
             $request = $this->following[$operationId]['request'] ?? null;
             if ($request !== null) {
                 unset($this->requests[$request]);
             }
-            unset($this->following[$operationId]);
+            unset($this->following[$operationId], $this->deadlines[$operationId]);
 
             return;
         }
         $definition = app(DirectOperation::class)->definition($operation->kind);
+        $deadline = $definition === null || ExpireOperationAction::awaitsSettlement($operation) ? null : OperationRunBudgets::deadline($operation);
+        if ($deadline !== null) {
+            $this->deadlines[$operationId] = $deadline->getTimestamp();
+        }
         if ($definition !== null && app(DirectOperation::class)->usesNativeTerminal($operation)
             && ! isset($operation->state['swamp_run_id']) && $operation->error_code === 'swamp.start_uncertain'
             && ! isset($this->lookedUp[$operationId])) {
             $this->lookedUp[$operationId] = true;
             try {
-                app(SwampCommandStep::class)->recoverUnbound($operation);
+                Bus::dispatch(new RecoverUnboundSwampRun($operation->id));
                 $operation->refresh();
             } catch (Throwable $exception) {
                 $this->log->warning('The native start lookup is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
@@ -84,7 +103,7 @@ final class SwampRunSubscriber
         }
         $run = $operation->state['swamp_run_id'] ?? null;
         if ($definition === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
-            || ($this->following[$operationId]['run'] ?? null) === $run) {
+            || ($this->following[$operationId]['run'] ?? null) === $run || ($this->queued[$operationId] ?? null) === $run) {
             return;
         }
         $old = $this->following[$operationId]['request'] ?? null;
@@ -97,11 +116,22 @@ final class SwampRunSubscriber
     /** One pass beside the existing Gateway observer's Reverb receive loop. */
     public function pass(): void
     {
-        $this->scheduled?->pass();
         if (! $this->started) {
             $this->recover();
             $this->started = true;
         }
+        foreach ($this->deadlines as $operationId => $deadline) {
+            if ($deadline > ($this->clock)()) {
+                continue;
+            }
+            $operation = Operation::query()->find($operationId);
+            if ($operation !== null) {
+                app(ExpireOperationAction::class)->execute($operation);
+            }
+            unset($this->deadlines[$operationId]);
+            $this->follow($operationId);
+        }
+        $this->scheduled?->pass();
         if ($this->following === [] || ($this->clock)() < $this->nextConnection) {
             return;
         }
@@ -152,6 +182,7 @@ final class SwampRunSubscriber
     {
         $this->socket->close();
         $this->requests = [];
+        $this->queued = [];
         foreach ($this->following as $operationId => $_entry) {
             $this->following[$operationId]['request'] = null;
             $this->following[$operationId]['attached'] = false;
@@ -215,7 +246,8 @@ final class SwampRunSubscriber
     {
         $entry = $this->following[$operationId];
         try {
-            ProjectSwampTerminal::dispatchSync($operationId, $entry['run'], $status);
+            Bus::dispatch(new ProjectSwampTerminal($operationId, $entry['run'], $status));
+            $this->queued[$operationId] = $entry['run'];
         } catch (Throwable $exception) {
             // A later native notice or explicit recovery may deliver again; elapsed time never reads history.
             $this->log->warning('The native terminal projection is unavailable.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);

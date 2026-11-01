@@ -10,6 +10,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Jobs\Operations\ProjectSwampScheduledTerminal;
 use Closure;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
@@ -94,17 +95,7 @@ final class SwampScheduledResults
             return;
         }
         if (! $this->loaded) {
-            $checkpoint = Cache::get($this->key(), ['cursor' => 0, 'runs' => []]);
-            if (! is_array($checkpoint) || ! is_int($checkpoint['cursor'] ?? null) || $checkpoint['cursor'] < 0
-                || ! is_array($checkpoint['runs'] ?? null)) {
-                throw new WebSocketException('The scheduled discovery checkpoint is invalid.');
-            }
-            foreach ($checkpoint['runs'] as $run => $workflow) {
-                if (! is_string($run) || ! Str::isUuid($run) || ! is_string($workflow)
-                    || ! isset(app(DirectOperation::class)->scheduledResultDefinitions()[$workflow])) {
-                    throw new WebSocketException('The scheduled discovery checkpoint is invalid.');
-                }
-            }
+            $checkpoint = $this->checkpoint();
             $this->cursor = $checkpoint['cursor'];
             $this->runs = $checkpoint['runs'];
             $this->loaded = true;
@@ -137,6 +128,7 @@ final class SwampScheduledResults
         $this->feedRequest = null;
         $this->readRequests = [];
         $this->readable = [];
+        $this->loaded = false;
     }
 
     /** @param array<string,mixed> $message */
@@ -189,7 +181,6 @@ final class SwampScheduledResults
             || ($payload['done'] ?? null) !== false || ! is_array($payload['changes'] ?? null) || ! array_is_list($payload['changes'])) {
             throw new WebSocketException('The native commit feed frame is invalid.');
         }
-        $runs = $this->runs;
         $observed = [];
         $previous = $this->cursor;
         $declarations = app(DirectOperation::class)->scheduledResultDefinitions();
@@ -212,14 +203,16 @@ final class SwampScheduledResults
                 if (! is_string($ref['runId'] ?? null) || ! Str::isUuid($ref['runId'])) {
                     throw new WebSocketException('The native scheduled run reference is invalid.');
                 }
-                $runs[$ref['runId']] = $ref['workflowId'];
                 $observed[$ref['runId']] = $ref['workflowId'];
             }
         }
         // Cursor and undispatched roots are one checkpoint, so restart cannot skip a discovered result.
-        $this->save($payload['cursor'], $runs);
-        $this->cursor = $payload['cursor'];
-        $this->runs = $runs;
+        Cache::lock($this->key().':lock', 10)->block(2, function () use ($payload, $observed): void {
+            $checkpoint = $this->checkpoint();
+            $this->runs = [...$checkpoint['runs'], ...$observed];
+            $this->cursor = max($checkpoint['cursor'], $payload['cursor']);
+            $this->save($this->cursor, $this->runs);
+        });
         foreach ($observed as $run => $workflow) {
             $this->project($workflow, $run);
         }
@@ -228,16 +221,25 @@ final class SwampScheduledResults
     private function project(string $workflow, string $run): void
     {
         try {
-            if (ProjectSwampScheduledTerminal::dispatchSync($workflow, $run, null) === false) {
-                return;
-            }
-            $remaining = $this->runs;
-            unset($remaining[$run]);
-            $this->save($this->cursor, $remaining);
-            $this->runs = $remaining;
+            Bus::dispatch(new ProjectSwampScheduledTerminal($workflow, $run, null, $this->key()));
         } catch (Throwable $exception) {
             $this->log->warning('The scheduled native result is unavailable.', ['workflow_id' => $workflow, 'run_id' => $run, 'exception_type' => $exception::class]);
         }
+    }
+
+    /** Acknowledge only after the queued shared projector accepted the exact native result. */
+    public static function acknowledge(string $key, string $run): void
+    {
+        Cache::lock($key.':lock', 10)->block(2, function () use ($key, $run): void {
+            $checkpoint = Cache::get($key);
+            if (! is_array($checkpoint) || ! is_array($checkpoint['runs'] ?? null)) {
+                return;
+            }
+            unset($checkpoint['runs'][$run]);
+            if (! Cache::forever($key, $checkpoint)) {
+                throw new WebSocketException('The scheduled discovery checkpoint could not be saved.');
+            }
+        });
     }
 
     /** @param array<string,string> $runs */
@@ -246,6 +248,24 @@ final class SwampScheduledResults
         if (! Cache::forever($this->key(), ['cursor' => $cursor, 'runs' => $runs])) {
             throw new WebSocketException('The scheduled discovery checkpoint could not be saved.');
         }
+    }
+
+    /** @return array{cursor:int,runs:array<string,string>} */
+    private function checkpoint(): array
+    {
+        $checkpoint = Cache::get($this->key(), ['cursor' => 0, 'runs' => []]);
+        if (! is_array($checkpoint) || ! is_int($checkpoint['cursor'] ?? null) || $checkpoint['cursor'] < 0
+            || ! is_array($checkpoint['runs'] ?? null)) {
+            throw new WebSocketException('The scheduled discovery checkpoint is invalid.');
+        }
+        foreach ($checkpoint['runs'] as $run => $workflow) {
+            if (! is_string($run) || ! Str::isUuid($run) || ! is_string($workflow)
+                || ! isset(app(DirectOperation::class)->scheduledResultDefinitions()[$workflow])) {
+                throw new WebSocketException('The scheduled discovery checkpoint is invalid.');
+            }
+        }
+
+        return ['cursor' => $checkpoint['cursor'], 'runs' => $checkpoint['runs']];
     }
 
     private function key(): string

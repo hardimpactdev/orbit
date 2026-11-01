@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace App\Jobs\Operations;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\DirectOperation;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Operation;
-use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
 
-/** A synchronous native terminal notice. Only the shared helper reads history or projects its public result. */
-final readonly class ProjectSwampTerminal
+/** Read exact terminal history on the existing operations queue, away from live event reception. */
+final class ProjectSwampTerminal implements ShouldQueue
 {
-    use Dispatchable;
+    use Queueable;
 
-    public function __construct(public int $operationId, public string $runId, public ?string $status) {}
+    public int $tries = 1;
+
+    public function __construct(public int $operationId, public string $runId, public ?string $status)
+    {
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
+    }
 
     public function handle(SwampCommandStep $step): void
     {
