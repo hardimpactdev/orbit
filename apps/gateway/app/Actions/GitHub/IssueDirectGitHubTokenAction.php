@@ -64,8 +64,7 @@ final readonly class IssueDirectGitHubTokenAction
         if ($operation->node_id !== $callerNodeId) {
             throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for the Operation Node.', 403);
         }
-        if (($operation->input['github'] ?? null) !== ['$secret' => 'github.installation', 'id' => $operation->node_id]
-            || ($this->direct->definition($operation->kind)['private_material']['github'] ?? null) !== 'github.installation') {
+        if (($operation->input['github'] ?? null) !== ['$secret' => 'github.installation', 'id' => $operation->node_id]) {
             throw new ResourceOperationException('operation.github_token_forbidden', 'The GitHub reference does not belong to this direct intent.', 403);
         }
         if ($operation->status->terminal() || $operation->cancel_requested_at !== null) {

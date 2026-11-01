@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { RecipePrAction } from "./actions.ts";
+import { RecipeWorkflowFixture as RecipePrAction } from "./fixture.ts";
 import { RecipeGitHub } from "./api.ts";
 import { currentDate, RecipePath } from "./policy.ts";
 import { rewriteSnapshot } from "./contents.ts";
@@ -51,6 +51,7 @@ function fixture() {
     errorMutation: false,
     changedMetadata: false,
     losePushReply: false,
+    loseMergeReply: false,
   };
   state.metadata.head.ref = "nightly/recipe-" + currentDate();
   state.pulls[0].head.ref = state.metadata.head.ref;
@@ -85,16 +86,23 @@ function fixture() {
     } else if (path === "/pulls/19/commits") data = state.commits;
     else if (path === "/pulls/19/files") data = state.files;
     else if (path.endsWith("/check-runs")) {
-      data = { total_count: state.checks.length, check_runs: state.checks };
+      data = {
+        total_count: state.checks.length,
+        check_runs: state.checks,
+      };
     } else if (path === "/contents/" + RecipePath && method === "GET") {
       data = {
-        content: btoa(url.searchParams.get("ref") === head ? after : before),
+        content: btoa(
+          url.searchParams.get("ref") === head ? after : before,
+        ),
         encoding: "base64",
         sha: parent,
       };
-    } else if (path === "/git/ref/heads/main") data = { object: { sha: main } };
-    else if (path.startsWith("/compare/")) data = { status: state.compare };
-    else if (path === "/issues/19/timeline") data = state.timeline;
+    } else if (path === "/git/ref/heads/main") {
+      data = { object: { sha: main } };
+    } else if (path.startsWith("/compare/")) {
+      data = { status: state.compare };
+    } else if (path === "/issues/19/timeline") data = state.timeline;
     else if (path === "/graphql") {
       data = body.query.startsWith("query")
         ? {
@@ -104,7 +112,9 @@ function fixture() {
               pullRequest: {
                 userContentEdits: {
                   nodes: state.edits,
-                  pageInfo: { hasNextPage: state.hasNextPage },
+                  pageInfo: {
+                    hasNextPage: state.hasNextPage,
+                  },
                 },
               },
             },
@@ -114,15 +124,27 @@ function fixture() {
       if (body.query.startsWith("mutation") && state.losePushReply) {
         state.losePushReply = false;
         state.pulls[0].head.sha = body.variables.input.refUpdates[0].afterOid;
+        state.metadata.head.sha = state.pulls[0].head.sha;
         throw new TypeError("Lost committed expected-head push reply");
       }
     } else if (path === "/git/commits/" + main) {
       data = { tree: { sha: "d".repeat(40) } };
     } else if (path === "/git/trees" || path === "/git/commits") {
       data = { sha: "e".repeat(40) };
-    } else if (path === "/pulls/19/merge") data = { merged: true };
-    else if (path === "/pulls" && method === "POST") {
-      data = { html_url: "https://github.com/hardimpactdev/orbit/pull/999" };
+    } else if (path === "/pulls/19/merge") {
+      if (state.loseMergeReply) {
+        state.loseMergeReply = false;
+        Object.assign(state.metadata, {
+          state: "closed",
+          merged: true,
+        });
+        throw new TypeError("Lost committed merge response");
+      }
+      data = { merged: true };
+    } else if (path === "/pulls" && method === "POST") {
+      data = {
+        html_url: "https://github.com/hardimpactdev/orbit/pull/999",
+      };
     } else if (method !== "GET") data = {};
     else throw new Error("Unexpected fixture path: " + path);
     return Promise.resolve(
@@ -177,14 +199,18 @@ Deno.test("foreign App signature extra commits or extra files block before any G
     const alteration of ["author", "signature", "commits", "files", "patch"]
   ) {
     const f = fixture();
-    if (alteration === "author") f.state.metadata.user.login = "foreign[bot]";
+    if (alteration === "author") {
+      f.state.metadata.user.login = "foreign[bot]";
+    }
     if (alteration === "signature") {
       f.state.commits[0].commit.verification
         .verified = false;
     }
     if (alteration === "commits") f.state.commits.push(commit());
     if (alteration === "files") f.state.files.push(f.state.files[0]);
-    if (alteration === "patch") f.state.files[0].patch = "-old\n+unexpected";
+    if (alteration === "patch") {
+      f.state.files[0].patch = "-old\n+unexpected";
+    }
     await assertRejects(() => f.action.execute(f.input));
     assertEquals(f.mutations(), []);
   }
@@ -241,7 +267,8 @@ Deno.test("refresh uses expected-head compare-and-swap after trusted failed CI a
   f.state.checks[0].conclusion = "failure";
   await f.action.execute({ ...f.input, action: "update" });
   const mutation = f.mutations().find((call) =>
-    call.path === "/graphql" && String(call.body?.query).startsWith("mutation")
+    call.path === "/graphql" &&
+    String(call.body?.query).startsWith("mutation")
   );
   assertEquals((mutation!.body!.variables as { input: unknown }).input, {
     repositoryId: "repo-id",
@@ -301,7 +328,10 @@ Deno.test("GitHub client refuses off-origin URLs and changed check pagination", 
   const github = new RecipeGitHub("SECRET", () => {
     calls++;
     return Promise.resolve(
-      Response.json({ total_count: calls === 1 ? 2 : 3, check_runs: [check] }),
+      Response.json({
+        total_count: calls === 1 ? 2 : 3,
+        check_runs: [check],
+      }),
     );
   });
   await assertRejects(() => github.checks(head, check.name));
@@ -320,13 +350,31 @@ Deno.test("refresh retry never repeats a committed expected-head push", async ()
   );
   assertEquals(await f.action.execute(f.input), {
     completed: true,
-    outcome: "absent",
+    outcome: "checked",
   });
   assertEquals(
     f.mutations().filter((call) =>
       call.path === "/graphql" &&
       String(call.body?.query).startsWith("mutation")
     ).length,
+    1,
+  );
+});
+
+Deno.test("lost committed merge completes on exact merged head without another write", async () => {
+  const f = fixture();
+  f.state.loseMergeReply = true;
+  await assertRejects(
+    () => f.action.execute(f.input),
+    Error,
+    "fleet.recipe_github_unavailable",
+  );
+  assertEquals(await f.action.execute(f.input), {
+    completed: true,
+    outcome: "checked",
+  });
+  assertEquals(
+    f.mutations().filter((c) => c.path === "/pulls/19/merge").length,
     1,
   );
 });

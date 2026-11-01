@@ -9,6 +9,7 @@ use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
 use App\Models\Operation;
 
 final readonly class AdmitRecipePrAction
@@ -30,8 +31,10 @@ final readonly class AdmitRecipePrAction
             throw new ResourceOperationException('fleet.recipe_pr_invalid', 'The serving recipe and App identity are required.', 422);
         }
 
-        return $this->start->execute('fleet.recipe_pr', $number === 0 ? 'recipe_'.$variant : 'recipe_pr', $number === 0 ? $nodeId : $number, $nodeId, [
-            'github' => ['$secret' => 'github.installation', 'id' => $nodeId],
+        Node::query()->findOrFail(209);
+
+        return $this->start->execute('fleet.recipe_pr', $number === 0 ? 'recipe_'.$variant : 'recipe_pr', $number === 0 ? $nodeId : $number, 209, [
+            'github' => ['$secret' => 'github.installation', 'id' => 209],
             'action' => $action, 'variant' => $variant, 'pull_number' => $number, 'head_sha' => $head, 'date' => $date,
             'author' => $author.'[bot]', 'required_check' => config()->string('orbit.gateway_releases.check'), 'deployed_recipe' => $recipe,
         ], 'swamp', null);
