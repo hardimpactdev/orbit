@@ -15,7 +15,7 @@ The `metrics` family enables the Metrics role, reports its status, selects expor
 | --- | --- |
 | [`metrics:enable`](#orbit-metricsenable) | Enable Metrics on one Node. |
 | [`metrics:status`](#orbit-metricsstatus) | Show the assignment, container health, and exporter state. |
-| [`metrics:credentials`](#orbit-metricscredentials) | Show or reset the verified Grafana administrator credential. |
+| [`metrics:credentials`](#orbit-metricscredentials) | Read the stored Grafana credential or admit a reset. |
 | [`metrics:exporter:enable`](#orbit-metricsexporterenable) | Select one Node as an exporter. |
 | [`metrics:exporter:disable`](#orbit-metricsexporterdisable) | Exclude one Node from exporter selection. |
 | [`metrics:disable`](#orbit-metricsdisable) | Disable Metrics, and optionally delete its data. |
@@ -50,7 +50,7 @@ orbit metrics:status [--json]
 
 ## orbit metrics:credentials
 
-Show the verified Grafana administrator credential, or reset the password.
+Read the stored Grafana administrator credential, or admit a native reset.
 
 ```bash
 orbit metrics:credentials [--reset] [--json]
@@ -58,9 +58,9 @@ orbit metrics:credentials [--reset] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--reset` | Set a new password through Grafana's API, and return it after verification. |
+| `--reset` | Admit a native reset and follow its Operation. Human output then reads the active credential; JSON returns the Operation. |
 
-Human output prints the URL, the user `admin`, the password, and the request ID. A concurrent read or reset waits. It then reads the result or fails with `metrics.credentials_busy` and changes nothing.
+Human output prints the URL, the user `admin`, the stored active password and the request ID. Reads execute no host action. A failed reset retains the pending password; a fresh reset checks it before another write. The Gateway has no execution-lifetime credential lock.
 
 ## orbit metrics:exporter:enable
 

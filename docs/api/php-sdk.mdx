@@ -95,7 +95,7 @@ Response classes are `final readonly` objects with public camel-case properties 
 | `DatabaseConnectionResponse`, `DatabaseConnectionAttachmentResponse` | The connection registry and attachments. |
 | `MetricsStatusResponse`, `MetricsCredentialsResponse` | Metrics status and credentials. |
 | `DoctorReportResponse` | Doctor, with `DoctorNodeResponse`, `DoctorFamilyResponse`, and `DoctorIssueResponse` nested inside. |
-| `OperationResponse`, `OperationsResponse` | Operations, including Metrics role and exporter changes, deploys and rollbacks. |
+| `OperationResponse`, `OperationsResponse` | Operations, including Metrics role changes, exporter changes and credential resets, deploys and rollbacks. |
 | `ActivityResponse`, `WorkspaceResponse` | Activities and legacy Workspaces. |
 
 [GitHub feedback fixups](/reference/tasks#execution-ownership) remain ordinary subtasks in task-group responses. Their existing `brief` contains the source review and immutable findings. The Gateway's `fixup_problem` string uses `review:{reviewer_id}`. Feedback adds no SDK request, response shape, trust configuration input, or merge method. SDK tests replay the Gateway-recorded review-fixup fixture to check that its findings and typed deliverables survive unchanged.

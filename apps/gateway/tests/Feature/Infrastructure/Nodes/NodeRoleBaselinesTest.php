@@ -10,8 +10,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
@@ -197,13 +195,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
     ]);
 
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet
-        ->shouldReceive('reconcile')
-        ->times(3)
-        ->andReturnUsing(static function () use (&$events): void {
-            $events[] = 'metrics';
-        });
+
     $owner = new NodeRoleBaselineClusterRouterOperationLock($events);
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
@@ -214,7 +206,6 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
         $owner,
@@ -231,15 +222,12 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
-        'metrics',
         "owner:exit:{$assignment->cluster_id}",
         "owner:enter:{$assignment->cluster_id}",
         'caddy:remove',
         'firewall:remove:router',
-        'metrics',
         "owner:exit:{$assignment->cluster_id}",
         "owner:enter:{$assignment->cluster_id}",
-        'metrics',
         "owner:exit:{$assignment->cluster_id}",
     ]);
 });
@@ -386,7 +374,7 @@ it('verifies VPN PHP before Gateway publication regardless of requested role ord
     });
     app()->instance(RoleBaselineConverger::class, $baselines);
     $this->mock(NodeConverger::class)->shouldReceive('converge')->once()->andReturn(new NodeObservation('x86_64'));
-    $this->mock(MetricsFleetReconciler::class)->shouldReceive('reconcile');
+
     $provision = fn (): Node => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
         name: 'gateway-vpn', publicSshHost: '192.0.2.10', wireguardIp: '10.44.0.10',
         roles: [RoleName::Gateway, RoleName::Vpn], architecture: 'x86_64', expectedSshHostFingerprint: 'SHA256:pinned',
@@ -543,13 +531,7 @@ it('converges database beside router without rewriting routing or node processes
         'status',
     ]);
     $routerSnapshot = $routerAssignment->only(['id', 'node_id', 'cluster_id', 'role', 'status']);
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet
-        ->shouldReceive('reconcile')
-        ->once()
-        ->andReturnUsing(static function () use (&$events): void {
-            $events[] = 'metrics';
-        });
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -559,7 +541,6 @@ it('converges database beside router without rewriting routing or node processes
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         router_role_baseline($events),
         new NodeRoleBaselineClusterRouterOperationLock($events),
@@ -569,7 +550,7 @@ it('converges database beside router without rewriting routing or node processes
     $dispatcher->converge($node, $databaseAssignment);
 
     expect($events)
-        ->toBe(['guard:gateway', 'ssh:database', 'metrics'])
+        ->toBe(['guard:gateway', 'ssh:database'])
         ->and($process->fresh()->only(array_keys($processSnapshot)))
         ->toBe($processSnapshot)
         ->and($routerAssignment->fresh()->only(array_keys($routerSnapshot)))
@@ -741,8 +722,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $events = [];
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(count(role_baseline_roles()) + 1);
+
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(
             $firewall,
@@ -758,7 +738,6 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
@@ -795,13 +774,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
 it('installs Caddy for an Ingress-only Node, and on removal builds the Node and closes public HTTP but keeps Caddy', function (): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Ingress, 'ingress-only');
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet
-        ->shouldReceive('reconcile')
-        ->times(3)
-        ->andReturnUsing(static function () use (&$events): void {
-            $events[] = 'metrics';
-        });
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -811,7 +784,6 @@ it('installs Caddy for an Ingress-only Node, and on removal builds the Node and 
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         ingress: ingress_role_baseline($events),
     );
@@ -825,18 +797,14 @@ it('installs Caddy for an Ingress-only Node, and on removal builds the Node and 
         'ssh:caddy-source',
         'ssh:ingress',
         'caddy:converge',
-        'metrics',
         'caddy:remove',
         'firewall:remove:ingress',
-        'metrics',
-        'metrics',
     ]);
 });
 
 it('dispatches removeUnreachable and refuses the retired Metrics baseline', function (): void {
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(2);
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -846,7 +814,6 @@ it('dispatches removeUnreachable and refuses the retired Metrics baseline', func
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
@@ -863,7 +830,7 @@ it('dispatches removeUnreachable and refuses the retired Metrics baseline', func
 
 it('republishes private DNS when the dispatcher sheds an unreachable gateway role', function (): void {
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -873,7 +840,6 @@ it('republishes private DNS when the dispatcher sheds an unreachable gateway rol
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
@@ -885,7 +851,7 @@ it('republishes private DNS when the dispatcher sheds an unreachable gateway rol
 
 it('propagates the VPN removeUnreachable rejection through the dispatcher', function (): void {
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -895,7 +861,6 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
     );
 
@@ -907,7 +872,7 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
 
 it('checks the remote operating system before every role convergence', function (): void {
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(
@@ -917,7 +882,6 @@ it('checks the remote operating system before every role convergence', function 
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
@@ -967,7 +931,7 @@ it('checks the remote operating system before every role convergence', function 
 
 it('stops baseline convergence when the remote operating system guard fails', function (): void {
     $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+
     [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'guard-failure');
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
@@ -978,7 +942,6 @@ it('stops baseline convergence when the remote operating system guard fails', fu
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
-        $metricsFleet,
         new NodeRoleOperatingSystemGuard((new FakeAgentCommandRunner)->answer('node.os-release', static function () use (&$events): array {
             $events[] = 'guard:app-dev';
 
@@ -1453,40 +1416,6 @@ function baseline_known_hosts(): KnownHostsStore
         public function put(string $host, int $port, HostKey $key): void {}
     };
 }
-
-it('holds back fleet reconciliation during a deferral and reports that one was requested', function (): void {
-    $events = [];
-    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->once();
-    $deferral = new MetricsReconcileDeferral;
-    $dispatcher = new NativeRoleBaselineConverger(
-        gateway_role_baseline($events),
-        new VpnRoleBaseline(
-            baseline_prerequisites($events),
-            baseline_firewall($events),
-            baseline_account_resolver(),
-        ),
-        app_dev_role_baseline($events),
-        app_prod_role_baseline($events),
-        $metricsFleet,
-        new NodeRoleOperatingSystemGuard(baseline_guard_agents($events)),
-        metricsDeferral: $deferral,
-    );
-
-    [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, 'deferred-app-dev');
-    [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, 'deferred-app-prod');
-
-    $requested = $deferral->during(function () use ($dispatcher, $appDevNode, $appDevAssignment, $appProdNode, $appProdAssignment): void {
-        $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
-        $dispatcher->removeUnreachable($appProdNode, $appProdAssignment);
-    });
-
-    expect($requested)->toBeTrue()
-        ->and($deferral->during(static function (): void {}))->toBeFalse();
-
-    // Outside a deferral, each change reconciles again.
-    $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
-});
 
 function ci_role_baseline(array &$events): CiRunnerRoleBaseline
 {

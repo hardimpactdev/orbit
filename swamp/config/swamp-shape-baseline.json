@@ -1214,20 +1214,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
-      "rule": "gateway-http",
-      "count": 2,
-      "evidence": [
-        "<unknown> <unknown>"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/integrations/metrics_credentials_reset.ts",
-      "rule": "private-material",
-      "count": 1,
-      "evidence": []
-    },
-    {
       "file": "extensions/behaviors/operations/integrations/metrics_exporter_actions.ts",
       "rule": "multi-action",
       "count": 2,

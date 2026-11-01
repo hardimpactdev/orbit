@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Clusters\ClusterRouterOperationLock;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsReconcileDeferral;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -22,14 +20,12 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private VpnRoleBaseline $vpn,
         private DevelopmentRoleBaseline $appDev,
         private ProductionRoleBaseline $appProd,
-        private MetricsFleetReconciler $metricsFleet,
         private NodeRoleOperatingSystemGuard $operatingSystem,
         private ?RouterRoleBaseline $router = null,
         private ?ClusterRouterOperationLock $clusterRouterOperations = null,
         private ?DatabaseRoleBaseline $database = null,
         private ?WebSocketRoleBaseline $websocket = null,
         private ?IngressRoleBaseline $ingress = null,
-        private ?MetricsReconcileDeferral $metricsDeferral = null,
         private ?NodeRoleConvergeLock $nodeLock = null,
         private ?CiRunnerRoleBaseline $ciRunner = null,
     ) {}
@@ -55,24 +51,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             $this->baseline($assignment->role)->converge($node, $assignment);
         });
 
-        // The fleet reconcile converges exporters on other Nodes without taking their locks: waiting for
-        // another Node's lock while this one is held could deadlock two converges. It runs inside this
-        // Node's lock when the caller holds it for the whole operation, as role add and remove do.
-        $this->reconcileMetrics($assignment);
-
-    }
-
-    private function reconcileMetrics(NodeRole $assignment): void
-    {
-        if ($assignment->role === RoleName::Metrics) {
-            return;
-        }
-
-        if (($this->metricsDeferral ?? app(MetricsReconcileDeferral::class))->defers()) {
-            return;
-        }
-
-        $this->metricsFleet->reconcile();
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
@@ -97,7 +75,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             'node_role.remove_failed',
         );
 
-        $this->reconcileMetrics($assignment);
     }
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void
@@ -118,7 +95,6 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     {
         $this->baseline($assignment->role)->removeUnreachable($node, $assignment);
 
-        $this->reconcileMetrics($assignment);
     }
 
     private function baseline(RoleName $role): RoleBaseline

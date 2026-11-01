@@ -27,7 +27,6 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -83,16 +82,12 @@ beforeEach(function (): void {
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');
 });
 
-it('broadcasts a changed Route target before a metrics reconcile failure', function (): void {
+it('broadcasts a changed Route target without synchronous Metrics execution', function (): void {
     Event::fake();
     $route = reconciliation_route($this->orbitApp, 'set-before-reconcile.test', $this->node);
     $replacement = reconciliation_instance($this->orbitApp, $this->node, 'replacement');
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
-    app()->instance(MetricsFleetReconciler::class, $metrics);
 
-    expect(fn () => app(SetRouteTargetAction::class)->execute($route, $replacement->id))
-        ->toThrow(RuntimeException::class, 'metrics unavailable');
+    app(SetRouteTargetAction::class)->execute($route, $replacement->id);
 
     Event::assertDispatched(RecordBroadcast::class);
     expect($route->refresh()->targets->sole()->instance_id)->toBe($replacement->id);
@@ -2110,9 +2105,7 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
     {
         public function converge(Node $node): void {}
     });
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
-    $metrics->shouldReceive('reconcile')->zeroOrMoreTimes()->withNoArgs();
-    app()->instance(MetricsFleetReconciler::class, $metrics);
+
 }
 
 function reconciliation_instance(Project $project, Node $node, string $name): Instance

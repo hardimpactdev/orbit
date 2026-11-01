@@ -77,9 +77,7 @@ These commands store the preference. Nothing else writes one: adding or adopting
 
 A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. Explicit exporter changes use the official firewall model to allow the Metrics Node source address to reach the port.
 
-The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add` except the enrollment of a task VM, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
-
-Explicit exporter changes use the native preference workflow. It captures the selected Node and complete scrape configuration, then uses official cfgmgmt for packages, downloads, files and systemd state. Canonical PHP monitor and Caddy children converge service metrics. In each step, the official firewall model manages one port rule for the Metrics source address with its defaults. Prometheus candidate validation precedes publication and restart of the existing container.
+Explicit Metrics role and exporter Operations capture their fleet at admission and compose native workflows. Node parents retain their shared Metrics runtime material and lower contract. Gateway Node provisioning, role baselines and Route removal perform no synchronous fleet convergence.
 
 Node role and fleet reconciliation use the native Metrics exporter lowers. They receive captured Node and Metrics addresses, snapshot exporter state and manage packages, binaries, units and exact firewall rules under the existing host locks. Their recovery restores captured configuration, services and firewall sources. Explicit exporter preference Operations use the placed workflow above.
 
@@ -87,9 +85,7 @@ Exporter listeners bind to the WireGuard address. Explicit exporter changes use 
 
 ### Exporter degradation
 
-An exporter reconcile failure does not demote an active Node or fail `node:add`; the affected Node stays active and its Metrics state is degraded with the error code. A service-metrics snapshot or convergence failure also degrades only the affected Node. The Gateway records the failing step and error code for that Node rather than failing the operation that triggered the reconcile. The degraded Node is skipped while the reconcile continues on the other Nodes. A later reconcile retries it and clears its degradation when reconciliation succeeds.
-
-`orbit metrics:status` reports the fleet summary in `reconcile_status` and `reconcile_error_code`, and reports the affected Node's `degraded_reason: reconcile_failed` and exact `degraded_error_code` in its exporter row. A selected exporter that is inactive, drifting, unknown or skipped makes `reconcile_status` degraded even when Prometheus and Grafana are healthy. The summary keeps a recorded error code when available; otherwise it reports `metrics.exporter_not_active` or the recorded exporter degradation code. The next normal fleet reconcile retries the selected Node and clears the degradation after successful convergence. There is no periodic retry trigger. The [Node provisioning](/reference/node-provisioning#converge-an-existing-node) page documents the exporter provisioning outcomes.
+`orbit metrics:status` observes the runtime and reports stored degradation metadata. A selected exporter that is inactive, drifting, unknown or skipped makes `reconcile_status` degraded even when Prometheus and Grafana are healthy. Status reads perform no convergence. A fresh explicit exporter Operation captures current desired state; retained Node parents own their existing lower recovery.
 
 ## cAdvisor
 
@@ -101,11 +97,7 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 ## Service metrics
 
-[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance runtime changes and changes to public, active Route hosts trigger a fleet reconcile to update those services and the Prometheus targets. Private Route changes, unchanged publication, target binding and web-root-only changes do not change that host catalog and do not trigger Route reconciliation of Metrics.
-
-If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. The operation that triggered the reconcile continues. For example, an Instance removal on another Node does not fail because service metrics cannot reconcile on this Node. The Gateway skips the degraded Node and continues reconciling the rest of the fleet. It retries the Node on a later reconcile and clears the degradation when reconciliation succeeds. Inspect the Node's exporter row in `orbit metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
-
-Service degradation belongs to service metrics. Exporter and cAdvisor snapshots do not clear it. The Gateway clears it only after that Node's service reconciliation and publication succeed. Step and error-code updates are atomic. If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node.
+[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Explicit role and exporter workflows capture their service catalog and compose the owning native workflows. Gateway provisioning, baseline and Route actions perform no synchronous Metrics fleet mutation. Node parents retain their shared service-metrics lower until their own conversion.
 
 ## Swamp worker state
 
@@ -141,9 +133,9 @@ With no active Gateway, or more than one, every caller gets `node_access.require
 
 The Grafana user is `admin`. The first convergence generates a random password. The Gateway stores it encrypted in the Metrics Node's settings. Later convergence reuses it.
 
-`orbit metrics:credentials --reset` creates a pending password, applies it through Grafana's API, verifies it, and then makes it active. A failed reset keeps the pending password. The next reset first checks whether Grafana accepts it, and applies it only when Grafana does not. Orbit never returns a password that it has not verified.
+`orbit metrics:credentials` reads the Gateway's stored administrator credential without executing a host action. `--reset` admits one native Operation. The Gateway creates or reuses an encrypted pending password and supplies a names-only execution copy. On 209, official pinned SSH checks the candidate, applies it only if needed, and verifies it in separate steps. Terminal success promotes the pending password; failure preserves it. The CLI follows the Operation before reading the stored credential. After a failed or uncertain reset, a new `metrics:credentials --reset` reuses the pending password and checks it before another write. A direct native resume does not reopen an already-terminal Gateway Operation.
 
-One lock per Metrics Node covers password creation, verified reads, resets, and purge. A competing request waits within its deadline. It then reads the finished state or returns HTTP 409 `metrics.credentials_busy` with no changes. Credential responses use `Cache-Control: no-store`. No other response contains a password.
+Short database transactions protect credential creation, pending reuse, promotion and purge. The Gateway holds no execution-lifetime lock and performs no host verification during a read. Native workflow steps own the execution. Credential responses use `Cache-Control: no-store`; Operation results contain public reset metadata only.
 
 ### Material for native parents
 
@@ -199,7 +191,7 @@ A Node without Gateway SSH management has no service-management contract with th
 
 ### The credential in Metrics settings
 
-Metrics keeps its own encrypted settings. Orbit has no generic credential system. The pending password lets a failed reset resume, and Orbit never returns an unverified password.
+Metrics keeps its own encrypted settings. Orbit has no generic credential system. A fresh reset reuses the pending password after failure. Only a successful native verification promotes it; credential reads return the stored active value.
 
 ### Removal that keeps data
 
@@ -210,12 +202,6 @@ Volumes and the password survive a removal, so re-enabling is safe. Data deletio
 Prometheus stays unpublished. Grafana's datasource proxy reuses the publication and the password that already exist. A new Prometheus host name is a rejected alternative. A Gateway endpoint that reads Prometheus over SSH is also rejected, because it adds an SSH round trip to each refresh.
 
 
-## Reconciliation child Operation
+## Shared Node runtime material
 
-Route parents request `metrics.reconcile {}` on the one active Metrics serving Node only when their public, active host catalog changes. The catalog maps each host to its serving Ingress Node; FPM Instance selection does not depend on Route targets. Metrics validates that assignment and captures its exporter fleet and service Instances when the child is requested. The parent cannot provide credentials, a fleet or another serving Node. Planning creates no runnable child.
-
-Swamp snapshots exporters and service monitoring before changing them. It then refreshes the Metrics runtime, verifies Grafana credentials and proves service Caddy updates through the owning Route child only for fleet Nodes with Orbit-managed Caddy (`caddy: true` in the captured intent).
-
-Service restoration uses the same restriction. Exporters and other service monitoring still run on Nodes without managed Caddy; unrelated Caddy Processes stay untouched. Reconciliation keeps the existing Metrics publication; it makes no certificate or private DNS change. Only proven matching child results permit successful completion. Failed or cancelled reconciliation requires restoration from the same parent's successful snapshots before it ends. A lost Node lock, lost Operation lease or cancelled service recovery stops reconciliation and requires fleet rollback. A refused or cancelled rollback completes as `metrics.rollback_failed`. Once the new runtime succeeds, later failure preserves it for recovery.
-
-Runtime configuration and credentials are resolved inside the Gateway through owner-bound secret references. Receipts keep only declared redacted metadata. Retained Gateway callers keep the synchronous fleet reconciler and its tests until their owning parent composition converts them. This child adds no HTTP cutover and deletes no retained executor.
+Node parents consume the retained Metrics material API and canonical runtime specification. Their existing native lower owns its execution and recovery. Metrics credential resets, role changes and exporter preference changes use their fixed native workflows. The Gateway retains state, material capture and observation; its former synchronous fleet, service, cAdvisor and exporter mutation adapters are deleted.

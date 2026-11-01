@@ -17,7 +17,6 @@ use App\Data\Schedules\AddScheduleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -39,10 +38,7 @@ use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 it('refuses macOS and iPadOS role, Metrics, Process, Schedule, and firewall changes before Linux mutation', function (string $platform): void {
     app()->instance(NodeConverger::class, new MacOsBoundaryConverger);
-    $fleet = Mockery::mock(MetricsFleetReconciler::class);
-    $fleet->shouldNotReceive('reconcile');
-    $fleet->shouldNotReceive('retire');
-    app()->instance(MetricsFleetReconciler::class, $fleet);
+
     $node = $platform === 'macos' ? macos_boundary_node() : ipados_boundary_node();
 
     expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))

@@ -10,7 +10,6 @@ use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\ProductionWebRootManager;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Routes\RouteEnvironmentOperationLock;
@@ -170,9 +169,9 @@ it('skips Metrics for target associations without calling the retained PHP recon
     $this->node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $this->route->update(['status' => 'pending', 'sites_published' => false]);
     $this->instance->update(['status' => 'reserved']);
-    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+
     $metrics->shouldNotReceive('reconcile');
-    app()->instance(MetricsFleetReconciler::class, $metrics);
+
     $admission = app(AdmitRouteOperationAction::class);
     $operation = $mode === 'set' ? $admission->setTarget($this->route, $this->instance->id) : $admission->clearTarget($this->route);
     expect($operation->status->value)->toBe('queued')

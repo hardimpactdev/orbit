@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\DevelopmentSourceAccess;
-use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,7 +30,6 @@ function native_binding_intent_fixture(): array
 it('records target association intent and retries without invoking source access, Metrics, agent commands or global projection locking', function (): void {
     [$route, $instance] = native_binding_intent_fixture();
     $this->mock(DevelopmentSourceAccess::class)->shouldNotReceive('grant');
-    $this->mock(MetricsFleetReconciler::class)->shouldNotReceive('reconcile');
     $this->mock(DevelopmentProjectionOperationLock::class)->shouldNotReceive('run');
     $agents = new FakeAgentCommandRunner;
     app()->instance(AgentCommandRunner::class, $agents);

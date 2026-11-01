@@ -16,12 +16,6 @@ use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
-use App\Domain\Metrics\ExporterDegradationReason;
-use App\Domain\Metrics\ExporterDegradationRepository;
-use App\Domain\Metrics\MetricsFleetReconcileException;
-use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Metrics\MetricsReconcileComponent;
-use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\MachineArchitecture;
 use App\Domain\Nodes\ManagedNodeEligibility;
@@ -67,9 +61,6 @@ final readonly class ProvisionNodeAction
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
         private AppDevTldConverger $appDevTldConverger,
-        private MetricsFleetReconciler $metrics,
-        private ExporterDegradationRepository $exporterDegradations,
-        private MetricsReconcileDegradationRepository $metricsDegradation,
         private NodeAgentRuntime $agent,
         private ManagedNodeEligibility $managedNodeEligibility,
         private ConfiguredStoragePathValidator $storagePaths,
@@ -481,28 +472,6 @@ final readonly class ProvisionNodeAction
                 $this->markFailed($node, $failure);
 
                 throw $failure;
-            }
-        }
-
-        // Role convergence runs while the node is still provisioning, and
-        // exporter selection only ever considers active nodes. The node is
-        // active here, so every provisioning outcome reconciles: a role-bearing
-        // node becomes a selected exporter, and a roleless node picks up an
-        // explicit preference it kept from an earlier registration.
-        try {
-            $this->metrics->reconcile();
-        } catch (Throwable $exception) {
-            if ($exception instanceof MetricsFleetReconcileException) {
-                if ($exception->component !== MetricsReconcileComponent::Runtime) {
-                    $this->exporterDegradations->put(
-                        $exception->nodeId,
-                        ExporterDegradationReason::ReconcileFailed,
-                    );
-                }
-
-                $this->metricsDegradation->put($exception->nodeId, $exception->errorCode);
-            } else {
-                $this->metricsDegradation->put($node->id, 'metrics.reconcile_failed');
             }
         }
 

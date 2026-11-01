@@ -112,10 +112,10 @@ it('projects the exact native success through the shared terminal reader', funct
     expect($op->fresh()->result)->toMatchArray(['node_id' => $this->target->id, 'status' => 'enabled', 'preference_only' => false]);
 });
 
-it('refuses a second target on the same Metrics owner before changing its preference', function (): void {
+it('records preferences without a Gateway execution-lifetime hold', function (): void {
     $this->putJson($this->url)->assertAccepted();
-    $this->putJson('/api/v1/metrics/exporters/'.$this->gateway->id)->assertConflict()->assertJsonPath('error.code', 'metrics.operation_active');
-    expect(Operation::query()->count())->toBe(1);
-    expect(app(ExporterPreferenceRepository::class)->get($this->gateway->id))->toBeNull();
-    expect($this->socket->sent)->toHaveCount(1);
+    $this->putJson('/api/v1/metrics/exporters/'.$this->gateway->id)->assertAccepted();
+    expect(Operation::query()->count())->toBe(2);
+    expect(app(ExporterPreferenceRepository::class)->get($this->gateway->id))->toBe(ExporterPreference::Enabled);
+    expect($this->socket->sent)->toHaveCount(2);
 });
