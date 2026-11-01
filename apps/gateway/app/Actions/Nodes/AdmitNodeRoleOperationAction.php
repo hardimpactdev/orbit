@@ -29,6 +29,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -63,6 +64,9 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('database.wireguard_ip_missing', 'The database role requires its recorded WireGuard address.', 422);
             }
             $native = $converge && NativeNodeRoleConvergeInput::supports($node, $role);
+            if ($converge && $role === RoleName::WebSocket && ! $native) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket convergence requires a supported native role plan.', 422);
+            }
             if ($duringProvisioning || ! app(ManagedNodeEligibility::class)->allows($node)
                 || (! $native && ! app(NodeRolePlacement::class)->allows($node))) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'Role work requires its exact managed Node worker.', 422);
@@ -105,6 +109,9 @@ final readonly class AdmitNodeRoleOperationAction
                 throw new ResourceOperationException('operation.kind_unavailable', 'An applicable footprint contribution has no native action.', 422);
             }
             $metrics = $snapshot['metrics_fleet'] === null ? null : ValidatedData::object($snapshot['metrics_fleet']);
+            if ($native && $role === RoleName::WebSocket && $metrics !== null) {
+                throw new ResourceOperationException('operation.kind_unavailable', 'WebSocket convergence requires the native Metrics fleet contribution.', 422);
+            }
             $native = $native && $metrics === null;
             if (! $native && ! app(NodeRolePlacement::class)->allows($node)) {
                 throw new ResourceOperationException('operation.kind_unavailable', 'This role set requires its existing Node worker.', 422);
@@ -116,6 +123,10 @@ final readonly class AdmitNodeRoleOperationAction
             $executionSecrets = [];
             if ($nativeInput !== null) {
                 $private = ['observer' => new OperationSecretValue($node->agent_secret_hash)];
+                if ($role === RoleName::WebSocket) {
+                    $material = app(NodeRoleRuntimeSource::class)->resolveRoleMaterial($snapshot, $node->id);
+                    $private['runtime_material'] = new OperationSecretValue(json_encode($material->value, JSON_THROW_ON_ERROR));
+                }
                 foreach ($private as $name => $value) {
                     $executionSecrets[$name] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
                         'node-role-'.$operation->id.'-'.$name,

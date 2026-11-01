@@ -949,31 +949,6 @@
       ]
     },
     {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "custom-control",
-      "count": 18,
-      "evidence": [
-        "embedded-control",
-        "lock"
-      ]
-    },
-    {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "inline-script",
-      "count": 344,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/node/gateway_role_system.ts",
-      "rule": "multi-action",
-      "count": 3,
-      "evidence": [
-        "/usr/bin/python3",
-        "/usr/bin/sudo",
-        "/usr/bin/systemctl"
-      ]
-    },
-    {
       "file": "extensions/behaviors/operations/node/network_native_program.ts",
       "rule": "custom-control",
       "count": 5,
@@ -1342,12 +1317,6 @@
       "file": "extensions/behaviors/operations/routes/router-lan.ts",
       "rule": "inline-script",
       "count": 40,
-      "evidence": []
-    },
-    {
-      "file": "extensions/behaviors/operations/routes/router-preparation.ts",
-      "rule": "inline-script",
-      "count": 100,
       "evidence": []
     },
     {

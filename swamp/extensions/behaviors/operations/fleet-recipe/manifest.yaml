@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/fleet-recipe-command'
-version: 2026.11.01.1
+version: 2026.11.01.8
 visibility: private
 license: MIT
 description: Shared signed recipe policies and single-action host programs.
@@ -9,11 +9,38 @@ behaviors:
   - operations/fleet-recipe/node_role.ts
   - operations/fleet-recipe/observer_assets.ts
   - operations/fleet-recipe/fleet_release.ts
+  - operations/fleet-recipe/runtime_assets.ts
+  - operations/fleet-recipe/role_phase_assets.ts
 additionalFiles:
+  - role_phases/common.py
+  - role_phases/prerequisites.py
+  - role_phases/observer.py
+  - role_phases/php_runtime.py
+  - role_phases/cli.py
+  - role_phases/firewall.py
+  - role_phases/caddy_service.py
   - scripts/recipe.py
+  - scripts/role_prerequisites.py
+  - scripts/caddy_ordering.py
   - scripts/php_runtime.py
   - scripts/footprint.py
   - scripts/cli.py
   - scripts/file.py
+  - scripts/file_snapshot.py
+  - scripts/file_restore.py
   - scripts/observer_identity.py
   - scripts/observer_checkout.py
+  - runtime_scripts/phase_account.py
+  - runtime_scripts/phase_activation.py
+  - runtime_scripts/phase_checkout.py
+  - runtime_scripts/phase_cleanup.py
+  - runtime_scripts/phase_common.py
+  - runtime_scripts/phase_dependencies.py
+  - runtime_scripts/phase_environment.py
+  - runtime_scripts/phase_restore.py
+  - runtime_scripts/phase_unit.py
+  - runtime_scripts/phase_verify.py
+  - runtime_scripts/websocket_cleanup.py
+  - runtime_scripts/websocket_directory.py
+  - runtime_scripts/websocket_link.py
+  - runtime_scripts/websocket_observe.py

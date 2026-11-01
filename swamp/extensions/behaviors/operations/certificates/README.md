@@ -60,7 +60,7 @@ The RSA key stays on its effect Node. Only the CSR and signed public certificate
 Publication keeps
 `/etc/caddy/orbit-cert-current/{gateway.pem,gateway.key,root-ca.pem}`,
 `/etc/caddy/orbit-metrics-cert-current/{metrics.pem,metrics.key}`
-`/etc/caddy/orbit-websocket-cert-current/{websocket.pem,websocket.key}` and
+`/etc/caddy/orbit-websocket-cert-current/{reverb.pem,reverb.key}` and
 `/etc/caddy/orbit-analytics-cert-current/{analytics.pem,analytics.key}`. Each
 publication also keeps the public `root-ca.pem` for local renewal checks. An
 existing owned version link is accepted only within that role's fixed versions

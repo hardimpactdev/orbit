@@ -37,7 +37,7 @@
     {"vault": "orbit-control-inputs", "key_pattern": "^process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^process-update-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^schedule-run-operation-[1-9][0-9]*$", "actions": ["write", "read"]},
-    {"vault": "orbit-control-inputs", "key_pattern": "^node-role-[0-9]+-observer$", "actions": ["write", "read"]},
+    {"vault": "orbit-control-inputs", "key_pattern": "^node-role-[0-9]+-(observer|runtime_material)$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^database-write-intent-[1-9][0-9]*$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^bootstrap-identity-node-14$", "actions": ["write", "read"]},
     {"vault": "orbit-control-inputs", "key_pattern": "^analytics-plausible-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", "actions": ["write", "read"]},

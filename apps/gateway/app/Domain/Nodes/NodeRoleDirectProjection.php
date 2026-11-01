@@ -105,6 +105,19 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
 
                 return $projected;
             }
+            if (isset($operation->input['native_role'])) {
+                $native = ValidatedData::object($operation->input['native_role']);
+                $nodeId = ValidatedData::integer($snapshot['node_id']);
+                if (($result['certificates_proven'] ?? false) === true) {
+                    app(NodeRolePublicationState::class)->record(ValidatedData::object($native['certificates'] ?? ['leaves' => [], 'withdrawals' => []]), 'certificates_published', $nodeId);
+                }
+                if (($result['publication_proven'] ?? false) === true && $snapshot['role'] === RoleName::WebSocket->value) {
+                    app(NodeRolePublicationState::class)->record(ValidatedData::object($native['certificates']), 'caddy_published', $nodeId);
+                }
+                if (($result['runtime_proven'] ?? false) === true) {
+                    app(NodeRoleRuntimeProjection::class)->record($snapshot);
+                }
+            }
             $assignment = NodeRole::query()->whereKey($snapshot['assignment_id'])->where('node_id', $operation->node_id)
                 ->where('role', $snapshot['role'])->firstOrFail();
             if ($status === OperationStatus::Succeeded) {

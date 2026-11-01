@@ -1,10 +1,12 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import {
   gatewayCaddyOrdering,
-  GatewayCaddyOrderingProgram,
   GatewayRoleProgram,
   gatewayRoleSystem,
 } from "./gateway_role_system.ts";
+const GatewayCaddyOrderingProgram = await Deno.readTextFile(
+  new URL("../fleet-recipe/scripts/caddy_ordering.py", import.meta.url),
+);
 import type { SystemTransport } from "./system_command.ts";
 
 const input = {
@@ -267,15 +269,9 @@ async function orderingPython(body: string) {
 import shutil
 ROOT=Path(tempfile.mkdtemp(prefix='orbit-caddy-order-'))
 (ROOT/'etc/systemd/system').mkdir(parents=True)
-LOCK=ROOT/'locks/caddy.lock'
 UID,GID=os.getuid(),os.getgid()
 commands=[];active=True;failures=[]
 def control(args,probe=False):
-    with LOCK.open('a') as second:
-        try:
-            fcntl.flock(second,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            raise AssertionError('Caddy ordering escaped shared host lock')
-        except BlockingIOError:pass
     commands.append(args)
     if len(commands) in failures:raise Refused()
     if probe:return active
@@ -304,7 +300,7 @@ directory=ROOT/'etc/systemd/system/caddy.service.d';path=directory/'orbit-vpn.co
   const [result] = await Promise.all([child.output(), writing]);
   if (!result.success) throw new Error(new TextDecoder().decode(result.stderr));
 }
-Deno.test("Gateway Caddy ordering installs exact dependency drop-in under Caddy lock, repeats without restart and restarts inactive Caddy", async () => {
+Deno.test("Gateway Caddy ordering installs exact dependency drop-in, repeats without restart and restarts inactive Caddy", async () => {
   await orderingPython(String.raw`
 assert outcome()=={'completed':True,'changed':True}
 assert path.read_bytes()==b'# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n'
@@ -364,7 +360,9 @@ assert not directory.exists()
   } as const;
   assertEquals(
     await gatewayCaddyOrdering(() =>
-      Promise.resolve({ success: true, stdout: JSON.stringify(refusal) })
+      Promise.resolve({ success: true, stdout: JSON.stringify(refusal) }),
+      undefined,
+      GatewayCaddyOrderingProgram,
     ),
     refusal,
   );
@@ -376,7 +374,7 @@ assert not directory.exists()
       () => Promise.resolve({ success: true, stdout: '{"completed":true}' }),
     ]
   ) {
-    const error = await assertRejects(() => gatewayCaddyOrdering(invoke));
+    const error = await assertRejects(() => gatewayCaddyOrdering(invoke, undefined, GatewayCaddyOrderingProgram));
     assertEquals(String(error).includes("private sentinel"), false);
   }
   await assertRejects(() =>

@@ -187,3 +187,17 @@ Deno.test("CLI uses the canonical admitted public plan and pin", async () => {
     agent_sha256: admission.snapshot.agent_sha256,
   }]);
 });
+
+Deno.test("retired WebSocket convergence cannot enter the retained add/relocate effect graph", async () => {
+  const f = fixture();
+  f.operation.kind = "node.role_converge";
+  f.operation.input.role = "websocket";
+  const admission = await f.root.methods.admit.execute({
+    ...args,
+    kind: "node.role_converge",
+  }, f.ctx);
+  assertEquals(admission.ready, false);
+  assertEquals(admission.refusal, "operation.kind_unavailable");
+  assertEquals(f.effects(), 0);
+  assertEquals(f.posts, []);
+});

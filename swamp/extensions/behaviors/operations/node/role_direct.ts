@@ -233,6 +233,9 @@ export function nodeRoleAdd(
                     const refusal =
                         current.cancel_requested || ctx.signal?.aborted
                             ? "operation.cancelled"
+                            : args.kind === "node.role_converge" &&
+                                    snapshot.role === "websocket"
+                            ? "operation.kind_unavailable"
                             : snapshot.footprint.refusal
                             ? snapshot.footprint.refusal
                             : snapshot.metrics_fleet?.fleet.some((node) =>
@@ -408,6 +411,14 @@ export function nodeRoleAdd(
                                 const ordering = await gatewayActions.order(
                                     undefined,
                                     ctx.signal,
+                                    gatewayActions.order ===
+                                            gatewayCaddyOrdering
+                                        ? await Deno.readTextFile(
+                                            ctx.extensionFile(
+                                                "scripts/caddy_ordering.py",
+                                            ),
+                                        )
+                                        : undefined,
                                 );
                                 if (!ordering.completed) {
                                     return {
@@ -439,6 +450,14 @@ export function nodeRoleAdd(
                                     baseline === convergeRoleBaseline
                                     ? await Deno.readTextFile(
                                         ctx.extensionFile("scripts/recipe.py"),
+                                    )
+                                    : undefined,
+                                args.stage === "prerequisites" &&
+                                    baseline === convergeRoleBaseline
+                                    ? await Deno.readTextFile(
+                                        ctx.extensionFile(
+                                            "scripts/role_prerequisites.py",
+                                        ),
                                     )
                                     : undefined,
                             );
@@ -498,6 +517,11 @@ export function nodeRoleAdd(
                                         php: await Deno.readTextFile(
                                             ctx.extensionFile(
                                                 "scripts/php_runtime.py",
+                                            ),
+                                        ),
+                                        preparation: await Deno.readTextFile(
+                                            ctx.extensionFile(
+                                                "scripts/role_prerequisites.py",
                                             ),
                                         ),
                                         footprint: await Deno.readTextFile(
@@ -560,7 +584,14 @@ export function nodeRoleAdd(
                             : await cli({
                                 ...snapshot.cli,
                                 agent_sha256: snapshot.agent_sha256,
-                            }, { signal: ctx.signal, source:cli===convergeCli?await Deno.readTextFile(ctx.extensionFile("scripts/cli.py")):undefined }),
+                            }, {
+                                signal: ctx.signal,
+                                source: cli === convergeCli
+                                    ? await Deno.readTextFile(
+                                        ctx.extensionFile("scripts/cli.py"),
+                                    )
+                                    : undefined,
+                            }),
                     );
                     await ctx.writeResource("cli_outcome", "cli", outcome);
                     return { ok: !Object.hasOwn(outcome, "error_code") };

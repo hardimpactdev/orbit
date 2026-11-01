@@ -193,6 +193,31 @@ class RecipeSystemPrograms(unittest.TestCase):
         self.assertFalse(any('orbit-agent' in str(argv) for argv in self.calls))
         self.assertEqual(ns['install_javascript'](self.host,data,self.account),{'changed':False,'retired':[]})
 
+    def test_javascript_replacement_retires_node_apt_provider_and_stale_corepack_links(self):
+        node=self.archive('node-retire.tgz',[('node-v22.1.0-linux-x64/bin/node',b'ELF','file')])
+        vp=self.archive('vp-retire.tgz',[('vp',b'ELF','file')])
+        data=self.data({'node':self.pin('22.1.0',node),'vp-cli':self.pin('0.2.0',vp)})
+        source=self.host.path('/etc/apt/sources.list.d/nodesource.list')
+        source.write_text('deb https://deb.nodesource.com/node_22.x nodistro main\n')
+        binary=self.host.path('/usr/bin/pnpm');binary.parent.mkdir(parents=True)
+        binary.symlink_to('../lib/node_modules/corepack/dist/pnpm.js')
+        original=self.host.run;installed=True
+        def run(argv,required=True,timeout=600,environment=None):
+            nonlocal installed
+            if argv[0]=='dpkg-query':return {'code':0,'stdout':'nodejs\tamd64\t22.0.0\tinstall ok installed\n' if installed else '', 'stderr':''}
+            if argv[:3]==['apt-get','--simulate','remove']:
+                self.calls.append(argv);return {'code':0,'stdout':'Remv nodejs [22.0.0]\n','stderr':''}
+            if argv[:3]==['apt-get','remove','--yes']:
+                self.calls.append(argv);installed=False;return {'code':0,'stdout':'','stderr':''}
+            return original(argv,required,timeout,environment)
+        self.host.run=run
+        result=ns['install_javascript'](self.host,data,self.account,{'node':node,'vp-cli':vp})
+        self.assertEqual(result['retired'],['remove_corepack_links','remove_nodejs_package','retire_node_source'])
+        self.assertFalse(source.exists());self.assertFalse(binary.is_symlink())
+        self.assertFalse(installed)
+        self.assertTrue(self.host.path('/etc/apt/nodesource.list.orbit-node-backup').is_file())
+        self.assertTrue(self.host.path('/usr/local/bin/node').is_file())
+
     def test_bad_checksum_fails_before_managed_runtime_or_launcher_is_published(self):
         archive=self.archive('bad-checksum.tgz',[('vp',b'ELF','file')]);pin=self.pin('0.2.0',archive);pin['artifacts']['amd64']['sha256']='a'*64
         with self.assertRaises(ns['RecipeRefusal']):ns['install_javascript'](self.host,self.data({'vp-cli':pin}),self.account,{'vp-cli':archive})

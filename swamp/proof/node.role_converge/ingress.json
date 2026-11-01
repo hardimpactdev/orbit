@@ -1,0 +1,150 @@
+{
+  "kind": "node.role_converge",
+  "workflow": "operation-node-role-converge-209",
+  "topology": [
+    "app-prod"
+  ],
+  "budget_seconds": 1200,
+  "queue_timeout_seconds": 30,
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:show",
+        "${topology.app-prod.node_id}",
+        "--json"
+      ],
+      "capture": {
+        "target_node_id": "$.id"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "node:role:add",
+      "${topology.app-prod.node_id}",
+      "ingress",
+      "--converge",
+      "--json"
+    ],
+    "operation": "$.id"
+  },
+  "envelope": {
+    "role": "ingress",
+    "converge": true,
+    "native_role": {
+      "schema_version": 1,
+      "node_id": "${topology.app-prod.node_id}",
+      "assignment_id": "${match.positive_int}",
+      "created": false,
+      "role": "ingress",
+      "user": "${match.nonempty_string}",
+      "agent_sha256": "${match.sha256}",
+      "prerequisites": {
+        "releases": [
+          "resolute"
+        ],
+        "packages": [
+          "caddy"
+        ],
+        "apps_directory": false,
+        "composer_home": false
+      },
+      "ssh": {
+        "control_node_id": 209,
+        "identity_file": "${match.nonempty_string}",
+        "public_key": "${match.nonempty_string}",
+        "target": {
+          "host": "${topology.app-prod.wireguard_ip}",
+          "user": "${match.nonempty_string}",
+          "port": 22
+        }
+      },
+      "footprint": {
+        "node_id": "${topology.app-prod.node_id}",
+        "agent_sha256": "${match.sha256}"
+      }
+    }
+  },
+  "expect": {
+    "status": "succeeded",
+    "outputs": {
+      "job": "result",
+      "step": "result",
+      "match": {
+        "role": "ingress",
+        "role_proven": true,
+        "runtime_proven": true,
+        "certificates_proven": true,
+        "publication_proven": true,
+        "created": false,
+        "follow_up": null
+      }
+    }
+  },
+  "phases": [
+    {
+      "name": "account",
+      "job": "effects",
+      "step": "account",
+      "budget_seconds": 30
+    },
+    {
+      "name": "observer_install",
+      "job": "effects",
+      "step": "observer_install",
+      "budget_seconds": 90
+    },
+    {
+      "name": "packages",
+      "job": "effects",
+      "step": "packages",
+      "budget_seconds": 600
+    },
+    {
+      "name": "observer",
+      "job": "effects",
+      "step": "observer",
+      "budget_seconds": 120
+    },
+    {
+      "name": "caddy",
+      "job": "effects",
+      "step": "caddy-0",
+      "budget_seconds": 120
+    },
+    {
+      "name": "firewall",
+      "job": "effects",
+      "step": "firewall-0",
+      "budget_seconds": 60
+    }
+  ],
+  "parity": {
+    "command": [
+      "python3",
+      "-I",
+      "swamp/proof/node.role_converge/parity.py",
+      "ingress"
+    ],
+    "cases": [
+      "recorded-assignment-preserved",
+      "baseline-proven",
+      "observer-footprint-proven",
+      "canonical-host-state-proven"
+    ]
+  },
+  "before_request": [
+    {
+      "argv": [
+        "python3",
+        "-I",
+        "prepare.py",
+        "ingress",
+        "${capture.target_node_id}"
+      ],
+      "timeout_seconds": 300
+    }
+  ]
+}

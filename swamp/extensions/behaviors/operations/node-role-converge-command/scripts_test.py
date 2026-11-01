@@ -8,8 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-def load(name):
-    spec=importlib.util.spec_from_file_location(name,Path(__file__).parent.parent/'fleet-recipe/scripts'/(name+'.py'))
+def load(name, directory="scripts"):
+    base=Path(__file__).parent if directory=="runtime_scripts" else Path(__file__).parent.parent/'fleet-recipe'
+    spec=importlib.util.spec_from_file_location(name,base/directory/(name+'.py'))
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
 
@@ -42,3 +43,21 @@ class ObserverPolicy(unittest.TestCase):
             outside=Path(root)/'outside';outside.write_text('unchanged');outside.chmod(0o644)
             environment.unlink();environment.symlink_to(outside)
             self.assertFalse(module.apply({'checkout':str(checkout)})['changed']);self.assertEqual(outside.stat().st_mode&0o777,0o644)
+
+
+class WebSocketLinkPolicy(unittest.TestCase):
+    def test_restore_accepts_the_canonical_relative_prior_link_but_refuses_a_foreign_target(self):
+        module=load('websocket_link', 'runtime_scripts')
+        with tempfile.TemporaryDirectory() as root:
+            install=Path(root)/'reverb'
+            releases=Path(str(install)+'.releases');releases.mkdir()
+            previous=releases/('release.'+'a'*32);previous.mkdir()
+            candidate=releases/('release.'+'b'*32);candidate.mkdir()
+            install.symlink_to(previous.relative_to(root))
+            data={'install_path':str(install),'release':str(candidate),'previous':str(previous),'restore':True}
+            self.assertTrue(module.publish(data)['ready'])
+            self.assertEqual(install.resolve(),previous)
+            foreign=Path(root)/'foreign';foreign.mkdir()
+            install.unlink();install.symlink_to(foreign)
+            with self.assertRaises(ValueError):module.publish(data)
+            self.assertEqual(install.resolve(),foreign)
