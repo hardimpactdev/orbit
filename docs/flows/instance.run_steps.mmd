@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task + intent-as-workflow-inputs + single-swamp-node; orbit-instance-run-account; DECISIONS R4 (commands as inputs, sudo -u intent account, terminal projection).
+  %% Target design: ADR 0244 task, R2-R4 (process.stop shape: 209, @swamp/ssh, full intent as inputs), DECISIONS instance.run_steps (commands as inputs, sudo -u intent account, terminal projection, no API reads). docs/reference/instance-setup.md.
   %% status: draft
+  %% command: instance:setup
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -10,23 +11,102 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-dev Node<br/>reached over ssh
-  CLI->>GW: instance:setup<br/>{instance: 42}
-  Note over GW: Check active dev Instance<br/>list digest · task #5131
-  GW->>SW: Start run, full intent<br/>step commands, account as inputs
-  GW-->>CLI: 202 Accepted<br/>operation #5131
-  loop each admitted step
-    SW->>N: Run the step in checkout<br/>@swamp/ssh · sudo -u intent user
-    N-->>SW: exit 0
+  CLI->>GW: instance:setup 42<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit instance:setup 42`
+  %%> - syntax: `instance:setup <instance> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the numeric Instance ID
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool send the same request
+  Note over GW: Validate, record the task<br/>Instance 42 · task #5133
+  %%> Requirements:
+  %%> - your Node has an access grant to Node 12, the Node of Instance 42
+  %%> - Instance 42 is an active development Instance on an `app-dev` Node
+  %%> - no other task holds Instance 42; the Gateway holds one lock per Instance and waits briefly for a busy one
+  %%> Records:
+  %%> - the Project's setup steps as they are now: names, commands, timeouts, and their digest
+  %%> - a later change to the list does not change this task; start a new one to use it
+  %%> Result:
+  %%> - task #5133 recorded with the full intent
+  %%> - nothing has happened on the Node yet
+  GW->>SW: Start run, full intent<br/>operation-instance-setup · 550 s
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209)
+  %%> Inputs:
+  %%> - `kind`: instance.run_steps
+  %%> - every step's name, command and timeout
+  %%> - the checkout path, the Instance account and the Node's Vite+ store (`VP_HOME`)
+  %%> - the seed: `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` of the `default` Instance on Node 12
+  %%> - Node 12's address and SSH host keys; the SSH identity comes from the `swamp` role
+  %%> Budget:
+  %%> - 550 s for the whole list; the step timeouts add up to at most 540 s
+  GW-->>CLI: 202 Accepted<br/>task #5133
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - the CLI follows the task with `operation:show`
+  SW->>N: Check the checkout<br/>@swamp/ssh · owned, on branch
+  %%> How:
+  %%> - Swamp reaches Node 12 over SSH from 209 with the official `@swamp/ssh` behavior
+  %%> What it does:
+  %%> - checks that the checkout of Instance 42 exists and is the one Orbit owns
+  %%> - checks that the Instance account exists
+  %%> Why:
+  %%> - the commands run only in the checkout the intent names
+  loop each setup step, in order
+    SW->>N: Run setup step<br/>sudo -u · timeout · bash -eu
+    %%> What it does:
+    %%> - runs one step's command with `bash -eu` from the repository root of the checkout
+    %%> - with `VP_HOME`, `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` set
+    %%> Typical steps:
+    %%> - `composer install`
+    %%> - `vp install`
+    %%> - `php artisan migrate`
+    %%> Runs as:
+    %%> - the Instance account from the intent, with `sudo -u`; not root
+    %%> Limits:
+    %%> - `timeout` stops the step's whole process group at its own timeout, so no command keeps running after it
+    %%> Progress:
+    %%> - each step shows under its own name
+    %%> Not kept:
+    %%> - command text and stdout; only the exit code and a redacted stderr tail
   end
-  alt all steps pass
-    SW-->>GW: Run succeeded<br/>terminal projection · outcome
-    Note over GW: Clear failed_step<br/>task → succeeded
+  alt every step exits 0
+    N-->>SW: exit 0 for each step
+    %%> Returns:
+    %%> - each step's exit code; that is the end state, so no other check runs
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event and reads the run's outputs; Swamp never calls the Gateway
+    Note over GW: Record result<br/>setup: done · task succeeded
+    %%> Result:
+    %%> - Instance 42's setup is recorded as done, and an earlier failed step is cleared
+    %%> - task #5133 succeeds; an empty list also succeeds
   else a step fails or times out
     N--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - a command exits with an error or runs past its timeout
+    %%> - exit 127 or 126: the command is missing or not executable
+    %%> Effect:
+    %%> - later steps do not run
     SW--xGW: Run failed<br/>failed_step, error_code
-    Note over GW: Keep Instance, mark failed<br/>instance.setup_step_failed
+    %%> The Gateway reads:
+    %%> - the failed step, its exit code and the redacted stderr tail
+    Note over GW: Keep Instance, mark failed<br/>task failed · rerun from start
+    %%> Result:
+    %%> - Instance 42 stays active; its setup is marked failed with the step name
+    %%> - task #5133 fails with `instance.setup_step_failed`, or `instance.setup_step_unavailable` for a missing command
+    %%> On the Node:
+    %%> - what earlier steps did stays; there is no rollback and no teardown
+    %%> Retry:
+    %%> - fix the cause and run `instance:setup` again; it starts at the first step, so steps should converge
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show #5131
+    CLI->>GW: operation:show #5133
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
     GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
   end
