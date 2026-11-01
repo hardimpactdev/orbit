@@ -207,6 +207,24 @@ export function destroySteps(): Fields[] {
             in: e(intent + ".direct_destroy.runtime.schedules"),
         },
     });
+    a.metadata(
+        "schedules-ready",
+        "require_actions",
+        {
+            names: ["destroy-schedules"],
+            counts: [
+                e("size(" + intent + ".direct_destroy.runtime.schedules)"),
+            ],
+            steps: e("steps"),
+        },
+        "@nckrtl/instance-dev-command",
+        {
+            dependsOn: [{
+                step: "destroy-schedules",
+                condition: { type: "always" },
+            }, { step: "destroy-verified", condition: { type: "succeeded" } }],
+        },
+    );
     a.add("processes", {
         type: "workflow",
         workflowIdOrName: "operation-process-destroy",
@@ -223,12 +241,9 @@ export function destroySteps(): Fields[] {
         },
     });
     a.steps.at(-1)!.dependsOn = [{
-        step: "destroy-schedules",
-        condition: {
-            type: "or",
-            conditions: [{ type: "succeeded" }, { type: "skipped" }],
-        },
-    }, { step: "destroy-verified", condition: { type: "succeeded" } }];
+        step: "destroy-schedules-ready",
+        condition: { type: "succeeded" },
+    }];
     a.metadata("runtime-ready", "require_actions", {
         names: ["destroy-schedules", "destroy-processes"],
         counts: [
@@ -464,6 +479,7 @@ export function destroySteps(): Fields[] {
     const steps = [...a.steps, ...route, ...end.steps];
     for (const step of steps) {
         const task = step.task as Fields;
+        if (task.type === "workflow") delete task.behaviorName;
         if (
             step.forEach && task.type === "behavior" &&
             typeof task.behaviorName === "string"

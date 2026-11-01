@@ -106,7 +106,7 @@ final readonly class StartDevelopmentInstanceCreateAction
                 'node_id' => $node->id, 'initial_status' => $instance->status->value, 'first_setup_pending' => $instance->first_setup_pending,
                 'user' => $node->user, 'source_root' => $sourceRoot,
                 'participant_node_ids' => [$node->id],
-                'seed_repository' => $instance->seed_repository, 'seed_commit' => $instance->seed_commit,
+                'seed_repository' => $instance->seed_repository, 'seed_commit' => $instance->seed_commit, 'seed_path' => $instance->seed_path,
                 'source_layout' => $instance->source_layout,
                 'route_id' => null, 'route_domain' => null,
                 'setup_digest' => $digest(LifecyclePhase::Setup), 'teardown_digest' => $digest(LifecyclePhase::Teardown),

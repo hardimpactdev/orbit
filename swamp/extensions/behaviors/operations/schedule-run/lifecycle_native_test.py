@@ -352,7 +352,7 @@ p.write_text(json.dumps(s))
         paths = []
         names = []
         for index in range(4):
-            name = "schedule-remove_files-" + str(self.inputs["operation_id"]) + "-" + str(index)
+            name = "schedule-remove_files-" + self.run["id"] + "-" + str(index)
             model = json.loads(self.cli("model", "get", name).stdout)
             names.append(model["name"])
             paths.append(model["globalArguments"]["path"])

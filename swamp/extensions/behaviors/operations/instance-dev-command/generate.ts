@@ -30,7 +30,7 @@ export function workflow(kind: "create" | "destroy") {
         },
     });
     const result: Record<string, unknown> & {
-        jobs: { name: string; steps: Record<string, unknown>[] }[];
+        jobs: Record<string, unknown>[];
     } = {
         id: kind === "create"
             ? "c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a"
@@ -82,8 +82,9 @@ export function workflow(kind: "create" | "destroy") {
     };
     if (kind === "create") {
         for (const job of result.jobs) {
-            const name = job.name + "-admitted";
-            for (const step of job.steps) {
+            const name = String(job.name) + "-admitted";
+            const jobSteps = job.steps as Record<string, unknown>[];
+            for (const step of jobSteps) {
                 if (step.name === "finish-result" || step.name === "accepted") {
                     continue;
                 }
@@ -99,7 +100,7 @@ export function workflow(kind: "create" | "destroy") {
                     { step: name, condition: { type: "succeeded" } },
                 ];
             }
-            job.steps.unshift({
+            jobSteps.unshift({
                 name,
                 target: "orbit-node-209",
                 guard: e("inputs.intent.already_active"),

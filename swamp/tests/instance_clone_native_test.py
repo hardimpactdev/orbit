@@ -14,6 +14,9 @@ class InstanceCloneNative(NativeTestCase):
         super().setUp()
         self.cli('extension', 'pull', '@swamp/ssh@2026.10.23.1')
         self.copy_behaviors('operations/instance-source-command', 'operations/instance-lifecycle', 'operations/tools', 'operations/instance-vp-command', 'operations/node-bootstrap', 'operations/instance-deploy')
+        # The fixture replaces HTTPS with a disposable local repository and sends no token.
+        fetch = self.repo/'extensions/behaviors/operations/instance-source-command/scripts/fetch.py'
+        fetch.write_text(fetch.read_text().replace('"protocol.https.allow=always"', '"protocol.https.allow=always", "protocol.file.allow=always"').replace('"GIT_ALLOW_PROTOCOL": "https"', '"GIT_ALLOW_PROTOCOL": "https:file"'))
         self.candidate = self.repo / 'candidate'
         self.candidate.mkdir()
         self.git('init', '-q')

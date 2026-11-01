@@ -80,6 +80,17 @@ class SourceActions(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertNotIn('FAKE_NOT_A_CREDENTIAL',answer.stdout+answer.stderr)
 
+    def test_git_fetch_refuses_repository_protocol_ext_override(self):
+        marker = self.root/'credential-observed'
+        shim = self.root/'ext-probe.py'
+        shim.write_text('from pathlib import Path\nPath(' + repr(str(marker)) + ').write_text("ran")\n')
+        self.git('config','protocol.ext.allow','always')
+        self.git('config','url.ext::'+sys.executable+' '+str(shim)+'.insteadOf','https://github.com/')
+        script = Path(__file__).parent.parent/'instance-source-command/scripts/fetch.py'
+        answer = subprocess.run([sys.executable,str(script),str(self.path),'https://github.com/example/project.git'],input=json.dumps({'github_token':'FAKE_NOT_A_CREDENTIAL'}),text=True,capture_output=True,check=False)
+        self.assertNotEqual(answer.returncode,0)
+        self.assertFalse(marker.exists())
+
     def test_new_unadmitted_worktree_refuses_before_common_repository_removal(self):
         value = self.value()
         survivor = self.path.with_name('unadmitted')

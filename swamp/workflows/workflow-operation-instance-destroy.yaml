@@ -342,20 +342,33 @@ jobs:
               cascade: true
               ssh_execution: '${{ inputs.intent.ssh_execution }}'
             execution_secrets: {}
-          behaviorName: undefined
         forEach:
           item: schedule
           in: '${{ inputs.intent.direct_destroy.runtime.schedules }}'
-      - name: destroy-processes
+      - name: destroy-schedules-ready
         target: orbit-node-209
         dependsOn:
           - step: destroy-schedules
             condition:
-              type: or
-              conditions:
-                - type: succeeded
-                - type: skipped
+              type: always
           - step: destroy-verified
+            condition:
+              type: succeeded
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-dev-command'
+          behaviorName: '${{ "idm-destro-15-" + run.id }}'
+          methodName: require_actions
+          inputs:
+            names:
+              - destroy-schedules
+            counts:
+              - '${{ size(inputs.intent.direct_destroy.runtime.schedules) }}'
+            steps: '${{ steps }}'
+      - name: destroy-processes
+        target: orbit-node-209
+        dependsOn:
+          - step: destroy-schedules-ready
             condition:
               type: succeeded
         task:
@@ -369,7 +382,6 @@ jobs:
               control: '${{ self.process }}'
               ssh_execution: '${{ inputs.intent.ssh_execution }}'
             execution_secrets: {}
-          behaviorName: undefined
         forEach:
           item: process
           in: '${{ inputs.intent.native_runtime.processes }}'
@@ -388,7 +400,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-destro-16-" + run.id }}'
+          behaviorName: '${{ "idm-destro-17-" + run.id }}'
           methodName: require_actions
           inputs:
             names:
@@ -407,7 +419,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-destro-17-" + run.id }}'
+          behaviorName: '${{ "idm-destro-18-" + run.id }}'
           methodName: read
           inputs:
             action: run_project_step
@@ -421,7 +433,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-18-" + run.id }}'
+          behaviorName: '${{ "ids-destro-19-" + run.id }}'
           methodName: copy
           globalArgs: *ref_0
           inputs:
@@ -438,7 +450,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-19-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-20-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -461,7 +473,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-20-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-21-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -484,7 +496,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-21-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-22-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -507,7 +519,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-22-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-23-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -530,7 +542,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-23-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-24-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -553,7 +565,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-24-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-25-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -576,7 +588,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-25-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-26-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -599,7 +611,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-26-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-27-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -622,7 +634,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-27-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-28-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -645,7 +657,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-28-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-29-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -668,7 +680,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-29-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-30-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -691,7 +703,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-30-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-31-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -714,7 +726,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-31-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-32-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -737,7 +749,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-32-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-33-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -760,7 +772,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-33-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-34-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -783,7 +795,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-34-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-35-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -806,7 +818,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-35-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-36-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -829,7 +841,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-36-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-37-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -852,7 +864,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-37-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-38-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -875,7 +887,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-38-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-39-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -898,7 +910,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-39-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-40-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -921,7 +933,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-40-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-41-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -944,7 +956,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-41-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-42-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -967,7 +979,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-42-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-43-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -990,7 +1002,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-43-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-44-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1013,7 +1025,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-44-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-45-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1036,7 +1048,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-45-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-46-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1059,7 +1071,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-46-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-47-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1082,7 +1094,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-47-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-48-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1105,7 +1117,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-48-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-49-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1128,7 +1140,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-49-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-50-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1151,7 +1163,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: '${{ "ids-destro-50-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
+          behaviorName: '${{ "ids-destro-51-" + run.id + "-" + string(self._index) + "-" + string(self._index) }}'
           methodName: exec
           globalArgs: *ref_0
           inputs:
@@ -1270,7 +1282,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-destro-51-" + run.id }}'
+          behaviorName: '${{ "idm-destro-52-" + run.id }}'
           methodName: require_actions
           inputs:
             names:
@@ -1362,7 +1374,6 @@ jobs:
                 host: '${{ inputs.intent.ssh_execution.target.host }}'
                 user: '${{ inputs.intent.ssh_execution.target.user }}'
                 host_keys: '${{ inputs.intent.ssh_execution.target.host_keys }}'
-          behaviorName: undefined
         forEach:
           item: database
           in: '${{ inputs.intent.direct_destroy.database.sqlite }}'
@@ -1378,7 +1389,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
-          behaviorName: '${{ "idm-destro-53-" + run.id }}'
+          behaviorName: '${{ "idm-destro-54-" + run.id }}'
           methodName: require_actions
           inputs:
             names:
@@ -2351,6 +2362,9 @@ jobs:
             condition:
               type: always
           - step: destroy-schedules
+            condition:
+              type: always
+          - step: destroy-schedules-ready
             condition:
               type: always
           - step: destroy-processes

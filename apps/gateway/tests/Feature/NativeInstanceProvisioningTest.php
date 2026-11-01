@@ -7,6 +7,7 @@ use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentMaterial;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\NativeInstanceProvisioningSetup;
 use App\Domain\Operations\OperationSecretValue;
@@ -163,4 +164,23 @@ it('refuses incomplete success without activating the Instance', function (): vo
     $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id, 'node_id' => $this->node->id, 'status' => 'running', 'input' => $this->input, 'state' => ['swamp_run_id' => $run]]);
     expect(fn () => app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'result' => ['instance_id' => $this->instance->id, 'ready' => true]]))->toThrow(ResourceOperationException::class);
     expect($this->instance->refresh()->status)->toBe(InstanceState::Reserved);
+});
+
+it('captures checkout scope and admitted seed values in the private command copy', function (): void {
+    ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'position' => 0,
+        'name' => 'prepare', 'command' => 'printf private-command', 'timeout_seconds' => 30]);
+    $plan = app(NativeInstanceProvisioningIntent::class)->create($this->instance, $this->input);
+    $plan['application'] = $plan['checkout'].'/nested/application';
+    $operation = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $this->instance->id,
+        'node_id' => $this->node->id, 'status' => 'queued', 'input' => [...$this->input, 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40),
+            'ssh_execution' => [], 'direct_provisioning' => $plan]]);
+    $this->instance->update(['seed_path' => '/later/default', 'seed_commit' => str_repeat('b', 40)]);
+    $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static fn (array $request): array => [['type' => 'vault.put', 'id' => $request['id'], 'payload' => ['data' => ['vaultName' => $request['payload']['vaultName'], 'secretKey' => $request['payload']['key'], 'vaultType' => 'local_encryption']]]];
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.run_token' => 'synthetic-token']);
+    $public = app(NativeDevelopmentInstanceInput::class)->create($operation);
+    $command = json_decode($socket->sent[1]['payload']['value'], true, flags: JSON_THROW_ON_ERROR);
+    expect($command)->toMatchArray(['directory' => $plan['checkout'], 'seed_path' => '/captured/default', 'seed_commit' => str_repeat('a', 40)])
+        ->and(json_encode($public))->not->toContain('private-command');
 });
