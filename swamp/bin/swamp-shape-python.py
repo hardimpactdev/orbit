@@ -6,6 +6,7 @@ import sys
 from urllib.parse import urlsplit
 
 from swamp_shape_host_tools import php_runtime_transaction
+from swamp_shape_polling import python_controls, shell_controls
 
 SECRET = re.compile(r"secret|password|passwd|credential|private.?key|api.?key|token|identity", re.I)
 # Guide rule 6: these are existing per-host tool transactions, not workflow locks.
@@ -18,7 +19,7 @@ HOST_TOOL_LOCKS = {
 SAFE_REF = re.compile(r"(?:key|id|ref|name|hash|digest|public|field)s?$", re.I)
 
 
-def scan(source, gateway_primitives=(), context=None):
+def scan(source, gateway_primitives=(), context=None, phase_seconds=0):
     findings = []
     try:
         tree = ast.parse(source)
@@ -40,6 +41,7 @@ def scan(source, gateway_primitives=(), context=None):
         return ""
 
     parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    phase_controls = python_controls(tree, phase_seconds)
     bindings = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
@@ -248,7 +250,7 @@ def scan(source, gateway_primitives=(), context=None):
                 call = name(bindings[node.func.id][0]) or call
             gateway_request(node, call)
             if call in ("time.sleep", "asyncio.sleep", "fcntl.flock", "fcntl.lockf"):
-                if call != "fcntl.flock" or not host_tool_lock(node):
+                if node not in phase_controls and (call != "fcntl.flock" or not host_tool_lock(node)):
                     add(node, "custom-control")
             if call in ("subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "os.system", "os.execv", "os.execve"):
                 argv = node.args[:1] + [k.value for k in node.keywords if k.arg in ("args", "executable")]
@@ -259,17 +261,22 @@ def scan(source, gateway_primitives=(), context=None):
                     # File writes are permitted only as protected config, which this heuristic cannot prove.
                     add(node, "secret-output")
         if isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value:
-            add(node, "custom-control")
+            if node not in phase_controls:
+                add(node, "custom-control")
         if isinstance(node, (ast.For, ast.AsyncFor)) and any(isinstance(part, ast.Name) and re.search(r"attempt|retry|poll", part.id, re.I) for part in ast.walk(node.target)):
             add(node, "custom-control")
     return findings
 
 
 if __name__ == "__main__":
-    primitives = json.loads(sys.argv[1]) if len(sys.argv) > 1 else []
+    primitives = json.loads(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] != "--phase-controls" else []
     payload = sys.stdin.read()
-    if len(sys.argv) > 2 and sys.argv[2] == "--source-context":
+    if len(sys.argv) > 1 and sys.argv[1] == "--phase-controls":
         payload = json.loads(payload)
-        print(json.dumps(scan(payload["source"], primitives, payload["sources"])))
+        print(json.dumps({file: shell_controls(value['source'], value['seconds'])
+                          for file, value in payload.items()}))
+    elif len(sys.argv) > 2 and sys.argv[2] == "--source-context":
+        payload = json.loads(payload)
+        print(json.dumps(scan(payload["source"], primitives, payload["sources"], payload.get("phase_seconds", 0))))
     else:
         print(json.dumps(scan(payload, primitives)))

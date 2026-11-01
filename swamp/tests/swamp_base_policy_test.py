@@ -29,6 +29,8 @@ class BasePolicy(unittest.TestCase):
             (swamp / "bin/workflow-placement.ts").write_bytes((ROOT / "bin/workflow-placement.ts").read_bytes())
             (swamp / "bin/swamp-shape-python.py").write_bytes((ROOT / "bin/swamp-shape-python.py").read_bytes())
             (swamp / "bin/swamp_shape_host_tools.py").write_bytes((ROOT / "bin/swamp_shape_host_tools.py").read_bytes())
+            (swamp / "bin/bounded-phase-scripts.ts").write_bytes((ROOT / "bin/bounded-phase-scripts.ts").read_bytes())
+            (swamp / "bin/swamp_shape_polling.py").write_bytes((ROOT / "bin/swamp_shape_polling.py").read_bytes())
             (swamp / "config/agent-command-kinds.json").write_text('{"agent.status":"observer"}')
             source = swamp / "extensions/behaviors/old.ts"
             source.write_text("export const behavior={type:'@fixture/old'};\nawait delay(10);\n")
