@@ -107,19 +107,27 @@ def grants(manifest):
     return {'grants': result}
 
 
+def source_files():
+    files = {}
+    for name in ('extensions', 'models', 'workflows'):
+        for source in (SOURCE / name).rglob('*'):
+            if source.is_file() and '__pycache__' not in source.parts:
+                files[str(source.relative_to(SOURCE))] = source
+    return files
+
+
+def source_digest(files):
+    digest = hashlib.sha256()
+    for relative in sorted(files):
+        digest.update(relative.encode() + b'\0' + files[relative].read_bytes() + b'\0')
+    return digest.hexdigest()
+
+
 def load_source():
     # Native runs create models too. Replace only source definitions, never their generated models.
     inventory = ROOT / 'source-files.json'
     previous = set(json.loads(inventory.read_text())) if inventory.exists() else set()
-    # extension pull owns this lockfile, including the installed versions and checksums.
-    managed = {'extensions/models/upstream_extensions.json'}
-    previous -= managed
-    current = {}
-    for name in ('extensions', 'models', 'workflows'):
-        for source in (SOURCE / name).rglob('*'):
-            relative = str(source.relative_to(SOURCE))
-            if source.is_file() and '__pycache__' not in source.parts and relative not in managed:
-                current[relative] = source
+    current = source_files()
     for relative in previous - set(current):
         (REPO / relative).unlink(missing_ok=True)
     for relative, source in current.items():
@@ -139,6 +147,9 @@ def load_source():
             existing.add(match[1].strip())
     for name in sorted({entry['vault'] for entry in manifest['vaults']} - existing):
         native('vault', 'create', 'local_encryption', name)
+    # Serve must start after this marker to serve what is now on disk.
+    (ROOT / 'loaded.json').write_text(json.dumps({
+        'digest': source_digest(current), 'boot': boot_id(), 'monotonic_us': time.monotonic_ns() // 1000}))
     run(['chown', '-R', 'orbit:orbit', str(ROOT)])
 
 
@@ -158,12 +169,19 @@ def install_extensions():
         for name, entry in pins.items()
     ):
         raise RuntimeError('e2e.swamp_extension_pins_invalid')
+    # The committed lock is the only pin source; load_source copies it over the native one.
+    lock = REPO / 'extensions/models/upstream_extensions.json'
+
+    def matches(installed, name):
+        return all(installed.get(name, {}).get(key) == pins[name][key] for key in ('version', 'checksum', 'filesChecksum'))
+
+    installed = json.loads(lock.read_text()) if lock.exists() else {}
     for name, entry in pins.items():
-        native('extension', 'pull', name + '@' + entry['version'])
+        if not matches(installed, name):
+            native('extension', 'pull', name + '@' + entry['version'])
     if pins:
-        installed = json.loads((REPO / 'extensions/models/upstream_extensions.json').read_text())
-        if any(any(installed.get(name, {}).get(key) != entry[key] for key in ('version', 'checksum', 'filesChecksum'))
-               for name, entry in pins.items()):
+        installed = json.loads(lock.read_text())
+        if not all(matches(installed, name) for name in pins):
             raise RuntimeError('e2e.swamp_extension_pins_mismatch')
 
 
@@ -194,7 +212,7 @@ def units():
               'Environment=SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1\nUMask=0077\n')
     serve = ('[Unit]\nDescription=Topology Swamp serve\nAfter=network-online.target\n[Service]\n'
              + common + f'LoadCredential=club:{ROOT}/credentials/club\n'
-             + f'Environment=SWAMP_API_KEY_FILE=%d/club\nExecStart={BINARY} serve '
+             + f'ExecStart={BINARY} serve --club-api-key-file %d/club '
              + f'--repo-dir {REPO} --host 127.0.0.1 --port 19470 --auth-mode token '
              + '--admins user:topology-operator --trusted-hosts swamp.orbit:19470 '
              + '--remote-only --hot-reload --no-schedule '
@@ -250,6 +268,34 @@ def start():
     wait_ready()
 
 
+def restart():
+    run(['systemctl', 'restart', 'orbit-e2e-swamp.service', 'orbit-node-worker.service'])
+    wait_ready()
+
+
+def boot_id():
+    return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+
+
+def served_matches_disk():
+    """Serve runs the staged source: loaded from the worktree, started after the load, every workflow served."""
+    loaded = json.loads((ROOT / 'loaded.json').read_text())
+    if loaded['digest'] != source_digest(source_files()):
+        return False
+    started = int(run(['systemctl', 'show', '-P', 'ActiveEnterTimestampMonotonic', 'orbit-e2e-swamp.service']).strip())
+    if loaded['boot'] == boot_id() and started <= loaded['monotonic_us']:
+        return False
+    disk = set()
+    for path in (REPO / 'workflows').glob('*.yaml'):
+        text = path.read_text()
+        identity = re.search(r'^id: [\"\']?([^\"\'\s]+)', text, re.MULTILINE)
+        name = re.search(r'^name: [\"\']?([^\"\'\s]+)', text, re.MULTILINE)
+        disk.add((identity and identity[1], name and name[1]))
+    served = native('workflow', 'search', '--server', URL, '--token-file', str(ROOT / 'credentials/operator'),
+                    '--ca-cert', str(ROOT / 'tls/cert.pem'), timeout=30)['results']
+    return {(entry.get('id'), entry.get('name')) for entry in served} == disk
+
+
 def verify():
     for name in ('orbit-e2e-swamp.service', 'orbit-node-worker.service'):
         run(['systemctl', 'is-active', '--quiet', name])
@@ -263,6 +309,8 @@ def verify():
             or workers[0].get('status') not in ('idle', 'busy') \
             or workers[0].get('labels', {}).get('node') != '209':
         raise RuntimeError('e2e.swamp_worker_not_ready')
+    if not served_matches_disk():
+        raise RuntimeError('e2e.swamp_served_source_stale')
 
 
 def wait_ready():
@@ -287,13 +335,10 @@ def main():
     elif sys.argv[1] == 'start':
         start()
     elif sys.argv[1] == 'refresh':
-        verify()
+        install_extensions()
         load_source()
-        reply = native('serve', 'reload', '--server', URL,
-                       '--token-file', str(ROOT / 'credentials/operator'),
-                       '--ca-cert', str(ROOT / 'tls/cert.pem'))
-        if reply.get('success') is not True:
-            raise RuntimeError('e2e.swamp_refresh_failed')
+        # A hot reload can keep stale bundles (Lab #4223); a restart serves disk by construction.
+        restart()
     elif sys.argv[1] == 'verify':
         verify()
     else:

@@ -23,11 +23,15 @@ class TopologySwampTest(unittest.TestCase):
             pins = {'@swamp/ssh': {'version': '2026.10.23.1', 'checksum': 'a' * 64, 'filesChecksum': 'b' * 64}}
             (source / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
             (repo / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
-            (source / 'config').mkdir()
-            (source / 'config/official-extensions.json').write_text('{"@swamp/ssh":"wrong-version"}')
-            with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), patch.object(module, 'native') as native:
+            (repo / 'extensions/models/upstream_extensions.json').write_text('{}')
+            with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), \
+                    patch.object(module, 'native', side_effect=lambda *argv: (repo / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))) as native:
                 module.install_extensions()
                 native.assert_called_once_with('extension', 'pull', '@swamp/ssh@2026.10.23.1')
+                native.reset_mock()
+                module.install_extensions()
+                native.assert_not_called()
+                native.side_effect = None
                 pins['@swamp/ssh']['checksum'] = 'c' * 64
                 (repo / 'extensions/models/upstream_extensions.json').write_text(json.dumps(pins))
                 with self.assertRaisesRegex(RuntimeError, 'e2e.swamp_extension_pins_mismatch'):
@@ -71,6 +75,54 @@ class TopologySwampTest(unittest.TestCase):
             {'subject': 'user:orbit-proof-reader', 'effect': 'allow', 'actions': ['read'],
              'resource': 'workflow:operation-instance-create'}]})
 
+    def test_serve_reads_the_club_key_from_its_credential_file_flag(self):
+        written = {}
+        with patch.object(module.Path, 'write_text', lambda path, value: written.__setitem__(str(path), value)), \
+                patch.object(module, 'run'):
+            module.units()
+        serve = written['/etc/systemd/system/orbit-e2e-swamp.service']
+        self.assertIn('LoadCredential=club:', serve)
+        self.assertIn(' serve --club-api-key-file %d/club ', serve)
+        self.assertNotIn('SWAMP_API_KEY', serve)
+
+    def test_refresh_pulls_committed_pins_loads_source_and_restarts_into_readiness(self):
+        calls = []
+        with patch.object(module, 'install_extensions', lambda: calls.append('pins')), \
+                patch.object(module, 'load_source', lambda: calls.append('load')), \
+                patch.object(module, 'run', lambda argv, **_: calls.append(argv)), \
+                patch.object(module, 'wait_ready', lambda: calls.append('ready')), \
+                patch.object(module.sys, 'argv', ['converge-swamp.py', 'refresh']), \
+                patch.object(module.os, 'geteuid', return_value=0), patch('builtins.print'):
+            module.main()
+        self.assertEqual(calls, ['pins', 'load',
+                                 ['systemctl', 'restart', 'orbit-e2e-swamp.service', 'orbit-node-worker.service'], 'ready'])
+
+    def test_served_source_must_match_the_staged_worktree_and_postdate_its_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'source'
+            repo = root / 'repository'
+            for path in (source, repo):
+                (path / 'workflows').mkdir(parents=True)
+                (path / 'workflows/workflow-a.yaml').write_text('id: 1111\nname: a\njobs:\n  - id: nested\n')
+            files = {'workflows/workflow-a.yaml': source / 'workflows/workflow-a.yaml'}
+            marker = {'digest': module.source_digest(files), 'boot': module.boot_id(), 'monotonic_us': 100}
+            (root / 'loaded.json').write_text(json.dumps(marker))
+            served = {'results': [{'id': '1111', 'name': 'a'}]}
+            with patch.object(module, 'ROOT', root), patch.object(module, 'SOURCE', source), \
+                    patch.object(module, 'REPO', repo), patch.object(module, 'native', return_value=served) as native, \
+                    patch.object(module, 'run', return_value='200\n') as run:
+                self.assertTrue(module.served_matches_disk())
+                self.assertEqual(native.call_args.args[:4], ('workflow', 'search', '--server', module.URL))
+                run.return_value = '100\n'
+                self.assertFalse(module.served_matches_disk())
+                run.return_value = '200\n'
+                native.return_value = {'results': []}
+                self.assertFalse(module.served_matches_disk())
+                native.return_value = served
+                (source / 'workflows/workflow-a.yaml').write_text('id: 1111\nname: a\ndescription: unloaded\n')
+                self.assertFalse(module.served_matches_disk())
+
     def test_source_refresh_retains_runtime_state_and_local_vaults(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -80,7 +132,7 @@ class TopologySwampTest(unittest.TestCase):
                 (source / name).mkdir(parents=True)
             (source / 'extensions/new.ts').write_text('new source')
             (source / 'extensions/models').mkdir()
-            (source / 'extensions/models/upstream_extensions.json').write_text('stale committed pins')
+            (source / 'extensions/models/upstream_extensions.json').write_text('committed pins')
             (source / 'config/gateway-workflow-grants.json').write_text(json.dumps({
                 'principal': 'user:orbit-gateway', 'vaults': [
                     {'vault': 'orbit-control-inputs', 'actions': ['read'], 'key_pattern': '^a$'}],
@@ -91,8 +143,7 @@ class TopologySwampTest(unittest.TestCase):
             (repo / 'models/generated.yaml').write_text('native model')
             (repo / 'extensions/models').mkdir(parents=True)
             native_lock = repo / 'extensions/models/upstream_extensions.json'
-            native_lock.write_text('fresh native pulls and checksums')
-            (root / 'source-files.json').write_text(json.dumps(['extensions/models/upstream_extensions.json']))
+            native_lock.write_text('native pulls and checksums')
             (repo / '.swamp/data').mkdir(parents=True)
             (repo / '.swamp/data/history').write_text('retained')
             with patch.object(module, 'SOURCE', source), patch.object(module, 'REPO', repo), \
@@ -100,12 +151,14 @@ class TopologySwampTest(unittest.TestCase):
                 module.load_source()
                 (source / 'extensions/new.ts').unlink()
                 module.load_source()
+                self.assertEqual(json.loads((root / 'loaded.json').read_text())['digest'],
+                                 module.source_digest(module.source_files()))
             native.assert_not_called()
             self.assertEqual((repo / '.swamp/data/history').read_text(), 'retained')
             self.assertFalse((repo / 'extensions/new.ts').exists())
             self.assertEqual((repo / 'models/generated.yaml').read_text(), 'native model')
-            self.assertEqual(native_lock.read_text(), 'fresh native pulls and checksums')
-            self.assertNotIn('extensions/models/upstream_extensions.json', json.loads((root / 'source-files.json').read_text()))
+            # One pin source: the committed lock replaces what native pulls wrote.
+            self.assertEqual(native_lock.read_text(), 'committed pins')
             self.assertTrue((repo / 'vaults/local_encryption/uuid.yaml').exists())
 
     def test_local_credential_never_becomes_a_command_argument(self):
