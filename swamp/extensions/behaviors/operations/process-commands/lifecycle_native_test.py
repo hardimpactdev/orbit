@@ -495,3 +495,25 @@ p.write_text(json.dumps(s))
         )
         self.assertEqual(self.unit.stat().st_ino, inode)
         self.assertTrue(self.current()["active"])
+
+    def test_mount_fanout_has_distinct_per_item_models(self):
+        paths = [str(self.repo / "mount-one"), str(self.repo / "mount-two")]
+        for path in paths:
+            Path(path).mkdir()
+        install = self.inputs["intent"]["installation"]
+        install["required_mount_paths"] = paths
+        install["unit"] = self.content.replace(
+            "[Unit]\n", "[Unit]\nRequiresMountsFor=" + " ".join(paths) + "\n"
+        )
+        install["content_hash"] = hashlib.sha256(install["unit"].encode()).hexdigest()
+        self.inputs["intent"]["mounts"] = [
+            {"index": index, "path": path} for index, path in enumerate(paths)
+        ]
+        self.run_lifecycle()
+        names = []
+        for index in range(2):
+            model = json.loads(
+                self.cli("model", "get", f"process-mount-17-{index}").stdout
+            )
+            names.append(model["name"])
+        self.assertEqual(names, ["process-mount-17-0", "process-mount-17-1"])

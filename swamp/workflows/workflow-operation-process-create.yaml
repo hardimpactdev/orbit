@@ -105,7 +105,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "process-ssh-" + string(inputs.operation_id) }}
+      behaviorName: ${{ "process-mount-" + string(inputs.operation_id) + "-" + string(self.mount.index) }}
       methodName: exec
       globalArgs: {name: '${{ "process-lifecycle-" + run.id }}', transport: *id001, hosts: *id002}
       inputs: {name: '${{ "mount-" + string(self.mount.index) }}', hosts: [target], argv: [/usr/bin/test, -e, '${{ self.mount.path }}'], sudo: true}
