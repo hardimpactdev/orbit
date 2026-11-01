@@ -664,6 +664,8 @@ The request cannot supply a domain, root or signing policy. A current leaf retur
 no new bundle. Node removal selects its admitted restoration leaves only when
 `restoring` is true.
 
+For registered `websocket.app_attach` and `websocket.app_detach` parents, signing reads only `websocket_attachment.route_mutations.forward.prepare_certificates` and `websocket_attachment.route_mutations.forward.certificates`. Restoration reads only `websocket_attachment.route_mutations.restore.certificates`. Other containers and the opposite phase grant no authority. Route children carry the actual parent run ID; the Operation and its bound run still scope every request.
+
 The signer verifies the CSR signature, RSA 2048 public key, exact common name and
 any requested DNS alternative name. It checks the existing matching RSA 4096 CA
 pair and issues a 397-day TLS server leaf with the admitted DNS name, critical
