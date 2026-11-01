@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('create_parity', ROOT / 'parity.py')
 parity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(parity)
