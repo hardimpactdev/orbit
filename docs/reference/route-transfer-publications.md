@@ -21,7 +21,7 @@ An admission snapshot can become stale. The native workflows first read current 
 
 ### Parent composition
 
-Both workflows receive the real parent `operation_id`, `kind`, `node_id`, empty `execution_secrets`, and `intent: {node_id, user, control_node_id, connection, host_keys, before, after, direction}`. Their fixed terminal selector is `completion/result`. Every step runs on 209; logical Nodes 1 and 18 use the same pinned SSH path.
+Both workflows receive the real parent `operation_id`, `kind`, `node_id`, empty `execution_secrets`, and `intent: {node_id, user, control_node_id, connection, host_keys, before, after, direction}`. Their fixed terminal selector is `completion/result`. Each job and step has one placement selector, `target: orbit-node-209`. Every step runs on 209; logical Nodes 1 and 18 use the same pinned SSH path.
 
 There is no encoded payload channel, host staging file, custom transport, deployment journal, generation tracking, load receipt or custom lock. Configuration text travels through native inputs and outputs and official SSH actions. Validation failure skips reload. Re-running reads the current configuration again and converges. The observation and file application are separate steps; this lower does not claim an atomic comparison across them. Parents own the ordering of their publications and recovery.
 
