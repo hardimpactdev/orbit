@@ -8,6 +8,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
+use Orbit\Sdk\Requests\Firewall\AllowlistFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\InspectFirewallRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
@@ -381,5 +382,25 @@ it('refuses a missing firewall inspection Node before admission', function (): v
 
     $this->artisan('firewall:inspect', ['--json' => true])->expectsOutputToContain('firewall.node_id_invalid')->assertExitCode(1);
 
+    $mock->assertNothingSent();
+});
+
+it('sends a complete repeated source set and follows the allowlist Operation', function (): void {
+    $mock = MockClient::global([
+        AllowlistFirewallRuleRequest::class => firewall_cli_response('allowlist', 'active'),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => firewall_cli_response('allowlist', 'active'),
+    ]);
+    $this->artisan('firewall:allowlist', ['name' => 'rex', '--node' => '7', '--port' => '7297', '--from' => ['10.44.0.6', '10.44.0.9'], '--idempotency-key' => 'rex-first', '--json' => true])
+        ->expectsOutput(firewall_cli_json('allowlist', 'active'))->assertExitCode(0);
+    $mock->assertSent(fn ($request): bool => $request instanceof AllowlistFirewallRuleRequest
+        && $request->body()->all() === ['name' => 'rex', 'sources' => ['10.44.0.6', '10.44.0.9'], 'port' => '7297']
+        && $request->headers()->get('Idempotency-Key') === 'rex-first');
+});
+
+it('refuses an empty allowlist without contacting the Gateway', function (): void {
+    $mock = MockClient::global([]);
+    $this->artisan('firewall:allowlist', ['name' => 'rex', '--node' => '7', '--port' => '7297', '--json' => true])
+        ->expectsOutputToContain('firewall.source_invalid')->assertExitCode(1);
     $mock->assertNothingSent();
 });

@@ -5,10 +5,12 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Firewall\AllowFirewallRuleRequest;
+use Orbit\Sdk\Requests\Firewall\AllowlistFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\DenyFirewallRuleRequest;
 use Orbit\Sdk\Requests\Firewall\InspectFirewallRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Firewall\RemoveFirewallRuleRequest;
+use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -235,4 +237,23 @@ it('starts a bodyless native firewall inspection and preserves the operation con
         ->and($request)->not->toBeInstanceOf(HasBody::class)
         ->and($operation)->toBeInstanceOf(OperationResponse::class)
         ->and($operation->kind)->toBe('firewall.inspect')->and($operation->status)->toBe('queued');
+});
+
+it('transports a complete allowlist source array and retry key without defaulting protocol', function (): void {
+    $request = new AllowlistFirewallRuleRequest(7, 'rex', ['10.44.0.6', '10.44.0.9/32'], null, '7297', 'rex-retry');
+    $mock = new MockClient([$request::class => MockResponse::make(firewall_sdk_envelope('allowlist'), 202)]);
+    $response = firewall_sdk_connector($mock)->send($request)->dto();
+    expect($request->getMethod())->toBe(Method::POST);
+    expect($request->resolveEndpoint())->toBe('/api/v1/nodes/7/firewall-rules/allowlist');
+    expect($request->body()->all())->toBe(['name' => 'rex', 'sources' => ['10.44.0.6', '10.44.0.9/32'], 'port' => '7297']);
+    expect($request->headers()->get('Idempotency-Key'))->toBe('rex-retry');
+    expect($response)->toBeInstanceOf(OperationResponse::class);
+    expect($response->kind)->toBe('firewall.allowlist');
+});
+
+it('preserves the complete allowlist source array when listing named rules', function (): void {
+    $data = [...firewall_sdk_data('allowlist'), 'sources' => ['10.44.0.6', '10.44.0.9']];
+    $response = FirewallRuleResponse::fromGatewayData($data, firewall_sdk_request_id());
+    expect($response->sources)->toBe(['10.44.0.6', '10.44.0.9']);
+    expect($response->toArray()['sources'])->toBe(['10.44.0.6', '10.44.0.9']);
 });

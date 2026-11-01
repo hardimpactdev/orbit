@@ -1,5 +1,6 @@
 id: ae3bff71-8b73-4cad-8ef4-e8f206492c43
 name: route-certificate-publish
+queueTimeout: 30
 description: 'One affected Node: staged assets, public CSR batch, root-bound signing and per-leaf proof through
   one official SSH connection.'
 vaults: []

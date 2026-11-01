@@ -1,5 +1,6 @@
 id: 3ae539e4-bd32-4fbc-b50d-bd13e660ed30
 name: operation-route-php-delta
+queueTimeout: 30
 description: Compose captured public sections and apply them with official file actions.
 vaults: []
 inputs:

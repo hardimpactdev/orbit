@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Operations\OperationData;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationContribution;
 use App\Domain\Operations\DirectOperationResultHook;
@@ -287,4 +288,179 @@ it('preserves declared successful public captures when cancellation skips the te
     expect($result->status)->toBe(OperationStatus::Cancelled)
         ->and($result->result)->toBe(['source' => ['instance_id' => 17], 'keys' => ['APP_KEY']])
         ->and($this->socket->sent)->toHaveCount(1);
+});
+
+it('projects the first native failure with its redacted bounded stderr independently of family result fields', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'install-runtime', 'status' => 'failed', 'outputs' => ['stderr' => str_repeat('earlier ', 1000)."\npassword=private-password-value\nFailed to install runtime.\n"], 'error' => 'generic exit 1'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('install-runtime');
+    $public = OperationData::fromModel($result)->toArray();
+    expect($public['error']['detail'])->toEndWith("password=[REDACTED]\nFailed to install runtime.\n");
+    expect(strlen($public['error']['detail']))->toBeLessThanOrEqual(4096);
+    expect(json_encode($result->state))->not->toContain('private-password-value');
+    expect($result->result)->toBe(['error_code' => 'operation.native_failed']);
+    expect($this->socket->sent)->toHaveCount(1);
+});
+
+it('projects a native validation failure without stderr and ignores later cascade errors', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'prepare-source', 'status' => 'failed', 'error' => 'Permission denied for Authorization: Bearer private-native-token'],
+        ['name' => 'probe-host', 'status' => 'failed', 'error' => 'No such key: prepare-source'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('prepare-source');
+    $public = OperationData::fromModel($result)->toArray();
+    expect($public['error']['detail'])->toBe('Permission denied for Authorization: [REDACTED]');
+    expect(json_encode($result->state))->not->toContain('private-native-token');
+});
+
+it('excludes allowed failures from the causal native diagnostic', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'optional', 'status' => 'failed', 'allowedFailure' => true, 'error' => 'Optional probe failure.'],
+        ['name' => 'required', 'status' => 'failed', 'error' => 'Required failure.'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('required');
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe('Required failure.');
+});
+
+it('keeps the native error when stderr was recorded but empty', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => ['stderr' => ''], 'error' => 'Worker disconnected before output.'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error'])->toBe([
+        'code' => 'operation.native_failed', 'detail' => 'Worker disconnected before output.', 'stderr_recorded' => true,
+    ]);
+});
+
+it('renders the literal native phase timeout with its failed step', function (mixed $command): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'compile', 'status' => 'failed', 'outputs' => ['exitCode' => 124, 'command' => $command, 'stderr' => ''], 'error' => 'Command failed with exit code 124'],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('compile');
+    expect(OperationData::fromModel($result)->toArray()['error'])->toBe([
+        'code' => 'operation.native_failed', 'detail' => 'compile timed out after 60s', 'stderr_recorded' => true,
+    ]);
+})->with([
+    'shell command' => ['timeout 60 python3 phase.py'],
+    'argv command' => [['timeout', '60', 'python3', 'phase.py']],
+]);
+
+it('preserves the native failure when exit or command does not prove a literal timeout', function (int $exitCode, mixed $command): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'compile', 'status' => 'failed', 'outputs' => ['exitCode' => $exitCode, 'command' => $command, 'stderr' => 'Original diagnostic.']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe('Original diagnostic.');
+})->with([
+    'ordinary failure' => [1, 'timeout 60 python3 phase.py'],
+    'plain exit 124' => [124, 'python3 phase.py'],
+    'disabled timeout' => [124, 'timeout 0 python3 phase.py'],
+    'dynamic timeout' => [124, 'timeout $BUDGET python3 phase.py'],
+    'nested text' => [124, 'echo timeout 60'],
+    'invalid argv budget' => [124, ['timeout', '-1', 'python3', 'phase.py']],
+]);
+
+it('chooses the earliest native failure rather than the workflow declaration order', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'] = [
+        ['name' => 'cleanup', 'steps' => [['name' => 'cleanup', 'status' => 'failed', 'completedAt' => '2026-10-31T12:00:00.900Z', 'error' => 'Later cleanup error.']]],
+        ['name' => 'bootstrap', 'steps' => [
+            ['name' => 'intent', 'status' => 'failed', 'completedAt' => '2026-10-31T12:00:00.100Z', 'error' => 'First admission error.'],
+            ['name' => 'probe-host', 'status' => 'skipped'],
+        ]],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('intent');
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe('First admission error.');
+});
+
+it('exposes the 6650 worker disconnect and validate step when no stderr was recorded', function (): void {
+    $error = "Worker 'orbit-node-209' disconnected after step 'validate' had written data — failing run (write-then-drop).";
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => [], 'error' => $error],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+    $public = OperationData::fromModel($result)->toArray();
+
+    expect($public['failed_step'])->toBe('validate');
+    expect($public['error'])->toBe(['code' => 'operation.native_failed', 'detail' => $error, 'stderr_recorded' => false]);
+    expect($public['result'])->toBe(['error_code' => 'operation.native_failed']);
+});
+
+it('enriches a live first failure with recorded terminal stderr without replacing its causal step', function (): void {
+    $this->operation->update(['state' => ['swamp_run_id' => $this->runId, 'native_failure' => [
+        'failed_step' => 'validate', 'detail' => 'Generic native failure.', 'stderr_recorded' => false,
+    ]]]);
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => ['stderr' => 'Actual safe diagnostic.']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect($result->failed_step)->toBe('validate');
+    expect(OperationData::fromModel($result)->toArray()['error'])->toBe([
+        'code' => 'operation.native_failed', 'detail' => 'Actual safe diagnostic.', 'stderr_recorded' => true,
+    ]);
+});
+
+it('drops a partial first stderr line before projecting the complete diagnostic lines', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => [
+            'stderr' => str_repeat('unbounded-prefix-', 400)."private-suffix\nReadable failure.\n", 'stdout' => 'never-expose-stdout']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe("Readable failure.\n");
+    expect(json_encode($result->state))->not->toContain('private-suffix');
+    expect(json_encode($result->state))->not->toContain('never-expose-stdout');
+});
+
+it('keeps the final diagnostic bytes when a UTF8 character straddles the tail boundary', function (): void {
+    $this->history['status'] = 'failed';
+    $this->history['jobs'][0]['steps'] = [
+        ['name' => 'validate', 'status' => 'failed', 'outputs' => ['stderr' => str_repeat('界', 2000)."\n".str_repeat('a', 4090).'END!']],
+        ['name' => 'probe-host', 'status' => 'skipped'],
+    ];
+
+    $result = $this->step->projectTerminal($this->operation, ['id' => $this->runId, 'status' => 'failed'], $this->selector);
+
+    expect(OperationData::fromModel($result)->toArray()['error']['detail'])->toBe(str_repeat('a', 4090).'END!');
 });

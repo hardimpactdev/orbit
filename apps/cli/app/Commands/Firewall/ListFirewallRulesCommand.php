@@ -59,7 +59,7 @@ final class ListFirewallRulesCommand extends FirewallCommand
             $rows[] = [
                 $rule->name,
                 $rule->action,
-                $rule->source,
+                $rule->action === 'allowlist' ? implode(', ', $rule->sources) : $rule->source,
                 $rule->port,
                 $rule->protocol,
                 $rule->status,

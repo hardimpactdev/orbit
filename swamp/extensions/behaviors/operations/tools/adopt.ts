@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { Input, safeVersion, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
+import { Input, repositoryJson, safeVersion, sourceInput, ToolRefusal, validateConstraint, verifyInstalled } from "./contract.ts";
 import { homebrewBlock } from "./adopt_homebrew.ts";
 
 export const AdoptInput = Input.omit({ materialize: true, intent_only: true }).extend({
@@ -22,6 +22,12 @@ type Context = {
     extensionFile(name: string): string;
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
+export function repositoryError(raw: unknown): string | null {
+    try {
+        const result = z.object({ ready: z.boolean(), error_code: z.string().regex(/^tool\.repository_[a-z_]+$/).optional() }).parse(JSON.parse(Observation.parse(raw).stdout));
+        return result.ready ? null : result.error_code ?? "tool.repository_failed";
+    } catch { return "tool.repository_failed"; }
+}
 export async function queryScript(input: z.infer<typeof AdoptInput>, ctx: Pick<Context, "extensionFile">) {
     const files = [
         "support", ...(input.manager.startsWith("brew") ? ["brew_query"] : []),
@@ -32,12 +38,16 @@ export async function queryScript(input: z.infer<typeof AdoptInput>, ctx: Pick<C
     ));
     const script_body = sources.map((s) =>
         s.replace(/^from (?:support|brew_query) import [^\n]*\n/gm, "")
-    ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(input)));
+    ).join("\n").replace("QUERY_INPUT = None", "QUERY_INPUT = " + JSON.stringify(JSON.stringify(sourceInput(input))));
     return script_body;
 }
-export function adoptionResult(input: z.infer<typeof AdoptInput>, raw: unknown) {
+export function adoptionResult(input: z.infer<typeof AdoptInput>, raw: unknown, repositoryObservation?: unknown) {
     let managerVersion: string | null = null;
     try {
+        if (input.repository) {
+            const code = repositoryError(repositoryObservation);
+            if (code) throw new ToolRefusal(code);
+        }
         const intent = { ...input, intent_only: false, materialize: null };
         validateConstraint(intent);
         const facts = Facts.parse(JSON.parse(Observation.parse(raw).stdout));
@@ -72,9 +82,9 @@ export function adoptionResult(input: z.infer<typeof AdoptInput>, raw: unknown) 
     }
 }
 export const behavior = {
-    type: "@nckrtl/tool-adopt-command", version: "2026.11.01.1",
+    type: "@nckrtl/tool-adopt-command", version: "2026.11.01.2",
     resources: {
-        assets: { schema: z.object({ script_body: z.string() }), lifetime: "1d", garbageCollection: 10 },
+        assets: { schema: z.object({ script_body: z.string(), repository_body: z.string(), repository_json: z.string() }), lifetime: "1d", garbageCollection: 10 },
         result: { schema: z.object({ stdout: z.string(), ok: z.boolean() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
@@ -83,18 +93,18 @@ export const behavior = {
             arguments: z.object({ input: AdoptInput }),
             execute: async ({ input }: { input: z.infer<typeof AdoptInput> }, ctx: Context) => {
                 const script_body = await queryScript(input, ctx);
-                const result = { script_body };
+                const result = { script_body, repository_body: await Deno.readTextFile(ctx.extensionFile("apt_repository.py")), repository_json: repositoryJson(input) };
                 await ctx.writeResource("assets", "assets", result);
                 return result;
             },
         },
         result: {
             description: "Check selected ownership against native manager facts",
-            arguments: z.object({ input: AdoptInput, observation: Observation }),
+            arguments: z.object({ input: AdoptInput, observation: Observation, repository_observation: Observation.nullable().optional() }),
             execute: async (
-                args: { input: z.infer<typeof AdoptInput>; observation: z.infer<typeof Observation> }, ctx: Context,
+                args: { input: z.infer<typeof AdoptInput>; observation: z.infer<typeof Observation>; repository_observation?: unknown }, ctx: Context,
             ) => {
-                const result = adoptionResult(args.input, args.observation);
+                const result = adoptionResult(args.input, args.observation, args.repository_observation);
                 await ctx.writeResource("result", "result", result);
                 return result;
             },

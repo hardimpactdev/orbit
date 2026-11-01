@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Psr\Log\NullLogger;
 use Tests\Support\FakeRoutePublicationSocket;
 use Tests\Support\FakeSwampEventSocket;
@@ -316,6 +317,100 @@ describe(GatewayHorizon::class, function (): void {
         config(['orbit.gateway_queue.connection' => '']);
         expect(app(GatewayHorizon::class)->converge($this->gateway, fn (): Process => $this->scheduler))->toBe(['outcome' => 'none'])
             ->and(Process::query()->where('name', 'horizon')->exists())->toBeFalse();
+    });
+});
+
+/** Runs the scheduled event and returns the one job it queued. */
+function gateway_queue_dispatched(Event $event): RunScheduledCommand
+{
+    $event->run(app());
+
+    return unserialize(json_decode(DB::table('jobs')->sole()->payload, true)['data']['command']);
+}
+
+/** Runs the queued command line in this process, against the test database. */
+function gateway_queue_run(RunScheduledCommand $job): void
+{
+    Artisan::call(implode(' ', [$job->command, ...$job->arguments]));
+}
+
+describe('Gateway self-maintenance', function (): void {
+    it('queues interrupted Activity finalization every five minutes on tasks', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $event = gateway_queue_event('orbit:activity-finalize-interrupted');
+        $job = gateway_queue_dispatched($event);
+
+        expect($event->expression)->toBe('*/5 * * * *')
+            ->and([$job->command, $job->arguments, $job->uniqueFor, $job->queue])->toBe(['orbit:activity-finalize-interrupted', [], 600, GatewayQueue::Tasks->value]);
+    });
+
+    it('snapshots Horizon metrics every five minutes, only while the Gateway queue is set', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey']);
+        $event = gateway_queue_event('horizon:snapshot');
+        $job = gateway_queue_dispatched($event);
+
+        expect([$event->expression, $event->filtersPass(app())])->toBe(['*/5 * * * *', true])
+            ->and([$job->command, $job->arguments, $job->uniqueFor, $job->queue])->toBe(['horizon:snapshot', [], 300, GatewayQueue::Tasks->value]);
+
+        config(['orbit.gateway_queue.connection' => '']);
+        expect($event->filtersPass(app()))->toBeFalse();
+    });
+
+    it('prunes failed jobs past the retention daily, also while Tasks is disabled', function (): void {
+        app(TaskExtensionState::class)->disable();
+        config(['orbit.gateway_queue.connection' => 'services-valkey', 'retention.failed_jobs_hours' => 48]);
+        $failed = static fn (int $hours): int => (int) DB::table('failed_jobs')->insertGetId([
+            'uuid' => (string) Str::uuid(), 'connection' => 'gateway', 'queue' => 'tasks', 'payload' => '{}', 'exception' => 'x',
+            'failed_at' => now()->subHours($hours),
+        ]);
+        $failed(49);
+        $kept = $failed(47);
+
+        $event = gateway_queue_event('queue:prune-failed');
+        $job = gateway_queue_dispatched($event);
+        gateway_queue_run($job);
+
+        expect([$event->expression, $event->filtersPass(app())])->toBe(['0 0 * * *', true])
+            ->and([$job->command, $job->arguments, $job->uniqueFor, $job->queue])->toBe(['queue:prune-failed', ['--hours=48'], 3600, GatewayQueue::Tasks->value])
+            ->and(DB::table('failed_jobs')->pluck('id')->all())->toBe([$kept]);
+    });
+
+    it('registers failed job pruning with the same arguments without the Gateway queue', function (): void {
+        config(['orbit.gateway_queue.connection' => '', 'retention.failed_jobs_hours' => 48]);
+
+        $event = gateway_queue_event('queue:prune-failed --hours=48');
+
+        expect([$event->expression, $event->withoutOverlapping, $event->expiresAt])->toBe(['0 0 * * *', true, 60]);
+    });
+
+    it('prunes finished, unfinished and cancelled batches past the retention daily on problems while Tasks is enabled', function (): void {
+        config(['orbit.gateway_queue.connection' => 'services-valkey', 'retention.job_batch_hours' => 48]);
+        $batch = static function (string $id, int $createdHours, ?int $finishedHours = null, ?int $cancelledHours = null): void {
+            DB::table('job_batches')->insert([
+                'id' => $id, 'name' => $id, 'total_jobs' => 1, 'pending_jobs' => 0, 'failed_jobs' => 0, 'failed_job_ids' => '[]',
+                'created_at' => now()->subHours($createdHours)->getTimestamp(),
+                'finished_at' => $finishedHours === null ? null : now()->subHours($finishedHours)->getTimestamp(),
+                'cancelled_at' => $cancelledHours === null ? null : now()->subHours($cancelledHours)->getTimestamp(),
+            ]);
+        };
+        $batch('finished-old', 60, finishedHours: 49);
+        $batch('finished-recent', 60, finishedHours: 47);
+        $batch('unfinished-old', 49);
+        $batch('unfinished-recent', 47);
+        // Laravel sets finished_at when it cancels a batch, so only --cancelled removes this row.
+        $batch('cancelled-old', 49, finishedHours: 1, cancelledHours: 1);
+
+        $event = gateway_queue_event('queue:prune-batches');
+        $job = gateway_queue_dispatched($event);
+        gateway_queue_run($job);
+
+        expect($event->expression)->toBe('0 0 * * *')
+            ->and([$job->command, $job->arguments, $job->uniqueFor, $job->queue])
+            ->toBe(['queue:prune-batches', ['--hours=48', '--unfinished=48', '--cancelled=48'], 3600, GatewayQueue::Problems->value])
+            ->and(DB::table('job_batches')->orderBy('id')->pluck('id')->all())->toBe(['finished-recent', 'unfinished-recent']);
+
+        app(TaskExtensionState::class)->disable();
+        expect(gateway_queue_event('queue:prune-batches')->filtersPass(app()))->toBeFalse();
     });
 });
 

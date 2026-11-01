@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Actions/Activities/**
   - apps/gateway/app/Infrastructure/Activity/**
   - apps/gateway/app/Domain/Observation/ObservationMaintenanceProjection.php
+  - apps/gateway/app/Console/Commands/FinalizeInterruptedActivitiesCommand.php
 ---
 
 The Gateway records an Activity for every request that can change something and for every request that fails. It keeps a sample of successful reads, as [What the Gateway records](#what-the-gateway-records) explains. The `activity` family lists records and shows one in full. Use it to answer what changed, who changed it, and whether it succeeded.
@@ -24,6 +25,8 @@ Project development deploy step changes record `project:dev-deploy-step:create`,
 [Project Document](/reference/project-documents) commands record their operation, target path, caller, outcome, and request ID. Activity input is empty for this family, including refused writes, so document bytes are never parsed or recorded before authorization. Storage credentials remain redacted. The Documents extension contributes this rule through the `ActivityInputRedaction` [plug-in point](/reference/extensions#plug-in-points), so it applies while `documents` is off too.
 
 [Conn](/reference/conn) T3 server registration records `conn:environment:register` with only the environment ID, label, and URL, so the admin session never enters Activity. A profile settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. `conn:profile:settings:update` records the document version it replaced and the names of the sections it sent. `conn:profile:settings:patch` records each section name with the version the client sent. The Conn extension contributes these rules through the `ActivityInputRedaction` [plug-in point](/reference/extensions#plug-in-points), so they apply while `conn` is off too.
+
+`firewall:allowlist` records the target Node, rule name, complete source list, outcome and request ID. A refusal before the rule exists still identifies the path-bound Node.
 
 ## Commands
 
@@ -97,11 +100,12 @@ These routes record no Activity, for any method: the Node agent endpoints, the G
 
 ## Interrupted requests
 
-A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. A fatal request that reaches the shutdown handler ends as `failed` with `activity.interrupted`. A killed worker can leave the record `running`; its duration and exit code stay null.
+A request can end before it records its outcome. PHP-FPM ends a Gateway request that passes its 600-second limit, the kernel can kill a worker that runs out of memory, and a Gateway deploy restarts its workers. The Gateway then ends the record as `failed` with the error code `activity.interrupted`. Its duration and exit code stay null.
 
 - After a fatal error in PHP, such as exhausted memory or an exceeded execution time, the Gateway ends the record when the request shuts down.
-- A killed worker runs no shutdown code. Explicit [observation maintenance](/reference/gateway-queue#scheduled-work) reports how many admitted records meet the interrupted cutoff, up to 500. It does not settle those Activities. Without an explicit state-recovery action, the records remain `running`.
-- Observation runs on Node 209 through native SSH. The former five-minute sweep and its Gateway mutation path are removed.
+- A killed worker runs no code. The Gateway scheduler runs `php artisan orbit:activity-finalize-interrupted` every five minutes, as a unique job on the [Gateway queue](/reference/gateway-queue#scheduled-work), or inline without overlap while the queue is not set. It ends every record still `running` 900 seconds after it started, at most 500 records per run, oldest first. PHP-FPM checks its 600-second limit every 200 seconds, so a request ends by about 800 seconds. The sweep therefore never ends a command that still works.
+- The sweep's lock expires after 10 minutes, so a killed sweep blocks later runs for at most 10 minutes.
+- The sweep runs only while the Gateway scheduler runs. Without it, a killed request stays `running`.
 
 
 Caddy gives up on a Gateway request after 600 seconds and sends the client a 504. PHP-FPM can let the request finish later, and the record then shows `succeeded`. The Activity, not the client's error, shows the outcome.

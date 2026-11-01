@@ -21,7 +21,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
-                            "adoption_block": "dependency"
+                            "adoption_block": "dependency",
+                            "repository": null
                         },
                         {
                             "manager": "brew",
@@ -32,7 +33,8 @@
                             "registered": true,
                             "tool_id": 2,
                             "adoption": "supported",
-                            "adoption_block": null
+                            "adoption_block": null,
+                            "repository": null
                         },
                         {
                             "manager": "brew",
@@ -43,7 +45,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
-                            "adoption_block": "protected"
+                            "adoption_block": "protected",
+                            "repository": null
                         }
                     ]
                 },
@@ -60,7 +63,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
-                            "adoption_block": "authorization_required"
+                            "adoption_block": "authorization_required",
+                            "repository": null
                         },
                         {
                             "manager": "brew-cask",
@@ -71,7 +75,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "supported",
-                            "adoption_block": null
+                            "adoption_block": null,
+                            "repository": null
                         }
                     ]
                 },
@@ -88,7 +93,8 @@
                             "registered": true,
                             "tool_id": 1,
                             "adoption": "supported",
-                            "adoption_block": null
+                            "adoption_block": null,
+                            "repository": null
                         },
                         {
                             "manager": "vp",
@@ -99,7 +105,8 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
-                            "adoption_block": "protected"
+                            "adoption_block": "protected",
+                            "repository": null
                         },
                         {
                             "manager": "vp",
@@ -110,9 +117,15 @@
                             "registered": false,
                             "tool_id": null,
                             "adoption": "unsupported",
-                            "adoption_block": "version_unreadable"
+                            "adoption_block": "version_unreadable",
+                            "repository": null
                         }
                     ]
+                },
+                {
+                    "manager": "apt",
+                    "scan_state": "unsupported",
+                    "packages": []
                 }
             ]
         },

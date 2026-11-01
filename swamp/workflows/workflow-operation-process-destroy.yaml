@@ -1,5 +1,6 @@
 id: 2662a4c2-54ed-43a6-ae0a-adbdd8f2e424
 name: operation-process-destroy
+queueTimeout: 30
 description: Converge one Process through official cfgmgmt and SSH on209.
 vaults: []
 inputs: {type: object, properties: {operation_id: {type: integer, minimum: 1}, node_id: {type: integer, minimum: 1}, kind: {type: string, enum: [process.destroy]},

@@ -29,11 +29,15 @@ The alert uses the existing [signed release webhook](/reference/gateway-recovery
 
 ## Native run budgets
 
+Each step in a native Instance workflow has a queue timeout: 10 seconds for create and 30 seconds for setup or destroy. Each child workflow declares its own queue timeout. These queue limits do not change the Operation's run budget.
+
 The Gateway tracks each direct Operation's budget from `started_at`, including native start confirmation. The shared `OperationRunBudgets` table reads `instance.create` from the server-captured immutable `input.run_budget_seconds`. The create admission computes that positive integer from its captured phase plan, including heavy Project setup. The Gateway does not re-read the Project.
 
 An explicit kind budget wins. Long-running kinds have a fixed budget in the same table: the 14-day p95 of successful runs, rounded up to the next five minutes. For example, `task_vm.image_build` has 2,400 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A first success replaces it with a p95. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the `task_vm.destroy` budget of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
+
+`tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. The budget is replaced by the 14-day p95 once repository installs have native history.
 
 Otherwise, the Gateway uses the longest successful run of that kind completed in the last 14 days, multiplied by 1.5 and rounded up to a minute. It measures `started_at` to `finished_at` on succeeded Operations with a `swamp_run_id`. With no successful history, the budget is 30 minutes. The observer caches each kind’s history budget for one pass; it makes no additional Swamp request or polling loop.
 
@@ -46,6 +50,16 @@ A projection that implements `DirectOperationTimeout` records its documented fai
 For an unbound timed-out admission, the existing exact lookup by Operation identity releases the hold only when Serve proves there is no matching run. A matching run binds without reopening the timeout; ambiguity or an unavailable lookup keeps the hold. A valid native terminal with `completedAt` at or before the deadline wins in the shared history read, even when its projection arrives late, so it causes no timeout or timeout alert.
 
 This is the Gateway's budget result, not proof that the native run or its descendants stopped. Cancellation still requires the native operator path; shared run credentials gain no admin authority. Native Serve ceilings, step queue limits and phase command limits remain separate controls. Deadline checks run on the existing observer pass. Uncertain-start lookup, terminal history and scheduled-result history run on the existing operations queue so they cannot block deadline reception. Bound Operation reads arbitrate native terminal history before expiry; unbound admission expiry needs no native read.
+
+## Native failure detail and live steps
+
+The shared observer projects live step names from native run events without reading history. `current_step_started_at` is the native timestamp when the event supplies one; it stays null when the runtime omits it. `current_step_observed_at` records when the Gateway observed that event. Replayed progress cannot replace a newer event.
+
+A failed or interrupted root retains its first causal step as `failed_step` and a bounded safe diagnostic in `error.detail`. Recorded stderr is preferred; otherwise the native step error is retained. `error.stderr_recorded` distinguishes recorded stderr from missing stderr, including worker disconnection or dispatch refusal. Stdout is never failure evidence.
+
+A failed step with exit 124 and a command beginning with a literal `timeout N` reports `<step> timed out after <N>s`; other failures keep their redacted diagnostic. The shared projector and the existing exact history read use the same diagnostic extractor. An older native failure can receive missing detail once through its next normal Operation read, without changing its terminal result or sending another failure alert.
+
+The shared extractor redacts known Instance and Process environment values, configured Swamp credentials and credential-shaped text before retaining the last 4 KiB. It drops a truncated first line whose identifying prefix may be missing, then redacts the retained text again. Budget expiry omits `error.stderr_recorded`, because that result makes no claim about native stderr. Native family scripts still own safe output preservation; this projection does not change their placement or execution.
 
 ## Native public participants
 

@@ -1086,3 +1086,11 @@ it('refuses untracked delete sources directory entries and caller arguments', fu
     [$status, $bytes, $error] = taskAnalysisAdapterRun($root, $base, [$entry], $mode === 'argument' ? ['--command=anything'] : []);
     expect($status)->toBe(1)->and($bytes)->toBe('')->and($error)->not->toBe('');
 })->with(['directory', 'delete', 'argument']);
+
+it('maps a Form Request in a route group to its versioned OpenAPI operation', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/apps/gateway/routes/api.php', "<?php Route::put('widgets', [WidgetController::class, 'update']);\n");
+    $report = new DocsImpact($root)->report(null, ['apps/gateway/app/Http/Requests/Widgets/UpdateWidgetRequest.php']);
+    expect($report['errors'])->toBe([]);
+    expect(array_column($report['surfaces'], 'owner'))->toContain('PUT /api/v1/widgets');
+});

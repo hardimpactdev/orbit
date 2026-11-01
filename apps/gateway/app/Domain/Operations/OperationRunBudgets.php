@@ -57,6 +57,11 @@ final class OperationRunBudgets
         // both kinds have successful runs with a VM.
         'tasks.cancel' => 3900,
         'tasks.maintenance_finish' => 3900,
+        // Provisional, ADR 0242. A Tool write runs its bounded phases in turn: signed repository prepare 180 s, candidate
+        // query 120 s, mutation 900 s (brew installs measured 471-578 s), plus the unchanged manager reads. 1,200 s of
+        // phases plus margin. Replace with the 14-day p95 once repository installs have native history.
+        'tool.install' => 1500,
+        'tool.update' => 1500,
     ];
 
     public static function seconds(Operation $operation): int

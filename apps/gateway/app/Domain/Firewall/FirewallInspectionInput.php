@@ -15,20 +15,29 @@ final readonly class FirewallInspectionInput
     /** @return array<string,mixed> */
     public function capture(Node $node): array
     {
+        return ['ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'expected' => $this->expected($node)];
+    }
+
+    /** @return list<array<string,mixed>> */
+    public function expected(Node $node): array
+    {
         $expected = array_map(static fn (DesiredFirewallRule $rule): array => [
             'name' => $rule->name, 'shape' => $rule->shape->toAgentInput(),
         ], app(NodeFirewallDesiredRules::class)->forNode($node));
         foreach ($node->firewallRules()->orderBy('name')->get() as $rule) {
-            $shape = FirewallInspectionTarget::fromRule($rule)->shape;
-            $expected[] = ['name' => $rule->name, 'shape' => [
-                'comment' => $shape->comment, 'action' => $shape->action,
-                'direction' => $shape->direction, 'source' => $shape->source,
-                'destination' => $shape->destination, 'port' => $shape->port,
-                'protocol' => $shape->protocol, 'in_interface' => $shape->inInterface,
-                'out_interface' => $shape->outInterface, 'family' => $shape->family,
-            ]];
+            $targets = $rule->action === FirewallAction::Allowlist ? FirewallAllowlist::targets($rule) : [FirewallInspectionTarget::fromRule($rule)];
+            foreach ($targets as $target) {
+                $shape = $target->shape;
+                $expected[] = ['name' => $rule->name, 'shape' => [
+                    'comment' => $shape->comment, 'action' => $shape->action,
+                    'direction' => $shape->direction, 'source' => $shape->source,
+                    'destination' => $shape->destination, 'port' => $shape->port,
+                    'protocol' => $shape->protocol, 'in_interface' => $shape->inInterface,
+                    'out_interface' => $shape->outInterface, 'family' => $shape->family,
+                ]];
+            }
         }
 
-        return ['ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'expected' => $expected];
+        return $expected;
     }
 }

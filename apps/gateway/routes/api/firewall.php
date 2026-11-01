@@ -28,6 +28,8 @@ Route::middleware([
     Route::post('nodes/{node}/firewall-rules/allow', [FirewallRulesController::class, 'allow'])
         ->defaults('firewall_action', 'allow')
         ->name('firewall:allow');
+    Route::post('nodes/{node}/firewall-rules/allowlist', [FirewallRulesController::class, 'allowlist'])
+        ->name('firewall:allowlist');
     Route::post('nodes/{node}/firewall-rules/deny', [FirewallRulesController::class, 'deny'])
         ->defaults('firewall_action', 'deny')
         ->name('firewall:deny');

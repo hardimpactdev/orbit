@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $node_id
+ * @property int|null $apt_repository_id
+ * @property-read AptRepository|null $aptRepository
  * @property int $tool_manager_id
  * @property string $package
  * @property string|null $version_constraint
@@ -30,6 +32,7 @@ final class Tool extends Model
         'node_id',
         'tool_manager_id',
         'package',
+        'apt_repository_id',
         'version_constraint',
         'status',
         'installed_version',
@@ -47,6 +50,12 @@ final class Tool extends Model
     public function manager(): BelongsTo
     {
         return $this->belongsTo(ToolManagerRecord::class, 'tool_manager_id');
+    }
+
+    /** @return BelongsTo<AptRepository, $this> */
+    public function aptRepository(): BelongsTo
+    {
+        return $this->belongsTo(AptRepository::class);
     }
 
     /** @return array<string, string> */

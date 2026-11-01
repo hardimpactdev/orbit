@@ -275,6 +275,8 @@ Stdout is exactly one strict UTF-8 JSON envelope:
 }
 ```
 
+The docs-impact report maps a Form Request to its OpenAPI operation even when the route inherits its `api/v1` prefix from a group.
+
 The placeholder report above illustrates the envelope, not a valid reduced payload. `status` is `ready`, `action_required`, or `blocked`; diagnostics are a list of `{code, message}`. Require every envelope field.
 
 Reject duplicate keys, non-finite numbers, prose prefixes, trailing bytes, malformed or truncated JSON, invalid UTF-8, and wrong echoed identities. The entire envelope is at most 64 KiB and JSON depth 24. Overflow fails; it never yields a shortened successful artifact. Analyzer stderr is not retained. If redaction would change structured evidence, refuse it rather than silently changing its meaning. Swamp validates the generic envelope, bounds and echoed identities against its own snapshots. The Gateway records the native result without judging the report. The repository validates payload semantics. Repository evidence is never privileged instructions.
@@ -884,7 +886,7 @@ Each read uses Swamp's WebSocket `workflow.run.search` with `inputs: {group: "<i
 
 Orbit applies the Activity secret rule before truncation and before caching. It also removes the configured reader token by exact value and strips terminal control sequences. Structured step outputs are recursively redacted before conversion to text. Output is plain text in the browser.
 
-Worker output can arrive after a step finishes. In the pinned Swamp version, worker console lines travel with the method result; resolved step outputs also appear after the method writes them. The page shows running and pending steps while waiting, and refreshes output as Swamp makes it readable. The [Swamp protocol](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/protocol.ts), [run attach authorization](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/connection.ts), and [worker console handling](https://git.swamp-club.com/swamp-club/swamp/src/commit/983e2929/src/serve/dispatch_service.ts) define these limits. The [Swamp manual](https://swamp-club.com/manual/explanation/swamp-serve) describes the server and grant boundary.
+Worker output can arrive after a step finishes. In the pinned Swamp version, worker console lines travel with the method result; resolved step outputs also appear after the method writes them. The page shows running and pending steps while waiting, and refreshes output as Swamp makes it readable. The [Swamp protocol](https://git.swamp-club.com/swamp-club/swamp/src/commit/e459d219/src/serve/protocol.ts), [run attach authorization](https://git.swamp-club.com/swamp-club/swamp/src/commit/e459d219/src/serve/connection.ts), and [worker console handling](https://git.swamp-club.com/swamp-club/swamp/src/commit/e459d219/src/serve/dispatch_service.ts) define these limits. The [Swamp manual](https://swamp-club.com/manual/explanation/swamp-serve) describes the server and grant boundary.
 
 ## Agent threads
 

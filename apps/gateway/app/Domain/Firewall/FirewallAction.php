@@ -7,5 +7,6 @@ namespace App\Domain\Firewall;
 enum FirewallAction: string
 {
     case Allow = 'allow';
+    case Allowlist = 'allowlist';
     case Deny = 'deny';
 }

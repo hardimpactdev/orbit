@@ -119,7 +119,6 @@ describe('tool requests', function (): void {
             )->toBeEmpty();
     })->with([
         'scan' => [new ScanToolInventoryRequest(12)],
-        'update' => [new UpdateToolRequest(41)],
         'remove' => [new RemoveToolRequest(41)],
     ]);
 
@@ -444,3 +443,12 @@ function tool_inventory_request_data(array $overrides = []): array
         ],
     ], $overrides);
 }
+
+it('preserves repository definitions in install adopt and update transport', function (): void {
+    $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
+    foreach ([new InstallToolRequest(12, 'apt', 'hello', repository: $repository), new AdoptToolRequest(12, 'apt', 'hello', repository: $repository), new UpdateToolRequest(41, repository: $repository)] as $request) {
+        expect($request->body()->all()['repository'])->toBe($repository);
+    }
+    expect(new UpdateToolRequest(41)->body()->all())->toBe([]);
+    expect(new UpdateToolRequest(41, repository: [])->body()->all())->toBe(['repository' => []]);
+});

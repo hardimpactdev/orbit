@@ -70,8 +70,8 @@ final readonly class TaskVmPlacementPolicy
 
     /**
      * The wait reason of a VM that only an Incus host can run, while no host has its free slots: `Task VM: no host has 3
-     * free slots for a large VM.` for a topology with two or more test nodes, or 2 for a medium VM: one test node, or a
-     * Project in `task_vms.medium_projects`.
+     * free slots for a large VM.` for two test nodes or a Project in `task_vms.large_projects`, or 2 for a medium VM:
+     * one test node or a Project in `task_vms.medium_projects`.
      */
     public static function noCapacityFor(TaskVmSize $size): string
     {

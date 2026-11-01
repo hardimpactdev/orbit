@@ -2,7 +2,7 @@ import { isIP } from "node:net";
 import { z } from "npm:zod@4.4.3";
 
 const Limit = 256 * 1024;
-const Shape = z.object({
+export const Shape = z.object({
     comment: z.string(),
     action: z.enum(["allow", "deny"]),
     direction: z.enum(["in", "out", "fwd"]),
@@ -156,6 +156,22 @@ export function inspectionResult(input: z.infer<typeof Args>) {
             match,
         });
     };
+    const allowlist = (shape: Rule) =>
+        /^orbit:node:\d+:allowlist:/.test(shape.comment);
+    const ordered = (actual: Rule) => {
+        if (!allowlist(actual)) return true;
+        const block = expected.filter((e) => e.shape.comment === actual.comment)
+            .map((e) => e.shape);
+        const rows = live.filter((r) => r.comment === actual.comment);
+        if (
+            rows.length !== block.length ||
+            !rows.every((r, i) => matches(r, block[i]))
+        ) return false;
+        const end = Math.max(...rows.map((r) => live.indexOf(r)));
+        return !live.slice(0, end).some((r) =>
+            !allowlist(r) || !expected.some((e) => matches(r, e.shape))
+        );
+    };
     const classified = live.map((rule) => {
         const owners = expected.filter((e) => e.shape.comment === rule.comment);
         const candidates = owners.length
@@ -165,7 +181,7 @@ export function inspectionResult(input: z.infer<typeof Args>) {
             rule,
             candidates.length === 0
                 ? "unmanaged"
-                : candidates.some((e) => exact(rule, e.shape))
+                : candidates.some((e) => exact(rule, e.shape)) && ordered(rule)
                 ? "exact"
                 : "drift",
         );
@@ -173,7 +189,9 @@ export function inspectionResult(input: z.infer<typeof Args>) {
     const missing = backend === "active"
         ? expected.filter((e) => {
             if (!named(e.shape)) {
-                return !live.some((r) => r.comment === e.shape.comment);
+                return allowlist(e.shape)
+                    ? !live.some((r) => matches(r, e.shape))
+                    : !live.some((r) => r.comment === e.shape.comment);
             }
             if (live.some((r) => matches(r, e.shape))) return false;
             const [start, end = start] = bounds(e.shape.port);

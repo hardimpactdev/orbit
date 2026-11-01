@@ -1,5 +1,6 @@
 id: 10c1e646-19cd-4527-8be5-01f524976346
 name: operation-instance-destroy
+queueTimeout: 30
 description: Development Instance destroy from209 through separately placed official SSH actions.
 vaults:
   - orbit-control-inputs

@@ -2050,7 +2050,8 @@ export async function toolFindings(
           ],
           JSON.stringify({
             source,
-            phase_seconds: phases.get(file) ?? 0,
+            phase_seconds: phases.get(file)?.seconds ?? 0,
+            phase_ssh: phases.get(file)?.ssh ?? false,
             sources: Object.fromEntries(
               [...sources].filter(([path]) =>
                 path.endsWith(".py") &&
@@ -2118,8 +2119,8 @@ export function analyze(
   const shellPhases = Object.fromEntries(
     [...phases].filter(([file]) => file.endsWith(".sh"))
       .map((
-        [file, seconds],
-      ) => [file, { source: sources.get(file), seconds }]),
+        [file, bound],
+      ) => [file, { source: sources.get(file), seconds: bound.seconds }]),
   );
   let boundedShell: Record<string, boolean> = {};
   if (Object.keys(shellPhases).length) {

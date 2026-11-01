@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { Shape } from "../operations/firewall/inspection-result.ts";
 
 export const Families = [
     "node",
@@ -38,6 +39,15 @@ export const NodeInput = z.object({
         services: z.array(z.string()),
     })).default([]),
     resources: z.object({
+        firewall_expected: z.array(z.object({ name: z.string(), shape: Shape }))
+            .default([]),
+        firewall_rules: z.array(
+            z.object({
+                id: z.number().int().positive(),
+                name: z.string(),
+                status: z.string(),
+            }),
+        ).default([]),
         node_checks: z.array(z.object({ status: z.string() })).default([]),
         processes: z.array(z.object({
             id: z.number().int().positive(),
@@ -74,9 +84,10 @@ export const Read = z.object({
     key: z.string(),
     node_id: z.number().int().positive(),
     ssh: Ssh,
-    family: z.enum(["node", "role", "process"]),
+    family: z.enum(["node", "role", "process", "firewall"]),
     resource: z.object({ id: Id, name: z.string() }),
     check: z.enum([
+        "firewall",
         "platform",
         "disk",
         "agent",

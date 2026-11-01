@@ -9,10 +9,12 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolIntentProjection;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
+use App\Http\Mcp\ToolManifest;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Activity;
+use App\Models\AptRepository;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Tool;
@@ -309,3 +311,133 @@ it('releases the manager hold on normal cancellation and interruption projection
     expect($operation->refresh()->status->value)->toBe($status)->and($operation->lock_key)->toBeNull();
     $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'composer', 'package' => 'vendor/next'])->assertAccepted();
 })->with(['cancelled', 'interrupted']);
+
+it('captures a signed apt repository without doing Node work', function (): void {
+    $repository = ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
+    expect(Operation::query()->sole()->input['repository'])->toBe($repository)
+        ->and($this->socket->sent[0]['payload']['inputs']['intent']['repository'])->toBe($repository);
+    expect(Tool::query()->count())->toBe(0);
+});
+
+it('rejects invalid apt repository input before starting a run', function (string $field, mixed $value): void {
+    $repository = signedToolRepository();
+    data_set($repository, $field, $value);
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertUnprocessable();
+    expect(Operation::query()->count())->toBe(0)->and($this->socket->sent)->toBe([]);
+})->with([
+    ['name', '../outside'], ['name', 'caddy'], ['uris', ['http://packages.example.test/apt']],
+    ['uris', ['https://user:password@packages.example.test/apt']], ['suites', ["preview\nTrusted: yes"]],
+    ['components', []], ['architectures', []], ['signing_key.fingerprint', null],
+    ['signing_key.fingerprint', 'DEADBEEF'], ['signing_key.url', 'file:///tmp/key'], ['trusted', true],
+]);
+
+it('rejects repository definitions for non apt managers', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'vp', 'package' => 'hello', 'repository' => signedToolRepository()])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'tool.repository_invalid');
+    expect(Operation::query()->count())->toBe(0);
+});
+
+it('shares repository intent updates and cleans up only the final Tool reference', function (): void {
+    $repository = signedToolRepository();
+    foreach (['hello' => ['hello'], 'world' => ['hello', 'world']] as $package => $pinned) {
+        $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => $package, 'repository' => $repository])->assertAccepted();
+        $install = Operation::query()->latest('id')->firstOrFail();
+        expect($install->input['repository_packages'])->toBe($pinned)
+            ->and(app(ToolIntentProjection::class)->input($install)['intent']['repository_packages'])->toBe($pinned);
+        finishSignedToolOperation($install);
+    }
+    $first = Tool::query()->where('package', 'hello')->sole();
+    $second = Tool::query()->where('package', 'world')->sole();
+    expect($first->apt_repository_id)->toBe($second->apt_repository_id);
+    $repository['suites'] = ['stable'];
+    $repository['uris'] = ['https://next.example.test/apt'];
+    $this->postJson('/api/v1/tools/'.$first->id.'/update', ['repository' => $repository])->assertAccepted();
+    $update = Operation::query()->latest('id')->firstOrFail();
+    expect($update->input['repository'])->toBe($repository);
+    expect($update->input['repository_packages'])->toBe(['hello', 'world']);
+    finishSignedToolOperation($update);
+    $this->getJson('/api/v1/tools/'.$second->id)->assertOk()->assertJsonPath('data.repository.suites', ['stable']);
+
+    $this->deleteJson('/api/v1/tools/'.$first->id)->assertAccepted();
+    $remove = Operation::query()->latest('id')->firstOrFail();
+    expect($remove->input['remove_repository'])->toBeFalse()->and($remove->input['repository_packages'])->toBe(['world']);
+    finishSignedToolOperation($remove);
+    expect(AptRepository::query()->count())->toBe(1);
+    $this->deleteJson('/api/v1/tools/'.$second->id)->assertAccepted();
+    $remove = Operation::query()->latest('id')->firstOrFail();
+    expect($remove->input['remove_repository'])->toBeTrue()->and($remove->input['repository_packages'])->toBe([]);
+    finishSignedToolOperation($remove);
+    expect(AptRepository::query()->count())->toBe(0)->and(Tool::query()->count())->toBe(0);
+});
+
+it('refuses a conflicting shared definition and repository renaming', function (): void {
+    $repository = signedToolRepository();
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole());
+    $repository['suites'] = ['other'];
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'world', 'repository' => $repository])->assertConflict()->assertJsonPath('error.code', 'tool.repository_conflict');
+    $repository['name'] = 'renamed';
+    $this->postJson('/api/v1/tools/'.Tool::query()->sole()->id.'/update', ['repository' => $repository])->assertConflict()->assertJsonPath('error.code', 'tool.repository_conflict');
+    expect(AptRepository::query()->sole()->definition['suites'])->toBe(['preview']);
+});
+
+it('keeps failed repository intent for retry and removal', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
+    $operation = Operation::query()->sole();
+    finishSignedToolOperation($operation, 'tool.repository_unavailable');
+    $tool = Tool::query()->sole();
+    expect($tool->status)->toBe(ToolStatus::Failed)->and($tool->error_code)->toBe('tool.repository_unavailable');
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
+    expect(Operation::query()->latest('id')->firstOrFail()->input['repository_id'])->toBe($tool->apt_repository_id);
+});
+
+function signedToolRepository(): array
+{
+    return ['name' => 'vendor', 'uris' => ['https://packages.example.test/apt'], 'suites' => ['preview'], 'components' => ['main'], 'signing_key' => ['url' => 'https://packages.example.test/key.gpg', 'fingerprint' => str_repeat('A', 40)]];
+}
+
+function finishSignedToolOperation(Operation $operation, ?string $error = null): void
+{
+    app(ToolIntentProjection::class)->apply($operation, ['run_id' => $operation->state['swamp_run_id'],
+        'status' => $error === null ? 'succeeded' : 'failed', 'error_code' => $error, 'started_at' => '2026-11-01T01:00:00Z', 'finished_at' => '2026-11-01T01:00:01Z',
+        'result' => ['manager_version' => 'apt 3.0.0', 'installed_version' => $operation->kind === 'tool.remove' ? null : '1.0.0', ...($error === null ? ['outcome' => 'applied'] : ['error_code' => $error])]]);
+}
+
+it('does not reserve a repository slug after failed read only adoption', function (): void {
+    $repository = signedToolRepository();
+    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole(), 'tool.repository_adoption_mismatch');
+    expect(AptRepository::query()->count())->toBe(0);
+    $repository['suites'] = ['corrected'];
+    $this->postJson('/api/v1/tools/adopt', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => $repository])->assertAccepted();
+});
+
+it('retains newly attached repository intent when an update fails so removal can clean it', function (): void {
+    $record = $this->node->toolManagers()->create(['name' => 'apt', 'status' => LifecycleStatus::Active]);
+    $tool = $this->node->tools()->create(['tool_manager_id' => $record->id, 'package' => 'hello', 'status' => ToolStatus::Installed]);
+    $this->postJson('/api/v1/tools/'.$tool->id.'/update', ['repository' => signedToolRepository()])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole(), 'tool.repository_unavailable');
+    expect($tool->refresh()->apt_repository_id)->not->toBeNull();
+    $this->deleteJson('/api/v1/tools/'.$tool->id)->assertAccepted();
+    expect(Operation::query()->latest('id')->firstOrFail()->input['remove_repository'])->toBeTrue();
+});
+
+it('exposes the full signed repository shape in the MCP catalogue', function (): void {
+    foreach (['tool-install', 'tool-adopt', 'tool-update'] as $name) {
+        $definition = collect(ToolManifest::default()->definitions())->firstWhere('name', $name);
+        $repository = data_get($definition?->inputSchema, 'properties.repository');
+        expect($repository)->toBeArray();
+        expect(data_get($repository, 'required'))->toBe(['name', 'uris', 'suites', 'components', 'signing_key']);
+        expect(data_get($repository, 'properties.signing_key.required'))->toBe(['url', 'fingerprint']);
+        expect(data_get($repository, 'properties.uris.items.format'))->toBe('uri');
+        expect(data_get($repository, 'properties.signing_key.properties.fingerprint.pattern'))->toContain('[A-F0-9]{40}');
+    }
+});
+
+it('allows Node deletion to retire its repository and Tool intent together', function (): void {
+    $this->postJson('/api/v1/tools', ['node_id' => $this->node->id, 'manager' => 'apt', 'package' => 'hello', 'repository' => signedToolRepository()])->assertAccepted();
+    finishSignedToolOperation(Operation::query()->sole());
+    $this->node->delete();
+    expect(Tool::query()->count())->toBe(0)->and(AptRepository::query()->count())->toBe(0);
+});

@@ -152,6 +152,8 @@ concatenation, constant aliases and joins. It inspects nested subprocesses and
 reports evidence for multi-command behavior files. Custom sleeps, timer helpers,
 polling, retries and lock calls are counted separately.
 
+A phase script invoked by official `@swamp/ssh.exec` may poll checked, read-only Incus VM state under a literal `timeout` argv. The gate binds the script body to its shipped source and checks every invocation, including conditional branches. Every body-output key occurrence must belong to a proved argv slot; bracket keys, escaped or joined keys, history reads, concatenation and unresolved selectors cannot earn a bound. It accepts fixed-interval `incus list --format json` observations that propagate command failures. Mutations, suppressed read failures, computed intervals and missing or computed bounds remain rejected. This does not admit local-shell Incus polls or another SSH transport.
+
 The approved Route private DNS grace is the sole sleep exception. It matches only
 `workflows/workflow-route-dns-grace.yaml`, job `grace`, step
 `wait-private-dns-ttl`, placed with step labels `{node: '209'}` or target

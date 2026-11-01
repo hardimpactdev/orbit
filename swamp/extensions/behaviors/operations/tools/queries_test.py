@@ -24,7 +24,7 @@ class QueriesTest(unittest.TestCase):
     def path(self, value):
         return self.root / str(value).lstrip('/')
 
-    def run_query(self, manager, outputs, platform='linux', family='queries', extra=None):
+    def run_query(self, manager, outputs, platform='linux', family='queries', extra=None, argv=()):
         input = {'user': 'orbit', 'package': 'hello', 'manager': manager, 'platform': platform, **(extra or {})}
         source = (QUERIES / 'support.py').read_text().replace('QUERY_INPUT = None', 'QUERY_INPUT = ' + repr(json.dumps(input)))
         namespace = {'__name__': '__main__'}
@@ -42,7 +42,7 @@ class QueriesTest(unittest.TestCase):
         if family != 'queries':
             sources = [QUERIES.parent / family / (('brew' if manager.startswith('brew') else manager) + '.py')]
         output = io.StringIO()
-        with patch('subprocess.run', side_effect=run), contextlib.redirect_stdout(output):
+        with patch('subprocess.run', side_effect=run), patch('sys.argv', ['-c', *argv]), contextlib.redirect_stdout(output):
             for file in sources:
                 text = '\n'.join(line for line in file.read_text().splitlines() if not line.startswith(('from support import', 'from brew_query import')))
                 exec(compile(text, str(file), 'exec'), namespace)  # noqa: S102 -- run shipped fixture source
@@ -55,6 +55,32 @@ class QueriesTest(unittest.TestCase):
             self.assertEqual(value['versions'], versions)
         self.assertEqual(self.run_query('apt', ['apt 3\n', (1, '', 'dpkg-query: no packages found matching hello\n')])['versions'], [])
         self.assertEqual(self.run_query('apt', ['apt 3\n', (1, '', 'database unreadable')])['error_code'], 'tool.version_probe_failed')
+
+    def test_apt_repository_candidate_excludes_distribution_sources_and_installed_status(self):
+        value = self.run_query('apt', ['hello:\n  Candidate: 0.0.123-gabc\n'], family='candidates', argv=[json.dumps({'name': 'vendor'})])
+        self.assertEqual(value, {'version': '0.0.123-gabc'})
+        argv = self.calls[-1][0]
+        self.assertIn('Dir::Etc::sourcelist=/etc/apt/sources.list.d/orbit-vendor.sources', argv)
+        self.assertIn('Dir::Etc::sourceparts=-', argv)
+        self.assertIn('Dir::State::status=/dev/null', argv)
+
+    def test_repository_package_is_downloaded_from_its_source_then_installed_with_normal_dependencies(self):
+        source = (QUERIES.parent / 'writes/apt.py').read_text().replace('from support import INPUT', '')
+        calls = []
+        def run(argv, **kwargs):
+            calls.append(argv)
+            if 'download' in argv:
+                self.assertEqual(argv[-1], 'hello=0.0.123-gabc')
+                (Path(kwargs['cwd']) / 'hello.deb').write_bytes(b'fixture deb')
+            return subprocess.CompletedProcess(argv, 0, '', '')
+        namespace = {'INPUT': {'package': 'hello'}}
+        argv = ['-c', json.dumps({'version': '0.0.123-gabc'}), json.dumps({'name': 'vendor'})]
+        with patch('subprocess.run', side_effect=run), patch('sys.argv', argv), contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(source, 'writes/apt.py', 'exec'), namespace)
+        self.assertIn('Dir::Etc::sourcelist=/etc/apt/sources.list.d/orbit-vendor.sources', calls[0])
+        self.assertEqual(calls[1][1:6], ['install', '--yes', '--no-install-recommends', '--no-remove', '--'])
+        self.assertTrue(calls[1][-1].endswith('/hello.deb'))
+        self.assertFalse(any('Dir::Etc' in arg or 'allow-downgrades' in arg for arg in calls[1]))
 
     def test_composer_roots_and_inventory_use_existing_shared_scope(self):
         scope = self.path('/opt/orbit/composer'); scope.mkdir(parents=True)

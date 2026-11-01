@@ -7,6 +7,7 @@ namespace App\Actions\Firewall;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
+use App\Domain\Firewall\FirewallAllowlist;
 use App\Domain\Firewall\FirewallMutationInput;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\FirewallPort;
@@ -30,7 +31,12 @@ final readonly class StoreFirewallRuleAction
         return DB::transaction(function () use ($node, $data, $caller, $requestId): Operation {
             $this->guardLinuxPlatform($node);
             $this->guardRecoverySsh($node, $data);
-            $this->guardActionConflict($node, $data);
+            app(FirewallAllowlist::class)->guardOverlap($node, $data);
+            if ($data->action === FirewallAction::Allowlist) {
+                app(FirewallAllowlist::class)->guard($node, $data);
+            } else {
+                $this->guardActionConflict($node, $data);
+            }
             app(DirectOperation::class)->writer('firewall.'.$data->action->value, [], $node->id);
             $rule = FirewallRule::query()->firstOrNew([
                 'node_id' => $node->id,
@@ -40,6 +46,7 @@ final readonly class StoreFirewallRuleAction
             $attributes = [
                 'action' => $data->action,
                 'source' => $data->source,
+                'sources' => $data->sources,
                 'protocol' => $data->protocol,
                 'port' => $data->port,
             ];
@@ -133,7 +140,7 @@ final readonly class StoreFirewallRuleAction
     private function oppositeAction(FirewallAction $action): FirewallAction
     {
         return match ($action) {
-            FirewallAction::Allow => FirewallAction::Deny,
+            FirewallAction::Allow, FirewallAction::Allowlist => FirewallAction::Deny,
             FirewallAction::Deny => FirewallAction::Allow,
         };
     }

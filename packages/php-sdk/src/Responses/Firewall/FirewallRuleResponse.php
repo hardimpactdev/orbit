@@ -9,6 +9,7 @@ use SensitiveParameter;
 
 final readonly class FirewallRuleResponse
 {
+    /** @param list<string> $sources */
     public function __construct(
         public int $id,
         public int $nodeId,
@@ -23,6 +24,7 @@ final readonly class FirewallRuleResponse
         public ?string $failedStep,
         public ?string $errorCode,
         public string $requestId,
+        public array $sources = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -46,6 +48,7 @@ final readonly class FirewallRuleResponse
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
+            sources: is_array($data['sources'] ?? null) ? array_values(array_filter($data['sources'], is_string(...))) : [],
         );
     }
 
@@ -59,6 +62,7 @@ final readonly class FirewallRuleResponse
             'name' => $this->name,
             'action' => $this->action,
             'source' => $this->source,
+            ...($this->action === 'allowlist' ? ['sources' => $this->sources] : []),
             'protocol' => $this->protocol,
             'port' => $this->port,
             'status' => $this->status,

@@ -20,6 +20,10 @@ abstract class ToolActionCommand extends ToolCommand
         if ($toolId === null) {
             return self::FAILURE;
         }
+        $request = $this->request($toolId);
+        if ($request === null) {
+            return self::FAILURE;
+        }
         $connector = $this->gatewayConnector($repository, $connectors);
         if ($connector === null) {
             return self::FAILURE;
@@ -28,12 +32,12 @@ abstract class ToolActionCommand extends ToolCommand
         if ($profile === null) {
             return self::FAILURE;
         }
-        $operation = $this->send($connector, $this->request($toolId), OperationResponse::class);
+        $operation = $this->send($connector, $request, OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, "Change Tool #{$toolId}", 'Tool')
             : self::FAILURE;
     }
 
-    abstract protected function request(int $toolId): GatewayRequest;
+    abstract protected function request(int $toolId): ?GatewayRequest;
 }

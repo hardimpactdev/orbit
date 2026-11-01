@@ -173,3 +173,19 @@ Deno.test("native completion requires every expected compliant tuple and no resi
         })
     );
 });
+
+Deno.test("an allowlist refusal projects its public code and an unknown exit stays a failure", async () => {
+    const { result } = await import("./mutation-result.ts");
+    const intent = {
+        ssh: { target: { host: "10.44.0.9", port: 22, host_keys: ["ssh-ed25519 admitted"] } },
+        rule: { node_id: 9, name: "rex", action: "allowlist", source: "any", port: "7297", protocol: "tcp", sources: ["10.44.0.6"] },
+        tuples: [],
+        ensure: "present",
+    };
+    const run = (exitCode: number, stdout: string) =>
+        result({ intent, stdout: "", outcomes: { allowlist: { status: "succeeded", outputs: { exitCode, stdout } } } });
+    assertEquals(run(0, '{"backend":"active"}'), { backend: "active" });
+    assertThrows(() => run(1, '{"error_code":"firewall.rule_collision"}'), Error, "firewall.rule_collision");
+    assertThrows(() => run(1, '{"error_code":"Rule\\ninjected"}'));
+    assertThrows(() => run(124, ""));
+});

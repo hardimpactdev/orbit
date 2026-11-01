@@ -6,6 +6,7 @@ namespace App\Actions\Operations;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationRunBudgets;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -31,16 +32,18 @@ final readonly class ReadOperationAction
             }
         }
         $operation = app(ExpireOperationAction::class)->execute($operation);
-        if ($operation->status->terminal() || ! is_string($runId) || ! Str::isUuid($runId)
+        if (($operation->status->terminal() && ! ($operation->error_code === 'operation.native_failed'
+            && in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
+            && ! array_key_exists('native_failure', $operation->state ?? []))) || ! is_string($runId) || ! Str::isUuid($runId)
             || $definition === null || $operation->node_id === null) {
             return $operation;
         }
-        $status = $this->history->status($operation, $definition['workflow'], $runId);
-        if ($status === null) {
+        $receipt = $this->history->read($operation, $definition['workflow'], $runId);
+        if ($receipt === null) {
             return $operation->refresh();
         }
         try {
-            return $this->failures->execute($operation, $runId, $status);
+            return $this->failures->execute($operation, $runId, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['operation.run_mismatch', 'operation.run_unbound'], true)) {
                 throw $exception;

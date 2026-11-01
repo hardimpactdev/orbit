@@ -15,6 +15,7 @@ use App\Data\Operations\OperationData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Firewall\StoreFirewallAllowlistRequest;
 use App\Http\Requests\Firewall\StoreFirewallRuleRequest;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\FirewallRule;
@@ -79,6 +80,12 @@ final class FirewallRulesController extends Controller
 
     #[StartsOperation('firewall.allow')]
     public function allow(StoreFirewallRuleRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
+    {
+        return $this->store($request, $node, $action);
+    }
+
+    #[StartsOperation('firewall.allowlist')]
+    public function allowlist(StoreFirewallAllowlistRequest $request, Node $node, StoreFirewallRuleAction $action): JsonResponse
     {
         return $this->store($request, $node, $action);
     }

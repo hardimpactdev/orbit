@@ -1,5 +1,6 @@
 id: 38356821-a5bb-4272-afab-60acf0a9cf22
 name: operation-schedule-destroy
+queueTimeout: 30
 description: Stop and remove a Schedule through official cfgmgmt on 209.
 vaults: []
 inputs:

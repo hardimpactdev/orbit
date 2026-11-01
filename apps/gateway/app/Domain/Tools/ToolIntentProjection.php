@@ -10,6 +10,7 @@ use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AptRepository;
 use App\Models\Operation;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -29,7 +30,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
     public function input(Operation $operation): array
     {
         return ['intent' => ['kind' => $operation->kind, ...array_intersect_key($operation->input, array_flip([
-            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'setup',
+            'node_id', 'manager', 'package', 'user', 'platform', 'architecture', 'version_constraint', 'tool_id', 'tool_status', 'installed_version', 'intent_only', 'setup', 'repository', 'remove_repository', 'repository_packages',
         ]))], 'ssh' => $operation->input['ssh']];
     }
 
@@ -70,6 +71,11 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         $status = $operation->status;
         $verb = substr($operation->kind, 5);
         if ($verb === 'adopt' && $status !== OperationStatus::Succeeded) {
+            $repositoryId = $operation->input['repository_id'] ?? null;
+            if (is_int($repositoryId) && ! Tool::query()->where('apt_repository_id', $repositoryId)->exists()) {
+                AptRepository::query()->whereKey($repositoryId)->delete();
+            }
+
             return;
         }
         $input = $operation->input;
@@ -106,16 +112,21 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         }
         if ($verb === 'remove') {
             $tool?->delete();
+            if (($input['remove_repository'] ?? false) && is_int($input['repository_id'] ?? null)) {
+                AptRepository::query()->whereKey($input['repository_id'])->delete();
+            }
 
             return;
         }
         if ($tool !== null && $verb === 'adopt' && $tool->status === ToolStatus::Installed) {
+            $tool->update(['apt_repository_id' => $input['repository_id'] ?? null]);
+
             return;
         }
         if ($tool === null && $record !== null) {
             $tool = $this->createTool($operation, $record);
         }
-        $tool?->update(['status' => ToolStatus::Installed, 'installed_version' => $result['installed_version'] ?? null, 'failed_operation' => null, 'error_code' => null]);
+        $tool?->update(['apt_repository_id' => $input['repository_id'] ?? null, 'status' => ToolStatus::Installed, 'installed_version' => $result['installed_version'] ?? null, 'failed_operation' => null, 'error_code' => null]);
     }
 
     private function createTool(Operation $operation, ToolManagerRecord $record): Tool
@@ -123,7 +134,7 @@ final readonly class ToolIntentProjection implements DirectOperationProjection, 
         return Tool::query()->create([
             'node_id' => $operation->node_id, 'tool_manager_id' => $record->id,
             'package' => $operation->input['package'], 'version_constraint' => $operation->input['version_constraint'],
-            'status' => ToolStatus::Installing,
+            'status' => ToolStatus::Installing, 'apt_repository_id' => $operation->input['repository_id'] ?? null,
         ]);
     }
 }

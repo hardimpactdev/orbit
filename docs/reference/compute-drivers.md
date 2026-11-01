@@ -104,7 +104,7 @@ A profile's effective set is the union of `common` and its own list, sorted by t
 
 ### Swamp worker
 
-The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261022.021804.0-sha.983e2929`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
+The one task VM base profile includes the official Swamp binary, pinned by version and SHA-256. Its release matches the orchestrator's `swamp serve`: `20261031.063736.0-sha.e459d219`. Roll out a reviewed recipe pin and matching serve release together. Image verification checks the installed binary against its artifact digest. No fleet or account credential belongs in the image.
 
 Before publishing the base image, the builder installs the Gateway's public Orbit root certificate at `/usr/local/share/ca-certificates/orbit-root.crt` and refreshes the system trust store. Orbit CA rotation requires rebuilding the base image before new task VMs use that CA. The worker explicitly uses this certificate for its WebSocket and HTTP/2 connections. Native VM enrollment starts its exact Node worker before Pi preparation. The separate [Task worker](/reference/tasks#optional-swamp-worker) serves group work after workspace setup. Swamp's [remote execution manual](https://swamp-club.com/manual/explanation/remote-execution) and [worker reference](https://swamp-club.com/manual/reference/remote-execution/worker-commands) own its protocol and reconnect behavior.
 
@@ -135,6 +135,8 @@ The base also holds the nested Incus packages, so a task VM [runs a topology](#p
 - `nftables`, for the isolation table.
 
 Zabbly bundles QEMU, qemu-img, virtiofsd, and firmware with Incus. No separate Ubuntu packages provide them. The recipe installs packages without recommended packages. The `base` profile is amd64 only, because Pi is. The topology Nodes start from the same base and carry these packages unused.
+
+The base also holds two packages for a topology's `gateway` VM. `dnsmasq` is the `vpn` role's DNS service, because that VM holds the `vpn` role. `fcgiwrap` serves the topology's Git repositories over HTTP, with Git's own `git-http-backend`. The `dnsmasq` package enables its unit, but the unit fails at boot: systemd-resolved starts first and holds port 53. Name resolution and nested Incus bridges are not affected. On the `gateway` VM, the `vpn` role's DNS configuration binds dnsmasq to `127.0.0.55`, the private DNS backend address, and restarts it, as on a production `vpn` Node.
 
 After the packages, the image build adds `orbit` to `incus-admin`, because cloud-init adds groups only to a user it creates. Software verification checks the membership. `image.clean` stops Incus and empties `/var/lib/incus`, and fails when it is not empty. So every VM and topology Node from the image creates its own Incus server certificate and database.
 
@@ -416,7 +418,7 @@ The workspace Instance has one durable [workspace lease](/reference/tasks#worksp
 
 A claim records placement and one native provision intent. The [native root](/reference/task-vm-native-provision) owns provider creation, enrollment and runtime preparation.
 
-1. Placement records the VM's [size](#size-by-declared-topology) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
+1. Placement records the VM's [size](#size-of-a-task-vm) and immutable recipe image. Ordinary VM admission records `task_vm.provision` in the same transaction. An owning Task parent uses `capture` and composes the native steps.
 2. Swamp creates the provider VM from that image on the admitted host. Incus cloud-init and provider commands run directly from native system steps.
 3. The host prepares the guest and records its public SSH identity and WireGuard key through the root's running projection.
 4. Native steps publish the network and install the exact `orbit-node-N` worker. They verify that Node identity before runtime preparation.
@@ -537,15 +539,17 @@ Placement is serialized by the Gateway's SQLite transaction. The claim checks fo
 
 Every VM that is neither `destroyed` nor `failed` takes the slots of its size, including parked VMs. When no eligible Incus host has room, including when the Project excludes every host, eligible groups can use the [UpCloud overflow](#upcloud-overflow). Otherwise the group waits for capacity. Lowering `max_vms` removes no VM; the host receives no new VM until capacity is available.
 
-#### Size by declared topology
+#### Size of a task VM
 
-At the claim, Orbit decides the size of the group's VM once. It takes the union of the `topology` fields of the group's subtasks that are not cancelled, and the Project's place in `task_vms.medium_projects`. The row stores the size in `size`, and it never changes while the VM exists.
+At the claim, Orbit decides the size of the group's VM once. It takes the union of the `topology` fields of the group's subtasks that are not cancelled, and the Project's place in `task_vms.medium_projects` or `task_vms.large_projects`. The row stores the size in `size`, and it never changes while the VM exists.
 
 | Size | When | VM | Slots |
 | --- | --- | --- | --- |
-| `normal` | No subtask declares a topology | The host's `cpus`, `memory`, and `disk` | 1 |
+| `normal` | No subtask declares a topology and the Project is in neither size list | The host's `cpus`, `memory`, and `disk` | 1 |
 | `medium` | The topology has one test node, or no subtask declares a topology and the Project is in `task_vms.medium_projects` | 4 vCPU, 8 GiB of memory, and a 40 GiB disk | 2 |
-| `large` | The topology has two test nodes | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 |
+| `large` | The topology has two test nodes, or no subtask declares a topology and the Project is in `task_vms.large_projects` | 6 vCPU, 12 GiB of memory, and a 60 GiB disk | 3 |
+
+For groups without a declared topology, `large_projects` takes precedence over `medium_projects`: a Project in both lists gets a large VM. These lists do not change the size of a group with a declared topology.
 
 A test node is `app-dev`, `app-prod`, or `app-prod-2`, whatever roles its entry adds. The [test Gateway and the operator](/reference/incus-topologies#declared-nodes) run in every topology and do not count. Each size defines how many test nodes it holds, one in a medium VM and two in a large VM, and the group gets the smallest size that holds its topology. The largest size sets the most test nodes a group may declare.
 
@@ -794,7 +798,7 @@ Swamp runs task VM effects through recorded Operations. Each effect fixes its ho
 
 The fixed `incus.vm` agent command runs on the Operation's host Node as its managed user. `IncusTaskVmProvider` exposes observations only. It launches the row's `image_fingerprint` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-A [medium VM](#size-by-declared-topology) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
+A [medium VM](#size-of-a-task-vm) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Their config on stdin also sets `raw.qemu.conf` to turn on free page reporting for the balloon device `qemu_balloon`. Incus applies that key only when the VM starts, so the launch sets it.
 
 A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#build-the-base-image) of its `image_fingerprint`:
 
@@ -1272,7 +1276,8 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
-| `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-by-declared-topology) when no subtask declares a topology. Default `[]` |
+| `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#size-of-a-task-vm) when no subtask declares a topology. Default `[]` |
+| `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#size-of-a-task-vm) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
 | `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need a [declared topology](#prove-work-on-a-topology). Default `{}` |
 
 Each task VM stores `ai_router_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
@@ -1494,7 +1499,7 @@ A group of the `orbit` Project runs on a task VM, like the group of any other Pr
 
 Configure the Project like this:
 
-- List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-by-declared-topology) with 4 vCPU. Its check runs the test suites in parallel.
+- List it in `task_vms.medium_projects`, so its groups get a [medium VM](#size-of-a-task-vm) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
 Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
@@ -1509,7 +1514,7 @@ The subtasks of a group declare at most two test nodes together, as many as a la
 
 The Gateway validates a declaration once, when a request or `tasks:render-prompt` gives it. It trusts a stored declaration. So a node or role that leaves the format later never fails a tick or a response for a subtask that declares it; the harness refuses that node when the topology is prepared.
 
-The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-by-declared-topology) at the claim.
+The group's topology is the union of its subtasks that are not cancelled: each node once, with every role any subtask adds to it. It decides the [VM size](#size-of-a-task-vm) at the claim.
 
 ### Prepare the topology
 

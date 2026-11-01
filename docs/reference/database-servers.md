@@ -245,8 +245,10 @@ The shared terminal subscriber records the user after native success. Native ter
 `database:user:create` adds or updates a user on a MySQL or PostgreSQL server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.
 
 ```bash
-orbit database:user:create dlf-leden --username=reporting --password=SECRET --read-only
+orbit database:user:create dlf-leden --username=reporting --read-only
 ```
+
+The CLI reads the password from piped standard input, or asks for it with a hidden prompt on a terminal; see [`database:user:create`](/cli/database#orbit-databaseusercreate).
 
 A read-only user gets `SELECT` on the database. A regular MySQL user gets all database privileges; a regular PostgreSQL user gets the data-write grants described above. Running the command again sets the password and replaces the privileges. A connection without a server returns `database.server_required` (422). A connection on a `redis` server returns `database.driver_unsupported` (422): on Valkey, each user is a connection of its own. The user of a connection on the same server returns `database.name_conflict` (409), so the command never changes the password that a connection uses. The Gateway stores the user's password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
@@ -255,7 +257,7 @@ A read-only user gets `SELECT` on the database. A regular MySQL user gets all da
 Create a managed read login for a logical replication consumer such as PowerSync.
 
 ```bash
-orbit database:user:create app --username=powersync --password=SECRET --replication
+orbit database:user:create app --username=powersync --replication
 ```
 
 `--replication` (API field `replication`, boolean, default false) requires a managed PostgreSQL server with live `wal_level=logical`. Orbit checks it before changing the role or grants. It refuses another driver with `database.driver_unsupported` (422) and another WAL level with `database.wal_level_not_logical` (422). Orbit does not change server configuration.

@@ -1,5 +1,6 @@
 id: e947ab58-40c6-405d-9c74-2c14210e4511
 name: operation-database-write
+queueTimeout: 30
 description: Execute one admitted write as a placed command step; the Gateway projects terminal stdout.
 writes: true
 vaults:

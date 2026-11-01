@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
+use Tests\Support\FakeStandardInput;
 
 require_once __DIR__.'/../../Helpers/DatabaseOperationFixtures.php';
 
@@ -55,8 +57,9 @@ describe('database server contract', function (): void {
     });
 
     it('renders database:user:create from the recorded response', function (): void {
-        run_database_operation_contract('database-connections/database-user-create/default', 'database:user:create', ['slug' => 'dlf-leden', '--username' => 'reporting', '--password' => 'reporting-secret', '--read-only' => true], 'database-connections/database-user-create/default.human.txt', 0);
-        run_database_operation_contract('database-connections/database-user-create/default', 'database:user:create', ['slug' => 'dlf-leden', '--username' => 'reporting', '--password' => 'reporting-secret', '--read-only' => true, '--json' => true], 'database-connections/database-user-create/default.json', 0);
+        app()->instance(StandardInputReader::class, FakeStandardInput::piped('reporting-secret'));
+        run_database_operation_contract('database-connections/database-user-create/default', 'database:user:create', ['slug' => 'dlf-leden', '--username' => 'reporting', '--read-only' => true], 'database-connections/database-user-create/default.human.txt', 0);
+        run_database_operation_contract('database-connections/database-user-create/default', 'database:user:create', ['slug' => 'dlf-leden', '--username' => 'reporting', '--read-only' => true, '--json' => true], 'database-connections/database-user-create/default.json', 0);
     });
 });
 
