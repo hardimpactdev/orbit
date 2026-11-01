@@ -6,6 +6,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteLifecycleInput;
+use App\Domain\Routes\NativeRouteMutationInput;
 use App\Domain\Routes\NativeRouteRemovalProjection;
 use App\Domain\Routes\NativeRouteTargetInput;
 use App\Domain\Routes\RouteEnvironmentMaterialSource;
@@ -20,6 +21,8 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
 use Tests\Support\FakeRoutePublicationSocket;
 
 beforeEach(function (): void {
@@ -249,3 +252,40 @@ it('keeps a published public Route visible after failed removal and restoration'
         ->and($route->fresh()->error_code)->toBeNull()
         ->and($sites->all()->where('domain', $route->domain)->map(fn ($site): string => $site->addressKey())->sort()->values()->all())->toBe($before);
 })->with(['Instance site' => false, 'Process proxy' => true]);
+
+it('captures prospective public WebSocket handlers without changing stored bindings, DNS or certificate scopes', function (bool $detach): void {
+    $ingress = $this->nodes['new'];
+    $ingress->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $ingress->cluster_id]);
+    $route = $this->routes['pool'];
+    $route->update(['status' => 'active', 'sites_published' => true, 'publication' => 'public', 'replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $app = WebSocketApp::query()->create(['name' => 'route-seam-proof', 'app_id' => 'route-seam-id', 'key' => 'route-seam-key', 'secret' => 'synthetic-seam-secret']);
+    if ($detach) {
+        $app->targets()->create(['instance_id' => $this->instances['old']->id, 'route_id' => $route->id]);
+    }
+    $policy = app(NativeRouteMutationInput::class);
+    $before = app(DevelopmentSiteRepository::class)->all();
+    $previous = $policy->route($route->fresh(), environment: false);
+    $transform = static fn ($site) => $detach
+        ? $site->withoutWebSocket()
+        : $site->withWebSocket($app->key, $app->pusherId());
+    $desired = $previous;
+    $desired['sites'] = array_map($transform, $previous['sites']);
+    $candidate = $before->map(fn ($site) => $site->domain === $route->domain ? $transform($site) : $site);
+    $capture = $policy->capture([$previous], [$desired], [$desired], [$previous], $before, $candidate, [], static fn (Closure $render): array => $render());
+    $publications = $capture['route_mutations']['forward']['publications'];
+    $edge = array_values(array_filter($publications, fn (array $part): bool => $part['node_id'] === $ingress->id))[0];
+    expect(str_contains($edge['before']['caddy']['content'], '/app/route-seam-key'))->toBe($detach)
+        ->and(str_contains($edge['after']['caddy']['content'], '/app/route-seam-key'))->toBe(! $detach)
+        ->and($route->fresh()->sites_published)->toBeTrue()
+        ->and(WebSocketAppTarget::query()->count())->toBe($detach ? 1 : 0)
+        ->and(WebSocketAppTarget::query()->first()?->route_id)->toBe($detach ? $route->id : null)
+        ->and($capture['execution_secrets'])->toBe([])
+        ->and(json_encode($capture))->not->toContain('synthetic-seam-secret')
+        ->and(collect($publications)->where('serves_routes', true)->pluck('node_id')->sort()->values()->all())
+        ->toBe($before->where('domain', $route->domain)->pluck('nodeId')->unique()->sort()->values()->all())
+        ->and(Operation::query()->count())->toBe(0);
+    foreach ($publications as $part) {
+        expect($part['after']['dns'])->toBe($part['before']['dns'])
+            ->and($part['after']['certificate_scopes'])->toBe($part['before']['certificate_scopes']);
+    }
+})->with(['attach' => false, 'detach' => true]);
