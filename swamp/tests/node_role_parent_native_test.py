@@ -72,6 +72,17 @@ class RoleParentNative(database.DatabaseRoleNative):
         self.assertTrue(result['target']['created'])
 
     def prepare_move(self):
+        module=self.repo/'extensions/behaviors/operations/node-role-converge-command/supplier_fixture.ts'
+        module.write_text('''import {z} from "npm:zod@4.4.3";
+export const behavior={type:"@nckrtl/role-supplier-fixture",version:"2026.11.01.1",resources:{result:{schema:z.record(z.string(),z.unknown()),lifetime:"1d",garbageCollection:10}},methods:{complete:{description:"Return a typed supplier boundary fixture",arguments:z.object({action:z.string(),parent_run_id:z.string().optional()}),execute:async(args:{action:string;parent_run_id?:string},ctx:{writeResource(s:string,n:string,v:unknown):Promise<unknown>})=>{await Deno.writeTextFile(AUDIT,JSON.stringify(args)+"\\n",{append:true});const result={completed:true,ready:true,node_id:5,scope:"role-websocket",version:"cccccccccccccccc"};await ctx.writeResource("result","result",result);return result;}}}};
+'''.replace('AUDIT',json.dumps(str(self.audit))))
+        for name,action in [('node-role-websocket','runtime'),('node-role-certificate-publish','certificate'),('node-role-publication','publication')]:
+            path=self.repo/('workflows/workflow-'+name+'.yaml')
+            flow=yaml.safe_load(path.read_text())
+            args={'action':action}
+            if action=='certificate':args['parent_run_id']='${{ inputs.parent_run_id }}'
+            flow['jobs']=[{'name':'fixture','steps':[{'name':'result','task':{'type':'behavior','behaviorType':'@nckrtl/role-supplier-fixture','behaviorName':action+'-fixture','methodName':'complete','inputs':args}}]}]
+            path.write_text(yaml.safe_dump(flow,sort_keys=False))
         self.input['kind'] = 'node.role_relocate'
         target = self.input['intent']['target']
         target.update(role='websocket', created=False,

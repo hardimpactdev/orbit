@@ -34,7 +34,7 @@ beforeEach(function (): void {
     FleetFixtures::node('relocation-gateway', [RoleName::Gateway]);
     $this->source = FleetFixtures::node('relocation-source', [RoleName::WebSocket]);
     $this->target = FleetFixtures::node('relocation-target');
-    $this->target->update(['agent_secret_hash' => str_repeat('e', 64)]);
+    $this->target->forceFill(['agent_secret_hash' => str_repeat('e', 64)])->save();
     config(['swamp_workers.nodes' => [$this->source->id, $this->target->id]]);
     app(NodeRoleRuntimeInput::class)->prepare($this->source, $this->source->roles()->sole());
     $agents = Mockery::mock(AgentCommandRunner::class);
