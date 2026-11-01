@@ -1,0 +1,212 @@
+sequenceDiagram
+  %% Target design: ADR 0244 (a task group is one root task; Pi turns use the pi driver), Recall swamp-tasks-swamp-orchestrates-pi + task-vms-swamp-via-ssh, DECISIONS R1-R4, RULES 5 (stage kinds become steps of this run).
+  %% status: draft
+  %% command: tasks:provision
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane VM icon=server pill=target tone=amber
+  %% lane H icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant VM as Task VM<br/>tvm-88 over ssh
+  participant H as Incus host<br/>Node 14 · VM power
+  CLI->>GW: tasks:provision 42<br/>--idempotency-key=KEY
+  %%> Command:
+  %%> - `orbit tasks:provision 42 --idempotency-key=feature.42`
+  %%> - syntax: `<group> [--idempotency-key=KEY] [--json]`
+  %%> Input:
+  %%> - the task group id; the group already holds its subtasks and deliverables
+  %%> Also started by:
+  %%> - moving the group to `todo` with `tasks:update 42 --status=todo` or `tasks:create … --status=todo`; the Gateway admits this same task with the key `group:42`
+  %%> - the Project maintenance routine, for its dependency group
+  %%> Who can call it:
+  %%> - the `orbit` CLI and the MCP tool `tasks-provision` send the same request
+  %%> Replaces:
+  %%> - the per-minute `groups-driver` tick and the separate `tasks:turn`, `tasks:check`, `tasks:analyze`, `tasks:script`, `tasks:publish` and `tasks:park` calls; they are steps of this run now
+  Note over GW: Validate, record the run<br/>group 42: reserved · task #5140
+  %%> Requirements:
+  %%> - your Node has Gateway access, and the Tasks extension is on
+  %%> - group 42 is `todo`, every subtask has a deliverable, and the Project reads its repository through the GitHub App
+  %%> - or, for a rerun, group 42 is open and no root task runs for it
+  %%> - no other task holds `task_group:42`
+  %%> Capacity:
+  %%> - the Gateway picks a host with room and the promoted image of the current recipe, for example Node 14
+  %%> - with no room, the task waits (`waiting`, reason `capacity`); the Gateway starts it when a task VM is destroyed or an image is promoted
+  %%> Result:
+  %%> - task #5140 recorded as the group's root task, driver `workflow`, with the full intent: Project, repository, branch `task-42`, subtasks, deliverables, setup and teardown steps
+  %%> - VM 88 reserved on Node 14 (Placement)
+  %%> - budgets: 60 min idle and 2 h waiting for a person, the token cap per Pi turn
+  GW->>SW: Push the VM secrets<br/>vault: model key, Pi token
+  %%> What it does:
+  %%> - writes the secrets for VM 88 into the Swamp vault: its model key, its Pi token, and the provider bootstrap
+  %%> Why:
+  %%> - secrets go Gateway → vault → step; the run inputs hold only vault key names
+  GW->>SW: Start run, full intent<br/>operation-task-provision
+  %%> What it does:
+  %%> - starts one Swamp run on serve (Node 209) for the whole life of group 42
+  %%> Inputs:
+  %%> - the group, its subtasks in order, VM 88 and Node 14, the Project setup and teardown steps
+  %%> - the SSH identity comes from the `swamp` role; task VMs run no Swamp worker
+  GW-->>CLI: 202 Accepted<br/>task #5140
+  %%> What you get:
+  %%> - the task number, at once
+  %%> Next:
+  %%> - follow it with `operation:show`, the board with `tasks:show 42`, and a Pi thread with `tasks:agent:show`
+  SW->>H: Create the task VM<br/>incus launch · recipe image
+  %%> What it does:
+  %%> - creates VM 88 from the promoted recipe image, with the read-only package cache mounted
+  %%> Per provider:
+  %%> - Incus: `incus launch` on Node 14 over SSH
+  %%> - UpCloud overflow: the UpCloud API from 209, with the token from the vault
+  %%> Replaces:
+  %%> - the `task_vm.provision` kind
+  SW->>VM: Prepare the VM<br/>WireGuard, model key, Pi server
+  %%> What it does:
+  %%> - joins VM 88 to WireGuard; its peer goes onto the hub through the shared hub step
+  %%> - writes the model key and starts the Pi server, then checks Pi answers
+  %%> - records the VM's SSH host key for the next steps
+  SW->>VM: Set up the workspace<br/>clone · Project setup steps
+  %%> What it does:
+  %%> - clones the repository on 209 and copies it as a Git bundle, on branch `task-42` from the default branch
+  %%> - runs the Project setup steps in order, each with its own timeout
+  %%> - captures the start commit as the fixed analysis base
+  Note over GW: Board follows the run<br/>step events → group, subtasks
+  %%> How:
+  %%> - the Gateway's run reader turns each finished step into board state: `running`, subtask status, thread links, check rows and turn receipts
+  %%> - steps never call the Gateway; the Gateway reads the run
+  loop each subtask in position order
+    opt first subtask only
+      SW->>VM: Run the baseline check<br/>Project check, start commit
+      %%> What it does:
+      %%> - runs the Project task check before any change, so a later failure is known to come from the work
+    end
+    alt dependency group
+      SW->>VM: Update dependencies<br/>tracked repo script · no agent
+      %%> When:
+      %%> - the group comes from the Project maintenance routine
+      %%> What it does:
+      %%> - runs the captured package updates through the repository's tracked script, with no credentials
+      %%> - a Pi repair turn runs once, only when the next check fails
+      %%> Replaces:
+      %%> - the `tasks.maintenance` and `tasks.script` kinds
+    else feature group
+      opt subtask carries a plan
+        SW->>VM: Analyze the plan<br/>bin/task-analyze · read-only
+        %%> What it does:
+        %%> - runs the repository's fixed analyzer against the plan, base, head and tree; it changes nothing
+        %%> Replaces:
+        %%> - the `tasks.analyze` kind
+      end
+      SW->>VM: Implementer turn<br/>pi driver · new thread
+      %%> What it does:
+      %%> - a fresh Pi implementer writes the subtask in the checkout and returns a receipt
+      %%> Rules:
+      %%> - the agent never fetches or pushes; Durable retries provider errors inside the turn
+      %%> Replaces:
+      %%> - the `tasks.turn` kind for the implementer
+    end
+    SW->>VM: Run the handoff check<br/>Project check + deliverables
+    %%> What it does:
+    %%> - runs the Project check and verifies each file and command deliverable
+    %%> - a passing check commits the candidate in the VM, for example check 17
+    %%> Replaces:
+    %%> - the `tasks.check` kind
+    opt Project requires handoff CI
+      GW->>SW: Mint a token, signal<br/>vault: task-check-write-…
+      %%> When:
+      %%> - the run waits at `Wait for a GitHub token`; the Gateway sees it wait, mints a scoped token, writes it to the vault and signals the run
+      %%> Why:
+      %%> - the Gateway alone mints tokens, and a token minted at admission would expire during a long group
+      Note over SW: Push, wait for CI<br/>task-42-handoff · no force
+      %%> What it does:
+      %%> - pushes the exact candidate from 209 and waits for the Required checks on that commit, then revokes the token
+    end
+    SW->>VM: Reviewer turn<br/>pi driver · read-only · check 17
+    %%> What it does:
+    %%> - a fresh Pi reviewer reads the checked candidate and approves, asks for changes, or reports blocked
+    %%> After the turn:
+    %%> - the checkout resets to the check's commit
+    %%> Outcome:
+    %%> - changes requested: the next cycle starts a new implementer turn
+    %%> - blocked: the board asks for assistance and the run waits; a `resolution` comment signals it to go on
+  end
+  alt changes to publish
+    GW->>SW: Mint a token, signal<br/>vault: task-publish-token-…
+    %%> When:
+    %%> - the run waits at `Wait for a GitHub token` before the push
+    Note over SW: Push, open the PR<br/>task-42 · no force · PR #2210
+    %%> What it does:
+    %%> - pushes the last approved commit from 209, then opens or updates the pull request against the default branch
+    %%> - an identical remote tip skips the push; a divergent one fails
+    %%> Replaces:
+    %%> - the `tasks.publish` kind
+    SW->>H: Park the VM<br/>stop · disk and checkout kept
+    %%> What it does:
+    %%> - stops VM 88 while the pull request waits, and checks the provider reports it stopped
+    %%> Result:
+    %%> - the board shows `waiting_for_review`
+    %%> Replaces:
+    %%> - the `tasks.park` kind
+    GW->>SW: PR ended, signal<br/>PR watch · GitHub App
+    %%> What it does:
+    %%> - the Gateway watches pull request #2210 and signals the run when it merges or closes, or when review asks for changes
+    opt review asks for changes
+      SW->>H: Resume the VM<br/>start · Pi ready check
+      %%> What it does:
+      %%> - starts VM 88 again and checks Pi answers; a fix-up subtask then runs the subtask loop
+      %%> Replaces:
+      %%> - the `task_vm.resume` kind
+    end
+  else dependency group, no changes
+    Note over SW: Skip the PR<br/>the check passed, nothing changed
+    %%> Replaces:
+    %%> - the `tasks.maintenance_finish` kind
+  end
+  opt VM still running
+    SW->>VM: Run teardown steps<br/>Project teardown · own timeouts
+    %%> When:
+    %%> - only while VM 88 runs; a parked VM skips guest teardown
+  end
+  SW->>H: Destroy the task VM<br/>delete VM · revoke model key
+  %%> What it does:
+  %%> - deletes VM 88, revokes its model key, and checks the provider no longer has it
+  %%> Replaces:
+  %%> - the `task_vm.destroy` kind and `tasks.maintenance_finish`
+  alt every step passes
+    SW-->>GW: Run succeeded<br/>terminal event
+    %%> How the Gateway learns it:
+    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
+    Note over GW: Record result<br/>group 42 completed · VM 88 gone
+    %%> Result:
+    %%> - group 42 is `completed`, with PR #2210 and its settle metrics
+    %%> - VM 88 and its `tvm-88` Node record are removed
+    %%> - task #5140 succeeds
+  else a step fails
+    VM--xSW: exit ≠ 0 or timeout
+    %%> When:
+    %%> - a create, setup, check, push or provider step fails, or a budget ends
+    %%> - a failed check or a review that asks for changes is not a failure; the loop goes on
+    SW--xGW: Run failed<br/>error_code, failed step
+    %%> The Gateway reads:
+    %%> - which step failed and its error code
+    Note over GW: Mark the task failed<br/>group asks for help · VM 88 kept
+    %%> Result:
+    %%> - task #5140 fails; group 42 keeps its board state and asks for assistance
+    %%> - a failure before the workspace is ready ends the group `failed`
+    %%> On the VM:
+    %%> - VM 88 and its checkout stay; there is no rollback
+    %%> Retry:
+    %%> - `tasks:provision 42` with a new key starts a new root task that goes on from the current subtask
+    %%> - or `tasks:cancel 42` ends the group and removes the VM
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show #5140
+    %%> What it does:
+    %%> - asks for the task's status every 2 seconds until it has ended
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the task has ended
+  end
