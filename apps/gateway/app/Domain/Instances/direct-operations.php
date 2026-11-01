@@ -47,6 +47,8 @@ return [
     'instance.rename' => ['workflow' => 'operation-instance-rename', 'workflow_inputs' => true, 'terminal_result' => ['job' => 'source', 'step' => 'result'], 'projection' => InstanceRenameResult::class],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
+        'workflow_inputs' => true,
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$']],
         'projection' => InstanceDeployProjection::class,
         'private_material' => ['git_read' => 'instance.deployment', 'vp_materialize' => 'instance.deployment',
             'environment_material' => 'instance.deployment', 'definitions_material' => 'instance.deployment'],
