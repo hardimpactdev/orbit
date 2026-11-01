@@ -24,7 +24,7 @@ final readonly class TaskVmPlacementPolicy
      * The active host with the most free slots, when it has room for the size. Hosts with as many free slots keep
      * their config order. Without room, a VM of a size that UpCloud supports goes to UpCloud: only while the overflow
      * is on, the group's Project is opted in, and fewer than `max_vms` UpCloud VMs count against its cap, failed and
-     * parked ones too. This row cap is the placement rule; `UpCloudTaskVmProvider` also counts the account's servers
+     * parked ones too. This row cap is the placement rule; the native UpCloud provider child also counts the account's servers
      * before each create, as its own cost guard. A VM of another size waits for an Incus host.
      *
      * @param  array<int, int>  $free  host Node id => free slots, in config order

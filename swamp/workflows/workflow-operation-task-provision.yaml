@@ -1,7 +1,7 @@
 id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
-description: Compose canonical VM provision, source checkout and ordered setup from
-  full inputs on209; no guest worker or Gateway step callbacks.
+description: Compose canonical VM provision, source checkout and ordered setup from full inputs on209;
+  no guest worker or Gateway step callbacks.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -30,7 +30,7 @@ inputs:
             - orbit-control-inputs
           key:
             type: string
-            pattern: ^(task-vm-(model-key|pi-token)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
+            pattern: ^(task-vm-(model-key|pi-token|provider-bootstrap)-[1-9][0-9]*|model-router-(management|anchor)-node-[1-9][0-9]*|task-vm-upcloud-token|task-provision-git-[1-9][0-9]*)$
         required:
         - vault
         - key
@@ -99,7 +99,8 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         intent: ${{ inputs.intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
+        execution_secrets: '${{ "git_authorization" in inputs.execution_secrets ? {"git_authorization":inputs.execution_secrets.git_authorization}
+          : {} }}'
         workspace: ${{ steps.guest.outputs.workspace }}
   - name: shape_result
     target: orbit-node-209

@@ -15,12 +15,15 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmProvisionIntent;
 use App\Domain\TaskVms\TaskVmProvisionProjection;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
+use App\Domain\TaskVms\TaskVmUpCloud;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Infrastructure\TaskVms\UpCloudApi;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Models\Node;
 use App\Models\Operation;
@@ -122,13 +125,61 @@ it('freezes full public intent and descriptor-only copies without provider effec
         ->and(json_encode($envelope, JSON_THROW_ON_ERROR))->not->toContain(str_repeat('d', 64))->not->toContain($this->vm->fresh()->model_key);
 });
 
-it('refuses unpublished UpCloud provision before execution copies or provider actions', function (): void {
-    $this->vm->update(['provider' => 'upcloud', 'host_node_id' => null]);
+function configureNativeUpCloudProvision(): void
+{
+    $vm = test()->vm;
+    $vm->update(['provider' => 'upcloud', 'host_node_id' => null, 'image_fingerprint' => '22b4a02c-81e6-4b01-a1ec-2a825933c0ba']);
+    $cloud = new TaskVmUpCloud(true, [$vm->group->project_id], '/unused/token', 2, 'fi-hel1', 'test-plan', 20, $vm->image_fingerprint);
+    TaskVmSettingsBuilder::bind(['upcloud' => $cloud, 'devClusterId' => null, 'piArtifactPath' => '/private/pi', 'piArtifactSha256' => str_repeat('c', 64), 'piModels' => ['test-model']]);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'PRIVATE-UPCLOUD-FIXTURE'));
+}
+
+it('captures Gateway-owned UpCloud bootstrap only through the shared vault writer', function (): void {
+    configureNativeUpCloudProvision();
+    $public = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGaNG9xwGkyymXqkaSEKl6+u5VLBHPbi0ga0ya7sdCtG';
+    $this->vm->update(['provider_bootstrap' => ['private' => 'PRIVATE-BOOTSTRAP-FIXTURE', 'public' => $public], 'ssh_host_key' => $public]);
+    app()->instance(UpCloudApi::class, new UpCloudApi(app(TaskVmSettings::class), 'PRIVATE-UPCLOUD-FIXTURE'));
+    $input = app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
+    expect($input['node_id'])->toBe($this->gateway->id)->and($input['host_node_id'])->toBeNull()
+        ->and($input['bootstrap_host_key'])->toBe($public)
+        ->and($input['execution_secrets']['bootstrap'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'task-vm-provider-bootstrap-'.$this->vm->id])
+        ->and($this->vm->fresh()->provider_bootstrap['private'])->toBe('PRIVATE-BOOTSTRAP-FIXTURE')
+        ->and($this->vm->fresh()->getRawOriginal('provider_bootstrap'))->not->toContain('PRIVATE-BOOTSTRAP-FIXTURE')
+        ->and(json_encode($input))->not->toContain('PRIVATE-BOOTSTRAP-FIXTURE')->not->toContain('PRIVATE-UPCLOUD-FIXTURE');
+    $again = app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
+    expect($again['bootstrap_host_key'])->toBe($public)->and($again['execution_secrets']['bootstrap'])->toBe($input['execution_secrets']['bootstrap']);
+});
+
+it('generates and retains one encrypted bootstrap pair for a new UpCloud VM', function (): void {
+    configureNativeUpCloudProvision();
+    $first = app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
+    $pair = $this->vm->fresh()->provider_bootstrap;
+    expect($pair['private'])->toContain('BEGIN OPENSSH PRIVATE KEY')
+        ->and($pair['public'])->toBe($first['bootstrap_host_key'])
+        ->and(json_encode($first))->not->toContain($pair['private']);
+    app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
+    expect($this->vm->fresh()->provider_bootstrap)->toBe($pair);
+});
+
+it('does not admit an UpCloud operation when its bootstrap vault copy is refused', function (): void {
+    configureNativeUpCloudProvision();
     $socket = new FakeRoutePublicationSocket;
+    $socket->reply = static function (array $message): array {
+        return $message['payload']['key'] === 'task-vm-provider-bootstrap-'.test()->vm->id
+            ? [['type' => 'error', 'id' => $message['id'], 'error' => 'denied']]
+            : nativeProvisionVaultReply($message);
+    };
     app()->instance(WebSocketClient::class, $socket);
-    expect(fn () => app(TaskVmProvisionIntent::class)->capture($this->vm->fresh()))
-        ->toThrow(ResourceOperationException::class, 'Native UpCloud provision requires');
-    expect($this->vm->fresh()->node_id)->toBeNull()->and($socket->sent)->toBe([]);
+    expect(fn () => app(StartTaskVmProvisionAction::class)->execute($this->vm->id))->toThrow(ResourceOperationException::class);
+    expect(Operation::query()->where('kind', 'task_vm.provision')->count())->toBe(0)
+        ->and($this->vm->fresh()->provider_bootstrap)->toBeNull();
+});
+
+it('refuses UpCloud bootstrap drift against the stored host pin', function (): void {
+    configureNativeUpCloudProvision();
+    app(TaskVmProvisionIntent::class)->capture($this->vm->fresh());
+    $this->vm->update(['ssh_host_key' => 'ssh-ed25519 changed']);
+    expect(fn () => app(TaskVmProvisionIntent::class)->capture($this->vm->fresh()))->toThrow(ResourceOperationException::class);
 });
 
 it('refuses incomplete allocation instead of selecting an image or fabricating readiness', function (string $field): void {

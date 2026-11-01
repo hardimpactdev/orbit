@@ -1,6 +1,7 @@
 id: a5dc9328-9812-4f24-9055-d874830f9bb7
 name: task-vm-destroy
-description: Revoke same-VM model access, delete the Incus VM, then complete canonical Node cleanup on209.
+description: Revoke same-VM model access, delete the provider VM, then complete canonical Node cleanup
+  on209.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -14,8 +15,6 @@ inputs:
       minimum: 1
     kind:
       type: string
-      enum:
-      - task_vm.destroy
     intent:
       type: object
     execution_secrets:
@@ -64,7 +63,8 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: {}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
+          : {} }}'
         action: inspect
     dependsOn:
     - step: plan
@@ -80,7 +80,8 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: {}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
+          : {} }}'
         action: stop
     dependsOn:
     - step: inspect
@@ -97,7 +98,8 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.model_intent }}
-        execution_secrets: ${{ inputs.execution_secrets }}
+        execution_secrets: '${{ steps.plan.outputs.model_required ? {"model_key":inputs.execution_secrets.model_key,"model_router_management":inputs.execution_secrets.model_router_management,"model_router_anchor":inputs.execution_secrets.model_router_anchor}
+          : {} }}'
     dependsOn:
     - step: inspect
       condition:
@@ -145,7 +147,8 @@ jobs:
         kind: ${{ inputs.kind }}
         node_id: ${{ inputs.node_id }}
         intent: ${{ inputs.intent.provider_input }}
-        execution_secrets: {}
+        execution_secrets: '${{ inputs.intent.provider == "upcloud" ? {"upcloud":inputs.execution_secrets.upcloud}
+          : {} }}'
         action: delete
     dependsOn:
     - step: revoked
@@ -162,14 +165,19 @@ jobs:
         name: ${{ "vm-provider-" + run.id }}
         transport:
           kind: ssh
-          user: ${{ inputs.intent.provider_input.host_ssh_execution.target.user }}
-          port: ${{ inputs.intent.provider_input.host_ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.provider_input.host_ssh_execution.identity_file }}
+          user: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.user
+            : "orbit" }}'
+          port: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.port
+            : 22 }}'
+          identityFile: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.identity_file
+            : "/unused-upcloud" }}'
         hosts:
         - name: target
-          address: ${{ inputs.intent.provider_input.host_ssh_execution.target.host }}
+          address: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host
+            : "127.0.0.1" }}'
           transport:
-            hostKeys: ${{ inputs.intent.provider_input.host_ssh_execution.target.host_keys }}
+            hostKeys: '${{ inputs.intent.provider == "incus" ? inputs.intent.provider_input.host_ssh_execution.target.host_keys
+              : ["unused-upcloud"] }}'
       inputs:
         hosts: name:target
         argv: ${{ steps.plan.outputs.seed_observe_argv }}
@@ -178,6 +186,7 @@ jobs:
     - step: delete
       condition:
         type: succeeded
+    guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed
     target: orbit-node-209
     task:
@@ -192,6 +201,7 @@ jobs:
     - step: seed-before
       condition:
         type: succeeded
+    guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: seed-delete
     target: orbit-node-209
     task:
@@ -208,7 +218,7 @@ jobs:
     - step: seed
       condition:
         type: succeeded
-    guard: ${{ !steps.seed.outputs.present }}
+    guard: ${{ steps.plan.outputs.provider != "incus" || !steps.seed.outputs.present }}
   - name: seed-after
     target: orbit-node-209
     task:
@@ -231,6 +241,7 @@ jobs:
         conditions:
         - type: succeeded
         - type: skipped
+    guard: ${{ steps.plan.outputs.provider != "incus" }}
   - name: cleanup
     target: orbit-node-209
     task:
@@ -243,9 +254,15 @@ jobs:
         intent: ${{ inputs.intent.removal }}
         execution_secrets: {}
     dependsOn:
-    - step: seed-after
+    - step: delete
       condition:
         type: succeeded
+    - step: seed-after
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     guard: ${{ !steps.plan.outputs.node_present }}
   - name: result
     target: orbit-node-209
@@ -259,7 +276,8 @@ jobs:
         provider: ${{ steps.delete.outputs.result }}
         removal_stdout: '${{ steps.plan.outputs.node_present ? steps.cleanup.outputs.result.stdout : ""
           }}'
-        seed_stdout: ${{ steps["seed-after"].outputs.stdout }}
+        seed_stdout: '${{ inputs.intent.provider == "incus" ? steps["seed-after"].outputs.stdout : ""
+          }}'
     dependsOn:
     - step: delete
       condition:
@@ -272,4 +290,7 @@ jobs:
         - type: skipped
     - step: seed-after
       condition:
-        type: succeeded
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
