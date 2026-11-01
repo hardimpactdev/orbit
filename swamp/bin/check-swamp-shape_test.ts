@@ -25,9 +25,9 @@ const inventory = {
   "cli.install": "action",
   "caddy.publish": "action",
 };
-Deno.test("step inputs read one bounded data record, never a query or version history", () => {
+Deno.test("step inputs and fan-out read bounded sources, never a query or version history", () => {
   const file = "workflows/workflow-example.yaml";
-  const workflow = (candidates: string) =>
+  const workflow = (candidates: string, fanout = false) =>
     JSON.stringify({
       name: "example",
       jobs: [{
@@ -35,18 +35,19 @@ Deno.test("step inputs read one bounded data record, never a query or version hi
         target: "orbit-node-209",
         steps: [{
           name: "context",
+          ...(fanout ? { forEach: { item: "candidate", in: candidates } } : {}),
           task: {
             type: "behavior",
             behaviorType: "@nckrtl/observation-schedule",
             behaviorName: "select",
             methodName: "select",
-            inputs: { candidates },
+            inputs: fanout ? {} : { candidates },
           },
         }],
       }],
     });
-  const rules = (candidates: string) =>
-    analyzeYaml(file, workflow(candidates)).findings.map((f) => f.rule);
+  const rules = (candidates: string, fanout = false) =>
+    analyzeYaml(file, workflow(candidates, fanout)).findings.map((f) => f.rule);
   for (
     const unbounded of [
       `\${{ data.query('specName == "context"').map(c, c.attributes) }}`,
@@ -54,10 +55,13 @@ Deno.test("step inputs read one bounded data record, never a query or version hi
       `\${{ data.findByTag("k", "v") }}`,
       `\${{ data.listVersions("m", "context") }}`,
     ]
-  ) assert(rules(unbounded).includes("unbounded-data-input"), unbounded);
-  assertEquals(
+  ) for (const fanout of [false, true]) {
+    assert(rules(unbounded, fanout).includes("unbounded-data-input"), unbounded);
+  }
+  for (const fanout of [false, true]) assertEquals(
     rules(
       `\${{ [data.latest("observation-context-fleet", "context").?attributes.orValue(null)].filter(c, c != null) }}`,
+      fanout,
     ).includes("unbounded-data-input"),
     false,
   );

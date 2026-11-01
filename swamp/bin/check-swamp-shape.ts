@@ -1587,7 +1587,8 @@ export function analyzeYaml(
       // A step input becomes one dispatch frame; history reads grow with every write (B7).
       if (
         file.startsWith("workflows/") && path[0] === "jobs" &&
-        path[2] === "steps" && path[4] === "task" && path[5] === "inputs" &&
+        path[2] === "steps" &&
+        (path[4] === "task" && path[5] === "inputs" || path[4] === "forEach" && path[5] === "in") &&
         /\bdata\.(?:query|findByTag|findBySpec|listVersions)\s*\(/.test(value)
       ) add("unbounded-data-input");
       const envValue = path.length >= 4 && path.at(-2) === "env" &&
