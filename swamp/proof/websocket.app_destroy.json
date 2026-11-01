@@ -4,55 +4,22 @@
   "budget_seconds": 50,
   "queue_timeout_seconds": 5,
   "envelope": {
-    "operation_id": "${proof.operation_id}",
-    "node_id": "${proof.control.node_id}",
-    "kind": "websocket.app_destroy",
-    "intent": {
-      "start_tag": "${proof.start_tag}",
-      "registry_operation_id": "${proof.start_tag}",
-      "epoch": "proof-registry",
-      "revision": 2,
+    "registry_operation_id": "${match.uuid}",
+    "epoch": "${match.uuid}",
+    "revision": "${match.positive_int}",
+    "native_registry": {
+      "start_tag": "${match.uuid}",
+      "registry_operation_id": "${match.uuid}",
+      "epoch": "${match.uuid}",
+      "revision": "${match.positive_int}",
       "change": "destroy",
-      "app_id": "retired",
+      "app_id": "${capture.subject_app_id}",
       "credential_generation": null,
-      "runtimes": [
-        {
-          "process_id": "8f61a312-2b19-4ef7-92d5-39dff3d42382",
-          "node_id": "${proof.target.node_id}",
-          "port": 18794,
-          "credential_field": "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42382",
-          "ssh": {
-            "control_node_id": "${proof.control.node_id}",
-            "identity_file": "${proof.control.identity_file}",
-            "public_key": "${proof.control.public_key}",
-            "target": {
-              "name": "${proof.target.name}",
-              "host": "${proof.target.host}",
-              "user": "${proof.target.user}",
-              "port": "${proof.target.port}",
-              "host_keys": "${proof.target.host_keys}"
-            }
-          }
-        }
-      ],
+      "runtimes": "${match.present}",
       "missing_node_ids": []
     },
-    "execution_secrets": {
-      "runtime_8f61a312_2b19_4ef7_92d5_39dff3d42382": {
-        "vault": "orbit-control-inputs",
-        "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42382"
-      }
-    }
+    "execution_secrets": "${match.present}"
   },
-  "secrets": [
-    {
-      "vault": "orbit-control-inputs",
-      "key": "websocket-registry-8f61a312-2b19-4ef7-92d5-39dff3d42382",
-      "value": "generate:hex32",
-      "stage_to_target": true
-    }
-  ],
-  "target_setup": "websocket.app_destroy/tests/target-setup.sh",
   "expect": {
     "status": "succeeded",
     "outputs": {
@@ -89,17 +56,91 @@
       "python3",
       "-I",
       "swamp/proof/websocket.sync/tests/parity.py",
-      "websocket.app_destroy"
+      "websocket.app_destroy",
+      "proof-destroy-${proof.run}",
+      "proof-destroy-other-${proof.run}",
+      "${capture.unrelated_key}",
+      "${capture.subject_key}",
+      "${proof.operation_id}",
+      "${topology.app-prod.node_id}",
+      "${topology.app-prod.wireguard_ip}"
     ],
     "cases": [
-      "committed-revision",
-      "created-app-handshake",
+      "native-terminal-result",
+      "unrelated-app-present",
+      "unrelated-app-handshake",
       "removed-app-refused",
-      "old-generation-refused",
-      "current-generation-publishes",
-      "unrelated-app-preserved",
-      "legacy-provider-wire-cases"
+      "exact-admitted-runtime",
+      "names-only-registry-copy"
     ]
   },
-  "topology": "app-dev"
+  "topology": "app-prod",
+  "prepare": [
+    {
+      "argv": [
+        "orbit",
+        "node:role:add",
+        "${topology.app-prod.node_id}",
+        "websocket",
+        "--converge",
+        "--json"
+      ],
+      "capture": {
+        "role_operation_id": "$.id"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:create",
+        "proof-destroy-other-${proof.run}",
+        "--operation-key=proof-destroy-other-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:show",
+        "proof-destroy-other-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "unrelated_app_id": "$.app_id",
+        "unrelated_key": "$.key"
+      }
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:create",
+        "proof-destroy-${proof.run}",
+        "--operation-key=proof-destroy-${proof.run}",
+        "--json"
+      ]
+    },
+    {
+      "argv": [
+        "orbit",
+        "websocket:app:show",
+        "proof-destroy-${proof.run}",
+        "--json"
+      ],
+      "capture": {
+        "subject_app_id": "$.app_id",
+        "subject_key": "$.key"
+      }
+    }
+  ],
+  "request": {
+    "argv": [
+      "orbit",
+      "websocket:app:destroy",
+      "proof-destroy-${proof.run}",
+      "--operation-key=proof-destroy-${proof.run}",
+      "--force",
+      "--json"
+    ],
+    "operation": "$.id"
+  }
 }

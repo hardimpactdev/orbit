@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Orbit\Sdk\Requests\WebSocket\AddInstanceWebSocketAppRequest;
@@ -226,3 +227,28 @@ it('requires consent for rotation before sending its typed request', function ()
     expect($tester->execute(['name' => 'hauzer', '--force' => true, '--json' => true], ['interactive' => false]))->toBe(0);
     $mock->assertSent(RotateWebSocketAppRequest::class);
 });
+
+it('executes the F13 fixture request through the actual CLI and returns its flat Operation id', function (string $kind, string $requestClass): void {
+    $fixture = json_decode(file_get_contents(dirname(base_path(), 2).'/swamp/proof/'.$kind.'.json'), true, flags: JSON_THROW_ON_ERROR);
+    $argv = array_map(static fn (string $part): string => str_replace('${proof.run}', 'disposable', $part), $fixture['request']['argv']);
+    $mock = MockClient::global([
+        $requestClass => websocket_app_cli_response(),
+        ShowOperationRequest::class => websocket_app_cli_response(),
+        '*/api/v1/realtime' => MockResponse::make(['data' => []]),
+    ]);
+    $command = implode(' ', array_map(escapeshellarg(...), array_slice($argv, 1)));
+
+    expect(Artisan::call($command))->toBe(0);
+    $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    expect($fixture['request']['operation'])->toBe('$.id')->and($output['id'])->toBe(42);
+    $mock->assertSent(static fn ($request): bool => $request instanceof $requestClass
+        && $request->headers()->get('Idempotency-Key') === 'proof-'.match ($kind) {
+            'websocket.sync' => 'sync', 'websocket.app_create' => 'create',
+            'websocket.app_destroy' => 'destroy', 'websocket.app_rotate' => 'rotate',
+        }.'-disposable');
+})->with([
+    ['websocket.sync', SyncWebSocketAppsRequest::class],
+    ['websocket.app_create', CreateWebSocketAppRequest::class],
+    ['websocket.app_destroy', DestroyWebSocketAppRequest::class],
+    ['websocket.app_rotate', RotateWebSocketAppRequest::class],
+]);
