@@ -319,7 +319,7 @@ export function probeWorkflow(): Fields {
                     inputs: {
                         hosts: "name:target",
                         argv: expr(
-                            '["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]',
+                            '"protocol" in inputs.intent && inputs.intent.protocol == "http" ? ["/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host: " + inputs.intent.probe.domain,"http://" + inputs.intent.probe.address + ":" + string(inputs.intent.probe.port) + "/"] : ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]',
                         ),
                     },
                 },

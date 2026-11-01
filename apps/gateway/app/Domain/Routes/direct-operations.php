@@ -3,7 +3,6 @@
 declare(strict_types=1);
 use App\Domain\Routes\DirectRoutePublication;
 use App\Domain\Routes\NativeCaddyPublicationProjection;
-use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Routes\NativeRouteConvergenceProjection;
 use App\Domain\Routes\NativeRouteLanRemovalProjection;
 use App\Domain\Routes\NativeRouteRemovalProjection;
@@ -26,7 +25,8 @@ return [
     ],
     'route.create' => [
         'workflow' => 'operation-route-create', 'projection' => NativeRouteConvergenceProjection::class,
-        'private_material' => NativeRouteAdmission::privateMaterial(),
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ],
     'route.target_set' => [
         'workflow' => 'operation-route-target-set', 'projection' => NativeRouteTargetProjection::class,
@@ -35,8 +35,8 @@ return [
     ],
     ...array_fill_keys(['route.destroy', 'route.withdraw'], [
         'workflow' => 'operation-route-removal', 'projection' => NativeRouteRemovalProjection::class,
-        'workflow_inputs' => true,
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-removal-[a-f0-9]{16}-route_environment_[0-9]+$']],
+        'workflow_inputs' => true, 'terminal_result' => ['job' => 'update', 'step' => 'result'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(forward|restore)-route_material_[0-9]+$']],
     ]),
     'route.target_unset' => [
         'workflow' => 'operation-route-target-unset', 'writer_config' => 'swamp.direct_writers',

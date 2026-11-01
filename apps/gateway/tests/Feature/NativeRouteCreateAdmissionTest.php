@@ -44,10 +44,10 @@ afterEach(function (): void {
 /** @return array{Instance,Node} */
 function native_create_admission_fixture(): array
 {
-    $node = Node::query()->create(['name' => 'create-admission-workload', 'public_ssh_host' => '192.0.2.41', 'wireguard_ip' => '10.44.0.41',
+    $node = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'create-admission-workload', 'public_ssh_host' => '192.0.2.41', 'wireguard_ip' => '10.44.0.41',
         'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-    $control = Node::query()->create(['name' => 'create-admission-control', 'public_ssh_host' => '192.0.2.42', 'wireguard_ip' => '10.44.0.42',
+    $control = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'create-admission-control', 'public_ssh_host' => '192.0.2.42', 'wireguard_ip' => '10.44.0.42',
         'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $control->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $node->accessibleNodes()->attach($control);
@@ -70,85 +70,43 @@ it('records one unpublished Route intent then starts its exact native create wor
     expect($route->status)->toBe(RouteStatus::Pending)->and($route->sites_published)->toBeFalse()
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id])
         ->and($operation->kind)->toBe('route.create')
-        ->and($operation->input['route_convergence']['status'])->toBe('pending')
-        ->and($operation->input['route_convergence']['sites_published'])->toBeFalse()
+        ->and($operation->input['route_lifecycle']['route_id'])->toBe($route->id)
+        ->and($operation->input['route_lifecycle']['effectful'])->toBeTrue()
         ->and($operation->input['participant_node_ids'])->toBe([$node->id, 209])
         ->and($operation->input['certificates'][0])->toMatchArray(['node_id' => $node->id, 'scope' => 'app-instance-'.$instance->id])
         ->and($operation->state)->not->toHaveKeys(['route_plan', 'executor_runs', 'steps'])
         ->and($this->socket->sent)->toHaveCount(1)
         ->and($this->socket->sent[0]['payload']['workflowIdOrName'])->toBe('operation-route-create');
-    $field = $operation->input['environment_fields'][$node->id];
-    expect($operation->input['private_bindings'][$field])->toBe(['owner_node_id' => $node->id, 'read_node_ids' => [$node->id], 'write_node_ids' => []]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
-        ->assertJsonPath('data.node_id', $node->id)
-        ->assertJsonPath('data.input.route.route_id', $route->id)
-        ->assertJsonPath('data.input.participant_node_id', $node->id)
-        ->assertJsonPath('data.result', null);
-    $this->getJson($path.'/private-material?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()->assertJsonPath('data.'.$field, []);
+    expect($operation->input)->not->toHaveKeys(['environment_fields', 'private_bindings'])
+        ->and($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($operation->input['route_lifecycle'])
+        ->and($this->socket->sent[0]['payload']['inputs']['execution_secrets'])->toEqual((object) [])
+        ->and($operation->state['swamp_run_id'])->toBe('a075eb23-7ac4-4487-80d1-57a038a92676');
 });
 
-it('projects initial publication and native success without Gateway execution receipts', function (): void {
+it('refuses executor callbacks without publishing or deleting admitted Route intent', function (string $status): void {
     [$instance, $node] = native_create_admission_fixture();
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'finished.private.test'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    $route = Route::query()->sole();
-    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
-    $started = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'running', 'started_at' => '2026-10-31T10:00:00.000Z'];
-
-    $this->postJson($path, [...$started, 'result' => ['checkpoint' => 'sites-published']])->assertOk();
-    expect($route->fresh()->sites_published)->toBeTrue()->and($route->fresh()->status)->toBe(RouteStatus::Pending);
-    $terminal = [...$started, 'status' => 'succeeded', 'finished_at' => '2026-10-31T10:00:01.000Z', 'result' => ['ready' => true, 'route_id' => $route->id]];
-    $this->postJson($path, $terminal)->assertOk();
-    $this->postJson($path, $terminal)->assertOk();
-    expect($route->fresh()->status)->toBe(RouteStatus::Active)
-        ->and($operation->fresh()->status)->toBe(OperationStatus::Succeeded)
-        ->and($operation->fresh()->state)->not->toHaveKeys(['executor_runs', 'steps']);
-});
-
-it('withdraws initial sites before native recovery and keeps failed Route intent', function (): void {
-    [$instance, $node] = native_create_admission_fixture();
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'failed.private.test'])->assertAccepted();
-    $operation = Operation::query()->sole();
-    $route = Route::query()->sole();
-    $path = '/api/v1/direct-operations/'.$operation->id.'/result';
-    $started = ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'running', 'started_at' => '2026-10-31T10:00:00.000Z'];
-    $this->postJson($path, [...$started, 'result' => ['checkpoint' => 'sites-published']])->assertOk();
-
-    $this->postJson($path, [...$started, 'result' => ['checkpoint' => 'rollback-initial']])->assertOk();
-    expect($route->fresh()->status)->toBe(RouteStatus::Failed)->and($route->fresh()->sites_published)->toBeFalse();
-    $this->postJson($path, [...$started, 'status' => 'failed', 'finished_at' => '2026-10-31T10:00:01.000Z', 'error_code' => 'caddy.publication_failed',
-        'result' => ['route_id' => $route->id, 'error_code' => 'caddy.publication_failed']])->assertOk();
-    expect($operation->fresh()->status)->toBe(OperationStatus::Failed)
-        ->and($route->fresh()->error_code)->toBe('caddy.publication_failed')
-        ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id]);
-});
-
-it('cancels the native create root without inventing publication or deleting the Route', function (): void {
-    [$instance, $node] = native_create_admission_fixture();
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'cancelled.private.test'])->assertAccepted();
+    $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'native-only.private.test'])->assertAccepted();
     $operation = Operation::query()->sole();
     $route = Route::query()->sole();
 
-    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'cancelled',
-        'started_at' => '2026-10-31T10:00:00.000Z', 'finished_at' => '2026-10-31T10:00:01.000Z', 'result' => []])->assertOk();
+    $this->postJson('/api/v1/direct-operations/'.$operation->id.'/result', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => $status,
+        'started_at' => '2026-10-31T10:00:00.000Z', 'finished_at' => '2026-10-31T10:00:01.000Z', 'error_code' => 'route.create_failed',
+        'result' => ['ready' => true, 'checkpoint' => 'sites-published']])->assertForbidden()->assertJsonPath('error.code', 'operation.executor_forbidden');
 
-    expect($operation->fresh()->status)->toBe(OperationStatus::Cancelled)
+    expect($operation->fresh()->status)->toBe(OperationStatus::Running)
         ->and($route->fresh()->status)->toBe(RouteStatus::Pending)
         ->and($route->fresh()->sites_published)->toBeFalse()
         ->and($route->targets()->pluck('instance_id')->all())->toBe([$instance->id]);
-});
+})->with(['running', 'succeeded', 'failed', 'cancelled']);
 
-it('admits public Process publication without requesting a private ingress certificate', function (bool $lan): void {
+it('admits public Process publication without requesting a private ingress certificate', function (bool $lan, bool $allowed): void {
     [, $node] = native_create_admission_fixture();
     $cluster = Cluster::query()->create(['name' => 'create-public', 'state' => 'active']);
-    $ingress = Node::query()->create(['name' => 'create-public-ingress', 'public_ssh_host' => '192.0.2.43', 'wireguard_ip' => '10.44.0.43', 'cluster_id' => $cluster->id,
+    $ingress = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'create-public-ingress', 'public_ssh_host' => '192.0.2.43', 'wireguard_ip' => '10.44.0.43', 'cluster_id' => $cluster->id,
         'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $ingress->roles()->create(['role' => RoleName::Ingress, 'cluster_id' => $cluster->id, 'status' => 'active']);
-    $router = Node::query()->create(['name' => 'create-public-router', 'public_ssh_host' => '192.0.2.44', 'wireguard_ip' => '10.44.0.44', 'cluster_id' => $cluster->id,
+    $router = Node::query()->create(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-host-key', 'name' => 'create-public-router', 'public_ssh_host' => '192.0.2.44', 'wireguard_ip' => '10.44.0.44', 'cluster_id' => $cluster->id,
         'user' => 'orbit', 'platform' => 'linux', 'architecture' => 'x86_64', 'status' => 'active']);
     $router->roles()->create(['role' => RoleName::Router, 'cluster_id' => $cluster->id, 'status' => 'active']);
     $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'create-public-http',
@@ -158,44 +116,41 @@ it('admits public Process publication without requesting a private ingress certi
         $ingress->update(['lan_ip' => '10.6.0.43']);
         $process->update(['runtime_config' => ['ports' => ['10.6.0.42:8787:8080/tcp']]]);
     }
+    if ($allowed) {
+        $node->firewallRules()->create(['name' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
+    }
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
     $this->postJson('/api/v1/routes', ['domain' => 'create-public.example.test', 'publication' => 'public', 'process_id' => $process->id, 'ingress_node_id' => $ingress->id])->assertAccepted();
 
     $route = Route::query()->sole();
     $operation = Operation::query()->sole();
-    expect($operation->input['route_convergence']['certificates'])->toBe([])
-        ->and($operation->input['route_convergence']['public_node_ids'])->toBe([$ingress->id, $router->id])
-        ->and($operation->input['participant_node_ids'])->toBe([$node->id, $ingress->id, $router->id])
-        ->and($operation->input['route_convergence']['upstream_firewall_node_ids'])->toBe([$node->id])
+    expect($operation->input['certificates'])->toBe([])
+        ->and($operation->input['participant_node_ids'])->toEqualCanonicalizing([$node->id, $ingress->id, $router->id, 209])
         ->and($route->sites_published)->toBeFalse();
-    $this->withServerVariables(['REMOTE_ADDR' => $ingress->wireguard_ip]);
-    $path = '/api/v1/direct-operations/'.$operation->id;
-    $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
-        ->assertJsonPath('data.node_id', $router->id)
-        ->assertJsonPath('data.input.participant_node_id', $ingress->id)
-        ->assertJsonPath('data.input.caddy_publication.node_id', $ingress->id)
-        ->assertJsonPath('data.input.probes.0.protocol', 'http')
-        ->assertJsonPath('data.input.probes.0.probe.address', $lan ? $node->lan_ip : $node->wireguard_ip)
-        ->assertJsonPath('data.input.probes.0.probe.port', 8787)
-        ->assertJsonMissingPath('data.result');
-    $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $snapshot = $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
-        ->assertJsonPath('data.input.upstream_firewall.node_id', $node->id);
-    if ($lan) {
-        $snapshot->assertJsonPath('data.input.upstream_firewall.expected', []);
+    $intent = $operation->input['route_lifecycle'];
+    expect($this->socket->sent[0]['payload']['inputs']['intent'])->toBe($intent)
+        ->and($intent['preparation']['probes'][0]['protocol'])->toBe('http')
+        ->and($intent['preparation']['probes'][0]['probe'])->toMatchArray(['address' => $lan ? $node->lan_ip : $node->wireguard_ip, 'port' => 8787]);
+    $expected = $intent['preparation']['upstream_firewalls'][0];
+    expect($expected['node_id'])->toBe($node->id);
+    if ($allowed) {
+        expect($expected['expected'][0])->toMatchArray(['comment' => 'orbit:node:'.$node->id.':firewall:process-lan', 'source' => $ingress->lan_ip, 'port' => '8787']);
+        $node->firewallRules()->delete();
+        expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0])->toBe($expected);
+    } elseif ($lan) {
+        expect($expected['expected'])->toBe([]);
         $node->firewallRules()->create(['name' => 'process-lan', 'action' => 'allow', 'source' => $ingress->lan_ip, 'port' => '8787', 'protocol' => 'tcp', 'status' => 'active']);
-        $this->getJson($path.'?run_id=a075eb23-7ac4-4487-80d1-57a038a92676')->assertOk()
-            ->assertJsonPath('data.input.upstream_firewall.expected.0.comment', 'orbit:node:'.$node->id.':firewall:process-lan')
-            ->assertJsonPath('data.input.upstream_firewall.expected.0.source', $ingress->lan_ip)
-            ->assertJsonPath('data.input.upstream_firewall.expected.0.port', '8787');
+        expect($operation->fresh()->input['route_lifecycle']['preparation']['upstream_firewalls'][0]['expected'])->toBe([])
+            ->and($this->socket->sent)->toHaveCount(1);
     } else {
-        $snapshot->assertJsonPath('data.input.upstream_firewall.expected.0.comment', 'orbit:wireguard-members');
+        expect($expected['expected'][0]['comment'])->toBe('orbit:wireguard-members');
     }
+    $path = '/api/v1/direct-operations/'.$operation->id;
     $this->withServerVariables(['REMOTE_ADDR' => $ingress->wireguard_ip]);
     $this->postJson($path.'/result', ['run_id' => 'a075eb23-7ac4-4487-80d1-57a038a92676', 'status' => 'succeeded',
         'started_at' => '2026-10-31T10:00:00.000Z', 'finished_at' => '2026-10-31T10:00:01.000Z', 'result' => ['ready' => true, 'route_id' => $route->id]])->assertForbidden();
-})->with(['WireGuard' => [false], 'LAN' => [true]]);
+})->with(['WireGuard' => [false, false], 'LAN missing allowance' => [true, false], 'LAN admitted allowance' => [true, true]]);
 
 it('refuses package roots, inactive targets and caller-owned scope before recording Route intent', function (string $case): void {
     [$instance, $node] = native_create_admission_fixture();

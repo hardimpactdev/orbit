@@ -1,6 +1,8 @@
 id: 5cbf1292-9922-444b-9225-fb2b682111f7
 name: cluster-router-probe
-description: Verify one admitted workload TLS endpoint from the candidate Router through official SSH.
+description: >-
+  Verify one admitted workload TLS endpoint from the candidate Router through
+  official SSH.
 vaults: []
 inputs:
   type: object
@@ -19,36 +21,44 @@ inputs:
       type: object
       additionalProperties: false
   required:
-  - operation_id
-  - node_id
-  - kind
-  - intent
-  - execution_secrets
+    - operation_id
+    - node_id
+    - kind
+    - intent
+    - execution_secrets
   additionalProperties: false
 jobs:
-- name: probe
-  steps:
   - name: probe
-    target: orbit-node-209
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "cluster-router-probe-" + run.id }}
-      methodName: exec
-      globalArgs:
-        name: ${{ "cluster-router-ssh-" + run.id }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.connection.nodeUser }}
-          identityFile: ${{ inputs.intent.connection.nodeIdentityFile }}
-          port: ${{ inputs.intent.connection.nodePort }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.connection.nodeHost }}
-          transport:
-            hostKeys: ${{ inputs.intent.host_keys }}
-      inputs:
-        hosts: name:target
-        argv: ${{ ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address
-          + ":" + string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]
-          }}
+    steps:
+      - name: probe
+        target: orbit-node-209
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "cluster-router-probe-" + run.id }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "cluster-router-ssh-" + run.id }}'
+            transport:
+              kind: ssh
+              user: '${{ inputs.intent.connection.nodeUser }}'
+              identityFile: '${{ inputs.intent.connection.nodeIdentityFile }}'
+              port: '${{ inputs.intent.connection.nodePort }}'
+            hosts:
+              - name: target
+                address: '${{ inputs.intent.connection.nodeHost }}'
+                transport:
+                  hostKeys: '${{ inputs.intent.host_keys }}'
+          inputs:
+            hosts: 'name:target'
+            argv: >-
+              ${{ "protocol" in inputs.intent && inputs.intent.protocol ==
+              "http" ?
+              ["/usr/bin/curl","--head","--noproxy","*","--silent","--connect-timeout","10","--max-time","10","--output","/dev/null","--header","Host:
+              " + inputs.intent.probe.domain,"http://" +
+              inputs.intent.probe.address + ":" +
+              string(inputs.intent.probe.port) + "/"] :
+              ["/usr/bin/timeout","10","/usr/bin/openssl","s_client","-quiet","-no_ign_eof","-connect",inputs.intent.probe.address
+              + ":" +
+              string(inputs.intent.probe.port),"-servername",inputs.intent.probe.domain,"-verify_hostname",inputs.intent.probe.domain,"-verify_return_error"]
+              }}
