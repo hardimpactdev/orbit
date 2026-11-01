@@ -4,8 +4,6 @@ import { type SystemCommand, systemCommand } from "./system.ts";
 import {
   Account,
   type Artifacts,
-  Context,
-  Id,
   legacyScheduleUnits,
   Path,
   paths,
@@ -16,13 +14,7 @@ import {
 export { renderScheduleUnits } from "./contract.ts";
 const Command = z.string().min(1).max(4096).regex(/^[^\0\r\n]+$/);
 const Install = PublicInstall.extend({ command: Command.optional() });
-const Remove = z.union([
-  Install.extend({ command: Command, cascade: z.boolean() }),
-  z.object({ id: Id, group: Account, cascade: z.boolean() }).strict(),
-]);
-export type ScheduleCommand =
-  | "schedule.install"
-  | "schedule.remove";
+export type ScheduleCommand = "schedule.install";
 
 class Refused extends Error {
   constructor(readonly code: string) {
@@ -282,39 +274,6 @@ function publicInput(input: z.infer<typeof Install>): PublicInput {
   return PublicInstall.parse(value);
 }
 
-function installedIntent(
-  id: string,
-  service: string | null,
-  timer: string | null,
-) {
-  if (service === null || timer === null) {
-    refuse("schedule.artifact_conflict");
-  }
-  const field = (text: string, key: string) => {
-    const values = text.split("\n").filter((line) =>
-      line.startsWith(key + "=")
-    );
-    if (values.length !== 1) refuse("schedule.artifact_conflict");
-    return values[0].slice(key.length + 1);
-  };
-  const context = Context.parse(
-    JSON.parse(field(service, "X-Orbit-Execution-Context")),
-  );
-  const intent = PublicInstall.parse({
-    ...context,
-    id,
-    command_hash: field(service, "X-Orbit-Command-SHA256"),
-    timeout_seconds: Number(field(service, "X-Orbit-Timeout-Seconds")),
-    calendar: field(timer, "OnCalendar").replaceAll("%%", "%"),
-    desired: "disabled",
-  });
-  const expected = renderScheduleUnits(intent);
-  if (service !== expected.service || timer !== expected.timer) {
-    refuse("schedule.artifact_conflict");
-  }
-  return intent;
-}
-
 function validateObsolete(
   input: z.infer<typeof Install>,
   previous: Awaited<ReturnType<typeof readArtifacts>>,
@@ -488,62 +447,7 @@ async function install(host: Host, input: z.infer<typeof Install>) {
   }
 }
 
-async function remove(host: Host, input: z.infer<typeof Remove>) {
-  await host.inspectDirectories();
-  const gid = await host.group(input.group);
-  const previous = await readArtifacts(host, input.id, gid);
-  const obsolete = previous.script !== null || previous.callback !== null;
-  if (obsolete) {
-    if (!("user" in input)) refuse("schedule.artifact_conflict");
-    if (await commandHash(input.command) !== input.command_hash) {
-      refuse("schedule.artifact_conflict");
-    }
-    const { cascade: _cascade, ...installation } = input;
-    const expected = renderScheduleUnits(publicInput(installation));
-    validateObsolete(installation, previous, expected);
-  } else if (previous.service !== null || previous.timer !== null) {
-    const intent = installedIntent(
-      input.id,
-      previous.service,
-      previous.timer,
-    );
-    if (intent.group !== input.group) refuse("schedule.artifact_conflict");
-    if ("user" in input) {
-      const { cascade: _cascade, ...installation } = input;
-      const expected = renderScheduleUnits(publicInput(installation));
-      if (
-        previous.service !== expected.service ||
-        previous.timer !== expected.timer ||
-        await commandHash(input.command) !== input.command_hash
-      ) refuse("schedule.artifact_conflict");
-    }
-  }
-  const p = paths(input.id);
-  if (Object.values(previous).every((v) => v === null)) return;
-  if (
-    !input.cascade &&
-    !["inactive", "failed", "unknown"].includes(
-      await host.state("is-active", p.serviceUnit),
-    )
-  ) refuse("schedule.run_active");
-  host.beginMutation();
-  if (
-    !await host.systemctl("disable", "--now", p.timerUnit) &&
-    previous.timer !== null
-  ) refuse();
-  if (
-    input.cascade && previous.service !== null &&
-    !await host.systemctl("stop", p.serviceUnit)
-  ) refuse();
-  for (const key of ["timer", "service", "script", "callback"] as const) {
-    if (previous[key] !== null) await host.remove(p[key]);
-  }
-  if (!await host.systemctl("daemon-reload")) refuse();
-  await host.systemctl("reset-failed", p.serviceUnit);
-  await host.systemctl("reset-failed", p.timerUnit);
-}
-
-/** Fixed Schedule actions. Private command source is used only on protected stdin. */
+/** Retained parent Schedule installation; standalone destruction uses native cfgmgmt. */
 export async function scheduleSystem(
   name: ScheduleCommand,
   input: Record<string, unknown>,
@@ -555,9 +459,6 @@ export async function scheduleSystem(
     switch (name) {
       case "schedule.install":
         await install(host, Install.parse(input));
-        break;
-      case "schedule.remove":
-        await remove(host, Remove.parse(input));
         break;
     }
     return {};

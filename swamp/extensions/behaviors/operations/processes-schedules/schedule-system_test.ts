@@ -357,66 +357,37 @@ Deno.test("legacy migration checks exact context and command then preserves actu
   }
 });
 
-Deno.test("old artifacts cannot migrate or delete with only a marker or a different private command", async () => {
-  for (const action of ["schedule.install", "schedule.remove"] as const) {
-    for (
-      const change of [
-        "command",
-        "script",
-        "service",
-        "timer",
-        "callback",
-        "missing-private",
-      ]
-    ) {
-      const f = new Fixture();
-      legacy(f);
-      const value: Record<string, unknown> = {
-        ...input,
-        command: privateCommand,
-        ...(action === "schedule.remove" ? { cascade: true } : {}),
-      };
-      if (change === "command") value.command = "false";
-      else if (change === "missing-private") delete value.command;
-      else if (change === "callback") {
-        put(f, callback, `# X-Orbit-Schedule-ID=${id}\nforeign`, 0o700);
-      } else {f.files.get(
-          change === "script" ? script : change === "service" ? service : timer,
-        )!.content += "# changed\n";}
-      const before = structuredClone(f.files);
-      assertEquals(await f.action(action, value), {
-        error_code: action === "schedule.remove" && change === "missing-private"
-          ? "schedule.failed"
-          : "schedule.artifact_conflict",
-      });
-      assertEquals(f.files, before);
-      assertEquals(f.mutations(), []);
-    }
-  }
-});
-
-Deno.test("legacy removal validates old files and never installs or enables an admission timer", async () => {
-  const f = new Fixture();
-  legacy(f);
-  f.enabled = true;
-  assertEquals(
-    await f.action("schedule.remove", {
+Deno.test("old artifacts cannot migrate with only a marker or a different private command", async () => {
+  for (
+    const change of [
+      "command",
+      "script",
+      "service",
+      "timer",
+      "callback",
+      "missing-private",
+    ]
+  ) {
+    const f = new Fixture();
+    legacy(f);
+    const value: Record<string, unknown> = {
       ...input,
       command: privateCommand,
-      cascade: true,
-    }),
-    {},
-  );
-  for (const path of [script, callback, service, timer]) {
-    assertEquals(f.files.has(path), false);
+    };
+    if (change === "command") value.command = "false";
+    else if (change === "missing-private") delete value.command;
+    else if (change === "callback") {
+      put(f, callback, `# X-Orbit-Schedule-ID=${id}\nforeign`, 0o700);
+    } else {f.files.get(
+        change === "script" ? script : change === "service" ? service : timer,
+      )!.content += "# changed\n";}
+    const before = structuredClone(f.files);
+    assertEquals(await f.action("schedule.install", value), {
+      error_code: "schedule.artifact_conflict",
+    });
+    assertEquals(f.files, before);
+    assertEquals(f.mutations(), []);
   }
-  assertEquals(
-    f.calls.some((call) =>
-      call.program === "/usr/bin/install" || call.args[0] === "enable" ||
-      call.args[0] === "start"
-    ),
-    false,
-  );
 });
 
 Deno.test("failed legacy migration restores the old closed artifacts and separate timer state", async () => {
@@ -438,30 +409,20 @@ Deno.test("failed legacy migration restores the old closed artifacts and separat
 
 Deno.test("foreign files, links and writable directories refuse before stop or removal", async () => {
   for (
-    const name of [
-      "schedule.install",
-      "schedule.remove",
-    ] as const
+    const drift of [{ uid: 1000 }, { type: "symbolic link" }, { links: 2 }, {
+      mode: 0o666,
+    }, { content: "foreign" }]
   ) {
-    for (
-      const drift of [{ uid: 1000 }, { type: "symbolic link" }, { links: 2 }, {
-        mode: 0o666,
-      }, { content: "foreign" }]
-    ) {
-      const f = new Fixture();
-      assertEquals(await f.action("schedule.install"), {});
-      Object.assign(f.files.get(service)!, drift);
-      f.calls = [];
-      const before = structuredClone(f.files);
-      const value = name === "schedule.install"
-        ? input
-        : { id, group: "orbit", cascade: true };
-      assertEquals(await f.action(name, value), {
-        error_code: "schedule.artifact_conflict",
-      });
-      assertEquals(f.files, before);
-      assertEquals(f.mutations(), []);
-    }
+    const f = new Fixture();
+    assertEquals(await f.action("schedule.install"), {});
+    Object.assign(f.files.get(service)!, drift);
+    f.calls = [];
+    const before = structuredClone(f.files);
+    assertEquals(await f.action("schedule.install", input), {
+      error_code: "schedule.artifact_conflict",
+    });
+    assertEquals(f.files, before);
+    assertEquals(f.mutations(), []);
   }
   const f = new Fixture();
   f.files.set("/etc/orbit", {
@@ -522,28 +483,6 @@ Deno.test("verification failure restores absent artifacts and reports failed rol
   assertEquals(await f.action("schedule.install"), {
     error_code: "schedule.rollback_failed",
   });
-});
-
-Deno.test("standalone removal checks active work before disabling its timer and cascade deletes owned units", async () => {
-  const f = new Fixture();
-  assertEquals(await f.action("schedule.install"), {});
-  f.serviceActive = true;
-  f.enabled = true;
-  f.calls = [];
-  const remove = { id, group: "orbit", cascade: false };
-  assertEquals(await f.action("schedule.remove", remove), {
-    error_code: "schedule.run_active",
-  });
-  assertEquals(f.mutations(), []);
-  assertEquals(f.enabled, true);
-  assertEquals(
-    await f.action("schedule.remove", { ...remove, cascade: true }),
-    {},
-  );
-  assertEquals(f.serviceActive, false);
-  assertEquals(f.files.has(service), false);
-  assertEquals(f.files.has(timer), false);
-  assertEquals(await f.action("schedule.remove", remove), {});
 });
 
 Deno.test("systemd parses generated public units without private files", async () => {
@@ -622,28 +561,25 @@ function directArtifacts(f: Fixture) {
 }
 
 Deno.test("migration removes only an exact obsolete completion callback and script", async () => {
-  for (const action of ["schedule.install", "schedule.remove"] as const) {
-    const f = new Fixture();
-    directArtifacts(f);
-    assertEquals(
-      await f.action(action, {
-        ...input,
-        command: privateCommand,
-        ...(action === "schedule.remove" ? { cascade: false } : {}),
-      }),
-      {},
-    );
-    assertEquals(f.files.has(script), false);
-    assertEquals(f.files.has(callback), false);
-    assertEquals(f.files.has(service), action === "schedule.install");
-    assertEquals(
-      f.calls.some((call) =>
-        call.program.includes("orbit-agent") ||
-        call.program === "/usr/bin/timeout"
-      ),
-      false,
-    );
-  }
+  const f = new Fixture();
+  directArtifacts(f);
+  assertEquals(
+    await f.action("schedule.install", {
+      ...input,
+      command: privateCommand,
+    }),
+    {},
+  );
+  assertEquals(f.files.has(script), false);
+  assertEquals(f.files.has(callback), false);
+  assertEquals(f.files.has(service), true);
+  assertEquals(
+    f.calls.some((call) =>
+      call.program.includes("orbit-agent") ||
+      call.program === "/usr/bin/timeout"
+    ),
+    false,
+  );
 });
 
 Deno.test("interrupted cleanup validates remaining obsolete files against the published public unit", async () => {
@@ -661,43 +597,26 @@ Deno.test("interrupted cleanup validates remaining obsolete files against the pu
   assertEquals([f.enabled, f.active], [true, false]);
 });
 
-Deno.test("marker-preserving service changes refuse deletion before effects", async () => {
+Deno.test("busy legacy migration retains the original owned runtime", async () => {
   const f = new Fixture();
-  assertEquals(await f.action("schedule.install"), {});
-  f.files.get(service)!.content = f.files.get(service)!.content.replace(
-    "--request POST", "--request DELETE",
-  );
-  f.calls = [];
+  legacy(f);
+  f.enabled = true;
+  f.active = false;
+  f.serviceActive = true;
+  const before = structuredClone(f.files);
   assertEquals(
-    await f.action("schedule.remove", { id, group: "orbit", cascade: true }),
-    { error_code: "schedule.artifact_conflict" },
+    await f.action("schedule.install", {
+      ...input,
+      command: privateCommand,
+    }),
+    { error_code: "schedule.run_active" },
   );
-  assertEquals(f.mutations(), []);
-});
-
-Deno.test("busy legacy migration and standalone deletion retain the original owned runtime", async () => {
-  for (const action of ["schedule.install", "schedule.remove"] as const) {
-    const f = new Fixture();
-    legacy(f);
-    f.enabled = true;
-    f.active = false;
-    f.serviceActive = true;
-    const before = structuredClone(f.files);
-    assertEquals(
-      await f.action(action, {
-        ...input,
-        command: privateCommand,
-        ...(action === "schedule.remove" ? { cascade: false } : {}),
-      }),
-      { error_code: "schedule.run_active" },
-    );
-    for (const path of [script, callback, service, timer]) {
-      assertEquals(f.files.get(path), before.get(path));
-    }
-    assertEquals([f.enabled, f.active], [true, false]);
-    assertEquals(f.serviceActive, true);
-    assertEquals(f.calls.some((call) => call.args[0] === "stop"), false);
+  for (const path of [script, callback, service, timer]) {
+    assertEquals(f.files.get(path), before.get(path));
   }
+  assertEquals([f.enabled, f.active], [true, false]);
+  assertEquals(f.serviceActive, true);
+  assertEquals(f.calls.some((call) => call.args[0] === "stop"), false);
 });
 
 Deno.test("same-root Schedule account lookup reads actual primary group without guessing", async () => {

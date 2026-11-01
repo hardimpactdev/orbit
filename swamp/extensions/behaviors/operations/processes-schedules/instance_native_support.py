@@ -1,13 +1,14 @@
 """Actual same-root placed member DAGs, using the shared local native harness."""
-import hashlib
+import importlib
 import json
 import re
-from pathlib import Path
 import sys
 import uuid
+from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / 'tests'))
-from native_harness import NativeTestCase
+NativeTestCase = importlib.import_module("native_harness").NativeTestCase
 
 
 class InstanceRuntimeCase(NativeTestCase):
