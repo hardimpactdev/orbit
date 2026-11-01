@@ -53,7 +53,7 @@ export function automaticDeploy(
 ) {
   return {
     type: "@nckrtl/automatic-deploy",
-    version: "2026.11.01.1",
+    version: "2026.11.01.2",
     globalArguments: z.object({
       gatewayUrl: z.string().url().default("https://gateway.orbit"),
       caFile: z.string().default(
