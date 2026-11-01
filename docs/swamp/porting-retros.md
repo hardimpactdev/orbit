@@ -13,6 +13,10 @@ These PRs change what a kind does. Each one needs an F10 re-proof.
 
 | PR | Ported or changed | Swamp lines | Steps per legacy call | Budget | Pre-F10 evidence | Findings |
 | --- | --- | --- | --- | --- | --- | --- |
+| #2366 | Gate follows sibling-module imports in poll helpers; strict UpCloud `poll_read()` (lane 0b) | +256 / −84 | Not a kind | Gate rule | Recorded receipt exception for the `upcloud.py` move (A's merge feed); gate tests | The DNS allowance is gone; only external HTTPS polls qualify |
+| #2363 | Club key delivered only to disposable proof Task VMs (lane 25) | +314 / −10 | One `@swamp/ssh` exec step | Action 30 s; `queueTimeout` 10 | Bootstrap exception; the first `up` is the receipt | Lane 26 review: the OD2 line needed an `sh -c` wrapper. On exit 1 without `okExitCodes`, the refusal code is lost |
+| #2360 | Gate proves external polling origins and HTTP failure propagation (lane 0b) | +387 / −42 | Not a kind | Gate rule | Gate tests | Closes L17-PR-2325-01 |
+| #2355 | Setup keeps only a fully redacted stderr tail (B) | +74 / −33 | Unchanged | None | Outage exception | Decoding after redaction joined split secrets, and the second pass grew short-value tails; #2370 (open) fixes both |
 | #2332 | Automatic-deploy policy returns one checkpoint handle per resource name; `swamp.vault_sync_unavailable` with 0 attempts and a null result is a definite pre-submission failure (E) | +67 / −15 | Not a kind | None | Outage exception on E's independent review PASS against the skill; receipt after `up` | A duplicate `development-315` output broke policy and tick. The body lacked "merges without a topology receipt". CI does not check `deno fmt`, and main is not fmt-clean |
 | #2369 | Task VM guest Node removal skips the token phases (boundary decision 8 (a)) | +49 / −10 | Unchanged: a guard on five existing steps | Unchanged | Outage exception; native guest and ordinary-Node regressions; live check after load | Dead `allows()` conjunct. A pre-release intent lacks `task_vm_guest`, so its guard fails. Both token list steps list every token before filtering, against decision 8 |
 | #2253 | `route.create` and Route removal from native children | +1,957 / −5,706 | About 100 steps for about 5 to 7 calls | None | Native tests; no live run | All-pairs `always` edges; result takes `${{ steps }}` plus an echo step; one SSH `true` per Node |
@@ -47,6 +51,7 @@ Fix-forward is allowed for these. They need no proof.
 
 | PR | Deleted | Swamp lines | Baseline rows | Findings |
 | --- | --- | --- | --- | --- |
+| #2372 | Unreachable Swamp code and the nested `swamp/.github` CI copies (slimming lane; first F15 deletion) | +5 / −3,677 | 1 removed (`php/shared_program.ts` `inline-script`) | The nested copies never ran. The root `.github/workflows/swamp-shape.yml` is the only CI copy |
 | #2358 | Test fixtures leaking anonymous Docker volumes (tests only) | +16 / −13 | None | Forced `rm` beat `--rm`; about 1,000 leaked volumes a day on beast until cleanup passed `--volumes` |
 | #2341 | Unused SQLite seed-abandon kind | +9 / −78 | None | Deletion, −129 net |
 | #2331 | Unreachable standalone certificate kinds (C) | +29 / −780 | None | Deletion, −911 net |
