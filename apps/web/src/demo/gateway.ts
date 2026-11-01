@@ -1213,6 +1213,7 @@ export function createDemoGateway() {
             current_step: null,
             failed_step: null,
             error_code: null,
+            error: null,
             result: null,
             cancel_requested: false,
             assistance: null,

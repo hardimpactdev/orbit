@@ -14,6 +14,7 @@ const operation = (overrides: Partial<Operation> = {}): Operation => ({
     current_step: null,
     failed_step: null,
     error_code: null,
+    error: null,
     result: null,
     cancel_requested: false,
     assistance: null,
