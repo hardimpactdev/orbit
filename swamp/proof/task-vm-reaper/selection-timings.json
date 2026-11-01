@@ -1,0 +1,40 @@
+{
+  "scope": "isolated pinned-native selection only; not F10 topology proof",
+  "workflow": "task-vm-reaper",
+  "proof_project_id": 62,
+  "runs": [
+    {
+      "completed_at": "2026-11-01T11:57:01.514Z",
+      "phase": "select",
+      "phase_ms": 367,
+      "run_id": "348994b4-c529-4601-98b6-32714ec81097",
+      "started_at": "2026-11-01T11:57:01.051Z",
+      "status": "succeeded",
+      "run_seconds": 0.463
+    },
+    {
+      "completed_at": "2026-11-01T11:57:05.816Z",
+      "phase": "select",
+      "phase_ms": 78,
+      "run_id": "91c0860d-8b21-4444-9b7b-8599830c5137",
+      "started_at": "2026-11-01T11:57:05.716Z",
+      "status": "succeeded",
+      "run_seconds": 0.1
+    },
+    {
+      "completed_at": "2026-11-01T11:57:07.993Z",
+      "phase": "select",
+      "phase_ms": 68,
+      "run_id": "31d0ed21-d46e-4739-8d7a-32dd448762dc",
+      "started_at": "2026-11-01T11:57:07.911Z",
+      "status": "succeeded",
+      "run_seconds": 0.082
+    }
+  ],
+  "sample": 3,
+  "p95_seconds": 0.463,
+  "selection_budget_seconds": 30,
+  "queue_timeout_seconds": 15,
+  "cleanup": "existing tasks.cancel and task_vm.destroy own their phases and budgets",
+  "f10": "pending scheduled-producer fixture support and lane 0c cleanup seam"
+}

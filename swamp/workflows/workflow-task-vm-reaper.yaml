@@ -1,0 +1,30 @@
+id: 97255f74-03e4-4814-aef6-f61888786763
+name: task-vm-reaper
+description: Select expired claimed Task VMs from Gateway-published recorded work facts.
+trigger:
+  schedule: '20 * * * * *'
+queueTimeout: 15
+vaults: []
+inputs:
+  type: object
+  required: [expectations_hash, expectations]
+  additionalProperties: false
+  properties:
+    expectations_hash: {type: string, pattern: '^[a-f0-9]{64}$'}
+    expectations: {type: object}
+reports:
+  skip: ['@swamp/workflow-summary']
+jobs:
+  - name: select
+    target: orbit-node-209
+    steps:
+      - name: result
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-vm-reaper-input'
+          behaviorName: '${{ "task-vm-reaper-" + run.id }}'
+          methodName: select
+          inputs:
+            expectations_hash: '${{ inputs.expectations_hash }}'
+            proof_project_id: '${{ inputs.expectations.proof_project_id }}'
+            vms: '${{ inputs.expectations.vms }}'

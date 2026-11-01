@@ -6,14 +6,20 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\NativeOperationProjection;
 use App\Models\AgentThread;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records the native result and the board's existing thread observation. */
-final readonly class TaskTurnProjection implements DirectOperationProjection
+final readonly class TaskTurnProjection implements DirectOperationProjection, NativeOperationProjection
 {
+    public function native(Operation $operation): bool
+    {
+        return true;
+    }
+
     public function input(Operation $operation): array
     {
         return ['intent' => array_diff_key($operation->input, ['execution_secrets' => true]),

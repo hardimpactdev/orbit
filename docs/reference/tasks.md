@@ -1137,6 +1137,10 @@ The read writes no thread state. Activity samples it like any other [read](/cli/
 
 ## Cancel a stuck task
 
+A native Swamp schedule selects claimed Task VMs that have no live group, have made no recorded work progress for 60 minutes, or have waited for unanswered assistance for two hours. The proof Project uses only a limit of 45 minutes from group creation, including persistent proof topologies; the ordinary progress and assistance limits do not apply to it. Progress uses group and subtask work timestamps, check start/completion timestamps and turn/check Operation timestamps. Observer refreshes and metric updates do not extend the deadline. Assistance age starts at the existing assistance-request Activity. Unclaimed warm-pool VMs are excluded. The proof Project is resolved by its `swamp-proof` slug at publication; its age uses the group’s `created_at`, without runner deadline metadata.
+
+The Gateway republishes full schedule expectations only when the computed per-VM deadlines or ownership change. The native schedule returns the expired exact VM identities. The shared terminal feed checks current expectations and uses normal cancellation admission: active Operations first receive native cancellation, and cleanup starts after their terminal result. The native workspace and VM cleanup owns every remote effect. Only its completed result removes records and cancels the group. Scheduled steps never POST admissions to the Gateway.
+
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
 Cancel waits for exclusive workspace ownership before it pushes approved work or removes the checkout. A busy workspace returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. When no durable cleanup retry exists, the refused request withdraws its queued intent so later scheduler work can proceed after the holder finishes. It never releases an active or uncertain holder.
