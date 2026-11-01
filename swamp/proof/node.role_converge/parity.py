@@ -118,10 +118,10 @@ def role_certificate(intent):
         and leaves[0]["scope"] == "role-websocket",
         "unexpected-websocket-leaf",
     )
-    name, directory, _ = module.role_paths(leaves[0])
+    certificate, _, root = module.role_paths(leaves[0])
     return {
-        "leaf": str(directory / (name + ".pem")),
-        "root": str(directory / "root-ca.pem"),
+        "leaf": str(certificate),
+        "root": str(root),
         "root_hash": leaves[0]["root_hash"],
     }
 
