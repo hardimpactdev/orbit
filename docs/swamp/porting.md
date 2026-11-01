@@ -238,7 +238,7 @@ Lane 26 adds a row after every merged port. Lane 17 wrote v0 in #2268.
 | Retro #2248, A ruling | Legacy polled UpCloud until the VM started; the one-shot observe is a regression. A bounded poll for external state inside a phase script is allowed under coreutils `timeout`. |
 | #2258, #2259 | At grant time, Swamp rejects a pattern with a quantified group holding `+` or `*`; use a flat alternation and run `bin/check-grant-patterns.ts` in `swamp/`. Name `forEach` models from `self._index`, with matching `@swamp/ssh` `globalArgs.name`. |
 | #2252, #2264, #2270, #2286, #2287 | Deletion PRs check imports, loaders and manifests first, remove baseline rows or lower a count, and keep methods live workflows still call. |
-| #2281, lanes 17 and 27 | F9 means the legacy code at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
+| #2281, lanes 17 and 27 | F9 means the legacy code and tests at `6291bb036`: its sweep stops a host at the first failure. Over two steps per legacy call needs a reason; #2281 ran 22 for 6. |
 | #2273, lane 9 create consult | Op 6639 took 957 s for 4.6 s of SSH work. Encode empty maps as objects. A Node never returns a secret; generate Gateway-owned secrets at admission. |
 | #2310 (B7 outage) | A `data.query` in step inputs grew with every capture, to 847 records and 117 MB in one dispatch. Read one stable record with `data.latest`. |
 | PLAN F10, F12 | `bin/swamp-proof` proves on two shark task VMs with throwaway Swamp state on a versioned topology, never production serve or 209. Receipts name the topology version. |
