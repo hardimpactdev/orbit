@@ -362,6 +362,26 @@ describe('TopologyAcquirer', function () {
             ]);
     });
 
+    it('admits both spare Router roles normally and leaves their fixture role rows empty', function (): void {
+        $steps = [];
+        ['acquirer' => $acquirer, 'incus' => $incus, 'request' => $request] = acquirerFixture(steps: $steps);
+
+        $acquirer->acquire($request, TopologyRecipe::compose(['app-dev+ingress', 'spare+router', 'spare-2+router']));
+
+        $seeding = array_find($incus->execs, static fn (array $exec): bool => ($exec['argv'][1] ?? null) === 'seed');
+        $nodes = array_column(json_decode($seeding['stdin'], true)['nodes'], null, 'key');
+        expect($nodes['spare']['roles'])->toBe([])
+            ->and($nodes['spare-2']['roles'])->toBe([])
+            ->and(array_values(array_map(
+                static fn (array $exec): array => array_slice($exec['argv'], 1),
+                array_filter($incus->execs, static fn (array $exec): bool => ($exec['argv'][1] ?? null) === 'role-add'),
+            )))->toBe([
+                ['role-add', 'app-dev', 'ingress', 'e2e-app-dev'],
+                ['role-add', 'spare', 'router'],
+                ['role-add', 'spare-2', 'router'],
+            ]);
+    });
+
     it('rolls back the network and names the copy failure when the host has no template', function () {
         ['acquirer' => $acquirer, 'incus' => $incus, 'worktree' => $worktree, 'request' => $request] = acquirerFixture(template: false);
 

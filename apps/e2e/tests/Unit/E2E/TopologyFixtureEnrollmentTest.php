@@ -48,13 +48,15 @@ it('refuses missing or failed public identities without invoking the seeder', fu
 })->with([['{}', 0], ['invalid', 0], ['{}', 1]]);
 
 it('leaves declared extra roles for normal product convergence instead of seeding active role rows', function (): void {
-    [$incus, $target, $fixtures] = fixtureEnrollmentHost(TopologyRecipe::compose(['app-dev+router+vpn']));
+    [$incus, $target, $fixtures] = fixtureEnrollmentHost(TopologyRecipe::compose(['app-dev+router+vpn', 'spare+router', 'spare-2+vpn']));
     $ssh = base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('s', 32));
     $incus->respond(static fn (): array => [json_encode(['wireguard_public_key' => base64_encode(str_repeat('p', 32)), 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => $ssh]), '', 0]);
     $input = $fixtures->capture($target, array_fill_keys($target->recipe->nodeKeys(), '192.0.2.10'), array_fill_keys($target->recipe->nodeKeys(), 'x86_64'), ['url' => 'https://repositories.orbit/seed.git', 'commit' => str_repeat('a', 40), 'branch' => 'main']);
 
     expect($target->recipe->node('app-dev')->roles)->toBe(['app-dev', 'router', 'vpn'])
-        ->and($input['nodes'][1]['roles'])->toBe(['app-dev']);
+        ->and($input['nodes'][1]['roles'])->toBe(['app-dev'])
+        ->and($input['nodes'][2])->toMatchArray(['key' => 'spare', 'roles' => [], 'wireguard_ip' => '10.44.0.6'])
+        ->and($input['nodes'][3])->toMatchArray(['key' => 'spare-2', 'roles' => [], 'wireguard_ip' => '10.44.0.7']);
 });
 
 it('refuses seed success without every assigned topology Node id', function (array $nodes): void {

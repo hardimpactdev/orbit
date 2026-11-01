@@ -53,7 +53,7 @@ it('reads the --nodes option, with app-dev and app-prod by default and an empty 
 it('refuses an unknown, repeated, or unsupported declaration', function (array $declared, string $message) {
     expect(fn () => TopologyRecipe::compose($declared))->toThrow(InvalidArgumentException::class, $message);
 })->with([
-    'unknown' => [['app-staging'], 'A declared Node must be one of app-dev, app-prod, app-prod-2.'],
+    'unknown' => [['app-staging'], 'A declared Node must be one of app-dev, app-prod, app-prod-2, spare, spare-2.'],
     'gateway is always present' => [['gateway'], 'A declared Node must be one of'],
     'repeated' => [['app-dev', 'app-dev'], 'The Node [app-dev] is declared twice.'],
     'second production Node alone' => [['app-prod-2'], 'The Node [app-prod-2] requires [app-prod].'],
@@ -109,3 +109,21 @@ it('accepts declarable Router and VPN roles in canonical order without moving th
     [['app-prod+vpn+router'], 'app-prod'],
     [['app-prod', 'app-prod-2+vpn+router'], 'app-prod-2'],
 ]);
+
+it('composes independent roleless spares and retains every requested role for the normal product path', function (): void {
+    $recipe = TopologyRecipe::compose(['spare-2+router', 'app-dev+ingress', 'spare+router']);
+
+    expect($recipe->nodeKeys())->toBe(['gateway', 'app-dev', 'spare', 'spare-2', 'operator'])
+        ->and($recipe->node('spare')->address)->toBe(15)
+        ->and($recipe->node('spare')->wireGuardAddress())->toBe('10.44.0.6')
+        ->and($recipe->node('spare-2')->address)->toBe(16)
+        ->and($recipe->node('spare-2')->wireGuardAddress())->toBe('10.44.0.7')
+        ->and($recipe->baseRoles($recipe->node('spare')))->toBe([])
+        ->and($recipe->extraRoles($recipe->node('spare')))->toBe(['router'])
+        ->and($recipe->extraRoles($recipe->node('spare-2')))->toBe(['router'])
+        ->and($recipe->lastAddress())->toBe(16)
+        ->and(TopologyRecipe::fromArray($recipe->toArray())->assignments())->toBe($recipe->assignments())
+        ->and(TopologyRecipe::compose(['spare'])->node('spare')->roles)->toBe([])
+        ->and(TopologyRecipe::compose(['spare-2'])->node('spare-2')->roles)->toBe([])
+        ->and(TopologyRecipe::compose(['spare+vpn+ingress+router'])->node('spare')->roles)->toBe(['ingress', 'router', 'vpn']);
+});

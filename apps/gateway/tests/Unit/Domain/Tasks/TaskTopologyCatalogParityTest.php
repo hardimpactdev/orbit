@@ -10,7 +10,7 @@ use App\Domain\TaskVms\TaskVmSize;
  * the constants and `match` arms of `TopologyRecipe`. The live Gateway validates declarations against its own catalog
  * and the group's harness composes them, so both must accept the same entries.
  *
- * @return array{nodes: array<string, array{base_role: string, requires: ?string, memory: ?string}>, extra_roles: list<string>, reserved: array<string, ?string>}
+ * @return array{nodes: array<string, array{base_role: ?string, requires: ?string, memory: ?string}>, extra_roles: list<string>, reserved: array<string, ?string>}
  */
 function harness_topology_catalog(): array
 {
@@ -25,7 +25,7 @@ function harness_topology_catalog(): array
 
                 continue;
             }
-            $nodes[$key] = ['base_role' => $node['base_role'], 'requires' => $node['requires'] ?? null, 'memory' => $node['memory'] ?? null];
+            $nodes[$key] = ['base_role' => $node['base_role'] ?? null, 'requires' => $node['requires'] ?? null, 'memory' => $node['memory'] ?? null];
         }
 
         return ['nodes' => $nodes, 'extra_roles' => $catalog['extra_roles'], 'reserved' => $reserved];
@@ -52,7 +52,7 @@ it('declares the same nodes, base roles, requirements, and extra roles as the ha
     $harness = harness_topology_catalog();
 
     expect(array_keys($harness['nodes']))->toBe(array_keys(TaskTopology::Nodes))
-        ->and(array_map(static fn (array $node): string => $node['base_role'], $harness['nodes']))->toBe(TaskTopology::Nodes)
+        ->and(array_map(static fn (array $node): ?string => $node['base_role'], $harness['nodes']))->toBe(TaskTopology::Nodes)
         ->and(array_filter(array_map(static fn (array $node): ?string => $node['requires'], $harness['nodes'])))->toBe(TaskTopology::Requires)
         ->and($harness['extra_roles'])->toBe(TaskTopology::ExtraRoles);
 });

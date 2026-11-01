@@ -23,7 +23,9 @@ An Orbit task group on a [task VM](/reference/compute-drivers#task-vms) gets a t
 
 ## Declared Nodes
 
-Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names one of `app-dev`, `app-prod`, and `app-prod-2`, and may request `ingress`, `router`, or `vpn` after a `+`, for example `app-dev+router` or `app-prod+ingress+router`. The product's role policy still decides whether a role can run on that Node. `app-prod-2` requires `app-prod`. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` uses the same entries.
+Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` adds the workload Nodes the work needs. `LIST` is a comma-separated list of entries, in any order. An entry names `app-dev`, `app-prod`, `app-prod-2`, `spare`, or `spare-2`, and may request `ingress`, `router`, or `vpn` after a `+`. For example, `app-dev+ingress,spare+router,spare-2+router` declares separate Router candidates. The spare Nodes have no base role; `--nodes=spare` supplies a role-add target. The product's role policy still decides whether a requested role can run there.
+
+`app-prod-2` requires `app-prod`. Each spare can be declared independently. Without the option, the list is `app-dev,app-prod`. An empty list, `--nodes=`, gives the Gateway and the operator only. A task VM group's subtask `topology` accepts the same entries within its size limit.
 
 | Node key | Incus address | WireGuard address | Roles | Checkout |
 | --- | --- | --- | --- | --- |
@@ -31,6 +33,8 @@ Every topology has a `gateway` VM and an `operator` VM. `acquire --nodes=LIST` a
 | `app-dev` | `.11` | `10.44.0.2` | `app-dev` | yes |
 | `app-prod` | `.12` | `10.44.0.3` | `app-prod` | no |
 | `app-prod-2` | `.13` | `10.44.0.4` | `app-prod` | no |
+| `spare` | `.15` | `10.44.0.6` | none, plus requested roles | no |
+| `spare-2` | `.16` | `10.44.0.7` | none, plus requested roles | no |
 | `operator` | `.14` | `10.44.0.5` | none | yes |
 
 Every Node is a copy of the same `node-template`. `app-prod-2` is a second `app-prod` Node. Each production Node gets its own name as its development TLD, and `app-dev` gets `beast`.
@@ -39,7 +43,7 @@ The Node catalog `apps/e2e/resources/topology-nodes.json` holds this table. For 
 
 The WireGuard address is the address position minus 9. The network's DHCP range ends at the highest position the topology uses. A new workload Node kind needs one catalog entry. A Gateway test reads the same file, so the Gateway accepts the same `topology` entries as the harness.
 
-The harness assigns the base roles in the table and runs normal product commands for each declared extra role. A Router exists only after the declared `+router` finishes the normal Cluster Router path. Neither a declaration nor a seeded active row proves runtime readiness. Add the workloads the check needs with the Orbit CLI on the topology, for example `orbit project:create`, and record those steps as evidence.
+The harness assigns only the base roles in the table and runs normal product commands for every declared extra role, including roles requested on a spare Node. A bare spare has a WireGuard peer and trusted Gateway access without a workload role or a Caddy requirement. A Router exists only after `+router` finishes the normal Cluster Router path. Neither a declaration nor a seeded active row proves runtime readiness. Product VPN singleton and protection rules apply to `+vpn`; declaration does not override them. Add workloads through the topology CLI and record those steps as evidence.
 
 | Field | Value |
 | --- | --- |

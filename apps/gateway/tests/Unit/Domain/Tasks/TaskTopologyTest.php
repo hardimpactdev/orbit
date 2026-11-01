@@ -53,12 +53,12 @@ it('unites declarations per node and refuses a union larger than the largest VM'
 it('derives the entry pattern and the messages from the catalog', function (): void {
     foreach ([...array_keys(TaskTopology::Nodes), 'gateway', 'operator', 'app-prod-3'] as $node) {
         foreach (['', ...array_map(static fn (string $role): string => '+'.$role, [...TaskTopology::ExtraRoles, 'websocket'])] as $roles) {
-            $catalog = isset(TaskTopology::Nodes[$node]) && ($roles === '' || in_array(substr($roles, 1), TaskTopology::ExtraRoles, true));
+            $catalog = array_key_exists($node, TaskTopology::Nodes) && ($roles === '' || in_array(substr($roles, 1), TaskTopology::ExtraRoles, true));
             expect(preg_match(TaskTopology::EntryPattern, $node.$roles))->toBe($catalog ? 1 : 0);
         }
     }
 
-    expect(TaskTopology::invalidMessage())->toBe('Topology must be a list of at most 2 distinct app-dev, app-prod, or app-prod-2 nodes, each with an optional +ingress or +router or +vpn role where it fits the node; app-prod-2 needs app-prod.')
+    expect(TaskTopology::invalidMessage())->toBe('Topology must be a list of at most 2 distinct app-dev, app-prod, app-prod-2, spare, or spare-2 nodes, each with an optional +ingress or +router or +vpn role where it fits the node; app-prod-2 needs app-prod.')
         ->and(TaskTopology::tooManyMessage())->toBe('The subtasks of a group declare more than 2 test nodes together. The largest task VM holds 2: split the work into groups.');
 });
 
@@ -164,4 +164,10 @@ it('accepts requested Router and VPN roles and canonicalizes compound declaratio
         ->and(TaskTopology::fromInput(['app-prod+router', 'app-prod-2+vpn'])->toArray())->toBe(['app-prod+router', 'app-prod-2+vpn'])
         ->and(preg_match(TaskTopology::EntryPattern, 'app-dev+router+vpn'))->toBe(1)
         ->and(TaskTopology::valid(['app-dev+router+router']))->toBeFalse();
+});
+
+it('accepts roleless spares and canonical extra roles within the existing size limit', function (): void {
+    expect(TaskTopology::fromInput(['spare'])->toArray())->toBe(['spare'])
+        ->and(TaskTopology::fromInput(['spare+vpn+router', 'spare-2+router'])->toArray())->toBe(['spare+router+vpn', 'spare-2+router'])
+        ->and(TaskTopology::valid(['app-dev', 'spare', 'spare-2']))->toBeFalse();
 });

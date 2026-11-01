@@ -29,7 +29,7 @@ use JsonException;
 final readonly class TaskTopology implements Castable
 {
     /** The test nodes an entry can name, in composition order, each with its base role. */
-    public const array Nodes = ['app-dev' => 'app-dev', 'app-prod' => 'app-prod', 'app-prod-2' => 'app-prod'];
+    public const array Nodes = ['app-dev' => 'app-dev', 'app-prod' => 'app-prod', 'app-prod-2' => 'app-prod', 'spare' => null, 'spare-2' => null];
 
     /** A node that needs another node in the same declaration. */
     public const array Requires = ['app-prod-2' => 'app-prod'];
@@ -45,7 +45,7 @@ final readonly class TaskTopology implements Castable
      * exactly the catalog's node and role names; role conflicts and {@see self::Requires} are checked by
      * {@see self::valid()}.
      */
-    public const string EntryPattern = '/\A(?:app-dev|app-prod|app-prod-2)(?:\+(?:ingress|router|vpn))*\z/';
+    public const string EntryPattern = '/\A(?:app-dev|app-prod|app-prod-2|spare|spare-2)(?:\+(?:ingress|router|vpn))*\z/';
 
     /** @param array<string, list<string>> $entries node => added roles, in declaration order */
     public function __construct(private array $entries = []) {}
@@ -268,12 +268,12 @@ final readonly class TaskTopology implements Castable
             }
             $roles = explode('+', $entry);
             $node = array_shift($roles);
-            if (! isset(self::Nodes[$node]) || isset($entries[$node]) || count($roles) !== count(array_unique($roles))) {
+            if (! array_key_exists($node, self::Nodes) || isset($entries[$node]) || count($roles) !== count(array_unique($roles))) {
                 return null;
             }
-            $base = RoleName::from(self::Nodes[$node]);
+            $base = self::Nodes[$node] === null ? null : RoleName::from(self::Nodes[$node]);
             foreach ($roles as $role) {
-                if (! in_array($role, self::ExtraRoles, true) || $registry->conflicts($base, RoleName::from($role))) {
+                if (! in_array($role, self::ExtraRoles, true) || ($base !== null && $registry->conflicts($base, RoleName::from($role)))) {
                     return null;
                 }
             }

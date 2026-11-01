@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Value\GuestCommand;
-use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 
@@ -47,7 +46,7 @@ final readonly class TopologyFixtureEnrollment
                 'key' => $node->key, 'name' => $node->key, 'platform' => 'linux', 'architecture' => $architectures[$node->key],
                 'user' => 'orbit', 'home' => '/home/orbit', 'public_address' => $addresses[$node->key], 'public_ssh_port' => 22,
                 'wireguard_ip' => $node->wireGuardAddress(), ...$facts,
-                'roles' => $node->purpose === TopologyNodePurpose::Workload ? [$node->roles[0]] : $node->roles,
+                'roles' => $target->recipe->baseRoles($node),
                 ...($node->tld === null ? [] : ['tld' => $node->tld]),
             ];
         }

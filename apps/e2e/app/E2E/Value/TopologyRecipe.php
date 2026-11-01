@@ -38,7 +38,9 @@ final readonly class TopologyRecipe
                 $entry['purpose'],
                 $entry['address'],
                 $entry['checkout'],
-                $entry['declarable'] ? [(string) $entry['base_role'], ...$extras[$key]] : $entry['purpose']->roles(),
+                $entry['declarable']
+                    ? [...($entry['base_role'] === null ? [] : [$entry['base_role']]), ...$extras[$key]]
+                    : $entry['purpose']->roles(),
                 $entry['memory'],
                 $entry['tld'],
             );
@@ -165,14 +167,21 @@ final readonly class TopologyRecipe
         ));
     }
 
-    /**
-     * The roles a workload Node gets beyond the base role of its image, which the composer adds.
-     *
-     * @return list<string>
-     */
+    /** @return list<string> The fixture base roles; declared extras always use normal product admission. */
+    public function baseRoles(TopologyNode $node): array
+    {
+        if ($node->purpose !== TopologyNodePurpose::Workload) {
+            return $node->purpose->roles();
+        }
+        $base = TopologyNodeCatalog::load()->node($node->key)['base_role'];
+
+        return $base === null ? [] : [$base];
+    }
+
+    /** @return list<string> Every role requested beyond the Node's optional base role. */
     public function extraRoles(TopologyNode $node): array
     {
-        return array_slice($node->roles, 1);
+        return array_slice($node->roles, count($this->baseRoles($node)));
     }
 
     /**

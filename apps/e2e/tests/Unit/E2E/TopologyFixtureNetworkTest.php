@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\TopologyFixtureNetwork;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeIncus;
@@ -12,10 +13,10 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 /** @return array{FakeIncus, TopologyTarget, TopologyFixtureNetwork, list<array<string,mixed>>} */
-function topologyNetworkFixture(): array
+function topologyNetworkFixture(?TopologyRecipe $recipe = null): array
 {
     $incus = new FakeIncus()->install();
-    $target = featureTarget('TST-11');
+    $target = featureTarget('TST-11', recipe: $recipe);
     $nodes = [];
     foreach ($target->recipe->nodes as $node) {
         $incus->instances[$target->instance($node->key)] = [...$incus->instances[IncusHost::TEMPLATE], 'status' => 'Running', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']];
@@ -26,7 +27,7 @@ function topologyNetworkFixture(): array
 }
 
 it('renders the hub on its Gateway and uses canonical peer actions with public input only', function (): void {
-    [$incus, $target, $network, $nodes] = topologyNetworkFixture();
+    [$incus, $target, $network, $nodes] = topologyNetworkFixture(TopologyRecipe::compose(['app-dev', 'spare+router', 'spare-2+router']));
     $incus->respond(static function (string $instance, array $argv): array {
         $source = implode(' ', $argv);
         $field = str_contains($source, 'def persist(') ? 'persisted' : (str_contains($source, 'syncconf') ? 'applied' : 'configured');
@@ -37,6 +38,7 @@ it('renders the hub on its Gateway and uses canonical peer actions with public i
     $network->converge($target, $nodes);
 
     $count = count($nodes);
+    expect(array_column($nodes, 'key'))->toBe(['gateway', 'app-dev', 'spare', 'spare-2', 'operator']);
     expect($incus->execs)->toHaveCount(3 * $count)
         ->and($incus->execs[0]['instance'])->toBe($target->instance('gateway'))
         ->and($incus->execs[0]['argv'])->toBe(['php', '/usr/local/bin/topology-network.php'])

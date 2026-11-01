@@ -87,6 +87,15 @@ describe('TopologyVerifier', function () {
             'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
             'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
         ]],
+        'roleless spare' => [['spare'], [
+            'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
+        ]],
+        'router spare' => [['spare+router'], [
+            'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
+            'caddy.spare' => 'spare',
+            'operator.gateway' => 'operator', 'source.gateway' => 'gateway', 'source.operator' => 'operator',
+        ]],
         'full' => [['app-dev', 'app-prod', 'app-prod-2'], [
             'nodes.registered' => 'gateway', 'service.swamp' => 'gateway', 'service.gateway' => 'gateway', 'service.vpn' => 'gateway', 'wireguard.reachability' => 'gateway',
             'caddy.app-dev' => 'app-dev', 'caddy.app-prod' => 'app-prod', 'caddy.app-prod-2' => 'app-prod-2',
